@@ -50,7 +50,7 @@ Stop those processes before starting updated applications: the first startup
 for the new cache format removes existing `settings:*` entries and records a
 shared completion marker. Later starts skip that scan. Cleanup must succeed
 before continuing; losing the marker safely repeats it.
-Updated processes cache secret-kind settings only in encrypted form. Do not
+Updated processes bind all cached settings to the full secret ring in encrypted envelopes. Do not
 leave older application images running or available for automatic restart.
 Every application makes a settings startup attempt, then retries temporary Valkey
 failures using the remainder of its five-minute NATS and settings recovery
@@ -139,7 +139,7 @@ or configure any intentionally separate native pool independently. See
 
 ## Bootstrap application connections from Core
 
-Applications can authenticate at startup with `CLOUD_APP_KEY` or
+Every serving application except Core and Gateway must authenticate at startup with `CLOUD_APP_KEY` or
 `CLOUD_APP_KEY_FILE` and the direct Core listener origin in
 `CLOUD_CORE_INTERNAL_ORIGIN`. The origin must use HTTP or HTTPS, with no path,
 query, fragment or embedded credentials. The public gateway blocks this
@@ -162,9 +162,26 @@ infrastructure environment values and refuse an app key.
 
 Each explicitly supplied connection value wins independently, including a
 supported alias, mounted secret, or explicit `false`. Core supplies the rest;
-environment defaults do not override Core values. Without a key, the existing
-environment mode remains available. The platform keeps the bootstrap response
-in memory and never writes delivered values to `process.env`.
+environment defaults do not override Core values. This per-value rule also
+supports third-party applications that still import `sql` or `redis` globals
+from `bun`: keep their explicit `DATABASE_URL` and `REDIS_URL` (and any other
+needed infrastructure values) until the application author migrates to Cloud
+clients. The app key remains mandatory for their HTTP server. Bootstrap values
+stay in memory and are never written to `process.env`, so Bun globals cannot
+read connections delivered only by Core.
+
+The generated server entry, `startPlatform()` and development preload fail
+immediately without a key, naming `CLOUD_APP_KEY_FILE` and the operator guide.
+`APP_DIR` selects paths and does not exempt a standalone HTTP application.
+Desktop's separate single-process SQLite runtime does not use this server startup.
+
+One-off scripts, test preloads, migrations and data commands may still call
+`initializePlatform({ appId, source: "env" })` from `@k2b/cloud/start` without a
+key. This initializes explicitly configured connections for a process that does
+not serve HTTP or make signed calls. Core and Gateway also use environment
+initialization. Forced environment mode refuses an app key. If a keyless
+process calls `sendAppRequest`, it fails before transport with one error naming
+`CLOUD_APP_KEY_FILE`; a caller-supplied Authorization header cannot replace it.
 
 Until Core answers, the app opens no HTTP listener and is not ready. Network,
 TLS/CA, HTTP 429 and HTTP 503 failures retry for at most five minutes, with a
@@ -191,10 +208,10 @@ the process to apply a changed secret.
 
 File alternatives are supported for:
 
-- `APP_SECRET` and `ADMIN_LOGIN_TOKEN`;
+- `APP_SECRET`, `APP_SECRET_NEXT`, `APP_SECRET_PREVIOUS` and `ADMIN_LOGIN_TOKEN`;
 - `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`, `CLOUD_IDENTITY_NEXT_KEY` and
   `CLOUD_IDENTITY_PREVIOUS_KEY`;
-- `CLOUD_APP_KEY`, `CLOUD_OAUTH_BROKER_SECRET` and `CLOUD_APP_CREDENTIAL`;
+- `CLOUD_APP_KEY`;
 - Cloud Login's `CLOUD_LOGIN_VAPID_PRIVATE_KEY`.
 
 ### Declare an application secret
@@ -289,15 +306,13 @@ environment variables. Applications using the shared HTTP transports supply
 | `NATS_ADMIN_CREDS_FILE` | Deprecated; Gateway Ops imports .creds **contents** into the secret `gateway.nats_admin_access` |
 | `NATS_ADMIN_NKEY_SEED_FILE` | Deprecated; imports user seed **contents** and selects `nkey`; mutually exclusive with `NATS_ADMIN_CREDS_FILE` |
 | `NATS_ADMIN_TLS_CA_FILE` | Deprecated; Gateway Ops imports CA PEM **contents** into `gateway.nats_admin_tls_ca` |
-| `APP_SECRET` | Encrypts settings and credentials |
+| `APP_SECRET` | Current root for encrypted settings, credentials and purpose signatures |
+| `APP_SECRET_NEXT` | Optional next root, 64 hex characters; distribute before cutover |
+| `APP_SECRET_PREVIOUS` | Optional previous root for reads and automatic rewrap; mutually exclusive with NEXT |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | Core-only KEK for private platform signing keys; exactly 64 hexadecimal characters |
 | `CLOUD_IDENTITY_NEXT_KEY` | Temporary next Core KEK, distributed before promotion |
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | Temporary previous Core KEK during a rolling rewrap |
-| `CLOUD_OAUTH_BROKER_SECRET` | Deprecated legacy Core/OAuth secret; exactly 64 hexadecimal characters; needed only when OAuth has no app key |
-| `CLOUD_IDENTITY_JWKS_ORIGIN` | Deprecated; use `CLOUD_CORE_INTERNAL_ORIGIN` for Core identity JWKS |
-| `CLOUD_OAUTH_JWKS_ORIGIN` | Deprecated explicit OAuth JWKS origin; otherwise uses Core internal OAuth JWKS via `CLOUD_CORE_INTERNAL_ORIGIN`, then the public issuer |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | Private Core origin required for OAuth issuance and workload/mandate broker calls; interactive capability calls can default to the public Cloud origin |
-| `CLOUD_APP_CREDENTIAL` | Deprecated host-run workload credential override for apps without an app key; not used by OAuth |
 | `NODE_ENV` | Set to `production` by built-in images; development tooling supplies its own mode |
 | `ADMIN_LOGIN_TOKEN` | Core-only temporary first-access or recovery token; no production default |
 
@@ -323,7 +338,7 @@ Treat a gateway compromise as an installation compromise, just as for Core:
 its shared database role and encryption secret allow access beyond the
 settings its normal delivery path reads. Protect its environment and host as
 installation-wide credentials. It does not receive Core's identity KEKs or
-the Core/OAuth broker secret.
+any application private key.
 
 `APP_SECRET` remains the data/settings encryption input; it never signs or verifies a
 session, invocation, or OAuth token.
@@ -335,18 +350,13 @@ secret. Generate it with `openssl rand -hex 32` and keep it independent from
 
 Set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin, for example
 `http://app-core:3000`. Session and invocation JWKS use that origin while
-tokens retain the public `app.url` issuer. The deprecated
-`CLOUD_IDENTITY_JWKS_ORIGIN` remains honored when explicitly set for this
-release and logs a startup warning. Without either value, JWKS use the public
-issuer origin.
+tokens retain the public `app.url` issuer. Without a private Core origin,
+verification can use the public issuer origin.
 
-OAuth verification uses Core's internal
-`/api/_internal/identity/v1/oauth/jwks` endpoint through
-`CLOUD_CORE_INTERNAL_ORIGIN`. The public `/.well-known/jwks.json` endpoint on
-OAuth and the public `app.url` issuer stay unchanged. An explicit deprecated
-`CLOUD_OAUTH_JWKS_ORIGIN` keeps using the old OAuth transport for this release;
-without either origin, applications use the public issuer. Applications cache
-OAuth public keys locally for at most five minutes.
+OAuth verification uses Core's internal `/api/_internal/identity/v1/oauth/jwks`
+endpoint through `CLOUD_CORE_INTERNAL_ORIGIN`. The public OAuth
+`/.well-known/jwks.json` endpoint and public issuer stay unchanged. Applications
+cache public keys locally for at most five minutes.
 
 Private HTTP origins assume a network that prevents traffic interception and
 modification, such as a trusted single-host container bridge. Public keys are
@@ -359,7 +369,7 @@ Core and OAuth currently require the same PostgreSQL database for identity
 state and one-shot grant claims. Separate databases are not supported.
 
 Set `CLOUD_CORE_INTERNAL_ORIGIN` to the private Core service origin when
-applications use workload credentials or mandates. The gateway rejects paths
+applications send signed requests or use mandates. The gateway rejects paths
 containing an `_internal` segment for HTTP and WebSocket requests; background
 helpers fail closed when their private origin is missing. Interactive helpers
 can still use the public capability route. The helper sends the caller
@@ -369,7 +379,7 @@ cookie, OAuth token, or API key.
 
 ### Signed background and OAuth requests
 
-With an app key configured, the platform signs the final method, target path
+The platform signs the final method, target path
 and exact body bytes immediately before every send to Core. Each transmission,
 including an explicitly safe retry, has a fresh 30-second proof and nonce.
 Core reads the active app key directly, so revocation or account disabling
@@ -381,10 +391,11 @@ operator-owned `oauth_issue_allowed` credential grant, checked directly on
 every request regardless of app ID. Every new issuer key, including rotations,
 needs explicit `--grant oauth:issue` (or API `grants: ["oauth:issue"]`). Setup
 and development tooling must pass it for the built-in OAuth app's first
-enrollment; the one-time migration grants only keys enrolled before the grant
-existed. Grants are never inherited. Issuance serves clients and grants in
-Cloud's OAuth registry; separate third-party identity-provider registries are
-not supported.
+enrollment. The migration starts keys without issuance permission and preserves
+stored operator grants on repeat runs. Grants are never inherited. Issuers own client policy and grants;
+Core signs closed authority statements against the shared minimal client
+registry and live platform facts. Third-party issuers use the same contract.
+See [Implement an OAuth issuer](/en/docs/identity/oauth#implement-an-oauth-issuer).
 See [App keys](/en/docs/operations/app-keys#background-and-oauth-authority) for
 grant storage and administration. Mandates and OAuth grant checks stay unchanged.
 `connections_allowed=false` prevents startup connection delivery but still
@@ -396,92 +407,33 @@ A lost response from a non-idempotent Action still requires reconciliation.
 Mail supplies its mandate and run context to the platform; Chat's app-only
 resource checks need no workload-credential env value.
 
-During this release, apps without keys retain the following legacy path.
-`CLOUD_APP_CREDENTIAL` and `CLOUD_OAUTH_BROKER_SECRET` are deprecated and remain
-accepted until their separate removal in the following release.
-`CLOUD_MAIL_APP_CREDENTIAL` is already unused as a Compose input; remove it and
-revoke the old credential after verifying signed background work. See
-[the migration steps](/en/docs/reference/deprecations-and-migrations#app-keys-authenticate-background-work-and-oauth).
-
-### Legacy workload credentials during this release
-
-Core automatically issues an app-bound `identity:invoke` workload credential to
-every registered app instance, including third-party apps. No admin creation or
-per-app Compose input is needed. Mail incoming automations use this credential.
-The runtime obtains the raw token through non-retained NATS request/reply and
-keeps it in process memory; Postgres stores its hash. Tokens expire after one
-hour and rotate after 30 minutes, with the preceding token valid until its
-expiry so in-flight calls can finish. Core retains at most two runtime token
-rows per instance; retired rows are removed and lifecycle events remain in
-the audit log. Admin revocation remains effective through the app's disabled
-workload service account.
-
-The runtime checks with Core every minute and retries failed refreshes after five
-seconds. A transient refresh failure keeps a still-valid token available.
-Dependent calls fail closed when no valid token remains; logs report that
-state and report recovery once. Public HTTP readiness contains no credential
-status or reason, so an issuance outage does not remove unrelated app routes.
-Operators inspect credential metadata and the workload account state under
-**Administration → Apps**, then the app and **Keys → Tokens for host operation**, and application logs for refresh failures.
-Before starting lifecycle workers, the runtime registers its instance and
-requests a credential with a five-second timeout. If none is available, startup
-continues with dependent background calls unavailable. Routes are advertised
-only after lifecycle startup and declared resources are ready.
-
-Credentials named `Runtime <instance>` appear under **Administration → Apps**, then the app and **Keys → Tokens for host operation**
-and `cld admin app-credentials list <app>`. Revoking either overlapping runtime
-token disables the app's workload service account: calls and automatic issuance
-stop for every instance, including after a restart or concurrent rotation.
-At the top of the same keys column, **Background access is off** offers **Turn on again** to allow issuance again,
-or run `cld admin app-credentials enable <app> --yes`. Restarting alone does not
-restore access. The admin API also supports
-`PATCH /api/admin/identity/workloads/<app>` with `{"status":"active"}` or
-`{"status":"disabled"}`; `cld admin app-credentials disable <app> --yes` applies
-the same lasting off switch. Re-enabling never restores a revoked token; live
-instances obtain a replacement on refresh.
-
-When Core rejects a cached workload token before dispatch, the shared capability
-client refreshes it and retries the broker call once. If credential authorization
-still fails, it returns retryable unavailability (HTTP 503). A target or subject
-authorization failure keeps its original status and is not retried this way.
-
-A graceful stop requests revocation after its workers drain. If delivery fails
-or the process crashes, Core revokes an unregistered instance only after more
-than one registry TTL (three minutes) without a credential refresh, checked on
-the one-minute reconciliation interval. A brief registry reset therefore does
-not revoke a recently refreshed token. Automatically removed instances can
-recover when membership returns. Other replicas retain their own credentials.
-When the last Core replica stops, its own token expires or is removed when
-Core resumes; its shutdown log reports an unconfirmed release.
-
-For host-run apps without an app key, deprecated `CLOUD_APP_CREDENTIAL` remains an explicit override and wins
-over automatic delivery. Create a resource-bound credential with binding
-`{ appId, resourceType: "cloud.app", resourceId: appId }` and scope
-`identity:invoke` through the admin UI or CLI, and inject it only into its
-owning app. Overrides retain operator-managed expiry and rotation. Set
-`CLOUD_CORE_INTERNAL_ORIGIN` to Core's direct listener, not the gateway.
-OAuth without an app key uses its deprecated deployment broker secret. Never put a workload
-credential in a browser bundle or a target-app request, and never load Core's
-KEKs into other apps.
-
 ### Shared infrastructure trust limit
 
-Workload credentials separate apps by contract and protect against mistakes
-and confused-deputy bugs. They do not isolate a compromised app while apps
-share a Postgres user, NATS access, and `APP_SECRET`. Real separation requires
-per-app database roles and NATS accounts. Any client in the same NATS account
-can request workload tokens for this installation's registered instances.
-Use one NATS account per installation. `SYNC_NAMESPACE` separates resource and
-subject names; it does not restrict access. The workload delivery channel carries
-only newly issued app-bound workload credentials, never Core identity signing
-keys, key-encryption material, OAuth secrets, or person sessions.
+App keys identify applications within one installation. Apps still share the
+Postgres role, NATS access and `APP_SECRET`; they are trusted like programs
+running as one Unix user. Use a separate installation when that trust is not
+appropriate. `SYNC_NAMESPACE` separates resource names, not access. Core alone
+holds identity signing keys and their encryption material.
 
-> Keep `APP_SECRET` stable and back it up. Cloud has no built-in key rotation;
-> changing it makes encrypted values unreadable. Settings then fall back to
-> their environment value or default; Cloud keeps the stored rows unchanged. See
-> [Keep the encryption key stable](/en/docs/data/secrets-and-persistent-state#keep-the-encryption-key-stable).
+Administrators can disable the app's account through
+`PATCH /api/admin/identity/apps/<app>` with `{"status":"disabled"}` and restore
+it with `{"status":"active"}`. **Administration → Apps → Keys** offers
+**Turn on again** for a disabled account. Restoring an account never restores a
+revoked key.
+
+> Keep encryption roots with the backups that need them. Rotate with
+> [APP_SECRET rotation](/en/docs/operations/app-secret-rotation): distribute NEXT,
+> roll, switch to current/PREVIOUS, roll, wait for strict status and token expiry,
+> then remove PREVIOUS and roll again. Core and Gateway read the environment ring;
+> other apps inherit the complete ring from Core. A locally pinned current uses
+> only its local NEXT/PREVIOUS; local rotation values without current fail startup.
 
 `app.start()` refuses to boot without `APP_SECRET`.
+
+Use a randomly generated 64-hex-character `APP_SECRET` (32 random bytes). If an
+installation still uses a legacy passphrase or another human-chosen value, follow
+[APP_SECRET rotation](/en/docs/operations/app-secret-rotation) to move it to this
+random format. `APP_SECRET_NEXT` already requires that format.
 
 Core refuses to initialize identity issuance if its KEK is missing, malformed,
 or cannot decrypt and validate the active private/public key pairs. Existing
@@ -499,31 +451,17 @@ tolerance. Scheduled work uses mandates, never a stored browser session.
 Synchronize every host's clock, for example with NTP, and monitor drift well
 within the invocation verifier's two-second tolerance.
 
-OAuth always uses Core issuance. Prefer an app key enrolled for `oauth`;
-readiness, token batches and device approval requests all use signed requests.
-When no app key is configured, generate legacy `CLOUD_OAUTH_BROKER_SECRET` once with
-`openssl rand -hex 32` and inject the same value exclusively into Core and OAuth.
-Do not reuse `APP_SECRET` or Core's KEK. This secret authenticates only OAuth's
-closed broker endpoints; Core still checks the current grant, client and
-principal before signing. No admin login or credential provisioning is needed.
-
-Development Compose supplies a public, development-only default. Production
-Compose requires an explicit value. Start Core before OAuth. OAuth checks the
-configured app key or legacy secret and Core signer at startup, before migrations,
-and fails closed if either
-is unavailable. Missing or malformed Core configuration disables the OAuth
-broker but does not prevent running Core without OAuth.
-
-To rotate the broker secret, pause OAuth traffic, replace the value on all Core
-and OAuth replicas, recreate those containers, and verify OAuth readiness before
-resuming traffic. There is no previous-secret overlap; mismatched replicas reject
-issuance. Rotation alone does not invalidate existing JWTs or refresh grants.
+OAuth always uses Core issuance and its enrolled app key. Readiness, token
+batches and device approvals use signed requests. Each issuer key requires the
+explicit `oauth:issue` grant. Start Core before OAuth; a missing key, refused
+grant or unavailable Core signer fails OAuth startup. Core can run without OAuth.
+Rotate by enrolling a second key with the grant, rolling every OAuth replica,
+checking issuance and status, then revoking the old key.
 
 Before upgrading mandate writers, follow the coordinated schema cutover in
 [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
-Mail incoming automations use mandates and the runtime's automatic
-`identity:invoke` credential. Keep Core's broker available. For upgrades that change
+Mail incoming automations use mandates and signed `identity:invoke` app requests. Keep Core's broker available. For upgrades that change
 stored credentials, follow [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
 For first access, temporarily provide `ADMIN_LOGIN_TOKEN` only to Core and open
@@ -645,8 +583,8 @@ Check configuration in this order:
 2. Postgres, Valkey and NATS names resolve on the private network;
 3. application containers and the gateway share the same `APP_SECRET`;
 4. only Core has the current identity KEK;
-5. only Core and OAuth share the OAuth broker secret, and background callers
-   have only their own scoped workload credentials;
+5. every ordinary app has its own enrolled key; OAuth issuer keys have the
+   explicit `oauth:issue` grant;
 6. `app.url` matches the public origin;
 7. required settings validate in the administration UI;
 8. the application starts without fallback warnings.

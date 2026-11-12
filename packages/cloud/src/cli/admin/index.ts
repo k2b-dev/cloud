@@ -16,7 +16,6 @@ import { aiModelCommands } from "./ai-models";
 import { aiQuotaCommands } from "./ai-quotas";
 import { aiSkillCommands } from "./ai-skills";
 import { aiUsageCommands } from "./ai-usage";
-import { appCredentialCommands } from "./app-credentials";
 import { appDomainCommands } from "./app-domains";
 import { appKeyCommands } from "./app-keys";
 import { appSignInCommands } from "./app-sign-in";
@@ -34,6 +33,7 @@ import { metricsCommands } from "./metrics";
 import { natsCommands } from "./nats";
 import { notificationCommands } from "./notifications";
 import { outgoingMailCommands } from "./outgoing-mail";
+import { secretCommands } from "./secrets";
 import { settingsCommands } from "./settings";
 import { syncCommands } from "./sync";
 import { telemetryCommands } from "./telemetry";
@@ -45,6 +45,7 @@ const build = (locale?: string) =>
     name: "admin",
     summary: "Inspect and operate Cloud administration surfaces.",
     groupSummaries: {
+      secrets: "Inspect installation secret rotation and owner checks.",
       capabilities: "Inspect registered capabilities and their executions.",
       "capabilities executions": "List and inspect capability executions.",
       "ai enrichment": "Run AI enrichment for configured resources.",
@@ -88,7 +89,6 @@ const build = (locale?: string) =>
       "ai skills": "Inspect Assistant Skills and trusted templates.",
       "ai usage": "Inspect AI runs and usage facets.",
       announcements: "Manage platform announcements and banners.",
-      "app-credentials": "Manage per-application credentials for background work.",
       agents: "Create, list, revoke, and re-key agent accounts with OAuth client credentials, and change their pictures.",
       "agents avatar": "Show and change an agent's picture: its robot parts or a photo.",
       "agents keys": "Create, list and revoke an agent's API keys; a new key acts as its agent.",
@@ -102,7 +102,7 @@ const build = (locale?: string) =>
         de: "App-Domains zuordnen und DNS, TLS und Gateway-Erreichbarkeit prüfen.",
       }),
       "apps keys": "Create, list, and revoke Ed25519 app keys.",
-      "apps migration": "Check the app-key migration and start its legacy-use observation window.",
+      "apps migration": "Check the app-key migration and fresh signed probes.",
       documentation: "Manage the administration documentation website.",
       geoip: "Replace and inspect sign-in location databases.",
       jobs: "Inspect background jobs and their runs.",
@@ -141,7 +141,6 @@ const build = (locale?: string) =>
       "linux config": "Manage Linux identity defaults and allocation range.",
     },
     commands: [
-      ...appCredentialCommands,
       ...appKeyCommands,
       ...appStatusCommands,
       ...appDomainCommands(locale),
@@ -170,6 +169,7 @@ const build = (locale?: string) =>
       ...metricsCommands,
       ...natsCommands,
       ...syncCommands,
+      ...secretCommands,
       ...settingsCommands,
       ...administrationCommands,
     ],
@@ -179,5 +179,13 @@ const admin = build();
 export default {
   ...admin,
   help: (locale?: string) => build(locale).help?.(locale) ?? "",
-  run: (ctx: CloudCliContext) => build(ctx.options.locale).run(ctx),
+  run: async (ctx: CloudCliContext) => {
+    try {
+      return await build(ctx.options.locale).run(ctx);
+    } catch (error) {
+      if (ctx.args[0] !== "secrets") throw error;
+      ctx.error(error instanceof Error ? error.message : "Secret status failed");
+      return 2;
+    }
+  },
 };

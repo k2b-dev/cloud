@@ -48,7 +48,7 @@ describe("GQL preparation cache", () => {
       expect(canonicalize).toHaveBeenCalledTimes(1);
       expect(writes).toHaveLength(2);
       expect(reads).toHaveLength(5);
-      expect(writes.every((key) => /^grids:gql-preparation:v1:\d+$/.test(key))).toBe(true);
+      expect(writes.every((key) => /^grids:gql-preparation:v1:[A-Za-z0-9_-]{16}:\d+$/.test(key))).toBe(true);
     } finally {
       resolve.mockRestore();
       canonicalize.mockRestore();
@@ -185,10 +185,12 @@ describe("GQL preparation cache", () => {
     expect(await cache.resolve(ast, ctx())).toEqual(first);
     expect(writes).toHaveLength(2);
     let fills = 0;
+    let rotatedKey = "";
     const rotated = createGqlPreparationCache(
       {
         get: async (key) => entries.get(key) ?? null,
-        set: async () => {
+        set: async (key) => {
+          rotatedKey = key;
           fills++;
         },
       },
@@ -196,6 +198,7 @@ describe("GQL preparation cache", () => {
     );
     expect(await rotated.resolve(ast, ctx())).toEqual(first);
     expect(fills).toBe(1);
+    expect(rotatedKey).not.toBe(key);
   });
 
   test("connected but stalled cache commands are bounded and close their connection", async () => {

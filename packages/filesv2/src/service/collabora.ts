@@ -39,7 +39,11 @@ export type EditorTokenPayload = {
   };
 };
 const encode = (value: string) => Buffer.from(value).toString("base64url");
-const sign = (body: string) => createHmac("sha256", connections().appSecret.current).update(`filesv2.editor:${body}`).digest("base64url");
+const roots = () => {
+  const { current, previous, next } = connections().appSecret;
+  return [current, previous, next].filter((root): root is string => root !== undefined);
+};
+const sign = (body: string, key = roots()[0]!) => createHmac("sha256", key).update(`filesv2.editor:${body}`).digest("base64url");
 
 export function signEditorToken(payload: EditorTokenPayload): string {
   const body = encode(
@@ -56,9 +60,14 @@ export function signEditorToken(payload: EditorTokenPayload): string {
 export function verifyEditorToken(token: string, now = Date.now()): EditorTokenPayload | null {
   const [body, signature, ...rest] = token.split(".");
   if (!body || !signature || rest.length || token.length > 4096) return null;
-  const expected = Buffer.from(sign(body));
   const received = Buffer.from(signature);
-  if (expected.length !== received.length || !timingSafeEqual(expected, received)) return null;
+  if (
+    !roots().some((key) => {
+      const expected = Buffer.from(sign(body, key));
+      return expected.length === received.length && timingSafeEqual(expected, received);
+    })
+  )
+    return null;
   try {
     const parsed = TokenPayloadSchema.parse(JSON.parse(Buffer.from(body, "base64url").toString()));
     if (parsed.e <= now) return null;

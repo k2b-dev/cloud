@@ -18,6 +18,7 @@ const router = new Hono<AuthContext>()
 router.get("/admin/ipa-hosts/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
+  secretOwners: [],
   fetch: router.fetch,
   help: ipaHostsHelp,
   openapi: apiRoutes,

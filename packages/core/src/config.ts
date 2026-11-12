@@ -11,7 +11,7 @@ export const app = defineApp({
     "/api/auth/app-approval/v1/pairings/result",
     "/api/auth/app-approval/v1/device",
   ],
-  // These routes keep their own authentication, including workload and models-only credentials.
+  // These routes keep their own authentication, including signed app proofs and models-only credentials.
   access: appAccess.signedIn({
     publicRoutes: [
       "/_internal/apps/bootstrap",

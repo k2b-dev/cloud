@@ -138,7 +138,6 @@ test("migration status validates the explicit inventory, keeps an admin actor, a
     needsAttention: true,
     apps: [],
     registryIssues: [],
-    observation: { startedAt: null, lastLegacyUseAt: null, observedAt: "2030-01-02T00:00:00.000Z", windowSeconds: null, complete: false },
   };
   const routes = createAdminAppKeyRoutes(authenticate, service, async (params) => {
     input.push(params);
@@ -176,33 +175,11 @@ test("the admin key-list OpenAPI response declares the nullable rejection and it
   expect(schema).toContain('"keyId"');
 });
 
-test("starting an observation requires administrator write scope and validates its duration", async () => {
-  let begins = 0;
-  const begin: Parameters<typeof createAdminAppKeyRoutes>[3] = async (input) => {
-    expect(input.actor).toEqual(actor);
-    begins++;
-    return ok({ startedAt: "2030-01-02T00:00:00.000Z" });
-  };
-  const routes = createAdminAppKeyRoutes(authenticate, service, undefined, begin);
-  expect((await routes.request("/observation", { method: "POST" })).status).toBe(200);
-  expect(begins).toBe(1);
-  const readOnly = createAdminAppKeyRoutes(
-    async (c, next) => {
-      c.set("user", actor);
-      c.set("oauthScopes", ["read"]);
-      await next();
-    },
-    service,
-    undefined,
-    begin,
-  );
-  expect((await readOnly.request("/observation", { method: "POST" })).status).toBe(403);
-  expect(begins).toBe(1);
-  expect((await readOnly.request("/status", { method: "POST" })).status).toBe(403);
+test("status is a write-scoped POST and the retired observation route is absent", async () => {
+  const routes = createAdminAppKeyRoutes(authenticate, service);
+  expect((await routes.request("/observation", { method: "POST" })).status).toBe(404);
   expect((await routes.request("/status")).status).toBe(404);
   const spec = await generateSpecs(routes);
   expect(spec.paths?.["/status"]?.post).toBeDefined();
   expect(spec.paths?.["/status"]?.get).toBeUndefined();
-  for (const duration of ["0", "-1", "NaN", "1.5"])
-    expect((await routes.request(`/status?windowSeconds=${duration}`, { method: "POST" })).status).toBe(400);
 });

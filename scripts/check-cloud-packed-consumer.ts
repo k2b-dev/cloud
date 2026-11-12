@@ -319,12 +319,16 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     [process.execPath, "node_modules/typescript/bin/tsc", "--project", "tsconfig.json"],
     consumer,
   );
-  await run(
-    "Load the minimal app through the installed preload",
-    [process.execPath, "--preload", "./node_modules/@k2b/cloud/scripts/preload.ts", "./src/config.ts"],
-    consumer,
-    { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
-  );
+  console.log("Reject keyless application startup through the installed preload");
+  const keyless = Bun.spawnSync([process.execPath, "--preload", "./node_modules/@k2b/cloud/scripts/preload.ts", "./src/config.ts"], {
+    cwd: consumer,
+    env: { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (keyless.exitCode === 0 || !keyless.stderr.toString().includes("CLOUD_APP_KEY_FILE")) {
+    throw new Error(`Keyless preload must fail with the app-key configuration error: ${keyless.stderr}`);
+  }
   await Bun.write(
     join(consumer, "src/styles/app.css"),
     `@import "tailwindcss";
@@ -374,9 +378,12 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     "Load plugin-only config through the installed preload",
     [process.execPath, "--preload", "./node_modules/@k2b/cloud/scripts/preload.ts", "./src/config.ts"],
     consumer,
-    { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
+    { ...cleanEnv, APP_ID: "gateway", DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
   );
-  await run("Build plugin-only config", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
+  await run("Build plugin-only config", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer, {
+    ...cleanEnv,
+    APP_ID: "gateway",
+  });
   if ((await Bun.file(join(consumer, "dist/server.js")).size) === 0) throw new Error("Plugin-only server bundle is empty");
   // The public server entries import without a transform, but a build that reaches JSX needs one.
   await run(

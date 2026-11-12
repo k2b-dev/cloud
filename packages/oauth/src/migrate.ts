@@ -192,7 +192,6 @@ export const migrate = async (): Promise<void> => {
   });
   await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS auth_epoch BIGINT`.simple();
   await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS confirmed_sid UUID, ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ`.simple();
-  await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS authority_nonce UUID`.simple();
   await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS authority_issued_at TIMESTAMPTZ`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_oauth_codes_expires
@@ -230,7 +229,7 @@ export const migrate = async (): Promise<void> => {
     )
   `.simple();
   await sql`ALTER TABLE oauth.refresh_token_families ADD COLUMN IF NOT EXISTS auth_epoch BIGINT`.simple();
-  // Existing families count as notified. Reservations start notified too; Core clears it on activation.
+  // Existing families count as notified. Reservations start notified too; the issuer clears it on activation.
   await sql.begin(async (tx) => {
     await tx`ALTER TABLE oauth.refresh_token_families ADD COLUMN IF NOT EXISTS notified_at TIMESTAMPTZ DEFAULT now()`.simple();
     await tx`ALTER TABLE oauth.refresh_token_families ALTER COLUMN notified_at DROP DEFAULT`.simple();
@@ -288,7 +287,6 @@ export const migrate = async (): Promise<void> => {
       expires_at TIMESTAMPTZ NOT NULL,
       used_at TIMESTAMPTZ,
       rotated_at TIMESTAMPTZ,
-      authority_nonce UUID,
       authority_reserved_at TIMESTAMPTZ,
       authority_issued_at TIMESTAMPTZ,
       authority_scopes TEXT[],
@@ -298,7 +296,6 @@ export const migrate = async (): Promise<void> => {
       CONSTRAINT oauth_refresh_tokens_status_check CHECK (status IN ('active', 'issuing', 'rotated', 'revoked', 'reused'))
     )
   `.simple();
-  await sql`ALTER TABLE oauth.refresh_tokens ADD COLUMN IF NOT EXISTS authority_nonce UUID`.simple();
   await sql`ALTER TABLE oauth.refresh_tokens ADD COLUMN IF NOT EXISTS authority_reserved_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE oauth.refresh_tokens ADD COLUMN IF NOT EXISTS authority_issued_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE oauth.refresh_tokens ADD COLUMN IF NOT EXISTS authority_scopes TEXT[]`.simple();
@@ -350,25 +347,6 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ oauth refresh token tables");
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS oauth.client_credentials_authority_grants (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      nonce UUID NOT NULL DEFAULT gen_random_uuid(),
-      client_id TEXT NOT NULL REFERENCES oauth.clients(client_id) ON DELETE CASCADE,
-      scopes TEXT[] NOT NULL,
-      audiences TEXT[] NOT NULL,
-      resource TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + INTERVAL '1 minute',
-      consumed_at TIMESTAMPTZ
-    )
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_oauth_client_credentials_authority_grants_expires
-    ON oauth.client_credentials_authority_grants(expires_at)
-  `.simple();
-  console.log("  ✓ oauth client credentials authority grants");
-
   // RFC 8628 device authorizations. Only hashes of the device and user codes are stored.
   await sql`
     CREATE TABLE IF NOT EXISTS oauth.device_authorizations (
@@ -383,7 +361,6 @@ export const migrate = async (): Promise<void> => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       expires_at TIMESTAMPTZ NOT NULL,
       decided_at TIMESTAMPTZ,
-      authority_nonce UUID,
       authority_issued_at TIMESTAMPTZ,
       CONSTRAINT oauth_device_authorizations_status_check CHECK (status IN ('pending', 'approved', 'denied', 'consumed')),
       CONSTRAINT oauth_device_authorizations_decision_check CHECK (status = 'pending' OR user_id IS NOT NULL)
@@ -488,9 +465,12 @@ export const migrate = async (): Promise<void> => {
     WHERE client_id = (SELECT id FROM oauth.clients WHERE client_id = 'cloud-cli')
   `.simple();
   console.log("  ✓ oauth first-party CLI client");
+  await sql`ALTER TABLE oauth.codes DROP COLUMN IF EXISTS authority_nonce`.simple();
+  await sql`ALTER TABLE oauth.refresh_tokens DROP COLUMN IF EXISTS authority_nonce`.simple();
+  await sql`ALTER TABLE oauth.device_authorizations DROP COLUMN IF EXISTS authority_nonce`.simple();
+  await sql`DROP TABLE IF EXISTS oauth.client_credentials_authority_grants`.simple();
 
-  // Coordinated hard cut: old replicas must be stopped before this migration.
-  // Client registrations, authorization codes and refresh grants are retained.
+  // Local signing storage is obsolete; retain client registrations and grant state.
   await sql`DROP TABLE IF EXISTS oauth.keys`.simple();
   await sql`DROP TABLE IF EXISTS oauth.issuance_state`.simple();
   console.log("  ✓ OAuth signing authority belongs exclusively to Core");

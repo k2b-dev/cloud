@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { appKeyFixture, INSTALLATION_ID, KEY_ID } from "../../../scripts/fixtures/app-key-fixtures";
+
 const cloud = resolve(import.meta.dir, "..");
 const childOutput = async (child: ReturnType<typeof Bun.spawn>) => {
   const timer = setTimeout(() => child.kill(), 60_000);
@@ -40,11 +42,34 @@ export const platformStartFixture = async ({
   nats?: string;
   creds?: string;
   namespace?: string;
-  /** Custom-server seam; full app.start key-only operation waits for the import migration. */
+  /** Real Core bootstrap when the test exercises infrastructure. */
   bootstrap?: { key: string; origin: string; now: number };
 } = {}): Promise<void> => {
   const root = await mkdtemp(join(tmpdir(), "cloud-platform-start-"));
   let runtime: ReturnType<typeof Bun.spawn> | undefined;
+  const ordinaryApp = appId !== "core" && appId !== "gateway";
+  const fixtureCore =
+    ordinaryApp && !bootstrap
+      ? Bun.serve({
+          hostname: "127.0.0.1",
+          port: 0,
+          fetch: () =>
+            Response.json({
+              identity: { appId, installationId: INSTALLATION_ID, keyId: KEY_ID },
+              connections: {
+                database: { url: database ?? "postgres://127.0.0.1:1/unused_test" },
+                valkey: { url: valkey ?? "redis://127.0.0.1:1" },
+                nats: {
+                  servers: nats ? nats.split(",") : ["nats://127.0.0.1:1"],
+                  namespace: namespace ?? "test",
+                  replicas: 1,
+                  ignoreClusterUpdates: true,
+                },
+                appSecret: { current: "fixture-only-secret" },
+              },
+            }),
+        })
+      : undefined;
   try {
     const archive = join(root, "cloud.tgz");
     await childOutput(Bun.spawn([process.execPath, "pm", "pack", "--filename", archive], { cwd: cloud, stdout: "pipe", stderr: "pipe" }));
@@ -140,8 +165,8 @@ export const platformStartFixture = async ({
           env: {
             ...env,
             FIXTURE_PORT: String(port),
-            CLOUD_APP_KEY: bootstrap?.key,
-            CLOUD_CORE_INTERNAL_ORIGIN: bootstrap?.origin,
+            CLOUD_APP_KEY: ordinaryApp ? (bootstrap?.key ?? appKeyFixture(appId)) : undefined,
+            CLOUD_CORE_INTERNAL_ORIGIN: bootstrap?.origin ?? fixtureCore?.url.origin,
             DATABASE_URL: bootstrap ? undefined : lifecycle ? database! : "postgres://127.0.0.1:1/unused_test",
             REDIS_URL: bootstrap ? undefined : lifecycle ? valkey! : "redis://127.0.0.1:1",
             NATS_SERVERS: bootstrap ? undefined : lifecycle ? nats! : "",
@@ -221,6 +246,7 @@ export const platformStartFixture = async ({
         clearTimeout(stopped);
       }
     }
+    await fixtureCore?.stop(true);
     await rm(root, { recursive: true, force: true });
   }
 };

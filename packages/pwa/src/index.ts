@@ -5,4 +5,7 @@ import { shellRoutes } from "./frontend";
 
 const router = new Hono<AuthContext>().use("*", middleware.runtime()).use("*", middleware.settings()).route("/", shellRoutes);
 
-export default await app.start({ fetch: router.fetch });
+export default await app.start({
+  secretOwners: [],
+  fetch: router.fetch,
+});

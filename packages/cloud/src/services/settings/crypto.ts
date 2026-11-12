@@ -7,63 +7,38 @@ import { connections } from "../../runtime/connections";
  * `APP_SECRET` — see `getAppSecret()` for the hex/passphrase handling.
  */
 
-import { createHash } from "node:crypto";
+import { appSecretRoots, normalizeAppSecret } from "../../runtime/app-secret";
 import { crypto } from "../../server/services";
 
-/**
- * Resolve the encryption key passed to stdlib's `crypto.symmetric.encrypt`.
- *
- * Stdlib derives keys via HKDF and requires the input to be a hex string
- * (it calls `fromHex(key)` internally). Two cases:
- *
- *  1. APP_SECRET is already a valid hex string (any even length).
- *     Pass it through unchanged. THIS IS THE PRODUCTION PATH — existing
- *     deployments use hex secrets and have data encrypted with the secret
- *     verbatim. Any transformation here would change the derived HKDF key
- *     and make every previously encrypted settings row unreadable.
- *
- *  2. APP_SECRET is not valid hex (e.g. a passphrase like "supersecret").
- *     Deterministically derive a 32-byte hex key via SHA-256. Same input
- *     always produces the same hex output, so settings encrypted with a
- *     non-hex secret stay decryptable across restarts.
- *
- * ⚠️  DO NOT change the hex-passthrough branch. Hashing a hex secret would
- * silently break every prod instance: encrypted settings could no longer
- * be decrypted because the HKDF input would differ from what was used at
- * write time. The branch exists specifically to preserve backward compat
- * with deployments that have always used hex-format APP_SECRET.
- */
-export const getAppSecret = (): string => {
-  const raw = connections().appSecret.current.trim();
-  if (!raw) {
-    throw new Error("APP_SECRET is required to read or write encrypted settings");
+/** Current-root writers keep the legacy hex/passphrase normalization. */
+export const getAppSecret = (): string => normalizeAppSecret(connections().appSecret.current);
+
+/** Encrypt already-decrypted bytes without parsing or changing their representation. */
+export const encryptSecretBytes = async (payload: string): Promise<string> =>
+  crypto.symmetric.encrypt({ payload, key: getAppSecret(), stretched: false });
+
+export const decryptSecretBytes = async (payload: string, root: string): Promise<string> =>
+  crypto.symmetric.decrypt({ payload, key: normalizeAppSecret(root) });
+
+export const decryptWithSecretRing = async (payload: string): Promise<{ plaintext: string; rootIndex: number }> => {
+  const roots = appSecretRoots(connections().appSecret);
+  for (const [rootIndex, root] of roots.entries()) {
+    try {
+      return { plaintext: await decryptSecretBytes(payload, root), rootIndex };
+    } catch {
+      /* AES-GCM authentication selects the matching root. */
+    }
   }
-  // Case 1: already hex — pass through (backward-compat, see doc above).
-  if (raw.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(raw)) {
-    return raw;
-  }
-  // Case 2: non-hex passphrase — deterministically derive hex via SHA-256.
-  return createHash("sha256").update(raw).digest("hex");
+  throw new Error("Encrypted value cannot be read with the configured APP_SECRET ring");
 };
 
-export const encryptValue = async (value: unknown): Promise<string> =>
-  crypto.symmetric.encrypt({
-    payload: JSON.stringify(value),
-    key: getAppSecret(),
-    stretched: false,
-  });
+export const encryptValue = async (value: unknown): Promise<string> => encryptSecretBytes(JSON.stringify(value));
 
 export const decryptValue = async (value: string): Promise<unknown> => {
-  const decrypted = await crypto.symmetric.decrypt({
-    payload: value,
-    key: getAppSecret(),
-  });
+  const { plaintext } = await decryptWithSecretRing(value);
   try {
-    return JSON.parse(decrypted);
+    return JSON.parse(plaintext);
   } catch {
-    // Decrypt succeeded but the plaintext isn't JSON. Either pre-JSON-encoding
-    // legacy data or external write — return the raw string so callers can
-    // decide. Throwing here would corrupt the read path entirely.
-    return decrypted;
+    return plaintext;
   }
 };

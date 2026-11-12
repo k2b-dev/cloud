@@ -4,6 +4,8 @@ import { CAPABILITY_MAX_REQUEST_BYTES } from "@k2b/cloud/contracts";
 import { sendAppRequest } from "@k2b/cloud/services/identity";
 import type { Mandate } from "@k2b/cloud/services/mandates";
 import { ok } from "@k2b/stdlib";
+import { decodeJwt } from "jose";
+import { appKeyFixture } from "../../../../scripts/fixtures/app-key-fixtures";
 import { createIdentityMandateRoutes } from "./identity-mandates";
 
 const MANDATE_ID = "11111111-1111-4111-8111-111111111111";
@@ -51,8 +53,8 @@ describe("owner mandate lifecycle routes", () => {
       return ok(mandate);
     };
     const routes = createIdentityMandateRoutes({
-      authenticateWorkload: async ({ appId }) => ({
-        appId,
+      authenticate: async (c) => ({
+        appId: c.req.header("x-cloud-app-id") ?? "",
         serviceAccountId: SERVICE_ACCOUNT_ID,
         credentialId: CREDENTIAL_ID,
         scope: "identity:invoke",
@@ -106,10 +108,10 @@ describe("owner mandate lifecycle routes", () => {
       for (const authenticated of [false, true]) {
         let reads = 0;
         const routes = createIdentityMandateRoutes({
-          authenticateWorkload: async () =>
+          authenticate: async () =>
             authenticated
               ? { appId: "oauth", serviceAccountId: SERVICE_ACCOUNT_ID, credentialId: CREDENTIAL_ID, scope: "identity:invoke" }
-              : null,
+              : Response.json({ code: "UNAUTHORIZED" }, { status: 401 }),
           service: {
             get: async () => mandate,
             confirm: async () => ok(mandate),
@@ -146,8 +148,8 @@ describe("owner mandate lifecycle routes", () => {
       return ok(mandate);
     };
     const routes = createIdentityMandateRoutes({
-      authenticateWorkload: async ({ appId }) => ({
-        appId,
+      authenticate: async (c) => ({
+        appId: c.req.header("x-cloud-app-id") ?? "",
         serviceAccountId: SERVICE_ACCOUNT_ID,
         credentialId: CREDENTIAL_ID,
         scope: "identity:invoke",
@@ -170,10 +172,10 @@ describe("owner mandate lifecycle routes", () => {
   test("requires an app-bound workload and hides another owner's mandate", async () => {
     const authenticated: string[] = [];
     const routes = createIdentityMandateRoutes({
-      authenticateWorkload: async (input) => {
-        authenticated.push(`${input.appId}:${input.scope}:${input.token}`);
+      authenticate: async (c, scope) => {
+        authenticated.push(`${c.req.header("x-cloud-app-id")}:${scope}:${c.req.header("authorization")?.slice(7)}`);
         return {
-          appId: input.appId,
+          appId: c.req.header("x-cloud-app-id") ?? "",
           serviceAccountId: SERVICE_ACCOUNT_ID,
           credentialId: CREDENTIAL_ID,
           scope: "identity:invoke",
@@ -196,8 +198,8 @@ describe("owner mandate lifecycle routes", () => {
   test("derives owner authority from authentication for confirm, narrow, pause and revoke", async () => {
     const calls: Array<{ action: string; input: Record<string, unknown> }> = [];
     const routes = createIdentityMandateRoutes({
-      authenticateWorkload: async ({ appId }) => ({
-        appId,
+      authenticate: async (c) => ({
+        appId: c.req.header("x-cloud-app-id") ?? "",
         serviceAccountId: SERVICE_ACCOUNT_ID,
         credentialId: CREDENTIAL_ID,
         scope: "identity:invoke",
@@ -251,14 +253,21 @@ describe("owner mandate lifecycle routes", () => {
   });
 });
 
-test("the shared keyless sender confirms a mandate through the owner route", async () => {
+test("the shared signed sender confirms a mandate through the owner route", async () => {
   const originalKey = Object.getOwnPropertyDescriptor(env, "CLOUD_APP_KEY")!;
-  Object.defineProperty(env, "CLOUD_APP_KEY", { value: undefined, configurable: true });
+  Object.defineProperty(env, "CLOUD_APP_KEY", { value: appKeyFixture("mail"), configurable: true });
   let confirmations = 0;
   const routes = createIdentityMandateRoutes({
-    authenticateWorkload: async (input) => {
-      expect(input).toEqual({ token: "workload-secret", appId: "mail", scope: "identity:invoke" });
-      return { appId: input.appId, serviceAccountId: SERVICE_ACCOUNT_ID, credentialId: CREDENTIAL_ID, scope: "identity:invoke" };
+    authenticate: async (c, scope) => {
+      expect(scope).toBe("identity:invoke");
+      expect(decodeJwt(c.req.header("authorization")!.slice(7)).iss).toBe("mail");
+      return {
+        appId: "mail",
+        keyId: CREDENTIAL_ID,
+        serviceAccountId: SERVICE_ACCOUNT_ID,
+        credentialId: CREDENTIAL_ID,
+        scope: "identity:invoke",
+      };
     },
     service: {
       get: async () => mandate,
@@ -281,7 +290,6 @@ test("the shared keyless sender confirms a mandate through the owner route", asy
       }),
       {
         appId: "mail",
-        bearer: () => "workload-secret",
         transport: async (request) => routes.request(request),
       },
     );
@@ -289,5 +297,21 @@ test("the shared keyless sender confirms a mandate through the owner route", asy
     expect(confirmations).toBe(1);
   } finally {
     Object.defineProperty(env, "CLOUD_APP_KEY", originalKey);
+  }
+});
+
+test("retired workload bearer tokens cannot enter the mandate lifecycle", async () => {
+  const routes = createIdentityMandateRoutes();
+  for (const [method, suffix] of [
+    ["GET", ""],
+    ["POST", "/confirm"],
+    ["POST", "/pause"],
+    ["POST", "/revoke"],
+  ] as const) {
+    const response = await routes.request(`/mandates/${MANDATE_ID}${suffix}`, {
+      method,
+      headers: { authorization: "Bearer cld_former_workload_token" },
+    });
+    expect(response.status).toBe(401);
   }
 });

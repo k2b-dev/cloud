@@ -103,7 +103,11 @@ databaseSuite()("a tier meant for people admits machines: pre-switch inventory",
         const rows = await db.unsafe<{ service_account_id: string; link_table: string; resource_id: string[]; lost_permission: string }[]>(
           generated.inventory_query,
         );
-        const matching = rows.filter((row) => row.link_table === "auth.rail_shortcut_access" && row.resource_id[0]?.startsWith(prefix));
+        const fixtureAccounts = new Set([agent.id, standalone.id, bound.id, disabled.id]);
+        const fixtureRows = rows.filter((row) => fixtureAccounts.has(row.service_account_id));
+        const matching = fixtureRows.filter(
+          (row) => row.link_table === "auth.rail_shortcut_access" && row.resource_id[0]?.startsWith(prefix),
+        );
         expect(matching.map((row) => `${row.service_account_id}:${row.resource_id[0]}:${row.lost_permission}`).sort()).toEqual(
           [
             ...[agent, standalone, bound].flatMap((account) => [
@@ -120,7 +124,7 @@ databaseSuite()("a tier meant for people admits machines: pre-switch inventory",
             `${bound.id}:${prefix}-group:read`,
           ].sort(),
         );
-        const appRows = rows.filter((row) => row.link_table === `${appSchema}.workspace_access`);
+        const appRows = fixtureRows.filter((row) => row.link_table === `${appSchema}.workspace_access`);
         expect(appRows.map((row) => `${row.service_account_id}:${JSON.stringify(row.resource_id)}:${row.lost_permission}`).sort()).toEqual(
           [
             ...[agent, standalone, bound].map((account) => `${account.id}:[{"workspace":"${prefix}-store"}]:read`),

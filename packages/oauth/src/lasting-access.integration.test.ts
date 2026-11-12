@@ -62,6 +62,8 @@ const managed = async () => {
     VALUES (${crypto.randomUUID()}, ARRAY[${redirectUri}], ARRAY['openid', 'offline_access']) RETURNING id
   `;
   if (!row) throw new Error("Missing managed client");
+  await sql`INSERT INTO auth.oauth_clients(client_id,issuer_app_id,status,name)
+    SELECT client_id,'oauth','active',name FROM oauth.clients WHERE id=${row.id}::uuid`;
   clients.push(row.id);
   const client = await oauth.clients.get({ id: row.id });
   if (!client) throw new Error("Missing managed client");

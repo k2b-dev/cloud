@@ -25,6 +25,10 @@ const keys = [
   "NATS_TLS_CA_FILE",
   "APP_SECRET",
   "APP_SECRET_FILE",
+  "APP_SECRET_NEXT",
+  "APP_SECRET_NEXT_FILE",
+  "APP_SECRET_PREVIOUS",
+  "APP_SECRET_PREVIOUS_FILE",
 ];
 let previous: Record<string, string | undefined>;
 const dirs: string[] = [];
@@ -165,4 +169,39 @@ describe("platform connection resolution", () => {
       else process.env[key!] = previous;
     }
   });
+});
+
+test("Core and Gateway env rings support secret files and never mix with Core bootstrap", () => {
+  const A = "ab".repeat(32),
+    B = "cd".repeat(32);
+  process.env.APP_SECRET = A;
+  process.env.APP_SECRET_NEXT_FILE = file(B + "\n");
+  for (const appId of ["core", "gateway"]) expect(resolveConnections({ appId }).appSecret).toEqual({ current: A, next: B });
+  const supplied = core();
+  supplied.appSecret = { current: "core-current", previous: "core-previous" };
+  const local = resolveConnections({ appId: "inventory", core: supplied });
+  expect(local.appSecret).toEqual({ current: A, next: B });
+  expect(local.sources.appSecret).toEqual({ current: "env", next: "env" });
+  delete process.env.APP_SECRET_NEXT_FILE;
+  process.env.APP_SECRET_PREVIOUS = A;
+  process.env.APP_SECRET = B;
+  expect(resolveConnections({ appId: "inventory", core: supplied }).appSecret).toEqual({ current: B, previous: A });
+});
+
+test("apps inherit the complete Core ring while invalid or orphan local rotations fail startup", () => {
+  const A = "ab".repeat(32),
+    B = "cd".repeat(32);
+  const supplied = core();
+  supplied.appSecret = { current: A, next: B };
+  expect(resolveConnections({ appId: "inventory", core: supplied }).appSecret).toEqual(supplied.appSecret);
+  process.env.APP_SECRET_NEXT = B;
+  expect(() => resolveConnections({ appId: "inventory", core: supplied })).toThrow("explicit local APP_SECRET");
+  process.env.APP_SECRET = A;
+  process.env.APP_SECRET_PREVIOUS = "old";
+  expect(() => resolveConnections({ appId: "inventory", core: supplied })).toThrow("must not both be set");
+  delete process.env.APP_SECRET_PREVIOUS;
+  process.env.APP_SECRET_NEXT = "short";
+  expect(() => resolveConnections({ appId: "inventory", core: supplied })).toThrow("64 hex characters");
+  process.env.APP_SECRET_NEXT = A.toUpperCase();
+  expect(() => resolveConnections({ appId: "inventory", core: supplied })).toThrow("distinct");
 });

@@ -8,7 +8,6 @@ export type { PosixCandidate } from "./accounts/posix";
 export { accountIdentities, AccountIdentityError } from "./accounts/identities";
 export type { AccountIdentityUser, AccountIdentityGroup, AccountIdentityPage, AccountIdentityAvailability } from "./accounts/identities";
 export type { AccountIdentityReconciliation } from "./accounts/identity-reconciliation";
-export { getAppWorkloadCredential } from "../_internal/workload-credential";
 export { providers } from "./providers";
 export { createAllowedNetworkFetch } from "./allowed-network-fetch";
 export { requestPublicHttps, type PublicHttpInput } from "./public-http";
@@ -304,3 +303,9 @@ export { links } from "./links";
 export { previews, PreviewSourceChanged } from "./previews";
 export type { PreviewSource, PreviewReader, PreviewReadResult, PreviewVariant } from "./previews";
 export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";
+
+export { oauthClients, type OAuthClientRegistration } from "./oauth-clients";
+export { createSecretOwner, createSecretMaintenance } from "./secret-owners";
+export type { SecretOwner, SecretOwnerRow } from "./secret-owners";
+
+export { platformSecretOwners } from "./platform-secret-owners";

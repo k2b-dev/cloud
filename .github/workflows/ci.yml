@@ -816,12 +816,9 @@ jobs:
             --env SYNC_REPLICAS=1
             --env SYNC_NAMESPACE=ci
             --env APP_SECRET="$APP_SECRET"
-            --env CLOUD_IDENTITY_JWKS_ORIGIN=http://app-core:3000
-            --env CLOUD_OAUTH_JWKS_ORIGIN=http://app-oauth:3000
             --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000)
           docker run --detach --read-only --name app-core "${common[@]}" \
             --env CLOUD_IDENTITY_KEY_ENCRYPTION_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
-            --env CLOUD_OAUTH_BROKER_SECRET=abababababababababababababababababababababababababababababababab \
             --env ADMIN_LOGIN_TOKEN=ci-admin \
             --publish 127.0.0.1:3001:3000 cloud-core:ci
           docker run --detach --name gateway "${common[@]}" --publish 127.0.0.1:3000:3000 cloud-gateway:ci

@@ -1,13 +1,9 @@
 import { invokeCapability } from "@k2b/cloud/capabilities/server";
-import { getAppWorkloadCredential } from "@k2b/cloud/services";
 
 type MandateJob = { id: string; draftId: string; mandateId: string; mandateRevision: number };
 
-/** Background mandate call from identity/background-mandates.md; read the credential at call time. */
+/** Background mandate call from identity/background-mandates.md; the platform signs at send time. */
 export const sendDraftUnderMandate = async (job: MandateJob) => {
-  const credential = getAppWorkloadCredential();
-  if (!credential) throw new Error("App workload authorization is unavailable");
-
   return invokeCapability(
     {
       appId: "mail",
@@ -17,7 +13,6 @@ export const sendDraftUnderMandate = async (job: MandateJob) => {
       idempotencyKey: job.id,
     },
     {
-      authorization: `Bearer ${credential}`,
       mandate: {
         id: job.mandateId,
         revision: job.mandateRevision,

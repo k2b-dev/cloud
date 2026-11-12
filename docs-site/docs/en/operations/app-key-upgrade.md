@@ -3,33 +3,28 @@ title: Upgrade applications to app keys
 navTitle: App key upgrade
 section: Operations
 order: 1141
-description: Replace application infrastructure environment values with an app key file and the Core address, with explicit migration checks and rollback boundaries.
+description: Prepare application keys before upgrading, verify signed work, and check every deployed replica.
 tags: [deployment, upgrade, configuration, app-keys]
-updated: 2026-11-05
+updated: 2026-11-12
 ---
 
 # Upgrade applications to app keys
 
-Each application receives its own `CLOUD_APP_KEY_FILE` and
-`CLOUD_CORE_INTERNAL_ORIGIN`. Core and Gateway keep their infrastructure
-environment values. The app loads database, Valkey, NATS and `APP_SECRET`
-from Core at startup; it keeps those values only in memory until it stops.
-
-This upgrade requires the release containing the complete platform-client
-migration and signed background and OAuth requests. Do not apply the new
-Compose template to an earlier release. Third-party applications must also
-use the platform clients; explicitly retain their environment values until
-the application author has migrated them.
-
-Cloud releases 0.56.0–0.65.0 still refuse resource-principal reads signed with an app key
-([#2377](https://github.com/k2b-dev/cloud/issues/2377)). Its advice to leave
-`CLOUD_APP_KEY` and `CLOUD_APP_KEY_FILE` unset still applies to those releases.
-Before enabling keys, upgrade Core and all applications to a release containing
-the resource-principal read fix. After switching, verify Chat readability checks
-or another consumer of `readResourcePrincipals()` as well as startup and
-background calls.
+This release requires an enrolled Ed25519 app key for every serving application
+except Core and Gateway. There is no workload-token or shared broker-secret
+fallback. Prepare the keys on the previous parallel-support release before
+upgrading. Core and Gateway keep their infrastructure environment values and
+refuse app keys.
 
 ## Upgrade an existing installation
+
+Stop all old Core replicas before starting the new Core version, as described
+in step 5. The migration removes the former workload, migration-observation
+and proof replay tables. Applications keep running during this Core-only
+maintenance window. All new Core replicas must share the same Valkey replay
+store before signed traffic resumes. See
+[Upgrade all Core replicas together](/en/docs/operations/app-keys#upgrade-all-core-replicas-together)
+for the shared Valkey requirement and recovery behavior.
 
 Use the same Compose infrastructure overlay and CLI profile throughout.
 The commands below use profile `migration`, already signed in as a Cloud
@@ -38,140 +33,99 @@ immutable image tag, Compose files, environment and still-valid credentials
 for rollback. Back up Postgres and the encryption keys before upgrading.
 Never generate a new `APP_SECRET` for this migration.
 
-1. Upgrade the images to the release containing this guide **using the previous
-   release's Compose files and environment**. Do not copy the new Compose
-   template yet: it requires key files created in step 3. Retain every existing
-   app environment block, including deprecated network allowlists and
-   `NATS_ADMIN_*` values and mounts, until the settings import is verified.
-   Upgrade every Core replica first and wait for its migrations and readiness,
-   then upgrade Gateway and the other services. Verify that no older Core replica
-   remains before starting the observation in step 5. Existing environment mode remains supported in this release.
-2. Check the settings import. Continue only with exit code zero:
+1. On the previous parallel-support release, upgrade every Core replica and
+   application to a version that supports signed app requests and resource
+   principal reads. Releases 0.56.0–0.65.0 cannot serve signed resource-principal
+   reads ([#2377](https://github.com/k2b-dev/cloud/issues/2377)); first upgrade
+   to a parallel-support version containing that fix.
+2. Check imported settings with `cld --profile migration admin settings status --env`.
+   Repair missing, unreadable or conflicting settings before removing their
+   environment sources or mounts.
+3. Write the complete intended app inventory to `apps.txt`, one ID per line,
+   including third-party and stopped apps; exclude `core` and `gateway`.
+   Enroll each identity locally:
 
    ```bash
-   cld --profile migration admin settings status --env
-   ```
-
-   Repair unreadable, missing or conflicting settings before removing their
-   environment sources. NATS diagnostic credentials are imported as contents,
-   not container file paths.
-3. Write the complete intended app inventory into `apps.txt`, one app ID per
-   line, including installed third-party apps and apps that are currently
-   stopped. Exclude `core` and `gateway`. Create the keys locally:
-
-   ```bash
-   # The supplied deployment includes oauth; issuance is an explicit key grant.
    cld --profile migration admin apps keys create oauth --grant oauth:issue --out-dir ./secrets
    awk '$0 != "oauth"' apps.txt > apps-without-oauth.txt
    cld --profile migration admin apps keys create --all --apps ./apps-without-oauth.txt --no-grant --out-dir ./secrets
    ```
 
-   For a deployment without OAuth, omit the first command and use `apps.txt`
-   directly with `--no-grant`. Apply `--grant oauth:issue` to any other issuer
-   deliberately, in its own enrollment command. Repeat the grant on rotation;
-   the library never infers it from an app name. Repeating enrollment preserves
-   the original grants: replace a key enrolled without the needed grant using
-   a new output directory rather than expecting a retry to add authority.
-
-   This writes `<app>.key` and owner-only enrollment records. Preserve both;
-   rerunning the same command resumes after a lost registration response or
-   interrupted file write without rotating the key. Never print these files
-   or commit them. Ensure each file is readable by its container's process
-   user. The supplied production images run as UID 1000; run enrollment with
-   `--uid 1000` as root when needed, or arrange the corresponding ownership
-   through the deployment's secret store. Compose file-backed secrets retain
-   host ownership; Compose `uid`/`mode` settings do not repair host permissions.
-4. Use `compose.prod.yml` from this release. Replace each ordinary app's
-   environment block with its key-file path and the direct Core origin;
-   mount its corresponding `./secrets/<app>.key` as a Docker secret. Keep
-   infrastructure values on Core and Gateway. Include the infrastructure
-   overlay as before. On a network crossing hosts, use verified HTTPS to Core
-   and install any private CA before the first bootstrap request.
-5. Recreate the app services and wait for readiness. After **every Core replica**
-   is upgraded and all intended callers are migrated, begin durable legacy-use
-   observation:
-
-   ```bash
-   cld --profile migration admin apps migration observe --json
-   ```
-
-   Choose a clean interval that covers representative scheduled background work,
-   OAuth issuance and infrequent clients. For example, use `OBSERVATION_SECONDS=86400`
-   for a daily work cycle; include weekly jobs explicitly or choose a longer
-   interval when needed. Exercise real background work and OAuth token issuance
-   during this interval. Accepted legacy bearer or OAuth broker-secret requests
-   restart the clean interval, across all Core replicas and process restarts.
-   Starting observation again discards elapsed time, so do not restart it while
-   waiting. No observation or no chosen duration can pass status.
-6. After that clean interval, check every expected app:
+   Omit the first command when OAuth is absent. Grant `oauth:issue` explicitly
+   to any other intended issuer in its own enrollment command. Repeat the grant
+   on every rotation; neither app IDs nor repeated enrollment add authority.
+   A database upgrade that introduces the grant column also leaves every key
+   ungranted; enroll a replacement key with the explicit grant before starting
+   its issuer. Existing stored grants remain unchanged.
+   Preserve the private `<app>.key` files and owner-only enrollment records.
+   Never print or commit them. Production images run as UID 1000: use the
+   CLI's `--uid 1000` as root or set corresponding secret-store ownership.
+   File-backed Compose secrets retain host ownership.
+4. Still on the previous release, mount each key and set `CLOUD_APP_KEY_FILE`
+   and `CLOUD_CORE_INTERNAL_ORIGIN`. Restart every app replica and verify a
+   routed request, representative background work, resource-principal reads
+   and OAuth readiness and issuance where applicable. Retain explicit connection
+   environment values for third-party apps that still use Bun globals.
+5. Stop **all old Core replicas before starting any Core replica on this
+   release**. This Core-only maintenance window is required because the migration
+   drops the workload, migration-observation and proof replay tables used by old
+   Core versions. Mixing versions can cause failed requests or block the
+   migration on old broker transactions. Applications keep running; requests and background work that
+   need Core are briefly unavailable. Start the new Core version and wait for
+   readiness, then upgrade Gateway and the applications. Core's migration
+   revokes active app API tokens carrying former workload scopes and records each
+   revocation once. Use this release's Compose template: ordinary apps receive
+   their key file and direct Core origin; Core and Gateway retain infrastructure
+   configuration. Keep documented third-party connection overrides. Across hosts
+   use verified HTTPS to Core.
+6. After all replicas are ready, check the complete inventory:
 
    ```bash
-   cld --profile migration admin apps migration status --strict --json --observation-seconds "$OBSERVATION_SECONDS" --expect "$(paste -sd, apps.txt)"
+   cld --profile migration admin apps migration status --strict --json --expect "$(paste -sd, apps.txt)"
    ```
 
-   Continue only with exit code zero. The inventory combines apps with active
-   keys on enabled accounts, registered apps and `--expect`. The result includes
-   every live replica's mode, key ID, sources and format/protocol capability.
-   Missing metadata, stopped apps and unknown producers do not pass. During a
-   rolling update, both old and new replicas count. Each deployed key must
-   complete a **fresh signed broker probe**; keys granted `oauth:issue` also
-   complete a signed OAuth probe. Core records these authenticated receipts;
-   an app's claim alone is insufficient. Missing, rejected, timed-out or
-   unreachable probes keep status nonzero. The check uses the registered
-   application endpoint. During key rotation, an endpoint reaching a replica
-   using the other key may report an incomplete probe: finish the rollout and
-   retry; never bypass the result.
+   Continue only with exit code zero. Every live replica needs key bootstrap
+   metadata, a current key and fresh signed broker receipts; keys granted
+   `oauth:issue` also need OAuth receipts. Stopped apps, malformed metadata,
+   probe failures and `lastRejectedStart` keep status nonzero. A successful
+   bootstrap clears a rejected start. During rotation, finish the rollout and
+   retry if the endpoint reaches a replica using the other key.
 
-   `lastRejectedStart` appears per app in JSON and text as an attention reason.
-   A successful bootstrap clears that rejection. An already running older
-   replica does not clear it by reporting readiness.
+   Add `--allow-env inventory` only for an app deliberately retaining explicit
+   connection values. It still needs an app key and signed probes. This option
+   does not permit keyless HTTP processes or waive stopped apps and rejected starts.
+7. Remove retired workload-token and broker-secret injection from deployment
+   files and secret stores. Check each service's private `/_cloud/ready`, a
+   routed app request, background work and OAuth issuance. Gateway readiness
+   alone does not establish application readiness.
 
-   Use `--allow-env inventory` only as an explicit exception for a third-party
-   app retaining connection environment values. It still needs its deployed key,
-   modern bootstrap metadata and successful signed probes. The exception does
-   not waive observation, stopped instances or rejected starts. Keep the app's
-   old environment block and record the exception in the deployment inventory.
-7. Review the actual deployment configuration and representative work results.
-   A clean window cannot prove that a stopped or unexercised client migrated.
-   Only after the strict check and this review, remove
-   `CLOUD_MAIL_APP_CREDENTIAL`, `CLOUD_APP_CREDENTIAL` and
-   `CLOUD_OAUTH_BROKER_SECRET` from the relevant deployment configuration and
-   revoke obsolete workload tokens through **Administration › Apps** or
-   `cld admin app-credentials revoke`.
-
-Check the private `/_cloud/ready` endpoint of each service, a routed app
-request, a background action and OAuth issuance after the rollout. Gateway
-readiness alone does not establish app readiness.
-
-See [Check application migration evidence](/en/docs/operations/app-key-status)
-for the status command and its evidence fields.
+The status command no longer uses an observation window. It verifies current
+metadata and fresh signed work. Review actual deployment configuration and
+representative jobs too; a probe does not exercise every business operation.
+See [App migration status](/en/docs/operations/app-key-status).
 
 ## Roll back at the right boundary
 
-- **App key/environment switch (steps 3–6):** restore the previous app
-  environment blocks and recreate those apps. Keep their previous workload
-  credentials valid while this rollback remains needed. The new public keys
-  and installation ID can stay in Postgres. Do not change `APP_SECRET`.
-- **Removing old broker authentication:** this release still accepts the old
-  paths. Removing their configuration is reversible only while those
-  credentials remain valid; after revocation, provision replacements. Once
-  the following release removes the old paths, rolling the configuration
-  back requires returning to this parallel-support release as well.
-- **Encryption format/root changes:** this migration does not rotate
-  `APP_SECRET` or change its format. A later encryption-root or format change
-  has a separate restore boundary; restoring images or environment values
-  alone cannot recover data encrypted with an incompatible root.
+Returning to environment-only application identity requires returning to the
+previous parallel-support release. Restoring environment values alone cannot
+start an ordinary HTTP app on this release. Enrolled keys remain usable on
+that previous release, so retain them during rollback. The revocation migration
+is permanent: returning to older images does not reactivate retired tokens.
+If old authentication is needed there, provision replacement credentials using
+that release's supported procedure.
+
+This upgrade does not rotate the encryption root. Keep `APP_SECRET` and the
+Core identity encryption keys stable. An incompatible encryption-format change
+has its own database-and-key restore boundary.
 
 ## Start a fresh installation
 
-Start infrastructure, then Core and Gateway with their infrastructure
-environment. Sign in with `ADMIN_LOGIN_TOKEN`, create keys for the complete
-app inventory as in step 3, explicitly granting `oauth:issue` to the built-in
-OAuth app, and then start the apps using this release's Compose template.
-Begin observation and run the strict check as above before retiring legacy
-configuration. An app can
-be enrolled before it ever registers; a stopped app with an active key remains visible
-in the status result.
+Start infrastructure, then Core and Gateway with infrastructure configuration.
+Sign in using the temporary Core `ADMIN_LOGIN_TOKEN`, enroll keys for the
+complete app inventory as in step 3, and start apps with their mounted keys.
+Grant OAuth issuance explicitly. Check readiness, real work and strict status.
+An app can be enrolled before its first start; its active key keeps a stopped
+app visible in the status inventory.
 
 ## Mount app keys in Kubernetes
 

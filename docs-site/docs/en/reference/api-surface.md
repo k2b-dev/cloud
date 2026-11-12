@@ -20,6 +20,21 @@ should use them only when a feature guide gives the exact import.
 `Preview` means the contract may still change before its feature is released,
 and such changes are not treated as breaking until then.
 
+## OAuth issuer services
+
+Applications granted `oauth:issue` use `oauthClients` and
+`OAuthClientRegistration` from `@k2b/cloud/services` to maintain verifier
+facts in the transaction that changes a private client. The service captures
+the running app ID and refuses a different existing owner or any deleted ID.
+Removal keeps a tombstone that permanently reserves the ID.
+`OAuthAuthorityStatementSchema`, `OAuthDeviceApprovalRequestSchema`,
+`OAuthNewAccessNoticeSchema` and their corresponding types are supported
+exports of `@k2b/cloud/contracts`. Send the closed requests through the
+app-signed transport described in
+[Implement an OAuth issuer](/en/docs/identity/oauth#implement-an-oauth-issuer).
+Client policy, single-use reservations, finalization and notice retries
+belong to the issuer; the platform registry contains no private OAuth grants.
+
 ## Application entry points
 
 | Entry point | Status | Use |
@@ -185,16 +200,17 @@ log.info("Import completed", { itemCount: 42 });
 Use the capability guide to choose the narrow API:
 
 - [Retained service-account authority](/en/docs/identity/authentication#retain-service-account-authority): `isServiceAccountOAuthAuthorityCurrent` from `@k2b/cloud/services` revalidates protected OAuth references before domain authorization.
+- [Encrypted data owners](/en/docs/data/secrets-and-persistent-state#declare-encrypted-data-for-rotation): `createSecretOwner`, `SecretOwner` and `SecretOwnerRow` from `@k2b/cloud/services`, declared through `app.start({ secretOwners })`, provide automatic CAS rewrap and owner checks.
 - [Settings](/en/docs/platform/settings): `SettingUnreadableError`, `SettingRead`, and `StoredSettingState` from `@k2b/cloud/services`; `app.settings.read()` reports stored state before a partial update.
 - [Saved maps](/en/docs/platform/saved-map-documents): `GeoDocumentSchema`, pin/link schemas and `serializeGeoDocument` from `@k2b/cloud/geo/document` save Geo results and complete routes as Notebook blocks.
 - [Places and maps](/en/docs/platform/places-and-maps): `geoClient` from `@k2b/cloud/server` calls Core with a `CapabilityCaller`; `geoContract`, `geoRouteContract`, geo input/result schemas, route plans/updates, and provenance types come from `@k2b/cloud/contracts`.
 - [Object store](/en/docs/platform/object-store): `storage` from `@k2b/cloud/services` supplies app-bound private documents and permanent public image URLs.
-- [One-time links](/en/docs/identity/one-time-links): `links.create(input, { tx }?)`, `links.peek(token, { purpose }, { tx }?)`, and `links.redeem(token, { purpose }, { tx }?)` from `@k2b/cloud/services` share single-use credentials within an application package; synchronous `appKey(name): string` from `@k2b/cloud/server` derives app-specific signing keys.
+- [One-time links](/en/docs/identity/one-time-links): `links.create(input, { tx }?)`, `links.peek(token, { purpose }, { tx }?)`, and `links.redeem(token, { purpose }, { tx }?)` from `@k2b/cloud/services` share single-use credentials within an application package; synchronous `appKey(name): string` signs with current and `appKeys(name): string[]` returns current-first verification keys from `@k2b/cloud/server`.
 - [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, `mail.readableApps()`, and audited `mail.content(id, context)` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
 - [App capabilities](/en/docs/platform/capabilities): `cloudResourceHref(ref)` from `@k2b/cloud/contracts` and `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` supply [resource permalinks](/en/docs/platform/capabilities#resource-links).
-- [Background mandates](/en/docs/identity/background-mandates): `sendAppRequest` from `@k2b/cloud/services/identity` signs final worker requests to Core, with legacy workload credentials retained for this release.
+- [Background mandates](/en/docs/identity/background-mandates): `sendAppRequest` from `@k2b/cloud/services/identity` signs final worker requests to Core, using the required enrolled app key.
 - [Resource types and discussions](/en/docs/platform/resource-types-and-discussions): `resolveResourceReaders` and `ResourceReader` from `@k2b/cloud/services/identity` resolve current account subjects and resource bindings for provider-owned reader checks.
 - [Universal search](/en/docs/platform/search)
 - [Document extraction](/en/docs/platform/document-extraction)

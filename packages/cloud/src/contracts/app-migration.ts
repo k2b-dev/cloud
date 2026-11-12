@@ -3,6 +3,30 @@ import { z } from "zod";
 export const APP_MIGRATION_RECEIPT_PATH = "/api/_internal/identity/v1/migration-probe";
 export const APP_MIGRATION_TRIGGER_PATH = "/api/_internal/app-migration/v1";
 
+const rootId = z.string().regex(/^[A-Za-z0-9_-]{16}$/);
+export const SecretOwnerCheckSchema = z.object({
+  id: z.string().min(1),
+  rows: z.number().int().nonnegative(),
+  previousOnly: z.number().int().nonnegative(),
+  unreadable: z.number().int().nonnegative(),
+  startedAt: z.iso.datetime().nullable(),
+  checkedAt: z.iso.datetime().nullable(),
+});
+export type SecretOwnerCheck = z.infer<typeof SecretOwnerCheckSchema>;
+export const SecretRotationMetadataSchema = z
+  .object({
+    current: rootId,
+    previous: rootId.nullable(),
+    next: rootId.nullable(),
+    changedAt: z.iso.datetime(),
+    /** Missing means unknown; [] explicitly declares no durable ciphertext. */
+    owners: z.array(SecretOwnerCheckSchema).optional(),
+  })
+  .refine((ring) => !(ring.previous && ring.next) && ring.previous !== ring.current && ring.next !== ring.current, {
+    message: "Rotation metadata requires distinct roots and at most one overlap root",
+  });
+export type SecretRotationMetadata = z.infer<typeof SecretRotationMetadataSchema>;
+
 const source = z.enum(["env", "core"]);
 export const AppBootstrapMetadataSchema = z.object({
   keyId: z.uuid().optional(),
@@ -29,13 +53,7 @@ const instance = z.object({
   bootstrap: AppBootstrapMetadataSchema.nullable(),
   status: z.enum(["core", "env", "unknown"]),
   allowed: z.boolean(),
-});
-export const AppMigrationObservationSchema = z.object({
-  startedAt: z.iso.datetime().nullable(),
-  lastLegacyUseAt: z.iso.datetime().nullable(),
-  observedAt: z.iso.datetime(),
-  windowSeconds: z.number().int().positive().nullable(),
-  complete: z.boolean(),
+  secrets: SecretRotationMetadataSchema.nullable().optional(),
 });
 export const AppMigrationProbeSchema = z.object({
   keyId: z.uuid(),
@@ -45,7 +63,6 @@ export const AppMigrationProbeSchema = z.object({
 });
 export const AppMigrationStatusSchema = z.object({
   needsAttention: z.boolean(),
-  observation: AppMigrationObservationSchema,
   registryIssues: z.array(z.object({ key: z.string(), reason: z.string() })),
   apps: z.array(
     z.object({

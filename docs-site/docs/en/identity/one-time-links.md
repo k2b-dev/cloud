@@ -161,12 +161,13 @@ that rolls its transaction back has not consumed the link.
 
 ## Sign an app session cookie
 
-`appKey` is synchronous and server-only:
+`appKey` and `appKeys` are synchronous and server-only:
 
 ```ts
-import { appKey } from "@k2b/cloud/server";
+import { appKey, appKeys } from "@k2b/cloud/server";
 
 appKey(name: string): string;
+appKeys(name: string): string[];
 ```
 
 After `app.start()`, it derives 32 bytes with HKDF-SHA-256 from the startup
@@ -182,7 +183,7 @@ Pass the string directly to Hono's cookie helpers:
 
 ```ts
 import { getSignedCookie, setSignedCookie } from "hono/cookie";
-import { appKey } from "@k2b/cloud/server";
+import { appKey, appKeys } from "@k2b/cloud/server";
 
 await setSignedCookie(c, "__Host-portal-session", sessionId, appKey("portal.session"), {
   secure: true,
@@ -192,11 +193,11 @@ await setSignedCookie(c, "__Host-portal-session", sessionId, appKey("portal.sess
   maxAge: 3600,
 });
 
-const signedSessionId = await getSignedCookie(
-  c,
-  appKey("portal.session"),
-  "__Host-portal-session",
-);
+let signedSessionId: string | undefined;
+for (const key of appKeys("portal.session")) {
+  const value = await getSignedCookie(c, key, "__Host-portal-session");
+  if (value) { signedSessionId = value; break; }
+}
 ```
 
 Issue the cookie after the domain transaction commits. On every request,
@@ -207,9 +208,13 @@ everywhere” before the cookie expires.
 
 Apps share the installation's trust model and `APP_SECRET`. Derived keys
 separate purposes and ordinary app use; they do not isolate apps that can
-access the installation secret. Rotating the current secret invalidates all
-cookies signed with the old derived keys. Previous-secret verification is
-not automatic.
+access the installation secret. `appKey(name)` retains its existing derivation
+and signs with current. `appKeys(name)` returns current first, followed by
+PREVIOUS or NEXT, with the same derivation for each root. Verify against each
+key to keep existing sessions during overlap. Removing a root rejects its
+signatures. Set an explicit session lifetime and include it in the operator's
+[rotation wait](/en/docs/operations/app-secret-rotation); the platform does not
+invent a lifetime for third-party cookies.
 
 ## Deliver sign-in links safely
 

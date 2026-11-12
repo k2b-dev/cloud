@@ -103,7 +103,7 @@ export const consume = async (params: {
   audiences: string[];
   resource: string | null;
   nonce: string | null;
-  authorityGrant: { kind: "authorization_code"; code: string; nonce: string };
+  authorityGrant: { kind: "authorization_code"; code: string };
 } | null> => {
   const { code, clientId, redirectUri, resource, codeVerifier } = params;
 
@@ -143,10 +143,9 @@ export const consume = async (params: {
   }
 
   // Mark as used atomically so concurrent token exchanges cannot consume the same code twice.
-  const authorityNonce = crypto.randomUUID();
   const [usedRow] = await sql<{ code: string }[]>`
     UPDATE oauth.codes
-    SET used = true, authority_nonce = ${authorityNonce}::uuid
+    SET used = true
     WHERE code = ${code}
       AND auth_epoch IS NOT NULL
       AND used = false
@@ -167,7 +166,7 @@ export const consume = async (params: {
     audiences: row.audiences,
     resource: row.resource,
     nonce: row.nonce,
-    authorityGrant: { kind: "authorization_code", code, nonce: authorityNonce },
+    authorityGrant: { kind: "authorization_code", code },
   };
 };
 

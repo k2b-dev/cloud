@@ -20,6 +20,7 @@ const router = new Hono<AuthContext>()
 router.get("/admin/proxy-auth/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
+  secretOwners: [],
   fetch: router.fetch,
   help: proxyAuthHelp,
   openapi: apiRoutes,

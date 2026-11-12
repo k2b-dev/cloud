@@ -77,7 +77,7 @@ export const fixtureApps = (): AppInput[] => [
     description: "Dateien ablegen, teilen und gemeinsam bearbeiten.",
     routes: ["/files", "/api/files", "/s", "/dav"],
     accessKind: "resources",
-    // Still starts with its environment: running, no key yet.
+    // An older instance still runs with environment connections, without a key.
     keys: { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null },
     startsWithEnv: true,
     numbers: numbers(13_610, 6, 62),

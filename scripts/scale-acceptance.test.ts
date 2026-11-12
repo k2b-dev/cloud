@@ -96,6 +96,8 @@ describe("scale acceptance configuration", () => {
     try {
       Object.assign(process.env, {
         APP_SECRET: "inherited-secret",
+        APP_SECRET_NEXT: "inherited-next-secret",
+        APP_SECRET_PREVIOUS: "inherited-previous-secret",
         POSTGRES_PASSWORD: "inherited-password",
         CLOUD_IMAGE_TAG: "inherited-tag",
         CLOUD_HOST: "production.example",
@@ -108,8 +110,12 @@ describe("scale acceptance configuration", () => {
       expect(env.CLOUD_HOST).toBe("cloud.scale-acceptance.test");
       expect(env.POSTGRES_DB).toEndWith("_test");
       expect(env.SYNC_NAMESPACE).toBe("scale-deadbeef");
+      expect(env.APP_SECRET_NEXT).toBe("");
+      expect(env.APP_SECRET_PREVIOUS).toBe("");
       for (const value of [
         "inherited-secret",
+        "inherited-next-secret",
+        "inherited-previous-secret",
         "inherited-password",
         "inherited-tag",
         "production.example",

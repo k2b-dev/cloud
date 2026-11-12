@@ -5,10 +5,65 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-08
+updated: 2026-11-12
 ---
 
 # Deprecations and migrations
+
+## OAuth issuers own their grant state
+
+Core's internal OAuth token endpoint now accepts a closed
+`OAuthAuthorityStatement`, authenticated by an app key granted `oauth:issue`.
+The old built-in grant-reference body and `authority_nonce` handshake are
+removed. The issuer reserves its own source, commits, asks Core to sign, then
+finalizes on success. Complete 4xx/5xx responses release the reservation;
+timeouts, lost responses and malformed success responses leave it consumed.
+There is no recovery ledger.
+
+Core and token verifiers use `auth.oauth_clients` for current issuer, status
+and service-account binding. Issuers call `oauthClients.upsert` or `remove`
+in the same transaction as private client mutations, including automatic
+cleanup. Removal retains a `deleted` tombstone; no issuer can register that
+ID again. The built-in OAuth schema is no longer a platform runtime dependency.
+
+Roll Core first, then OAuth back-to-back. OAuth token issuance and terminal
+approvals are unavailable between these updates because Core rejects the old
+request bodies with HTTP 400. Core backfills once; OAuth reconciles its existing
+clients before serving requests. No client-write freeze is needed. Complete
+replacement of old issuer replicas before relying on transactional registry
+updates. Access-notice retry ownership moves from Core to the issuer while
+keeping the existing notification content and idempotency key. See
+[rollout steps](/en/docs/operations/app-keys#roll-out-issuer-ownership) and the
+[public issuer contract](/en/docs/identity/oauth#implement-an-oauth-issuer).
+
+## APP_SECRET supports overlapping roots
+
+Follow [Rotate APP_SECRET](/en/docs/operations/app-secret-rotation) instead of
+replacing the encryption secret directly. Ciphertext and token formats stay
+unchanged. Readers accept current plus NEXT or PREVIOUS; writers use current.
+Rewrap runs automatically in the application that owns each table.
+
+Third-party apps declare `secretOwners` at startup, including `[]` when none
+are needed. Omission blocks strict readiness. Use `appKeys(name)` for purpose
+signature verification during overlap; `appKey(name)` keeps its byte-identical
+current-key derivation. Settings caches now require an encrypted envelope
+bound to the full ring; earlier cache entries are refreshed from Postgres.
+
+## App proof replay protection moves to Valkey
+
+Stop all old Core replicas before starting any new Core replica. Applications
+keep running during this Core-only maintenance window; resume signed traffic
+after all new Core replicas are ready. Core drops
+`auth.app_proof_replays` and its indexes; older replicas return HTTP 503 on
+signed requests until replaced. Every replica must share the installation's
+Valkey. Follow [the Core upgrade requirements](/en/docs/operations/app-keys#upgrade-all-core-replicas-together).
+
+The platform-owned `consumeBootstrapProof(keyId, jti, exp)` no longer takes a
+database executor; `cleanupBootstrapProofs` and its maintenance step are removed.
+`getActiveAppKey` and `getStoredAppKey` include the installation identity and
+activity status in their single read. Pass the authenticated key row to
+`touchAppKey(key, db)` instead of passing `{ appId, keyId }`. Activity timestamps
+update at most once per minute per key; revocation checks remain uncached.
 
 ## Saved signed bar rows render again
 
@@ -92,47 +147,38 @@ for issuance and the `cld admin agents keys` commands.
 
 This release replaces ordinary apps' shared infrastructure environment block
 with an app key file and Core address. Core and Gateway retain infrastructure
-values. Existing environment mode remains supported during the parallel
-release; environment overrides also remain supported afterward.
+values. Explicit connection overrides remain supported per value, but every
+ordinary HTTP app requires a key.
 
 Follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
-for settings checks, resumable enrollment, expected-app and replica checks,
-file permissions and the three rollback boundaries. Use the Compose template
-from that release. Do not remove legacy workload or OAuth credentials until
-the verification steps pass. Removing those authentication paths is a later
-breaking release, separate from this configuration migration.
+for preparation on the previous release, enrollment, settings checks, every
+replica's signed probes, file permissions and rollback boundaries. Use this
+release's Compose template after enrolling keys on the previous release.
 
 ## App keys authenticate background work and OAuth
 
-Applications with `CLOUD_APP_KEY` or `CLOUD_APP_KEY_FILE` now sign each request
-to Core. The same key authenticates background capability calls and, with the
-operator-owned `oauth:issue` grant, OAuth issuance. Keys enrolled before this
-release for the built-in `oauth` app get the grant once through the migration;
-every new key needs `--grant oauth:issue` explicitly, and third-party app keys can
-hold it too. Keep
-`CLOUD_CORE_INTERNAL_ORIGIN` pointing at Core.
-Mandates, current grants, and domain idempotency still apply.
+Every ordinary serving app now requires its enrolled Ed25519 app key. Core
+and Gateway remain environment-configured and refuse keys. Workload API-token
+authentication, shared OAuth broker authentication, runtime token delivery,
+credential-refresh retries, token administration and legacy-use observation
+are removed. The old authentication and JWKS override environment entries are
+removed from the configuration registry; Core's private origin supplies JWKS.
 
-`CLOUD_APP_CREDENTIAL` and `CLOUD_OAUTH_BROKER_SECRET` are deprecated. During
-this release, apps without an app key can still use automatically delivered or
-explicit workload credentials, and OAuth can still use its broker secret. A
-configured app key takes precedence; rejection never falls back to a bearer.
-Their removal belongs to the following release as a separate breaking change.
-The former Compose input `CLOUD_MAIL_APP_CREDENTIAL` is already unused; remove
-it and revoke the corresponding old credential after verifying background work.
+Before upgrading, enroll and mount keys on the previous parallel-support
+release and verify real signed work. Stop all old Core replicas before starting
+any new Core replica on this release: the migration drops tables that old Core
+still uses. This requires a Core-only maintenance window; applications keep
+running, while work that needs Core is briefly unavailable. Wait for new Core readiness,
+then upgrade Gateway and applications. OAuth issuers need an explicit
+`oauth:issue` grant on each key, irrespective of app ID. Core's idempotent
+migration revokes active app API tokens with former workload scopes and audits each revocation once. Returning to old authentication requires the
+previous release; revoked tokens do not reactivate. See
+[App key upgrade](/en/docs/operations/app-key-upgrade).
 
-`CLOUD_OAUTH_JWKS_ORIGIN` is also deprecated. Remove it to load OAuth public
-keys directly from Core through `CLOUD_CORE_INTERNAL_ORIGIN`. An explicit old
-origin remains honored during this release. The public OAuth JWKS endpoint
-and token issuer stay unchanged.
-
-Enroll keys, roll out Core before its callers, verify a background action and
-OAuth readiness and token issuance, then remove legacy secret injection and
-revoke obsolete workload credentials. Keep the legacy configuration until
-these checks pass. A rollback during this release can restore the old env
-configuration; legacy credentials must still be active. See
-[App keys](/en/docs/operations/app-keys) and
-[runtime configuration](/en/docs/operations/runtime-configuration).
+Explicit connection environment values still win per value, including for
+third-party apps using Bun globals. Keyless non-serving scripts can initialize
+with `initializePlatform({ appId, source: "env" })`; signed requests always need
+a key. See [Runtime configuration](/en/docs/operations/runtime-configuration).
 
 ## Apps, app credentials and Gateway › Apps are one Apps page
 
@@ -147,13 +193,12 @@ address keeps the selection and the list's search and filter, for example
 | Before | Now |
 | --- | --- |
 | `/admin/apps?app=<id>` | unchanged; opens the app |
-| `/admin/app-credentials` | opens `/admin/apps` with a hint; tokens are under the app's **Keys → Tokens for host operation** |
+| Former app-token page | removed; manage enrolled keys in `/admin/apps` |
 | `/admin/observability/gateway` (Apps table) | opens `/admin/apps` with a hint |
 | **Remove offline app** in the Gateway Apps table | **Remove from list …** in the app's detail under **More**, only for an app that is not running |
 | `/admin/observability/gateway/routes` | unchanged; app IDs link to the app |
 
-Operators: no migration is needed beyond Core's own. `cld admin app-credentials …`,
-`cld admin apps keys …` and `DELETE /api/gateway/apps/<id>` keep working.
+Operators: use `cld admin apps keys …` for keys. `DELETE /api/gateway/apps/<id>` keeps working.
 Update bookmarks in your own runbooks.
 
 ## NATS diagnostics access moves to settings
@@ -170,22 +215,6 @@ System access value stays encrypted and hidden in administration responses.
 See [NATS diagnostics access](/en/docs/operations/nats-operations#give-gateway-ops-access-to-diagnostics)
 for setting keys and the migration steps.
 
-## App workload credentials are delivered automatically
-
-Core now issues and rotates a credential for every registered app instance.
-Remove `CLOUD_MAIL_APP_CREDENTIAL` from Compose environment files and secret
-injection. Update Core and app images together so both support automatic
-delivery. Keep `CLOUD_CORE_INTERNAL_ORIGIN` pointing at Core's private listener.
-After the upgrade, check the credential state under **Administration → App
-credentials** and verify the app's background work. Then revoke the old manually
-created Mail credential there.
-Removing its old Compose input does not itself revoke that credential.
-
-For apps without an app key, the deprecated `CLOUD_APP_CREDENTIAL` remains an
-explicit host-run override and takes precedence over automatic delivery. Existing admin UI, API and CLI creation and revocation
-paths remain available. See [runtime configuration](/en/docs/operations/runtime-configuration)
-for credential lifetimes, recovery after revocation, and the shared-infrastructure trust limit.
-
 ## Storage import
 
 Import `storage` from `@k2b/cloud`. The former `@k2b/cloud/services` export
@@ -195,8 +224,7 @@ storage configuration are unchanged. See [Object store](/en/docs/platform/object
 ## Network and AI environment values become administrator settings
 
 This release imports nine network and AI values at startup, without replacing
-stored rows. `GOTENBERG_URL` is bootstrap-only; `CLOUD_IDENTITY_JWKS_ORIGIN`
-is replaced by `CLOUD_CORE_INTERNAL_ORIGIN`, and `GATEWAY_INSTANCE_ID` defaults
+stored rows. `GOTENBERG_URL` is bootstrap-only; Core JWKS use `CLOUD_CORE_INTERNAL_ORIGIN`, and `GATEWAY_INSTANCE_ID` defaults
 to a random per-process ID. Run `cld admin settings status --env` before
 removing legacy variables. Follow the [operator migration steps](/en/docs/operations/deprecations-and-migrations).
 
@@ -2503,16 +2531,10 @@ issues target- and operation-bound invocation JWTs for them.
 
 ### OAuth signing hard cut
 
-OAuth no longer accepts `CLOUD_APP_CREDENTIAL` or the Compose input
-`CLOUD_OAUTH_APP_CREDENTIAL`. Replace them with `CLOUD_OAUTH_BROKER_SECRET` on
-Core and OAuth; see [Runtime configuration](/en/docs/operations/runtime-configuration).
-Revoke any previously provisioned OAuth workload credential through the admin
-identity API. The retired `identity:oauth-issue` scope is no longer provisionable
-and remains blocked at ordinary API entry points. Client secrets are unrelated
-and do not need replacement.
-
-Include every OAuth replica in the maintenance window. Configure the same
-`CLOUD_OAUTH_BROKER_SECRET` exclusively on Core and OAuth, start updated Core,
+OAuth signs requests with its enrolled app key and explicit `oauth:issue` grant;
+Core checks the current grant, client and principal before signing tokens.
+Client secrets are unrelated and do not need replacement. Include every OAuth
+replica in the maintenance window. Start updated Core,
 then start updated OAuth. Its migration drops only the obsolete `oauth.keys` and
 `oauth.issuance_state` tables and the old code-audience compatibility trigger.
 Client registrations and client secrets are retained. Older authorization codes

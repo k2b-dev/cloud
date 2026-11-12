@@ -27,3 +27,11 @@ describe("referenced-by cursor", () => {
     expect(decodeReferencedByCursor("x".repeat(2_001), scope, key)).toBeNull();
   });
 });
+
+test("reference cursors authenticate all overlapping roots without weakening their scope", () => {
+  const boundary = { fieldId: "field1", recordId: "record" };
+  const cursor = encodeReferencedByCursor(scope, boundary, "A");
+  expect(decodeReferencedByCursor(cursor, scope, ["B", "A"])).toEqual(boundary);
+  expect(decodeReferencedByCursor(cursor, { ...scope, relationFieldId: "field2" }, ["B", "A"])).toBeNull();
+  expect(decodeReferencedByCursor(cursor, scope, ["B"])).toBeNull();
+});

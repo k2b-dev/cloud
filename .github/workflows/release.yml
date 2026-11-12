@@ -286,15 +286,20 @@ jobs:
             --env SYNC_REPLICAS=1
             --env SYNC_NAMESPACE=release
             --env APP_SECRET="$APP_SECRET"
-            --env CLOUD_IDENTITY_JWKS_ORIGIN=http://app-core:3000
-            --env CLOUD_OAUTH_JWKS_ORIGIN=http://app-oauth:3000
             --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000
             --env CLOUD_IDENTITY_KEY_ENCRYPTION_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
-            --env CLOUD_OAUTH_BROKER_SECRET=abababababababababababababababababababababababababababababababab
             --env ADMIN_LOGIN_TOKEN=release-smoke)
           docker run --detach --name app-core "${common[@]}" --publish 127.0.0.1:3001:3000 "$registry/cloud-core@$(ref cloud-core)"
           docker run --detach --name gateway "${common[@]}" --publish 127.0.0.1:3000:3000 "$registry/cloud-gateway@$(ref cloud-gateway)"
-          docker run --detach --name app-faq "${common[@]}" --publish 127.0.0.1:3002:3000 "$registry/cloud-app-faq@$(ref cloud-app-faq)"
+          # Enroll production identities before starting ordinary applications.
+          umask 077
+          docker cp scripts/fixtures/enroll-image-apps.ts app-core:/tmp/enroll-image-apps.ts
+          docker exec app-core bun /tmp/enroll-image-apps.ts faq > "$RUNNER_TEMP/app-keys.json"
+          app_identity=(--network cloud-smoke --restart unless-stopped
+            --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000)
+          jq -r '.faq' "$RUNNER_TEMP/app-keys.json" > "$RUNNER_TEMP/faq.key"
+          sudo chown 1000:1000 "$RUNNER_TEMP/faq.key"
+          docker run --detach --name app-faq "${app_identity[@]}" --env CLOUD_APP_KEY_FILE=/run/secrets/faq.key --volume "$RUNNER_TEMP/faq.key:/run/secrets/faq.key:ro" --publish 127.0.0.1:3002:3000 "$registry/cloud-app-faq@$(ref cloud-app-faq)"
           for _attempt in {1..90}; do
             core=$(curl --silent --fail http://127.0.0.1:3001/_cloud/ready || true)
             faq=$(curl --silent --fail http://127.0.0.1:3002/_cloud/ready || true)

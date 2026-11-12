@@ -1,19 +1,26 @@
 import { sql } from "@k2b/cloud";
 import { env } from "@k2b/cloud/config";
 import type { User } from "@k2b/cloud/contracts";
-import { accounts, isStandaloneServiceAccountKind, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
+import { accounts, isStandaloneServiceAccountKind, serviceAccounts } from "@k2b/cloud/services";
 import { resolveOAuthJwksUrl } from "@k2b/cloud/services/identity/runtime-config";
+import * as settings from "@k2b/cloud/services/settings";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
 import * as jose from "jose";
 import { type OAuthClient, type OAuthScope, OAuthScopeSchema } from "@/contracts";
+import { notifyPendingOAuthNewAccess } from "./access-notices";
+import {
+  finalizeOAuthAuthority,
+  InvalidIssuerAuthorityError,
+  type OAuthTokenRequest,
+  releaseOAuthAuthority,
+  stageOAuthAuthority,
+} from "./issuer-authority";
 import * as refreshTokens from "./refresh-tokens";
 import {
   issueOAuthTokenBatch,
   OAuthAuthorityGrantRejectedError,
-  type OAuthTokenRequest,
+  OAuthAuthorityRejectedError,
   type OAuthUserGrantReference,
-  type ServiceAccessTokenRequest,
-  type UserAccessTokenRequest,
-  type UserIdTokenRequest,
 } from "./token-authority";
 
 export { OAuthAuthorityGrantRejectedError } from "./token-authority";
@@ -84,26 +91,6 @@ const validateRequestedResource = (client: OAuthClient, resource: string | undef
   return [resource];
 };
 
-const createClientCredentialsAuthorityGrant = async (params: {
-  clientId: string;
-  scopes: OAuthScope[];
-  audiences: string[];
-  resource: string | null;
-}): Promise<{ kind: "client_credentials"; grantId: string; nonce: string }> => {
-  const [grant] = await sql<{ id: string; nonce: string }[]>`
-    INSERT INTO oauth.client_credentials_authority_grants (client_id, scopes, audiences, resource)
-    VALUES (
-      ${params.clientId},
-      ${toPgTextArray(params.scopes)}::text[],
-      ${toPgTextArray(params.audiences)}::text[],
-      ${params.resource}
-    )
-    RETURNING id, nonce
-  `;
-  if (!grant) throw new Error("Failed to reserve OAuth client credentials authority");
-  return { kind: "client_credentials", grantId: grant.id, nonce: grant.nonce };
-};
-
 /** Publish only the OAuth-purpose public keys owned by Core. */
 export const getJwks = async (): Promise<jose.JSONWebKeySet> => {
   const rows = await sql<AuthorityKey[]>`
@@ -122,16 +109,8 @@ export const getJwks = async (): Promise<jose.JSONWebKeySet> => {
   };
 };
 
-export const cleanupAuthorityGrants = async (): Promise<number> => {
-  const deleted = await sql`
-    DELETE FROM oauth.client_credentials_authority_grants
-    WHERE expires_at < now() OR consumed_at < now() - INTERVAL '1 hour'
-  `;
-  return deleted.count;
-};
-
 const getOAuthVerificationKey = async (): Promise<jose.JWTVerifyGetKey> => {
-  const configuredOrigin = env.CLOUD_OAUTH_JWKS_ORIGIN ?? env.CLOUD_CORE_INTERNAL_ORIGIN;
+  const configuredOrigin = env.CLOUD_CORE_INTERNAL_ORIGIN;
   if (configuredOrigin) {
     const url = resolveOAuthJwksUrl(configuredOrigin);
     const cacheKey = url.toString();
@@ -268,10 +247,10 @@ export const createTokens = async (
       kind: "user_access",
       grant: authorityGrant,
       expiresIn,
-    } satisfies UserAccessTokenRequest,
+    },
   ];
   if (scopes.includes("openid")) {
-    const idTokenRequest: UserIdTokenRequest = {
+    const idTokenRequest: OAuthTokenRequest = {
       kind: "user_id",
       grant: authorityGrant,
       expiresIn,
@@ -282,9 +261,23 @@ export const createTokens = async (
 
   let signed: string[];
   try {
-    signed = await issueOAuthTokenBatch(requests);
+    const issuer = publicCloudOrigin(await settings.get<string>("app.url"));
+    const staged = await stageOAuthAuthority(requests, issuer, endsAt);
+    signed = await issueOAuthTokenBatch(staged.statement);
+    await finalizeOAuthAuthority(staged);
+    if (staged.familyId && !staged.terminalConfirmed)
+      void notifyPendingOAuthNewAccess({ familyId: staged.familyId }).catch(() => {
+        console.error("[oauth] new-access notice remains pending for maintenance");
+      });
   } catch (error) {
+    if (
+      params.authorityGrant.kind !== "refresh_token" &&
+      (error instanceof OAuthAuthorityRejectedError || error instanceof InvalidIssuerAuthorityError)
+    ) {
+      await releaseOAuthAuthority(params.authorityGrant);
+    }
     if (reservation) await refreshTokens.revokeFamily(reservation.familyId, "authority_issuance_failed");
+    if (error instanceof InvalidIssuerAuthorityError) throw new OAuthAuthorityGrantRejectedError();
     throw error;
   }
   const accessToken = signed[0]!;
@@ -329,18 +322,33 @@ export const createClientCredentialsToken = async (params: {
   const resourceAudiences = validateRequestedResource(client, resource);
   const accessTokenAudiences = resource ? resourceAudiences : getAccessTokenAudience(client);
 
-  const signed = await issueOAuthTokenBatch([
-    {
-      kind: "service_access",
-      grant: await createClientCredentialsAuthorityGrant({
-        clientId: client.clientId,
-        scopes: requestedScopes,
-        audiences: accessTokenAudiences,
-        resource: resource ?? null,
-      }),
-      expiresIn,
-    } satisfies ServiceAccessTokenRequest,
-  ]);
+  const issuer = publicCloudOrigin(await settings.get<string>("app.url"));
+  let staged: Awaited<ReturnType<typeof stageOAuthAuthority>>;
+  try {
+    staged = await stageOAuthAuthority(
+      [
+        {
+          kind: "service_access",
+          expiresIn,
+          authority: {
+            client_id: client.clientId,
+            user_id: null,
+            scopes: requestedScopes,
+            audiences: accessTokenAudiences,
+            resource: resource ?? null,
+            nonce: null,
+            family_expires_at: null,
+          },
+        },
+      ],
+      issuer,
+      null,
+    );
+  } catch (error) {
+    if (error instanceof InvalidIssuerAuthorityError) throw new OAuthAuthorityGrantRejectedError();
+    throw error;
+  }
+  const signed = await issueOAuthTokenBatch(staged.statement);
 
   return { accessToken: signed[0]!, expiresIn, scope: scopeValue };
 };
@@ -356,7 +364,7 @@ export const verifyAccessToken = async (params: { token: string; issuer: string 
     });
     return payload;
   } catch (error) {
-    if (error instanceof jose.errors.JWKSNoMatchingKey && !env.CLOUD_OAUTH_JWKS_ORIGIN && !env.CLOUD_CORE_INTERNAL_ORIGIN) {
+    if (error instanceof jose.errors.JWKSNoMatchingKey && !env.CLOUD_CORE_INTERNAL_ORIGIN) {
       const now = Date.now();
       if (now - lastUnknownKeyRefreshAt < 1_000) return null;
       lastUnknownKeyRefreshAt = now;

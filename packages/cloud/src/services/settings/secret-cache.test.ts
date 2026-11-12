@@ -1,5 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { stubConnections } from "../../runtime/connections.test-fixture";
+import { connectionFixture, stubConnections } from "../../runtime/connections.test-fixture";
 import * as crypto from "./crypto";
 import { registerSettings, SETTINGS } from "./defaults";
 import { ENCRYPTED_SETTING_PREFIX, encodeSecretCache, readSecretCache } from "./secret-cache";
@@ -40,9 +40,9 @@ test("memoized values do not survive a change of encryption key", async () => {
   await expect(readSecretCache(key, encoded)).rejects.toThrow();
 });
 
-test("the declared secret count bounds the memo and recent entries survive eviction", async () => {
+test("the declared setting count bounds the memo and recent entries survive eviction", async () => {
   stubConnections();
-  const limit = SETTINGS.filter((setting) => setting.kind === "secret").length;
+  const limit = SETTINGS.length;
   const values = await Promise.all(Array.from({ length: limit + 1 }, (_, index) => encodeSecretCache(key, `value-${index}`)));
   const decrypt = spyOn(crypto, "decryptValue");
   for (const value of values.slice(0, limit)) await readSecretCache(key, value);
@@ -53,4 +53,16 @@ test("the declared secret count bounds the memo and recent entries survive evict
   expect(decrypt).toHaveBeenCalledTimes(before);
   await readSecretCache(key, values[1]!);
   expect(decrypt).toHaveBeenCalledTimes(before + 1);
+});
+
+test("a full ring change invalidates memoized and shared ciphertext even when current stays unchanged", async () => {
+  const A = "ab".repeat(32),
+    B = "cd".repeat(32);
+  const snapshot = stubConnections({ appSecret: { current: B, previous: A } });
+  const encoded = await encodeSecretCache(key, "previously readable");
+  expect(await readSecretCache(key, encoded)).toBe("previously readable");
+  snapshot.mockReturnValue(connectionFixture({ appSecret: { current: B } }));
+  await expect(readSecretCache(key, encoded)).rejects.toThrow();
+  snapshot.mockReturnValue(connectionFixture({ appSecret: { current: B, previous: A } }));
+  expect(await readSecretCache(key, encoded)).toBe("previously readable");
 });

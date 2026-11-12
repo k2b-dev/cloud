@@ -17,6 +17,7 @@
     "@k2b/cloud": "workspace:*",
     "@k2b/ssr": "workspace:*",
     "@k2b/stdlib": "catalog:",
+    "@k2b/sync": "catalog:",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
     "jose": "catalog:",

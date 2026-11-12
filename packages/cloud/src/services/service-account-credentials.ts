@@ -459,6 +459,7 @@ export const createResourceApiToken = async (params: {
   const serviceAccount = await serviceAccounts.get({ id: params.serviceAccountId });
   if (!serviceAccount || serviceAccount.kind !== "resource_bound") return fail(err.notFound("Resource service account"));
   if (serviceAccount.status !== "active") return fail(err.badInput("Resource service account is disabled"));
+  if (serviceAccount.resourceType === "cloud.app") return fail(err.badInput("Applications authenticate with an app key"));
 
   return sql.begin(async (tx) => {
     const result = await insertApiToken(tx, {
@@ -547,7 +548,6 @@ export const listOverview = async (config?: {
   pagination?: PageParams;
   filter?: {
     search?: string;
-    automatic?: "hide" | "include";
     serviceAccountKind?: ServiceAccount["kind"];
     credentialStatus?: ServiceAccountCredentialStatus;
     userId?: string;
@@ -556,7 +556,7 @@ export const listOverview = async (config?: {
     resourceId?: string;
     serviceAccountId?: string;
   };
-}): Promise<Paginated<ServiceAccountCredentialOverview> & { hiddenAutomaticCount?: number }> => {
+}): Promise<Paginated<ServiceAccountCredentialOverview>> => {
   const page = Math.max(1, config?.pagination?.page ?? 1);
   const perPage = Math.max(1, Math.min(config?.pagination?.perPage ?? 100, 500));
   const offset = (page - 1) * perPage;
@@ -569,16 +569,8 @@ export const listOverview = async (config?: {
   const resourceId = config?.filter?.resourceId ?? null;
   const serviceAccountId = config?.filter?.serviceAccountId ?? null;
 
-  const hideAutomatic = config?.filter?.automatic === "hide";
-  // Remove this predicate when runtime keys are no longer issued (step 8).
-  const automatic = sql`EXISTS (
-    SELECT 1 FROM auth.app_workload_instances i
-    WHERE i.credential_id = c.id OR i.previous_credential_id = c.id
-  )`;
-
-  const [countRow] = await sql<{ count: string; automatic_count: string }[]>`
-    SELECT COUNT(*)::text AS count,
-      ${hideAutomatic ? sql`COUNT(*) FILTER (WHERE ${automatic})` : sql`0`}::text AS automatic_count
+  const [countRow] = await sql<{ count: string }[]>`
+    SELECT COUNT(*)::text AS count
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     LEFT JOIN auth.users du ON du.id = sa.delegated_user_id
@@ -653,16 +645,13 @@ export const listOverview = async (config?: {
         OR sa.resource_type ILIKE '%' || ${search} || '%'
         OR sa.resource_id ILIKE '%' || ${search} || '%'
       )
-      AND ${hideAutomatic ? sql`NOT ${automatic}` : sql`TRUE`}
     ORDER BY c.created_at DESC, c.id DESC
     LIMIT ${perPage}
     OFFSET ${offset}
   `;
 
-  const hiddenAutomaticCount = Number.parseInt(countRow?.automatic_count ?? "0", 10);
-  const total = Number.parseInt(countRow?.count ?? "0", 10) - hiddenAutomaticCount;
+  const total = Number.parseInt(countRow?.count ?? "0", 10);
   return {
-    ...(hideAutomatic ? { hiddenAutomaticCount } : {}),
     items: rows.map(mapCredentialOverview),
     page,
     perPage,
@@ -782,46 +771,7 @@ export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL 
       db,
     });
   };
-  const revokeWithWorkload = async (db: SQL): Promise<Result<void>> => {
-    if (params.actor) {
-      const [instance] = await db<{ app_id: string; instance_id: string; service_account_id: string }[]>`
-        SELECT i.app_id, i.instance_id, c.service_account_id FROM auth.app_workload_instances i
-        JOIN auth.service_account_credentials c ON c.id = i.credential_id
-        WHERE i.credential_id = ${params.credentialId}::uuid OR i.previous_credential_id = ${params.credentialId}::uuid
-      `;
-      if (instance) {
-        // Same lock order as Core rotation. Resolve the latest generation *after* waiting,
-        // so an admin revoking the displayed token also revokes an overlapping rotation.
-        await db`SELECT id FROM auth.service_accounts WHERE id = ${instance.service_account_id}::uuid FOR UPDATE`;
-        // The account is the durable app-wide off switch, including future process instances.
-        await db`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${instance.service_account_id}::uuid`;
-        await audit.record(
-          {
-            action: "service_account.disable",
-            outcome: "allowed",
-            actor: actorForUser(params.actor),
-            target: { type: "service_account", id: instance.service_account_id },
-            metadata: { appId: instance.app_id, serviceAccountId: instance.service_account_id, status: "disabled" },
-          },
-          db,
-        );
-        const [current] = await db<{ credential_id: string; previous_credential_id: string | null }[]>`
-          SELECT credential_id, previous_credential_id FROM auth.app_workload_instances
-          WHERE app_id = ${instance.app_id} AND instance_id = ${instance.instance_id}
-        `;
-        if (current) {
-          for (const credentialId of [current.credential_id, current.previous_credential_id]) {
-            if (!credentialId) continue;
-            const result = await run(db, credentialId);
-            if (!result.ok) return result;
-          }
-          return ok();
-        }
-      }
-    }
-    return run(db);
-  };
-  return options.db ? revokeWithWorkload(options.db) : sql.begin(revokeWithWorkload);
+  return options.db ? run(options.db) : sql.begin(run);
 };
 
 const findActiveByTokenPrefix = async (tokenPrefix: string): Promise<DbCredentialWithSecretRow | null> => {

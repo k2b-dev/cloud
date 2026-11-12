@@ -2,7 +2,7 @@
 id: core-admin
 title: Administration
 icon: ti ti-settings
-description: Use the administration overview, publish announcements, change Core settings, and rotate app credentials.
+description: Use the administration overview, publish announcements, change Core settings, and rotate app keys.
 order: 120
 ---
 
@@ -14,7 +14,7 @@ The account settings link to the matching English guide with **Documentation**. 
 
 :::reference
 - **Overview:** Lists the registered apps with administration pages. It also counts the registered apps, the administration pages that you can open, and the navigation entries that people see.
-- **Apps:** Every app with its state, access, keys and events. Open an app to see why it needs attention and what to do. Its **Keys** also hold the tokens for apps that run on the host. User mandates still limit the actions that a key or token can take.
+- **Apps:** Every app with its state, access, keys and events. Open an app to see why it needs attention and what to do. Its **Keys** manage the app identity. User mandates still limit background actions.
 - **Announcements:** Create and edit announcements or banners. An entry is active, scheduled, or expired, depending on its publish time and expiry time.
 - **Settings:** Edit the settings by group. Each field shows its current value. It also shows the source of the value where the settings service provides it.
 :::
@@ -67,31 +67,20 @@ On a fresh installation, the operator sets a temporary `ADMIN_LOGIN_TOKEN` for C
 
 Configure FreeIPA and its administrator group mapping in the settings. Cloud has no environment bootstrap for FreeIPA.
 
-## Rotate an app credential {icon="key"}
+## Rotate an app key {icon="key"}
 
-Core issues and rotates app credentials automatically. In **Apps**, open the app, then
-**Keys → Tokens for host operation**. It lists them as `Runtime <instance>` and lets you revoke them. Revoking an automatic
-credential disables background access for every instance of that app, including
-after a restart. To restore it, choose **Turn on again** at the top of **Keys**. The app then obtains a new credential automatically. A host-run override
-still needs manual replacement if its token was revoked.
-
-The following steps create an optional override for an app running on the host.
+Every app except Core and Gateway needs its own enrolled key to start and make
+signed calls. In **Apps**, open the app and choose **Keys**.
 
 :::steps
-1. In **Apps**, open the app and choose **Keys**.
-2. Unfold **Tokens for host operation** and choose **Create token**.
-3. Enter the **Name** and, if needed, the expiry time.
-4. Choose **Create token** in the dialog.
-5. Copy the token. Cloud shows it only once; afterwards only its metadata and **Revoke** stay available.
+1. Choose **Create key**, then **Create**.
+2. Save the private key now by downloading or copying it. Core stores only the public part.
+3. Ask the operator to mount the new key and restart every instance.
+4. Verify startup and the app's background work.
+5. Revoke the old key after every instance uses the replacement.
 :::
 
-Then switch the app to the new token:
-
-:::steps
-1. Give the token only to the owning app, as `CLOUD_APP_CREDENTIAL`, through the secret store of the deployment.
-2. Set Core's private address in `CLOUD_CORE_INTERNAL_ORIGIN`. Background calls need it.
-3. Apply the change and check the background work of the app.
-4. Choose **Revoke** for the old credential and confirm in the dialog.
-:::
-
-Revoking stops new calls with that credential.
+Revocation stops new signed requests immediately. Revoking the only active key
+requires a new key before the app can restart. If background access is off,
+**Turn on again** restores the account; revoked keys stay revoked. OAuth issuer
+keys need explicit `oauth:issue` access when enrolled through the CLI.

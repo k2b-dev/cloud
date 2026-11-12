@@ -1,25 +1,18 @@
-import { beforeAll, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
-import { createIdentityOAuthIssuanceRoutes } from "../../core/src/api/identity-oauth-issuance";
 import { migrate as migrateAuth } from "../../core/src/migrate/core/auth";
 import { migrate as migrateSettings } from "../../core/src/migrate/core/settings";
 import { migrate } from "./migrate";
 import * as clients from "./service/clients";
+import { stageOAuthAuthority } from "./service/issuer-authority";
 import * as refreshTokens from "./service/refresh-tokens";
-import type { OAuthUserGrantReference } from "./service/token-authority";
+import { OAuthAuthorityRejectedError } from "./service/token-authority";
 import * as tokens from "./service/tokens";
 
 // This suite exercises schema upgrades on the shared `_test` database and restores the schema itself.
 const suite = suiteFor("database");
-const deferred = () => {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-};
 const fixture = async () => {
   const [user] = await sql<{ id: string }[]>`
     INSERT INTO auth.users (uid, provider, profile) VALUES (${crypto.randomUUID()}, 'local', 'user') RETURNING id
@@ -50,30 +43,6 @@ const waitForBlockedBy = async (pid: number) => {
   }
   throw new Error("Expected reservation release to wait for the Core claim transaction");
 };
-const coreRoutes = async (options: { beforeSign?: () => Promise<void>; onTransaction?: (pid: number) => void } = {}) => {
-  const { privateKey } = await generateKeyPair("RS256");
-  return createIdentityOAuthIssuanceRoutes({
-    authenticate: () => true,
-    issuer: async () => "https://cloud.test",
-    withActiveSigner: (_purpose, callback) =>
-      sql.begin(async (db) => {
-        const [row] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-        options.onTransaction?.(row!.pid);
-        const result = await callback(
-          { kid: crypto.randomUUID(), key: privateKey, signUntil: new Date(Date.now() + 60_000), issuer: "https://cloud.example.test" },
-          db,
-        );
-        await options.beforeSign?.();
-        return result;
-      }),
-  });
-};
-const issue = (routes: Awaited<ReturnType<typeof coreRoutes>>, grant: OAuthUserGrantReference) =>
-  routes.request("/oauth/token", {
-    method: "POST",
-    headers: { authorization: "Bearer workload", "content-type": "application/json" },
-    body: JSON.stringify({ tokens: [{ kind: "user_access", grant, expiresIn: 3_600 }] }),
-  });
 
 suite("OAuth external review regressions", () => {
   beforeAll(async () => {
@@ -82,84 +51,61 @@ suite("OAuth external review regressions", () => {
     await migrate();
   }, 60_000);
 
-  test("transport failure releases an unclaimed attempt and fences late Core even after re-reservation", async () => {
+  beforeEach(async () => {
+    const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
+    setSystemTime(clock!.now);
+  });
+  afterEach(() => setSystemTime());
+
+  test.each([400, 403, 500, 503])("a definitive Core rejection releases a refresh reservation: %s", async (status) => {
     const { userId, client } = await fixture();
     const token = await activeRefreshFamily({
-      expiresAt: new Date(Date.now() + refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
       userId,
       client,
       scopes: ["openid", "offline_access"],
       audiences: ["cloud", client.clientId],
+      expiresAt: new Date(Date.now() + 3600_000),
     });
-    const routes = await coreRoutes();
-    const references: OAuthUserGrantReference[] = [];
     await expect(
-      refreshTokens.rotate(token.refreshToken, client, undefined, undefined, async ({ authorityGrant }) => {
-        references.push(authorityGrant);
-        throw new Error("Core unavailable");
+      refreshTokens.rotate(token.refreshToken, client, undefined, undefined, async () => {
+        throw new OAuthAuthorityRejectedError(status);
       }),
-    ).rejects.toThrow("Core unavailable");
-    const [released] = await sql<{ status: string; authority_nonce: string | null; authority_issued_at: Date | null }[]>`
-      SELECT status, authority_nonce, authority_issued_at FROM oauth.refresh_tokens WHERE family_id = ${token.familyId}::uuid
-    `;
-    expect(released).toMatchObject({ status: "active", authority_nonce: null, authority_issued_at: null });
+    ).rejects.toBeInstanceOf(OAuthAuthorityRejectedError);
+    const [released] = await sql`SELECT status,authority_issued_at FROM oauth.refresh_tokens WHERE family_id=${token.familyId}::uuid`;
+    expect(released).toMatchObject({ status: "active", authority_issued_at: null });
     const result = await refreshTokens.rotate(token.refreshToken, client, undefined, undefined, async ({ authorityGrant }) => {
-      expect(authorityGrant.nonce).not.toBe(references[0]!.nonce);
-      expect((await issue(routes, references[0]!)).status).toBe(403);
-      expect((await issue(routes, authorityGrant)).status).toBe(200);
+      await sql`UPDATE oauth.refresh_tokens SET authority_issued_at=now() WHERE id=${authorityGrant.tokenId}::uuid`;
     });
     expect(result.ok).toBe(true);
-  }, 30_000);
+  });
 
-  test("Core claim wins concurrent release: lost response revokes the family without reissuance", async () => {
+  test("an uncertain transport outcome keeps the refresh consumed without retry", async () => {
     const { userId, client } = await fixture();
     const token = await activeRefreshFamily({
-      expiresAt: new Date(Date.now() + refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
       userId,
       client,
       scopes: ["openid", "offline_access"],
       audiences: ["cloud", client.clientId],
+      expiresAt: new Date(Date.now() + 3600_000),
     });
-    const entered = deferred();
-    const finish = deferred();
-    let corePid = 0;
-    const routes = await coreRoutes({
-      onTransaction: (pid) => {
-        corePid = pid;
-      },
-      beforeSign: async () => {
-        entered.resolve();
-        await finish.promise;
-      },
-    });
-    let coreResponse: Promise<Response> | undefined;
-    const rotation = refreshTokens.rotate(token.refreshToken, client, undefined, undefined, async ({ authorityGrant }) => {
-      coreResponse = Promise.resolve(issue(routes, authorityGrant));
-      await entered.promise;
-      throw new Error("response lost while Core signs");
-    });
-    const outcome = rotation.then(
-      () => null,
-      (error: unknown) => error,
-    );
-    try {
-      await entered.promise;
-      await waitForBlockedBy(corePid);
-    } finally {
-      finish.resolve();
-    }
-    expect((await coreResponse)?.status).toBe(200);
-    const error = await outcome;
-    expect(error).toBeInstanceOf(Error);
-    if (error instanceof Error) expect(error.message).toBe("response lost while Core signs");
-    const [state] = await sql<{ status: string; issued: boolean; family_status: string }[]>`
-      SELECT token.status, token.authority_issued_at IS NOT NULL AS issued, family.status AS family_status
-      FROM oauth.refresh_tokens token JOIN oauth.refresh_token_families family ON family.id = token.family_id
-      WHERE family.id = ${token.familyId}::uuid
-    `;
-    expect(state).toEqual({ status: "revoked", issued: true, family_status: "revoked" });
+    let calls = 0;
+    await expect(
+      refreshTokens.rotate(token.refreshToken, client, undefined, undefined, async ({ authorityGrant }) => {
+        calls++;
+        await stageOAuthAuthority(
+          [{ kind: "user_access", grant: authorityGrant, expiresIn: 60 }],
+          "https://cloud.test",
+          new Date(Date.now() + 3600_000),
+        );
+        throw new TypeError("Core response was lost");
+      }),
+    ).rejects.toThrow("Core response was lost");
+    expect(calls).toBe(1);
+    const [state] = await sql`SELECT t.status,t.authority_issued_at,f.status AS family_status
+      FROM oauth.refresh_tokens t JOIN oauth.refresh_token_families f ON f.id=t.family_id WHERE f.id=${token.familyId}::uuid`;
+    expect(state).toMatchObject({ status: "revoked", family_status: "revoked", authority_issued_at: expect.any(Date) });
     expect((await refreshTokens.rotate(token.refreshToken, client)).ok).toBe(false);
-  }, 30_000);
+  });
 
   test("refresh reservation waits for the family without locking its token", async () => {
     const { userId, client } = await fixture();

@@ -49,6 +49,7 @@ export const createRegistryMembership = (
     hostname?: string;
     startedAt?: number;
     bootstrap?: AppInstanceRecord["bootstrap"];
+    secrets?: () => AppInstanceRecord["secrets"];
     writeTimeoutMs?: number;
   },
 ) => {
@@ -61,7 +62,6 @@ export const createRegistryMembership = (
     hostname: options.hostname ?? hostname(),
     startedAt: options.startedAt ?? Date.now(),
     entries: {},
-    ...(appId === "core" ? { legacyEvidence: 1 as const } : {}),
     ...(options.bootstrap ? { bootstrap: structuredClone(options.bootstrap) } : {}),
   };
   const writeTimeoutMs = options.writeTimeoutMs ?? HEARTBEAT_WRITE_TIMEOUT_MS;
@@ -85,7 +85,11 @@ export const createRegistryMembership = (
       });
     if (result === null) throw new Error(`Registry membership lock unavailable for app ${appId}`);
   };
-  const upsert = () => options.registry().upsert({ key, value });
+  const upsert = () => {
+    const secrets = options.secrets?.();
+    if (secrets) value.secrets = secrets;
+    return options.registry().upsert({ key, value });
+  };
   const publishShared = async (): Promise<void> => {
     if (left) return;
     await upsert();
@@ -171,6 +175,11 @@ export const createRegistryMembership = (
     },
     renew: async (): Promise<void> => {
       if (left) return;
+      if (options.secrets) {
+        await upsert();
+        if (left) await options.registry().delete({ key });
+        return;
+      }
       if (!(await options.registry().touch({ key }))) {
         await locked(async () => {
           if (!left) await upsert();

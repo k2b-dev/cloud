@@ -8,6 +8,7 @@
 import { aiDictationRoutes, aiSkillsRoutes, stopLiveDictationSessions } from "@k2b/cloud/ai";
 import { aiLive, aiLiveChannels } from "@k2b/cloud/ai/live";
 import {
+  createAdminSecretsRoutes,
   createAiOpenAiRoutes,
   createAppAccessRoutes,
   createAppBootstrapRoutes,
@@ -17,6 +18,7 @@ import {
   createPwaPhoneRoutes,
 } from "@k2b/cloud/api";
 import { type AppContext, type AuthContext, middleware } from "@k2b/cloud/server";
+import { platformSecretOwners } from "@k2b/cloud/services";
 import { createIdentityPublicRoutes } from "@k2b/cloud/services/identity";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
@@ -50,6 +52,7 @@ const identityPublicRoutes = createIdentityPublicRoutes();
 // Dedicated brokers must precede Task auth on /api/ai/*: models-only OpenAI keys
 // and non-user Skills readers cannot pass the Task router's user requirement.
 const coreApi = new Hono()
+  .route("/admin/secrets", createAdminSecretsRoutes())
   .route("/admin/apps", createAdminAppListingRoutes())
   .route("/admin/apps", createAdminAppStatusRoutes())
   .route("/ai/openai/v1", createAiOpenAiRoutes())
@@ -78,6 +81,7 @@ const router = new Hono<AuthContext>()
   .route("/", pages);
 
 const result = await app.start({
+  secretOwners: platformSecretOwners(),
   fetch: router.fetch,
   capabilities: aiCapabilities,
   help: coreHelp,

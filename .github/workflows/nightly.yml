@@ -289,19 +289,30 @@ jobs:
             --env SYNC_REPLICAS=1
             --env SYNC_NAMESPACE=nightly
             --env APP_SECRET="$APP_SECRET"
-            --env CLOUD_IDENTITY_JWKS_ORIGIN=http://app-core:3000
-            --env CLOUD_OAUTH_JWKS_ORIGIN=http://app-oauth:3000
             --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000)
           docker run --detach --name app-core "${common[@]}" \
             --env CLOUD_IDENTITY_KEY_ENCRYPTION_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
-            --env CLOUD_OAUTH_BROKER_SECRET=abababababababababababababababababababababababababababababababab \
             --env ADMIN_LOGIN_TOKEN=nightly-admin \
             cloud-core:nightly
           docker run --detach --name gateway "${common[@]}" --publish 127.0.0.1:3000:3000 cloud-gateway:nightly
-          docker run --detach --name app-accounts "${common[@]}" cloud-accounts:nightly
-          docker run --detach --name app-chat "${common[@]}" cloud-chat:nightly
-          docker run --detach --name app-grids "${common[@]}" cloud-grids:nightly
-          docker run --detach --name app-mail "${common[@]}" cloud-mail:nightly
+          # Enroll production identities before starting ordinary applications.
+          umask 077
+          docker cp scripts/fixtures/enroll-image-apps.ts app-core:/tmp/enroll-image-apps.ts
+          docker exec app-core bun /tmp/enroll-image-apps.ts accounts chat grids mail > "$RUNNER_TEMP/app-keys.json"
+          app_identity=(--network cloud-smoke --restart unless-stopped
+            --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000)
+          jq -r '.accounts' "$RUNNER_TEMP/app-keys.json" > "$RUNNER_TEMP/accounts.key"
+          sudo chown 1000:1000 "$RUNNER_TEMP/accounts.key"
+          jq -r '.chat' "$RUNNER_TEMP/app-keys.json" > "$RUNNER_TEMP/chat.key"
+          sudo chown 1000:1000 "$RUNNER_TEMP/chat.key"
+          jq -r '.grids' "$RUNNER_TEMP/app-keys.json" > "$RUNNER_TEMP/grids.key"
+          sudo chown 1000:1000 "$RUNNER_TEMP/grids.key"
+          jq -r '.mail' "$RUNNER_TEMP/app-keys.json" > "$RUNNER_TEMP/mail.key"
+          sudo chown 1000:1000 "$RUNNER_TEMP/mail.key"
+          docker run --detach --name app-accounts "${app_identity[@]}" --env CLOUD_APP_KEY_FILE=/run/secrets/accounts.key --volume "$RUNNER_TEMP/accounts.key:/run/secrets/accounts.key:ro" cloud-accounts:nightly
+          docker run --detach --name app-chat "${app_identity[@]}" --env CLOUD_APP_KEY_FILE=/run/secrets/chat.key --volume "$RUNNER_TEMP/chat.key:/run/secrets/chat.key:ro" cloud-chat:nightly
+          docker run --detach --name app-grids "${app_identity[@]}" --env CLOUD_APP_KEY_FILE=/run/secrets/grids.key --volume "$RUNNER_TEMP/grids.key:/run/secrets/grids.key:ro" cloud-grids:nightly
+          docker run --detach --name app-mail "${app_identity[@]}" --env CLOUD_APP_KEY_FILE=/run/secrets/mail.key --volume "$RUNNER_TEMP/mail.key:/run/secrets/mail.key:ro" cloud-mail:nightly
           # Each app serves its OpenAPI document without a session once the gateway routes to it.
           for _attempt in {1..90}; do
             routed=0

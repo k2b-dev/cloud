@@ -34,6 +34,34 @@ const previousMailStartup = (previousLiveFunction: string) =>
  * to lose when the baseline is regenerated.
  */
 suite("mail baseline schema", () => {
+  test("ciphertext-only provider rewrap preserves timestamps while credential edits still touch them", async () => {
+    await migrate();
+    const rollback = new Error("rollback rotation timestamp fixture");
+    await expect(
+      sql.begin(async (tx) => {
+        const [mailbox] = await tx<{ id: string }[]>`INSERT INTO mail.mailboxes(short_id,name)
+        VALUES (${newShortId()}, 'Rotation timestamp fixture') RETURNING id`;
+        const [connection] = await tx<{ id: string }[]>`INSERT INTO mail.provider_connections
+        (owner_mailbox_id,name,email,username,imap_host,imap_port,imap_tls_mode,smtp_host,smtp_port,smtp_tls_mode,
+         secret_kind,encrypted_secret,updated_at)
+        VALUES (${mailbox!.id}::uuid,'Fixture','rotation@example.test','rotation@example.test',
+          'imap.example.test',993,'implicit','smtp.example.test',465,'implicit',
+          'password','old-ciphertext','2026-01-02T00:00:00Z') RETURNING id`;
+        const [before] = await tx`SELECT updated_at,secret_revision FROM mail.provider_connections WHERE id=${connection!.id}::uuid`;
+        await tx`UPDATE mail.provider_connections SET encrypted_secret='current-ciphertext' WHERE id=${connection!.id}::uuid`;
+        const [rewrapped] = await tx`SELECT updated_at,secret_revision FROM mail.provider_connections WHERE id=${connection!.id}::uuid`;
+        expect(rewrapped).toEqual(before);
+        await tx`UPDATE mail.provider_connections SET encrypted_secret='user-write',secret_revision=secret_revision+1 WHERE id=${connection!.id}::uuid`;
+        const [edited] =
+          await tx`SELECT updated_at,secret_revision,now() AS transaction_time FROM mail.provider_connections WHERE id=${connection!.id}::uuid`;
+        expect(edited!.secret_revision).toBe(before!.secret_revision + 1);
+        expect(edited!.updated_at).toEqual(edited!.transaction_time);
+        expect(edited!.updated_at).not.toEqual(before!.updated_at);
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+  });
+
   test("records the baseline and compatibility markers once and preserves their timestamps on rerun", async () => {
     await migrate();
     const first = await sql<{ version: number; name: string; applied_at: Date }[]>`

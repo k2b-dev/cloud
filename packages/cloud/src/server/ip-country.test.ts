@@ -65,8 +65,9 @@ beforeEach(() => {
     lastUsedAt: null,
     connectionsAllowed: true,
     oauthIssueAllowed: false,
+    installationId: key.installationId,
+    activityDue: true,
   });
-  spyOn(keys, "getInstallationId").mockResolvedValue(key.installationId);
   spyOn(keys, "touchAppKey").mockResolvedValue();
   spyOn(bootstrap, "consumeBootstrapProof").mockResolvedValue(true);
   spyOn(bootstrap, "bootstrapRateLimit").mockResolvedValue(100);

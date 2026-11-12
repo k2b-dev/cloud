@@ -2,7 +2,7 @@ import { spyOn } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { User } from "../contracts/shared";
-import { stubConnections } from "../runtime/connections.test-fixture";
+import { stubAppIdentity, stubConnections } from "../runtime/connections.test-fixture";
 import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
@@ -12,7 +12,6 @@ import * as heartbeat from "./heartbeat";
 import { clearProcessApplicationId } from "./process-identity";
 import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
-import * as workload from "./workload-credential";
 
 export const inventory = {
   id: "inventory",
@@ -58,13 +57,14 @@ export const publishedEntry = async (
   const sync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
     stubConnections(),
+    stubAppIdentity(),
     spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
     spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };
     }),
-    // Startup registers the instance and obtains its workload credential before lifecycle work.
+    // Startup registers the instance before lifecycle work.
     spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
       instanceId: "0123456789abcdef",
       register: async () => {},
@@ -73,11 +73,6 @@ export const publishedEntry = async (
       publish: async () => {},
       adopt: async () => {},
       renew: async () => {},
-    }),
-    spyOn(workload, "createAppWorkloadCredential").mockReturnValue({
-      start: async () => {},
-      refresh: async () => {},
-      stop: async () => {},
     }),
     spyOn(heartbeat, "createHeartbeat").mockImplementation((_id, entry) => {
       entries.push(entry);

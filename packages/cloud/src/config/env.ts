@@ -130,7 +130,19 @@ const registry = defineEnv({
     scope: "secret",
     secretFile: true,
     example: "change-me-generate-with-openssl-rand-hex-32",
-    doc: "Deployment-wide secret for at-rest settings encryption and signed cursors; generate once with `openssl rand -hex 32` and never change it after data has been written.",
+    doc: "Deployment-wide secret for at-rest encryption and purpose signing; generate with `openssl rand -hex 32` and follow the APP_SECRET rotation procedure before changing it.",
+  },
+  APP_SECRET_NEXT: {
+    schema: z.string(),
+    scope: "secret",
+    secretFile: true,
+    doc: "Optional 64-hex-character next APP_SECRET, distributed before cutover; mutually exclusive with APP_SECRET_PREVIOUS and distinct from APP_SECRET.",
+  },
+  APP_SECRET_PREVIOUS: {
+    schema: z.string(),
+    scope: "secret",
+    secretFile: true,
+    doc: "Optional previous APP_SECRET retained for reads and automatic data rewrap; remove only after strict secrets status and token expiry, following the rotation guide.",
   },
   ADMIN_LOGIN_TOKEN: {
     schema: z.string(),
@@ -175,35 +187,15 @@ const registry = defineEnv({
     secretFile: true,
     doc: "Core only: old KEK set during an explicit rolling rewrap of stored identity signing keys, then removed.",
   },
-  CLOUD_OAUTH_BROKER_SECRET: {
-    schema: z.string(),
-    scope: "secret",
-    secretFile: true,
-    doc: "Deprecated: Core and OAuth legacy 64-hex broker secret, used only when OAuth has no app key. Configure an OAuth app key instead; retained for this release.",
-  },
   CLOUD_APP_KEY: {
     schema: z.string(),
     scope: "secret",
     secretFile: true,
-    doc: "App Ed25519 private key for startup bootstrap, background calls and OAuth issuance; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Built-in apps need only the key and direct Core origin; retain infrastructure env for Core and Gateway.",
+    doc: "Required Ed25519 private key for serving applications, background calls and OAuth issuance; keyless infrastructure-only scripts may use initializePlatform with source env; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Built-in apps need only the key and direct Core origin; retain infrastructure env for Core and Gateway.",
   },
   CLOUD_CORE_INTERNAL_ORIGIN: {
     schema: z.string(),
     doc: "Direct Core listener origin for app connection bootstrap, OAuth issuance, mandate-backed background work and internal callbacks; never the gateway. Cross-host bootstrap requires verified TLS; install private CAs through NODE_EXTRA_CA_CERTS before the first fetch.",
-  },
-  CLOUD_APP_CREDENTIAL: {
-    schema: z.string(),
-    scope: "secret",
-    secretFile: true,
-    doc: "Deprecated: host-run override for the automatically delivered workload credential when no app key is configured; use CLOUD_APP_KEY or CLOUD_APP_KEY_FILE instead. Retained for this release.",
-  },
-  CLOUD_IDENTITY_JWKS_ORIGIN: {
-    schema: z.string(),
-    doc: "Deprecated: use `CLOUD_CORE_INTERNAL_ORIGIN`; the explicit old origin remains honored for this release. Optional private origin of the Core listener for session and invocation JWKS; unset uses `CLOUD_CORE_INTERNAL_ORIGIN`, then the public issuer origin.",
-  },
-  CLOUD_OAUTH_JWKS_ORIGIN: {
-    schema: z.string(),
-    doc: "Deprecated: explicit legacy OAuth JWKS origin, honored for this release. Unset uses Core internal OAuth JWKS through CLOUD_CORE_INTERNAL_ORIGIN, then the public issuer origin.",
   },
 
   // Build and standalone development

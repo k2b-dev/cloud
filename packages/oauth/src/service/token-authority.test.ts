@@ -1,41 +1,58 @@
-import { describe, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { formatAppKey, importAppPublicKey } from "@k2b/cloud/app-key";
 import { env } from "@k2b/cloud/config";
+import type { OAuthAuthorityStatement } from "@k2b/cloud/contracts";
 import { decodeJwt, jwtVerify } from "jose";
-import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
+import { APP_KEY_FIXTURES, appKeyFixture } from "../../../../scripts/fixtures/app-key-fixtures";
 import {
   issueOAuthTokenBatch,
   OAuthAuthorityGrantRejectedError,
-  type OAuthTokenRequest,
+  OAuthAuthorityRejectedError,
   probeOAuthTokenAuthority,
   startOAuthDeviceApproval,
 } from "./token-authority";
 
-const request: OAuthTokenRequest = {
-  kind: "user_access",
-  grant: { kind: "authorization_code", code: "opaque-code", nonce: "a5ae9b9c-94f4-49a8-a954-c87839affc3d" },
-  expiresIn: 3_600,
+const descriptor = Object.getOwnPropertyDescriptor(env, "CLOUD_APP_KEY")!;
+beforeEach(() => {
+  setSystemTime(new Date("2030-01-02T03:04:05Z"));
+  Object.defineProperty(env, "CLOUD_APP_KEY", { value: appKeyFixture("oauth"), configurable: true });
+});
+afterEach(() => {
+  Object.defineProperty(env, "CLOUD_APP_KEY", descriptor);
+  setSystemTime();
+});
+
+const request: OAuthAuthorityStatement = {
+  clientId: "test-client",
+  subject: { kind: "user", userId: "68df7d96-aaab-420a-ab1e-62a67e44d3be", authEpoch: 7 },
+  scopes: ["read"],
+  audiences: ["cloud"],
+  resource: null,
+  nonce: null,
+  loginExpiresAt: "2030-01-02T05:04:05.000Z",
+  terminalLoginId: null,
+  tokens: [{ kind: "user_access", expiresIn: 3600 }],
 };
 
 describe("OAuth Core token authority client", () => {
-  test("rejects invalid broker configuration without a network request or credential fallback", async () => {
+  test("a keyless issuer fails before any network request", async () => {
+    Object.defineProperty(env, "CLOUD_APP_KEY", { value: undefined, configurable: true });
     let calls = 0;
-    const fetch = async () => {
-      calls += 1;
-      return new Response(null, { status: 204 });
+    const options = {
+      origin: "http://core.internal:3000",
+      fetch: async () => {
+        calls++;
+        return new Response();
+      },
     };
-    for (const brokerSecret of ["", "cld_old_workload_token", "a".repeat(63), "z".repeat(64)]) {
-      const options = { brokerSecret, origin: "http://core.internal:3000", fetch };
-      await expect(probeOAuthTokenAuthority(options)).rejects.toThrow("64 hexadecimal characters");
-      await expect(issueOAuthTokenBatch([request], options)).rejects.toThrow("64 hexadecimal characters");
-    }
+    await expect(probeOAuthTokenAuthority(options)).rejects.toThrow("CLOUD_APP_KEY_FILE");
+    await expect(issueOAuthTokenBatch(request, options)).rejects.toThrow("CLOUD_APP_KEY_FILE");
     expect(calls).toBe(0);
   });
-  test("sends one closed batch with broker authentication", async () => {
+  test("sends one closed batch with signed app authentication", async () => {
     const seen: Request[] = [];
-    const tokens = await issueOAuthTokenBatch([request], {
+    const tokens = await issueOAuthTokenBatch(request, {
       origin: "http://core.internal:3000",
-      brokerSecret: "abababababababababababababababababababababababababababababababab",
       fetch: async (input, init) => {
         seen.push(new Request(input, init));
         return Response.json({ tokens: ["signed.jwt"] });
@@ -45,8 +62,8 @@ describe("OAuth Core token authority client", () => {
     expect(tokens).toEqual(["signed.jwt"]);
     expect(seen[0]?.url).toBe("http://core.internal:3000/api/_internal/identity/v1/oauth/token");
     expect(seen[0]?.redirect).toBe("error");
-    expect(seen[0]?.headers.get("authorization")).toBe("Bearer abababababababababababababababababababababababababababababababab");
-    expect(await seen[0]?.json()).toEqual({ tokens: [request] });
+    expect(decodeJwt(seen[0]!.headers.get("authorization")!.slice(7)).iss).toBe("oauth");
+    expect(await seen[0]?.json()).toEqual(request);
   });
 
   test("does not retry failed or malformed authority responses", async () => {
@@ -56,28 +73,65 @@ describe("OAuth Core token authority client", () => {
       return new Response(null, { status: 503 });
     };
     await expect(
-      issueOAuthTokenBatch([request], {
+      issueOAuthTokenBatch(request, {
         origin: "http://core.internal:3000",
-        brokerSecret: "abababababababababababababababababababababababababababababababab",
         fetch,
       }),
     ).rejects.toThrow("status 503");
     expect(calls).toBe(1);
 
     await expect(
-      issueOAuthTokenBatch([request], {
+      issueOAuthTokenBatch(request, {
         origin: "http://core.internal:3000",
-        brokerSecret: "abababababababababababababababababababababababababababababababab",
         fetch: async () => Response.json({ tokens: [] }),
       }),
     ).rejects.toThrow("invalid token batch");
+  });
+
+  test.each([400, 403, 500, 503])("classifies complete Core errors as releasable without retry: %s", async (status) => {
+    let calls = 0;
+    await expect(
+      issueOAuthTokenBatch(request, {
+        origin: "http://core.internal:3000",
+        fetch: async () => {
+          calls += 1;
+          return new Response(null, { status });
+        },
+      }),
+    ).rejects.toBeInstanceOf(OAuthAuthorityRejectedError);
+    expect(calls).toBe(1);
+  });
+  test("transport loss and malformed success remain uncertain without retry", async () => {
+    for (const fetch of [
+      async () => {
+        throw new TypeError("Response was lost");
+      },
+      async () => new Response("not JSON", { status: 200 }),
+      async () => Response.json({ tokens: [] }),
+    ]) {
+      let calls = 0;
+      let caught: unknown;
+      try {
+        await issueOAuthTokenBatch(request, {
+          origin: "http://core.internal:3000",
+          fetch: async () => {
+            calls += 1;
+            return fetch();
+          },
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught).not.toBeInstanceOf(OAuthAuthorityRejectedError);
+      expect(calls).toBe(1);
+    }
   });
 
   test("probes readiness once and distinguishes a definite grant rejection", async () => {
     const seen: Request[] = [];
     await probeOAuthTokenAuthority({
       origin: "http://core.internal:3000",
-      brokerSecret: "abababababababababababababababababababababababababababababababab",
       fetch: async (input, init) => {
         seen.push(new Request(input, init));
         return new Response(null, { status: 204 });
@@ -88,9 +142,8 @@ describe("OAuth Core token authority client", () => {
     expect(seen[0]?.redirect).toBe("error");
 
     await expect(
-      issueOAuthTokenBatch([request], {
+      issueOAuthTokenBatch(request, {
         origin: "http://core.internal:3000",
-        brokerSecret: "abababababababababababababababababababababababababababababababab",
         fetch: async () => new Response(null, { status: 403 }),
       }),
     ).rejects.toBeInstanceOf(OAuthAuthorityGrantRejectedError);
@@ -102,13 +155,15 @@ describe("OAuth Core device approval client", () => {
     deviceAuthorizationId: "a5ae9b9c-94f4-49a8-a954-c87839affc3d",
     identifier: "alice@example.test",
     clientId: "cloud-cli",
+    clientName: "Cloud CLI",
+    grantExpiresAt: "2030-01-02T03:09:05.000Z",
     scopes: ["openid", "offline_access"],
     lifetimeSeconds: 28_800,
   };
-  const options = { origin: "http://core.internal:3000", brokerSecret: "ab".repeat(32) };
+  const options = { origin: "http://core.internal:3000" };
   const result = { comparison: "012345", expiresAt: "2026-10-17T12:05:00.000Z" };
 
-  test("sends one bounded, broker-authenticated request and parses Core's comparison", async () => {
+  test("sends one bounded, signed app request and parses Core's comparison", async () => {
     const seen: Request[] = [];
     expect(
       await startOAuthDeviceApproval(approval, {
@@ -124,26 +179,9 @@ describe("OAuth Core device approval client", () => {
     expect(seen[0]?.url).toBe("http://core.internal:3000/api/_internal/identity/v1/oauth/device-approval");
     expect(seen[0]?.method).toBe("POST");
     expect(seen[0]?.redirect).toBe("error");
-    expect(seen[0]?.headers.get("authorization")).toBe(`Bearer ${options.brokerSecret}`);
+    expect(decodeJwt(seen[0]!.headers.get("authorization")!.slice(7)).iss).toBe("oauth");
     expect(seen[0]?.headers.get("content-type")).toBe("application/json");
     expect(await seen[0]?.json()).toEqual(approval);
-  });
-
-  test("rejects invalid broker configuration before fetching", async () => {
-    let calls = 0;
-    for (const brokerSecret of ["", "z".repeat(64), "a".repeat(63)]) {
-      await expect(
-        startOAuthDeviceApproval(approval, {
-          ...options,
-          brokerSecret,
-          fetch: async () => {
-            calls += 1;
-            return Response.json(result);
-          },
-        }),
-      ).rejects.toThrow("64 hexadecimal characters");
-    }
-    expect(calls).toBe(0);
   });
 
   test("rejects every non-200 response without retrying", async () => {
@@ -204,7 +242,6 @@ test("OAuth signs readiness, each issuance and device approval without a broker 
   try {
     const options = {
       origin: "http://core.test",
-      brokerSecret: "",
       fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
         const sent = new Request(input, init);
         const proof = sent.headers.get("authorization")!.slice(7);
@@ -231,13 +268,15 @@ test("OAuth signs readiness, each issuance and device approval without a broker 
       },
     };
     await probeOAuthTokenAuthority(options);
-    await issueOAuthTokenBatch([request], options);
-    await issueOAuthTokenBatch([{ ...request, expiresIn: 1800 }], options);
+    await issueOAuthTokenBatch(request, options);
+    await issueOAuthTokenBatch({ ...request, tokens: [{ kind: "user_access", expiresIn: 1800 }] }, options);
     await startOAuthDeviceApproval(
       {
         deviceAuthorizationId: "33333333-3333-4333-8333-333333333333",
         identifier: "alice@example.test",
         clientId: "cloud-cli",
+        clientName: "Cloud CLI",
+        grantExpiresAt: "2030-01-02T03:09:05Z",
         scopes: ["openid"],
         lifetimeSeconds: 3600,
       },

@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, expect, jest, test } from "bun:test";
+import { afterAll, beforeAll, expect, jest, spyOn, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { authenticateSignedAppRequest } from "@k2b/cloud/api";
 import type { AppKey } from "@k2b/cloud/app-key";
 import { mandates } from "@k2b/cloud/services";
 import { authenticateBootstrap } from "@k2b/cloud/services/app-bootstrap";
-import { appKeys, getActiveAppKey } from "@k2b/cloud/services/app-keys";
+import { appKeys, getActiveAppKey, touchAppKey } from "@k2b/cloud/services/app-keys";
 import { SQL } from "bun";
 import { Hono } from "hono";
 import { createLocalJWKSet, decodeJwt, exportJWK, generateKeyPair } from "jose";
@@ -12,15 +13,16 @@ import { requireInfra, suiteFor, useFreshDatabase } from "../../../../scripts/fi
 import { createIdentityInvocationRoutes } from "../../../core/src/api/identity-invocation";
 import { createIdentityMandateRoutes } from "../../../core/src/api/identity-mandates";
 import { createIdentityOAuthIssuanceRoutes } from "../../../core/src/api/identity-oauth-issuance";
+import { migrate as migrateAppApproval } from "../../../core/src/migrate/core/app-approval";
 import { migrateAppBootstrap } from "../../../core/src/migrate/core/app-bootstrap";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
+import { migrate as migrateOAuthClients } from "../../../core/src/migrate/core/oauth-clients";
 import { migrate as migrateRailPreferences } from "../../../core/src/migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
-import { migrate as migrateOAuth } from "../../../oauth/src/migrate";
 import { BOOTSTRAP_PATH, signAppProof, signBootstrapProof } from "../../src/runtime/bootstrap-protocol";
-import { sql } from "../../src/runtime/clients";
+import { redis, sql } from "../../src/runtime/clients";
 import { verifyAccessToken } from "../../src/services/oauth-tokens";
 
 const NOW = Date.UTC(2030, 0, 2, 3, 4, 5);
@@ -52,7 +54,8 @@ suiteFor(
     await migrateSettings();
     await migrateRailPreferences();
     await migrateRailShortcuts();
-    await migrateOAuth();
+    await migrateAppApproval();
+    await migrateOAuthClients();
     await migrateAppBootstrap();
     await sql`INSERT INTO auth.users (id, uid, provider, profile, admin) VALUES (${actor.id}::uuid, ${actor.uid}, 'local', 'user', true)`;
     const enroll = async (appId: string, fixture: { seed: string; publicKey: string } = APP_KEY_FIXTURES[0], grants?: "oauth:issue"[]) => {
@@ -93,6 +96,105 @@ suiteFor(
     };
   };
 
+  test("ten signed calls each read once, write only on first use and claim one Valkey nonce, separate from domain SQL", async () => {
+    const enrolled = await appKeys.register({ actor, appId: "signed-cost", publicKey: APP_KEY_FIXTURES[0].publicKey });
+    if (!enrolled.ok) throw new Error(enrolled.error.message);
+    const appKey = { ...key, appId: "signed-cost", keyId: enrolled.data.keyId };
+    const statements: { auth: string[]; domain: string[] } = { auth: [], domain: [] };
+    let phase: keyof typeof statements = "auth";
+    // Count only executed statements; unsafe(columns) constructs a fragment, not another read.
+    const counted = new Proxy(replicas[0], {
+      apply(target, receiver, args) {
+        statements[phase].push(args[0].join("?"));
+        return Reflect.apply(target, receiver, args);
+      },
+      get(target, property) {
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const route = new Hono().post(path, async (c) => {
+      const authenticated = await authenticateSignedAppRequest(c, "identity:invoke", { db: counted, ingress: admitted, admit: admitted });
+      if (authenticated instanceof Response) return authenticated;
+      phase = "domain";
+      await counted`SELECT 1 AS domain_work`;
+      return c.json({ appId: authenticated.appId });
+    });
+    const send = redis.send.bind(redis);
+    const commands = spyOn(redis, "send").mockImplementation(send);
+    try {
+      for (let index = 0; index < 10; index++) {
+        statements.auth.length = 0;
+        statements.domain.length = 0;
+        phase = "auth";
+        commands.mockClear();
+        const request = await signed(appKey, "{}");
+        const response = await route.request(path, request.init);
+        expect(response.status).toBe(200);
+        expect(statements.auth.filter((statement) => /^\s*SELECT\b/i.test(statement))).toHaveLength(1);
+        expect(statements.auth.filter((statement) => !/^\s*SELECT\b/i.test(statement))).toHaveLength(index === 0 ? 1 : 0);
+        expect(statements.domain).toHaveLength(1);
+        expect(commands.mock.calls).toHaveLength(1);
+        expect(commands.mock.calls[0]).toEqual([
+          "SET",
+          [`cloud:app-proof:${appKey.keyId}:${decodeJwt(request.proof).jti}`, "1", "NX", "PX", "330000"],
+        ]);
+      }
+    } finally {
+      commands.mockRestore();
+    }
+  });
+
+  test("Valkey replay failure returns a retryable 503 before domain work and leaves the proof usable", async () => {
+    const request = await signed(key, "{}");
+    const send = redis.send.bind(redis);
+    const unavailable = spyOn(redis, "send").mockImplementation(async (command, args) => {
+      if (command === "SET") throw new Error("Replay store unavailable PRIVATE");
+      return send(command, args);
+    });
+    try {
+      for (const route of routes) {
+        const response = await route.request(path, request.init);
+        expect(response.status).toBe(503);
+        expect(response.headers.get("Retry-After")).toBe("1");
+        expect(response.headers.get("Cache-Control")).toBe("no-store");
+        expect(await response.json()).toEqual({
+          code: "app_proof_unavailable",
+          message: "App request authentication is temporarily unavailable",
+        });
+      }
+    } finally {
+      unavailable.mockRestore();
+    }
+    expect((await routes[1].request(path, request.init)).status).toBe(200);
+  });
+
+  test("a stale activity result cannot update a timestamp already written by another replica", async () => {
+    const enrolled = await appKeys.register({ actor, appId: "activity-guard", publicKey: APP_KEY_FIXTURES[0].publicKey });
+    if (!enrolled.ok) throw new Error(enrolled.error.message);
+    const stale = await getActiveAppKey({ appId: "activity-guard", keyId: enrolled.data.keyId }, replicas[0]);
+    if (!stale) throw new Error("Missing activity fixture");
+    expect(stale.activityDue).toBe(true);
+    await replicas[1]`UPDATE auth.service_account_credentials SET last_used_at = now() WHERE id = ${stale.keyId}::uuid`;
+    const [before] = await sql`SELECT last_used_at FROM auth.service_account_credentials WHERE id = ${stale.keyId}::uuid`;
+    await touchAppKey(stale, replicas[0]);
+    const [after] = await sql`SELECT last_used_at FROM auth.service_account_credentials WHERE id = ${stale.keyId}::uuid`;
+    expect(after?.last_used_at).toEqual(before?.last_used_at);
+    expect((await getActiveAppKey(stale))?.activityDue).toBe(false);
+  });
+
+  test("an expired key is refused immediately on both warm replicas", async () => {
+    const warm = await signed(thirdPartyKey, "{}");
+    expect((await routes[0].request(path, warm.init)).status).toBe(200);
+    const request = await signed(thirdPartyKey, "{}");
+    await sql`UPDATE auth.service_account_credentials SET expires_at = now() - interval '1 second' WHERE id = ${thirdPartyKey.keyId}::uuid`;
+    try {
+      for (const route of routes) expect((await route.request(path, request.init)).status).toBe(401);
+    } finally {
+      await sql`UPDATE auth.service_account_credentials SET expires_at = NULL WHERE id = ${thirdPartyKey.keyId}::uuid`;
+    }
+  });
+
   test("two different requests in one run and a lost-response retry consume distinct proofs, preserving domain idempotency", async () => {
     const first = await signed(key, JSON.stringify({ runId: "run-1", idempotencyKey: "effect-1", input: "one" }));
     const retry = await signed(key, JSON.stringify({ runId: "run-1", idempotencyKey: "effect-1", input: "one" }));
@@ -128,13 +230,13 @@ suiteFor(
     }
   });
 
-  test("migration grants the built-in default once and preserves operator changes on repeated setup", async () => {
+  test("migration grants no issuer by app ID and preserves explicit operator grants on repeated setup", async () => {
     expect((await getActiveAppKey(oauthKey))?.oauthIssueAllowed).toBe(true);
     expect((await getActiveAppKey(thirdPartyKey))?.oauthIssueAllowed).toBe(false);
     // Recreate the pre-grant schema on this private database to exercise an existing installation.
     await sql`ALTER TABLE auth.service_account_credentials DROP COLUMN oauth_issue_allowed`.simple();
     await migrateAppBootstrap();
-    expect((await getActiveAppKey(oauthKey))?.oauthIssueAllowed).toBe(true);
+    expect((await getActiveAppKey(oauthKey))?.oauthIssueAllowed).toBe(false);
     expect((await getActiveAppKey(key))?.oauthIssueAllowed).toBe(false);
     expect((await getActiveAppKey(thirdPartyKey))?.oauthIssueAllowed).toBe(false);
     await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = (id = ${thirdPartyKey.keyId}::uuid)
@@ -205,9 +307,6 @@ suiteFor(
     const issuance = new Hono().route("/", createIdentityPublicRoutes()).route(
       "/api/_internal/identity/v1",
       createIdentityOAuthIssuanceRoutes({
-        authenticate: () => {
-          throw new Error("Signed issuance must not use legacy authentication");
-        },
         issuer: async () => issuer,
         now: () => NOW / 1000,
         withActiveSigner: async (purpose, use) => {
@@ -218,26 +317,21 @@ suiteFor(
     );
     const clientId = "third-party-registry-client";
     const serviceAccountId = "44444444-4444-4444-8444-444444444444";
-    const grantId = "55555555-5555-4555-8555-555555555555";
-    const nonce = "66666666-6666-4666-8666-666666666666";
     await sql`INSERT INTO auth.service_accounts (id, name, kind) VALUES (${serviceAccountId}::uuid, 'Registry client', 'standalone')`;
-    await sql`INSERT INTO oauth.clients (client_id, name, redirect_uris, scopes, audiences, service_account_id)
-      VALUES (${clientId}, 'Third-party registry client', ARRAY[]::text[], ARRAY['read'], ARRAY['cloud'], ${serviceAccountId}::uuid)`;
-    await sql`INSERT INTO oauth.client_credentials_authority_grants (id, nonce, client_id, scopes, audiences)
-      VALUES (${grantId}::uuid, ${nonce}::uuid, ${clientId}, ARRAY['read'], ARRAY['cloud'])`;
+    expect((await sql`SELECT to_regclass('oauth.clients') AS issuer_table`)[0]?.issuer_table).toBeNull();
+    await sql`INSERT INTO auth.oauth_clients(client_id,issuer_app_id,service_account_id,status,name)
+      VALUES (${clientId},${thirdPartyKey.appId},${serviceAccountId}::uuid,'active','Third-party registry client')`;
     const target = "/api/_internal/identity/v1/oauth/token";
     const body = JSON.stringify({
-      tokens: [
-        {
-          kind: "service_access",
-          expiresIn: 60,
-          grant: {
-            kind: "client_credentials",
-            grantId,
-            nonce,
-          },
-        },
-      ],
+      clientId,
+      subject: { kind: "service_account", serviceAccountId },
+      scopes: ["read"],
+      audiences: ["cloud"],
+      resource: null,
+      nonce: null,
+      loginExpiresAt: null,
+      terminalLoginId: null,
+      tokens: [{ kind: "service_access", expiresIn: 60 }],
     });
     await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = true WHERE id = ${thirdPartyKey.keyId}::uuid`;
     try {
@@ -256,16 +350,31 @@ suiteFor(
         scopes: ["read"],
         payload: { token_use: "access", principal_type: "service_account" },
       });
-      const [grant] = await sql`SELECT consumed_at FROM oauth.client_credentials_authority_grants WHERE id = ${grantId}::uuid`;
-      expect(grant?.consumed_at).toBeInstanceOf(Date);
-      const replay = await signed(thirdPartyKey, body, "POST", target);
-      expect((await issuance.request(target, replay.init)).status).toBe(403);
-      await sql`DELETE FROM oauth.clients WHERE client_id = ${clientId}`;
+      // The trusted issuer owns single-use semantics. A fresh app proof may sign another statement.
+      const retry = await signed(thirdPartyKey, body, "POST", target);
+      expect((await issuance.request(target, retry.init)).status).toBe(200);
+      const wrongIssuer = await signed(oauthKey, body, "POST", target);
+      expect((await issuance.request(target, wrongIssuer.init)).status).toBe(403);
+      await sql`UPDATE auth.oauth_clients SET status='disabled' WHERE client_id=${clientId}`;
       expect(await verifyAccessToken(tokens[0], "cloud", verification)).toBeNull();
+      const disabled = await signed(thirdPartyKey, body, "POST", target);
+      expect((await issuance.request(target, disabled.init)).status).toBe(403);
+      await sql`UPDATE auth.oauth_clients SET status='active' WHERE client_id=${clientId}`;
+      expect(await verifyAccessToken(tokens[0], "cloud", verification)).not.toBeNull();
+      await sql`UPDATE auth.oauth_clients SET service_account_id=NULL WHERE client_id=${clientId}`;
+      expect(await verifyAccessToken(tokens[0], "cloud", verification)).toBeNull();
+      const rebound = await signed(thirdPartyKey, body, "POST", target);
+      expect((await issuance.request(target, rebound.init)).status).toBe(403);
+      await sql`UPDATE auth.oauth_clients SET status='deleted' WHERE client_id=${clientId}`;
+      expect(await verifyAccessToken(tokens[0], "cloud", verification)).toBeNull();
+      const deleted = await signed(thirdPartyKey, body, "POST", target);
+      expect((await issuance.request(target, deleted.init)).status).toBe(403);
       await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = false WHERE id = ${thirdPartyKey.keyId}::uuid`;
       const denied = await signed(thirdPartyKey, body, "POST", target);
       expect((await issuance.request(target, denied.init)).status).toBe(403);
     } finally {
+      await sql`DELETE FROM auth.oauth_clients WHERE client_id=${clientId}`;
+      await sql`DELETE FROM auth.service_accounts WHERE id=${serviceAccountId}::uuid`;
       jwks.mockRestore();
       await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = false WHERE id = ${thirdPartyKey.keyId}::uuid`;
     }
@@ -278,32 +387,39 @@ suiteFor(
       .route(
         "/api/_internal/identity/v1",
         createIdentityOAuthIssuanceRoutes({
-          authenticate: () => {
-            throw new Error("Signed OAuth must not use the legacy broker");
-          },
           withActiveSigner: async (_purpose, use) => {
             signerCalls++;
             return use({ kid: "signed-test", key: privateKey, signUntil: new Date(NOW + 60_000), issuer: "https://cloud.test" }, sql);
           },
         }),
       )
-      .route(
-        "/api/_internal/identity/v1",
-        createIdentityInvocationRoutes({
-          authenticateWorkload: async () => {
-            throw new Error("Signed invocation must not use legacy authentication");
-          },
-        }),
-      )
+      .route("/api/_internal/identity/v1", createIdentityInvocationRoutes())
       .route(
         "/api/_internal/identity/v1",
         createIdentityMandateRoutes({
-          authenticateWorkload: async () => {
-            throw new Error("Signed mandate must not use legacy authentication");
-          },
           service: { ...mandates, get: async () => null },
         }),
       );
+    const account = await getActiveAppKey(key);
+    if (!account) throw new Error("Missing app account");
+    const prefix = "0123456789abcdef01234567";
+    const secret = "ab".repeat(32);
+    const hash = `sha256:${createHash("sha256").update(secret).digest("hex")}`;
+    await sql`INSERT INTO auth.service_account_credentials (service_account_id, name, kind, token_prefix, secret_hash, scopes)
+      VALUES (${account.serviceAccountId}::uuid, 'Former app token', 'api_token', ${prefix}, ${hash}, ARRAY['identity:invoke']::text[])`;
+    try {
+      for (const [target, method] of [
+        ["/api/_internal/identity/v1/invoke", "POST"],
+        ["/api/_internal/identity/v1/mandates/44444444-4444-4444-8444-444444444444", "GET"],
+        ["/api/_internal/identity/v1/oauth/ready", "POST"],
+        ["/api/_internal/identity/v1/oauth/token", "POST"],
+      ] as const) {
+        const rejected = await routes.request(target, { method, headers: { authorization: `Bearer cld_${prefix}_${secret}` } });
+        expect(rejected.status).toBe(401);
+      }
+    } finally {
+      await sql`DELETE FROM auth.service_account_credentials WHERE token_prefix = ${prefix}`;
+    }
     const readyPath = "/api/_internal/identity/v1/oauth/ready";
     const ready = await signed(oauthKey, "", "POST", readyPath);
     expect((await routes.request(readyPath, ready.init)).status).toBe(204);

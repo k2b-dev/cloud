@@ -215,6 +215,9 @@ export type AppDeviceActions = {
   }): Promise<boolean>;
 };
 export type AppTerminalLoginInput = {
+  issuerAppId: string;
+  clientName: string;
+  grantExpiresAt: string;
   deviceAuthorizationId: string;
   identifier: string;
   clientId: string;
@@ -222,12 +225,13 @@ export type AppTerminalLoginInput = {
   lifetimeSeconds: number;
 };
 export type AppTerminalLogins = {
-  /** Live pending authorizations whose registry client still allows the device grant. */
+  /** Pending platform logins; the issuer enforces its client policy when issuing. */
   describe(tx: SQL, ids: string[]): Promise<Map<string, { id: string; name: string }>>;
   /** In the sign-in decision transaction; false aborts both decisions and their audits. */
   decide(
     tx: SQL,
     input: {
+      loginId: string;
       deviceAuthorizationId: string;
       clientId: string;
       user: Pick<AccountRow, "id" | "uid" | "provider" | "profile" | "auth_epoch">;
@@ -804,7 +808,8 @@ export const createAppApprovalService = (
       await cleanup();
       const id = crypto.randomUUID(),
         code = comparison(),
-        expiresAt = future(limits.loginSeconds);
+        expiresAt = new Date(Math.min(future(limits.loginSeconds).getTime(), Date.parse(input.grantExpiresAt)));
+      if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) return reject("CONFLICT", 409);
       let owner: string | undefined;
       await db().begin(async (tx) => {
         let candidate = await loginCandidate(tx, input.identifier);
@@ -816,11 +821,12 @@ export const createAppApprovalService = (
         const budget = await loginBudget(tx, cfg.issuer, subject.id);
         if (!allowed || !devices.length || !budget) candidate = undefined;
         const inserted = await tx`INSERT INTO auth.app_logins
-          (id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,expires_at,kind,device_authorization_id,client_id,scopes,lifetime_seconds)
+          (id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,expires_at,kind,device_authorization_id,client_id,scopes,lifetime_seconds,oauth_issuer_app_id,oauth_client_name,oauth_grant_expires_at)
           VALUES (${id}::uuid,${cfg.issuer},${candidate?.id ?? null}::uuid,${candidate?.auth_epoch ?? null},
             ${candidate ? accountCategory(candidate) : "login"},${hash(secret())},${secret()},${code},${expiresAt},'terminal',
-            ${input.deviceAuthorizationId}::uuid,${input.clientId},${toPgTextArray(input.scopes)}::text[],${input.lifetimeSeconds})
-          ON CONFLICT (device_authorization_id) WHERE device_authorization_id IS NOT NULL DO NOTHING RETURNING id`;
+            ${input.deviceAuthorizationId}::uuid,${input.clientId},${toPgTextArray(input.scopes)}::text[],${input.lifetimeSeconds},
+            ${input.issuerAppId},${input.clientName},${input.grantExpiresAt}::timestamptz)
+          ON CONFLICT (oauth_issuer_app_id,device_authorization_id) WHERE device_authorization_id IS NOT NULL DO NOTHING RETURNING id`;
         if (!inserted.length) return reject("CONFLICT", 409);
         owner = candidate?.id;
       });
@@ -972,7 +978,7 @@ export const createAppApprovalService = (
             acceptsTerminal && terminal
               ? await terminal.describe(
                   tx,
-                  rows.flatMap((row) => (row.device_authorization_id ? [row.device_authorization_id] : [])),
+                  rows.filter((row) => row.kind === "terminal").map((row) => row.id),
                 )
               : new Map<string, { id: string; name: string }>();
           const requests: AppPendingLogin[] = [];
@@ -985,7 +991,7 @@ export const createAppApprovalService = (
               expiresAt: iso(row.expires_at),
             };
             if (row.kind === "terminal") {
-              const client = row.device_authorization_id ? clients.get(row.device_authorization_id) : undefined;
+              const client = clients.get(row.id);
               if (!client || client.id !== row.client_id || !row.scopes || !row.lifetime_seconds) continue;
               login.terminal = {
                 client: { id: client.id, name: appApprovalText(client.name || client.id, APP_ACTION_LIMITS.nameChars) || "OAuth" },
@@ -1054,6 +1060,7 @@ export const createAppApprovalService = (
             !row.device_authorization_id ||
             !row.client_id ||
             !(await terminal.decide(tx, {
+              loginId: row.id,
               deviceAuthorizationId: row.device_authorization_id,
               clientId: row.client_id,
               user,

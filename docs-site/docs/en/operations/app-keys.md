@@ -5,7 +5,7 @@ section: Operations
 order: 1144
 description: Enroll, export, rotate and revoke an application's Ed25519 key without sending its private seed to Core.
 tags: [operations, identity, credentials, cli]
-updated: 2026-11-05
+updated: 2026-11-12
 ---
 
 # App keys
@@ -105,6 +105,7 @@ and needs the same protection as the final key.
 
 ## Use the key at start
 
+Every serving application except Core and Gateway requires its enrolled key.
 After enrollment, supply either `CLOUD_APP_KEY` or
 `CLOUD_APP_KEY_FILE=/run/secrets/inventory.key` to the application process, plus
 `CLOUD_CORE_INTERNAL_ORIGIN=https://core.example.internal`. Mount the key file
@@ -117,7 +118,7 @@ Chat readability checks. Keep `CLOUD_APP_KEY` and `CLOUD_APP_KEY_FILE` unset on
 those releases. Enable them only after Core and all applications run a release
 containing the resource-principal read fix ([#2377](https://github.com/k2b-dev/cloud/issues/2377)).
 With that fix, these checks accept app keys with the same `resources:readers`
-admission as legacy workload credentials. A key identifies the application;
+admission as other supported app calls. A key identifies the application;
 it grants no person or resource authority. Revocation and expiry are checked
 again before the provider runs the check.
 
@@ -137,9 +138,41 @@ for replica consistency and startup probes.
 Invalid, unknown, revoked or mismatched keys stop startup. If Core is
 unreachable or answers HTTP 429 or 503, startup retries for at most five minutes
 without opening an HTTP listener. A retry signs a new proof even if the first
-response was lost. Successful bootstrap updates `lastUsedAt`. Revocation blocks
+response was lost. Successful bootstrap updates `lastUsedAt` at most once per
+minute per key. Revocation blocks
 new bootstrap requests on every Core replica immediately; it does not close
 already established database or NATS connections or recall delivered secrets.
+
+### Upgrade all Core replicas together
+
+Stop all old Core replicas before starting any Core replica on this version.
+Applications keep running during this Core-only maintenance window; work that
+needs Core is briefly unavailable. Resume signed traffic after all new Core
+replicas are ready. The migration drops `auth.app_proof_replays` and its indexes.
+An older Core replica then returns HTTP 503 for signed calls until it is
+replaced; do not leave old replicas serving bootstrap or signed requests during
+the upgrade.
+
+Core now stores proof replay claims in the installation's shared Valkey. Every
+verified request claims its proof once with `SET NX`; the claim expires five
+minutes after the proof's expiry. All Core replicas must use the same Valkey
+and preserve these claims through their expiry: keep Valkey's default
+`maxmemory-policy noeviction`. An evicting policy (`allkeys-*` or
+`volatile-*`) can drop a claim early and accept a captured proof again; with
+`noeviction`, a full Valkey refuses the claim and Core answers 503 instead.
+A Valkey restart without persistence or a failover that loses recent writes
+reopens the same window for proofs issued in the last 32 seconds (30-second
+proof lifetime plus two seconds of clock tolerance). If rate admission or a replay
+claim is unavailable, Core returns HTTP 503 with `app_proof_unavailable` and
+`Retry-After: 1`. Restore Valkey availability and retry with a fresh proof.
+Core also skips refused-start diagnostics when it cannot check the replay
+claim. No replay-table cleanup job remains.
+
+Each signed call reads the key and installation identity together from
+Postgres, keeping revocation immediate across replicas. Activity tracking
+updates `last_used_at` at most once per minute per key across Core replicas;
+other successful calls perform no Postgres writes in authentication. Domain
+operations keep their own reads and writes.
 
 ## Background and OAuth authority
 
@@ -163,9 +196,10 @@ and development tooling must run:
 cld --profile operator admin apps keys create oauth --grant oauth:issue --out-dir ./secrets
 ```
 
-The one-time migration grants built-in issuer keys enrolled before this grant
-existed. Repeated migrations preserve operator changes. New keys always need
-an explicit grant, on upgraded installations too.
+A database migration that introduces this grant starts every existing key
+without issuance permission. Enroll a replacement with the explicit grant
+before starting the issuer. Repeated migrations preserve stored operator
+grants. No app ID receives an implicit grant.
 
 The administrator API accepts `grants: ["oauth:issue"]` on enrollment; an omitted
 `grants` or `grants: []` creates an ungranted key. `cld` also accepts `--no-grant`
@@ -176,10 +210,11 @@ directory, deploy it, and revoke every granted key for that app. A granted key
 can still issue during the rotation overlap. Revoke it immediately if issuance
 must stop immediately. There is no grant-editing UI.
 
-Issuance serves clients and one-shot grants registered in Cloud's OAuth
-registry. A third-party app holding `oauth:issue` uses that same registry and
-Core's issuance checks. A separate client or grant registry owned by a
-third-party identity provider is not supported by this contract.
+Each issuer owns its private clients, policy and one-shot grants. It registers
+only verifier facts through `oauthClients` and sends a closed authority
+statement to Core. Core checks the signed issuer against that registry and
+live platform identity facts. The built-in OAuth schema is optional; see
+[Implement an OAuth issuer](/en/docs/identity/oauth#implement-an-oauth-issuer).
 
 Core owns the issuer and OAuth signing keys. Every granted app uses the same
 Core issuance endpoint and internal JWKS; changing the granted app leaves the
@@ -189,6 +224,34 @@ Keys with `connections_allowed=false` can sign requests but cannot retrieve
 startup connections. Revoking a key rejects its next bootstrap or background
 request on every Core replica. An invocation already admitted keeps its
 existing short lifetime. See [background mandates](/en/docs/identity/background-mandates).
+
+## Roll out issuer ownership
+
+Update Core first. Its migration creates `auth.oauth_clients` and backfills
+existing built-in clients once when `oauth.clients` exists. It also preserves
+terminal approval display statements and grant deadlines. OAuth token issuance
+and terminal approvals are unavailable between the Core and OAuth updates:
+Core rejects the old request bodies with HTTP 400. Roll out both updates
+back-to-back, replacing all OAuth replicas. Before serving requests, the
+updated issuer upserts its clients in bounded pages, including clients
+created after Core's backfill, and marks registrations for clients deleted
+during that interval as `deleted`.
+These tombstones prevent client ID reuse by every issuer. Client writes and
+registry writes then share the issuer's transaction. This upgrade needs no
+client-write freeze.
+
+Replace old OAuth replicas before relying on registry synchronization: old
+writers do not maintain it. Verify an authorization-code exchange, refresh,
+terminal device approval and client-credentials exchange after rollout.
+Existing JWT shapes, public issuer and JWKS stay unchanged. In-flight old
+issuance requests may fail; start those sign-ins again. A lost signing
+response burns its reservation and has no recovery endpoint.
+
+The issuer retries access notices from its own maintenance; Core no longer
+probes optional OAuth tables. Pending notices retry newest first until
+delivery succeeds or the family expires; cleanup removes expired families
+even when delivery keeps failing. Core may run with another trusted issuer
+or with no OAuth application installed.
 
 ## Create keys in Administration
 
@@ -232,8 +295,10 @@ cld --profile operator admin apps keys revoke inventory <keyId> --yes
 The list includes the public key, fingerprint, name, creation and creator,
 optional expiry, last use, grants, and revocation metadata. Status is `active`,
 `expired`, or `revoked`; `accountStatus` is `active` or `disabled`. A disabled
-account prevents authentication with all its keys. Successful bootstrap updates
-`lastUsedAt`; a key that has never authenticated has a null value. Lists accept `--page` and `--per-page`
+account prevents authentication with all its keys. Successful bootstrap and
+signed requests update `lastUsedAt` at most once per minute per key; allow that
+delay when checking a rotation. A key that has never authenticated has a null
+value. Lists accept `--page` and `--per-page`
 (default 100, maximum 500).
 
 The per-app key list also reports `lastRejectedStart`: the time, key ID and
@@ -389,7 +454,11 @@ Keep the locally generated pair until registration succeeds. Retrying with the
 same public key is what makes lost responses safe. Core-owned consumers read
 `getInstallationId`, `getActiveAppKey`, and `touchAppKey` from
 `@k2b/cloud/services/app-keys`; the active-key read goes directly to Postgres
-and checks account status, revocation, and expiry without a cache.
+and checks account status, revocation, and expiry without a cache. Its result
+includes `installationId` and `activityDue`; pass that authenticated result to
+`touchAppKey(key, db)`. The touch never rereads the key. Its process throttle
+skips SQL for a minute after an activity statement, and its SQL guard prevents
+other replicas from updating a recent timestamp.
 
 Key metadata keeps its stored lifecycle `status` and reports `usable` separately.
 A key is usable only while it and its account are active and the runtime accepts

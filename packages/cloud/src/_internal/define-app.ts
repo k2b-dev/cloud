@@ -8,8 +8,10 @@ import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-ac
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
 import { startLiveOutbox } from "../events/live";
+import { requireAppKey } from "../runtime/app-identity";
 import { appCatalogExists, usesLegacyCatalogRenewal } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
+import { createSecretMaintenance, type SecretOwner } from "../services/secret-owners";
 import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
@@ -134,7 +136,6 @@ import { publicFileVersion, servePublicAsset, sharedStylesheetVersion, versioned
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
 import { WEB_VITALS_ASSET_HREF } from "./web-vitals-asset";
 import { compileWidgetDeclarations } from "./widget-declarations";
-import { createAppWorkloadCredential } from "./workload-credential";
 
 /** Only development links use this start stamp to pick up rebuilds. */
 const developmentStamp = Date.now();
@@ -375,6 +376,8 @@ export type StartOptions = {
    */
   openapi?: Hono<any>;
   lifecycle?: AppLifecycle;
+  /** Declare app-owned durable ciphertext; [] means none, omission is unknown. */
+  secretOwners?: readonly SecretOwner[];
   capabilities?: CapabilityDefinitions;
   /**
    * Handlers for declared dashboard widgets, keyed by widget id. The
@@ -742,11 +745,11 @@ export const defineApp = <
   const start = async (startOpts: StartOptions): Promise<StartResult> => {
     if (!opts.public && publicRouter.routes.length)
       throw new Error(`App "${opts.id}" adds app.public routes without declaring public: true`);
+    if (meta.id !== "core" && meta.id !== "gateway") requireAppKey(meta.id);
+    else if (env.CLOUD_APP_KEY) throw new Error("Core and Gateway refuse app keys");
     const port = startOpts.port ?? 3000;
     if (env.GOTENBERG_URL)
       console.warn("[deprecation] GOTENBERG_URL only bootstraps gotenberg.url; remove it after cld admin settings status --env succeeds.");
-    if (env.CLOUD_IDENTITY_JWKS_ORIGIN)
-      console.warn("[deprecation] CLOUD_IDENTITY_JWKS_ORIGIN is deprecated; use CLOUD_CORE_INTERNAL_ORIGIN instead.");
     const baseUrl = opts.baseUrl;
     const log = logger("app");
     const http = createHttpDrain();
@@ -871,12 +874,15 @@ export const defineApp = <
       const registryError = validateAppRegistryEntry(entry);
       if (registryError) throw new Error(`Invalid app registry entry: ${registryError}`);
 
+      const secretMaintenance = createSecretMaintenance(startOpts.secretOwners, startedAt);
+      cleanup.push(() => secretMaintenance.stop());
       // Both shared entries follow one process membership; creating it touches no Sync resources.
       const membership = createRegistryMembership(meta.id, {
         registry: appInstanceRegistry,
         lock: appMembershipLock,
         startedAt: entry.startedAt,
         bootstrap: connections().bootstrap,
+        secrets: secretMaintenance.metadata,
       });
       const publishHelp = createCatalogPublication();
       const publishSkills = createCatalogPublication();
@@ -885,6 +891,11 @@ export const defineApp = <
         registry: appRegistry(),
         membership,
         beforeWrite: async (force = false) => {
+          // Reuse registration maintenance; never hold its membership lease for
+          // database work. Failure remains visible as an unknown owner check.
+          void secretMaintenance
+            .tick()
+            .catch(() => log.error("Secret owner maintenance failed; retrying on the next heartbeat", { appId: meta.id }));
           const current = force ? null : await getApp(meta.id);
           if (compiledHelp)
             await publishHelp(compiledHelp.corpus.manifestHash, () => registerHelp(compiledHelp.corpus), {
@@ -1267,8 +1278,6 @@ export const defineApp = <
 
       let stopNotificationRegistration: (() => void) | undefined;
       cleanup.push(() => stopNotificationRegistration?.());
-      let workloadCredential: ReturnType<typeof createAppWorkloadCredential> | undefined;
-      cleanup.push(() => workloadCredential?.stop());
       const stopLifecycle = startOpts.lifecycle?.stop;
       if (stopLifecycle) cleanup.push(() => stopLifecycle(cloudCtx));
 
@@ -1295,22 +1304,7 @@ export const defineApp = <
 
       await loadSettingsCache(AbortSignal.timeout(settingsStartupBudget));
 
-      // The instance can obtain its credential before workers run; routes remain undiscoverable.
       await membership.register();
-      workloadCredential = createAppWorkloadCredential({
-        appId: meta.id,
-        instanceId: membership.instanceId,
-        onRecovered: () => log.info("App workload credential refresh recovered", { appId: meta.id }),
-        onUnavailable: (reason) => {
-          if (reason === "release_unavailable") {
-            log.warn("Workload credential release was not confirmed; Core will reconcile after removal", { appId: meta.id });
-          } else {
-            log.error("App workload credential unavailable; background invocation is disabled", { appId: meta.id, reason });
-          }
-        },
-      });
-      // The NATS request has a five-second timeout; an outage leaves workers fail-closed.
-      await workloadCredential.start();
 
       if (startOpts.lifecycle?.start) {
         log.info(`Start: ${meta.id}`);
