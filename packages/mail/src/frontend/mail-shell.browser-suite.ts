@@ -4435,12 +4435,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
             await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved on server" }).waitFor();
           };
+          // A phone shows Compose with the list, not beside an open conversation.
           for (const [theme, width] of [
             ["light", 1440],
             ["light", 390],
             ["dark", 1440],
           ] as const)
-            // A phone shows Compose with the list, not beside an open conversation.
             await shoot("08-new-message", theme, width, `${boxPath}?${width < 640 ? "" : "conversation=Conv01&"}identity=1`, compose);
           await shoot("09-new-minimized", "light", 1440, `${boxPath}?conversation=Conv01&identity=1`, async (page) => {
             await compose(page);

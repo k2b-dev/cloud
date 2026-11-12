@@ -19,7 +19,6 @@ import {
   prompts,
   ScrollArea,
   Select,
-  StatusBadge,
   Toolbar,
   Tooltip,
   toast,
