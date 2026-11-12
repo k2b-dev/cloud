@@ -105,6 +105,7 @@ Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachmen
 | `mail.conversation.summary.write` | `mail.mailbox(id).conversation.summary.write` | Write automated conversation summary | mail.mailbox | required | admin approval |
 | `mail.conversation.tag.update` | `mail.mailbox(id).conversation.tag.update` | Update conversation tags | mail.mailbox | — | admin approval |
 | `mail.delivery.cancel` | `mail.mailbox(id).delivery.cancel` | Cancel delivery | mail.mailbox | required | never |
+| `mail.draft.attachment.import.v1` | `mail.mailbox(id).draft.attachment.import.v1` | Attach a file to a draft | mail.mailbox | required | admin approval |
 | `mail.draft.attachment.add` | `mail.mailbox(id).draft.attachment.add` | Add draft attachment | mail.mailbox | required | admin approval |
 | `mail.draft.attachment.remove` | `mail.mailbox(id).draft.attachment.remove` | Remove draft attachment | mail.mailbox | required | never |
 | `mail.draft.create` | `mail.mailbox(id).draft.create` | Create draft | mail.mailbox | required | admin approval |
@@ -286,6 +287,7 @@ Queries: `files.activity.chain`, `files.activity.get`, `files.activity.list`, `f
 | `filesv2.entry.move` | `files.entry(id).move` | Move entry | filesv2.entry | required | never |
 | `filesv2.entry.rename` | `files.entry(id).rename` | Rename entry | filesv2.entry | required | never |
 | `filesv2.entry.trash` | `files.entry(id).trash` | Move entry to trash | filesv2.entry | required | never |
+| `filesv2.file.save.v1` | `files.entry(id).file.save.v1` | Save a file into Files | filesv2.entry | required | never |
 | `filesv2.folder.create` | `files.entry(id).folder.create` | Create folder | filesv2.entry | required | never |
 | `filesv2.provider.save` | — | Save a new file | — | — | not in the SDK |
 | `filesv2.trash.restore` | `files.entry(id).trash.restore` | Restore entry from trash | filesv2.entry | required | never |
@@ -293,8 +295,8 @@ Queries: `files.activity.chain`, `files.activity.get`, `files.activity.list`, `f
 The Files SDK export is `files`; its app, capability and event IDs keep
 `filesv2` (including `filesv2.*` events). Code can list, search and read entry metadata,
 and `files.content.read` returns a file as a [FileRef](file-ref.md) to pass
-to another app. Code cannot write file content, and no Files Action runs
-unattended yet.
+to another app. `files.entry(id).file.save.v1` saves a FileRef into a writable folder, with the same
+collision and approval rules as an upload. No Files Action runs unattended yet.
 
 Reading from several apps in one personal page:
 
