@@ -5,7 +5,7 @@ section: Operations
 order: 1141
 description: Replace application infrastructure environment values with an app key file and the Core address, with explicit migration checks and rollback boundaries.
 tags: [deployment, upgrade, configuration, app-keys]
-updated: 2026-11-05
+updated: 2026-11-12
 ---
 
 # Upgrade applications to app keys
@@ -30,6 +30,12 @@ or another consumer of `readResourcePrincipals()` as well as startup and
 background calls.
 
 ## Upgrade an existing installation
+
+When upgrading to Valkey proof replay protection, update **all Core replicas
+together** before resuming signed traffic. The migration removes the former
+replay table; older Core replicas return HTTP 503 for signed calls until
+replaced. See [Upgrade all Core replicas together](/en/docs/operations/app-keys#upgrade-all-core-replicas-together)
+for the shared Valkey requirement and recovery behavior.
 
 Use the same Compose infrastructure overlay and CLI profile throughout.
 The commands below use profile `migration`, already signed in as a Cloud
