@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
-import { splitQuotedHistory, withoutSignatureSegments } from "./service/compose-renderer";
 import { eraseRetiredDraftInTransaction, retireDraftInTransaction } from "./service/draft-retirement";
+import { hasLegacyReplyBodyEvidence } from "./service/reply-draft-body-evidence";
 
 export const REPLY_DRAFT_MIGRATION_VERSION = 4;
 export const REPLY_DRAFT_MIGRATION_NAME = "one_reply_draft";
@@ -25,30 +25,19 @@ const bestBodyEvidenceDraft = async (db: typeof sql, conversationId: string): Pr
   let cursor = "00000000-0000-0000-0000-000000000000";
   let best: string | null = null;
   for (;;) {
-    const rows = await db<{ id: string; body_markdown: string; signature_source: string | null }[]>`SELECT
-      d.id, d.body_markdown, signature.body_template AS signature_source FROM mail.drafts d
-      LEFT JOIN LATERAL (SELECT t.body_template FROM mail.compose_templates t
-        WHERE t.mailbox_id = d.mailbox_id AND t.kind = 'signature' AND t.archived_at IS NULL
-          AND (t.id = d.signature_template_id OR (d.signature_template_id IS NULL
-            AND (t.scope = 'mailbox' OR (d.author_kind = 'user' AND t.owner_user_id = d.author_id))
-            AND strpos(d.body_markdown, ${"\u2063"} || t.body_template || ${"\u2064"}) > 0))
-        ORDER BY strpos(d.body_markdown, ${"\u2063"} || t.body_template || ${"\u2064"}), t.id LIMIT 1) signature ON true
+    const rows = await db<{ id: string; body_markdown: string }[]>`SELECT d.id, d.body_markdown FROM mail.drafts d
+      ${editTimes()}
       WHERE d.conversation_id = ${conversationId}::uuid AND ${occupied()} AND d.id > ${cursor}::uuid
+        AND d.revision = 1 AND edits.edited_at IS NULL
       ORDER BY d.id LIMIT ${BATCH_SIZE}`;
     if (!rows.length) return best;
-    const candidates = rows
-      .filter((row) => {
-        // Match resolveDraftSignature: remove only exact marked copies of the selected/recognized signature.
-        const body = row.signature_source === null ? row.body_markdown : withoutSignatureSegments(row.body_markdown, row.signature_source);
-        // quote_source is rendered separately; older images also embedded generated history in body_markdown.
-        return splitQuotedHistory(body).reply.trim().length > 0;
-      })
-      .map((row) => row.id);
+    // quote_source is rendered separately; older images also embedded generated history in body_markdown.
+    const candidates = rows.filter((row) => hasLegacyReplyBodyEvidence(row.body_markdown)).map((row) => row.id);
     if (best) candidates.push(best);
     if (candidates.length) {
       // Every candidate has body evidence, so only the other ranking keys decide which one could survive.
-      const [winner] = await db<{ id: string }[]>`SELECT d.id FROM mail.drafts d ${editTimes()}
-        WHERE d.id = ANY(${sql.array(candidates, "UUID")}) ORDER BY ${priority()}, ${recency()} LIMIT 1`;
+      const [winner] = await db<{ id: string }[]>`SELECT d.id FROM mail.drafts d
+        WHERE d.id = ANY(${sql.array(candidates, "UUID")}) ORDER BY ${priority()}, d.created_at DESC, d.id DESC LIMIT 1`;
       best = winner?.id ?? null;
     }
     cursor = rows.at(-1)!.id;

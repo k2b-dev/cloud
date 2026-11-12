@@ -45,12 +45,13 @@ and ID, in that order. The edit timestamp is the later of `content_edited_at`
 and stored shared-document revisions after revision 1; an exported provider
 snapshot after revision 1 is the fallback when neither exists.
 
-Body text also counts as evidence after removing recognized signature segments
-and generated reply or forward history. This protects text supplied when a
-legacy draft was created, even at revision 1 with no edit timestamp, such as
-`cld mail reply --body`, `mail.draft.create` under a user principal, or the first
-compose autosave. The separately stored source quote (`quote_source`) is not
-part of the editable body and does not count.
+For revision-1 drafts without an edit timestamp, F6 also counts body text after
+removing signature segments and generated reply or forward history. Signature
+templates may have changed or been archived since creation; their marked
+segments still do not count as text. This protects text supplied at creation
+through `cld mail reply --body`, `mail.draft.create` under a user principal, or
+the first compose autosave. The separately stored source quote (`quote_source`)
+is not part of the editable body and does not count.
 
 For legacy lock-mode rows, revision greater than 1 also counts as evidence.
 A derived subject, reply recipients, a signature-only body and a quote-only
