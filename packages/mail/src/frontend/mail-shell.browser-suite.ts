@@ -4894,12 +4894,32 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await shoot("06-gustav-suggestion", "dark", 1440, `${thread}&suggestion=1`, async (page) => {
             await readyDraft(page);
           });
-          for (const width of [1440, 390])
-            await shoot("08-new-message", "light", width, `${boxPath}?conversation=Conv01&identity=1`, async (page) => {
-              await page.locator("[data-workspace-primary]").first().click();
-              await readyWindow(page);
-              await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
-            });
+          const compose = async (page: Page) => {
+            await page.locator("[data-workspace-primary]").first().click();
+            await readyWindow(page);
+            await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+            await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved on server" }).waitFor();
+          };
+          for (const [theme, width] of [
+            ["light", 1440],
+            ["light", 390],
+            ["dark", 1440],
+          ] as const)
+            // A phone shows Compose with the list, not beside an open conversation.
+            await shoot("08-new-message", theme, width, `${boxPath}?${width < 640 ? "" : "conversation=Conv01&"}identity=1`, compose);
+          await shoot("09-new-minimized", "light", 1440, `${boxPath}?conversation=Conv01&identity=1`, async (page) => {
+            await compose(page);
+            await composeWindow(page).getByRole("button", { name: "Minimize" }).click();
+          });
+          await shoot("10-new-maximized", "light", 1440, `${boxPath}?conversation=Conv01&identity=1`, async (page) => {
+            await compose(page);
+            await composeWindow(page).getByRole("button", { name: "Maximize" }).click();
+          });
+          await shoot("11-new-closed", "light", 1440, `${boxPath}?identity=1`, async (page) => {
+            await compose(page);
+            await composeWindow(page).getByRole("button", { name: "Close window" }).click();
+            await page.locator("[data-k2b-toast-container]", { hasText: "Draft is in “Drafts”" }).waitFor();
+          });
           await shoot("07-quote-attached", "light", 1440, thread, async (page) => {
             await reply(page);
             await page.locator("[data-mail-draft-quote]").getByRole("button").click();

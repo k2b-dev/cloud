@@ -12,6 +12,7 @@ export type StoredComposeWindow = { draftId: string; state: FloatingWindowState;
 export const composeWindowsKey = (mailboxId: string): string => `cloud:mail:compose-windows:${mailboxId}`;
 
 const states: readonly FloatingWindowState[] = ["normal", "minimized", "maximized"];
+const isState = (value: unknown): value is FloatingWindowState => states.some((state) => state === value);
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const draftIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -37,7 +38,7 @@ export const readComposeWindows = (storage: Pick<Storage, "getItem">, mailboxId:
     const { draftId, state, rect } = entry as Record<string, unknown>;
     if (typeof draftId !== "string" || !draftIdPattern.test(draftId) || seen.has(draftId)) continue;
     seen.add(draftId);
-    const stored: StoredComposeWindow = { draftId, state: states.includes(state as FloatingWindowState) ? (state as FloatingWindowState) : "normal" };
+    const stored: StoredComposeWindow = { draftId, state: isState(state) ? state : "normal" };
     const place = readRect(rect);
     if (place) stored.rect = place;
     windows.push(stored);
@@ -46,7 +47,11 @@ export const readComposeWindows = (storage: Pick<Storage, "getItem">, mailboxId:
 };
 
 /** Remembers the open windows; a failing storage (private mode, quota) only costs the restore after a reload. */
-export const writeComposeWindows = (storage: Pick<Storage, "setItem" | "removeItem">, mailboxId: string, windows: StoredComposeWindow[]) => {
+export const writeComposeWindows = (
+  storage: Pick<Storage, "setItem" | "removeItem">,
+  mailboxId: string,
+  windows: StoredComposeWindow[],
+) => {
   try {
     if (windows.length === 0) storage.removeItem(composeWindowsKey(mailboxId));
     else storage.setItem(composeWindowsKey(mailboxId), JSON.stringify(windows));

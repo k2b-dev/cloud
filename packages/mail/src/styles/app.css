@@ -1586,16 +1586,6 @@
   text-overflow: ellipsis;
 }
 
-/* A new message shows its fields with their edge, as the mockup does; a reply keeps the quiet line. */
-.k2b-ui .mail-inline-draft[data-intent="new"] .mail-inline-draft-subject .k2b-input-shell {
-  --k2b-edge-color: var(--k2b-edge);
-}
-.k2b-ui .mail-inline-draft[data-intent="new"] .mail-inline-draft-subject .k2b-input-shell:focus-within {
-  --k2b-edge-color: var(--k2b-edge-focus);
-}
-.k2b-ui .mail-inline-draft[data-intent="new"] .mail-inline-draft-recipients .mail-recipient-control {
-  border-color: var(--k2b-edge);
-}
 
 /* A draft in a floating window: the composer is the window's content, flat, with no box of its own. The text takes
    the free height; the bar stays at the bottom edge. */
@@ -1605,7 +1595,8 @@
   min-height: 0;
   flex-direction: column;
 }
-.k2b-ui .mail-compose-window-body > .mail-inline-draft {
+/* Stronger than the phone's full-width draft in a conversation: the window keeps its own inset. */
+.k2b-ui .mail-compose-window .mail-compose-window-body > .mail-inline-draft {
   min-height: 0;
   flex: 1 1 auto;
   margin: 0;
@@ -1637,11 +1628,14 @@
 }
 .k2b-ui .mail-compose-window-foot {
   gap: 0.375rem;
+  /* The bar is the window's own surface, so it never shows as a band. */
+  background: var(--k2b-surface-elevated);
   margin-inline: -0.5rem;
   padding: 0.375rem 0.5rem;
   border-radius: var(--k2b-radius-control);
 }
-.k2b-ui .mail-compose-window-discard {
+/* The trash stands at the end of the bar, as far from Send as the bar allows. */
+.k2b-ui .mail-compose-window-foot > :last-child {
   margin-inline-start: auto;
 }
 /* A failed send keeps the window: the bar turns light red and says so; Send again stands in Send's place. */

@@ -65,9 +65,9 @@ import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
 import type { MailTextEditorActions } from "./MailTextEditor";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
+import { mailComposeWindowMessages } from "./mail-compose-window-messages";
 import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
-import { mailComposeWindowMessages } from "./mail-compose-window-messages";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { reconcileMailComposerPanes } from "./mail-composer-panes";
 import { defaultSignatureTemplateId, type MailComposerSignatures } from "./mail-composer-signature";
@@ -2278,7 +2278,6 @@ export default function MailComposer(props: {
                   <IconButton
                     type="button"
                     size="sm"
-                    class="mail-compose-window-discard"
                     label={t().discardDraft}
                     disabled={!editable() || discard.loading()}
                     onClick={() => void discardDraft()}

@@ -317,7 +317,8 @@ describe("MailComposer in a floating window", () => {
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
         const url = new URL(request.url);
-        if (url.pathname.endsWith("/attachment-uploads") && request.method === "POST") return Response.json({ id: "Upl001", chunkSize: 62 });
+        if (url.pathname.endsWith("/attachment-uploads") && request.method === "POST")
+          return Response.json({ id: "Upl001", chunkSize: 62 });
         // The first part arrives; the rest waits, so the upload stays at 62 %.
         if (url.pathname.endsWith("/attachment-uploads/Upl001") && request.method === "PATCH")
           return url.searchParams.get("offset") === "0" ? new Response(null, { status: 204 }) : rest.promise;

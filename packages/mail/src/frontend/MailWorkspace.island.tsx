@@ -47,6 +47,7 @@ import { UndoNotPossible } from "./_components/MailAutomationLog";
 import MailBulkActionBar from "./_components/MailBulkActionBar";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
 import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
+import MailComposeWindows from "./_components/MailComposeWindows";
 import MailConversationList from "./_components/MailConversationList";
 import MailConversationReader, { MAIL_CONTEXT_DETAIL_ID } from "./_components/MailConversationReader";
 import MailDetailsPanel, { MailDetailsSkeleton } from "./_components/MailDetailsPanel";
@@ -75,7 +76,6 @@ import { mailAutomationLogMessages } from "./_components/mail-automation-log-mes
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
-import MailComposeWindows from "./_components/MailComposeWindows";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { openDraftWindow } from "./_components/mail-compose-windows";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
@@ -1063,7 +1063,8 @@ function createMailboxController(props: MailboxControllerProps) {
     if (options.progressToast)
       composeProgress = toast(t().preparingMessage, { progress: "indeterminate", duration: 0, iconClass: "ti ti-pencil" });
     // The window returns the focus to what started it, such as New message.
-    const trigger = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    const trigger =
+      document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
     let draft: MailDraft;
     try {
       let seed = pendingComposeSeed?.mailboxId === mailboxId ? pendingComposeSeed : null;

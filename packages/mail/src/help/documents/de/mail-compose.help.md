@@ -3,7 +3,7 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
-updated: 2026-11-09
+updated: 2026-11-12
 order: 30
 ---
 
@@ -11,7 +11,19 @@ order: 30
 
 Du schreibst direkt in der Unterhaltung. Wähle in einer Unterhaltung **Antworten**, **Allen** oder **Weiterleiten** in der schwebenden Leiste über der neuesten Nachricht, oder **Auswahl zitieren** an einer Nachricht. Die Leiste wächst an derselben Stelle zum Entwurf, über der neuesten Nachricht, und die Schreibmarke steht im Text. Am Telefon wartet die Leiste unten, und der Entwurf öffnet oben über die volle Breite. Mail legt den gemeinsamen Entwurf an, bevor du tippst.
 
-Wähle **Verfassen** für eine neue Nachricht. Sie steht als **Neue Nachricht** oben in der Liste, und rechts steht eine leere Unterhaltung mit dem Entwurf. Nach dem Senden wird daraus eine Unterhaltung.
+Wähle **Verfassen** oder drücke **Strg+Alt+N** (**⌘+⌥+N** auf dem Mac) für eine neue Nachricht. Sie öffnet als schwebendes Fenster über dem Postfach. Liste und offene Unterhaltung dahinter bleiben bedienbar, und du kannst mehrere neue Nachrichten zugleich offen haben.
+
+- **Kopf des Fensters:** Er zeigt den Betreff, bis dahin „Neue Nachricht“, und leise den Stand: „Auf dem Server gespeichert“, „Entwurf wird gespeichert…“ oder „Offline · hier gesichert“. Daneben stehen **Minimieren**, **Vergrößern** und **Fenster schließen**. Ziehe das Fenster am Kopf an eine andere Stelle.
+- **Minimieren** legt das Fenster als Leiste unten ab. Ein Klick auf die Leiste holt es zurück. Die Liste lässt Platz, damit ihre letzte Zeile erreichbar bleibt.
+- **Vergrößern** legt das Fenster über fast die ganze App und dunkelt den Rest ab. Esc oder **Verkleinern** holt es auf seine Größe zurück.
+- **Schließen** verliert nichts: Der Entwurf liegt danach in **Entwürfe**, und der Hinweis „Entwurf liegt in ‚Entwürfe‘“ bietet **Öffnen** an. Ein Klick auf eine neue Nachricht in **Entwürfe** öffnet sie wieder als Fenster. Eine gerade begonnene Nachricht ohne Änderung verschwindet beim Schließen.
+- **Senden** schließt das Fenster. Der Hinweis „Wird in … s gesendet“ bietet **Rückgängig** an, solange das noch geht; dann öffnet das Fenster wieder mit dem Entwurf. **Später senden** schließt das Fenster ebenfalls, und **Ändern** im Hinweis holt die Nachricht zurück zum Bearbeiten.
+- **Fehler beim Senden:** Das Fenster bleibt offen, die Leiste unten wird rot und nennt den Grund. Dein Text ist gespeichert. **Erneut senden** steht an der Stelle von **Senden**.
+- **Offline** schreibst du weiter; Mail sichert den Text in diesem Browser, und **Senden** wartet, bis die Verbindung zurück ist. Solange eine Datei hochlädt, zeigt der Kopf „Lädt hoch · n %“, und **Senden** wartet ebenfalls.
+- **Neu laden:** Mail merkt sich die offenen Fenster in diesem Tab, je Postfach, mit Größe und Zustand. Nach dem Neuladen oder der Rückkehr aus einer anderen App öffnen sie wieder. Ein inzwischen gesendeter oder gelöschter Entwurf fehlt dann ohne Meldung.
+- **Am Telefon** ist das Fenster ein Blatt über den ganzen Bildschirm. **Senden** steht oben rechts, **Schließen** oben links; Schließen behält den Entwurf.
+
+Nach dem Senden wird aus der neuen Nachricht eine Unterhaltung.
 
 Der Kopf des Entwurfs zeigt die Empfänger, **Cc, Bcc**, **…**, **Vollbild** und **Einklappen (Esc)**. Eine leise Zeile darunter zeigt Absender und Betreff. Esc verlässt zuerst das Vollbild und klappt dann den Entwurf ein. Ein gerade begonnener Entwurf ohne Änderung verschwindet beim Einklappen; jeder andere Entwurf wird gespeichert und bleibt in der Unterhaltung.
 
@@ -19,7 +31,7 @@ Der Kopf des Entwurfs zeigt die Empfänger, **Cc, Bcc**, **…**, **Vollbild** u
 - **Signatur:** Die gewählte Signatur folgt dem Text als fester Block, genau so, wie Mail sie beim Senden einfügt. Wechsle sie mit der Signatur-Schaltfläche in den Werkzeugen des Entwurfs.
 - **Zitat:** Eine Antwort bietet **Zitat anhängen** für die Nachricht an, auf die sie antwortet. Das Zitat ist im Entwurf eingeklappt und geht nach der Signatur mit, mit Datum in deiner Sprache und Zeitzone.
 - **Vorschau:** zeigt die Mail genau so, wie sie ankommt, mit dem Design des Postfachs. Der Editor selbst bleibt im ruhigen Cloud-Stil.
-- **Eigenes Fenster:** **…** › **In eigenem Fenster** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht nie ein zweiter Entwurf. Alte Links auf die Seite des Editors öffnen die Unterhaltung mit offenem Entwurf.
+- **Eigenes Fenster:** **…** › **In eigenem Fenster** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht nie ein zweiter Entwurf. Alte Links auf die Seite des Editors öffnen die Unterhaltung mit offenem Entwurf. Links auf eine neue Nachricht und alte Links auf ein eigenes Fenster öffnen Mail mit dem Fenster des Entwurfs.
 
 Wähle unter **Von** eine bestätigte Absenderidentität, füge Empfänger hinzu und gib Betreff und Text ein. **Cc/Bcc** zeigt die weiteren Empfängerfelder. Empfänger sehen die Bcc-Liste nie. Deine eigene Kopie in Gesendet behält sie, sodass jedes E-Mail-Programm zeigt, wen du in Bcc gesetzt hast.
 

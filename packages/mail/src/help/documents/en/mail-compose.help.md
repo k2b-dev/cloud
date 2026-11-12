@@ -3,7 +3,7 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
-updated: 2026-11-09
+updated: 2026-11-12
 order: 30
 kind: task
 ---
@@ -12,7 +12,19 @@ kind: task
 
 You write in the conversation itself. In a conversation, choose **Reply**, **Reply all**, or **Forward** in the floating bar above the newest message, or **Quote selection** on a message. The bar grows into the draft at the same place, above the newest message, and the cursor stands in the text. On a phone, the bar waits at the bottom, and the draft opens at the top over the full width. Mail creates the shared draft before you type.
 
-Choose **Compose** for a new message. It appears as **New message** at the top of the list, and the reader shows an empty conversation with the draft. After you send it, the message becomes a conversation.
+Choose **Compose** or press **Ctrl+Alt+N** (**⌘+⌥+N** on a Mac) for a new message. It opens as a floating window over the mailbox. The list and the open conversation behind it stay usable, and you can have several new messages open at once.
+
+- **Window head:** It shows the subject, until then "New message", and quietly where the draft stands: "Saved on server", "Saving draft...", or "Offline · saved here". Next to it are **Minimize**, **Maximize**, and **Close window**. Drag the head to move the window.
+- **Minimize** puts the window down as a bar at the bottom. Click the bar to bring it back. The list leaves room so that its last row stays reachable.
+- **Maximize** enlarges the window over almost all of the app and dims the rest. Esc or **Restore size** makes it smaller again.
+- **Close** loses nothing: the draft waits in **Drafts**, and the notice "Draft is in “Drafts”" offers **Open**. Clicking a new message in **Drafts** opens it as a window again. A message you just started and did not change disappears when you close it.
+- **Send** closes the window. The notice "Sending in … s" offers **Undo** while that is still possible; the window then opens again with the draft. **Send later** closes the window too, and **Change** in the notice takes the message back for editing.
+- **Send failed:** The window stays open, its bottom bar turns red and names the reason. Your text is saved. **Send again** stands where **Send** was.
+- **Offline** you keep writing; Mail keeps the text in this browser, and **Send** waits until the connection is back. While a file uploads, the head shows "Uploading · n %", and **Send** waits too.
+- **Reload:** Mail remembers the open windows in this tab, per mailbox, with their size and state. After a reload or when you come back from another app, they open again. A draft that was sent or deleted in the meantime is left out without a message.
+- **On a phone** the window is a sheet over the whole screen. **Send** is at the top right and **Close** at the top left; closing keeps the draft.
+
+After you send it, the new message becomes a conversation.
 
 The draft head shows the recipients, **Cc, Bcc**, **…**, **Full screen**, and **Collapse (Esc)**. A quiet line below shows the sender and the subject. Esc leaves full screen first and then collapses the draft. A draft you just started and did not change goes away when you collapse it; any other draft is saved and stays in the conversation.
 
@@ -20,7 +32,7 @@ The draft head shows the recipients, **Cc, Bcc**, **…**, **Full screen**, and 
 - **Signature:** the chosen signature follows the text as a fixed block, exactly as Mail adds it when it sends. Switch it with the signature button in the draft's tools.
 - **Quote:** a reply offers **Attach quote** for the message it answers. The quote is collapsed in the draft and goes out after the signature, with the date in your language and time zone.
 - **Preview:** shows the mail exactly as it arrives, with the mailbox's design. The editor itself keeps a calm Cloud style.
-- **Own window:** **…** › **In its own window** moves the same draft to its own browser window. It never creates a second draft. Old links to the compose page open the conversation with the draft open.
+- **Own window:** **…** › **In its own window** moves the same draft to its own browser window. It never creates a second draft. Old links to the compose page open the conversation with the draft open. Links to a new message and old links to its own window open Mail with the draft's window.
 
 Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** shows the additional recipient fields. Recipients never see the Bcc list. Your own copy in Sent keeps it, so any mail client shows whom you blind-copied.
 
