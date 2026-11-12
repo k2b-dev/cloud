@@ -1,6 +1,18 @@
 import type { CloudTheme } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
-import { Button, ContextMenu, type DropdownAction, type DropdownItem, Placeholder, StatusBadge, toast, useLocale } from "@k2b/ui";
+import {
+  Avatar,
+  Button,
+  ContextMenu,
+  type DropdownAction,
+  type DropdownItem,
+  IconButton,
+  Placeholder,
+  StatusBadge,
+  Tooltip,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { DraftDerivationKind, DraftIntent, SenderIdentity } from "../../contracts";
@@ -12,6 +24,7 @@ import MailMessageAttachments from "./MailMessageAttachments";
 import MailMessageBody from "./MailMessageBody";
 import MailMessageDeliveryControl from "./MailMessageDeliveryControl";
 import { createMailMessageMenu, MailMessageMenuTrigger } from "./MailSenderMessageActions";
+import MailSenderPopover from "./MailSenderPopover";
 import { deriveReplyRecipients, formatMailAddress, forwardMessageBody } from "./mail-compose-derivation";
 import { isOutgoingMessage } from "./mail-conversation-history";
 import { mailMessageMessages } from "./mail-message-messages";
@@ -27,6 +40,7 @@ import {
   resolveMessageBodyFormat,
   resolveMessageColors,
 } from "./mail-message-presentation";
+import { mailReaderMessages } from "./mail-reader-messages";
 import type { MailReadingFormat } from "./mail-user-preferences";
 
 /** How long a reader waits for an opened message's body before it says that it waits for the mailbox. */
@@ -49,6 +63,10 @@ type MailMessageCardContext = {
   theme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
   composerBusy: boolean;
+  /** The conversation's subject, the name of a ZIP with all attachments. */
+  subject?: string;
+  /** Every message of the conversation, for Technical details. */
+  messages?: MailWorkspaceMessage[];
 };
 
 type MailMessageCardActions = {
@@ -63,6 +81,8 @@ type MailMessageCardActions = {
   split: (messageId: string) => void | Promise<void>;
   /** Undo send and cancel return the message as a draft; the conversation opens it in its place. */
   openDraft?: (draftId: string) => void;
+  /** Opens an attachment in the conversation's Lightbox, which steps through every attachment of the conversation. */
+  openAttachment?: (messageId: string, attachmentId: string) => void;
 };
 
 export default function MailMessageCard(props: {
@@ -78,6 +98,7 @@ export default function MailMessageCard(props: {
   const messageId = props.message.id;
   const locale = useLocale();
   const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
+  const reader = createMemo(() => mailReaderMessages.resolve([locale()]).t);
   const findingPresentation = (finding: MailSecurityFinding): { title: string; explanation: string } => {
     const t = messages();
     if (finding.code === "admin_deny_policy") {
@@ -247,8 +268,9 @@ export default function MailMessageCard(props: {
         : new Set<string>();
     return props.message.attachments.filter((attachment) => !inline.has(attachment.id));
   });
+  const responseAllowed = () => props.context.canWrite && Boolean(props.context.selectedConversationId) && !exceptionalDelivery();
   const responseActions = (): DropdownItem[] =>
-    props.context.canWrite && props.context.selectedConversationId && !exceptionalDelivery()
+    responseAllowed()
       ? [
           {
             sectionLabel: messages().respond,
@@ -341,6 +363,9 @@ export default function MailMessageCard(props: {
     get primaryActions() {
       return messageMenuActions();
     },
+    get conversationMessages() {
+      return props.context.messages;
+    },
     onReassignMessage: (id) => props.actions.reassign(id),
     onSplitMessage: (id) => props.actions.split(id),
     onDeriveMessage: (kind, message) => props.actions.derive(kind, message),
@@ -352,85 +377,139 @@ export default function MailMessageCard(props: {
         attachment.filename?.toLowerCase().endsWith(".ics"),
     );
 
+  const [senderAnchor, setSenderAnchor] = createSignal<HTMLElement | null>(null);
+  let article!: HTMLElement;
+  /** The open head and the one-line row are different elements; the focus moves along from one to the other. */
+  const toggle = () => {
+    const focused = article.contains(document.activeElement);
+    props.actions.toggle(props.message.id);
+    if (focused) queueMicrotask(() => article.querySelector<HTMLElement>("[data-mail-message-header]")?.focus());
+  };
+  const sender = () => props.message.from[0] ?? null;
+  const senderName = () => (outgoing() ? messages().you : sender()?.name || sender()?.address || messages().unknownSender);
+  const attachmentCount = () => listedAttachments().length;
+  const paperclip = () => (
+    <Show when={attachmentCount() > 0}>
+      <span class="mail-message-clip" title={messages().attachmentCount({ count: attachmentCount() })} data-mail-message-attachment-count>
+        <i class="ti ti-paperclip" aria-hidden="true" />
+        <span aria-hidden="true">{attachmentCount()}</span>
+        <span class="sr-only">{messages().attachmentCount({ count: attachmentCount() })}</span>
+      </span>
+    </Show>
+  );
+  const date = () => (
+    <time class="mail-message-date" dateTime={props.message.internalDate}>
+      {formatMailMessageDateTime(props.message.internalDate, props.context.dateConfig)}
+    </time>
+  );
+
   return (
     <article
-      class="group min-w-0 scroll-mt-3 py-1"
+      ref={article}
+      class="mail-message group min-w-0 scroll-mt-3"
       data-mail-message-id={props.message.id}
       data-mail-direction={outgoing() ? "outgoing" : "incoming"}
+      data-expanded={props.expanded ? "" : undefined}
     >
       {/* A right-click on the message opens its "…" menu. A block host takes focus back when Escape closes it. */}
       <ContextMenu class="block" tabIndex={-1} items={messageMenu.items()} label={messageMenu.label()} keepNativeMenu>
-        <div
-          class={`flex items-start gap-1 rounded-[var(--ui-radius-surface)] p-1 transition-colors ${
-            props.isLatest ? "" : "bg-[var(--ui-surface-subtle)] hover:bg-[var(--ui-hover)] focus-within:bg-[var(--ui-hover)]"
-          }`}
+        <Show
+          when={props.expanded}
+          fallback={
+            // An older message is one line: who, the start of the text, its attachments and when. A click opens it.
+            <button type="button" class="mail-message-row" aria-expanded="false" data-mail-message-header onClick={toggle}>
+              <Avatar name={senderName()} size="sm" class="mail-message-avatar" />
+              <span
+                class="mail-message-row-sender"
+                title={props.message.from.map(formatMailAddress).join(", ") || messages().unknownSender}
+              >
+                {senderLabel()}
+              </span>
+              <span class="mail-message-row-preview" data-mail-message-preview>
+                {preview() || routeLabel()}
+              </span>
+              <Show when={deliveryBadge()}>
+                {(status) => <StatusBadge tone={status().tone} label={status().label} icon={status().icon} class="shrink-0" />}
+              </Show>
+              {paperclip()}
+              {date()}
+            </button>
+          }
         >
-          <button
-            type="button"
-            class="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-[var(--ui-radius-control)] p-2 text-left"
-            aria-expanded={props.expanded}
-            data-mail-message-header
-            onClick={() => props.actions.toggle(props.message.id)}
-          >
-            <span class="min-w-0 flex-1">
-              <span class="flex h-6 min-w-0 items-center gap-2">
-                <span
-                  class="inline-flex h-5 w-5 shrink-0 items-center justify-center text-secondary"
-                  title={outgoing() ? messages().outgoingMessage : messages().incomingMessage}
-                >
-                  <i class={`ti ${outgoing() ? "ti-arrow-up-right" : "ti-arrow-down-left"} text-sm`} aria-hidden="true" />
-                  <span class="sr-only">{outgoing() ? messages().outgoingMessage : messages().incomingMessage}</span>
-                </span>
-                <span
-                  class={`truncate text-sm font-semibold ${props.expanded || props.isLatest ? "text-primary" : "text-secondary"}`}
-                  title={props.message.from.map(formatMailAddress).join(", ") || messages().unknownSender}
+          <div class="mail-message-head">
+            <Avatar name={senderName()} size="sm" class="mail-message-avatar" />
+            <div class="mail-message-head-who">
+              <Show when={!outgoing() && sender()} fallback={<span class="mail-message-sender">{senderLabel()}</span>}>
+                <button
+                  type="button"
+                  class="mail-message-sender"
+                  data-mail-sender-trigger
+                  aria-haspopup="dialog"
+                  aria-expanded={senderAnchor() !== null}
+                  title={props.message.from.map(formatMailAddress).join(", ")}
+                  onClick={(event) => setSenderAnchor(senderAnchor() ? null : event.currentTarget)}
                 >
                   {senderLabel()}
-                </span>
-                <span class="truncate text-xs text-dimmed">{routeLabel()}</span>
-              </span>
-              <Show when={!props.expanded && preview()}>
-                {(value) => (
-                  <span class="mt-1 block truncate text-xs leading-5 text-dimmed" data-mail-message-preview>
-                    {value()}
-                  </span>
-                )}
+                  <i class="ti ti-chevron-down" aria-hidden="true" />
+                </button>
               </Show>
-              <Show when={deliveryBadge()}>
-                {(status) => (
-                  <StatusBadge
-                    tone={status().tone}
-                    label={status().label}
-                    icon={status().icon}
-                    title={props.message.delivery?.lastErrorMessage ?? undefined}
-                    class="mt-1"
-                  />
-                )}
-              </Show>
-            </span>
-            <span class="flex h-6 shrink-0 items-center gap-2">
-              {/* Open, the message lists its attachments above its body; collapsed, its header names how many. */}
-              <Show when={!props.expanded && listedAttachments().length > 0}>
-                <span
-                  class="inline-flex items-center gap-0.5 text-xs text-dimmed"
-                  title={messages().attachmentCount({ count: listedAttachments().length })}
-                  data-mail-message-attachment-count
+              <span class="mail-message-route">{routeLabel()}</span>
+            </div>
+            <Show when={deliveryBadge()}>
+              {(status) => (
+                <StatusBadge
+                  tone={status().tone}
+                  label={status().label}
+                  icon={status().icon}
+                  title={props.message.delivery?.lastErrorMessage ?? undefined}
+                />
+              )}
+            </Show>
+            {/* The date and the free space of the head close the message again; buttons keep their own meaning. */}
+            <button
+              type="button"
+              class="mail-message-collapse"
+              aria-expanded="true"
+              aria-label={reader().collapseMessage}
+              data-mail-message-header
+              onClick={toggle}
+            >
+              {paperclip()}
+              {date()}
+            </button>
+            <Show when={responseAllowed()}>
+              <Tooltip.Anchor content={messages().reply}>
+                <IconButton
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  label={messages().reply}
+                  data-mail-message-reply
+                  disabled={props.context.composerBusy}
+                  onClick={() => props.actions.compose("reply", props.message)}
                 >
-                  <i class="ti ti-paperclip" aria-hidden="true" />
-                  <span aria-hidden="true">{listedAttachments().length}</span>
-                  <span class="sr-only">{messages().attachmentCount({ count: listedAttachments().length })}</span>
-                </span>
-              </Show>
-              <time class="shrink-0 text-xs text-dimmed" dateTime={props.message.internalDate}>
-                {formatMailMessageDateTime(props.message.internalDate, props.context.dateConfig)}
-              </time>
-              <i class={`ti ${props.expanded ? "ti-chevron-up" : "ti-chevron-down"} text-dimmed print:hidden`} aria-hidden="true" />
-            </span>
-          </button>
-          <div class="flex h-10 shrink-0 items-center">
+                  <i class="ti ti-arrow-back-up" aria-hidden="true" />
+                </IconButton>
+              </Tooltip.Anchor>
+            </Show>
             <MailMessageMenuTrigger menu={messageMenu} />
           </div>
-        </div>
+          <Show when={sender()}>
+            {(from) => (
+              <MailSenderPopover
+                anchor={senderAnchor()}
+                onClose={() => setSenderAnchor(null)}
+                mailboxId={props.context.mailboxId}
+                conversationId={props.context.selectedConversationId}
+                sender={{ name: from().name, address: from().address }}
+                dateConfig={props.context.dateConfig}
+                actions={messageMenu.senderActions()}
+                showHistory={props.context.mailboxWide}
+                canWrite={props.context.canWrite}
+              />
+            )}
+          </Show>
+        </Show>
         <Show when={props.message.deletedOnServer}>
           {/* Full width and wrapping, so the notice stays readable on a phone; the hint explains it on hover. */}
           <p
@@ -456,7 +535,7 @@ export default function MailMessageCard(props: {
           )}
         </Show>
         <Show when={props.expanded}>
-          <div class="px-3 pb-3 pt-2">
+          <div class="mail-message-content">
             <Show when={security().risk !== "none"}>
               <div
                 class={`mb-3 flex gap-2 rounded-[var(--ui-radius-control)] border px-3 py-2 text-xs ${
@@ -488,14 +567,6 @@ export default function MailMessageCard(props: {
                   </a>
                 </div>
               </div>
-            </Show>
-            <Show when={listedAttachments().length > 0 && !security().linksDisabled}>
-              <MailMessageAttachments
-                mailboxId={props.context.mailboxId}
-                messageId={props.message.id}
-                attachments={listedAttachments()}
-                canShare={props.context.canAdmin}
-              />
             </Show>
             <div ref={messageBody} class="mail-message-body min-w-0 overflow-x-auto text-sm text-primary">
               <Show
@@ -569,6 +640,18 @@ export default function MailMessageCard(props: {
                 )}
               </Show>
             </div>
+            <Show when={listedAttachments().length > 0 && !security().linksDisabled}>
+              <MailMessageAttachments
+                mailboxId={props.context.mailboxId}
+                messageId={props.message.id}
+                attachments={listedAttachments()}
+                canShare={props.context.canAdmin}
+                archiveName={props.context.subject}
+                onOpen={
+                  props.actions.openAttachment ? (attachment) => props.actions.openAttachment?.(props.message.id, attachment.id) : undefined
+                }
+              />
+            </Show>
             <Show when={hasCalendarInvitation() && props.context.calendarIntegrationAvailable && !security().linksDisabled}>
               <MailCalendarInvitation
                 mailboxId={props.context.mailboxId}

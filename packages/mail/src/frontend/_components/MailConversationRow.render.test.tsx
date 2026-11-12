@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -139,18 +139,24 @@ describe("Mail conversation row marks (v5)", () => {
   });
 
   test("Waiting stands as a word, Later as a clock with its day, and the message count after the sender", () => {
-    const html = renderRow({
-      ...plain,
-      workStatus: "waiting",
-      messageCount: 3,
-      // Two days ahead of now: its weekday.
-      snoozedUntil: new Date(Date.now() + 2 * 86_400_000).toISOString(),
-    });
-    expect(html).toContain(">Waiting<");
-    expect(html).toMatch(/class="mail-row-snooze"[^>]*aria-label="until [A-Z][a-z]{2}"/);
-    expect(html).toContain('aria-label="3 messages"');
-    // A snooze that has passed shows nothing.
-    expect(renderRow({ ...plain, snoozedUntil: new Date(Date.now() - 60_000).toISOString() })).not.toContain("mail-row-snooze");
+    // Wednesday, 19 August 2026, 12:00 UTC.
+    setSystemTime(new Date("2026-08-19T12:00:00.000Z"));
+    try {
+      const html = renderRow({
+        ...plain,
+        workStatus: "waiting",
+        messageCount: 3,
+        // Two days ahead of now: its weekday.
+        snoozedUntil: "2026-08-21T12:00:00.000Z",
+      });
+      expect(html).toContain(">Waiting<");
+      expect(html).toMatch(/class="mail-row-snooze"[^>]*aria-label="until Fri"/);
+      expect(html).toContain('aria-label="3 messages"');
+      // A snooze that has passed shows nothing.
+      expect(renderRow({ ...plain, snoozedUntil: "2026-08-19T11:59:00.000Z" })).not.toContain("mail-row-snooze");
+    } finally {
+      setSystemTime();
+    }
   });
 
   test("who is responsible: one face, you first as You, everyone in the label", () => {

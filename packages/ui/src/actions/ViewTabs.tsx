@@ -125,7 +125,7 @@ type WatchedViewTabs = HTMLElement & {
     /** Runs one fit in the next frame; calls before it runs share it. */
     schedule: () => void;
     frame: number;
-    /** The head lead's width and the widths of the shown entries when the last fit ended. */
+    /** The room's width and the widths of the shown entries when the last fit ended. */
     room: string;
     /** Fits again once web fonts finish loading: their metrics change every view's width, not the lead's. */
     fonts: () => void;
@@ -136,15 +136,16 @@ type WatchedViewTabs = HTMLElement & {
  * Also embedded, so it must not close over module state.
  *
  * A fitting strip converges by construction. It fits again only when the strip renders, web fonts finish loading, or
- * a notification finds another width of the head lead or of an entry that the last fit left shown. A fit only shows
- * and hides entries: the lead is an inline-size container that takes no width from the strip, and every entry keeps
- * its own width (`flex: none`), so the notifications a fit causes find the widths it ended with and stop there.
+ * a notification finds another width of its room or of an entry that the last fit left shown. The room is the head
+ * lead, or outside a workspace head the strip's own root, which takes its width from its row. A fit only shows and
+ * hides entries: neither room takes width from the entries, and every entry keeps its own width (`flex: none`), so the
+ * notifications a fit causes find the widths it ended with and stop there.
  */
 function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTabs, edges: (element: HTMLElement) => string | undefined) {
   if (!(list instanceof HTMLElement)) return;
   const fits = list.hasAttribute("data-fit-room");
-  const roomOf = () => list.closest<HTMLElement>(".k2b-app-workspace__head-lead");
-  // What a fit depends on: the lead's width and each shown entry's width, which fonts, icons and labels change.
+  const roomOf = () => list.closest<HTMLElement>(".k2b-app-workspace__head-lead") ?? list.closest<HTMLElement>(".k2b-view-tabs");
+  // What a fit depends on: the room's width and each shown entry's width, which fonts, icons and labels change.
   const measured = () =>
     [roomOf()?.clientWidth ?? -1, ...Array.from(list.children, (child) => child.getBoundingClientRect().width)].join(" ");
   // A DOM property survives hydration: one observer and focus listener per reused list.

@@ -20,6 +20,7 @@ const nonCredentials = new Map([
   ["__Host-cloud_shared_workstation", "Marks the browser as a shared workstation; the server holds each session's limit."],
   ["app-access-fixture", "Identifies in-memory state in the browser UI fixture."],
   ["mail_fixture_focus_notice", "Mail's browser fixture marks its notice as closed; the fixture server only."],
+  ["mail_fixture_workspace", "Mail's browser fixture keeps the list share and seen hints; the fixture server only."],
 ]);
 const sources = new Map<string, ts.SourceFile>();
 const sourceAt = (path: string): ts.SourceFile => {

@@ -15,17 +15,7 @@ import {
 } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import {
-  AppWorkspace,
-  announce,
-  appWorkspaceDetailElementId,
-  openSpotlightSearch,
-  Placeholder,
-  prompts,
-  type ToastHandle,
-  toast,
-  useLocale,
-} from "@k2b/ui";
+import { AppWorkspace, announce, openSpotlightSearch, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { type Accessor, batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
@@ -37,7 +27,6 @@ import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
 import { isMailEventsRoute, readMailEventsFilter } from "../mail-events-route";
 import { guaranteedMailSearchFolderIds } from "../search-folder-scope";
-import type { MailboxAccessMember } from "../service/access";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
 import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
@@ -49,8 +38,7 @@ import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTa
 import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
 import MailComposeWindows from "./_components/MailComposeWindows";
 import MailConversationList from "./_components/MailConversationList";
-import MailConversationReader, { MAIL_CONTEXT_DETAIL_ID } from "./_components/MailConversationReader";
-import MailDetailsPanel, { MailDetailsSkeleton } from "./_components/MailDetailsPanel";
+import MailConversationReader from "./_components/MailConversationReader";
 import MailDraftsView from "./_components/MailDraftsView";
 import { createMailEventsFeed, MailEventsFeed } from "./_components/MailEventsFeed";
 import { MAIL_LIST_MIN, MAIL_READER_MIN, MailListHandle, MailListShareStyle, mailListPercent } from "./_components/MailListHandle";
@@ -88,7 +76,6 @@ import {
   selectAllMailConversations,
   toggleMailConversationSelection,
 } from "./_components/mail-conversation-selection";
-import type { MailConversationToolbarActionId } from "./_components/mail-conversation-toolbar";
 import { mailConversationUiMessages } from "./_components/mail-conversation-ui-messages";
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
@@ -228,7 +215,7 @@ function createMailboxController(props: MailboxControllerProps) {
   // server snapshot remains one canonical contract.
   const [data, setData] = createStore(props.data);
   const [requestPath, setRequestPath] = createSignal(props.requestPath);
-  const [detailsOpen, setDetailsOpen] = createSignal(props.initialPreferences.detailsOpen);
+
   // A draft open inside the reader, from the URL on the server too, so the first render already knows full screen.
   // `?draft=` without a conversation names a draft window instead (see below).
   const [draftOpen, setDraftOpen] = createSignal(
@@ -236,7 +223,6 @@ function createMailboxController(props: MailboxControllerProps) {
   );
   // F7: full screen is this browser's last choice and never turns on by itself.
   const [draftFullscreen, setDraftFullscreen] = createSignal(props.initialPreferences.draftFullscreen);
-  const [toolbarActions, setToolbarActions] = createSignal(props.initialPreferences.toolbarActions);
   const [theme, setTheme] = createSignal<CloudTheme | null>(props.initialTheme);
   const [presence, setPresence] = createSignal<ConversationPresenceSnapshot>({
     participants: [],
@@ -244,21 +230,6 @@ function createMailboxController(props: MailboxControllerProps) {
   /** Whether the people here are known: loading until the first heartbeat answers, unavailable after one failed. */
   const [presenceState, setPresenceState] = createSignal<"loading" | "live" | "unavailable">("loading");
   let retryPresence = () => {};
-  // Who has access belongs to the mailbox, so it loads once, when details first show a conversation. Only people
-  // with mailbox-wide access read it; the server decides the same way.
-  const [accessWanted, setAccessWanted] = createSignal(false);
-  const accessMembers = query.create<string, MailboxAccessMember[]>({
-    source: () => data.mailbox.id,
-    enabled: () => accessWanted() && data.access.scope === "mailbox",
-    load: async (id, { abortSignal }) => {
-      const response = await apiClient.mailboxes[":mailboxId"].access.members.$get(
-        { param: { mailboxId: id } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(String(response.status));
-      return response.json();
-    },
-  });
   const [settingsOpening, setSettingsOpening] = createSignal(false);
   const [detailsOpening, setDetailsOpening] = createSignal(false);
   const [managementOpening, setManagementOpening] = createSignal<"health" | "links" | "remote-content" | "subscriptions" | null>(null);
@@ -873,11 +844,6 @@ function createMailboxController(props: MailboxControllerProps) {
     persistPreferences({ eventsDiscovered: true });
   });
 
-  const updateToolbarActions = (actions: MailConversationToolbarActionId[]) => {
-    setToolbarActions(actions);
-    persistPreferences({ toolbarActions: actions });
-  };
-
   const updateListMode = (listMode: MailboxPageData["listMode"]) => {
     if (listMode === data.listMode) return;
     props.onNavigationStart();
@@ -1417,7 +1383,6 @@ function createMailboxController(props: MailboxControllerProps) {
       }) === "not_spam",
   );
   const selectedConversationRevision = createMemo(() => selectedListItem()?.revision ?? data.collaborationState?.revision ?? null);
-  const canShowDetails = createMemo(() => Boolean(data.selectedConversationId));
 
   createEffect(() => {
     if (canWrite() || (!selectionMode() && conversationSelection().ids.size === 0)) return;
@@ -1751,7 +1716,7 @@ function createMailboxController(props: MailboxControllerProps) {
       setDensityHintOpen(true);
     };
     // Escape closes the open conversation, as × does; the list then takes the full width. An open menu, dialog, hint,
-    // field, or Details column takes it first.
+    // or field takes it first.
     const leaveReader = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || selectionMode() || !hasSelection()) return;
       if (
@@ -1768,8 +1733,6 @@ function createMailboxController(props: MailboxControllerProps) {
       } catch {
         // Older engines have no popover selector; the other guards still apply.
       }
-      const details = document.getElementById(appWorkspaceDetailElementId(MAIL_CONTEXT_DETAIL_ID));
-      if (details && !details.hidden && details.getClientRects().length > 0) return;
       // Phones go back with the reader's own back step.
       if (!document.querySelector(".mail-workspace .mail-list-handle")?.getClientRects().length) return;
       event.preventDefault();
@@ -2949,25 +2912,6 @@ function createMailboxController(props: MailboxControllerProps) {
     void runAction("mark_read", { silent: true, targets: [target] });
   });
 
-  const setDetailsVisible = (open: boolean, moveFocus = true) => {
-    setDetailsOpen(open);
-    persistPreferences({ detailsOpen: open });
-    // The shared head control owns its pointer/keyboard focus behavior.
-    if (!moveFocus) return;
-    const frame = requestAnimationFrame(() => {
-      focusFrames.delete(frame);
-      if (disposed) return;
-      const target = open
-        ? document.querySelector<HTMLElement>("[data-mail-details-heading]")
-        : [
-            document.querySelector<HTMLElement>(".mail-workspace [data-app-workspace-detail-toggle]"),
-            document.querySelector<HTMLElement>(".mail-workspace [data-mail-details-trigger]"),
-          ].find((element) => element && element.getClientRects().length > 0);
-      target?.focus({ preventScroll: true });
-    });
-    focusFrames.add(frame);
-  };
-
   const sidebarText = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
   const eventsText = createMemo(() => mailEventsMessages.resolve([locale()]).t);
   const mailboxMenu = createMailboxMenu(() => ({
@@ -3094,9 +3038,7 @@ function createMailboxController(props: MailboxControllerProps) {
     onOpenPlaceRowHiddenChange: setOpenPlaceRowHidden,
     preferences: () => ({
       ...props.initialPreferences,
-      detailsOpen: detailsOpen(),
       draftFullscreen: draftFullscreen(),
-      toolbarActions: toolbarActions(),
       listMode: data.listMode,
     }),
     handle: {
@@ -3155,7 +3097,6 @@ function createMailboxController(props: MailboxControllerProps) {
     assignedOnly,
     canAdmin,
     canAssign,
-    canShowDetails,
     canWrite,
     clearConversationSelection,
     closeConversation,
@@ -3166,7 +3107,6 @@ function createMailboxController(props: MailboxControllerProps) {
     conversationText,
     currentTab,
     data,
-    detailsOpen,
     draftFullscreen,
     draftFullscreenActive,
     toggleDraftFullscreen,
@@ -3197,8 +3137,6 @@ function createMailboxController(props: MailboxControllerProps) {
     presence,
     presenceState,
     retryPresence: () => retryPresence(),
-    accessMembers,
-    wantAccessMembers: () => setAccessWanted(true),
     reassignMessage,
     reconcileWorkspace,
     requestPath,
@@ -3214,7 +3152,7 @@ function createMailboxController(props: MailboxControllerProps) {
     selectedUnread,
     selectionMode,
     setConversationKept,
-    setDetailsVisible,
+
     sidebarText,
     splitMessage,
     startCompose,
@@ -3223,9 +3161,8 @@ function createMailboxController(props: MailboxControllerProps) {
     t,
     theme,
     toggleConversationSelection,
-    toolbarActions,
+
     updateListMode,
-    updateToolbarActions,
     userPreferences,
     viewTabs,
     workspaceQuery,
@@ -3667,10 +3604,18 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                         readingFormat={controller().userPreferences().readingFormat}
                         theme={controller().theme()}
                         calendarIntegrationAvailable={props.calendarIntegrationAvailable}
-                        detailsOpen={controller().detailsOpen()}
-                        toolbarActions={controller().toolbarActions()}
-                        onToggleDetails={() => controller().canShowDetails() && controller().setDetailsVisible(!controller().detailsOpen())}
-                        onToolbarActionsChange={controller().updateToolbarActions}
+                        collaboration={controller().hasSelection() ? controller().data.collaborationState : null}
+                        reminder={controller().data.reminder}
+                        assignableUsers={controller().data.assignableUsers}
+                        onCollaborationChange={controller().applyCollaborationState}
+                        tags={controller().data.conversationLocalTags?.tags ?? controller().selectedListItem()?.localTags ?? []}
+                        comments={controller().hasSelection() ? controller().data.comments : []}
+                        commentsCursor={controller().data.commentsCursor}
+                        detailErrors={controller().data.detailErrors}
+                        presence={controller().presence().participants}
+                        hintSeen={controller().hintSeen}
+                        toolbarCustomized={props.session.initialPreferences.toolbarCustomized}
+                        onHintSeen={controller().markHintSeen}
                         actionPending={controller().structureMutationLoading()}
                         structurePending={controller().structurePending()}
                         onAction={controller().runAction}
@@ -3750,89 +3695,6 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
             </Show>
           </div>
         </AppWorkspace.Main>
-        <AppWorkspace.Detail
-          id={MAIL_CONTEXT_DETAIL_ID}
-          openOnChoice={false}
-          open={controller().detailsOpen() && controller().canShowDetails() && !controller().draftFullscreenActive()}
-          available={controller().canShowDetails()}
-          onOpen={() => controller().setDetailsVisible(true, false)}
-          onClose={() => controller().setDetailsVisible(false)}
-          width="lg"
-          maxWidth={520}
-        >
-          <Show
-            when={
-              controller().data.selectedConversationId && controller().data.collaborationState && controller().data.conversationLocalTags
-            }
-            fallback={
-              <Show when={!controller().routeLoading()} fallback={<MailDetailsSkeleton label={controller().t().loadingDetails} />}>
-                <div class="flex h-full items-center justify-center p-4">
-                  <Placeholder
-                    state="error"
-                    title={controller().t().detailsUnavailable}
-                    description={
-                      controller().data.detailErrors.collaboration ??
-                      controller().data.detailErrors.tags ??
-                      controller().data.collaborationError ??
-                      controller().t().refreshConversation
-                    }
-                    onRetry={() => void controller().reconcileWorkspace()}
-                  />
-                </div>
-              </Show>
-            }
-          >
-            <Show when={controller()} keyed>
-              {(mailbox) => (
-                <MailDetailsPanel
-                  mailboxId={mailbox.data.mailbox.id}
-                  conversationId={mailbox.data.selectedConversationId!}
-                  active={mailbox.detailsOpen()}
-                  canWrite={mailbox.canWrite()}
-                  mailboxWide={!mailbox.assignedOnly()}
-                  initialState={mailbox.data.collaborationState!}
-                  initialLocalTags={mailbox.data.localTags}
-                  initialConversationLocalTags={mailbox.data.conversationLocalTags!}
-                  initialComments={mailbox.data.comments}
-                  initialCommentsCursor={mailbox.data.commentsCursor}
-                  assignableUsers={mailbox.data.assignableUsers}
-                  presence={mailbox.presence().participants}
-                  presenceState={mailbox.presenceState()}
-                  onRetryPresence={mailbox.retryPresence}
-                  access={
-                    mailbox.assignedOnly()
-                      ? null
-                      : {
-                          members: mailbox.accessMembers.data() ?? [],
-                          // A failed refresh says so instead of keeping a list that may be out of date.
-                          state: mailbox.accessMembers.error() ? "error" : mailbox.accessMembers.data() ? "ready" : "loading",
-                          load: mailbox.wantAccessMembers,
-                          retry: () => void mailbox.accessMembers.refresh(),
-                          // Settings change grants in place, so the list reloads once they close.
-                          manage: mailbox.canAdmin()
-                            ? () => void mailbox.openSettings("access").finally(() => void mailbox.accessMembers.refresh())
-                            : undefined,
-                        }
-                  }
-                  currentUserId={props.currentUserId}
-                  activity={mailbox.conversationActivity()}
-                  initialReminder={mailbox.data.reminder}
-                  detailErrors={mailbox.data.detailErrors}
-                  conversationDrafts={mailbox.data.conversationDrafts}
-                  messages={mailbox.data.detailMessages}
-                  subject={mailbox.data.selectedSubject}
-                  requestUrl={mailbox.requestPath()}
-                  dateConfig={props.dateConfig}
-                  onCollaborationChange={mailbox.applyCollaborationState}
-                  onConversationTagsChange={mailbox.applyConversationTags}
-                  onClose={() => mailbox.setDetailsVisible(false)}
-                  onOpenHref={mailbox.openWorkspaceHref}
-                  onReconcile={mailbox.reconcileWorkspace}
-                />
-              )}
-            </Show>
-          </Show>
-        </AppWorkspace.Detail>
       </AppWorkspace.Content>
       <Show when={controller()} keyed>
         {(mailbox) => (

@@ -228,7 +228,7 @@ Die CLI bietet dieselben Werkzeuge zur Wiederherstellung:
 
 ## Kontaktverzeichnis wählen {icon="address-book"}
 
-Mail nutzt die eingebaute App Contacts für Empfängervorschläge, Kontakte in den **Unterhaltungsdetails**, **Neuer Kontakt** und Kontakte, die **Mit KI schreiben** anhängt. Dafür musst du nichts einrichten.
+Mail nutzt die eingebaute App Contacts für Empfängervorschläge, die Karte eines Absenders, **Neuer Kontakt** und Kontakte, die **Mit KI schreiben** anhängt. Dafür musst du nichts einrichten.
 
 Um eine andere App zu nutzen, etwa eine App für Kundenbeziehungen, musst du zur Cloud-Administration gehören:
 

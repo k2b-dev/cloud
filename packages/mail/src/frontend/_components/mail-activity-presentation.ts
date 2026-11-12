@@ -74,25 +74,6 @@ export const mailActivityLabel = (event: MailActivityEvent, locale = "en"): stri
   return labels[event.action] ?? (resolved.locale === "en" ? event.action.split(".").at(-1)!.replaceAll("_", " ") : event.action);
 };
 
-const inlineActions = new Set([
-  "conversation.collaboration_updated",
-  "conversation.kept",
-  "conversation.keep_released",
-  "conversation.local_tag_added",
-  "conversation.local_tag_removed",
-  "conversation.local_tags_added",
-  "conversation.local_tags_updated",
-  "conversation.merged",
-  "conversation.message_reassigned",
-  "conversation.reference_allocated",
-  "conversation.snooze_expired",
-  "conversation.split",
-  "conversation.summary_updated",
-  "draft.created",
-  "draft.derived",
-  "draft.discarded",
-]);
-
 export const mailActivityIcon = (event: MailActivityEvent): string => {
   if (event.action === "conversation.collaboration_updated" || event.action === "conversation.work_state_changed")
     return collaborationPresentation(event, "en").icon;
@@ -117,11 +98,6 @@ export const mailActivityActorLabel = (event: MailActivityEvent, locale = "en"):
     ? t.workflowActor({ name: event.actor.displayName })
     : event.actor.displayName;
 };
-
-export const showMailActivityInline = (event: MailActivityEvent): boolean =>
-  inlineActions.has(event.action) &&
-  (event.outcome === "confirmed" || event.outcome === "failed") &&
-  (!event.action.startsWith("draft.") || event.actor.kind === "workflow" || event.metadata.reason === "reply_draft_consolidation");
 
 export type PresentedMailActivity = MailActivityEvent & {
   actorLabel: string;

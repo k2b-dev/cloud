@@ -16,7 +16,6 @@ import type { MailActivityEvent } from "../service/collaboration";
 import type { MessageDetail } from "../service/messages";
 import type { MailboxListView, MailboxPageData, MailListItem } from "../service/workspace";
 import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
-import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
@@ -111,6 +110,28 @@ const traceFixture = (kind: string | null) => {
 };
 const summaryRule = { id: "Wf001", name: "Lange Mails zusammenfassen" };
 /** `?summary=` picks the summary state the reader shows; without it the conversation has a person's short text. */
+/** `notes=1`: an invented internal note before the message, and a deleted one. */
+const notesFixture = (conversationId: string): MailboxPageData["comments"] => {
+  const note = (id: string, minutes: number, body: string | null) => {
+    const at = new Date(Date.parse(MAIL_SHELL_NOW) - minutes * 60_000).toISOString();
+    return {
+      id,
+      conversationId,
+      body,
+      author: { kind: "user" as const, id: "user-2", displayName: "Nora Example", avatarHash: null },
+      referencedMessageId: null,
+      revision: 1,
+      canEdit: true,
+      canDelete: true,
+      editedAt: null,
+      deletedAt: body === null ? at : null,
+      createdAt: at,
+      updatedAt: at,
+    };
+  };
+  return [note("Note01", 20, "Invented note: the customer called, the offer goes out on Friday."), note("Note02", 10, null)];
+};
+
 /** `photos=N`: the message carries an invented programme PDF and N invented photos. */
 const photosFixture = (count: string | null): MessageDetail["attachments"] => {
   const photos = Number(count ?? 0);
@@ -704,8 +725,9 @@ export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>)
       ? {
           conversationId: selectedConversationId,
           assignees: url.searchParams.has("team") && selectedConversationId === "Conv01" ? [teamUsers[1]!] : [],
-          // ?work=done opens a conversation that is already done.
-          workStatus: url.searchParams.get("work") === "done" ? "done" : "needs_action",
+          // ?work=done opens a conversation that is already done, ?work=waiting one that waits for a reply.
+          workStatus:
+            url.searchParams.get("work") === "done" ? "done" : url.searchParams.get("work") === "waiting" ? "waiting" : "needs_action",
           snoozedUntil: null,
           revision: 1,
         }
@@ -714,7 +736,7 @@ export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>)
     conversationLocalTags: selectedConversationId
       ? { conversationId: selectedConversationId, conversationRevision: 1, tags: localTags.slice(0, 1) }
       : null,
-    comments: [],
+    comments: selectedConversationId && url.searchParams.get("notes") === "1" ? notesFixture(selectedConversationId) : [],
     commentsCursor: null,
     assignableUsers: url.searchParams.has("team") ? teamUsers : [],
     activity: [],
@@ -804,7 +826,6 @@ export default function MailShellFixture(props: {
   source: string;
   locale?: "en" | "de";
   theme: "light" | "dark";
-  workspaceCookieHeader?: string | null;
   /** The list share and seen hints the fixture server stored for this browser. */
   storedWorkspace?: Partial<MailWorkspacePreference>;
   /** `?notice=1` until the fixture server stored the person's click on "Got it". */
@@ -825,13 +846,8 @@ export default function MailShellFixture(props: {
         dateConfig={{ locale, timeZone: "UTC" }}
         initialPreferences={{
           ...readMailWorkspacePreferences(""),
-          detailsOpen: url.searchParams.has("persist-details")
-            ? readMailWorkspacePreferences(props.workspaceCookieHeader).detailsOpen
-            : url.searchParams.get("details") === "1",
-          // A person's own toolbar (`?toolbar=reply,archive`), as the preference cookie stores it.
-          ...(url.searchParams.has("toolbar")
-            ? { toolbarActions: normalizeMailConversationToolbarActions(url.searchParams.get("toolbar")!.split(",")) }
-            : {}),
+          // A person who had arranged their own toolbar before Mail v5 (`?toolbar=reply,archive`).
+          toolbarCustomized: url.searchParams.has("toolbar"),
         }}
         initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
         initialTheme={props.theme}

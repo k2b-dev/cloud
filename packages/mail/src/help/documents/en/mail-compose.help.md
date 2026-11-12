@@ -10,7 +10,7 @@ kind: task
 
 ## Start a message {icon="square-plus"}
 
-You write in the conversation itself. In a conversation, choose **Reply**, **Reply all**, or **Forward** in the floating bar above the newest message, or **Quote selection** on a message. The bar grows into the draft at the same place, above the newest message, and the cursor stands in the text. On a phone, the bar waits at the bottom, and the draft opens at the top over the full width. Mail creates the shared draft before you type.
+You write in the conversation itself. In a conversation, choose **Reply**, **Reply all**, or **Forward** in the floating bar below the newest message, **Reply** on a message, or **Quote selection** on a message. The bar grows into the draft at the same place, below the newest message, and the cursor stands in the text. Mail creates the shared draft before you type.
 
 Choose **Compose** or press **Ctrl+Alt+N** (**⌘+⌥+N** on a Mac) for a new message. It opens as a floating window over the mailbox. The list and the open conversation behind it stay usable, and you can have several new messages open at once.
 

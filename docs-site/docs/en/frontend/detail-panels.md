@@ -13,7 +13,8 @@ updated: 2026-11-08
 The detail panel answers "what is this, who is here, and what belongs to it"
 for the object open in an application. Every Cloud application builds it the
 same way, so people find the same things in the same places in Notebooks,
-Spaces, Files, Mail, and third-party apps.
+Spaces, Files, and third-party apps. Mail is the exception: its reader shows
+state in the head, notes in the timeline, and attachments in the messages.
 
 Build it from [`DetailPanel`](/en/ui/layout/detail-panel) inside
 `AppWorkspace.Detail` and its shared sections. The application passes data;

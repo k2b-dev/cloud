@@ -9,7 +9,7 @@ order: 30
 
 ## Eine Nachricht beginnen {icon="square-plus"}
 
-Du schreibst direkt in der Unterhaltung. Wähle in einer Unterhaltung **Antworten**, **Allen** oder **Weiterleiten** in der schwebenden Leiste über der neuesten Nachricht, oder **Auswahl zitieren** an einer Nachricht. Die Leiste wächst an derselben Stelle zum Entwurf, über der neuesten Nachricht, und die Schreibmarke steht im Text. Am Telefon wartet die Leiste unten, und der Entwurf öffnet oben über die volle Breite. Mail legt den gemeinsamen Entwurf an, bevor du tippst.
+Du schreibst direkt in der Unterhaltung. Wähle in einer Unterhaltung **Antworten**, **Allen** oder **Weiterleiten** in der schwebenden Leiste unter der neuesten Nachricht, **Antworten** an einer Nachricht oder **Auswahl zitieren** an einer Nachricht. Die Leiste wächst an derselben Stelle zum Entwurf, unter der neuesten Nachricht, und die Schreibmarke steht im Text. Mail legt den gemeinsamen Entwurf an, bevor du tippst.
 
 Wähle **Verfassen** oder drücke **Strg+Alt+N** (**⌘+⌥+N** auf dem Mac) für eine neue Nachricht. Sie öffnet als schwebendes Fenster über dem Postfach. Liste und offene Unterhaltung dahinter bleiben bedienbar, und du kannst mehrere neue Nachrichten zugleich offen haben.
 
