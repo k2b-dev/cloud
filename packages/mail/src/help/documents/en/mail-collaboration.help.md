@@ -7,13 +7,13 @@ order: 40
 kind: task
 ---
 
-Cloud collaboration stays attached to a conversation, while the email itself stays normal provider mail. Open **Conversation details** to see the shared follow-up state apart from your private personal reminder.
+Cloud collaboration stays attached to a conversation, while the email itself stays normal provider mail. The head of an open conversation shows the shared follow-up state: **Done**, **Archive**, **Delete**, **Later**, and **Assign**, and below the subject a row of chips, such as **Waiting for reply**, **Later until …**, your **Reminder …**, **Kept**, the tags, and linked items. Choose a chip to change its value. Everything else is under **…**.
 
-The conversation reader quietly places meaningful collaboration and workflow changes between the messages, in time order. It updates them while the conversation stays open. Each row names the person or workflow that made the change. The longer list of recent activity stays in **Conversation details**. Low-level processing events do not interrupt the message history.
+The conversation reads from the oldest message to the newest one at the bottom. Internal notes stand between the messages, at the time they were written. To see what people and workflows changed, choose **… → Show activity**. Low-level processing events do not show there.
 
 ## Use ownership and follow-up consistently {icon="route"}
 
-- **Assignees** shows the people or agents who are responsible for the conversation. A conversation can have up to 20 assignees. Add or remove them in **Conversation details**. When someone else assigns a conversation to you, you get a Cloud notification that opens it.
+- **Assignees** shows the people or agents who are responsible for the conversation. A conversation can have up to 20 assignees. Choose **Assign** in the head of the conversation to add or remove them. When someone else assigns a conversation to you, you get a Cloud notification that opens it.
 - To add one person or account to several conversations, select the conversations in the list and choose **Assign**. Then choose the person or account. The other assignees stay assigned. People get one notification for the whole selection; agents and service accounts receive no user notification.
 - The same menu offers **Assign to me**, **Remove me**, and **Remove all assignees**. Assigning yourself or removing someone sends no notification.
 - In a shared mailbox, a conversation's **…** menu and its right-click menu offer **Assign to me** right below the replies. It adds you; everyone who is already assigned stays assigned.
@@ -43,17 +43,17 @@ Select an event to open its conversation beside the list. **Kind**, **Person**, 
 
 A failed send names its reason. The message in the conversation shows what you can do next.
 
-Everyone who can view the whole mailbox sees the tab. People with access to assigned conversations only do not see it; the **Conversation details** show them the activity of their conversations.
+Everyone who can view the whole mailbox sees the tab. People with access to assigned conversations only do not see it; **… → Show activity** in a conversation shows them its activity.
 
-## Add internal comments {icon="point"}
+## Add internal notes {icon="point"}
 
-Internal comments are visible to people who can read the mailbox and are never sent to email recipients. Use them for handoffs, decisions, and shared context. Mail does not notify single people about comments. When one collaborator is responsible for the next step, assign the conversation.
+Internal notes are visible to people who can read the mailbox and are never sent to email recipients. Use them for handoffs, decisions, and shared context. Each note stands in the conversation at its time, as a yellow tile with a lock and **internal**. Notes that an automation writes look the same. Mail does not notify single people about notes. When one collaborator is responsible for the next step, assign the conversation.
 
-You can edit or delete your own comments for 10 minutes after posting. Nobody can change comments from workflows or from other people, not even with **Manage** access. A deleted comment leaves a marker in the thread, so the event does not silently disappear from the team history.
+You can edit or delete your own notes for 10 minutes after posting: choose **…** on the note. Nobody can change notes from workflows or from other people, not even with **Manage** access. A deleted note leaves the line **Note deleted** at its place, so the event does not silently disappear from the team history.
 
 ## Use personal reminders and presence {icon="route"}
 
-The **Reminder** in conversation details is private to you. When you clear or change it, the reminders of other collaborators stay as they are. When the reminder is due, Mail creates a Cloud notification, if you still have access to the mailbox.
+The **Reminder** under **Later** in the head of the conversation is private to you. When you clear or change it, the reminders of other collaborators stay as they are. When the reminder is due, Mail creates a Cloud notification, if you still have access to the mailbox.
 
 When live presence is available, **Active collaborators** shows the people who are viewing the conversation or writing in it now. Presence is only a hint. The shared draft lease decides who can edit a draft. While someone holds it, Mail rejects draft changes from everyone else until one of them takes over.
 
@@ -86,19 +86,19 @@ Only active accounts with a current eligible mailbox access appear as assignees.
 
 ## Use Contacts context {icon="address-book"}
 
-Open **Conversation details** to see Contacts whose email addresses exactly match visible conversation participants. Multiple Contacts can match the same address. Mail shows every match that you can currently read and does not choose between them or merge them.
+Choose the sender of a message to see the matching contact, the earlier conversations with this sender, and what Mail can do about the sender. The contact must have exactly the sender's email address. When no contact matches, the card shows the address, and **Add to contacts** where the contact directory allows it.
 
-The **Related Mail** action on a Contact card opens an exact search with its own URL for that participant in a new tab. The separate **Related mail** section of the conversation uses shared participants and normalized subjects and explains every match.
+**All messages from this sender** on the card opens an exact search for that address.
 
-If an external participant has no matching Contact, choose **New contact** and choose a writable contact book. Mail creates the Contact there with the shown name and email. Mail shows no button for an address that already matches a Contact that you can read. This also applies to matches that are not on the first result page.
+If the sender has no matching Contact, choose **Add to contacts** and choose a writable contact book. Mail creates the Contact there with the shown name and email. Mail shows no such entry for an address that already matches a Contact that you can read.
 
-Mail stores no Contact ownership, notes, bank details, access entries, or other private fields. Each time you open the details panel, Mail asks Contacts for a limited set of participant data. Cloud administrators can switch this section to another contact directory app; see **Choose the contact directory**. Mail shows **New contact** only when that app supports creating contacts.
+Mail stores no Contact ownership, notes, bank details, access entries, or other private fields. Each time you open the card of a sender, Mail asks Contacts for a limited set of data about that sender. Cloud administrators can switch this section to another contact directory app; see **Choose the contact directory**. Mail shows **Add to contacts** only when that app supports creating contacts.
 
 The CLI shows matches for the conversation through `cld mail conversation related`, and Contacts context through `cld mail conversation context`. It shows the Contact-aware history through `cld mail conversation contact-history`.
 
 ## Link conversations to Spaces {icon="link"}
 
-Open **Conversation details** to link the conversation to an existing Space task or event where you have **Edit** access. You can also create a linked task or event directly. The Space item owns the link. The link therefore stays intact when a group has access to the mailbox or Space and one person leaves the team.
+Choose **… → Link** in the conversation to link it to an existing Space task or event where you have **Edit** access. The chip **n linked** in the head lists the linked items and opens them. You can also create a linked task or event directly. The Space item owns the link. The link therefore stays intact when a group has access to the mailbox or Space and one person leaves the team.
 
 Mail shows only Space items that you can currently view. It offers link targets only where you have **Edit** access. When you open a linked Mail conversation or Space item, that app checks your current access again. A removed or inaccessible target can therefore stay as an unavailable label until someone with **Edit** access to the Space removes the link.
 

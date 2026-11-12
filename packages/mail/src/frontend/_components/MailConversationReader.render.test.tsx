@@ -6,9 +6,11 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { ConversationDraftSummary } from "../../contracts";
-import type { MailActivityEvent } from "../../service/collaboration";
+import type { ConversationComment, MailActivityEvent } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";
+import type { LocalTag } from "../../service/local-tags";
 import type { MessageDetail } from "../../service/messages";
+import type { ConversationPresenceParticipant } from "../../service/presence";
 
 const root = mkdtempSync(join(tmpdir(), "mail-conversation-reader-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -80,7 +82,10 @@ const renderReader = (
     selectedMessageId?: string | null;
     keep?: ConversationKeep | null;
     canAdmin?: boolean;
-    toolbarActions?: Array<"reply" | "reply_all" | "trash" | "spam" | "keep">;
+    canWrite?: boolean;
+    tags?: LocalTag[];
+    comments?: ConversationComment[];
+    presence?: ConversationPresenceParticipant[];
     readingFormat?: "automatic" | "html" | "plain";
     theme?: "light" | "dark" | null;
     workStatus?: "needs_action" | "waiting" | "done" | null;
@@ -90,9 +95,10 @@ const renderReader = (
   const messages = options.messages ?? [message];
   return renderToString(() =>
     createComponent(MailConversationReader, {
+      currentUserId: "Usr001",
       mailboxId: "Box001",
       requestUrl: "https://cloud.example.test/app/mail/Box001?conversation=Conv01",
-      canWrite: true,
+      canWrite: options.canWrite ?? true,
       canAdmin: options.canAdmin ?? false,
       mailboxWide: true,
       identities: [],
@@ -116,10 +122,29 @@ const renderReader = (
       readingFormat: options.readingFormat ?? "automatic",
       theme: options.theme === undefined ? "light" : options.theme,
       calendarIntegrationAvailable: false,
-      detailsOpen: false,
-      toolbarActions: options.toolbarActions ?? ["reply", "reply_all"],
-      onToggleDetails: () => undefined,
-      onToolbarActionsChange: () => undefined,
+      collaboration: null,
+      reminder: null,
+      assignableUsers: [],
+      onCollaborationChange: () => undefined,
+      tags: options.tags ?? [],
+      comments: options.comments ?? [],
+      commentsCursor: null,
+      detailErrors: {
+        collaboration: null,
+        tags: null,
+        comments: null,
+        assignableUsers: null,
+        activity: null,
+        reminder: null,
+        keep: null,
+        reference: null,
+        summary: null,
+        drafts: null,
+      },
+      presence: options.presence ?? [],
+      hintSeen: (hint) => hint === "reader-head-moved",
+      toolbarCustomized: false,
+      onHintSeen: () => undefined,
       actionPending: false,
       structurePending: false,
       onAction: () => undefined,
@@ -338,52 +363,81 @@ describe("Mail conversation reader", () => {
     expect(html).toMatch(/class="k2b-toolbar__text"[^>]*>Reply all</);
   });
 
-  test("the pill holds Reply, Reply all, Forward | Done, Assign in a shared mailbox and no Archive", () => {
+  test("the head holds Done, Archive, Delete, Later, Assign and “…”; the pill after the newest message only answers", () => {
     const groupMessage = { ...message, cc: [{ name: "Stakeholder", address: "stakeholder@example.com" }] };
     const html = renderReader([], {
       messages: [groupMessage],
       workStatus: "needs_action",
       assignment: { assigned: false, others: ["Jana Berger"] },
     });
-    const pill = html.slice(html.indexOf("data-mail-reply-pill"), html.indexOf("data-mail-conversation-messages"));
+    const head = html.slice(html.indexOf("data-mail-reader-toolbar"), html.indexOf("data-mail-reader-chips"));
+    expect([...head.matchAll(/data-mail-toolbar-action="([^"]+)"/g)].map((match) => match[1])).toEqual([
+      "done",
+      "archive",
+      "trash",
+      "later",
+      "assign",
+    ]);
+    expect(head).toContain(">Done<");
+    expect(head).toContain('aria-label="More conversation actions"');
+    // No personal toolbar and no details toggle any more (Mail v5).
+    expect(html).not.toContain("data-mail-details-trigger");
+    expect(html).not.toContain("mail-reader-toolbar-action");
+    // The reply affordance follows the newest message at the end of the conversation.
+    const pillStart = html.indexOf("data-mail-reply-pill");
+    expect(pillStart).toBeGreaterThan(html.indexOf('data-mail-message-id="Msg001"'));
+    const pill = html.slice(pillStart);
     const names = [...pill.matchAll(/aria-label="([^"]+)"/g)].map((match) => match[1]);
-    expect(names.filter((name) => name !== "More actions" && name !== "Conversation actions")).toEqual([
+    expect(names.filter((name) => ["Reply", "Reply all", "Forward", "Mark as done", "Assign"].includes(name ?? ""))).toEqual([
       "Reply",
       "Reply all",
       "Forward",
-      "Mark as done",
-      "Assign",
     ]);
-    expect(pill).not.toContain("Archive");
-    // The head names who is responsible as a status chip, not a button.
-    expect(html).toContain("mail-reader-assignees");
-    expect(html).toContain("Jana Berger");
+  });
+  test("a personal mailbox has no Assign in the head", () => {
+    const html = renderReader([], { workStatus: "needs_action", assignment: null });
+    expect(html).not.toContain('data-mail-toolbar-action="assign"');
+    expect(html).toContain('data-mail-toolbar-action="done"');
   });
 
-  test("the pill has four buttons in a personal mailbox", () => {
-    const groupMessage = { ...message, cc: [{ name: "Stakeholder", address: "stakeholder@example.com" }] };
-    const html = renderReader([], { messages: [groupMessage], workStatus: "needs_action", assignment: null });
-    const pill = html.slice(html.indexOf("data-mail-reply-pill"), html.indexOf("data-mail-conversation-messages"));
-    expect(pill).not.toContain('aria-label="Assign"');
-    expect(html).not.toContain("mail-reader-assignees");
-  });
-
-  test("keeps an expanded older message body outside the muted header surface", () => {
+  test("the subject stays on one line and the chip row names the sender and the number of messages", () => {
     const older = { ...message, id: "MsgOld", internalDate: "2026-08-16T11:00:00.000Z", sentAt: "2026-08-16T11:00:00.000Z" };
-    const html = renderReader([], { messages: [older, message], selectedMessageId: older.id });
-    const articleStart = html.lastIndexOf("<article", html.indexOf('data-mail-message-id="MsgOld"'));
-    const articleEnd = html.indexOf("</article>", articleStart);
-    const olderArticle = html.slice(articleStart, articleEnd);
-    const articleOpen = olderArticle.slice(0, olderArticle.indexOf(">") + 1);
-
-    expect(articleOpen).not.toContain("bg-[var(--ui-surface-subtle)]");
-    expect(olderArticle).toContain(
-      'class="flex items-start gap-1 rounded-[var(--ui-radius-surface)] p-1 transition-colors bg-[var(--ui-surface-subtle)]',
-    );
-    expect(olderArticle).toContain('aria-expanded="true"');
+    const html = renderReader([], { messages: [older, message] });
+    expect(html).toMatch(/<h1[^>]*class="mail-reader-title"[^>]*title="Quarterly review"/);
+    expect(html).toContain("Ada Lovelace · 2 messages");
+  });
+  test("reads oldest first: older messages are one line, the newest is open at the bottom", () => {
+    const older = { ...message, id: "MsgOld", internalDate: "2026-08-16T11:00:00.000Z", sentAt: "2026-08-16T11:00:00.000Z" };
+    const html = renderReader([], { messages: [older, message] });
+    expect(html.indexOf('data-mail-message-id="MsgOld"')).toBeLessThan(html.indexOf('data-mail-message-id="Msg001"'));
+    const olderStart = html.lastIndexOf("<article", html.indexOf('data-mail-message-id="MsgOld"'));
+    const olderArticle = html.slice(olderStart, html.indexOf("</article>", olderStart));
+    expect(olderArticle).toContain('class="mail-message-row"');
+    expect(olderArticle).toContain('aria-expanded="false"');
+    const newestStart = html.lastIndexOf("<article", html.indexOf('data-mail-message-id="Msg001"'));
+    const newest = html.slice(newestStart, html.indexOf("</article>", newestStart));
+    expect(newest).toContain('class="mail-message-head"');
+    expect(newest).toContain("data-mail-sender-trigger");
+    // A link to an older message opens that one instead.
+    const linked = renderReader([], { messages: [older, message], selectedMessageId: older.id });
+    const linkedOlder = linked.slice(linked.lastIndexOf("<article", linked.indexOf('data-mail-message-id="MsgOld"')));
+    expect(linkedOlder.slice(0, linkedOlder.indexOf("</article>"))).toContain('class="mail-message-head"');
   });
 
-  test("shows a message's attachments above its body and their count in every message header", () => {
+  test("a long conversation folds its older messages into one row above the newest three", () => {
+    const messages = Array.from({ length: 6 }, (_, index) => ({
+      ...message,
+      id: `Msg00${index}`,
+      internalDate: `2026-08-16T0${index}:00:00.000Z`,
+      sentAt: `2026-08-16T0${index}:00:00.000Z`,
+    }));
+    const html = renderReader([], { messages });
+    expect(html).toContain("data-mail-older-messages");
+    expect(html).toContain("3 older messages");
+    expect(html.indexOf("data-mail-older-messages")).toBeLessThan(html.indexOf('data-mail-message-id="Msg003"'));
+    expect(html).not.toContain('data-mail-message-id="Msg002"');
+  });
+  test("shows a message's attachments as tiles after its body and their count in every collapsed row", () => {
     /** Invented demo attachments: one image the HTML body shows in place, four photos, and a PDF. */
     const attachment = (id: string, filename: string, contentType: string, contentId: string | null = null) => ({
       id,
@@ -410,30 +464,27 @@ describe("Mail conversation reader", () => {
     const olderStart = html.lastIndexOf("<article", html.indexOf('data-mail-message-id="MsgOld"'));
     const olderArticle = html.slice(olderStart, html.indexOf("</article>", olderStart));
 
-    // The list sits between the header and the body and leaves out the image the body already shows.
-    const list = latest.indexOf("data-mail-message-attachments");
-    expect(list).toBeGreaterThan(latest.indexOf("data-mail-message-header"));
-    expect(list).toBeLessThan(latest.indexOf("mail-message-body"));
-    expect(latest).toContain("5 attachments");
+    // The tiles follow the body and leave out the image the body already shows.
+    const tiles = latest.indexOf("data-mail-message-attachments");
+    expect(tiles).toBeGreaterThan(latest.indexOf("mail-message-body"));
+    expect(latest).toContain('aria-label="5 attachments"');
     expect(latest).not.toContain("logo.png");
-    // The first three, then "Show all 5"; images get a preview, other files their type, never the MIME type.
-    expect(latest).toContain("Programme.pdf");
-    expect(latest).toContain("Photo_2.jpg");
-    expect(latest).not.toContain("Photo_3.jpg");
-    expect(latest).toContain("Show all 5");
-    expect(latest).toContain('src="/api/mail/mailboxes/Box001/messages/Msg001/attachments/Att003?inline=true"');
+    // Every tile shows its name and its kind with the size, never the MIME type; from two on, all download as one ZIP.
+    for (const name of ["Programme.pdf", "Photo_1.jpg", "Photo_4.jpg"]) expect(latest).toContain(name);
+    expect(latest).toContain("PDF · ");
     expect(latest).not.toContain("application/pdf");
-    // A collapsed message names its attachments in its header, without the list.
+    expect(latest).toContain("Download all 5");
+    expect(latest).not.toContain("Show all");
+    // A collapsed message names its attachments in its one line, without the tiles.
     expect(olderArticle).toContain('aria-expanded="false"');
     expect(olderArticle).toContain("data-mail-message-attachment-count");
     expect(olderArticle).not.toContain("data-mail-message-attachments");
-    // Open, the list says it; the header repeats nothing.
-    expect(latest).not.toContain("data-mail-message-attachment-count");
-    // The plain alternative shows no inline image, so the image is listed there.
-    expect(renderReader([], { messages: [{ ...withFiles, plainText: "Photos" }], readingFormat: "plain" })).toContain("6 attachments");
+    // The plain alternative shows no inline image, so the image is a tile there.
+    expect(renderReader([], { messages: [{ ...withFiles, plainText: "Photos" }], readingFormat: "plain" })).toContain(
+      'aria-label="6 attachments"',
+    );
   });
-
-  test("renders meaningful SSR activity inline without turning it into a message card", () => {
+  test("keeps activity out of the timeline; it waits under “…” → Show activity", () => {
     const html = renderReader([], {
       activity: [
         {
@@ -451,44 +502,107 @@ describe("Mail conversation reader", () => {
         },
       ],
     });
+    expect(html).not.toContain("data-mail-conversation-activity");
+    expect(html).not.toContain("added a tag");
+    expect(html.match(/<article class="mail-message/g)).toHaveLength(1);
+  });
 
-    expect(html).toContain("data-mail-conversation-activity");
-    expect(html).toContain("ti-tag");
-    expect(html).toContain("Workflow Invoice triage");
-    expect(html).toContain("added a tag");
-    expect(html.match(/<article/g)).toHaveLength(1);
+  test("shows internal notes at their time between the messages, never as a message", () => {
+    const older = { ...message, id: "MsgOld", internalDate: "2026-08-16T09:00:00.000Z", sentAt: "2026-08-16T09:00:00.000Z" };
+    const note = {
+      id: "Note01",
+      conversationId: "Conv01",
+      body: "Oak is tight until week 48.",
+      author: { kind: "user" as const, id: "Usr002", displayName: "Tom Behrens", avatarHash: null },
+      referencedMessageId: null,
+      revision: 1,
+      canEdit: true,
+      canDelete: true,
+      editedAt: null,
+      deletedAt: null,
+      createdAt: "2026-08-16T10:00:00.000Z",
+      updatedAt: "2026-08-16T10:00:00.000Z",
+    };
+    const deleted = { ...note, id: "Note02", body: null, deletedAt: "2026-08-16T11:30:00.000Z", createdAt: "2026-08-16T11:00:00.000Z" };
+    const html = renderReader([], { messages: [older, message], comments: [deleted, note] });
+    const order = ['data-mail-message-id="MsgOld"', 'data-mail-note="Note01"', 'data-mail-note="Note02"', 'data-mail-message-id="Msg001"'];
+    const positions = order.map((marker) => html.indexOf(marker));
+    expect(positions.every((position) => position > 0)).toBe(true);
+    expect([...positions].sort((left, right) => left - right)).toEqual(positions);
+    const tile = html.slice(
+      html.indexOf('data-mail-note="Note01"') - 40,
+      html.indexOf("</article>", html.indexOf('data-mail-note="Note01"')),
+    );
+    expect(tile).toContain('class="mail-note"');
+    expect(tile).toContain("Internal note from Tom Behrens");
+    expect(tile).toContain(">internal<");
+    expect(tile).toContain("Oak is tight until week 48.");
+    expect(tile).not.toContain("k2b-avatar");
+    expect(html).toContain("Note from Tom Behrens deleted");
   });
 });
 
 describe("Mail conversation reader keep state", () => {
-  test("offers Keep to writers of a conversation that is not kept", () => {
-    const html = renderReader([], { toolbarActions: ["keep", "trash"] });
-    expect(html).toContain('data-mail-toolbar-action="keep"');
-    expect(html).toContain('aria-label="Keep"');
-    expect(html).not.toContain("data-mail-kept-indicator");
+  test("a conversation that is not kept has no Kept chip and Delete stays available", () => {
+    const html = renderReader([]);
+    expect(html).not.toContain('data-mail-head-chip="kept"');
+    const trash = html.match(/<button[^>]*data-mail-toolbar-action="trash"[^>]*>/)?.[0] ?? "";
+    expect(trash).toContain('aria-label="Delete"');
+    expect(trash).not.toContain("disabled");
   });
-
-  test("shows who kept the conversation, refuses Trash and Junk, and locks it for everyone but Cloud administrators", () => {
-    // A mailbox manager is no Cloud administrator: the lock explains who can lift it, and no dead action is offered.
-    const html = renderReader([], { keep, canAdmin: true, toolbarActions: ["keep", "spam", "trash"] });
-    expect(html).toContain("data-mail-kept-indicator");
-    expect(html).toContain("Kept since");
-    expect(html).toContain("Grace Hopper");
-    expect(html).toContain("Only a Cloud administrator can lift this.");
-    // The bar's short name leads the reason, so the visible "Trash" is part of the accessible name.
-    expect(html).toContain(`aria-label="Trash: Kept conversations can't be deleted."`);
-    expect(html).toContain(`aria-label="Kept conversations can't be moved to Junk."`);
+  test("shows who kept the conversation, refuses Delete, and locks it for everyone but Cloud administrators", () => {
+    // A mailbox manager is no Cloud administrator: the chip explains who can lift it, and no dead action is offered.
+    const html = renderReader([], { keep, canAdmin: true });
+    const chip = html.slice(
+      html.indexOf('data-mail-head-chip="kept"') - 80,
+      html.indexOf("</span></span>", html.indexOf('data-mail-head-chip="kept"')),
+    );
+    expect(chip).toContain("<span");
+    expect(chip).toContain("Kept");
+    expect(chip).toContain("Kept since");
+    expect(chip).toContain("Grace Hopper");
+    expect(chip).toContain("Only a Cloud administrator can lift this.");
+    // The visible name leads the reason in Delete's accessible name.
+    expect(html).toContain(`aria-label="Delete: Kept conversations can't be deleted."`);
     expect(html).not.toContain("Stop keeping");
-    // The chosen toolbar slot stays as a locked status, so nothing moves.
-    expect(html).toMatch(/data-mail-toolbar-action="keep"[^>]*disabled|disabled[^>]*data-mail-toolbar-action="keep"/);
   });
-
-  test("lets Cloud administrators stop keeping", () => {
-    const html = renderReader([], { keep: { ...keep, canLift: true }, toolbarActions: ["keep"] });
-    expect(html).toContain('aria-label="Stop keeping"');
+  test("lets Cloud administrators stop keeping from the Kept chip", () => {
+    const html = renderReader([], { keep: { ...keep, canLift: true } });
+    expect(html).toMatch(/<button[^>]*data-mail-head-chip="kept"/);
     expect(html).not.toContain("Only a Cloud administrator can lift this.");
   });
 
+  test("names the conversation's state, tags and read-only access as chips under the subject", () => {
+    const html = renderReader([], {
+      workStatus: "waiting",
+      canWrite: false,
+      tags: [{ id: "Tag001", mailboxId: "Box001", name: "Offer", color: "#0f766e", revision: 1, createdAt: now, updatedAt: now }],
+    });
+    const chips = html.slice(html.indexOf("data-mail-reader-chips"));
+    const ids = [...chips.matchAll(/data-mail-head-chip="([^"]+)"/g)].map((match) => match[1]);
+    expect(ids).toEqual(["waiting", "read-only", "tag:Tag001"]);
+    expect(chips).toContain("Waiting for reply");
+    expect(chips).toContain("Read only");
+    expect(chips).toContain("Offer");
+    // Without write access, nothing in the head changes the conversation.
+    expect(html).not.toContain('data-mail-toolbar-action="done"');
+    expect(html).not.toContain('data-mail-toolbar-action="archive"');
+    expect(chips).not.toContain('aria-label="Add tag"');
+  });
+
+  test("names who else reads the conversation, never the viewer", () => {
+    const person = (userId: string, displayName: string) => ({
+      userId,
+      displayName,
+      avatarHash: null,
+      mode: "viewing" as const,
+      peerCount: 1,
+      joinedAt: now,
+    });
+    const html = renderReader([], { presence: [person("Usr001", "Valentin Kolb"), person("Usr002", "Tom Behrens")] });
+    expect(html).toContain("Tom is reading");
+    expect(html).not.toContain("Valentin is reading");
+  });
   test("marks a message the server deleted while Cloud keeps it", () => {
     const html = renderReader([], { keep, messages: [{ ...message, deletedOnServer: true }] });
     expect(html).toContain("Deleted on the server, kept in Cloud");

@@ -127,10 +127,29 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   readingFormat: "automatic",
   theme: "light",
   calendarIntegrationAvailable: false,
-  detailsOpen: false,
-  toolbarActions: ["reply"],
-  onToggleDetails: () => undefined,
-  onToolbarActionsChange: () => undefined,
+  collaboration: null,
+  reminder: null,
+  assignableUsers: [],
+  onCollaborationChange: () => undefined,
+  tags: [],
+  comments: [],
+  commentsCursor: null,
+  detailErrors: {
+    collaboration: null,
+    tags: null,
+    comments: null,
+    assignableUsers: null,
+    activity: null,
+    reminder: null,
+    keep: null,
+    reference: null,
+    summary: null,
+    drafts: null,
+  },
+  presence: [],
+  hintSeen: (hint) => hint === "reader-head-moved",
+  toolbarCustomized: false,
+  onHintSeen: () => undefined,
   actionPending: false,
   structurePending: false,
   onAction: () => undefined,
@@ -178,6 +197,9 @@ test.skipIf(isServer)("jumping to newest reads the person's motion choice at cli
   try {
     expect(dom.window.matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false);
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    // The person reads far above the end of the conversation, where new messages arrive.
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, get: () => 2_000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, get: () => 600 });
     for (const [index, behavior] of ["auto", "smooth"].entries()) {
       scroller.scrollTop = 200;
       scroller.dispatchEvent(new Event("scroll"));
@@ -287,7 +309,7 @@ test.skipIf(isServer)(
       expect(card().querySelector(".mail-message-body")?.textContent).toContain("The numbers are attached.");
       expect(card().textContent).not.toContain("Refresh message");
       expect(dom.root.querySelector("[data-mail-print-root]")).toBe(reader);
-      expect(card().querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe("true");
+      expect(card().querySelector("[data-mail-message-header]")?.getAttribute("aria-expanded")).toBe("true");
       expect(bodyRequests.requests).toHaveLength(2);
     } finally {
       dispose();
@@ -542,7 +564,7 @@ test.skipIf(isServer)("a retained message card follows live delivery updates", a
   );
   try {
     const card = () => dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"]')!;
-    const header = () => card().querySelector("button[aria-expanded]")!.textContent ?? "";
+    const header = () => card().querySelector(".mail-message-head")!.textContent ?? "";
     await waitFor(() => card() !== null);
     const mounted = card();
     expect(header()).not.toContain("Sending");
@@ -609,6 +631,8 @@ test.skipIf(isServer)("a saved summary is announced to screen readers, with no t
     dom.root,
   );
   try {
+    // The summary is one row; its tools show once it is open.
+    dom.root.querySelector<HTMLButtonElement>(".mail-summary-row__toggle")!.click();
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit summary"]')!.click();
     await waitFor(() => saved);
     await Bun.sleep(150);
@@ -953,15 +977,13 @@ test.skipIf(isServer)("queued actions keep triage available while structure cont
         canWrite: true,
         actionPending: false,
         structurePending: true,
-        toolbarActions: ["trash", "keep", "tags"],
       }),
     dom.root,
   );
   try {
     const button = (label: string) => dom.root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
-    expect(button("Move to Trash")?.disabled).toBe(false);
-    expect(button("Keep")?.disabled).toBe(true);
-    expect(button("Tags")?.disabled).toBe(true);
+    expect(button("Delete")?.disabled).toBe(false);
+    expect(button("Archive")?.disabled).toBe(false);
     const menuItem = (label: string) =>
       [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === label);
     expect(menuItem("Move to Trash")?.disabled).toBe(false);
@@ -1181,12 +1203,12 @@ test.skipIf(isServer)("a conversation keeps the messages a live arrival showed w
     await waitFor(() => shown().length === 3);
     setSelected({ ...first, messages: [...first.messages, message(7)] });
     await waitFor(() => shown().includes("Msg007"));
-    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+    expect(shown()).toEqual(["Msg004", "Msg005", "Msg006", "Msg007"]);
     setSelected({ selectionKey: "Conv02", messages: [{ ...message(8), id: "Msg099" }] });
     await waitFor(() => shown().includes("Msg099"));
     setSelected({ ...first, messages: [...first.messages, message(7)] });
     await waitFor(() => shown().includes("Msg007"));
-    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+    expect(shown()).toEqual(["Msg004", "Msg005", "Msg006", "Msg007"]);
   } finally {
     dispose();
     dom.cleanup();
@@ -1305,6 +1327,8 @@ test.skipIf(isServer)("an abandoned summary form cannot write into a new A sessi
     dom.root,
   );
   try {
+    // The summary is one row; its tools show once it is open.
+    dom.root.querySelector<HTMLButtonElement>(".mail-summary-row__toggle")!.click();
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit summary"]')!.click();
     expect(form).toHaveBeenCalledTimes(1);
     setMailboxId("Box002");
@@ -1355,7 +1379,11 @@ test.skipIf(isServer)("summary generation cancels the earlier A session after A 
       }),
     dom.root,
   );
-  const generate = () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Write again"]')!.click();
+  const generate = () => {
+    const toggle = dom.root.querySelector<HTMLButtonElement>(".mail-summary-row__toggle")!;
+    if (toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Write again"]')!.click();
+  };
   try {
     generate();
     await waitFor(() => pending.length === 1);
