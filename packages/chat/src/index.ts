@@ -10,6 +10,7 @@ import { maintenanceLifecycle } from "./service/maintenance";
 import { notificationLifecycle } from "./service/notification-delivery";
 
 const result = await app.start({
+  secretOwners: [],
   capabilities: chatCapabilities,
   fetch: router.fetch,
   help: chatHelp,

@@ -91,6 +91,8 @@ alternative:
 - `@k2b/cloud/workflows` only when work needs a durable, inspectable,
   recoverable process rather than one bounded job.
 
+Declare application-owned encrypted columns through `app.start({ secretOwners: [createSecretOwner(...)] })` (`@k2b/cloud/services`); use `[]` when there are none. Omission means unknown for strict rotation status. Core owns all settings rewrap; applications own their other encrypted tables and idempotent post-commit cache invalidation. Readers try the complete startup secret ring; writers use current. A local `APP_SECRET` pins the whole local ring, never part of Core's ring. Use `appKey(name)` to sign and `appKeys(name)` to verify purpose signatures across overlap; app identity remains the separate Ed25519 app key. Read **Secrets and persistent state** and **Rotate APP_SECRET** before declaring owners or changing roots.
+
 Import `sql`, `redis`, `lazySync` and `storage` from `@k2b/cloud`; never import `sql` or `redis` values from `bun`. Standard entrypoints initialize native clients before app code; separate data processes use `@k2b/cloud/start`. Keyless scripts and migrations use `initializePlatform({ appId, source: "env" })` with explicit connections; they do not serve HTTP or make signed calls. Explicit connection env still wins per value for third-party apps with existing Bun-global clients. Use `createSql()` and `createRedis()` for owned pools, preserving limits and lifecycle; create them after startup, not while importing a module. Read **Platform start and connections** (`/en/docs/build/platform-start`).
 
 Declare Sync handles with `lazySync()`, use them after `app.start()`, start
@@ -174,7 +176,5 @@ only when an image-baked input changed, and follow the repository's commands.
 Build the smallest end-to-end behavior through its public seam. Avoid
 speculative paths, one-off abstractions, and unrelated cleanup. Start with the
 fastest relevant check, then verify each affected permission, data,
-registration, and SSR/browser boundary. Integration tests gate on `CLOUD_TEST_*`
-variables and never touch a database whose name does not end in `_test`. For live-trigger tests, use `installLiveOutbox(db)` from `@k2b/cloud/events/testing` before app migrations (see **Live updates**), instead of copying platform DDL. Before
-release, test against the target Cloud version with the production package version. Update the application's docs when observable behavior changes; finish
-when code, focused tests, and documentation describe one contract.
+registration, and SSR/browser boundary. Integration tests gate on `CLOUD_TEST_*` variables and never touch a database whose name does not end in `_test`. For live-trigger tests, use `installLiveOutbox(db)` from `@k2b/cloud/events/testing` before app migrations (see **Live updates**), instead of copying platform DDL. Before
+release, test against the target Cloud version with the production package version. Update the application's docs when observable behavior changes; finish when code, focused tests, and documentation describe one contract.

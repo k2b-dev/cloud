@@ -27,3 +27,9 @@ test("permits observed reads, writers, tests, and exact instance-authority consu
   ).toHaveLength(1);
   expect(checkSource("packages/cloud/src/request.test.ts", 'import { appRegistry } from "./registry";')).toEqual([]);
 });
+
+test("secret rotation status reads instance records without gaining raw application or capability reads", () => {
+  const file = "packages/cloud/src/services/secret-status.ts";
+  expect(checkSource(file, 'import { appInstanceRegistry } from "../_internal/registry";')).toEqual([]);
+  expect(checkSource(file, 'import { appRegistry, capabilityRegistry } from "../_internal/registry";')).toHaveLength(2);
+});

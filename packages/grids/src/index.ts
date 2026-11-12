@@ -55,6 +55,7 @@ router.get("/share/grids/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { l
 router.get("/apps/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "minimal" }));
 
 const result = await app.start({
+  secretOwners: [],
   capabilities: gridsCapabilities,
   fetch: router.fetch,
   help: gridsHelp,

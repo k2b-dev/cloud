@@ -305,3 +305,7 @@ export type { PreviewSource, PreviewReader, PreviewReadResult, PreviewVariant } 
 export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";
 
 export { oauthClients, type OAuthClientRegistration } from "./oauth-clients";
+export { createSecretOwner, createSecretMaintenance } from "./secret-owners";
+export type { SecretOwner, SecretOwnerRow } from "./secret-owners";
+
+export { platformSecretOwners } from "./platform-secret-owners";

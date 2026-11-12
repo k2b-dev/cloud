@@ -25,6 +25,7 @@ router.get("/app/weather/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/admin/weather/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
+  secretOwners: [],
   capabilities: weatherCapabilities,
   fetch: router.fetch,
   help: weatherHelp,

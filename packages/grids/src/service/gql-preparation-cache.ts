@@ -52,7 +52,8 @@ export const createGqlPreparationCache = (store: PreparationStore, signingKey: s
       )
       .digest("hex");
     const slot = Number.parseInt(fingerprint.slice(0, 8), 16) % SLOT_COUNT;
-    const key = `grids:gql-preparation:v${COMPILER_VERSION}:${slot}`;
+    const rootId = createHmac("sha256", signingKey).update("cloud:app-secret:root-id").digest("base64url").slice(0, 16);
+    const key = `grids:gql-preparation:v${COMPILER_VERSION}:${rootId}:${slot}`;
     const sign = (payload: string) => createHmac("sha256", cacheKey).update(fingerprint).update("\0").update(payload).digest();
     try {
       const cached = await store.get(key);

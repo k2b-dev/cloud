@@ -113,7 +113,12 @@ export const executePublishedCustomAppRecords = async (input: {
     canonicalSource: `${capability.planHash}\0${search ?? ""}\0${block.pageSize}`,
     scope: `custom-app-records:${input.page.id}:${block.id}`,
   });
-  const cursor = input.cursor ? decodeDslResultCursor(input.cursor, cursorSigningKey) : null;
+  const cursor = input.cursor
+    ? decodeDslResultCursor(
+        input.cursor,
+        Object.values(connections().appSecret).filter((root): root is string => root !== undefined),
+      )
+    : null;
   if (input.cursor && (!cursor || cursor.fingerprint !== cursorFingerprint || cursor.pageSize !== block.pageSize)) {
     return {
       primaryTableId: "primaryTableId" in capability ? capability.primaryTableId : capability.tableId,

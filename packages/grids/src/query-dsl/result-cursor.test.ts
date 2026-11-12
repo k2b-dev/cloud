@@ -61,3 +61,11 @@ describe("GQL result cursors", () => {
     expect(first).not.toBe(gqlResultFingerprint({ baseId: "base-a", canonicalSource: "from table A", scope: "view:two" }));
   });
 });
+
+test("existing result cursors verify throughout both ring overlaps and fail after root removal", () => {
+  const cursor = { fingerprint: "listing", pageSize: 10, start: 20, values: ["next"] };
+  const token = encodeDslResultCursor(cursor, "A");
+  expect(decodeDslResultCursor(token, ["B", "A"])).toEqual(cursor);
+  expect(decodeDslResultCursor(token, ["A", "B"])).toEqual(cursor);
+  expect(decodeDslResultCursor(token, ["B"])).toBeNull();
+});

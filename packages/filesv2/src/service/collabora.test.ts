@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { connections } from "@k2b/cloud";
 import { stubConnections } from "../../../../scripts/fixtures/platform";
 
 let connectionStub: ReturnType<typeof stubConnections>;
@@ -100,4 +101,28 @@ test("WOPI timestamp comparison preserves microseconds and normalizes timezone a
   expect(wopiTimestamp("2026-09-20T10:00:00.123456Z")).not.toBe(wopiTimestamp("2026-09-20T10:00:00.123457Z"));
   expect(wopiTimestamp("2026-09-20T10:00:00Z")).toBe("2026-09-20T10:00:00.000000Z");
   expect(wopiTimestamp("not a date")).toBe("");
+});
+
+test("24-hour editor sessions verify with the ring and still expire during overlap", () => {
+  const original = connections();
+  const now = Date.parse("2030-01-02T00:00:00Z");
+  const payload = {
+    userId: "00000000-0000-4000-8000-000000000001",
+    baseId: "base",
+    path: "document.odt",
+    expiresAt: now + 24 * 60 * 60_000,
+  };
+  try {
+    connectionStub.mockReturnValue({ ...original, appSecret: { current: "A" } });
+    const token = signEditorToken(payload);
+    connectionStub.mockReturnValue({ ...original, appSecret: { current: "B", previous: "A" } });
+    expect(verifyEditorToken(token, now)).toEqual(payload);
+    expect(verifyEditorToken(token, payload.expiresAt)).toBeNull();
+    connectionStub.mockReturnValue({ ...original, appSecret: { current: "A", next: "B" } });
+    expect(verifyEditorToken(token, now)).toEqual(payload);
+    connectionStub.mockReturnValue({ ...original, appSecret: { current: "B" } });
+    expect(verifyEditorToken(token, now)).toBeNull();
+  } finally {
+    connectionStub.mockReturnValue(original);
+  }
 });

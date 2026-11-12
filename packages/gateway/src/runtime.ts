@@ -4,6 +4,7 @@ import { readAppDomains } from "@k2b/cloud/contracts/app-domains";
 import type { EnvSettingStatus } from "@k2b/cloud/contracts/settings-env";
 import {
   buildGatewayRouteSnapshot,
+  createSecretMaintenance,
   logger,
   publishGatewayRouteSnapshot,
   removeGatewayRouteSnapshot,
@@ -47,6 +48,7 @@ let domainWatcherTask: Promise<void> | null = null;
 let snapshotTimer: ReturnType<typeof setInterval> | null = null;
 let snapshotTask: Promise<void> | null = null;
 const startedAt = Date.now();
+let secretMaintenance: ReturnType<typeof createSecretMaintenance> | undefined;
 
 export const getCurrentRuntime = () => currentRuntime;
 
@@ -71,10 +73,12 @@ const refreshEnvDiagnostics = (): void => {
 const publishSnapshot = async (routeHash: string, routeWarnings: AppRouteWarning[]): Promise<void> => {
   const currentDiagnostics = envDiagnostics;
   refreshEnvDiagnostics();
+  secretMaintenance ??= createSecretMaintenance([], startedAt);
   await publishGatewayRouteSnapshot(
     buildGatewayRouteSnapshot({
       instanceId: gatewayRouter.id,
       envSettings: currentDiagnostics,
+      secrets: secretMaintenance.metadata(),
       baseUrl: gatewayRouter.baseUrl,
       startedAt,
       routeHash,

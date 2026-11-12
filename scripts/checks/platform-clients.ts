@@ -15,6 +15,8 @@ const delivered = new Set([
   "NATS_TLS_CA_FILE",
   "NATS_IGNORE_CLUSTER_UPDATES",
   "APP_SECRET",
+  "APP_SECRET_NEXT",
+  "APP_SECRET_PREVIOUS",
 ]);
 // Test targets and native mock objects intentionally need constructors and env.
 // Client value imports still go through the platform in these files.

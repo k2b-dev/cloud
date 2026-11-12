@@ -9,7 +9,7 @@ export type { CreateApiClientConfig } from "./api-client";
 export { api as apiClient } from "./api-client";
 export { appAssetPath } from "./app-assets";
 export type { AppContext } from "./app-context";
-export { appKey } from "./app-key";
+export { appKey, appKeys } from "./app-key";
 export { clientIp, clientIpBucket } from "./client-ip";
 export { defineHelp, defineHelpCollection, type HelpCollection, type HelpDefinition, type HelpDefinitionDocument } from "./help";
 export { DBIP_ATTRIBUTION, type IpCountryResult, ipCountry } from "./ip-country";

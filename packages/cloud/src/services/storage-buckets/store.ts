@@ -6,6 +6,7 @@ import {
   objectStoreBackend,
   objectStoreSettingKeys,
   persistedSignature,
+  persistedSignatures,
   resolveObjectStoreConfig,
   storageEndpointIsValid,
   testObjectStoreBackend,
@@ -48,8 +49,8 @@ export type StorageBucketAuditContext = { actor: AuditActor; requestId?: string 
 type CheckRow = { bucket_id: string; signature: string; ok: boolean; step: StorageBucketCheckStep | null; checked_at: Date | string };
 const timestamp = (value: Date | string) => new Date(value).toISOString();
 const untested = (): StorageBucketCheck => ({ state: "untested", step: null, checkedAt: null });
-export const storageBucketCheck = (row: CheckRow | undefined, signature: string | null): StorageBucketCheck =>
-  !row || row.signature !== signature
+export const storageBucketCheck = (row: CheckRow | undefined, signature: string | readonly string[] | null): StorageBucketCheck =>
+  !row || !(typeof signature === "string" ? [signature] : (signature ?? [])).includes(row.signature)
     ? untested()
     : { state: row.ok ? "ok" : "failed", step: row.step, checkedAt: timestamp(row.checked_at) };
 const idValue = (value: string): StorageBucketId => {
@@ -99,11 +100,11 @@ const rowFor = async (db: SQL, id: StorageBucketId) => {
   const [row] = await db<StorageBucketRow[]>`SELECT * FROM platform.storage_buckets WHERE id = ${id}::uuid`;
   return row ?? unknown();
 };
-const effectiveSignature = async (id: StorageBucketId): Promise<string | null> => {
+const effectiveSignature = async (id: StorageBucketId): Promise<string[] | null> => {
   try {
-    return persistedSignature((await resolveObjectStoreConfig(id)).signature);
+    return persistedSignatures((await resolveObjectStoreConfig(id)).signature);
   } catch (error) {
-    if (error instanceof ObjectStoreConfigurationError) return error.signature === null ? null : persistedSignature(error.signature);
+    if (error instanceof ObjectStoreConfigurationError) return error.signature === null ? null : persistedSignatures(error.signature);
     throw error;
   }
 };

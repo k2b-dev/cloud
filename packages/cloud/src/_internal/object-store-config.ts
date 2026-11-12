@@ -2,8 +2,10 @@ import { createHash, createHmac } from "node:crypto";
 import { S3Client } from "bun";
 import { z } from "zod";
 import { DEFAULT_STORAGE_BUCKET_ID, type StorageBucketCheckStep, type StorageBucketId } from "../contracts/storage-buckets";
+import { appSecretRoots, normalizeAppSecret } from "../runtime/app-secret";
 import { sql } from "../runtime/clients";
-import { decryptValue, getAppSecret } from "../services/settings/crypto";
+import { connections } from "../runtime/connections";
+import { decryptValue } from "../services/settings/crypto";
 import { readStates } from "../services/settings/store";
 import { bucketTableUnavailable, type StorageBucketRow } from "../services/storage-buckets/rows";
 
@@ -65,8 +67,13 @@ const configSignature = (value: unknown): string => createHash("sha256").update(
  * The form of a signature that may be stored. Keyed with APP_SECRET, so a signature in a database dump never lets
  * anyone confirm a guessed key offline.
  */
-export const persistedSignature = (signature: string): string =>
-  createHmac("sha256", `cloud.storage-bucket-check:${getAppSecret()}`).update(signature).digest("hex");
+export const persistedSignatures = (signature: string): string[] =>
+  appSecretRoots(connections().appSecret).map((root) =>
+    createHmac("sha256", `cloud.storage-bucket-check:${normalizeAppSecret(root)}`)
+      .update(signature)
+      .digest("hex"),
+  );
+export const persistedSignature = (signature: string): string => persistedSignatures(signature)[0]!;
 
 export const storageEndpointIsValid = (value: string): boolean => {
   const endpoint = URL.parse(value);

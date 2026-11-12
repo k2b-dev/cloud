@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { appSecretRingId } from "../../runtime/app-secret";
 import { redis, sql } from "../../runtime/clients";
 import { connections } from "../../runtime/connections";
 import { stubConnections } from "../../runtime/connections.test-fixture";
@@ -10,6 +11,7 @@ import { buildProjectedUser } from "../session/user";
 import { decryptValue, encryptValue } from "./crypto";
 import { registerSettings } from "./defaults";
 import { get, loadCache, read, remove, set } from "./index";
+import { ENCRYPTED_SETTING_PREFIX, readSecretCache } from "./secret-cache";
 import { preserveTestSettings, useTestSettings } from "./settings.test-fixture";
 import { bulkRead, invalidateSettingsCache, invalidateSettingsCacheForAdmin, readKey } from "./store";
 
@@ -45,12 +47,12 @@ suite("settings cache upgrade compatibility", () => {
     expect(await readKey(key)).toBeUndefined();
     await invalidateSettingsCache([key]);
     expect(await readKey(key)).toBe(false);
-    expect(await redis.get(cacheKey)).toBe("false");
+    expect(await readSecretCache(key, (await redis.get(cacheKey))!)).toBe(false);
     await sql`UPDATE settings.entries SET value = ${await encryptValue(null)} WHERE key = ${key}`;
     expect((await bulkRead([key])).get(key)).toBe(false);
     await invalidateSettingsCache([key]);
     expect(await readKey(key)).toBeNull();
-    expect(await redis.get(cacheKey)).toBe("null");
+    expect(await readSecretCache(key, (await redis.get(cacheKey))!)).toBeNull();
   });
   test("negative entries retain each process's local fallback instead of serializing it", async () => {
     expect(await readKey(fallbackKey)).toBe("first environment");
@@ -74,12 +76,12 @@ suite("settings cache upgrade compatibility", () => {
       await redis.del(`settings:${appKey}`, unrelated);
     }
   });
-  test("reads existing JSON cache values and recovers corrupt values", async () => {
+  test("ignores pre-ring JSON cache values and recovers corrupt values", async () => {
     await redis.set(cacheKey, JSON.stringify("existing deployment"));
-    expect(await readKey(key)).toBe("existing deployment");
+    expect(await readKey(key)).toBeNull();
     await redis.set(cacheKey, "broken JSON");
     expect(await readKey(key)).toBeNull();
-    expect(await redis.get(cacheKey)).toBe("null");
+    expect(await readSecretCache(key, (await redis.get(cacheKey))!)).toBeNull();
     // Previous readers JSON.parse the marker, miss, and fall back to Postgres.
     expect(() => JSON.parse(MISSING_SETTING)).toThrow();
   });
@@ -112,9 +114,13 @@ suite("secret setting cache boundaries", () => {
     expect(await get<string>(secretKey)).toBe(secret);
     expect((await bulkRead([fallbackKey, secretKey])).get(secretKey)).toBe(secret);
     const cached = await redis.get(`settings:${secretKey}`);
-    expect(cached).toStartWith("!cloud:encrypted-setting:v2:");
+    expect(cached).toStartWith(ENCRYPTED_SETTING_PREFIX);
     expect(cached).not.toContain(secret);
-    expect(await decryptValue(cached!.slice("!cloud:encrypted-setting:v2:".length))).toEqual({ k: secretKey, v: secret });
+    expect(await decryptValue(cached!.slice(ENCRYPTED_SETTING_PREFIX.length))).toEqual({
+      k: secretKey,
+      v: secret,
+      ring: appSecretRingId(connections().appSecret),
+    });
     expect(await get<string>(secretKey)).toBe(secret);
     let cursor = "0";
     do {
@@ -144,7 +150,7 @@ suite("secret setting cache boundaries", () => {
       }
       expect(warning).toHaveBeenCalledTimes(1);
       expect(warning.mock.calls[0]).toEqual([
-        `[settings] ignoring plaintext cache entry for "${otherSecretKey}"; update all application processes`,
+        `[settings] ignoring a pre-rotation cache entry for "${otherSecretKey}"; refreshing from Postgres`,
       ]);
     } finally {
       warning.mockRestore();

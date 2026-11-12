@@ -22,6 +22,7 @@ const router = new Hono<AuthContext>()
 router.get("/app/dashboard/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
+  secretOwners: [],
   fetch: router.fetch,
   help: dashboardHelp,
   openapi: apiRoutes,

@@ -24,6 +24,8 @@ x-shared-env: &shared-env
   NATS_CREDS_FILE: ${NATS_CREDS_FILE:-}
   NATS_TLS_CA_FILE: ${NATS_TLS_CA_FILE:-}
   APP_SECRET: ${APP_SECRET}
+  APP_SECRET_NEXT: ${APP_SECRET_NEXT:-}
+  APP_SECRET_PREVIOUS: ${APP_SECRET_PREVIOUS:-}
   APP_URL: https://${CLOUD_HOST}
   CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
 
@@ -51,6 +53,8 @@ services:
       APP_URL: https://${CLOUD_HOST}
       GATEWAY_INTERNAL_URL: http://cloud-gateway-${CLOUD_HOST}:3000
       APP_SECRET: ${APP_SECRET}
+      APP_SECRET_NEXT: ${APP_SECRET_NEXT:-}
+      APP_SECRET_PREVIOUS: ${APP_SECRET_PREVIOUS:-}
       REDIS_URL: redis://valkey:6379
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       NATS_SERVERS: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222

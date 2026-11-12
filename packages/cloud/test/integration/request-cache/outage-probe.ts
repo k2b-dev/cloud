@@ -40,6 +40,7 @@ const baseline = new RedisClient(process.env.REDIS_URL);
 const { requestCacheRedis } = await import("../../../src/services/request-cache-redis");
 const { readKey } = await import("../../../src/services/settings/store");
 const { encryptValue } = await import("../../../src/services/settings/crypto");
+const { ENCRYPTED_SETTING_PREFIX, readSecretCache } = await import("../../../src/services/settings/secret-cache");
 const { announcements } = await import("../../../src/services/announcements");
 const { readRailSnapshot } = await import("../../../src/services/rail-snapshot");
 const { buildProjectedUser } = await import("../../../src/services/session/user");
@@ -49,6 +50,12 @@ const { migrate } = await import("../../../../core/src/migrate/core/settings");
 const cache = await requestCacheRedis();
 const key = `test.outage.${crypto.randomUUID()}`;
 const state = { seenAnnouncementVersion: 0, dismissedBannerVersions: [] };
+const assertCachedValue = async (expected: string) => {
+  const cached = await cache.get(`settings:${key}`);
+  assert(cached !== null);
+  assert(cached.startsWith(ENCRYPTED_SETTING_PREFIX));
+  assert.equal(await readSecretCache(key, cached), expected);
+};
 // A test deadline detects offline queue regressions; it is not a runtime timeout.
 const within = async <T>(promise: Promise<T>, ms: number): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -67,7 +74,7 @@ try {
   assert.equal(await baseline.send("PING", []), "PONG");
   await sql`INSERT INTO settings.entries(key, value) VALUES (${key}, ${await encryptValue("before")})`;
   assert.equal(await readKey(key), "before");
-  assert.equal(await cache.get(`settings:${key}`), '"before"');
+  await assertCachedValue("before");
   await announcements.active.forState({ state });
   await sql`INSERT INTO auth.users(id, uid, provider, profile) VALUES (${userId}, ${userId}, 'local', 'user')`;
   await readRailSnapshot(user);
@@ -118,7 +125,7 @@ try {
   );
   await cache.del(`settings:${key}`);
   assert.equal(await readKey(key), "after");
-  assert.equal(await cache.get(`settings:${key}`), '"after"');
+  await assertCachedValue("after");
   console.log("Cache reconnect and refill: passed");
 } finally {
   console.log("Outage probe: releasing clients and proxy");

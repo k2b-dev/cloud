@@ -271,7 +271,7 @@ const previewResolvedGqlPlan = async (
 const decodeRuntimeCursor = (
   token: string | undefined,
   fingerprint: string,
-  signingKey: string,
+  signingKey: readonly string[],
   invalidMessage: string,
 ): { ok: true; cursor: DslResultCursor | null } | { ok: false; diagnostics: DslQueryPreviewDiagnostic[] } => {
   if (!token) return { ok: true, cursor: null };
@@ -464,7 +464,7 @@ const executeQueryUnadmitted = async (
     const decodedCursor = decodeRuntimeCursor(
       body.cursor,
       cursorFingerprint,
-      cursorSigningKey,
+      Object.values(connections().appSecret).filter((root): root is string => root !== undefined),
       apiMessagesForLocale(runtime.dateConfig.locale).resultCursorInvalid,
     );
     if (!decodedCursor.ok) {
@@ -639,7 +639,7 @@ const executeSavedViewSourceUnadmitted = async (
     const decodedCursor = decodeRuntimeCursor(
       options.cursor,
       cursorFingerprint,
-      cursorSigningKey,
+      Object.values(connections().appSecret).filter((root): root is string => root !== undefined),
       apiMessagesForLocale(runtime.dateConfig.locale).resultCursorInvalid,
     );
     if (!decodedCursor.ok) {

@@ -7,6 +7,7 @@ import frontend from "./frontend";
 import { filesHelp } from "./help";
 import { filesLifecycle } from "./lifecycle";
 import { publicApi } from "./public";
+import { secretOwners } from "./secret-owners";
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
@@ -15,6 +16,7 @@ const router = new Hono<AuthContext>()
   .route("/share/filesv2", publicApi)
   .route("/", frontend);
 export default await app.start({
+  secretOwners,
   fetch: router.fetch,
   openapi: apiRoutes,
   help: filesHelp,

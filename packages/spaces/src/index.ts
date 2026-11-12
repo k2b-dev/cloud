@@ -25,6 +25,7 @@ router.get("/admin/spaces/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/pwa/spaces/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "pwa" }));
 
 const result = await app.start({
+  secretOwners: [],
   capabilities: spacesCapabilities,
   fetch: router.fetch,
   help: spacesHelp,

@@ -130,7 +130,19 @@ const registry = defineEnv({
     scope: "secret",
     secretFile: true,
     example: "change-me-generate-with-openssl-rand-hex-32",
-    doc: "Deployment-wide secret for at-rest settings encryption and signed cursors; generate once with `openssl rand -hex 32` and never change it after data has been written.",
+    doc: "Deployment-wide secret for at-rest encryption and purpose signing; generate with `openssl rand -hex 32` and follow the APP_SECRET rotation procedure before changing it.",
+  },
+  APP_SECRET_NEXT: {
+    schema: z.string(),
+    scope: "secret",
+    secretFile: true,
+    doc: "Optional 64-hex-character next APP_SECRET, distributed before cutover; mutually exclusive with APP_SECRET_PREVIOUS and distinct from APP_SECRET.",
+  },
+  APP_SECRET_PREVIOUS: {
+    schema: z.string(),
+    scope: "secret",
+    secretFile: true,
+    doc: "Optional previous APP_SECRET retained for reads and automatic data rewrap; remove only after strict secrets status and token expiry, following the rotation guide.",
   },
   ADMIN_LOGIN_TOKEN: {
     schema: z.string(),

@@ -1,4 +1,5 @@
 import { lazySync } from "../_internal/process-sync";
+import type { SecretRotationMetadata } from "../contracts/app-migration";
 import type { EnvSettingStatus } from "../contracts/settings-env";
 import { logger } from "./logging";
 
@@ -27,6 +28,7 @@ export type GatewayRouteSnapshotInput = {
   instanceId: string;
   /** Sanitized migration diagnostics; omitted by pre-migration gateways. */
   envSettings?: EnvSettingStatus[];
+  secrets?: SecretRotationMetadata;
   baseUrl: string;
   startedAt: number;
   routeHash: string;
@@ -49,6 +51,7 @@ export type GatewayRouteSnapshot = {
   instanceId: string;
   /** Sanitized migration diagnostics; omitted by pre-migration gateways. */
   envSettings?: EnvSettingStatus[];
+  secrets?: SecretRotationMetadata;
   baseUrl: string;
   startedAt: number;
   updatedAt: number;
@@ -126,6 +129,7 @@ export const watchGatewayDomainChanges = async (options: { signal: AbortSignal; 
 export const buildGatewayRouteSnapshot = (input: GatewayRouteSnapshotInput): GatewayRouteSnapshot => ({
   instanceId: input.instanceId,
   ...(input.envSettings ? { envSettings: input.envSettings } : {}),
+  ...(input.secrets ? { secrets: input.secrets } : {}),
   baseUrl: input.baseUrl,
   startedAt: input.startedAt,
   updatedAt: Date.now(),
