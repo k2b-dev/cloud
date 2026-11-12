@@ -122,6 +122,20 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     await database?.drop();
     setSystemTime();
   });
+  test("members still create and submit Code while a guest cannot author existing personal Code", async () => {
+    const guest: CodeContext = {
+      ...context,
+      authority: { ...context.authority, actor: { kind: "user", user: { ...user, profile: "guest" } } },
+    };
+    await expect(codeAuthoringServices.init({ title: "Guest fixture" }, guest)).rejects.toMatchObject({
+      code: "code_guests_cannot_author",
+    });
+    const project = await codeAuthoringServices.init({ title: "Member authoring fixture" }, context);
+    const input = { codeId: project.config.codeId, files: project.files, entry: project.config.entry, baseVersionId: null };
+    await expect(codeAuthoringServices.submit(input, guest)).rejects.toMatchObject({ code: "code_guests_cannot_author" });
+    const saved = await codeAuthoringServices.submit(input, context);
+    expect(saved.submission.version.codeId).toBe(project.config.codeId);
+  });
   async function withDraftChat(
     run: (invoke: (name: string, input: unknown, conversationId?: string) => Promise<unknown>) => Promise<void>,
   ) {

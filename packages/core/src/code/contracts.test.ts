@@ -22,7 +22,7 @@ import {
   codeQueryContracts,
 } from "./contracts";
 import { runCodeQuery } from "./queries";
-import { codeSourceHash, codeTextChunk } from "./store";
+import { codeSourceHash, codeTextChunk, createCode } from "./store";
 import { CodeVersionError } from "./versions";
 
 const user: User = {
@@ -386,5 +386,20 @@ test("Code list adapters expose their domain cursor through the shared page enve
   expect(await runCodeQuery(context, async () => ({ title: "Non-paginated" }))).toEqual({
     ok: true,
     data: { data: { title: "Non-paginated" } },
+  });
+});
+
+test("the capability seam preserves the stable guest authoring refusal", async () => {
+  const actor = { kind: "user" as const, user: { ...user, profile: "guest" as const } };
+  const result = await runCodeQuery({ ...context, authority: { ...authority, actor } }, (ctx) =>
+    createCode({ title: "Guest fixture", owner: { kind: "person", userId: user.id } }, ctx),
+  );
+  expect(result).toEqual({
+    ok: false,
+    error: {
+      code: "code_guests_cannot_author",
+      status: 403,
+      message: "Gäste können keinen Code erstellen oder Versionen einreichen. Bitte wende dich an ein Cloud-Mitglied.",
+    },
   });
 });

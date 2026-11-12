@@ -1,10 +1,10 @@
 import { sql } from "@k2b/cloud";
 import { type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema, cloudResourceRefAppId } from "@k2b/cloud/contracts";
 import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
-import { accounts, audit, canRepairAppAccess } from "@k2b/cloud/services";
+import { accounts, audit, canRepairAppAccess, coreSettings } from "@k2b/cloud/services";
 import { isNestedSourceCurrent } from "@k2b/cloud/services/identity";
 import { mandates } from "@k2b/cloud/services/mandates";
-import { catalogCache, describeEvent, describeOperations, describeTarget } from "@k2b/cloud/ssr/code-page/load";
+import { catalogCache, describeOperations, describeTarget } from "@k2b/cloud/ssr/code-page/load";
 import { codeActivationRows, codeDynamicOperations } from "@k2b/cloud/ssr/code-page/targets";
 import type { SQL } from "bun";
 import { z } from "zod";
@@ -16,6 +16,7 @@ import {
   type CodeActivationPreview,
   codeActivationContracts,
 } from "./activation-contracts";
+import { describeCodeAutomations } from "./automation-view";
 import type { Code } from "./contracts";
 import { requireCodeEventAccess } from "./event-access";
 import { syncCodeEventSubscriptions } from "./event-subscriptions";
@@ -163,15 +164,7 @@ export async function previewCodeActivation(
   const base = {
     codeId: code.id,
     automations: manifest.success
-      ? await Promise.all(
-          manifest.data.entrypoints.map(async ({ entrypoint, title, route, event }) => ({
-            entrypoint,
-            ...(title === undefined ? {} : { title }),
-            // The card needs who may open the page, not where it appears.
-            ...(route ? { route: { method: route.method, path: route.path, public: route.public } } : {}),
-            ...(event ? { event: await describeEvent(event, owner, catalog) } : {}),
-          })),
-        )
+      ? await describeCodeAutomations(manifest.data.entrypoints, owner, catalog, await coreSettings.get<string>("app.timezone"))
       : [],
     // Everything else the version may do, so the card never reads as harmless when it is not.
     ...(manifest.success
@@ -183,6 +176,7 @@ export async function previewCodeActivation(
       : {}),
     title: code.title,
     ownerKind: code.owner.kind,
+    ...(code.owner.kind === "app" ? { appName: await previewAppName(code.owner.appId, catalog) } : {}),
     versionId: input.versionId,
     number: version.number,
     running: numbers?.running ?? null,
@@ -231,6 +225,11 @@ export async function previewCodeActivation(
       )
     : undefined;
   return { ...base, activated: null, readiness, place, page, ...(targets ? { targets, operationLabels } : {}) };
+}
+/** The name of the app whose Code this is, as the registry names it; its service account is named after it. */
+async function previewAppName(appId: string, catalog: ReturnType<typeof catalogCache>): Promise<string | null> {
+  const app = await catalog(appId);
+  return app?.ok ? (app.data?.appName ?? null) : null;
 }
 /** A resource Code's page from its owner app's registry manifest; the owner app itself is not asked. */
 async function previewPage(code: Code, catalog: ReturnType<typeof catalogCache>): Promise<string | null> {

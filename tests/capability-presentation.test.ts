@@ -76,6 +76,34 @@ describe("built-in Capability presentation", () => {
     expect(missingPresentation(appId, definitions)).toEqual([]);
   });
 
+  test("Core file helpers localize every input field, including schema variants", () => {
+    const compiled = compileCapabilities("core", aiCapabilities);
+    const localized = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de-DE");
+    const queries = localized.queries.filter((entry) => entry.localId.startsWith("file."));
+    expect(queries).toHaveLength(6);
+
+    for (const query of queries) {
+      const input = compiled.presentation?.translations.de?.queries?.[query.localId]?.input;
+      const visit = (schema: unknown, prefix = ""): void => {
+        if (!schema || typeof schema !== "object" || Array.isArray(schema)) return;
+        const node = schema as Record<string, unknown>;
+        if (node.properties && typeof node.properties === "object" && !Array.isArray(node.properties)) {
+          for (const [field, definition] of Object.entries(node.properties)) {
+            const path = prefix ? `${prefix}.${field}` : field;
+            expect(input?.[path], `${query.localId}.${path}`).toBeTruthy();
+            expect(definition).toHaveProperty("description", input?.[path]);
+            visit(definition, path);
+          }
+        }
+        if (node.items) visit(node.items, `${prefix}[]`);
+        for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
+          if (Array.isArray(node[keyword])) node[keyword].forEach((variant) => visit(variant, prefix));
+        }
+      };
+      visit(query.inputSchema);
+    }
+  });
+
   test.each([
     ["chat", chatCapabilities, "conversation.readable"],
     ["filesv2", filesCapabilities, "entry.readable"],

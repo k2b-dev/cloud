@@ -12,6 +12,8 @@ above through `load_tools` if they are missing. Their JSON results are the
 same contracts as `cld code`; keep them intact. Cloud shows Code under the
 name **feat/code**: a person who says feat/code means Code.
 
+Guests cannot create Code or submit versions; if a guest asks, kindly explain that Code authoring is available to Cloud members and suggest asking a member for help.
+
 ## Workflow
 
 1. **Choose the owner.** Omit `owner` in `code_init({title})` for personal Code:
@@ -113,7 +115,9 @@ and start with the [database template](references/template-database.md).
 | Call an external HTTPS service, with a secret | `http.fetch` with `secrets.NAME` | [Access and secrets](references/access.md) |
 | Decide who sees a page | `c.user` (`id`, `username`, `groupIds`, `groupNames`, `kind`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
 | A page without the Cloud layout, such as a public survey | `{ public: true, layout: "plain" }` | [Pages](references/pages.md), [survey](references/template-survey.md) |
+| Generate a PDF, CSV, ODS, chart or DATEV/SEPA file | `pdf`, `sheet`, `chart`, `finance` from `@sdk` | [FileRef](references/file-ref.md), [generated file](references/template-generated-file.md) |
 | Pass a file from Mail or Files to another app | `FileRef` from a read stream into an Action's `file` input | [FileRef](references/file-ref.md), [mail invoices](references/template-mail-invoices.md) |
+| Check something before an app sends it, such as a customer message | The app's submitted event, rules from a note, `core.ai.generate`, then the app's approve or reject Action | [Review before sending](references/review-before-send.md) |
 
 ## Zugriff prüfen
 
@@ -157,6 +161,8 @@ secret binding](references/access.md#webhooks-r1-ohne-secret).
   recover; otherwise let the run fail visibly.
 - Write examples, fixtures and names without real people, mailboxes or IDs
   from this chat.
+- When someone wants a check before something is sent, use the
+  [review-before-sending pattern](references/review-before-send.md).
 
 Studio apps and their data have been retired without transfer. For a one-off
 chat computation, load `assistant-code-mode` and use inline `code_run`.
@@ -175,6 +181,7 @@ the real checker. Adapt names, IDs and texts; keep the structure.
 | [Weekly report](references/template-weekly-report.md) | personal | Weekly local schedule, AI summary, delivery to a Gustav chat |
 | [Task due tomorrow](references/template-task-due-tomorrow.md) | personal | Spaces events and a daily schedule assign tomorrow’s tasks and notify a team chat |
 | [Event to chat](references/template-event-to-chat.md) | mailbox | Post a short note into a team chat for each new message |
+| [Generate a file](references/template-generated-file.md) | personal | Generate a CSV as a FileRef and pass it to a receiving app Action |
 | [Mail invoices to an app](references/template-mail-invoices.md) | mailbox | Pass invoice attachments to an import app as FileRefs, then tag the conversation |
 
 In the Cloud repository the templates are the files in `templates/` beside

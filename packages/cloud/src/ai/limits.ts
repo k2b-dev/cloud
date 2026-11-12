@@ -5,3 +5,6 @@ export const AI_IMAGE_INPUT_MAX_BYTES = 10 * 1024 * 1024;
 export const AI_TURN_IMAGE_MAX_TOTAL_BYTES = 40 * 1024 * 1024;
 /** One chat file; the upload route refuses larger files. */
 export const AI_FILES_MAX_FILE_BYTES_DEFAULT = 50 * 1024 * 1024;
+
+/** Combined files in one conversation; reused as Code's byte ceiling. */
+export const AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT = 250 * 1024 * 1024;

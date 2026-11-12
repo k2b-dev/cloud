@@ -3,7 +3,7 @@ import { sql } from "../runtime/clients";
 import { stripImageMetadata } from "../services/image-metadata";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 import { isAiImage } from "./file-media-type";
-import { AI_FILES_MAX_FILE_BYTES_DEFAULT } from "./limits";
+import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT, AI_FILES_MAX_FILE_BYTES_DEFAULT } from "./limits";
 import {
   CLOUD_AI_VIEW_MAX_BYTES,
   CLOUD_AI_VIEW_SUFFIX,
@@ -16,8 +16,7 @@ import {
 export { guessAiMediaType } from "./file-media-type";
 
 /** Per-file and per-conversation caps — read once per operation from settings by the caller layer if needed. */
-export { AI_FILES_MAX_FILE_BYTES_DEFAULT };
-export const AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT = 250 * 1024 * 1024;
+export { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT, AI_FILES_MAX_FILE_BYTES_DEFAULT };
 
 export type AiFileStat = {
   path: string;
@@ -289,12 +288,14 @@ export const aiFileStore = {
     return rows[0] ? toStat(rows[0]) : null;
   },
 
-  async read(input: { conversationId: string; path: string }): Promise<AiFileContent | null> {
+  async read(input: { conversationId: string; path: string; version?: number; maxBytes?: number }): Promise<AiFileContent | null> {
     const path = await storedAiFilePath(sql, input.conversationId, input.path);
     const rows = await sql<FileContentRow[]>`
       SELECT path, bytes, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.files
       WHERE conversation_id = ${input.conversationId} AND path = ${path}
+        AND (${input.version ?? null}::bigint IS NULL OR version = ${input.version ?? null}::bigint)
+        AND (${input.maxBytes ?? null}::bigint IS NULL OR size <= ${input.maxBytes ?? null}::bigint)
     `;
     return rows[0] ? toContent(rows[0]) : null;
   },
@@ -681,12 +682,26 @@ export const listAiConversationFiles = (
   page?: { after?: string; limit: number },
 ): Promise<AiFileStat[]> => aiFileStore.list({ conversationId, prefix, ...page });
 
+/** Authorized metadata-only lookup before issuing a bounded file continuation. */
+export async function statAiConversationFile(input: {
+  conversationId: string;
+  ownerUserId: string;
+  path: string;
+}): Promise<AiFileStat | null> {
+  const { aiConversations } = await import("./store");
+  const conversation = await aiConversations.getConversation({ conversationId: input.conversationId, ownerUserId: input.ownerUserId });
+  if (!conversation || conversation.archivedAt) return null;
+  return aiFileStore.stat(input);
+}
+
 /** Authorized byte-preserving read for app-owned artifact importers. */
 export async function readAiConversationFile(input: {
   conversationId: string;
   ownerUserId: string;
   path: string;
   version?: number;
+  /** Refuse oversized revisions in SQL before loading bytes. */
+  maxBytes?: number;
 }): Promise<AiFileContent | null> {
   const { aiConversations } = await import("./store");
   const conversation = await aiConversations.getConversation({ conversationId: input.conversationId, ownerUserId: input.ownerUserId });

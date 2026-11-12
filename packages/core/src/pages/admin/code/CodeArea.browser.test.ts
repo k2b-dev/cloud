@@ -325,12 +325,10 @@ test("asking rows stay at Never without a choice at desktop and phone widths", a
   }
 }, 30_000);
 
-test("unused database delete requires confirmation, binds the shown incarnation, and keeps recovery visible", async () => {
+test("unused database delete requires confirmation and cancelling preserves the database on a phone", async () => {
   await goto("sec=databases", { width: 390, height: 844 });
   await settled(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  const row = page.getByRole("row").filter({ has: page.locator('a[href="/admin/code?sec=code&id=c_rueck"]') });
-  const before = await row.boundingBox();
   const actionBox = await page.getByRole("button", { name: "Jetzt löschen", exact: true }).boundingBox();
   expect(actionBox !== null && actionBox.x >= 0 && actionBox.x + actionBox.width <= 390).toBe(true);
   await page.getByRole("button", { name: "Ausgeblendete Werte der Zeile zeigen" }).click();
@@ -342,6 +340,14 @@ test("unused database delete requires confirmation, binds the shown incarnation,
   expect(await dialog.textContent()).toContain("endgültig löschen");
   await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
   expect(fixture.requests).toHaveLength(0);
+});
+
+test("confirmed unused database deletion binds the shown incarnation and keeps its geometry on a phone", async () => {
+  await goto("sec=databases", { width: 390, height: 844 });
+  await settled(page);
+  const row = page.getByRole("row").filter({ has: page.locator('a[href="/admin/code?sec=code&id=c_rueck"]') });
+  const before = await row.boundingBox();
+  const remove = page.getByRole("button", { name: "Jetzt löschen", exact: true });
   await remove.click();
   await page.getByRole("dialog").getByRole("button", { name: "Jetzt löschen", exact: true }).click();
   await page.getByText("Löschung beauftragt.", { exact: false }).waitFor();
@@ -354,6 +360,9 @@ test("unused database delete requires confirmation, binds the shown incarnation,
   ]);
   expect(await page.getByRole("button", { name: "Jetzt löschen", exact: true }).count()).toBe(0);
   expect(await page.getByRole("button", { name: "Neu laden", exact: true }).isVisible()).toBe(true);
+});
+
+test("an unconfirmed unused database deletion keeps recovery visible", async () => {
   await goto("sec=databases&state=lost");
   await page.getByRole("button", { name: "Jetzt löschen", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Jetzt löschen", exact: true }).click();
