@@ -295,7 +295,7 @@ Queries: `files.activity.chain`, `files.activity.get`, `files.activity.list`, `f
 The Files SDK export is `files`; its app, capability and event IDs keep
 `filesv2` (including `filesv2.*` events). Code can list, search and read entry metadata,
 and `files.content.read` returns a file as a [FileRef](file-ref.md) to pass
-to another app. `files.file.save.v1` saves a FileRef into a writable folder, with the same
+to another app. `files.entry(id).file.save.v1` saves a FileRef into a writable folder, with the same
 collision and approval rules as an upload. No Files Action runs unattended yet.
 
 Reading from several apps in one personal page:

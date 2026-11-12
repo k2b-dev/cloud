@@ -657,6 +657,14 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Datei an einen Entwurf anhängen",
           description:
             "Eine FileRef mit aktuellen Schreibrechten und Versionsprüfung an einen Entwurf anhängen. Die bestehenden Anhangsgrenzen und die Bearbeitungssperre gelten. Versendet nie eine Nachricht.",
+          input: {
+            draftId: "Exakte mail.draft-ID aus einer Entwurfsliste oder einem gelesenen Entwurf.",
+            expectedRevision: "Aktuelle Entwurfsrevision für die Versionsprüfung.",
+            file: "Dateiverweis; der Inhalt wird über den Datei-Stream übertragen.",
+            "file.name": "Dateiname des Anhangs ohne Pfad.",
+            "file.mediaType": "MIME-Typ des Dateiinhalts.",
+            "file.size": "Exakte Größe des Dateiinhalts in Bytes.",
+          },
         },
         "draft.attachment.add": {
           title: "Entwurfsanhang hinzufügen",

@@ -7,7 +7,7 @@ Action from `code_sdk` that declares a write stream and a `file` input.
 Read the `core` SDK declarations for the generation helpers.
 
 Owner: personal Code. The receiving app must allow the Action to run unattended.
-Files also accepts a FileRef through `files.file.save.v1`, with its existing
+Files also accepts a FileRef through `files.entry(id).file.save.v1`, with its existing
 confirmation rules; it cannot run unattended. Mail accepts a FileRef through
 `mail.mailbox(id).draft.attachment.import.v1`, with its draft-write policy.
 

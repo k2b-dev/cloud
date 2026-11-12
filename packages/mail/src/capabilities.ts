@@ -3447,7 +3447,7 @@ const actionDefinitions = {
       if (!draft.ok) return draft;
       if (draft.data.revision !== input.expectedRevision) return fail(err.conflict("Draft changed before review"));
       return ok(
-        mailActionReviews["draft.attachment.add"](
+        mailActionReviews["draft.attachment.import.v1"](
           context.locale,
           {
             file: fileSlot(input.file.name ?? "attachment"),
