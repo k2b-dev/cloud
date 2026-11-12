@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-08
+updated: 2026-11-12
 ---
 
 # Deprecations and migrations
@@ -35,6 +35,20 @@ updates. Access-notice retry ownership moves from Core to the issuer while
 keeping the existing notification content and idempotency key. See
 [rollout steps](/en/docs/operations/app-keys#roll-out-issuer-ownership) and the
 [public issuer contract](/en/docs/identity/oauth#implement-an-oauth-issuer).
+
+## App proof replay protection moves to Valkey
+
+Upgrade all Core replicas together before resuming signed traffic. Core drops
+`auth.app_proof_replays` and its indexes; older replicas return HTTP 503 on
+signed requests until replaced. Every replica must share the installation's
+Valkey. Follow [the Core upgrade requirements](/en/docs/operations/app-keys#upgrade-all-core-replicas-together).
+
+The platform-owned `consumeBootstrapProof(keyId, jti, exp)` no longer takes a
+database executor; `cleanupBootstrapProofs` and its maintenance step are removed.
+`getActiveAppKey` and `getStoredAppKey` include the installation identity and
+activity status in their single read. Pass the authenticated key row to
+`touchAppKey(key, db)` instead of passing `{ appId, keyId }`. Activity timestamps
+update at most once per minute per key; revocation checks remain uncached.
 
 ## Saved signed bar rows render again
 

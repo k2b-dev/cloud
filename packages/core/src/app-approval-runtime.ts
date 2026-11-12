@@ -1,6 +1,5 @@
 import { lazySync, sql } from "@k2b/cloud";
 import { appApproval, knownBrowsers, pwaDevices } from "@k2b/cloud/services";
-import { cleanupBootstrapProofs } from "@k2b/cloud/services/app-bootstrap";
 import type { Worker } from "@k2b/sync";
 import { cleanupTerminalLogins } from "./api/identity-oauth-device-approval";
 import type { CoreNotificationSender } from "./notifications";
@@ -29,10 +28,6 @@ export const appApprovalRuntime = {
           () => knownBrowsers.maintainNotices(sql, sender.sendNewBrowserSignIn, { signal }),
           () => appApproval.maintain(sender.sendDeviceEnrollment, signal),
           () => cleanupTerminalLogins(),
-          async () => {
-            const result = await cleanupBootstrapProofs(sql, { signal });
-            if (result.remaining > 0) console.warn("Bootstrap nonce cleanup backlog", result);
-          },
         ]) {
           try {
             await step();
