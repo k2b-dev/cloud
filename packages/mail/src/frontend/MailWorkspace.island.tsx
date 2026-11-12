@@ -80,7 +80,9 @@ import { mailAutomationLogMessages } from "./_components/mail-automation-log-mes
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
+import MailComposeWindows from "./_components/MailComposeWindows";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
+import { openDraftWindow } from "./_components/mail-compose-windows";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
 import { type MailRespondIntent, type MailRespondRequest, openMailReplyWindow } from "./_components/mail-conversation-menu";
@@ -243,16 +245,10 @@ function createMailboxController(props: MailboxControllerProps) {
   const [listCollapsed, setListCollapsed] = createSignal(props.initialPreferences.listCollapsed);
   const [detailsOpen, setDetailsOpen] = createSignal(props.initialPreferences.detailsOpen);
   // A draft open inside the reader, from the URL on the server too, so the first render already knows full screen.
-  const [draftOpen, setDraftOpen] = createSignal(Boolean(new URL(props.requestPath, "http://mail.invalid").searchParams.get("draft")));
-  // A new message in the flow: a draft without a conversation, at the top of the list and open in the reader. The URL
-  // names it (`?draft=` without `conversation`), so reload and Back open it again.
-  const initialNewDraftId = props.data.selectedConversationId
-    ? null
-    : new URL(props.requestPath, "http://mail.invalid").searchParams.get("draft");
-  const [newMessage, setNewMessage] = createSignal<{ draftId: string; initialDraft?: MailDraft; fresh: boolean } | null>(
-    initialNewDraftId ? { draftId: initialNewDraftId, fresh: false } : null,
+  // `?draft=` without a conversation names a draft window instead (see below).
+  const [draftOpen, setDraftOpen] = createSignal(
+    Boolean(props.data.selectedConversationId && new URL(props.requestPath, "http://mail.invalid").searchParams.get("draft")),
   );
-  const [newMessageSummary, setNewMessageSummary] = createSignal<{ subject: string; to: string[] }>({ subject: "", to: [] });
   // F7: full screen is this browser's last choice and never turns on by itself.
   const [draftFullscreen, setDraftFullscreen] = createSignal(props.initialPreferences.draftFullscreen);
   const [toolbarActions, setToolbarActions] = createSignal(props.initialPreferences.toolbarActions);
@@ -1075,6 +1071,8 @@ function createMailboxController(props: MailboxControllerProps) {
   };
 
   const [composeStarting, setComposeStarting] = createSignal(false);
+  /** A minimized draft window lies over the bottom of the list; the list then scrolls its last row above it. */
+  const [windowsDocked, setWindowsDocked] = createSignal(false);
   let composeRequest: AbortController | null = null;
   // A seed whose materialization has no answer yet: the next Compose retries it, so a lost answer creates no second draft.
   let pendingComposeSeed: MailDraftSeed | null = null;
@@ -1086,9 +1084,8 @@ function createMailboxController(props: MailboxControllerProps) {
     setComposeStarting(false);
   };
   /**
-   * Compose from this mailbox: a new message starts in the flow, as a draft at the top of the list with an empty
-   * conversation beside it. The draft is created before anyone types (seed and materialize, as Reply does), with the
-   * compose page's sender rule. Without a selectable sender, `fallback` opens the compose page, which explains why. A
+   * Compose from this mailbox: a new message opens as a floating window over the mailbox. The draft is created before
+   * anyone types (seed and materialize, as Reply does), with the compose page's sender rule. Without a selectable sender, `fallback` opens the compose page, which explains why. A
    * trigger without its own pending spot (the phone menu, the command) asks for the progress toast.
    */
   const startCompose = async (options: { fallback: () => void; progressToast: boolean }) => {
@@ -1101,8 +1098,8 @@ function createMailboxController(props: MailboxControllerProps) {
     composeRequest = request;
     if (options.progressToast)
       composeProgress = toast(t().preparingMessage, { progress: "indeterminate", duration: 0, iconClass: "ti ti-pencil" });
-    // A navigation while the draft is created wins: the empty draft then goes again instead of taking the reader.
-    const routeAtStart = requestPath();
+    // The window returns the focus to what started it, such as New message.
+    const trigger = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
     let draft: MailDraft;
     try {
       let seed = pendingComposeSeed?.mailboxId === mailboxId ? pendingComposeSeed : null;
@@ -1129,7 +1126,8 @@ function createMailboxController(props: MailboxControllerProps) {
       void prompts.error(error instanceof Error ? error.message : t().draftCreateFailed, { title: t().startMessageFailed });
       return;
     }
-    const stale = () => disposed || data.mailbox.id !== mailboxId || requestPath() !== routeAtStart;
+    // Another mailbox took the workspace meanwhile: the empty draft goes again instead of opening there.
+    const stale = () => disposed || data.mailbox.id !== mailboxId;
     if (stale()) {
       endComposeStart();
       if (!disposed)
@@ -1139,17 +1137,9 @@ function createMailboxController(props: MailboxControllerProps) {
       return;
     }
     writeMailSenderPreference(localStorage, mailboxId, identity.id);
-    // Drafts and Outbox have no reader: the new message opens in the mailbox's list.
-    if (data.scheduledMode || data.draftsMode) await transitionWorkspaceHref(`/app/mail/${encodeURIComponent(mailboxId)}`);
-    // An open conversation steps aside; the new message takes the reader.
-    else if (hasSelection()) {
-      const listHref = buildMailListHref(new URL(requestPath(), window.location.origin));
-      await closeConversationAt(listHref, (navigateOptions) => navigate(listHref, navigateOptions));
-    }
     endComposeStart();
-    if (disposed || hasSelection() || data.scheduledMode || data.draftsMode) return;
-    setNewMessage({ draftId: draft.id, initialDraft: draft, fresh: true });
-    setDraftParam(draft.id);
+    // A window over the mailbox: the list and an open conversation stay where they are.
+    openDraftWindow(draft.id, { mailboxId, initialDraft: draft, fresh: true, returnFocus: trigger });
   };
   onMount(() => {
     // A page restored from the back-forward cache shows Compose ready again.
@@ -1344,54 +1334,25 @@ function createMailboxController(props: MailboxControllerProps) {
     ),
   );
   // The Events feed has no columns: it fills the main area until a conversation opens beside it.
-  // A new message takes the reader like an open conversation, in every layout.
-  const largeLayout = createMemo(() =>
-    resolveMailLargeLayout(data.eventsMode ? "auto" : viewPreference().large, hasSelection() || newMessage() !== null),
-  );
+  const largeLayout = createMemo(() => resolveMailLargeLayout(data.eventsMode ? "auto" : viewPreference().large, hasSelection()));
   /** Columns over the full main area: the list pane closes and the list takes the reader's place. */
   const columnsWide = () => !data.scheduledMode && !data.draftsMode && largeLayout().list === "full";
   const listPresence = createMemo(() => resolveMailListPresence(largeLayout(), hasSelection(), listCollapsed()));
   /** Full screen moves the list and the details aside while a draft is open in the reader. */
-  const draftFullscreenActive = () => draftOpen() && draftFullscreen() && (hasSelection() || newMessage() !== null);
-  // Opening a conversation ends the new message in the reader; its session saves what is left, and the draft waits
-  // in Drafts.
-  createEffect(
-    on(hasSelection, (selected) => {
-      if (selected && untrack(newMessage)) closeNewMessage({ history: false });
-    }),
-  );
-  /** The new message leaves the reader: sent, discarded, collapsed, or replaced by a conversation. */
-  const closeNewMessage = (options: { history?: boolean } = {}) => {
-    setNewMessage(null);
-    setNewMessageSummary({ subject: "", to: [] });
-    setDraftParam(null, options);
+  const draftFullscreenActive = () => draftOpen() && draftFullscreen() && hasSelection();
+  /**
+   * `?draft=` without a conversation names a draft window: an old compose link, a draft from Drafts, a shared link. The
+   * window opens over the mailbox and the URL drops the draft again; the tab remembers its open windows by itself.
+   */
+  const openDraftWindowFromRoute = (path: string) => {
+    const url = new URL(path, "http://mail.invalid");
+    const draftId = url.searchParams.get("draft");
+    if (!draftId || url.searchParams.has("conversation") || url.searchParams.has("message")) return;
+    openDraftWindow(draftId, { mailboxId: data.mailbox.id });
+    setDraftParam(null);
   };
-  /** Another draft takes the new message's place in the reader and in the URL, such as the rest of a shared draft. */
-  const openNewMessageDraft = (draftId: string) => {
-    setNewMessage({ draftId, fresh: false });
-    setNewMessageSummary({ subject: "", to: [] });
-    setDraftParam(draftId);
-  };
-  // Back, Forward, and every other committed route decide: `?draft=` without a conversation is the new message.
-  createEffect(
-    on(
-      requestPath,
-      (path) => {
-        const url = new URL(path, "http://mail.invalid");
-        const draftId = url.searchParams.get("draft");
-        const selected = url.searchParams.has("conversation") || url.searchParams.has("message");
-        const current = untrack(newMessage);
-        if (draftId && !selected) {
-          if (current?.draftId !== draftId) setNewMessage({ draftId, fresh: false });
-          setDraftOpen(true);
-        } else if (current && !draftId) {
-          setNewMessage(null);
-          setNewMessageSummary({ subject: "", to: [] });
-        }
-      },
-      { defer: true },
-    ),
-  );
+  onMount(() => openDraftWindowFromRoute(requestPath()));
+  createEffect(on(requestPath, openDraftWindowFromRoute, { defer: true }));
   const toggleDraftFullscreen = () => {
     const next = !draftFullscreen();
     setDraftFullscreen(next);
@@ -3143,6 +3104,8 @@ function createMailboxController(props: MailboxControllerProps) {
     clearConversationSelection,
     closeConversation,
     composeStarting,
+    windowsDocked,
+    setWindowsDocked,
     conversationActivity,
     conversationText,
     currentTab,
@@ -3152,11 +3115,6 @@ function createMailboxController(props: MailboxControllerProps) {
     draftFullscreenActive,
     toggleDraftFullscreen,
     setDraftParam,
-    newMessage,
-    newMessageSummary,
-    setNewMessageSummary,
-    closeNewMessage,
-    openNewMessageDraft,
     exitHeadSelection,
     folderOnlyHint,
     hasSelection,
@@ -3296,7 +3254,6 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       loading={controller().routeLoading()}
       liveDegraded={controller().liveUnavailable()}
       onCollapse={() => controller().setCollapsed(true)}
-      newMessage={controller().newMessage() ? controller().newMessageSummary() : null}
       onOpenHealth={() => void controller().openHealth()}
       onOpenDeliverySettings={() => void controller().openSettings("delivery")}
       onNavigate={controller().navigateWorkspace}
@@ -3636,9 +3593,9 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       />
       <AppWorkspace.Content>
         <AppWorkspace.Main
-          class="p-0"
+          class={controller().windowsDocked() ? "p-0 mail-windows-docked" : "p-0"}
           aria-busy={controller().routeLoading()}
-          mobilePane={controller().hasSelection() || controller().newMessage() || controller().columnsWide() ? "main" : "conversations"}
+          mobilePane={controller().hasSelection() || controller().columnsWide() ? "main" : "conversations"}
           scroll={false}
           minWidth={
             controller().data.scheduledMode || controller().data.draftsMode || controller().columnsWide()
@@ -3734,10 +3691,6 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                     draftFullscreen={controller().draftFullscreen()}
                     onToggleDraftFullscreen={controller().toggleDraftFullscreen}
                     onDraftChange={controller().setDraftParam}
-                    newMessage={controller().newMessage()}
-                    onNewMessageSummary={controller().setNewMessageSummary}
-                    onNewMessageClose={() => controller().closeNewMessage()}
-                    onNewMessageOpenDraft={(draftId) => controller().openNewMessageDraft(draftId)}
                   />
                 </Show>
               </>
@@ -3878,6 +3831,27 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
           </Show>
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
+      <Show when={controller()} keyed>
+        {(mailbox) => (
+          <Show when={mailbox.canWrite()}>
+            <MailComposeWindows
+              mailboxId={mailbox.data.mailbox.id}
+              area={() => document.querySelector<HTMLElement>(".mail-workspace") ?? undefined}
+              currentUserId={props.currentUserId}
+              currentUserEmail={props.currentUserEmail}
+              identities={mailbox.data.identities}
+              dateConfig={props.dateConfig}
+              canAdmin={mailbox.canAdmin()}
+              mailboxRecipientSuggestions={!mailbox.assignedOnly()}
+              calendarIntegrationAvailable={props.calendarIntegrationAvailable}
+              liveDictation={props.liveDictation ?? false}
+              returnHref={mailbox.requestPath()}
+              onDraftsChanged={() => void mailbox.requireWorkspaceReconcile().catch(() => undefined)}
+              onDockedChange={mailbox.setWindowsDocked}
+            />
+          </Show>
+        )}
+      </Show>
     </>
   );
 }

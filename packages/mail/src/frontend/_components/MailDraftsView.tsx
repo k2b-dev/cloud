@@ -49,6 +49,13 @@ export default function MailDraftsView(props: {
     else target.searchParams.delete("cursor");
     return `${target.pathname}${target.search}`;
   };
+  /** A reply opens in its conversation; a new message opens as a window over this list (`?draft=`). */
+  const draftHref = (item: DraftFolderItem) => {
+    if (item.conversationId) return mailDraftHref(props.mailboxId, item.id, listHref(null));
+    const target = new URL(listHref(null), "http://mail.local");
+    target.searchParams.set("draft", item.id);
+    return `${target.pathname}${target.search}`;
+  };
   const timeColumnSizer = createMemo(() =>
     props.columns ? mailTimeColumnSizer(mailTimeColumnSamples(props.dateConfig, new Date())) : undefined,
   );
@@ -190,7 +197,7 @@ export default function MailDraftsView(props: {
                 {(item) => (
                   <MailDraftRow
                     item={item}
-                    href={props.canWrite ? mailDraftHref(props.mailboxId, item.id, listHref(null)) : null}
+                    href={props.canWrite ? draftHref(item) : null}
                     columns={props.columns}
                     dateConfig={props.dateConfig}
                     pending={pendingId() === item.id}
