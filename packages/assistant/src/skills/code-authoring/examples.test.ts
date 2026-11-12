@@ -47,6 +47,8 @@ const out = [];
 for (const [id, file, name] of apps) out.push(compileCapabilityManifest(id, (await import(file))[name]));
 // The fictional import app with a FileRef write stream, shared with the cloud checker test.
 out.push((await import(${JSON.stringify(join(packages, "cloud/src/code/file-ref.test-fixture.ts"))})).fileImportManifest());
+// The fictional outbox of the review-before-sending pattern.
+out.push((await import(${JSON.stringify(join(packages, "cloud/src/code/review-gate.test-fixture.ts"))})).reviewGateManifest());
 process.stdout.write(JSON.stringify(out));`,
   ],
   { stdout: "pipe", stderr: "pipe" },
@@ -355,7 +357,8 @@ test("the capability tables state when each Action runs and list every Action of
   for (const manifest of manifests)
     for (const action of manifest.actions) {
       const capability = `${manifest.appId}.${action.localId}`;
-      const documented = manifest.appId === "core" ? capability.startsWith("core.ai.") : !["imports", "grids"].includes(manifest.appId);
+      const documented =
+        manifest.appId === "core" ? capability.startsWith("core.ai.") : !["imports", "outbox", "grids"].includes(manifest.appId);
       if (documented && !listed.has(capability)) wrong.push(`${capability}: Action missing from the capability tables`);
     }
   expect(wrong).toEqual([]);
