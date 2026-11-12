@@ -5,7 +5,7 @@ import { monitorEventLoopDelay } from "node:perf_hooks";
 import { auth } from "@k2b/cloud/server";
 import { toBase64 } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
-import type { TopicConfig } from "@k2b/sync";
+import type { Lock, Mutex, TopicConfig } from "@k2b/sync";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import type { MailApiContext } from "../../src/api/public-resource-boundary";
@@ -159,6 +159,24 @@ try {
   if (!identity) throw new Error("Missing sender");
 
   const sync = (await import("@k2b/cloud")).getProcessSync();
+  const originalMutex = sync.mutex.bind(sync);
+  const mutexSpy = spyOn(sync, "mutex").mockImplementation((config) => {
+    const mutex = originalMutex(config);
+    if (config.id === "cloud:mail:draft-documents:admission") {
+      const withLock = mutex.withLock.bind(mutex);
+      mutex.withLock = <T>(input: Parameters<Mutex["withLock"]>[0], operation: (lock: Lock) => Promise<T>) => {
+        const start = performance.now();
+        return draftTraceSpan("admission_total", () =>
+          withLock(input, async (lock) => {
+            draftTrace("admission_wait", { durationMs: performance.now() - start, outcome: "ok" });
+            return draftTraceSpan("admission_operation", () => operation(lock));
+          }),
+        );
+      };
+    }
+    return mutex;
+  });
+  cleanup.push(() => mutexSpy.mockRestore());
   const originalTopic = sync.topic.bind(sync);
   const topicSpy = spyOn(sync, "topic").mockImplementation(<T>(config: TopicConfig) => {
     const topic = originalTopic<T>(config);
