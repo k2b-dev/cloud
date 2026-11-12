@@ -551,6 +551,13 @@ at the top of the list with an empty conversation beside it.
   signature with that person's date format.
 - A Gustav suggestion (`suggestion: true`) opens in plum until someone edits it.
 
+When a conversation already has a reply draft, Reply, Reply all and Forward
+open that draft and switch its mode. Replying to selected text opens it without
+inserting the selection, so existing text stays intact. If another draft appears
+while a new seed is being saved, Mail keeps the local text as a recovery copy and
+offers the existing draft. Retrying your own seed after a lost response resumes
+the same draft and saves later edits normally.
+
 ## Write signatures and snippets
 
 The draft shows the chosen signature as a fixed block after your text, exactly

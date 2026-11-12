@@ -45,9 +45,10 @@ and ID, in that order. The edit timestamp is the later of `content_edited_at`
 and stored shared-document revisions after revision 1; an exported provider
 snapshot after revision 1 is the fallback when neither exists.
 
-For legacy lock-mode rows, revision greater than 1 or non-empty body, subject
-or recipients also count as evidence. These rows may have no recoverable edit
-timestamp; the evidence still takes priority over a newer empty draft.
+For legacy lock-mode rows, revision greater than 1 also counts as evidence.
+A derived subject, reply recipients and a default signature do not prove an edit.
+These rows may have no recoverable edit timestamp; revision evidence still
+takes priority over a newer untouched draft.
 Revision is a historical proxy: content writes and send cancellation can
 advance it, while idle checkpoints and adoption alone do not. `updated_at`
 is excluded because adoption, document checkpoints and idle maintenance also
@@ -115,7 +116,10 @@ return the same ID. Supplied content to an occupied box must return
 Switch modes with the current revision and inspect recipients and attachments.
 Show any consolidation notice before acknowledging it.
 
-Seed materialization also rejects different content with 409 and a structured
-`draftId`. The composer keeps local text in its device journal and offers the
+Seed materialization rejects different editable content against another request's
+draft with 409 and a structured `draftId`; signature segments are excluded from
+that comparison. A retry with the original author's own idempotency key returns
+the original stored draft, including for new and derived messages. A subsequent
+revision-checked save persists text typed after the first request. The composer keeps local text in its device journal and offers the
 existing draft; it does not save over it. Review-reply automation encountering
 an occupied box finishes as skipped, with the reason in the automation log.

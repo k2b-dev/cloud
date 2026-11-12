@@ -108,6 +108,8 @@ const batch = () =>
       // Match send/cancellation's mailbox -> draft lock order. Mailboxes are visited in ID order.
       await tx`SELECT id FROM mail.mailboxes WHERE id = ${conversation.mailbox_id}::uuid FOR UPDATE`;
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`mail:reply-draft:${conversation.conversation_id}`}, 0))`;
+      // Derived subjects/recipients and signatures exist even on untouched replies. Only revision > 1
+      // is legacy lock-mode evidence when no actual edit timestamp can be recovered.
       const rows = await tx<{ id: string; consolidated_count: number }[]>`SELECT d.id, d.consolidated_count FROM mail.drafts d
         CROSS JOIN LATERAL (SELECT coalesce(greatest(d.content_edited_at,
           (SELECT max(r.created_at) FROM mail.draft_document_revisions r WHERE r.draft_id = d.id AND r.revision > 1)),
@@ -116,10 +118,7 @@ const batch = () =>
         WHERE d.conversation_id = ${conversation.conversation_id}::uuid AND ${occupied()}
         ORDER BY ${committedSend()} DESC,
           (d.author_kind <> 'service_account' OR d.adopted_at IS NOT NULL) DESC,
-          (edits.edited_at IS NOT NULL OR (d.edit_mode = 'lock' AND (d.revision > 1
-            OR btrim(d.body_markdown) <> '' OR btrim(d.subject) <> ''
-            OR jsonb_array_length(d.to_addresses) > 0 OR jsonb_array_length(d.cc_addresses) > 0
-            OR jsonb_array_length(d.bcc_addresses) > 0))) DESC,
+          (edits.edited_at IS NOT NULL OR (d.edit_mode = 'lock' AND d.revision > 1)) DESC,
           edits.edited_at DESC NULLS LAST, d.created_at DESC, d.id DESC
         LIMIT ${BATCH_SIZE - deleted + 1} FOR UPDATE OF d`;
       const [survivor, ...losers] = rows;

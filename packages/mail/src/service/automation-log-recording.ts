@@ -206,7 +206,8 @@ export const projectAutomationAudit = async (
         });
     } else if (output.skipped === "already_assigned" || output.skipped === "undone_before" || output.skipped === "reply_draft_occupied") {
       skipped = true;
-      reasons.push({ kind: output.skipped });
+      if (output.skipped !== "reply_draft_occupied" || !reasons.some((reason) => reason.kind === "reply_draft_occupied"))
+        reasons.push({ kind: output.skipped });
     } else if (output.skipped) {
       skipped = true;
       if (output.skipped === "order_expired") reasons.push({ kind: "condition", text: "automation_order = expired" });

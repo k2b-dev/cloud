@@ -604,7 +604,19 @@ const respondComposeTemplates = <T>(c: Context<MailApiContext>, result: Result<T
   respondPublic(c, result, "composeTemplates");
 const respondSenderIdentities = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) =>
   respondPublic(c, result, "senderIdentities");
-const respondDrafts = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => respondPublic(c, result, "drafts");
+const respondDrafts = async <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => {
+  const resolved = await result;
+  if (!resolved.ok && resolved.error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in resolved.error)
+    return c.json(
+      {
+        code: resolved.error.code,
+        message: localizeMailError(resolved.error, getLocale(c)).message,
+        draftId: String(resolved.error.draftId),
+      },
+      409,
+    );
+  return respondPublic(c, resolved, "drafts");
+};
 const respondDeliveries = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => respondPublic(c, result, "deliveries");
 const projectAttachmentLinks = async <T extends AttachmentLink | { link: AttachmentLink } | AttachmentLinkPage>(
   result: Result<T> | Promise<Result<T>>,
@@ -3293,15 +3305,6 @@ const mailOperationsApi = new Hono<MailApiContext>()
         input: await internalDraftSeedInput(c, c.req.valid("json")),
         rejectDifferentContent: true,
       });
-      if (!result.ok && result.error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in result.error)
-        return c.json(
-          {
-            code: result.error.code,
-            message: localizeMailError(result.error, getLocale(c)).message,
-            draftId: String(result.error.draftId),
-          },
-          409,
-        );
       return respondDrafts(c, result);
     },
   )

@@ -48,6 +48,7 @@ import {
 } from "./capability-reviews";
 import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
 import type { Mailbox, MailDraft, MailSearchExpression, MailSubscriptionSummary } from "./contracts";
+import { draftAdoptionMessages } from "./draft-adoption-messages";
 import { mailFolderPaths } from "./folder-tree";
 import {
   activityPublic,
@@ -90,25 +91,32 @@ const requestContext = (context: CapabilityExecutionContext): MailRequestContext
   requestId: context.requestId,
 });
 
+const localizeCapabilityError = <T extends { code: string; status: number; message: string }>(error: T, locale: string | undefined): T => {
+  const localized = localizeMailError(error, locale);
+  return error.code === "DRAFT_REPLY_BOX_OCCUPIED"
+    ? { ...localized, message: `${localized.message} ${draftAdoptionMessages.resolve([locale ?? "en"]).t.occupiedCapabilityHint}` }
+    : localized;
+};
+
 const localizeCapabilityErrors = <T extends CapabilityDefinitions>(definitions: T): T => {
   for (const definition of Object.values(definitions.queries ?? {})) {
     const run = definition.run;
     definition.run = async (input, context) => {
       const result = await run(input, context);
-      return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+      return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
     };
   }
   for (const definition of Object.values(definitions.actions ?? {})) {
     const run = definition.run;
     definition.run = async (input, context) => {
       const result = await run(input, context);
-      return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+      return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
     };
     if (definition.review) {
       const review = definition.review;
       definition.review = async (input, context) => {
         const result = await review(input, context);
-        return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+        return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
       };
     }
   }

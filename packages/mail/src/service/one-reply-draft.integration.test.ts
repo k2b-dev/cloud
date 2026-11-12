@@ -336,14 +336,24 @@ suite("one reply draft per conversation", () => {
         cap(gustav),
       );
       expect(occupied).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
-      if (!occupied.ok) expect(occupied.error.message).toContain(first.id);
+      if (!occupied.ok) {
+        expect(occupied.error.message).toContain(first.id);
+        expect(occupied.error.message).toContain("mail.draft.intent");
+        expect(occupied.error.message).not.toContain("cld mail");
+      }
       const contentConflict = await api.request(`/mailboxes/${mailboxShortId}/drafts`, {
         method: "POST",
         headers,
         body: JSON.stringify({ ...body, body: "Keep my new text" }),
       });
       expect(contentConflict.status).toBe(409);
-      expect(await contentConflict.json()).toMatchObject({ code: "DRAFT_REPLY_BOX_OCCUPIED", message: expect.stringContaining(first.id) });
+      const conflictBody = await contentConflict.json();
+      expect(conflictBody.message).not.toContain("cld mail");
+      expect(conflictBody).toMatchObject({
+        code: "DRAFT_REPLY_BOX_OCCUPIED",
+        draftId: first.id,
+        message: expect.stringContaining(first.id),
+      });
       for (const supplied of [{ body: "New text" }, { subject: "New subject" }, { to: [{ address: "new@example.test" }] }]) {
         const conflict = await mailCapabilities.actions["draft.create"].run(
           DraftCreateInputSchema.parse({ ...body, ...supplied, mailboxId: mailboxShortId }),
@@ -409,40 +419,130 @@ suite("one reply draft per conversation", () => {
         expect(await same.json()).toMatchObject({ creationOutcome: "existing", body: "My text" });
         const retry = await materialize("Later local text");
         expect(retry.status).toBe(409);
-        // A retry of a seed that created the row also cannot replace that row's content.
-        const ownSource = await thread();
-        const ownResponse = await api.request(`/mailboxes/${mailboxShortId}/draft-seeds`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            origin: {
-              kind: "compose",
-              input: {
-                ...input(ownSource),
-                conversationId: ownSource.conversationShortId,
-                sourceMessageId: ownSource.sourceShortId,
-                senderIdentityId: identityShortId,
-              },
-            },
-          }),
-        });
-        const ownSeed = await ownResponse.json();
-        const ownMaterialize = (body: string) =>
-          api.request(`/mailboxes/${mailboxShortId}/draft-seeds/materialize`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ idempotencyKey: ownSeed.id, origin: ownSeed.origin, draft: { ...ownSeed.content, body } }),
-          });
-        const created = await ownMaterialize("First text");
-        expect(created.status).toBe(200);
-        expect(await created.json()).toMatchObject({ creationOutcome: "created", body: "First text" });
-        expect((await ownMaterialize("First text")).status).toBe(200);
-        expect((await ownMaterialize("Different retry text")).status).toBe(409);
       } finally {
         token.mockRestore();
       }
     });
   }
+  for (const kind of ["reply", "new", "derive"] as const) {
+    test(`REST own-key retry after a lost response allows the later save (${kind})`, async () => {
+      const source = await thread();
+      if (owner.actor.kind !== "user") throw new Error("Missing user");
+      const token = spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+        kind: "user",
+        payload: {},
+        user: owner.actor.user,
+        scopes: ["read", "write"],
+      });
+      try {
+        const headers = { authorization: "Bearer b1", "content-type": "application/json" };
+        const origin =
+          kind === "derive"
+            ? {
+                kind: "derive",
+                messageId: source.sourceShortId,
+                input: { kind: "edit_as_new", senderIdentityId: identityShortId, includeAttachments: false },
+              }
+            : {
+                kind: "compose",
+                input: {
+                  ...input(source),
+                  senderIdentityId: identityShortId,
+                  body: "",
+                  intent: kind,
+                  conversationId: kind === "reply" ? source.conversationShortId : null,
+                  sourceMessageId: kind === "reply" ? source.sourceShortId : null,
+                },
+              };
+        const prepared = await api.request(`/mailboxes/${mailboxShortId}/draft-seeds`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ origin }),
+        });
+        expect(prepared.status).toBe(200);
+        const seed = await prepared.json();
+        const materialize = (body: string) =>
+          api.request(`/mailboxes/${mailboxShortId}/draft-seeds/materialize`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ idempotencyKey: seed.id, origin: seed.origin, draft: { ...seed.content, body } }),
+          });
+        // The first response is lost to the editor. Its request already committed.
+        const first = draftSchema.parse(await (await materialize("First text")).json());
+        const retry = await materialize("Later text");
+        expect(retry.status).toBe(200);
+        const retried = draftSchema.parse(await retry.json());
+        expect(retried.id).toBe(first.id);
+        expect(retried.creationOutcome).toBeUndefined();
+        expect(retried.body).toBe("First text");
+        const saved = await api.request(`/mailboxes/${mailboxShortId}/drafts/${retried.id}`, {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({ expectedRevision: retried.revision, draft: { ...editable(retried), body: "Later text" } }),
+        });
+        expect(saved.status).toBe(200);
+        expect(draftSchema.parse(await saved.json())).toMatchObject({ id: first.id, body: "Later text", revision: first.revision + 1 });
+      } finally {
+        token.mockRestore();
+      }
+    });
+  }
+  test("REST signatures do not make an own retry or equal foreign seed conflict", async () => {
+    const source = await thread();
+    const [signature] = await sql<{ id: string }[]>`INSERT INTO mail.compose_templates
+      (short_id, mailbox_id, kind, scope, name, normalized_name, shortcut, body_template, created_by_actor_kind, created_by_actor_id)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'signature', 'mailbox', 'Default', 'default', 'default',
+        'Best wishes, Ada', 'user', ${userId}::uuid) RETURNING id`;
+    await sql`INSERT INTO mail.compose_signature_defaults (mailbox_id, sender_identity_id, template_id)
+      VALUES (${mailboxId}::uuid, ${identityId}::uuid, ${signature!.id}::uuid)`;
+    if (owner.actor.kind !== "user") throw new Error("Missing user");
+    const token = spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+      kind: "user",
+      payload: {},
+      user: owner.actor.user,
+      scopes: ["read", "write"],
+    });
+    try {
+      const headers = { authorization: "Bearer b1", "content-type": "application/json" };
+      const prepared = await api.request(`/mailboxes/${mailboxShortId}/draft-seeds`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          origin: {
+            kind: "compose",
+            input: {
+              ...input(source),
+              senderIdentityId: identityShortId,
+              conversationId: source.conversationShortId,
+              sourceMessageId: source.sourceShortId,
+            },
+          },
+        }),
+      });
+      expect(prepared.status).toBe(200);
+      const seed = await prepared.json();
+      const materialize = (key: string) =>
+        api.request(`/mailboxes/${mailboxShortId}/draft-seeds/materialize`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ idempotencyKey: key, origin: seed.origin, draft: seed.content }),
+        });
+      const created = draftSchema.parse(await (await materialize(seed.id)).json());
+      expect(created.signatureTemplateId).not.toBeNull();
+      // Older images kept the signature in the body. A different seed with the same editable text may reuse it.
+      await sql`UPDATE mail.drafts SET body_markdown = ${"My text\n\n\u2063Best wishes, Ada\u2064"}
+        WHERE short_id = ${created.id}`;
+      const retry = await materialize(seed.id);
+      expect(retry.status).toBe(200);
+      expect(draftSchema.parse(await retry.json()).creationOutcome).toBeUndefined();
+      const equal = await materialize(crypto.randomUUID());
+      expect(equal.status).toBe(200);
+      expect(draftSchema.parse(await equal.json())).toMatchObject({ id: created.id, creationOutcome: "existing" });
+    } finally {
+      token.mockRestore();
+      await sql`DELETE FROM mail.compose_signature_defaults WHERE mailbox_id = ${mailboxId}::uuid AND sender_identity_id = ${identityId}::uuid`;
+    }
+  });
   for (const mode of ["lock", "shared"] as const) {
     test(`mode switch derives recipients, subject and attachments in both directions (${mode})`, async () => {
       let draft = await create();
@@ -725,13 +825,13 @@ suite("one reply draft per conversation", () => {
       expect((await sql`SELECT state FROM mail.drafts WHERE id = ${suggestion.id}::uuid`)[0]?.state).toBe("discarded");
     }
   });
-  for (const evidence of ["timestamp", "legacy content", "legacy revision"] as const) {
-    test(`F6 prefers an older edited draft over a newer empty draft (${evidence})`, async () => {
+  for (const evidence of ["timestamp", "legacy revision"] as const) {
+    test(`F6 prefers an older edited draft over a newer untouched reply with derived content (${evidence})`, async () => {
       const edited = await create();
       await sql`UPDATE mail.drafts SET edit_mode = 'lock', created_at = '2026-11-01T09:00:00Z',
         content_edited_at = ${evidence === "timestamp" ? "2026-11-01T10:00:00Z" : null}::timestamptz,
-        revision = ${evidence === "legacy revision" ? 2 : 1},
-        body_markdown = ${evidence === "legacy revision" ? "" : "Edited text"}, subject = '', to_addresses = '[]', cc_addresses = '[]', bcc_addresses = '[]'
+        revision = ${evidence === "legacy revision" ? 6 : 1},
+        body_markdown = 'Edited text', subject = 'Re: Question', to_addresses = '[{"address":"customer@example.test"}]', cc_addresses = '[]', bcc_addresses = '[]'
         WHERE id = ${edited.id}::uuid`;
       // Historical timestamps are restored separately: the content-update trigger records the fixture write itself.
       await sql`UPDATE mail.drafts SET content_edited_at = ${evidence === "timestamp" ? "2026-11-01T10:00:00Z" : null}::timestamptz WHERE id = ${edited.id}::uuid`;
@@ -739,7 +839,8 @@ suite("one reply draft per conversation", () => {
       const empty = await legacySuggestion(edited);
       await sql`UPDATE mail.drafts SET author_kind = 'user', author_id = ${userId}::uuid, adopted_at = '2026-11-01T12:00:00Z',
         edit_mode = 'lock', revision = 1, content_edited_at = NULL, created_at = '2026-11-01T11:00:00Z',
-        body_markdown = '', subject = '', to_addresses = '[]', cc_addresses = '[]', bcc_addresses = '[]'
+        body_markdown = ${"\u2063"} || 'Best wishes, Ada' || ${"\u2064"}, subject = 'Re: Question',
+        to_addresses = '[{"address":"customer@example.test"}]', cc_addresses = '[]', bcc_addresses = '[]'
         WHERE id = ${empty.id}::uuid`;
       await sql`UPDATE mail.drafts SET content_edited_at = NULL WHERE id = ${empty.id}::uuid`;
       expect(await migrate()).toMatchObject({ deletedDrafts: 1 });

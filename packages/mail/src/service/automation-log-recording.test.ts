@@ -54,17 +54,15 @@ useUnitClients();
 test("an occupied reply box is a calm skipped automation outcome with no effect", async () => {
   const audit = await projectAutomationAudit(sql, {
     steps: [],
-    outcomes: [
-      {
-        step_key: "reply",
-        source_path: [],
-        action: "createReplyDraft",
-        kind: "action",
-        state: "completed",
-        outcome: null,
-        effect_output: { applied: false, skipped: "reply_draft_occupied", conversationId: "source" },
-      },
-    ],
+    outcomes: ["reply", "schedule"].map((step_key) => ({
+      step_key,
+      source_path: [],
+      action: "createReplyDraft",
+      kind: "action",
+      state: "completed",
+      outcome: null,
+      effect_output: { applied: false, skipped: "reply_draft_occupied", conversationId: "source" },
+    })),
     conversationId: "source",
     evidenceConversationId: "source",
     ai: [],

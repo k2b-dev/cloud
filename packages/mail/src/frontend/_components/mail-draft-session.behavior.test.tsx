@@ -203,15 +203,18 @@ describe("Mail draft session", () => {
   };
 
   for (const editMode of ["lock", "shared"] as const) {
-    for (const answer of ["conflict", "existing"] as const) {
+    for (const answer of ["conflict", "conflict without id", "existing"] as const) {
       test(`occupied seed preserves the journal and never writes the other draft (${editMode}, ${answer})`, async () => {
         setSystemTime(new Date(now));
         const local = content("Local recovery text", "first@example.test");
         const occupant = { ...draft(7, content("Other person's text", "first@example.test")), editMode, creationOutcome: "existing" };
         respondWith((_method, url) => {
           if (url.endsWith("/materialize"))
-            return answer === "conflict"
-              ? Response.json({ code: "DRAFT_REPLY_BOX_OCCUPIED", message: "Existing draft", draftId: DRAFT_ID }, { status: 409 })
+            return answer !== "existing"
+              ? Response.json(
+                  { code: "DRAFT_REPLY_BOX_OCCUPIED", message: "Existing draft", ...(answer === "conflict" ? { draftId: DRAFT_ID } : {}) },
+                  { status: 409 },
+                )
               : Response.json(occupant);
           throw new Error(`Unexpected occupant write: ${url}`);
         });
@@ -235,7 +238,7 @@ describe("Mail draft session", () => {
         });
         await session.ensureDraft();
         expect(await session.persist()).toBeNull();
-        expect(session.occupiedReplyDraftId()).toBe(DRAFT_ID);
+        expect(session.occupiedReplyDraftId()).toBe(answer === "conflict without id" ? null : DRAFT_ID);
         expect(session.draft()).toBeNull();
         expect(materialized).not.toHaveBeenCalled();
         setCurrent({ ...current(), body: "Later local text" });
@@ -552,7 +555,8 @@ describe("Mail draft session", () => {
 
   test("a send after a lost save response stores the current recipients and text before it uses the draft", async () => {
     // The first save reached the server, but its response was lost, so the browser still has no draft.
-    const stored = draft(1, content("First meaningful edit", "first@example.test"));
+    // The own-key retry returns the original stored snapshot with no creationOutcome (same as REST).
+    const stored = { ...draft(1, content("First meaningful edit", "first@example.test")), creationOutcome: undefined };
     respondWith((method, url, body) => {
       if (url.endsWith("/draft-seeds/materialize")) return Response.json(stored);
       if (url.endsWith(`/drafts/${DRAFT_ID}/lease`) && method === "POST") return Response.json({ ...lease, token: crypto.randomUUID() });

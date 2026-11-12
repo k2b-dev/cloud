@@ -930,6 +930,7 @@ describe("MailComposer robustness", () => {
   let lease: Promise<void>;
   let leaves: string[];
   let opened: string[];
+  let hostControls: import("./MailComposer").MailInlineDraftControls | undefined;
 
   beforeEach(() => {
     dom = createDomTestHarness();
@@ -998,6 +999,7 @@ describe("MailComposer robustness", () => {
   const mount = async (
     options: {
       host?: boolean;
+      fresh?: boolean;
       popout?: boolean;
       draft?: MailDraft;
       seed?: MailDraftSeed;
@@ -1026,10 +1028,12 @@ describe("MailComposer robustness", () => {
             host={
               options.host
                 ? {
-                    fresh: false,
+                    fresh: options.fresh ?? false,
                     fullscreen: () => false,
                     toggleFullscreen: () => undefined,
-                    register: () => undefined,
+                    register: (controls) => {
+                      hostControls = controls;
+                    },
                     messageLabel: () => null,
                     leave: (outcome) => leaves.push(outcome),
                     openDraft: (draftId) => opened.push(draftId),
@@ -1055,6 +1059,14 @@ describe("MailComposer robustness", () => {
   const sendShortcut = (target: Element) =>
     target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
   const sent = () => requests.some((request) => request.endsWith("/commands"));
+
+  test("saving an unchanged fresh draft before a mode switch preserves it", async () => {
+    await mount({ host: true, fresh: true });
+    expect(hostControls).toBeDefined();
+    await hostControls!.collapse({ preserveDraft: true });
+    expect(leaves).toEqual(["closed"]);
+    expect(requests.some((request) => request.endsWith("/discard"))).toBe(false);
+  });
 
   test.each(["bernd", "bernd@firma"])("unfinished recipient text %p blocks Send, stays, and takes the focus", async (typed) => {
     await mount({ host: true });

@@ -204,7 +204,9 @@ mode was requested. `forward` supplies recipients and quoted source text, so it
 conflicts with an occupied box; use `draft intent` to forward the existing draft. Supplying a body, subject, recipients or attachments returns
 `DRAFT_REPLY_BOX_OCCUPIED` (409) if the box is occupied; the message names its ID,
 and the CLI exits non-zero. Read that draft and update it explicitly. Repeating
-the original idempotency key retains its retry contract. For a reply or forward, start from the conversation. Both commands use its latest message unless `--message` names another one, and the mailbox's verified default identity unless `--identity` names another one:
+the original idempotency key retains its retry contract. An occupied-box error
+names the existing draft and gives `draft intent` with the requested mode;
+capability errors instead name `mail.draft.intent`. For a reply or forward, start from the conversation. Both commands use its latest message unless `--message` names another one, and the mailbox's verified default identity unless `--identity` names another one:
 
 ```bash
 cld --json mail reply <conversation-id> --body-file body.md

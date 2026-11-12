@@ -49,7 +49,7 @@ import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { MailWorkspaceMessage } from "../../service/workspace";
 import { automationLogHref } from "../automation-log-href";
-import { readApiError } from "./api-response";
+import { readApiError, readApiFailure } from "./api-response";
 import MailAutomationTrace from "./MailAutomationTrace";
 import type { MailInlineDraftControls } from "./MailComposer";
 import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
@@ -951,23 +951,45 @@ export default function MailConversationReader(props: {
   const composerBusy = () => conversationDrafts().loading() || createdDraft().loading() || derivedDraft().loading() || inlineStarting();
 
   /**
-   * Reply, Reply all, and Forward write in the conversation. An existing draft with the same intent opens again; a new
-   * one is created and saved before anyone types, so it has its identity from the start and nothing lives only in this
-   * browser.
+   * Reply, Reply all, and Forward share the conversation's reply draft. Existing text stays when its mode changes.
+   * A quoted reply opens an occupied box unchanged; inserting a selection belongs to its active editor.
    */
   const startInlineDraft = async (intent: DraftIntent, message: MailWorkspaceMessage, quotedBody?: string) => {
     const conversationId = props.selectedConversationId;
     if (!conversationId) return;
     const generation = readerMailboxGeneration;
     const stillHere = () => !disposed && generation === readerMailboxGeneration && props.selectedConversationId === conversationId;
-    const reusable = intent === "forward" || quotedBody === undefined;
-    const existing = reusable ? props.conversationDrafts.find((draft) => draft.intent === intent) : undefined;
-    if (existing) return void (await openInlineDraft({ conversationId, draftId: existing.id, fresh: false }));
+    const param = { mailboxId: props.mailboxId };
+    const openExisting = async (draftId: string) => {
+      if (!stillHere()) return;
+      // Save and release our active editor before the structural write; never replace its unsaved input.
+      if (visibleInlineDraft()?.draftId === draftId && inlineDraftControls) {
+        await inlineDraftControls.collapse({ preserveDraft: true });
+        if (inlineDraft()?.draftId === draftId || !stillHere()) return;
+      }
+      const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].$get({ param: { ...param, draftId } });
+      if (!response.ok) throw new Error(await readApiError(response, t().createDraftFailed));
+      let existing = await response.json();
+      if (!stillHere()) return;
+      if (existing.state === "draft" && intent !== "new" && existing.intent !== intent) {
+        const changed = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].intent.$post({
+          param: { ...param, draftId },
+          json: { intent, expectedRevision: existing.revision },
+        });
+        if (!changed.ok) throw new Error(await readApiError(changed, t().createDraftFailed));
+        existing = await changed.json();
+      }
+      if (!stillHere()) return;
+      // A loading editor may already name this draft; refresh it with the switched snapshot.
+      if (inlineDraft()?.draftId === draftId) setInlineDraft(null);
+      await openInlineDraft({ conversationId, draftId, initialDraft: existing, fresh: false });
+    };
     setInlineStarting(true);
     try {
+      const existing = props.conversationDrafts.find((draft) => draft.intent !== "new");
+      if (existing) return await openExisting(existing.id);
       const senderIdentityId = await chooseReplyIdentity({ conversationId, generation, request: { intent, message, quotedBody } });
       if (!senderIdentityId || !stillHere()) return;
-      const param = { mailboxId: props.mailboxId };
       const seedResponse = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post({
         param,
         json: {
@@ -994,8 +1016,13 @@ export default function MailConversationReader(props: {
         param,
         json: { idempotencyKey: seed.id, origin: seed.origin, draft: seed.content },
       });
-      if (!response.ok) throw new Error(await readApiError(response, t().createDraftFailed));
+      if (!response.ok) {
+        const failure = await readApiFailure(response, t().createDraftFailed);
+        if (response.status === 409 && failure.draftId) return await openExisting(failure.draftId);
+        throw failure;
+      }
       const draft = await response.json();
+      if (draft.creationOutcome === "existing" || draft.creationOutcome === "suggestion_skipped") return await openExisting(draft.id);
       if (!stillHere()) {
         // The person moved on while the empty draft was created; it goes again instead of waiting in that conversation.
         if (draft.creationOutcome === "created")

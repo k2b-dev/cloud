@@ -2,7 +2,7 @@ import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { type ComponentProps, createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import type { MailDraftSeed, SenderIdentity } from "../../contracts";
+import { draftSchema, type MailDraftSeed, type SenderIdentity } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import type MailConversationReaderComponent from "./MailConversationReader";
 import { summaryState } from "./mail-summary-fixtures";
@@ -1417,3 +1417,143 @@ test.skipIf(isServer)("a new message's Open rest replaces the draft in place ins
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer).each(["forward", "reply_all", "quoted", "race", "active"] as const)(
+  "reader opens the occupied reply box and switches mode without replacing text (%s)",
+  async (scenario) => {
+    setSystemTime(new Date(now));
+    const dom = createDomTestHarness();
+    const card = await import("./MailMessageCard");
+    const inline = await import("./MailInlineDraft");
+    const { prompts } = await import("@k2b/ui");
+    let actions: ComponentProps<typeof card.default>["actions"] | undefined;
+    const message = { ...envelopeOnly, hydrationStatus: "complete" as const, plainText: "Selected source text" };
+    const cardMock = spyOn(card, "default").mockImplementation((props) => {
+      actions = props.actions;
+      return null;
+    });
+    const opened: Array<ComponentProps<typeof inline.default>> = [];
+    const collapseOptions: Array<{ preserveDraft?: boolean } | undefined> = [];
+    const inlineMock = spyOn(inline, "default").mockImplementation((props) => {
+      opened.push({ ...props });
+      props.host.register({
+        collapse: async (options) => {
+          collapseOptions.push(options);
+          props.host.leave("closed");
+        },
+        send: () => undefined,
+        focusText: () => undefined,
+      });
+      return null;
+    });
+    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const existing = draftSchema.parse({
+      id: "Draft1",
+      mailboxId: "Box001",
+      conversationId: "Conv01",
+      intent: "reply",
+      sourceMessageId: "Msg001",
+      derivedFromMessageId: null,
+      derivationKind: null,
+      senderIdentityId: "Send01",
+      signatureTemplateId: null,
+      to: [{ name: null, address: "ada@example.com" }],
+      cc: [],
+      bcc: [],
+      subject: "Re: Quarterly review",
+      body: "Existing person's text",
+      format: "markdown",
+      priority: "normal",
+      requestDeliveryReceipt: false,
+      requestReadReceipt: false,
+      attachments: [],
+      suggestion: false,
+      suggestedBy: null,
+      createdBy: { kind: "user", userId: "10000000-0000-4000-8000-000000000001" },
+      lastEditedBy: { kind: "user", userId: "10000000-0000-4000-8000-000000000001" },
+      lastEditedByDisplayName: "Ada",
+      recoveryCopyCount: 0,
+      revision: 7,
+      state: "draft",
+      deliveryClass: "normal",
+      createdAt: now,
+      updatedAt: now,
+    });
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        const path = new URL(request.url).pathname;
+        const raw = await request.text();
+        const body: unknown = raw ? JSON.parse(raw) : null;
+        calls.push({ method: request.method, path, body });
+        if (path.endsWith("/drafts/Draft1")) return Response.json(existing);
+        if (path.endsWith("/drafts/Draft1/intent"))
+          return Response.json({ ...existing, intent: scenario === "reply_all" ? "reply_all" : "forward", revision: 8 });
+        if (path.endsWith("/draft-seeds"))
+          return Response.json({
+            id: "20000000-0000-4000-8000-000000000002",
+            origin: { kind: "compose", input: {} },
+            content: {},
+          });
+        if (path.endsWith("/draft-seeds/materialize"))
+          return Response.json({ code: "DRAFT_REPLY_BOX_OCCUPIED", draftId: existing.id, message: "Occupied" }, { status: 409 });
+        return Response.json([]);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { MailConversationReader } = modules!;
+    const dispose = render(
+      () =>
+        createComponent(MailConversationReader, {
+          ...readerProps,
+          requestUrl: scenario === "active" ? "/app/mail/Box001?conversation=Conv01&draft=Draft1" : readerProps.requestUrl,
+          messages: [message],
+          identities: [{ ...supportIdentity, status: "verified", statusReason: null }],
+          conversationDrafts:
+            scenario === "race"
+              ? []
+              : [
+                  {
+                    ...existing,
+                    createdByDisplayName: "Ada",
+                    bodyPreview: existing.body,
+                  },
+                ],
+        }),
+      dom.root,
+    );
+    try {
+      await waitFor(() => actions !== undefined);
+      actions!.compose(
+        scenario === "reply_all" ? "reply_all" : scenario === "quoted" ? "reply" : "forward",
+        message,
+        scenario === "quoted" ? "> Selected source text" : undefined,
+      );
+      await waitFor(() => opened.length === (scenario === "active" ? 2 : 1));
+      expect(opened.at(-1)!.draftId).toBe(existing.id);
+      expect(opened.at(-1)!.host.fresh).toBe(false);
+      expect(opened.at(-1)!.initialDraft?.body).toBe(existing.body);
+      expect(collapseOptions).toEqual(scenario === "active" ? [{ preserveDraft: true }] : []);
+      expect(error).not.toHaveBeenCalled();
+      const switches = calls.filter((call) => call.path.endsWith("/intent"));
+      expect(switches).toHaveLength(scenario === "quoted" ? 0 : 1);
+      if (scenario !== "quoted")
+        expect(switches[0]!.body).toEqual({
+          intent: scenario === "reply_all" ? "reply_all" : "forward",
+          expectedRevision: existing.revision,
+        });
+      expect(calls.some((call) => call.method === "PUT" || call.path.endsWith("/discard"))).toBe(false);
+      if (scenario !== "race") expect(calls.some((call) => call.path.includes("/draft-seeds"))).toBe(false);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      error.mockRestore();
+      cardMock.mockRestore();
+      inlineMock.mockRestore();
+      dom.cleanup();
+      setSystemTime();
+    }
+  },
+);

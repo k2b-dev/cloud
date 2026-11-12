@@ -121,6 +121,7 @@ export const createMailDraftSession = (options: {
   const [lease, setLease] = createSignal<AcquiredDraftLease | null>(null);
   const [authenticationRequired, setAuthenticationRequired] = createSignal(false);
   const [leaseConflict, setLeaseConflict] = createSignal<MailDraftLeaseConflict | null>(null);
+  const [replyBoxOccupied, setReplyBoxOccupied] = createSignal(false);
   const [occupiedReplyDraftId, setOccupiedReplyDraftId] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<ComposerStatus>(options.initialSeed ? "local" : "preparing");
   const [statusMessage, setStatusMessage] = createSignal(options.initialSeed ? "" : t().preparingDraft);
@@ -787,7 +788,7 @@ export const createMailDraftSession = (options: {
       // A granted lease does not mean browser recovery has finished. Never
       // persist the initial server snapshot while its local journal is loading.
       if (initializePromise && !(await initializePromise)) return null;
-      if (lifecycleTransition() || authenticationRequired() || revisionConflict() || occupiedReplyDraftId()) return null;
+      if (lifecycleTransition() || authenticationRequired() || revisionConflict() || replyBoxOccupied()) return null;
       if (isShared()) {
         const current = await ensureDraft();
         const client = shared();
@@ -831,6 +832,7 @@ export const createMailDraftSession = (options: {
           if (failure.code === "DRAFT_REPLY_BOX_OCCUPIED") {
             stopScheduledSave();
             tryWriteJournal(options.initialSeed.id, { revision: 0, content: options.content() });
+            setReplyBoxOccupied(true);
             setOccupiedReplyDraftId(failure.draftId);
           }
           setStatus("error");
@@ -841,6 +843,7 @@ export const createMailDraftSession = (options: {
         if (currentDraft.creationOutcome === "existing" || currentDraft.creationOutcome === "suggestion_skipped") {
           stopScheduledSave();
           tryWriteJournal(options.initialSeed.id, { revision: 0, content: options.content() });
+          setReplyBoxOccupied(true);
           setOccupiedReplyDraftId(currentDraft.id);
           setStatus("error");
           setStatusMessage(t().replyDraftOccupiedLocal);
@@ -1219,7 +1222,7 @@ export const createMailDraftSession = (options: {
       stopScheduledSave();
       return;
     }
-    if (leaseConflict() || revisionConflict() || occupiedReplyDraftId() || saveTimer) return;
+    if (leaseConflict() || revisionConflict() || replyBoxOccupied() || saveTimer) return;
     // Coalesce the latest input without postponing autosave forever during
     // continuous typing. The shared promise keeps at most one save in flight.
     saveTimer = setTimeout(() => {

@@ -68,6 +68,7 @@ import {
   type DraftLease,
   type DraftRecoveryCopy,
   type DraftSendReview,
+  type draftContentInputSchema,
   draftEditableContentInputSchema,
   draftQuoteSourceSchema,
   type FolderDisplay,
@@ -957,8 +958,34 @@ const readComposeDraftInput = async (input: Parameters<typeof readCliInput>[0]) 
   return draftEditableContentInputSchema.parse(value);
 };
 
+const createDraftFromContent = async (
+  ctx: CloudCliContext,
+  mailboxId: string,
+  content: z.input<typeof draftContentInputSchema>,
+): Promise<MailDraft> => {
+  const response = await ctx.fetch(apiPath(`/mailboxes/${mailboxId}/drafts`), jsonRequest("POST", content));
+  if (response.status === 409) {
+    const failure = z.object({ code: z.literal("DRAFT_REPLY_BOX_OCCUPIED"), draftId: z.string(), message: z.string() }).safeParse(
+      await response
+        .clone()
+        .json()
+        .catch(() => null),
+    );
+    if (failure.success) {
+      const hint = `cld mail draft intent ${failure.data.draftId} --intent ${content.intent ?? "reply"} --revision <current-revision>`;
+      throw new Error(
+        `${response.status} ${failure.data.message} ${localizeCloudCliText(ctx.options.locale, {
+          en: `Switch its mode with ${hint}.`,
+          de: `Modus wechseln: ${hint}.`,
+        })}`,
+      );
+    }
+  }
+  return ctx.readJson<MailDraft>(response);
+};
+
 const createDraft = async (ctx: CloudCliContext, mailboxId: string, flags: Parameters<typeof readDraftContent>[0]): Promise<MailDraft> =>
-  readApi(ctx, `/mailboxes/${mailboxId}/drafts`, jsonRequest("POST", await readDraftContent(flags, ctx.options.locale)));
+  createDraftFromContent(ctx, mailboxId, await readDraftContent(flags, ctx.options.locale));
 
 const printExistingReplyDraft = (ctx: CloudCliContext, draft: MailDraft): boolean => {
   if (draft.creationOutcome !== "existing" && draft.creationOutcome !== "suggestion_skipped") return false;
@@ -2826,23 +2853,19 @@ const everydayCommands = (t: Translate) => {
           resolveSenderIdentityId(ctx, mailbox.id, flags.identity, t),
           readCliInput(flags.body, { label: "message body" }),
         ]);
-        const draft = await readApi<MailDraft>(
-          ctx,
-          `/mailboxes/${mailbox.id}/drafts`,
-          jsonRequest("POST", {
-            senderIdentityId,
-            ...draftSignatureChoice(flags),
-            to: [],
-            cc: [],
-            bcc: [],
-            subject: "",
-            body: body ?? "",
-            ...(flags.format ? { format: flags.format } : {}),
-            conversationId,
-            intent: flags.all ? "reply_all" : "reply",
-            sourceMessageId: source.id,
-          }),
-        );
+        const draft = await createDraftFromContent(ctx, mailbox.id, {
+          senderIdentityId,
+          ...draftSignatureChoice(flags),
+          to: [],
+          cc: [],
+          bcc: [],
+          subject: "",
+          body: body ?? "",
+          ...(flags.format ? { format: flags.format } : {}),
+          conversationId,
+          intent: flags.all ? "reply_all" : "reply",
+          sourceMessageId: source.id,
+        });
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         if (printExistingReplyDraft(ctx, draft)) return;
         printFormattingWarnings(ctx, draft.formattingWarnings);
@@ -2896,23 +2919,19 @@ const everydayCommands = (t: Translate) => {
           resolveSenderIdentityId(ctx, mailbox.id, flags.identity, t),
           readCliInput(flags.body, { label: "message body" }),
         ]);
-        const draft = await readApi<MailDraft>(
-          ctx,
-          `/mailboxes/${mailbox.id}/drafts`,
-          jsonRequest("POST", {
-            senderIdentityId,
-            ...draftSignatureChoice(flags),
-            to: parseAddresses(flags.to),
-            cc: parseAddresses(flags.cc),
-            bcc: [],
-            subject: forwardSubject(source.subject),
-            body: `${body ?? ""}${forwardMessageBody(source, { locale: ctx.options.locale ?? "en", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })}`,
-            conversationId,
-            intent: "forward",
-            sourceMessageId: source.id,
-            includeSourceAttachments: !flags.noAttachments,
-          }),
-        );
+        const draft = await createDraftFromContent(ctx, mailbox.id, {
+          senderIdentityId,
+          ...draftSignatureChoice(flags),
+          to: parseAddresses(flags.to),
+          cc: parseAddresses(flags.cc),
+          bcc: [],
+          subject: forwardSubject(source.subject),
+          body: `${body ?? ""}${forwardMessageBody(source, { locale: ctx.options.locale ?? "en", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })}`,
+          conversationId,
+          intent: "forward",
+          sourceMessageId: source.id,
+          includeSourceAttachments: !flags.noAttachments,
+        });
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         if (printExistingReplyDraft(ctx, draft)) return;
         printFormattingWarnings(ctx, draft.formattingWarnings);

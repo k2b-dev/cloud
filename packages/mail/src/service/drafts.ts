@@ -846,9 +846,33 @@ const insertComposeDraftInTransaction = async (params: {
       if (!access.ok) return access;
       if (params.rejectOccupiedContent) return fail(replyDraftOccupied(existing.short_id));
       if (params.rejectDifferentContent) {
-        const stored = internalDraftEditableContentSchema.strip().parse(mapDraft(existing));
+        const storedDraft = mapDraft(existing);
+        const stored = internalDraftEditableContentSchema.strip().parse(storedDraft);
         const incoming = internalDraftEditableContentSchema.strip().parse(params.content);
-        if ((await sha256Json(quoteHashContent(stored))) !== (await sha256Json(quoteHashContent(incoming))))
+        // Legacy bodies can still contain the selected signature as a marked segment. Compare editable
+        // content after the same signature normalization used by writes, not against that stored segment.
+        const storedSignature = await resolveDraftSignature({
+          db: params.db,
+          context: params.context,
+          mailboxId: params.mailboxId,
+          stored: storedDraft,
+          body: stored.body,
+          requested: undefined,
+        });
+        if (!storedSignature.ok) return storedSignature;
+        const incomingSignature = await resolveDraftSignature({
+          db: params.db,
+          context: params.context,
+          mailboxId: params.mailboxId,
+          stored: storedDraft,
+          body: incoming.body,
+          requested: incoming.signatureTemplateId,
+        });
+        if (!incomingSignature.ok) return incomingSignature;
+        if (
+          (await sha256Json(quoteHashContent({ ...stored, ...storedSignature.data }))) !==
+          (await sha256Json(quoteHashContent({ ...incoming, ...incomingSignature.data })))
+        )
           return fail(replyDraftOccupied(existing.short_id));
       }
       const adopted = await refreshDraftAdoption({ db: params.db, draftId: existing.id });
@@ -1320,17 +1344,9 @@ export const materializeDraftSeed = async (params: {
         }
         if (existing.request_hash !== requestHash)
           return fail(capabilityIdempotencyConflict("Compose idempotency key conflicts with a different request"));
-        if (params.rejectDifferentContent && existing.intent !== "new") {
-          const stored = internalDraftEditableContentSchema.strip().parse(mapDraft(existing));
-          const incoming = internalDraftEditableContentSchema.strip().parse({
-            ...parsed.data.draft,
-            signatureTemplateId:
-              parsed.data.draft.signatureTemplateId === undefined ? existing.signature_template_id : parsed.data.draft.signatureTemplateId,
-          });
-          if ((await sha256Json(quoteHashContent(stored))) !== (await sha256Json(quoteHashContent(incoming))))
-            return fail(replyDraftOccupied(existing.short_id));
-        }
-        return ok({ ...mapDraft(existing), creationOutcome: "existing" as const });
+        // This author's own key identifies the original request, even if its response was lost and
+        // the editor has typed on. Return the stored snapshot; its normal revision-checked save follows.
+        return ok(mapDraft(existing));
       }
       const validationOrigin: DraftSeedOrigin =
         parsed.data.origin.kind === "compose"
