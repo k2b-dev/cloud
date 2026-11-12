@@ -1730,7 +1730,7 @@ describe("Mail conversation printing", () => {
   /** What the reader prints: the subject, every message header, and every plain text body. */
   const printed = {
     subject: "[data-mail-print-root] h1",
-    sender: "[data-mail-print-root] [data-mail-message-header] .font-semibold",
+    sender: "[data-mail-print-root] .mail-message-sender",
     date: "[data-mail-print-root] [data-mail-message-header] time",
     body: "[data-mail-print-root] [data-mail-message-id] pre:not(details pre)",
     quote: "[data-mail-print-root] [data-mail-message-id] details pre",

@@ -1045,15 +1045,16 @@
     background-color: transparent !important;
   }
 
-  /* Controls do not print. The message header is a button too, but it carries
-     the sender, recipients and date, so it stays on paper. */
+  /* Controls do not print. The message's date and its sender are buttons too,
+     but they carry what the paper needs, so they stay. */
   body.mail-printing-conversation [data-mail-print-root] :where([data-mail-phone-actions], .mail-reader-actions, .mail-reader-close) {
     display: none !important;
   }
 
   body.mail-printing-conversation .mail-reader-head .mail-reader-title { overflow: visible; white-space: normal; }
+  body.mail-printing-conversation [data-mail-print-root] .mail-message-sender .ti { display: none; }
 
-  body.mail-printing-conversation [data-mail-print-root] :where(button:not([data-mail-message-header]), [role="menu"], [role="tooltip"]) {
+  body.mail-printing-conversation [data-mail-print-root] :where(button:not([data-mail-message-header], .mail-message-sender), [role="menu"], [role="tooltip"]) {
     display: none !important;
   }
 }

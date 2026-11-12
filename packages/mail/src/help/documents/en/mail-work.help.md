@@ -96,7 +96,7 @@ Mail sets the next step this way:
 
 A reply that you scheduled for later counts only when Mail sends it. If new mail arrives first, the conversation moves to **Needs action** and keeps its place by the newest real message. It stays in **Needs action** when the reply goes out, because you wrote the reply before that mail. Mail still sends the scheduled reply at its time, unless you cancel it under **Scheduled**.
 
-In **Conversation details**, you decide only whether the conversation is **Done**. When you clear Done, the conversation opens again, and Mail takes the next step from the latest verified message.
+In the head of the conversation, you decide only whether the conversation is **Done**. When you clear Done, the conversation opens again, and Mail takes the next step from the latest verified message.
 
 Choose **Move to folder** in the conversation actions to choose a destination with the keyboard, a pointer, or touch. On a desktop, you can also drag a conversation row onto a selectable folder in the left navigation. Mail queues the move, and synchronization confirms the result at the provider.
 
@@ -138,17 +138,17 @@ A quick look never marks a conversation as read, never creates a summary, and ne
 
 ## Read a complete thread {icon="route"}
 
-The reader keeps its subject above the messages while you scroll. The message count appears on wider screens. When no list stands beside the reader, **×** at the end of its toolbar and Esc return to the list. The list is where you left it, and the conversation you had open has the focus. On a phone, Back returns to the list and its workspace head.
+The reader keeps its head above the messages while you scroll: **×**, the subject on one line, and the actions **Done**, **Archive**, **Delete**, **Later**, **Assign**, and **…**. On a narrow screen, the actions that do not fit are in **…**. Below the subject, the sender and the number of messages stand next to the chips. **×** and Esc return to the list. The list is where you left it, and the conversation you had open has the focus.
 
-Choose a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content. An open message shows its attachments above its text: the number, the first three files with a preview or their type, and **Show all**. A collapsed message shows the number of its attachments next to its date. Images that the text already shows are not in the list.
+Choose a conversation row to open its thread. The oldest message comes first, and the newest one is open at the bottom. Older messages are one line each, with the sender, the start of the text, the number of attachments, and the date. Choose one to open it. An open message shows its attachments as tiles after its text, each with the name, the type, and the size. From two attachments on, **Download all** packs them into one ZIP file. Images that the text already shows are not tiles.
 
 An optional conversation summary appears in a highlighted card above the messages. To keep it current with Markdown formatting, use **Edit summary** or **More conversation actions → Create summary**. Summaries are shared Mail context, and an automation can also update them.
 
-If the conversation has unfinished drafts, they stand above the newest message: the open one in the place of the reply bar, the others as rows with who wrote them and when. Choose a row to continue it in place.
+If the conversation has unfinished drafts, they stand below the newest message: the open one in the place of the reply bar, the others as rows with who wrote them and when. Choose a row to continue it in place.
 
-In a mailbox that several people use, **Here now** at the top of Conversation details shows who has the conversation open and who is writing a reply. With access to the whole mailbox, **More about this conversation** › **Access** lists who has access and with which role. People who see only their assigned conversations do not see that list.
+In a mailbox that several people use, the end of the chip row shows who else has the conversation open, such as **Tom is reading**. Who has access to the mailbox is in **… → Mailbox details** in the head of the mailbox.
 
-Conversation details also shows a small **Related mail** section for the conversation as a whole. Mail ranks other conversations from the same mailbox that share an external participant or the same normalized subject. Each result shows why it matches. The **Related Mail** action on a Contact card is different: it opens an exact search for that one participant. Neither feature finds similar mail from message bodies, attachments, or calendar events.
+Choose the sender of a message to see up to five **Earlier conversations** with that sender in this mailbox, and **All messages from this sender** for an exact search.
 
 When you open an unread conversation, Mail marks it as read. Use **More conversation actions** to mark it unread again, add or remove a flag, or print the conversation. A conversation that you mark unread stays unread in already open tabs until you open its row again. A live update alone does not mark it read.
 
@@ -198,7 +198,7 @@ Another Cloud app can keep a reference to a conversation or a message. To give i
 - In a conversation, open **More conversation actions** or right-click the conversation. Choose **Copy conversation Cloud ID**.
 - On a message, open **Message actions** or right-click the message. Choose **Copy message Cloud ID**. The same menu also has **Copy conversation Cloud ID**.
 - In the list, the actions of a row have **Copy conversation Cloud ID**.
-- In **Conversation details**, choose **…** in the header, then **Copy conversation Cloud ID**. For the newest message, open **More about this conversation** › **Technical details** and choose **Copy message Cloud ID**.
+- In a conversation, choose **…** in its head, then **Copy conversation Cloud ID**. For one message, choose **…** on that message, then **Copy message Cloud ID**.
 
 Mail confirms the copy. Paste the Cloud ID into the other app. It is a link such as `https://cloud.example.com/open/mail.message/~Ab12Cd`, and it opens the mail. The Cloud ID gives no access: the other app shows the mail only to people who can open it in Mail.
 
@@ -206,7 +206,7 @@ A right-click on a conversation in the list, or in the open conversation, opens 
 
 ## Keep conversations that must not be deleted {icon="lock"}
 
-Some mail is evidence, for example that a customer was informed. Choose **More conversation actions > Keep** to protect the whole conversation. Everyone who can write in the mailbox can keep a conversation. A lock in the conversation list and next to the subject shows that it is kept; point at the lock next to the subject to see who kept it and since when. To keep conversations in one step, add **Keep** under **More conversation actions > Customize toolbar**.
+Some mail is evidence, for example that a customer was informed. Choose **More conversation actions > Keep** to protect the whole conversation. Everyone who can write in the mailbox can keep a conversation. A lock in the conversation list and the chip **Kept** below the subject show that it is kept; point at the chip to see who kept it and since when.
 
 The protection covers the conversation as it grows. Replies that join it later are kept too, and so are messages that someone splits off or merges into another conversation. The conversation that receives them is kept as well, and its activity names who moved them there.
 
@@ -220,7 +220,7 @@ Only a Cloud administrator can lift the protection. This also applies to people 
 
 ## Inspect an individual message {icon="file-search"}
 
-When you need technical information about one message, open **Conversation details**. Under **More about this conversation**, expand **Technical details** and choose **Headers** or **Source**. In a conversation with several messages, select the exact message at the top of the inspector.
+When you need technical information about one message, choose **…** on that message, then **Technical details**. The inspector opens with **Headers**; **Source** is next to it. In a conversation with several messages, select another message at the top of the inspector.
 
 - **Overview** shows message identifiers, provider placement, standard flags, provider keywords, MIME parts, attachments, synchronization state, and parsing warnings.
 - **Spam diagnostics** shows the provider's spam headers, if present. Cloud does not calculate or infer its own spam score.
@@ -258,7 +258,7 @@ Mail never opens an unsubscribe link only because you preview or read a message.
 
 Received attachments stay with the message that carried them. Choose an attachment chip to open or download it in a new browser tab.
 
-**Preview** opens text, CSV, JSON, images, PDFs, audio, and video in a full-screen preview. When a text file is Markdown and starts with a heading, that heading becomes the name at the top left, followed by the file name and size. The buttons at the top right are **Save to**, **Download**, and for text, CSV, and JSON also **Copy text**. The preview holds all attachments of the message, or of the conversation when you open it from the details panel. Use the arrow keys, the buttons at the edges, or the strip at the bottom to move between them. On a phone, swipe sideways.
+**Preview** opens text, CSV, JSON, images, PDFs, audio, and video in a full-screen preview. When a text file is Markdown and starts with a heading, that heading becomes the name at the top left, followed by the file name and size. The buttons at the top right are **Save to**, **Download**, and for text, CSV, and JSON also **Copy text**. The preview holds all attachments of the conversation. Use the arrow keys, the buttons at the edges, or the strip at the bottom to move between them. On a phone, swipe sideways.
 
 With **Manage** access, you can also create a public download link for an attachment. Mail shows the URL only when you create the link. You can protect it with a password, an expiry time, and a limit on download sessions. To review or revoke existing links, open **… → Shared links**.
 
