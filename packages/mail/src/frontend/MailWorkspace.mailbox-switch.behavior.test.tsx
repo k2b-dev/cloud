@@ -631,18 +631,6 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     noDocument();
   });
 
-  test("a pending details preference flushes on disposal and becomes the new session's preference", async () => {
-    const source = `${path}?conversation=Box001-row`;
-    const snapshot = snapshotFor(source);
-    snapshot.detailMessages = [readerMessage];
-    mount(source, snapshot);
-    dom.root.querySelector<HTMLButtonElement>("[data-mail-details-trigger]")!.click();
-    link("Box002").click();
-    await settle();
-    expect(m.readMailWorkspacePreferences(document.cookie).detailsOpen).toBe(true);
-    shown("Box002");
-  });
-
   test("session disposal flushes queued writes even while an earlier write is still running", async () => {
     const queue = m.actionQueues.createMailActionQueue(1);
     const factory = spyOn(m.actionQueues, "createMailActionQueue").mockReturnValueOnce(queue);

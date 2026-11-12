@@ -36,7 +36,7 @@ Startet Mail neu, während es einen Nachrichteninhalt lädt, kann der Lesebereic
 
 Manchmal ist der E-Mail-Anbieter nicht erreichbar oder lehnt Anmeldungen eine Zeit lang ab, etwa während einer Wartung oder weil zu viele Verbindungen offen sind. Mail versucht es weiter und macht von selbst weiter, wenn der Anbieter wieder antwortet. Ein neues Passwort oder neue Zugangsdaten brauchst du nur, wenn der Anbieter die aktuellen ablehnt.
 
-Mail kann einen Absender- oder Empfängereintrag nicht als Adresse speichern, wenn er weniger als 3 oder mehr als 320 Zeichen hat. Ein Beispiel ist ein Textfragment in einer fehlerhaften Nachricht. Mail importiert die Nachricht trotzdem und lässt nur diesen Eintrag weg. Der ursprüngliche Header bleibt unter **Header** in den Unterhaltungsdetails.
+Mail kann einen Absender- oder Empfängereintrag nicht als Adresse speichern, wenn er weniger als 3 oder mehr als 320 Zeichen hat. Ein Beispiel ist ein Textfragment in einer fehlerhaften Nachricht. Mail importiert die Nachricht trotzdem und lässt nur diesen Eintrag weg. Der ursprüngliche Header bleibt unter **…** an der Nachricht → **Technische Details** → **Header**.
 
 Bei Ordnern, die der Anbieter teilt, prüfe zuerst, ob das verbundene IMAP-Konto noch das nötige Abonnement und den nötigen Zugriff beim Anbieter hat. Mail findet nur Ordner, die der Anbieter diesem Konto zeigt.
 

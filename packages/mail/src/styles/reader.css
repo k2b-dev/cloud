@@ -1,0 +1,616 @@
+/* The conversation reader of Mail v5: head with five fixed actions and a chip row, the timeline with internal notes
+   at their time, attachment tiles, and the summary row. Flat and calm: one surface, no boxes in boxes, state changes
+   only change color and fill, so nothing moves. */
+
+/* Yellow means an internal note (plum is AI, orange a draft). Text contrast: ink 12.6:1 and badge 6.6:1 on the
+   light surface; ink 14.8:1 and badge 10.4:1 on the dark one. */
+.k2b-ui .mail-reader {
+  --mail-note-surface: #fdf7dc;
+  --mail-note-edge: #f0d982;
+  --mail-note-ink: #3b2c03;
+  --mail-note-muted: #6b5410;
+  --mail-note-badge-surface: #f8e7a6;
+  --mail-note-badge-ink: #6a4b00;
+}
+
+.dark .k2b-ui .mail-reader {
+  --mail-note-surface: #2b2307;
+  --mail-note-edge: #5e4a12;
+  --mail-note-ink: #fbf0c6;
+  --mail-note-muted: #e5d08a;
+  --mail-note-badge-surface: #4a3a0b;
+  --mail-note-badge-ink: #fcd34d;
+}
+
+/* Head: close, the subject on one line, the actions. Never two lines; narrow heads hide actions, "…" keeps them. */
+.k2b-ui .mail-reader-head {
+  container: mail-reader-head / inline-size;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0.375rem 0.75rem 0.25rem 0.5rem;
+}
+
+.k2b-ui .mail-reader-head-line {
+  display: flex;
+  min-width: 0;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .mail-reader-head .mail-reader-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  margin-inline-start: 0.25rem;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.5rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-reader-flag {
+  display: inline-flex;
+  flex: none;
+  width: 1rem;
+  justify-content: center;
+  color: var(--color-orange-600);
+}
+
+.dark .k2b-ui .mail-reader-flag {
+  color: var(--color-orange-400);
+}
+
+.k2b-ui .mail-reader-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.k2b-ui .mail-reader-actions > .mail-reader-done {
+  margin-inline-end: 0.25rem;
+}
+
+@container mail-reader-head (width < 34rem) {
+  .k2b-ui .mail-reader-actions [data-mail-toolbar-action="later"],
+  .k2b-ui .mail-reader-actions :has(> [data-mail-toolbar-action="later"]),
+  .k2b-ui .mail-reader-actions :has(> [data-mail-toolbar-action="archive"]),
+  .k2b-ui .mail-reader-actions [data-mail-toolbar-action="archive"] {
+    display: none;
+  }
+}
+
+@container mail-reader-head (width < 26rem) {
+  .k2b-ui .mail-reader-actions [data-mail-toolbar-action="trash"],
+  .k2b-ui .mail-reader-actions [data-mail-toolbar-action="assign"],
+  .k2b-ui .mail-reader-actions :has(> [data-mail-toolbar-action="trash"]),
+  .k2b-ui .mail-reader-actions :has(> [data-mail-toolbar-action="assign"]) {
+    display: none;
+  }
+}
+
+/* Chip row: "Sender · n messages", then state, tags and links, "+n", "+ Tag"; who reads along on the right. */
+.k2b-ui .mail-reader-chips {
+  display: flex;
+  min-width: 0;
+  height: 1.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline-start: 2.75rem;
+  overflow: hidden;
+}
+
+.k2b-ui .mail-reader-meta {
+  /* A fixed basis: chips leaving the row must not give it room back, or the row would measure again and again. */
+  flex: none;
+  min-width: 4rem;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-reader-chip-list {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.375rem;
+  overflow: hidden;
+}
+
+.k2b-ui .mail-reader-chip {
+  display: inline-flex;
+  flex: none;
+  max-width: 16rem;
+  height: 1.5rem;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--k2b-surface-muted);
+  box-shadow: inset 0 0 0 2px transparent;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.k2b-ui .mail-reader-chip[data-static] {
+  cursor: default;
+}
+
+.k2b-ui .mail-reader-chip:not([data-static]):hover {
+  background: var(--ui-hover);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .mail-reader-chip:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--k2b-focus-ring);
+}
+
+.k2b-ui .mail-reader-chip[data-kind="add"] {
+  background: transparent;
+}
+
+.k2b-ui .mail-reader-chip-slot {
+  display: inline-flex;
+  flex: none;
+}
+
+.k2b-ui .mail-reader-chip-slot[data-overflow="hidden"] {
+  display: none;
+}
+
+.k2b-ui .mail-reader-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .mail-reader-chip-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 9999px;
+  background: var(--mail-tag, var(--k2b-text-secondary));
+}
+
+.k2b-ui .mail-reader-presence {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.375rem;
+  margin-inline-start: auto;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+@container mail-reader-head (width < 30rem) {
+  .k2b-ui .mail-reader-chips {
+    padding-inline-start: 0.5rem;
+  }
+
+  .k2b-ui .mail-reader-meta {
+    max-width: 30%;
+  }
+
+  .k2b-ui .mail-reader-presence > span {
+    display: none;
+  }
+}
+
+/* Summary: one row above the timeline; open, it pushes only what follows. */
+.k2b-ui .mail-summary-row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--ui-radius-control);
+}
+
+.k2b-ui .mail-summary-row__toggle {
+  display: flex;
+  min-width: 0;
+  height: 2.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.5rem;
+  border-radius: var(--ui-radius-control);
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.k2b-ui .mail-summary-row__toggle:hover {
+  background: var(--ui-hover);
+}
+
+.k2b-ui .mail-summary-row__toggle:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: -2px;
+}
+
+.k2b-ui .mail-summary-row__label {
+  flex: none;
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+
+.k2b-ui .mail-summary-row[data-mail-summary-ai] .mail-summary-row__label {
+  color: var(--k2b-ai-accent);
+}
+
+.k2b-ui .mail-summary-row__line {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-summary-row__body {
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem 0.5rem 0.75rem 0.5rem;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .mail-summary-row__tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.125rem;
+}
+
+/* Timeline: oldest first, the newest message at the bottom. */
+.k2b-ui .mail-timeline {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.k2b-ui .mail-timeline-earlier {
+  align-self: center;
+}
+
+.k2b-ui .mail-timeline-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+
+/* Messages: an older one is one line, the open one has its head, body and attachment tiles. */
+.k2b-ui .mail-message-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 2.75rem;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0 0.5rem;
+  border-radius: var(--ui-radius-control);
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.k2b-ui .mail-message-row:hover {
+  background: var(--ui-hover);
+}
+
+.k2b-ui .mail-message-row:focus-visible,
+.k2b-ui .mail-message-collapse:focus-visible,
+.k2b-ui .mail-message-sender:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: -2px;
+}
+
+.k2b-ui .mail-message-avatar {
+  flex: none;
+}
+
+.k2b-ui .mail-message-row-sender {
+  flex: none;
+  max-width: 14rem;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-message-row-preview {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-message-clip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.125rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .mail-message-date {
+  flex: none;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-message-head {
+  display: flex;
+  min-width: 0;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.25rem 0.25rem 0 0.5rem;
+}
+
+.k2b-ui .mail-message-head-who {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-direction: column;
+}
+
+.k2b-ui .mail-message-sender {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: hidden;
+  border-radius: var(--ui-radius-control);
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: start;
+  white-space: nowrap;
+}
+
+.k2b-ui button.mail-message-sender {
+  cursor: pointer;
+}
+
+.k2b-ui button.mail-message-sender:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.k2b-ui .mail-message-sender .ti {
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .mail-message-route {
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-message-collapse {
+  display: flex;
+  min-width: 2rem;
+  flex: 1 1 auto;
+  align-self: stretch;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  border-radius: var(--ui-radius-control);
+  cursor: pointer;
+}
+
+.k2b-ui .mail-message-content {
+  min-width: 0;
+  padding: 0.5rem 0.5rem 0.75rem 3.125rem;
+}
+
+@container mail-reader (width < 30rem) {
+  .k2b-ui .mail-message-content {
+    padding-inline-start: 0.5rem;
+  }
+
+  .k2b-ui .mail-message-row-sender {
+    max-width: 8rem;
+  }
+}
+
+/* Internal note: centered, yellow, never a message head. */
+.k2b-ui .mail-note {
+  display: flex;
+  width: min(100%, 46rem);
+  flex-direction: column;
+  gap: 0.25rem;
+  align-self: center;
+  margin-block: 0.25rem;
+  padding: 0.5rem 0.625rem 0.625rem 0.875rem;
+  border: 1px solid var(--mail-note-edge);
+  border-radius: var(--ui-radius-surface);
+  background: var(--mail-note-surface);
+  color: var(--mail-note-ink);
+}
+
+.k2b-ui .mail-note-head {
+  display: flex;
+  min-width: 0;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .mail-note-author {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-note-time {
+  flex: none;
+  color: var(--mail-note-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .mail-note-badge {
+  display: inline-flex;
+  flex: none;
+  height: 1.25rem;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.4375rem;
+  border-radius: 9999px;
+  background: var(--mail-note-badge-surface);
+  color: var(--mail-note-badge-ink);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.k2b-ui .mail-note-head .k2b-button {
+  color: var(--mail-note-muted);
+}
+
+.k2b-ui .mail-note-body {
+  padding-inline-start: 1.5rem;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .mail-note-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.k2b-ui .mail-note-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.375rem;
+}
+
+.k2b-ui .mail-note-deleted {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  gap: 0.375rem;
+  margin-block: 0.125rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
+/* Attachment tiles reserve their size, so a loading name or a menu never moves the body. */
+.k2b-ui .mail-attachment-tiles {
+  margin-top: 0.75rem;
+}
+
+.k2b-ui .mail-attachment-tiles__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.k2b-ui .mail-attachment-tile {
+  position: relative;
+  display: flex;
+  width: 13.5rem;
+  max-width: 100%;
+  height: 3.5rem;
+  align-items: center;
+  border-radius: var(--ui-radius-control);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .mail-attachment-tile:hover {
+  background: var(--ui-hover);
+}
+
+.k2b-ui .mail-attachment-tile__open {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0 0.25rem 0 0.75rem;
+  border-radius: var(--ui-radius-control);
+  text-align: start;
+  cursor: pointer;
+}
+
+.k2b-ui .mail-attachment-tile__open:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: -2px;
+}
+
+.k2b-ui .mail-attachment-tile__icon {
+  display: inline-flex;
+  flex: none;
+  font-size: 1.25rem;
+}
+
+.k2b-ui .mail-attachment-tile__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .mail-attachment-tile__name {
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-attachment-tile__meta {
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-attachment-tile__menu {
+  flex: none;
+  margin-inline-end: 0.25rem;
+}
+
+/* New messages below the place the person reads: one button at the bottom, above the reply pill. */
+.k2b-ui .mail-reader-new-below {
+  position: absolute;
+  bottom: 4.5rem;
+  left: 50%;
+  z-index: 10;
+  transform: translateX(-50%);
+}

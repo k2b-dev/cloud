@@ -60,20 +60,35 @@ Saved automation assignments use the same label when the person is no longer
 available in the choices.
 
 On wide screens the conversation list grows with the window from 320 to
-440 px. The fixed reader toolbar combines the subject, message-count chip,
-list toggle, and conversation actions above the centered 760 px reading
-column. The subject stays visible when messages scroll; its full text is
-available on hover. On a phone, the workspace head appears over the list and
-leaves the screen while reading. Back, subject, overflow, and Details remain
-at the top; the message count is hidden. Reply actions stay in the bottom bar. **Conversation details** stand beside the reader while the reader
-keeps 440 px next to them; otherwise they wait behind **Details** and open with
-one click from the shared head button. On a phone, use **Details** in the reader
-while the list head is hidden. Hiding the list gives
-the reader that room. In Focus, a conversation opens its details beside the
-queue, or over its end when there is no room; on a phone it opens in its
-mailbox. List rows have three lines (sender and time, subject with its marks,
-preview) and a fourth only for tags or **Waiting**. When the reader is narrow,
-Reply all and Forward show only their icons, then move into **…**.
+440 px. List rows have three lines (sender and time, subject with its marks,
+preview) and a fourth only for tags or **Waiting**.
+
+The reader has no detail panel. Its fixed head shows **×**, the subject on
+one line (the full text on hover), and the same five actions for everyone:
+**Done**, **Archive**, **Delete**, **Later** (show later, and a reminder only
+for you), and **Assign**, then **…** with every other conversation action,
+including **Link**, **Show activity**, **Copy reference**, and the newest
+message's `.eml`. A narrow head keeps the actions that do not fit only in
+**…**. Below the subject, one row of chips names the sender and the number of
+messages, then the state (**Waiting for reply**, **Later until …**, your
+**Reminder …**, **Kept**, **Read only**), the tags, and the linked items; a
+click on a chip changes its value, and chips that do not fit wait behind
+**+n**. Who else reads the conversation stands at the end of that row.
+
+The timeline reads oldest first; the newest message is open at the bottom and
+the reply bar follows it. Older messages are one line each, and a long
+conversation folds all but the newest three behind **n older messages**.
+Internal notes stand at their time between the messages as centered yellow
+tiles marked **internal**; notes that automations write look the same. The
+summary is one collapsible row above the timeline. An open message shows its
+attachments as tiles after its body; the Lightbox steps through every
+attachment of the conversation, and from two attachments on **Download all**
+packs them into one ZIP. A click on a sender opens a card with the contact
+from the contact directory, up to five earlier conversations with that
+sender, and the sender actions. Each message's **…** keeps **Technical
+details** (headers and source). A person who had arranged their own toolbar
+before sees once where their actions went, and everyone sees once that notes
+moved into the timeline; Mail stores both hints per person and mailbox.
 
 Signed-in users can choose **New mailbox**; after creation, its delivery
 settings open before you enter the mailbox. If settings cannot load, the
@@ -171,7 +186,7 @@ Moving, archiving, filing, and marking read change no work status. Follow-up and
 
 ### Finish work and keep the provider Inbox in step
 
-Mark **Done** in **Conversation details**, with `cld mail done <conversation-id> --mailbox <mailbox>`, `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`, or an automation's `set_status: done`.
+Mark **Done** in the head of the conversation, with `cld mail done <conversation-id> --mailbox <mailbox>`, `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`, or an automation's `set_status: done`.
 Done updates only Cloud collaboration state and activity, clears **Show later**, and sends no provider command. It does not archive, move, or mark read. Other mail clients still show the email in the provider Inbox.
 
 To also clear that Inbox, choose **Archive**, run `cld mail archive <conversation-id> --mailbox <mailbox>`, or add `move_to_folder` to the same automation.
@@ -333,7 +348,7 @@ there as `mail.conversation.keep` by the person who moved the messages, with
 
 | Surface | Keep | Lift |
 | --- | --- | --- |
-| Web app | **More conversation actions > Keep**, or the toolbar | **Stop keeping** |
+| Web app | **More conversation actions > Keep** | **Stop keeping**, or the **Kept** chip |
 | API | `PUT /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/keep` | `DELETE` on the same path |
 | `cld` | `cld mail keep <conversation-id>...` | `cld mail unkeep <conversation-id>` |
 | Capabilities | `conversation.keep` | `conversation.keep.release` |
@@ -542,7 +557,7 @@ at the top of the list with an empty conversation beside it.
   `?window=1` and drafts with an open approval keep the compose page.
 - Opening another conversation saves typing the autosave has not sent yet
   before Mail releases the editing lease.
-- **Full screen** moves the list and details aside and is remembered per
+- **Full screen** moves the list aside and is remembered per
   browser; from 1500 px of reader width, the history stands beside the draft.
 - **Preview** shows the mail as it arrives, with the mailbox's design; the
   editor keeps Cloud's calm style.
@@ -709,16 +724,16 @@ accept `replaceUnreadable` as an array of the supplied setting names.
 | `mail.contact_directory.resolve` | `contact.resolve` | Yes |
 | `mail.contact_directory.read` | `contact.read` | No; empty disables **Compose email** from a contact reference |
 | `mail.contact_directory.list_writable_books` | `book.list` | No; together with `create` |
-| `mail.contact_directory.create` | `contact.create` | No; empty hides **New contact** |
+| `mail.contact_directory.create` | `contact.create` | No; empty hides **Add to contacts** |
 
 Mail calls the selected app as the requesting person, so that app's
 permissions decide which contacts appear. When the selected app is not installed
 (not registered), Mail hides contact features without an error. Recipient
-suggestions still come from the mailbox. The details panel has no contacts
-block. **Administration → Mail** still reports the missing app.
+suggestions still come from the mailbox. The sender card shows the address and
+Mail's own actions. **Administration → Mail** still reports the missing app.
 
 When a registered app stops briefly or returns data that no longer matches the
-contract, the details panel shows **Contacts unavailable** with **Retry**.
+contract, the sender card shows that the contact could not be loaded, with **Retry**.
 Recipient fields still offer mailbox addresses.
 
 ### Mailbox recipient suggestions

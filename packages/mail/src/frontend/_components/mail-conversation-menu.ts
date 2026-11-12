@@ -33,6 +33,8 @@ export type MailConversationMenu = {
   /** Adds you to the people responsible; `others` stay responsible. */
   assignToMe?: { assigned: boolean; others: readonly string[]; disabled?: boolean; run: () => void };
   completion?: { done: boolean; disabled?: boolean; run: () => void };
+  /** More ways to take the conversation, such as Assign and Show later, after Done. */
+  followUp?: readonly DropdownAction[];
   /** Read, flag, tags and the folder actions, for a person who may change the conversation. */
   organize?: {
     unread: boolean;
@@ -45,6 +47,8 @@ export type MailConversationMenu = {
     manageTags: () => void;
   };
   conversation?: readonly DropdownAction[];
+  /** Link the conversation with an item of another app, or remove a link. */
+  link?: readonly DropdownAction[];
   other?: readonly DropdownAction[];
   /** A row of the Drafts folder: it continues in the composer or is deleted, and has no conversation parts. */
   draft?: { href: string; discard: { disabled?: boolean; run: () => void } };
@@ -139,6 +143,7 @@ export const mailConversationMenuItems = (menu: MailConversationMenu): DropdownI
       action: completion.run,
     });
   }
+  followUp.push(...(menu.followUp ?? []));
   if (followUp.length > 0) sections.push({ sectionLabel: t.followUp, items: followUp });
   const organize = menu.organize;
   if (organize) {
@@ -169,6 +174,7 @@ export const mailConversationMenuItems = (menu: MailConversationMenu): DropdownI
     });
   }
   if (menu.conversation?.length) sections.push({ sectionLabel: t.conversationSection, items: menu.conversation });
+  if (menu.link?.length) sections.push({ sectionLabel: t.link, items: menu.link });
   if (menu.other?.length) sections.push({ sectionLabel: t.other, items: menu.other });
   return sections;
 };
