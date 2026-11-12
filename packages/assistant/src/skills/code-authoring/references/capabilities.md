@@ -12,8 +12,7 @@ the version approval and the current access of the account.
 
 SDK properties use camelCase, including hyphenated and snake_case path segments:
 `spaces.space(id).task.setCompleted`, `grids.table(id).record.upsertExternal`,
-and `mail.mailbox(id).mailingList`. The capability IDs listed below keep their
-original spelling. Files imports as `files`; events keep `filesv2.*`.
+and `mail.mailbox(id).mailingList`. The tables keep capability IDs beside their generated SDK paths. Files imports as `files`; events keep `filesv2.*`.
 
 ## Read Mail content
 
@@ -82,43 +81,43 @@ its person can read.
 
 ## Mail
 
-Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachment.text.read`, `mail.comment.read`, `mail.conversation.activity.list`, `mail.conversation.comment.list`, `mail.conversation.focus`, `mail.conversation.list`, `mail.conversation.read`, `mail.conversation.related`, `mail.conversation.reminder.get`, `mail.conversation.search`, `mail.delivery.list`, `mail.delivery.read`, `mail.draft.list`, `mail.draft.read`, `mail.draft.send.check`, `mail.draft.send.review`, `mail.folder.list`, `mail.mailbox.browse`, `mail.mailbox.identity.list`, `mail.mailbox.list`, `mail.mailbox.member.list`, `mail.mailbox.read`, `mail.mailbox.tag.list`, `mail.mailing-list.subscription.get`, `mail.mailing-list.subscription.list`, `mail.message.catchup`, `mail.message.content.read`, `mail.message.event`, `mail.message.event-preview`, `mail.message.list`, `mail.message.read`, `mail.reminder.read`, `mail.search`.
+Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachment.text.read`, `mail.comment.read`, `mail.mailbox(id).conversation.activity.list`, `mail.mailbox(id).conversation.comment.list`, `mail.conversation.focus`, `mail.mailbox(id).conversation.list`, `mail.conversation.read`, `mail.mailbox(id).conversation.related`, `mail.mailbox(id).conversation.reminder.get`, `mail.mailbox(id).conversation.search`, `mail.mailbox(id).delivery.list`, `mail.delivery.read`, `mail.mailbox(id).draft.list`, `mail.draft.read`, `mail.draft.send.check`, `mail.mailbox(id).draft.send.review`, `mail.mailbox(id).folder.list`, `mail.mailbox.browse`, `mail.mailbox(id).identity.list`, `mail.mailbox.list`, `mail.mailbox(id).member.list`, `mail.mailbox.read`, `mail.mailbox(id).tag.list`, `mail.mailbox(id).mailingList.subscription.get`, `mail.mailbox(id).mailingList.subscription.list`, `mail.mailbox(id).message.catchup`, `mail.message.content.read`, `mail.message.event`, `mail.mailbox(id).message.eventPreview`, `mail.mailbox(id).message.list`, `mail.message.read`, `mail.reminder.read`, `mail.search`.
 
-| Action | Title | Target | Key | Unattended |
-| --- | --- | --- | --- | --- |
-| `mail.conversation.assign` | Assign conversation | mail.mailbox | — | admin approval |
-| `mail.conversation.assign.batch` | Assign conversations | mail.mailbox | — | admin approval |
-| `mail.conversation.comment.create` | Create internal comment | mail.mailbox | required | admin approval |
-| `mail.conversation.comment.delete` | Delete internal comment | mail.mailbox | required | never |
-| `mail.conversation.comment.update` | Update internal comment | mail.mailbox | — | never |
-| `mail.conversation.keep` | Keep conversation | mail.mailbox | — | admin approval |
-| `mail.conversation.keep.release` | Stop keeping conversation | mail.mailbox | required | never |
-| `mail.conversation.mark` | Mark email conversation | mail.mailbox | required | admin approval |
-| `mail.conversation.move` | Move email conversation | mail.mailbox | required | admin approval |
-| `mail.conversation.reference.ensure` | Ensure conversation reference | mail.mailbox | required | admin approval |
-| `mail.conversation.reminder.cancel` | Cancel personal reminder | mail.mailbox | — | automatic |
-| `mail.conversation.reminder.set` | Set personal reminder | mail.mailbox | — | automatic |
-| `mail.conversation.snooze` | Show conversation later | mail.mailbox | — | admin approval |
-| `mail.conversation.status.set` | Update conversation status | mail.mailbox | — | admin approval |
-| `mail.conversation.status.set.batch` | Update the status of conversations | mail.mailbox | — | admin approval |
-| `mail.conversation.status.update` | Update conversation status | mail.mailbox | — | not in the SDK |
-| `mail.conversation.status.update.batch` | Update the status of conversations | mail.mailbox | — | not in the SDK |
-| `mail.conversation.summary.write` | Write automated conversation summary | mail.mailbox | required | admin approval |
-| `mail.conversation.tag.update` | Update conversation tags | mail.mailbox | — | admin approval |
-| `mail.delivery.cancel` | Cancel delivery | mail.mailbox | required | never |
-| `mail.draft.attachment.import.v1` | Attach a file to a draft | mail.mailbox | required | admin approval |
-| `mail.draft.attachment.add` | Add draft attachment | mail.mailbox | required | admin approval |
-| `mail.draft.attachment.remove` | Remove draft attachment | mail.mailbox | required | never |
-| `mail.draft.create` | Create draft | mail.mailbox | required | admin approval |
-| `mail.draft.discard` | Discard draft | mail.mailbox | required | never |
-| `mail.draft.patch` | Change selected draft fields | mail.mailbox | — | admin approval |
-| `mail.draft.send` | Send mail | mail.mailbox | required | never |
-| `mail.draft.update` | Update draft | mail.mailbox | — | admin approval |
-| `mail.folder.display.set` | Set where a folder's mail appears | mail.mailbox | — | never |
-| `mail.mailbox.tag.create` | Create mailbox tag | mail.mailbox | required | admin approval |
-| `mail.mailbox.tag.delete` | Delete mailbox tag | mail.mailbox | required | never |
-| `mail.mailbox.tag.update` | Update mailbox tag | mail.mailbox | — | admin approval |
-| `mail.mailing-list.unsubscribe` | Unsubscribe from mailing list | mail.mailbox | required | never |
+| Action ID | SDK path | Title | Target | Key | Unattended |
+| --- | --- | --- | --- | --- | --- |
+| `mail.conversation.assign` | `mail.mailbox(id).conversation.assign` | Assign conversation | mail.mailbox | — | admin approval |
+| `mail.conversation.assign.batch` | `mail.mailbox(id).conversation.assign.batch` | Assign conversations | mail.mailbox | — | admin approval |
+| `mail.conversation.comment.create` | `mail.mailbox(id).conversation.comment.create` | Create internal comment | mail.mailbox | required | admin approval |
+| `mail.conversation.comment.delete` | `mail.mailbox(id).conversation.comment.delete` | Delete internal comment | mail.mailbox | required | never |
+| `mail.conversation.comment.update` | `mail.mailbox(id).conversation.comment.update` | Update internal comment | mail.mailbox | — | never |
+| `mail.conversation.keep` | `mail.mailbox(id).conversation.keep` | Keep conversation | mail.mailbox | — | admin approval |
+| `mail.conversation.keep.release` | `mail.mailbox(id).conversation.keep.release` | Stop keeping conversation | mail.mailbox | required | never |
+| `mail.conversation.mark` | `mail.mailbox(id).conversation.mark` | Mark email conversation | mail.mailbox | required | admin approval |
+| `mail.conversation.move` | `mail.mailbox(id).conversation.move` | Move email conversation | mail.mailbox | required | admin approval |
+| `mail.conversation.reference.ensure` | `mail.mailbox(id).conversation.reference.ensure` | Ensure conversation reference | mail.mailbox | required | admin approval |
+| `mail.conversation.reminder.cancel` | `mail.mailbox(id).conversation.reminder.cancel` | Cancel personal reminder | mail.mailbox | — | automatic |
+| `mail.conversation.reminder.set` | `mail.mailbox(id).conversation.reminder.set` | Set personal reminder | mail.mailbox | — | automatic |
+| `mail.conversation.snooze` | `mail.mailbox(id).conversation.snooze` | Show conversation later | mail.mailbox | — | admin approval |
+| `mail.conversation.status.set` | `mail.mailbox(id).conversation.status.set` | Update conversation status | mail.mailbox | — | admin approval |
+| `mail.conversation.status.set.batch` | `mail.mailbox(id).conversation.status.set.batch` | Update the status of conversations | mail.mailbox | — | admin approval |
+| `mail.conversation.status.update` | — | Update conversation status | mail.mailbox | — | not in the SDK |
+| `mail.conversation.status.update.batch` | — | Update the status of conversations | mail.mailbox | — | not in the SDK |
+| `mail.conversation.summary.write` | `mail.mailbox(id).conversation.summary.write` | Write automated conversation summary | mail.mailbox | required | admin approval |
+| `mail.conversation.tag.update` | `mail.mailbox(id).conversation.tag.update` | Update conversation tags | mail.mailbox | — | admin approval |
+| `mail.delivery.cancel` | `mail.mailbox(id).delivery.cancel` | Cancel delivery | mail.mailbox | required | never |
+| `mail.draft.attachment.import.v1` | `mail.mailbox(id).draft.attachment.import.v1` | Attach a file to a draft | mail.mailbox | required | admin approval |
+| `mail.draft.attachment.add` | `mail.mailbox(id).draft.attachment.add` | Add draft attachment | mail.mailbox | required | admin approval |
+| `mail.draft.attachment.remove` | `mail.mailbox(id).draft.attachment.remove` | Remove draft attachment | mail.mailbox | required | never |
+| `mail.draft.create` | `mail.mailbox(id).draft.create` | Create draft | mail.mailbox | required | admin approval |
+| `mail.draft.discard` | `mail.mailbox(id).draft.discard` | Discard draft | mail.mailbox | required | never |
+| `mail.draft.patch` | `mail.mailbox(id).draft.patch` | Change selected draft fields | mail.mailbox | — | admin approval |
+| `mail.draft.send` | `mail.mailbox(id).draft.send` | Send mail | mail.mailbox | required | never |
+| `mail.draft.update` | `mail.mailbox(id).draft.update` | Update draft | mail.mailbox | — | admin approval |
+| `mail.folder.display.set` | `mail.mailbox(id).folder.display.set` | Set where a folder's mail appears | mail.mailbox | — | never |
+| `mail.mailbox.tag.create` | `mail.mailbox(id).tag.create` | Create mailbox tag | mail.mailbox | required | admin approval |
+| `mail.mailbox.tag.delete` | `mail.mailbox(id).tag.delete` | Delete mailbox tag | mail.mailbox | required | never |
+| `mail.mailbox.tag.update` | `mail.mailbox(id).tag.update` | Update mailbox tag | mail.mailbox | — | admin approval |
+| `mail.mailing-list.unsubscribe` | `mail.mailbox(id).mailingList.unsubscribe` | Unsubscribe from mailing list | mail.mailbox | required | never |
 
 Mail sending stays manual: create a draft and let a person send it.
 `mail.attachment.content.read` returns an attachment as a [FileRef](file-ref.md). Use the
@@ -168,39 +167,39 @@ Actions; reading needs **View**.
 
 ## Spaces
 
-Queries: `spaces.calendar-destination.list`, `spaces.calendar-invitation.preview`, `spaces.calendar-invitation.response.prepare`, `spaces.calendar.events`, `spaces.calendar.list`, `spaces.comment.list`, `spaces.comment.read`, `spaces.event.agenda`, `spaces.event.list`, `spaces.item.link-candidate.search`, `spaces.item.read`, `spaces.item.reference.find`, `spaces.item.reference.list`, `spaces.item.search`, `spaces.space.activity`, `spaces.space.assignee.list`, `spaces.space.browse`, `spaces.space.containers`, `spaces.space.list`, `spaces.space.read`, `spaces.space.search`, `spaces.task.blocker.list`, `spaces.task.blocks.list`, `spaces.task.checklist.list`, `spaces.task.focus`, `spaces.task.list`, `spaces.task.work.read`, `spaces.template.list`, `spaces.template.read`.
+Queries: `spaces.calendarDestination.list`, `spaces.calendarInvitation.preview`, `spaces.calendarInvitation.response.prepare`, `spaces.calendar.events`, `spaces.calendar.list`, `spaces.comment.list`, `spaces.comment.read`, `spaces.event.agenda`, `spaces.event.list`, `spaces.item.linkCandidate.search`, `spaces.item.read`, `spaces.item.reference.find`, `spaces.item.reference.list`, `spaces.item.search`, `spaces.space.activity`, `spaces.space.assignee.list`, `spaces.space.browse`, `spaces.space.containers`, `spaces.space.list`, `spaces.space.read`, `spaces.space.search`, `spaces.task.blocker.list`, `spaces.task.blocks.list`, `spaces.task.checklist.list`, `spaces.task.focus`, `spaces.task.list`, `spaces.task.work.read`, `spaces.template.list`, `spaces.template.read`.
 
-| Action | Title | Target | Key | Unattended |
-| --- | --- | --- | --- | --- |
-| `spaces.calendar-invitation.import` | Import calendar invitation | spaces.space | — | never |
-| `spaces.calendar-invitation.response.commit` | Commit calendar response draft | — | — | not in the SDK |
-| `spaces.comment.create` | Create comment | spaces.space | required | admin approval |
-| `spaces.comment.delete` | Delete comment | spaces.space | required | never |
-| `spaces.comment.update` | Update comment | spaces.space | required | never |
-| `spaces.event.create` | Create calendar event | spaces.space | required | admin approval |
-| `spaces.event.invitation.commit` | Commit event invitation | — | — | not in the SDK |
-| `spaces.event.invitation.prepare` | Prepare event invitation | — | — | not in the SDK |
-| `spaces.event.update` | Update event | spaces.space | — | never |
-| `spaces.item.delete` | Delete Space item | spaces.space | required | never |
-| `spaces.item.reference.add` | Link a Cloud resource | spaces.space | — | admin approval |
-| `spaces.item.reference.remove` | Unlink a Cloud resource | spaces.space | — | never |
-| `spaces.item.tags.set` | Set item tags | spaces.space | — | admin approval |
-| `spaces.reaction.add` | Add reaction | spaces.space | required | never |
-| `spaces.reaction.remove` | Remove reaction | spaces.space | required | never |
-| `spaces.task.blocker.add` | Add task blocker | spaces.space | — | never |
-| `spaces.task.blocker.remove` | Remove task blocker | spaces.space | — | never |
-| `spaces.task.checklist.create` | Add task checklist entry | spaces.space | — | never |
-| `spaces.task.checklist.delete` | Delete task checklist entry | spaces.space | required | never |
-| `spaces.task.checklist.update` | Update task checklist entry | spaces.space | — | never |
-| `spaces.task.claim` | Claim task work | spaces.space | — | never |
-| `spaces.task.create` | Create task | spaces.space | required | admin approval |
-| `spaces.task.progress` | Progress task work | spaces.space | — | never |
-| `spaces.task.release` | Release task work | spaces.space | — | never |
-| `spaces.task.set-completed` | Set task completion | spaces.space | — | never |
-| `spaces.task.update` | Update task | spaces.space | — | admin approval |
-| `spaces.template.create` | Create template | spaces.space | — | never |
-| `spaces.template.delete` | Delete template | spaces.space | required | never |
-| `spaces.template.update` | Update template | spaces.space | — | never |
+| Action ID | SDK path | Title | Target | Key | Unattended |
+| --- | --- | --- | --- | --- | --- |
+| `spaces.calendar-invitation.import` | `spaces.space(id).calendarInvitation.import` | Import calendar invitation | spaces.space | — | never |
+| `spaces.calendar-invitation.response.commit` | — | Commit calendar response draft | — | — | not in the SDK |
+| `spaces.comment.create` | `spaces.space(id).comment.create` | Create comment | spaces.space | required | admin approval |
+| `spaces.comment.delete` | `spaces.space(id).comment.delete` | Delete comment | spaces.space | required | never |
+| `spaces.comment.update` | `spaces.space(id).comment.update` | Update comment | spaces.space | required | never |
+| `spaces.event.create` | `spaces.space(id).event.create` | Create calendar event | spaces.space | required | admin approval |
+| `spaces.event.invitation.commit` | — | Commit event invitation | — | — | not in the SDK |
+| `spaces.event.invitation.prepare` | — | Prepare event invitation | — | — | not in the SDK |
+| `spaces.event.update` | `spaces.space(id).event.update` | Update event | spaces.space | — | never |
+| `spaces.item.delete` | `spaces.space(id).item.delete` | Delete Space item | spaces.space | required | never |
+| `spaces.item.reference.add` | `spaces.space(id).item.reference.add` | Link a Cloud resource | spaces.space | — | admin approval |
+| `spaces.item.reference.remove` | `spaces.space(id).item.reference.remove` | Unlink a Cloud resource | spaces.space | — | never |
+| `spaces.item.tags.set` | `spaces.space(id).item.tags.set` | Set item tags | spaces.space | — | admin approval |
+| `spaces.reaction.add` | `spaces.space(id).reaction.add` | Add reaction | spaces.space | required | never |
+| `spaces.reaction.remove` | `spaces.space(id).reaction.remove` | Remove reaction | spaces.space | required | never |
+| `spaces.task.blocker.add` | `spaces.space(id).task.blocker.add` | Add task blocker | spaces.space | — | never |
+| `spaces.task.blocker.remove` | `spaces.space(id).task.blocker.remove` | Remove task blocker | spaces.space | — | never |
+| `spaces.task.checklist.create` | `spaces.space(id).task.checklist.create` | Add task checklist entry | spaces.space | — | never |
+| `spaces.task.checklist.delete` | `spaces.space(id).task.checklist.delete` | Delete task checklist entry | spaces.space | required | never |
+| `spaces.task.checklist.update` | `spaces.space(id).task.checklist.update` | Update task checklist entry | spaces.space | — | never |
+| `spaces.task.claim` | `spaces.space(id).task.claim` | Claim task work | spaces.space | — | never |
+| `spaces.task.create` | `spaces.space(id).task.create` | Create task | spaces.space | required | admin approval |
+| `spaces.task.progress` | `spaces.space(id).task.progress` | Progress task work | spaces.space | — | never |
+| `spaces.task.release` | `spaces.space(id).task.release` | Release task work | spaces.space | — | never |
+| `spaces.task.set-completed` | `spaces.space(id).task.setCompleted` | Set task completion | spaces.space | — | never |
+| `spaces.task.update` | `spaces.space(id).task.update` | Update task | spaces.space | — | admin approval |
+| `spaces.template.create` | `spaces.space(id).template.create` | Create template | spaces.space | — | never |
+| `spaces.template.delete` | `spaces.space(id).template.delete` | Delete template | spaces.space | required | never |
+| `spaces.template.update` | `spaces.space(id).template.update` | Update template | spaces.space | — | never |
 
 Code can create tasks and calendar events, update tasks and link a Cloud
 resource to an item; everything else in Spaces needs a person.
@@ -211,14 +210,14 @@ column. Spaces events cannot start Code yet ([Events](events.md)).
 
 Queries: `chat.discussion.list`, `chat.message.read`, `chat.notifications.read`.
 
-| Action | Title | Target | Key | Unattended |
-| --- | --- | --- | --- | --- |
-| `chat.discussion.post` | Post to item discussion | — | — | not in the SDK |
-| `chat.message.delete` | Delete discussion message | — | — | not in the SDK |
-| `chat.message.edit` | Edit discussion message | — | — | not in the SDK |
-| `chat.message.post` | Post a chat message | — | required | admin approval |
-| `chat.notifications.set` | Set chat notifications | — | — | not in the SDK |
-| `chat.thread.follow` | Follow or unfollow a discussion | — | — | not in the SDK |
+| Action ID | SDK path | Title | Target | Key | Unattended |
+| --- | --- | --- | --- | --- | --- |
+| `chat.discussion.post` | — | Post to item discussion | — | — | not in the SDK |
+| `chat.message.delete` | — | Delete discussion message | — | — | not in the SDK |
+| `chat.message.edit` | — | Edit discussion message | — | — | not in the SDK |
+| `chat.message.post` | `chat.message.post` | Post a chat message | — | required | admin approval |
+| `chat.notifications.set` | — | Set chat notifications | — | — | not in the SDK |
+| `chat.thread.follow` | — | Follow or unfollow a discussion | — | — | not in the SDK |
 
 `chat.message.post` takes a `conversation` ID and a Markdown `body`. The
 account must be a member of that conversation. See the
@@ -240,23 +239,23 @@ export default app;
 
 Queries: `notebooks.annotation.list`, `notebooks.annotation.read`, `notebooks.annotation.replies`, `notebooks.comment.browse`, `notebooks.comment.list`, `notebooks.comment.read`, `notebooks.note.children`, `notebooks.note.links`, `notebooks.note.preview`, `notebooks.note.read`, `notebooks.note.search`, `notebooks.note.tree`, `notebooks.notebook.activity`, `notebooks.notebook.browse`, `notebooks.notebook.containers`, `notebooks.notebook.list`, `notebooks.notebook.read`, `notebooks.notebook.search`, `notebooks.tag.list`, `notebooks.tag.notes`, `notebooks.template.list`.
 
-| Action | Title | Target | Key | Unattended |
-| --- | --- | --- | --- | --- |
-| `notebooks.annotation.accept` | Accept a passage suggestion | notebooks.notebook | required | never |
-| `notebooks.annotation.create` | Comment on a passage | notebooks.notebook | required | never |
-| `notebooks.annotation.delete` | Delete your recent comment | notebooks.notebook | required | never |
-| `notebooks.annotation.edit` | Edit your recent comment | notebooks.notebook | — | never |
-| `notebooks.annotation.reject` | Reject or reopen a passage suggestion | notebooks.notebook | — | never |
-| `notebooks.annotation.reply` | Reply to a comment | notebooks.notebook | required | never |
-| `notebooks.annotation.resolve` | Resolve or reopen a comment | notebooks.notebook | — | never |
-| `notebooks.annotation.restore` | Restore your recent deleted comment | notebooks.notebook | — | never |
-| `notebooks.annotation.undo-accept` | Undo an accepted passage suggestion | notebooks.notebook | required | never |
-| `notebooks.comment.create` | Add page discussion post | notebooks.notebook | required | admin approval |
-| `notebooks.comment.delete` | Delete page discussion post | notebooks.notebook | required | never |
-| `notebooks.comment.update` | Edit page discussion post | notebooks.notebook | — | never |
-| `notebooks.note.create` | Create note | notebooks.notebook | required | admin approval |
-| `notebooks.note.edit` | Edit note | notebooks.notebook | — | never |
-| `notebooks.note.move` | Move note | notebooks.notebook | — | never |
+| Action ID | SDK path | Title | Target | Key | Unattended |
+| --- | --- | --- | --- | --- | --- |
+| `notebooks.annotation.accept` | `notebooks.notebook(id).annotation.accept` | Accept a passage suggestion | notebooks.notebook | required | never |
+| `notebooks.annotation.create` | `notebooks.notebook(id).annotation.create` | Comment on a passage | notebooks.notebook | required | never |
+| `notebooks.annotation.delete` | `notebooks.notebook(id).annotation.delete` | Delete your recent comment | notebooks.notebook | required | never |
+| `notebooks.annotation.edit` | `notebooks.notebook(id).annotation.edit` | Edit your recent comment | notebooks.notebook | — | never |
+| `notebooks.annotation.reject` | `notebooks.notebook(id).annotation.reject` | Reject or reopen a passage suggestion | notebooks.notebook | — | never |
+| `notebooks.annotation.reply` | `notebooks.notebook(id).annotation.reply` | Reply to a comment | notebooks.notebook | required | never |
+| `notebooks.annotation.resolve` | `notebooks.notebook(id).annotation.resolve` | Resolve or reopen a comment | notebooks.notebook | — | never |
+| `notebooks.annotation.restore` | `notebooks.notebook(id).annotation.restore` | Restore your recent deleted comment | notebooks.notebook | — | never |
+| `notebooks.annotation.undo-accept` | `notebooks.notebook(id).annotation.undoAccept` | Undo an accepted passage suggestion | notebooks.notebook | required | never |
+| `notebooks.comment.create` | `notebooks.notebook(id).comment.create` | Add page discussion post | notebooks.notebook | required | admin approval |
+| `notebooks.comment.delete` | `notebooks.notebook(id).comment.delete` | Delete page discussion post | notebooks.notebook | required | never |
+| `notebooks.comment.update` | `notebooks.notebook(id).comment.update` | Edit page discussion post | notebooks.notebook | — | never |
+| `notebooks.note.create` | `notebooks.notebook(id).note.create` | Create note | notebooks.notebook | required | admin approval |
+| `notebooks.note.edit` | `notebooks.notebook(id).note.edit` | Edit note | notebooks.notebook | — | never |
+| `notebooks.note.move` | `notebooks.notebook(id).note.move` | Move note | notebooks.notebook | — | never |
 
 Code can read and search notes; no Notebooks Action runs unattended yet.
 
@@ -264,34 +263,34 @@ Code can read and search notes; no Notebooks Action runs unattended yet.
 
 Queries: `contacts.book.list`, `contacts.book.read`, `contacts.contact.list`, `contacts.contact.read`, `contacts.contact.resolve`, `contacts.contact.search`, `contacts.contact.suggest`, `contacts.note.list`, `contacts.note.read`, `contacts.tag.list`, `contacts.tag.read`.
 
-| Action | Title | Target | Key | Unattended |
-| --- | --- | --- | --- | --- |
-| `contacts.contact.create` | Create contact | contacts.book | required | never |
-| `contacts.contact.delete` | Delete contact | contacts.book | required | never |
-| `contacts.contact.move` | Move contact | contacts.book | required | never |
-| `contacts.contact.update` | Update contact | contacts.book | — | never |
-| `contacts.favorite.set` | Set contact favorite | contacts.book | — | never |
-| `contacts.note.create` | Create contact note | contacts.book | required | admin approval |
-| `contacts.tag.change` | Change contact tags | contacts.book | — | admin approval |
+| Action ID | SDK path | Title | Target | Key | Unattended |
+| --- | --- | --- | --- | --- | --- |
+| `contacts.contact.create` | `contacts.book(id).contact.create` | Create contact | contacts.book | required | never |
+| `contacts.contact.delete` | `contacts.book(id).contact.delete` | Delete contact | contacts.book | required | never |
+| `contacts.contact.move` | `contacts.book(id).contact.move` | Move contact | contacts.book | required | never |
+| `contacts.contact.update` | `contacts.book(id).contact.update` | Update contact | contacts.book | — | never |
+| `contacts.favorite.set` | `contacts.book(id).favorite.set` | Set contact favorite | contacts.book | — | never |
+| `contacts.note.create` | `contacts.book(id).note.create` | Create contact note | contacts.book | required | admin approval |
+| `contacts.tag.change` | `contacts.book(id).tag.change` | Change contact tags | contacts.book | — | admin approval |
 
 Code can look up contacts, for example to recognise a sender; no Contacts
 Action runs unattended yet.
 
 ## Files
 
-Queries: `filesv2.activity.chain`, `filesv2.activity.get`, `filesv2.activity.list`, `filesv2.bases.list`, `filesv2.content.download`, `filesv2.content.read`, `filesv2.entry.list`, `filesv2.entry.read`, `filesv2.entry.search`, `filesv2.entry.search-in-base`, `filesv2.provider.list`, `filesv2.share.access`, `filesv2.storage.read`, `filesv2.template.read`, `filesv2.trash.list`.
+Queries: `files.activity.chain`, `files.activity.get`, `files.activity.list`, `files.bases.list`, `files.content.download`, `files.content.read`, `files.entry(id).list`, `files.entry.read`, `files.entry.search`, `files.entry(id).searchInBase`, `files.provider.list`, `files.share.access`, `files.storage.read`, `files.template.read`, `files.entry(id).trash.list`.
 
-| Action | Title | Target | Key | Unattended |
-| --- | --- | --- | --- | --- |
-| `filesv2.content.create` | Write file content | — | — | not in the SDK |
-| `filesv2.entry.copy` | Copy entry | filesv2.entry | required | never |
-| `filesv2.entry.move` | Move entry | filesv2.entry | required | never |
-| `filesv2.entry.rename` | Rename entry | filesv2.entry | required | never |
-| `filesv2.entry.trash` | Move entry to trash | filesv2.entry | required | never |
-| `filesv2.file.save.v1` | Save a file into Files | filesv2.entry | required | never |
-| `filesv2.folder.create` | Create folder | filesv2.entry | required | never |
-| `filesv2.provider.save` | Save a new file | — | — | not in the SDK |
-| `filesv2.trash.restore` | Restore entry from trash | filesv2.entry | required | never |
+| Action ID | SDK path | Title | Target | Key | Unattended |
+| --- | --- | --- | --- | --- | --- |
+| `filesv2.content.create` | — | Write file content | — | — | not in the SDK |
+| `filesv2.entry.copy` | `files.entry(id).copy` | Copy entry | filesv2.entry | required | never |
+| `filesv2.entry.move` | `files.entry(id).move` | Move entry | filesv2.entry | required | never |
+| `filesv2.entry.rename` | `files.entry(id).rename` | Rename entry | filesv2.entry | required | never |
+| `filesv2.entry.trash` | `files.entry(id).trash` | Move entry to trash | filesv2.entry | required | never |
+| `filesv2.file.save.v1` | `files.entry(id).file.save.v1` | Save a file into Files | filesv2.entry | required | never |
+| `filesv2.folder.create` | `files.entry(id).folder.create` | Create folder | filesv2.entry | required | never |
+| `filesv2.provider.save` | — | Save a new file | — | — | not in the SDK |
+| `filesv2.trash.restore` | `files.entry(id).trash.restore` | Restore entry from trash | filesv2.entry | required | never |
 
 The Files SDK export is `files`; its app, capability and event IDs keep
 `filesv2` (including `filesv2.*` events). Code can list, search and read entry metadata,
@@ -333,21 +332,21 @@ export default app;
 
 ## Gustav (Core AI)
 
-Queries: `core.ai.chat.read`, `core.ai.chat.resources`, `core.ai.chat.run.read`, `core.ai.chat.search`, `core.ai.chats.resources`, `core.ai.chats.search`, `core.ai.decide`, `core.ai.generate`, `core.ai.skill.access.read`, `core.ai.skill.read`, `core.ai.skill.reference.read`, `core.ai.skills.list`.
+Queries: `core.ai.chat.read`, `core.ai.chat.resources`, `core.ai.chat(id).run.read`, `core.ai.chat.search`, `core.ai.chats.resources`, `core.ai.chats.search`, `core.ai.decide`, `core.ai.generate`, `core.ai.skill.access.read`, `core.ai.skill.read`, `core.ai.skill.reference.read`, `core.ai.skills.list`.
 
-| Action | Title | Target | Key | Unattended |
-| --- | --- | --- | --- | --- |
-| `core.ai.chat.deliver` | Deliver a Code result to your chat | core.ai.chat | required | automatic |
-| `core.ai.chat.message` | Message another AI conversation | core.ai.chat | required | never |
-| `core.ai.chat.run` | Start a Gustav turn from personal Code | core.ai.chat | required | admin approval |
-| `core.ai.skill.access.change` | Change Skill access | core.ai.skill | required | never |
-| `core.ai.skill.create` | Create an Assistant Skill | — | required | never |
-| `core.ai.skill.delete` | Delete an Assistant Skill | core.ai.skill | required | never |
-| `core.ai.skill.enabled.set` | Set personal Assistant Skill state | core.ai.skill | — | never |
-| `core.ai.skill.reference.remove` | Remove an Assistant Skill reference | core.ai.skill | — | never |
-| `core.ai.skill.reference.set` | Set an Assistant Skill reference | core.ai.skill | — | never |
-| `core.ai.skill.references.set` | Set Assistant Skill references | core.ai.skill | — | never |
-| `core.ai.skill.update` | Update an Assistant Skill | core.ai.skill | — | never |
+| Action ID | SDK path | Title | Target | Key | Unattended |
+| --- | --- | --- | --- | --- | --- |
+| `core.ai.chat.deliver` | `core.ai.chat(id).deliver` | Deliver a Code result to your chat | core.ai.chat | required | automatic |
+| `core.ai.chat.message` | `core.ai.chat(id).message` | Message another AI conversation | core.ai.chat | required | never |
+| `core.ai.chat.run` | `core.ai.chat(id).run` | Start a Gustav turn from personal Code | core.ai.chat | required | admin approval |
+| `core.ai.skill.access.change` | `core.ai.skill(id).access.change` | Change Skill access | core.ai.skill | required | never |
+| `core.ai.skill.create` | `core.ai.skill.create` | Create an Assistant Skill | — | required | never |
+| `core.ai.skill.delete` | `core.ai.skill(id).delete` | Delete an Assistant Skill | core.ai.skill | required | never |
+| `core.ai.skill.enabled.set` | `core.ai.skill(id).enabled.set` | Set personal Assistant Skill state | core.ai.skill | — | never |
+| `core.ai.skill.reference.remove` | `core.ai.skill(id).reference.remove` | Remove an Assistant Skill reference | core.ai.skill | — | never |
+| `core.ai.skill.reference.set` | `core.ai.skill(id).reference.set` | Set an Assistant Skill reference | core.ai.skill | — | never |
+| `core.ai.skill.references.set` | `core.ai.skill(id).references.set` | Set Assistant Skill references | core.ai.skill | — | never |
+| `core.ai.skill.update` | `core.ai.skill(id).update` | Update an Assistant Skill | core.ai.skill | — | never |
 
 Only `core.ai.chat.deliver` and `core.ai.chat.run` are meant for Code; both
 work in personal Code alone ([AI](ai.md)). Skills are managed by people, not by Code.

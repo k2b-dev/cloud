@@ -254,6 +254,7 @@ const getRowByName = async (name: string, db: SQL = sql): Promise<SkillRow | nul
  * second connection can exhaust the pool under concurrent requests.
  */
 type SkillAudience = {
+  guest: boolean;
   roles: readonly string[];
   usableAppIds: readonly string[];
   declaredAppIds: readonly string[];
@@ -283,6 +284,7 @@ const subjectRoles = async (subject: AiResourceContext | null, authority: Reques
       : null;
   return {
     roles,
+    guest: (actor?.kind === "user" ? actor.user : actor?.delegatedUser)?.profile === "guest",
     usableAppIds: usable,
     declaredAppIds: apps.filter((app) => app.access !== undefined).map((app) => app.id),
     brokerReadAppIds: usable.filter(
@@ -633,6 +635,7 @@ async function listSkillSummaries(
     LEFT JOIN ai.skill_user_disabled disabled
       ON disabled.skill_id = skill.id AND disabled.user_id = ${userId}::uuid
     WHERE access.permission <> 'none'
+      AND (NOT ${roles.guest} OR skill.name <> 'code-authoring')
       AND ${options.name === undefined ? sql`true` : sql`skill.name = ${options.name}`}
       AND ${options.shortIds === undefined ? sql`true` : sql`skill.short_id = ANY(${toPgTextArray([...options.shortIds])}::text[])`}
       AND (${!options.manageOnly} OR access.permission='admin')
@@ -1237,6 +1240,7 @@ export const aiSkills = {
       const [row] = await tx<SkillRow[]>`
         SELECT * FROM ai.skills WHERE name = ${name} OR short_id = ${shortId} FOR SHARE
       `;
+      if (roles.guest && row?.name === "code-authoring") return null;
       const skill = await requireSkill(row ?? null, subject, "read", tx, roles);
       if (!skill?.enabled) return null;
       if (name !== null && skill.manualOnly)

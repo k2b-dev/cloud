@@ -32,6 +32,7 @@ import {
 } from "./contracts";
 import { createCodeServiceAccount } from "./service-account";
 import { CODE_SETTINGS, codeSettings } from "./settings";
+import { codeVersionMessages } from "./version-messages";
 
 /** C8/C13 pass their transaction for domain-row operations; admission settings use the registered settings API. */
 export type CodeDb = SQL;
@@ -204,9 +205,20 @@ export const codeSourceHash = (source: CodeSourceFiles, entry?: string): string 
 };
 export const codeBundleHash = (bundle: string): string => sha256(bundle);
 
+/** Authoring is member-only, even when a guest owns Code or has an editor share. */
+export const codeAuthor = (context: CodeContext) => {
+  const user = codePerson(context, true);
+  if (user.profile === "guest")
+    throw new CodeDataError(
+      "code_guests_cannot_author",
+      codeVersionMessages.resolve(context.locale ? [context.locale] : []).t.guestsCannotAuthor,
+    );
+  return user;
+};
+
 /** Create one owner identity and its credentialless account in one transaction. This grants no target permissions. */
 export const createCode = async (input: { owner: CodeOwner; title: string }, context: CodeContext): Promise<Code> => {
-  const user = codePerson(context, true);
+  const user = codeAuthor(context);
   const owner = CodeOwnerSchema.parse(input.owner);
   let ownerTitle: string | null = null;
   if (owner.kind === "person") {
@@ -330,7 +342,7 @@ export const createCodeVersion = async (
   context: CodeContext,
   db: CodeDb = sql,
 ): Promise<CodeVersion> => {
-  codePerson(context, true);
+  codeAuthor(context);
   const source = CodeSourceFilesSchema.parse(input.sourceFiles);
   jsonText(source, true);
   jsonText(input.bundle, true);
