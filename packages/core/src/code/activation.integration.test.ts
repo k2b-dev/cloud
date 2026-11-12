@@ -481,7 +481,8 @@ databaseSuite()("durable Code activation", () => {
     );
     try {
       const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
-        readOwner: async (_owner, ctx) => {
+        readOwner: async (asked, ctx) => {
+          expect(asked).toEqual(code.owner);
           placeReads.push(ctx);
           return { title: "Owner", admin: false };
         },
@@ -562,6 +563,27 @@ databaseSuite()("durable Code activation", () => {
     });
     expect(reads).toEqual([nextOwnerId]);
     expect(preview.place).toEqual({ title: "Lager Nord", typeTitle: "Item", href: null });
+  });
+  test("a request that ends while the owner's reader is asked stops waiting for the place at once", async () => {
+    const code = await newCode(),
+      submitted = await version(code);
+    const ended = new AbortController();
+    let reads = 0;
+    const preview = await previewCodeActivation(
+      { codeId: code.id, versionId: submitted.version.id },
+      { ...owner, signal: ended.signal },
+      {
+        readOwner: () => {
+          reads++;
+          ended.abort();
+          return new Promise<never>(() => {});
+        },
+        // Far beyond the test's own limit: only the request's end can stop this wait.
+        placeTimeoutMs: 60_000,
+      },
+    );
+    expect(reads).toBe(1);
+    expect(preview.place).toBeNull();
   });
   test("an explicit Code editor cannot bypass the current owner manager check", async () => {
     const code = await newCode(),

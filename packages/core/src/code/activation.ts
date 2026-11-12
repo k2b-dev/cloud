@@ -263,11 +263,12 @@ async function previewPlace(
     else {
       const timeout = AbortSignal.timeout(deps.placeTimeoutMs);
       const signal = context.signal ? AbortSignal.any([context.signal, timeout]) : timeout;
-      // The race ends the wait even for a reader that does not stop on its signal.
-      owner = await Promise.race([
-        deps.readOwner(code.owner, { ...context, signal }),
-        new Promise<null>((resolve) => signal.addEventListener("abort", () => resolve(null), { once: true })),
-      ]);
+      // The race ends the wait even for a reader that does not stop on its signal; a request that already ended asks nobody.
+      const stopped = new Promise<null>((resolve) => {
+        if (signal.aborted) resolve(null);
+        else signal.addEventListener("abort", () => resolve(null), { once: true });
+      });
+      owner = signal.aborted ? null : await Promise.race([deps.readOwner(code.owner, { ...context, signal }), stopped]);
     }
     if (!owner) return null;
     const target = await describeTarget(ref, { ref, title: owner.title }, catalog);
