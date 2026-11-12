@@ -523,49 +523,50 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       const summaryHeights = new Map<number, Record<string, number>>();
       for (const width of [1440, 390]) {
         for (const state of ["ai", "stale", "writing", "failed", "limited", "person"] as const)
-          test(`automation: AI summary ${state} at ${width}: one place, plum only for AI`, async () => {
+          test(`automation: AI summary ${state} at ${width}: one row, plum only for AI`, async () => {
             const heights = summaryHeights.get(width) ?? {};
             summaryHeights.set(width, heights);
             const page = await open(`${boxPath}?conversation=Conv01&locale=de&summary=${state}`, width, width === 390 ? 844 : 900);
             try {
-              const card = page.locator("[data-mail-conversation-summary]");
-              await card.waitFor();
-              const box = (await card.boundingBox())!;
-              heights[state] = box.height;
-              const ai = (await card.getAttribute("data-mail-summary-ai")) !== null;
-              expect(ai, `${state}: AI surface only for AI`).toBe(state !== "person");
-              // A topic of the reader: a Section island with the AI tone (plum frame, title, ✦) only for AI, never a plum fill.
-              expect(await card.getAttribute("data-tone"), `${state}: AI tone only for AI`).toBe(state === "person" ? null : "ai");
-              const look = await card.evaluate((element) => {
-                const probe = element.parentElement!.appendChild(document.createElement("i"));
-                probe.style.borderTop = "1px solid color-mix(in srgb, var(--k2b-ai-accent) 45%, var(--k2b-surface))";
-                const plum = getComputedStyle(probe).borderTopColor;
+              const row = page.locator("[data-mail-conversation-summary]");
+              await row.waitFor();
+              await settled(page);
+              heights[state] = (await row.boundingBox())!.height;
+              const ai = (await row.getAttribute("data-mail-summary-ai")) !== null;
+              expect(ai, `${state}: AI only for AI`).toBe(state !== "person");
+              // Plum is the label's ink for AI work, never a fill.
+              const look = await row.evaluate((element) => {
+                const probe = element.appendChild(document.createElement("i"));
+                probe.style.color = "var(--k2b-ai-accent)";
+                const plum = getComputedStyle(probe).color;
                 probe.remove();
-                const style = getComputedStyle(element);
-                return { fill: style.backgroundColor, plumFrame: style.borderTopColor === plum };
+                return {
+                  fill: getComputedStyle(element).backgroundColor,
+                  plumLabel: getComputedStyle(element.querySelector(".mail-summary-row__label")!).color === plum,
+                };
               });
               expect(look.fill).not.toBe("rgb(252, 243, 248)");
-              expect(look.plumFrame, `${state}: plum frame only for AI`).toBe(state !== "person");
-              if (state === "writing") expect(await card.getAttribute("aria-busy")).toBe("true");
-              if (state === "stale") await page.getByText("1 neue Nachricht seit dieser Fassung").waitFor();
-              if (state === "failed") await card.getByRole("button", { name: "Erneut versuchen" }).waitFor();
-              if (state === "limited") await card.getByRole("button", { name: "Diese eine jetzt zusammenfassen" }).waitFor();
-              if (screenshots) {
-                await card.scrollIntoViewIfNeeded();
-                await page.screenshot({ path: join(screenshots, `summary-${state}-light-${width}.png`) });
-              }
+              expect(look.plumLabel, `${state}: plum label only for AI`).toBe(state !== "person");
+              if (state === "writing") expect(await row.locator(".mail-summary-row__line").textContent()).toBe("wird geschrieben …");
+              // Opening the row shows the rest in place.
+              const toggle = row.locator(".mail-summary-row__toggle");
+              await toggle.click();
+              expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+              if (state === "stale") await row.getByText("1 neue Nachricht seit dieser Fassung").waitFor();
+              if (state === "failed") await row.getByRole("button", { name: "Erneut versuchen" }).waitFor();
+              if (state === "limited") await row.getByRole("button", { name: "Diese eine jetzt zusammenfassen" }).waitFor();
+              if (screenshots) await page.screenshot({ path: join(screenshots, `summary-${state}-light-${width}.png`) });
             } finally {
               await close(page);
             }
           });
         // Reads the heights that the six state cases above measured, so it runs after them in the same file.
-        test(`automation: AI summary at ${width}: writing, failure and limit keep one height`, () => {
+        test(`automation: AI summary at ${width}: every state keeps one row's height`, () => {
           const heights = summaryHeights.get(width) ?? {};
           expect(Object.keys(heights).length, "the six state cases above ran first").toBe(6);
-          // Writing, failure and limit share the reserved height, so the messages below stay where they are.
-          expect(heights.writing).toBeGreaterThanOrEqual(196);
-          expect(Math.abs(heights.failed! - heights.writing!)).toBeLessThanOrEqual(width === 390 ? 60 : 0.5);
-          expect(Math.abs(heights.limited! - heights.writing!)).toBeLessThanOrEqual(width === 390 ? 80 : 0.5);
+          // Every state is the same one row, so the messages below stay where they are.
+          expect(new Set(Object.values(heights).map((height) => Math.round(height))).size).toBe(1);
+          expect(Math.round(heights.writing!)).toBe(36);
         });
       }
 
