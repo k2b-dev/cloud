@@ -84,9 +84,15 @@ with `method`, `path` and `public`, an `event` named like a target, a `cron`
 expression, or a one-time `at` with the `timeZone` it is read in. Code of an
 app also returns `appName`, which names its service account, or `null` when
 the registry does not know the app. For resource Code, `page` is the
-Code page its owner's app declares in `code.pages`, or `null`. Preview asks no target or owner
-application to plan, inspect or grant access. The Code page's dialog starts the
-same durable activation directly.
+Code page its owner's app declares in `code.pages`, or `null`. Its `place`
+names the Code's own place with `title`, `typeTitle` and `href`, read once
+through the owner app's reader with the requesting person's own rights. When
+that person may not read the place, or the reader fails or does not answer
+within one second, `place` is `null` and clients name it by type and ID, as
+they name a target. Preview never shows the title the Code's account stored.
+Preview asks no target application anything, and asks no application to plan,
+inspect or grant access. The Code page's dialog starts the same durable
+activation directly.
 
 Status contains `id`, `codeId`, `versionId`, `state`, `failure`, `mandateId`,
 `createdAt` and `updatedAt`. Timestamps use ISO 8601 UTC. A failure contains

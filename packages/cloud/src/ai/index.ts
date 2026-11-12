@@ -118,6 +118,7 @@ export {
   loadAiConversationFileOverview,
   normalizeAiFilePath,
   readAiConversationFile,
+  statAiConversationFile,
   writeAiConversationFile,
 } from "./files-store";
 export {

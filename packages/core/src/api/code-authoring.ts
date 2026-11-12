@@ -48,7 +48,13 @@ export function codeAuthoringFailure(error: unknown): { status: 400 | 403 | 404 
     };
   if (error instanceof CodeDataError)
     return {
-      status: error.code === "FORBIDDEN" ? 403 : error.code === "NOT_FOUND" ? 404 : error.code === "CONFLICT" ? 409 : 400,
+      status: ["FORBIDDEN", "code_guests_cannot_author"].includes(error.code)
+        ? 403
+        : error.code === "NOT_FOUND"
+          ? 404
+          : error.code === "CONFLICT"
+            ? 409
+            : 400,
       body: { version: 1, error: { code: error.code, message: error.message, details: null } },
     };
   if (error instanceof CodeJobError)
@@ -100,6 +106,7 @@ export function createCodeAuthoringRoutes() {
         requestBody: { required: true, ...jsonResponse(contract.input, "Code command input") },
         responses: {
           200: jsonResponse(contract.data, "Code command result"),
+          403: jsonResponse(CodeAuthoringErrorSchema, "Code authoring is not allowed"),
           400: jsonResponse(CodeAuthoringErrorSchema, "Invalid Code input"),
           409: jsonResponse(CodeAuthoringErrorSchema, "Version or state conflict"),
           503: jsonResponse(CodeAuthoringErrorSchema, "Runner or owner unavailable"),

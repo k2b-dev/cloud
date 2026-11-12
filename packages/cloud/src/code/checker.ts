@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import type { CodeAnalysis } from "./checker-analysis";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodeCheckResult, CodePermission } from "./checker-contract";
 import { CODE_CHECK_LIMITS, CodeCheckLimitsSchema, CodeVersionManifestSchema } from "./checker-contract";
+import { codeCheckerMessages } from "./checker-messages";
 import { codeSdkHash } from "./sdk-hash";
 
 /** Trusted executable paths provided by the runner image. isolate is mandatory and fails closed: no unsandboxed fallback.
@@ -28,18 +29,19 @@ const permissionKey = (p: Pick<CodePermission, "operation" | "target">) =>
  * Source paths and contents are untrusted data. SDK and host paths must originate from the platform, never the Code author. */
 export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, signal?: AbortSignal): Promise<CodeCheckResult> {
   if ("check" in host) return host.check(request, signal);
+  const t = codeCheckerMessages.resolve(request.locale ? [request.locale] : []).t;
   const limits = CodeCheckLimitsSchema.parse(request.limits ?? CODE_CHECK_LIMITS);
-  if (process.platform !== "linux") return failure("code_checker_unavailable", "Der Code-Prüfer benötigt Linux.", request.entry);
-  if (signal?.aborted) return failure("code_check_cancelled", "Prüfung abgebrochen.", request.entry);
+  if (process.platform !== "linux") return failure("code_checker_unavailable", t.linux, request.entry);
+  if (signal?.aborted) return failure("code_check_cancelled", t.cancelled, request.entry);
   if (Buffer.byteLength(JSON.stringify(request)) > limits.requestBytes)
-    return failure("code_request_limit", "Der Prüfauftrag überschreitet die eingestellte Grenze.", request.entry);
+    return failure("code_request_limit", t.request_limit, request.entry);
   const names = Object.keys(request.files).sort();
   const validPath = (name: string) =>
     /^(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.tsx?$/.test(name) && !["sdk.d.ts", "sdk.ts", "sdk.tsx"].includes(name);
   if (!names.includes(request.entry) || names.some((name) => !validPath(name)))
-    return failure("code_source_path", "Ungültige Quelldatei im Code-Projekt.", request.entry);
+    return failure("code_source_path", t.source_path, request.entry);
   if (names.length > limits.files || names.reduce((sum, name) => sum + Buffer.byteLength(request.files[name]!), 0) > limits.sourceBytes)
-    return failure("code_source_limit", "Der Quelltext überschreitet die eingestellte Grenze.", request.entry);
+    return failure("code_source_limit", t.source_limit, request.entry);
   const directory = await mkdtemp(join(tmpdir(), "cloud-code-check-"));
   const deadline = performance.now() + limits.checkMs;
   const run = async (command: string[]) => {
@@ -155,20 +157,14 @@ export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, 
             ]
           : [];
       });
-      return diagnostics.length
-        ? { ok: false, diagnostics }
-        : failure("code_typecheck_failed", "Typprüfung fehlgeschlagen.", request.entry);
+      return diagnostics.length ? { ok: false, diagnostics } : failure("code_typecheck_failed", t.typecheck_failed, request.entry);
     }
     await writeFile(requestPath, JSON.stringify({ ...request, limits, entrypoints: analysis.entrypoints }), { mode: 0o600 });
     const built = await run([host.bun, "--no-env-file", host.worker, "bundle", requestPath]);
     if (built.exit !== 0) throw new Error(built.stderr.includes("code_bundle_limit") ? "code_bundle_limit" : "code_bundle_failed");
     const { bundle, modules }: { bundle: string; modules: string[] } = JSON.parse(built.stdout);
     if (JSON.stringify([...analysis.modules].sort()) !== JSON.stringify([...modules].sort()))
-      return failure(
-        "code_import_elided",
-        "Bundler und Analyse sind sich über die geladenen Module uneinig. Prüfe die Importe und versuche es erneut.",
-        request.entry,
-      );
+      return failure("code_import_elided", t.import_elided, request.entry);
     if (Buffer.byteLength(bundle) > limits.bundleBytes) throw new Error("code_bundle_limit");
     const manifest = CodeVersionManifestSchema.parse({
       version: 1,
@@ -194,13 +190,7 @@ export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, 
     };
   } catch (error) {
     const code = error instanceof Error && /^code_[a-z_]+$/.test(error.message) ? error.message : "code_check_failed";
-    return failure(
-      code,
-      code === "code_check_time_limit"
-        ? "Prüfung hat die Zeitgrenze erreicht. Vereinfache die Typen oder erhöhe die Admin-Grenze."
-        : `Prüfung fehlgeschlagen (${code}).`,
-      request.entry,
-    );
+    return failure(code, code === "code_check_time_limit" ? t.time_limit : t.check_failed({ code }), request.entry);
   } finally {
     async function clean(path: string): Promise<void> {
       for (const entry of await readdir(path, { withFileTypes: true })) {

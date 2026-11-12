@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-09
+updated: 2026-11-11
 ---
 
 # Code SDK
@@ -26,7 +26,7 @@ names with a validation error. App IDs use the capability app-ID grammar; local
 names and ref target types use `CapabilityLocalIdSchema`. Ref field names remain
 literal property keys of 1–100 characters, including spaces and punctuation.
 Fix the application declaration and refresh its manifest before pulling the SDK again.
-Valid manifests retain the same declarations, runtime and manifest hashes.
+Existing method names, input fields and error codes remain supported.
 
 `secrets.NAME` supplies a secret marker and `http.fetch` dispatches a bounded public HTTPS request.
 The checker collects exact origins into `manifest.internet`; declare dynamic destinations
@@ -45,7 +45,11 @@ its app and event IDs stay `filesv2` and `filesv2.*`.
 Application authors may set `sdkExportName` in `defineCapabilities()` to
 choose a module export. The optional manifest field accepts a JavaScript
 identifier starting with a lowercase letter. Reserved names, duplicate
-exports and segments that produce the same camelCase path are rejected.
+exports and segments that produce the same camelCase path are rejected during
+application registration, before its capability manifest is published. A
+rejected registration leaves the previously accepted app manifest available
+while earlier replicas still run and renew its registration.
+SDK generation repeats this validation.
 The checker and runtime share these generated paths.
 
 `http.fetch()` returns `status`, `headers`, `bodyBase64`, `text()` and `json()`.
@@ -123,6 +127,77 @@ tags mail only after publication. Streaming Actions retain the normal Code polic
 and approval rules. Streams without the generic `file` input remain unavailable
 to Code; [Binary streams](/en/docs/platform/capabilities#binary-streams) describes
 the provider contract.
+
+## Generate a file
+
+Lasting Code can generate a file and pass its FileRef to a receiving app's
+Action. Read the `core` SDK declarations for the current inputs:
+
+| Helper | Output |
+| --- | --- |
+| `pdf.render({ name, html, title?, headerHtml?, footerHtml?, page?, tagged? })` | PDF from offline HTML; scripts and remote resources are disabled. |
+| `sheet.toCsv({ name, rows, delimiter?, bom? })` | UTF-8 CSV. Semicolon is the default separator; comma-separated files use dot decimals, other separators use the request locale. Text cells cannot become formulas. |
+| `sheet.toOds({ name, sheets })` | OpenDocument spreadsheet of plain cells. Worksheet names are unique, at most 31 characters. |
+| `finance.datev({ name, batch })` | DATEV CSV using stdlib's validation and exact amount strings. |
+| `finance.sepa({ name, batch })` | SEPA SCT XML using stdlib's validation and exact amount strings. |
+| `chart.render({ name, chart })` | SVG from the same checked chart description as Code pages, including a title. |
+
+Each helper is an alias of an ordinary versioned Core read Query under
+`core.file.*.v1`. The checker records its operation and `read` policy. File
+generation does not start an effect; storing or sending belongs to the
+receiving app's Action, with that app's access, review and idempotency rules.
+An existing app export keeps its name if it collides with a helper alias; use
+the corresponding `core.file.<helper>.<method>.v1` from the SDK in that case.
+
+```ts
+import { app, sheet, imports } from "@sdk";
+
+app.schedule({ cron: "0 8 * * 1", name: "weekly-file" }, async c => {
+  const file = await sheet.toCsv({
+    name: "weekly.csv",
+    rows: [{ item: "Example", amount: 12.5 }],
+  });
+  await imports.import({ file, idempotencyKey: `weekly-file:${c.scheduledAt ?? c.runId}` });
+});
+export default app;
+```
+
+`imports` is a fictional receiving app with a write Action whose input names
+`file`. Choose a compatible Action from the live SDK. Existing Files and Mail
+Actions keep their current inputs and confirmation policies; generation does
+not add file inputs to them.
+
+Generation input fits the ordinary 256 KiB capability request budget. A run can
+attempt at most 64 files of up to 50 MiB each within a combined 250 MiB output
+budget. In-progress and failed generation reserve budget too. Calls outside a
+Code run share the same limits per principal for ten minutes. Temporary output
+is encrypted, single-use and expires after ten minutes; its run-bound FileRef
+expires earlier when the run-token deadline does. Cancellation stops new work
+and propagates to PDF rendering. PDF generation needs the operator's existing
+Gotenberg configuration. Finance generation neither submits payments nor
+claims bank acceptance or XSD validation.
+
+## Pass a Gustav chat attachment to an app
+
+`assistant.chat.file.read.v1({ chatId, path })` opens one exact file from the
+person's chat as a read stream. Its generated SDK method returns the same
+FileRef that a receiving Action's `file` input accepts. Use an ID and path
+returned by the chat's file list; neither is a grant.
+
+The read checks chat ownership, archive state, allowed tools and current Project
+access when issuing the stream and again on transfer. It pins the file revision
+and checks its size before loading bytes, up to 50 MiB. A different account,
+changed or deleted file, expired stream or second use fails. The stream lives
+ten minutes at most. The receiving Code host enforces its existing aggregate
+transfer limits and keeps the FileRef local to that run.
+Resource-owned Code cannot borrow a person's chat access.
+
+For chat-attachment integration, the one-off chat host must invoke this Query
+through its current person's capability service. The existing stream dispatcher
+supports registering that read stream as a run-local FileRef and accepting it
+in a destination SDK write call. Automatic attachment selection in the chat
+host is a separate integration step.
+This adds no URL, bearer credential or separate file-download endpoint.
 
 ## Return a page
 
@@ -463,6 +538,24 @@ dynamic ones retain only their Type there. The target checks the account's
 current rights at execution. A handle or setting that names a target grants
 no access.
 
+## Omit empty inputs and reuse named types
+
+When an operation requires no input fields, additional targets or retry key,
+call it without an argument: `spaces.space.list()`. Passing `{}` remains valid.
+Required fields, refs and `idempotencyKey` still require an input object.
+
+Each operation exports types named after its application and local path, such
+as `Mail_Message_ReadInput` and `Mail_Message_ReadData`. Import them from `@sdk`
+for helper parameters. Their concise JSDoc describes the operation and its fields.
+Repeated schemas are declared once and referenced across operations. Nested
+structures can share a declaration even when their field descriptions differ;
+shared shapes keep the first concise set of field descriptions. Operation root
+types retain their own field documentation.
+Names retain the app and path boundaries, independently of catalog order.
+Hyphens and underscores in IDs are encoded as `$h` and `$u`.
+The numbered `InputN` and `DataN` declarations remain compatibility aliases;
+prefer the named types because numbers depend on the selected catalog.
+
 ## Read query results and follow cursors
 
 Queries returning domain data resolve to `CodeQueryResult<T>`, with typed
@@ -557,7 +650,15 @@ asks for writing Actions as required by the normal approval policy.
 
 ## Handle SDK errors
 
-SDK calls reject with `CodeError`, imported from `@sdk`. It extends `Error`
+SDK calls reject with `CodeError`, imported from `@sdk`. `KnownCodeErrorCode`
+lists platform codes; `CodeErrorCode` also accepts application-defined strings.
+Error strings keep their existing values. The checker still reports
+`code_code_false` and additionally supplies `aliases: ["code_false"]`.
+Checker messages follow the request locale (English fallback); codes do not.
+An unknown operation includes an “exists under `<path>`” hint when that
+operation is available at another SDK path.
+
+`CodeError` extends `Error`
 and exposes `{ code, status, message, details }`. Compare lowercase snake_case
 `code`, rather than parsing `message`. A target's 403 and 404 remain distinct
 in `status`; local validation uses 400 and unavailable transports use 503.
@@ -796,7 +897,7 @@ app.get("/hello/:name", c => c.json({
   hello: c.req.param("name"),
   visitor: c.user?.id,
 }));
-app.get("/health", c => c.text("Ready"), { public: true });
+app.get("/health", { public: true }, c => c.text("Ready"));
 app.post("/save", async c => {
   const allowedUserIds = ["u_example"];
   if (!c.user || !allowedUserIds.includes(c.user.id))
@@ -814,7 +915,10 @@ such as `:id`; declarations match in order. `HEAD` uses the GET handler.
 Handlers return `c.json(value, status?)`, `c.text(text, status?)` or
 `c.redirect(path, status?)`. Redirects stay inside this Code's namespace;
 `/next` resolves to `/code/<code-id>/next`. Code cannot return arbitrary headers,
-cookies or HTML. `c.req` provides `raw`, `param(name)`, `query(name)`, `json()`,
+cookies or HTML. Routes support `app.get(path, options, handler)` (and the same
+order for `post`, `put`, `delete` and `all`) so the handler stays last.
+`app.get(path, handler, options)` remains a compatibility overload.
+`c.req` provides `path`, `method`, `raw`, `param(name)`, `query(name)`, `json()`,
 `text()` and `formData()`. Core forwards only the request data and normalized content type, never
 incoming request headers, browser cookies or credentials.
 
@@ -920,13 +1024,13 @@ reads its variables. `app` and the returned `routes` register on the same
 app; the return carries the variable types for subsequent handlers.
 
 Middleware runs on matching public routes too; `c.user` remains `null`.
-[Access checks](#zugriff-prüfen) shows how to keep public paths reachable.
+[Access checks](#check-access) shows how to keep public paths reachable.
 SDK calls in middleware use the same Code account, approval and declared-set
 checks as calls in handlers. Register `use` at module scope, as a statement
 or as the initializer of a `const` binding. Schedules and events do not run
 HTTP middleware.
 
-## Zugriff prüfen
+## Check access
 
 Every non-public route admits every signed-in member; guests are refused. Put shared access checks
 in `app.use()` before the routes they protect; add handler checks for rules
@@ -1262,20 +1366,20 @@ export default async function triage() {
   // Fictional mail; in real Code, read the mail through its authorized SDK first.
   const { data: result } = await core.ai.decide({
     task: "mail.triage",
-    state: { subject: "Urgent: claim your prize", text: "Act now to receive a prize." },
+    input: { subject: "Urgent: claim your prize", text: "Act now to receive a prize." },
     questions: {
       category: {
         type: "choice",
         instructions: "What kind of message is this?",
         criteria: { support: "Help with an existing order", spam: "Unsolicited advertising or deceptive messages" },
       },
-      urgent: { type: "noul", instructions: "Does this message need urgent attention within its category?" },
+      urgent: { type: "boolean", instructions: "Does this message need urgent attention within its category?" },
     },
   });
   const category = result.answers.category;
   if (category?.type !== "choice" || category.choice !== "support" || category.confidence < 0.9) return false;
   const urgent = result.answers.urgent;
-  return urgent?.type === "noul" && urgent.probability >= 0.9;
+  return urgent.confidence >= 0.9;
 }
 ```
 
@@ -1287,6 +1391,17 @@ Optional `files: FileRef[]` and `model: { id }`, image support, quota
 failures and byte limits follow
 [Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).
 
+
+`input` aliases the earlier `state` field; `state` takes precedence if both
+are supplied. `type: "boolean"` aliases `"noul"`. Boolean answers retain
+`type: "noul"`, `value` and `probability`, and add `confidence` with the same
+value as `probability`. Existing names and their result types remain supported.
+Calls using the new
+`input` or `boolean` aliases infer each answer's type and named choices.
+For a legacy `state`/`noul` request, import `Core_Ai_DecideInput`, declare the
+request with `satisfies Core_Ai_DecideInput`, and opt into precise answers with
+`core.ai.decide<typeof request>(request)`; otherwise keep the existing
+discriminator checks.
 
 ## Generate text and extract fields
 
@@ -1336,9 +1451,14 @@ export default async function summarize() {
 }
 ```
 
-The generated SDK types describe the request and JSON result. A schema supplied
-at runtime cannot become a compile-time TypeScript shape; narrow `output`
-before reading its fields. Cloud validates the declared schema before returning
+The generated SDK preserves the existing JSON result type for ordinary calls.
+Narrow `output` before reading its fields. To opt into a precise result, declare
+a request with `satisfies Core_Ai_GenerateInput` and call
+`core.ai.generate<typeof request>(request)`. Text output then has type `string`;
+a literal JSON schema determines its output fields. Keep required field names
+as a literal tuple, for example `required: ["item", "quantity"] as ["item", "quantity"]`.
+A broadly typed `required` list keeps fields optional in TypeScript.
+Cloud validates the declared schema before returning
 it. For lasting Code, call this helper from a schedule; its callback returns
 `void`. Summarizing or drafting does not send or save anything. A separate
 application capability performs that effect under its own permissions.
@@ -1402,7 +1522,7 @@ fields; nested lists are rejected. A schema can therefore return invoice
 lines or totals per tax rate while retaining `additionalProperties: false`
 and the existing string bounds.
 
-## Webhooks (R1: ohne Secret)
+## Webhooks without signature verification
 
 A webhook in R1 is an ordinary public POST route, for example
 `app.post("/hooks/events", handler, { public: true })`. R1 does not verify a
@@ -1449,7 +1569,7 @@ http.allow(["https://events.example.com"]);
 const team = spaces.space("Spc001");
 
 app.use(async (c, next) => {
-  if (new URL(c.req.raw.url).pathname.startsWith("/hooks/")) return next();
+  if (c.req.path.startsWith("/hooks/")) return next();
   if (!c.user) return c.json({ error: "forbidden" }, 403);
   return next();
 });

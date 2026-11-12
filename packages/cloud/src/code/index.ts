@@ -6,6 +6,7 @@ export type {
   CodeDatabaseStatement,
   CodeDatabaseValue,
   CodeError,
+  CodeErrorCode,
   CodeHandle,
   CodeHttp,
   CodeHttpResult,
@@ -16,6 +17,7 @@ export type {
   CodeScheduleHandler,
   CodeSecret,
   CodeUser,
+  KnownCodeErrorCode,
 } from "./authoring-types";
 export { requireCodeCapabilityDeclared } from "./capability-set";
 export type { CodeCheckHost } from "./checker";
@@ -38,6 +40,7 @@ export {
 } from "./checker-contract";
 export { CODE_DATABASE_LIMITS, CODE_DATABASE_MESSAGES, type CodeDatabaseRequest, CodeDatabaseRequestSchema } from "./database-contract";
 export * from "./event-tools";
+export { CODE_FILE_LIMITS } from "./file-generation-contract";
 export { type CodeAiToolBinding, CodeAiToolBindingSchema, CodeFileRefSchema } from "./file-ref";
 export { generateCodeSdk } from "./generator";
 export {

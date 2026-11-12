@@ -7,8 +7,8 @@ Four Core operations bring AI into Code. Discover their generated handles with
 | --- | --- | --- | --- |
 | Summary, draft text, extracted fields | `core.ai.generate` | Query, AI | all Code |
 | Category, yes/no or score with probabilities | `core.ai.decide` | Query, AI | all Code |
-| Append a finished text to the owner's Gustav chat | `core.ai.chat.deliver` | Action, not AI | personal Code |
-| Start a Gustav turn that uses tools | `core.ai.chat.run`, then `core.ai.chat.run.read` | Action, AI | personal Code |
+| Append a finished text to the owner's Gustav chat | `core.ai.chat(chatId).deliver` | Action, not AI | personal Code |
+| Start a Gustav turn that uses tools | `core.ai.chat(chatId).run`, then `core.ai.chat(chatId).run.read` | Action, AI | personal Code |
 
 Without Action tools, AI calls change no domain records. Saving, tagging or
 drafting requires an Action with its own access check. Model output can be wrong: validate it and choose
@@ -27,6 +27,17 @@ thresholds for the cost of a mistake.
   `code_ai_budget_reserved`, `code_ai_daily_budget_limit`,
   `code_ai_owner_daily_budget_limit`. A rerun does not reset the daily budget.
 - Mail catch-up refuses versions that use AI.
+
+`decide` accepts `input` as an alias for `state` (`state` wins when both
+are supplied), and `type: "boolean"` as an alias for `"noul"`. Boolean answers
+retain `type: "noul"`, `value` and `probability`, with `confidence` as an equal
+alias for `probability`. Calls using the new aliases infer each answer's type.
+Existing spellings and result types remain valid. For precise types with an old
+`state`/`noul` request, import `Core_Ai_DecideInput`, declare it with
+`satisfies Core_Ai_DecideInput`, then use `core.ai.decide<typeof request>(request)`.
+Ordinary `generate` calls retain their JSON result type and narrowing checks.
+Opt into precise output with `core.ai.generate<typeof request>(request)`;
+text then returns a string, and a literal JSON schema determines its fields.
 
 ## Generate text
 
@@ -77,13 +88,16 @@ the effect. Check whether a step is already done before generating it. Text outp
 A JSON output schema is a strict object with 1–40 scalar or bounded list
 properties, `required` and
 `additionalProperties: false`. Strings may have `maxLength`, `enum` or
-`format: "date-time"`. The result type is not narrowed at compile time;
-check each field before use. Lists require `maxItems`; items are scalars or
+`format: "date-time"`. For precise output, import `Core_Ai_GenerateInput`,
+declare the request with `satisfies Core_Ai_GenerateInput`, and call
+`core.ai.generate<typeof request>(request)`. Keep required names as a literal
+tuple, for example `required: ["item", "quantity"] as ["item", "quantity"]`.
+A broadly typed `required` list keeps fields optional. Validate business constraints before use. Lists require `maxItems`; items are scalars or
 strict objects of scalar fields. Nested lists are not supported.
 
 <!-- check: resource mail.mailbox -->
 ```ts
-import { app, core, mail, spaces } from "@sdk";
+import { app, core, mail, spaces, type Core_Ai_GenerateInput } from "@sdk";
 
 // Fictional Space; its manager shares it with this mailbox's service account (Edit).
 const orders = spaces.space("Spc001");
@@ -94,7 +108,7 @@ app.on("mail.message.received", async event => {
     ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (!/order/i.test(message.subject) || !message.text) return;
-  const { data: result } = await core.ai.generate({
+  const request = {
     task: "mail.order",
     prompt: "Extract the ordered item and quantity. Use an empty item when the message orders nothing.",
     input: { subject: message.subject, body: message.text },
@@ -103,11 +117,12 @@ app.on("mail.message.received", async event => {
       schema: {
         type: "object",
         properties: { item: { type: "string", maxLength: 100 }, quantity: { type: "integer" } },
-        required: ["item", "quantity"],
+        required: ["item", "quantity"] as ["item", "quantity"],
         additionalProperties: false,
       },
     },
-  });
+  } satisfies Core_Ai_GenerateInput;
+  const { data: result } = await core.ai.generate<typeof request>(request);
   const output = result.output;
   if (typeof output !== "object" || output === null) return;
   const item = "item" in output && typeof output.item === "string" ? output.item.trim() : "";
@@ -133,20 +148,20 @@ import { app, core, mail } from "@sdk";
 async function needsUrgentSupport(subject: string, text: string) {
   const { data: result } = await core.ai.decide({
     task: "mail.triage",
-    state: { subject, text },
+    input: { subject, text },
     questions: {
       category: {
         type: "choice",
         instructions: "What kind of message is this?",
         criteria: { support: "Help with an existing order", sales: "New orders and offers", spam: "Unsolicited or deceptive messages" },
       },
-      urgent: { type: "noul", instructions: "Does this message need attention today within its category?" },
+      urgent: { type: "boolean", instructions: "Does this message need attention today within its category?" },
     },
   });
   const category = result.answers.category;
   if (category?.type !== "choice" || category.choice !== "support" || category.confidence < 0.9) return false;
   const urgent = result.answers.urgent;
-  return urgent?.type === "noul" && urgent.probability >= 0.9;
+  return urgent.confidence >= 0.9;
 }
 
 app.on("mail.message.received", async event => {
