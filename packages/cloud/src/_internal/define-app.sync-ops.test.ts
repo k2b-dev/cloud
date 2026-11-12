@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import type { User } from "../contracts/shared";
-import { stubConnections } from "../runtime/connections.test-fixture";
+import { stubAppIdentity, stubConnections } from "../runtime/connections.test-fixture";
 import { auth } from "../server/middleware/auth";
 import * as invocationActor from "../services/identity/invocation-actor";
 import { syncInvocationOperation } from "../services/identity/invocation-operations";
@@ -67,6 +67,7 @@ test("internal Sync operations require a bound invocation and current admin auth
   let activeClaims = claims;
   let resourceReads = 0;
   let currentUser = user;
+  const identityStub = stubAppIdentity();
   const secretStub = stubConnections({ appSecret: { current: "widget-context-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
@@ -163,6 +164,7 @@ test("internal Sync operations require a bound invocation and current admin auth
     processSync.unbindProcessSync();
     clearProcessApplicationId();
     secretStub.mockRestore();
+    identityStub.mockRestore();
     for (const [index, signal] of signals.entries()) {
       for (const listener of process.listeners(signal)) {
         if (!previousListeners[index]!.has(listener)) process.removeListener(signal, listener);

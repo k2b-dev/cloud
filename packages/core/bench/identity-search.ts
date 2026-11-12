@@ -143,7 +143,7 @@ const jwks = Bun.serve({
     return Response.json(new URL(request.url).pathname.includes("session") ? sessionKeys : invocationKeys);
   },
 });
-process.env.CLOUD_IDENTITY_JWKS_ORIGIN = jwks.url.origin;
+process.env.CLOUD_CORE_INTERNAL_ORIGIN = jwks.url.origin;
 const localProvider = configuration.topology === "shared" ? createProviderFixture(false) : undefined;
 const providerServer = localProvider ? Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: localProvider.fetch }) : undefined;
 let providerOrigin = providerServer?.url.origin;

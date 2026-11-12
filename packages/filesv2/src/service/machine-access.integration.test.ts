@@ -41,8 +41,7 @@ suite("Files machine storage through actual API tokens", () => {
   let oauthPrivateKey: CryptoKey;
   let oauthPublicKey: Awaited<ReturnType<typeof exportJWK>>;
   const oauthKid = "d2b94f53-f6d2-4b4f-9e90-e5bbd0f3ce10";
-  const originalIdentityOrigin = process.env.CLOUD_IDENTITY_JWKS_ORIGIN;
-  const originalJwksOrigin = process.env.CLOUD_OAUTH_JWKS_ORIGIN;
+  const originalIdentityOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
   const prefix = `machine-access-${Bun.randomUUIDv7()}`;
   const call = () => testCall(admin);
   const callerNetworks = new Set<string>();
@@ -192,14 +191,13 @@ suite("Files machine storage through actual API tokens", () => {
       hostname: "127.0.0.1",
       port: 0,
       fetch: (req) =>
-        new URL(req.url).pathname.startsWith("/.well-known/")
+        new URL(req.url).pathname.startsWith("/.well-known/") || new URL(req.url).pathname === "/api/_internal/identity/v1/oauth/jwks"
           ? Response.json({ keys: [{ ...oauthPublicKey, kid: oauthKid, alg: "RS256", use: "sig" }] })
           : new Response(
               `<wopi-discovery><net-zone name="external-http"><app name="writer"><action ext="odt" name="edit" urlsrc="https://office.example.test/browser/editor?"/><action ext="odt" name="view" urlsrc="https://office.example.test/browser/editor?"/></app></net-zone></wopi-discovery>`,
             ),
     });
-    process.env.CLOUD_OAUTH_JWKS_ORIGIN = office.url.origin;
-    process.env.CLOUD_IDENTITY_JWKS_ORIGIN = office.url.origin;
+    process.env.CLOUD_CORE_INTERNAL_ORIGIN = office.url.origin;
     await service.saveConfiguration(call(), {
       url: gateway.url,
       token: gateway.token,
@@ -237,10 +235,8 @@ suite("Files machine storage through actual API tokens", () => {
       for (const key of rateKeys)
         if (typeof key === "string" && [...callerNetworks].some((network) => key.includes(`:${network}:`))) await redis.del(key);
     setSystemTime();
-    if (originalJwksOrigin === undefined) delete process.env.CLOUD_OAUTH_JWKS_ORIGIN;
-    else process.env.CLOUD_OAUTH_JWKS_ORIGIN = originalJwksOrigin;
-    if (originalIdentityOrigin === undefined) delete process.env.CLOUD_IDENTITY_JWKS_ORIGIN;
-    else process.env.CLOUD_IDENTITY_JWKS_ORIGIN = originalIdentityOrigin;
+    if (originalIdentityOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+    else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalIdentityOrigin;
     office?.stop(true);
     await gateway?.stop();
     await runtime?.stop();

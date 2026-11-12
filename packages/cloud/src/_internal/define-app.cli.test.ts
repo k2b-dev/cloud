@@ -3,7 +3,7 @@ import type { Sync } from "@k2b/sync";
 import type { AppRegistryEntry } from "../contracts/registry";
 import * as appEventDelivery from "../events/app-event-delivery";
 import * as live from "../events/live";
-import { stubConnections } from "../runtime/connections.test-fixture";
+import { stubAppIdentity, stubConnections } from "../runtime/connections.test-fixture";
 import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
@@ -15,6 +15,7 @@ import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
 
 test.each(["core", "inventory"])("%s enforces the cookie boundary and serves declared CLI modules behind authentication", async (appId) => {
+  const identityStub = stubAppIdentity();
   const secretStub = stubConnections({ appSecret: { current: "cli-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
@@ -116,6 +117,7 @@ test.each(["core", "inventory"])("%s enforces the cookie boundary and serves dec
     clearProcessApplicationId();
     for (const spy of spies.toReversed()) spy.mockRestore();
     secretStub.mockRestore();
+    identityStub.mockRestore();
   }
 });
 

@@ -20,16 +20,10 @@ test("permits observed reads, writers, tests, and exact instance-authority consu
     checkSource("packages/cloud/src/_internal/define-app.ts", 'import { appRegistry, capabilityRegistry } from "./registry";'),
   ).toEqual([]);
   expect(
-    checkSource(
-      "packages/cloud/src/services/identity/workload-runtime.ts",
-      'import { appInstanceRegistry } from "../../_internal/registry";',
-    ),
+    checkSource("packages/cloud/src/services/app-migration.ts", 'import { appInstanceRegistry } from "../_internal/registry";'),
   ).toEqual([]);
   expect(
-    checkSource(
-      "packages/cloud/src/services/identity/workload-runtime.ts",
-      'import { capabilityRegistry } from "../../_internal/registry";',
-    ),
+    checkSource("packages/cloud/src/services/app-migration.ts", 'import { capabilityRegistry } from "../_internal/registry";'),
   ).toHaveLength(1);
   expect(checkSource("packages/cloud/src/request.test.ts", 'import { appRegistry } from "./registry";')).toEqual([]);
 });

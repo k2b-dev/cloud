@@ -116,7 +116,6 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/admin/announcements", auth.requireRole("admin", ssr.access), ...announcementsAdminPage)
     .get("/admin/apps", auth.requireRole("admin", ssr.access), ...appsAccessPage)
     // App credentials now live with each app under Keys › Tokens for host operation; the old address says so.
-    .get("/admin/app-credentials", auth.requireRole("admin", ssr.access), (c) => c.redirect("/admin/apps?moved=credentials", 302))
     .get("/admin/outgoing-mail", auth.requireRole("admin", ssr.access), ...outgoingMailPage)
     .get("/admin/storage", auth.requireRole("admin", ssr.access), ...storageAdminPage)
     .get("/admin/base", auth.requireRole("admin", ssr.access), ...generalPage)

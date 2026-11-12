@@ -38,6 +38,9 @@ export const authenticateSignedAppRequest = async (
     return reject(429, "RATE_LIMITED", "App request admission limit reached");
   };
   try {
+    const header = c.req.header("Authorization") ?? "";
+    if (!header.startsWith("Bearer ")) return reject(401, "invalid_proof", "A valid app proof is required");
+    inspectAppProof(header.slice(7));
     let peer = "unknown";
     try {
       peer = getConnInfo(c).remote.address ?? peer;
@@ -46,9 +49,6 @@ export const authenticateSignedAppRequest = async (
     }
     const ingress = await (dependencies.ingress ?? ((id) => admission("ingress", id)))(clientIpBucket(peer));
     if (ingress.limited) return limited(ingress);
-    const header = c.req.header("Authorization") ?? "";
-    if (!header.startsWith("Bearer ")) return reject(401, "invalid_proof", "A valid app proof is required");
-    inspectAppProof(header.slice(7));
     const tooLarge = () => reject(413, "body_too_large", "App request exceeds the byte limit");
     if (Number(c.req.header("Content-Length")) > CAPABILITY_MAX_REQUEST_BYTES) {
       void c.req.raw.body?.cancel().catch(() => undefined);

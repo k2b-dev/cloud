@@ -311,34 +311,24 @@ accepts work; reuse the request ID after an uncertain response. Inspect the
 returned run with `sync schedules runs get <app> <scheduler> <schedule> <run-id>`;
 `--timeout-ms` permits a bounded wait, and `completed: false` means pending.
 
-## App credentials
+## App identity
 
-Use the generic workload administration commands for any owning app:
+Use `cld admin apps keys create <app> --out-dir ./secrets` to enroll an identity,
+`keys list <app>` to inspect it and `keys revoke <app> <key-id> --yes` to revoke
+an exact key. OAuth issuers need `--grant oauth:issue` on every new key. Mount
+`<app>.key` as `CLOUD_APP_KEY_FILE` and configure the direct
+`CLOUD_CORE_INTERNAL_ORIGIN`. All serving apps except Core and Gateway require
+a key. There are no workload-token commands.
 
-```bash
-cld admin app-credentials apps
-cld admin app-credentials list mail --json
-(umask 077; cld admin app-credentials create mail --name production --yes > mail-credential.txt)
-cld admin app-credentials revoke mail <credential-id> --yes
-cld admin app-credentials enable mail --yes
-cld admin app-credentials disable mail --yes
-```
+`cld admin apps migration status --strict --expect app1,app2 --json` checks
+all live replicas, key IDs, per-value sources, fresh signed broker/OAuth probes
+and `lastRejectedStart`. `--allow-env app1` permits explicit connection values
+for that app; it never permits keyless serving. There is no observation window.
 
-Creation prints the token once; structured output includes token and metadata.
-Transfer the token to the deployment secret store, then remove the temporary
-file. An optional `--expires-at` takes a future ISO 8601 timestamp. Lists show
-metadata only. Core issues and rotates `Runtime <instance>` credentials automatically.
-Revoking an automatic runtime credential disables the app's workload account
-across all instances and restarts. `enable <app> --yes` allows issuance again;
-`disable <app> --yes` blocks workload access explicitly. The equivalent API is
-`PATCH /api/admin/identity/workloads/<app>` with `{"status":"active"}` or
-`{"status":"disabled"}`. Revoked tokens stay revoked after re-enabling. For an explicit
-host-run override, configure `CLOUD_APP_CREDENTIAL` only in its owning app and
-`CLOUD_CORE_INTERNAL_ORIGIN` with Core's private origin. Mandates still control
-the allowed background actions. For rotation, create and deploy a replacement,
-verify its calls, then revoke the old credential. The equivalent UI is
-**Administration → Apps**, then the app and **Keys → Tokens for host operation**.
-
+An administrator can disable or restore the app's account with
+`PATCH /api/admin/identity/apps/<app>` and `{"status":"disabled"}` or
+`{"status":"active"}`. Restoring the account does not restore revoked keys.
+The Apps page offers **Turn on again** for a disabled account.
 
 ## Agents
 

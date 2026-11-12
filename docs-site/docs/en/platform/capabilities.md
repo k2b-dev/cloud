@@ -524,7 +524,7 @@ Cloud generates app-only reader checks from `access.readable`. Their Query
 entries carry `appOnly: true`; older readers omit them, and person catalogs
 hide them. New Type facts live in top-level `resourceTypes` metadata so older
 readers keep the Type and ordinary reader. Calling applications declare
-`platformPermissions: ["resources:readers"]`; admission, workload credentials,
+`platformPermissions: ["resources:readers"]`; admission, app-key proofs,
 and limits are described in
 [App-to-app reader checks](/en/docs/platform/app-to-app-queries).
 
@@ -2044,7 +2044,7 @@ For public forms, apply `rateLimit({ keyBy: "ip" })` and app-owned controls
 using `clientIp(c)` before calling Core; see
 [Public site](/en/docs/build/public-surface#call-platform-capabilities-without-a-person).
 
-A durable worker uses the same server helper with an app workload credential
+A durable worker uses the same server helper with an app key
 and its persisted mandate ID/revision. The helper sends both only to Core;
 Core validates the current mandate, signs and dispatches the exact capability,
 and returns the bounded result. It never returns the invocation JWT to the

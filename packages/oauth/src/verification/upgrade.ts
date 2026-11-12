@@ -27,9 +27,6 @@ const start = async (role: "core" | "oauth", version: "baseline" | "current") =>
       OAUTH_VERIFY_VERSION: version,
       CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: role === "core" && version === "current" ? "43".repeat(32) : "",
       CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:4301",
-      CLOUD_IDENTITY_JWKS_ORIGIN: "http://127.0.0.1:4301",
-      CLOUD_OAUTH_JWKS_ORIGIN: client.issuer,
-      CLOUD_OAUTH_BROKER_SECRET: "ab".repeat(32),
     },
     ipc(message) {
       if (message === "ready") ready.resolve();
@@ -336,7 +333,7 @@ try {
           ...process.env,
           APP_ID: "core",
           CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: "43".repeat(32),
-          CLOUD_IDENTITY_JWKS_ORIGIN: "http://127.0.0.1:4301",
+          CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:4301",
         },
         stdout: "pipe",
         stderr: "pipe",
