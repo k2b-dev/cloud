@@ -64,7 +64,6 @@ export function createMailboxSearch(props: {
   const [opened, setOpened] = createSignal(Boolean(props.query.trim()));
   let manualMode = false;
   let input: HTMLInputElement | undefined;
-  let trigger: HTMLButtonElement | undefined;
   let head: HTMLElement | null = null;
   let previousMinHeight = "";
   const releaseHeight = () => {
@@ -85,7 +84,7 @@ export function createMailboxSearch(props: {
       if (opened() && input?.isConnected) input.focus({ preventScroll: true });
     });
   const open = (element?: HTMLElement) => {
-    lockHeight(element ?? trigger);
+    lockHeight(element);
     manualMode = true;
     setOpened(true);
     props.onUse?.();
@@ -118,9 +117,6 @@ export function createMailboxSearch(props: {
     manualMode = false;
     setOpened(false);
     releaseHeight();
-    queueMicrotask(() => {
-      if (!opened() && trigger?.isConnected) trigger.focus({ preventScroll: true });
-    });
   };
   onMount(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -135,8 +131,8 @@ export function createMailboxSearch(props: {
         !event.shiftKey &&
         !target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')
       ) {
-        const focusTarget = opened() ? input : trigger;
-        if (!focusTarget?.isConnected || focusTarget.getClientRects().length === 0) return;
+        // The search field always stands in the head; on a phone reading a conversation it is hidden.
+        if (!input?.isConnected || input.getClientRects().length === 0) return;
         event.preventDefault();
         open();
       } else if (
@@ -325,9 +321,6 @@ export function createMailboxSearch(props: {
     releaseHeight,
     inputRef: (element: HTMLInputElement) => {
       input = element;
-    },
-    triggerRef: (element: HTMLButtonElement) => {
-      trigger = element;
     },
     originFolder,
     scopeFolder: () => props.folders.find((folder) => folder.id === scopeFolderId()) ?? null,

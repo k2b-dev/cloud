@@ -2,10 +2,6 @@ import type { MailListMode } from "../../service/workspace";
 import { type MailConversationToolbarActionId, normalizeMailConversationToolbarActions } from "./mail-conversation-toolbar";
 
 export type MailWorkspacePreferences = {
-  listCollapsed: boolean;
-  /** Browser-level discovery of the mailbox head search, read on the server too. */
-  searchDiscovered?: boolean;
-  searchHintDismissed?: boolean;
   /** The person opened the mailbox's Events tab once; until then it is marked new. */
   eventsDiscovered?: boolean;
   detailsOpen: boolean;
@@ -30,12 +26,7 @@ const normalizeMailboxIds = (value: unknown): string[] =>
   Array.isArray(value) ? [...new Set(value.filter(isMailResourceId))].slice(0, MAX_MAILBOX_IDS) : [];
 
 const normalizeMailWorkspacePreferences = (value: unknown): MailWorkspacePreferences => ({
-  searchDiscovered: Boolean(value && typeof value === "object" && (value as { searchDiscovered?: unknown }).searchDiscovered === true),
-  searchHintDismissed: Boolean(
-    value && typeof value === "object" && (value as { searchHintDismissed?: unknown }).searchHintDismissed === true,
-  ),
   eventsDiscovered: Boolean(value && typeof value === "object" && (value as { eventsDiscovered?: unknown }).eventsDiscovered === true),
-  listCollapsed: Boolean(value && typeof value === "object" && (value as { listCollapsed?: unknown }).listCollapsed === true),
   detailsOpen: Boolean(value && typeof value === "object" && (value as { detailsOpen?: unknown }).detailsOpen === true),
   draftFullscreen: Boolean(value && typeof value === "object" && (value as { draftFullscreen?: unknown }).draftFullscreen === true),
   toolbarActions: normalizeMailConversationToolbarActions(

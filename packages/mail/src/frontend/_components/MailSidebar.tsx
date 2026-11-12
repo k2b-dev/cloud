@@ -438,29 +438,34 @@ export default function MailSidebar(
       </Show>
       {primaryFolderItems("inbox")}
       {primaryFolderItems("drafts")}
-      <AppWorkspace.SidebarItem
-        href={`/app/mail/${open().mailboxId}?scheduled=1`}
-        icon="ti ti-calendar-time"
-        active={open().scheduledMode}
-        meta={<span class="tabular-nums">{open().scheduledCount || ""}</span>}
-        navigation="enhanced"
-        onNavigate={open().onNavigate}
-        scroll="preserve"
-      >
-        {messages().scheduled}
-      </AppWorkspace.SidebarItem>
-      <AppWorkspace.SidebarItem
-        href={`/app/mail/${open().mailboxId}?view=send_problems`}
-        icon="ti ti-alert-circle"
-        active={sendProblemsActive()}
-        meta={<span class="tabular-nums">{open().viewCounts.send_problems || ""}</span>}
-        title={messages().sendProblemsDescription}
-        navigation="enhanced"
-        onNavigate={open().onNavigate}
-        scroll="preserve"
-      >
-        {messages().sendProblems}
-      </AppWorkspace.SidebarItem>
+      {/* The outbox and send problems show only when they hold something, or while one of them is open. */}
+      <Show when={open().scheduledCount > 0 || open().scheduledMode}>
+        <AppWorkspace.SidebarItem
+          href={`/app/mail/${open().mailboxId}?scheduled=1`}
+          icon="ti ti-calendar-time"
+          active={open().scheduledMode}
+          meta={<span class="tabular-nums">{open().scheduledCount || ""}</span>}
+          navigation="enhanced"
+          onNavigate={open().onNavigate}
+          scroll="preserve"
+        >
+          {messages().scheduled}
+        </AppWorkspace.SidebarItem>
+      </Show>
+      <Show when={open().viewCounts.send_problems > 0 || sendProblemsActive()}>
+        <AppWorkspace.SidebarItem
+          href={`/app/mail/${open().mailboxId}?view=send_problems`}
+          icon="ti ti-alert-circle"
+          active={sendProblemsActive()}
+          meta={<span class="tabular-nums">{open().viewCounts.send_problems || ""}</span>}
+          title={messages().sendProblemsDescription}
+          navigation="enhanced"
+          onNavigate={open().onNavigate}
+          scroll="preserve"
+        >
+          {messages().sendProblems}
+        </AppWorkspace.SidebarItem>
+      </Show>
       {primaryFolderItems("sent")}
       <Show when={secondaryFolders().length > 0}>
         <AppWorkspace.SidebarItem
@@ -659,26 +664,34 @@ export default function MailSidebar(
     const primary = (role: string) => primaryFolders().filter((folder) => folder.role === role);
     return [
       ...[...primary("inbox"), ...primary("drafts")].map((folder) => folderEntry(open, { folder, children: [] })),
-      {
-        id: "scheduled",
-        label: messages().scheduled,
-        href: `/app/mail/${open.mailboxId}?scheduled=1`,
-        icon: "ti ti-calendar-time",
-        active: open.scheduledMode,
-        badge: open.scheduledCount || undefined,
-        navigation: "enhanced",
-        scroll: "preserve",
-      },
-      {
-        id: "view:send_problems",
-        label: messages().sendProblems,
-        href: `/app/mail/${open.mailboxId}?view=send_problems`,
-        icon: "ti ti-alert-circle",
-        active: sendProblemsActive(),
-        badge: open.viewCounts.send_problems || undefined,
-        navigation: "enhanced",
-        scroll: "preserve",
-      },
+      ...(open.scheduledCount > 0 || open.scheduledMode
+        ? [
+            {
+              id: "scheduled",
+              label: messages().scheduled,
+              href: `/app/mail/${open.mailboxId}?scheduled=1`,
+              icon: "ti ti-calendar-time",
+              active: open.scheduledMode,
+              badge: open.scheduledCount || undefined,
+              navigation: "enhanced",
+              scroll: "preserve",
+            } satisfies NavigationItem,
+          ]
+        : []),
+      ...(open.viewCounts.send_problems > 0 || sendProblemsActive()
+        ? [
+            {
+              id: "view:send_problems",
+              label: messages().sendProblems,
+              href: `/app/mail/${open.mailboxId}?view=send_problems`,
+              icon: "ti ti-alert-circle",
+              active: sendProblemsActive(),
+              badge: open.viewCounts.send_problems || undefined,
+              navigation: "enhanced",
+              scroll: "preserve",
+            } satisfies NavigationItem,
+          ]
+        : []),
       ...primary("sent").map((folder) => folderEntry(open, { folder, children: [] })),
       ...(secondaryFolders().length > 0
         ? [

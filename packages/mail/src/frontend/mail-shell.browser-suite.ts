@@ -8,7 +8,7 @@ import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, pageErrors as collectPageErrors, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
-import type { MailSearchExpression } from "../contracts";
+import type { MailSearchExpression, MailWorkspacePreference } from "../contracts";
 import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
 import { mailTagSearch } from "../search-url";
 import { readMailHeadFilters } from "./_components/mail-head-filters";
@@ -52,6 +52,16 @@ const { chooseLandingMailbox, readMailLandingLink } = await import("./mail-landi
 const { readMailWorkspacePreferences } = await import("./_components/mail-workspace-preferences");
 /** The fixture server keeps the person's click on "Got it" in this cookie, as Mail keeps it for the person. */
 const NOTICE_COOKIE = "mail_fixture_focus_notice";
+/** The list share and seen hints the fixture server stored for this browser, as Mail stores them for the person. */
+const WORKSPACE_COOKIE = "mail_fixture_workspace";
+const storedWorkspace = (cookieHeader: string | null): Partial<MailWorkspacePreference> | undefined => {
+  const value = cookieHeader
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${WORKSPACE_COOKIE}=`))
+    ?.slice(WORKSPACE_COOKIE.length + 1);
+  return value ? JSON.parse(decodeURIComponent(value)) : undefined;
+};
 const ui = resolve(import.meta.dir, "../../../ui/dist");
 // Like Cloud's page head (`FONT_PRELOAD_LINKS`): the Latin Plex faces of the first frame load next to the stylesheets,
 // so the server frame shows Plex, not the fallback font. WebKit keeps text in `content-visibility: auto` rows, such as
@@ -67,7 +77,7 @@ const fontPreloads = ["400", "500", "600"]
   .join("");
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
 const boxPath = "/app/mail/Box001";
-const tabsSelector = ".k2b-app-workspace__head-views";
+const tabsSelector = ".mail-list-bar";
 const sidebarSelector = ".mail-sidebar .k2b-app-workspace__sidebar-desktop";
 const measurements = [
   ".mail-sidebar",
@@ -84,8 +94,10 @@ const measurements = [
   ".mail-list-entry",
   ".mail-row-draft-tag",
   "[data-mail-queue-count]",
-  ".k2b-app-workspace__main-pane",
-  ".k2b-app-workspace__main-primary",
+  ".mail-list-bar",
+  ".mail-split-list",
+  ".mail-split-reader",
+  ".mail-list-handle",
   ".mail-reader-toolbar",
   "[data-mail-details-trigger]",
   "[data-app-workspace-detail-toggle]",
@@ -141,6 +153,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
       // This opt-in exercises the same request-cookie reader as Mail's SSR page
       // without putting an artificial preference into its navigation URL.
       workspaceCookieHeader: url.searchParams.has("persist-details") ? cookieHeader : undefined,
+      storedWorkspace: storedWorkspace(cookieHeader),
       focusNoticeOpen: url.searchParams.get("notice") === "1" && !cookieHeader?.includes(`${NOTICE_COOKIE}=closed`),
     }),
   );
@@ -242,7 +255,20 @@ beforeAll(async () => {
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))), { headers: cached });
       if (url.pathname.endsWith("/workspace-route") || url.pathname.endsWith("/workspace-list")) {
         const target = new URL(url.searchParams.get("href") ?? boxPath, server.url);
-        return Response.json(url.pathname.endsWith("/workspace-list") ? mailboxList(target) : mailboxData(target));
+        const stored = storedWorkspace(request.headers.get("cookie"));
+        return Response.json(url.pathname.endsWith("/workspace-list") ? mailboxList(target) : mailboxData(target, stored));
+      }
+      // The person's list share and seen hints, kept per browser like Mail keeps them per person and mailbox.
+      if (url.pathname.endsWith("/workspace-preference") || url.pathname.endsWith("/workspace-preference/seen-hints")) {
+        const target = new URL(request.headers.get("referer") ?? boxPath, server.url);
+        const current = mailboxData(target, storedWorkspace(request.headers.get("cookie"))).workspacePreference;
+        const body: { listShare?: number | null; hintId?: MailWorkspacePreference["seenHints"][number] } = await request.json();
+        const next = url.pathname.endsWith("/seen-hints")
+          ? { ...current, seenHints: [...new Set([...current.seenHints, body.hintId!])] }
+          : { ...current, listShare: body.listShare ?? null };
+        return Response.json(next, {
+          headers: { "set-cookie": `${WORKSPACE_COOKIE}=${encodeURIComponent(JSON.stringify(next))}; Path=/` },
+        });
       }
       // Mail's landing as its page decides it: an old Focus link first, then the mailbox to open.
       if (url.pathname === "/app/mail") {
@@ -389,7 +415,6 @@ const open = async (
 const close = async (page: Page) => {
   try {
     expect(pageErrors.get(page), "No page errors, including live connections").toEqual([]);
-    expect(await page.locator(".k2b-moved-hint").count(), "Mail never renders a MovedHint").toBe(0);
   } finally {
     await page.context().close();
   }
@@ -1786,205 +1811,254 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     });
 
     section("layout", () => {
-      // #2507: on a phone the list always has its head, in every layout; the reader hides it and Back brings it back.
-      for (const layout of ["auto", "columns", "split"] as const)
-        for (const selected of [false, true])
-          test(`390 ${layout}${selected ? " with a conversation" : ""}: the list shows its head with tabs and Compose`, async () => {
-            const page = await open(`${boxPath}?layout=${layout}${selected ? "&conversation=Conv01" : ""}`, 390, 844);
-            try {
-              const head = page.locator(".mail-workspace > .k2b-app-workspace__head");
-              const headShown = async () => {
-                expect(await head.isVisible()).toBe(true);
-                expect(await tabs(page).getByRole("link", { name: /^All/ }).isVisible()).toBe(true);
-                expect(await page.locator("[data-workspace-primary]").isVisible()).toBe(true);
-              };
-              const recordedHead = async (name: "server" | "hydrated") =>
-                (JSON.parse((await page.locator("html").getAttribute(`data-${name}-geometry`))!) as Frame).find(
-                  (part) => part.part === "k2b-app-workspace__head",
-                );
-              const serverHead = await recordedHead("server");
-              if (!selected) {
-                // The server's first frame and the first hydrated one already have the head, so it never appears late.
-                expect(serverHead?.height).toBeGreaterThan(0);
-                expect((await recordedHead("hydrated"))?.height).toBe(serverHead?.height);
-                await headShown();
-                return;
-              }
-              expect(serverHead?.height).toBe(0);
-              expect(await head.isVisible()).toBe(false);
-              await page.locator(".mail-reader-back").click();
-              await page.waitForFunction(() => !new URL(location.href).searchParams.has("conversation"));
-              await settled(page);
-              await headShown();
-            } finally {
-              await close(page);
-            }
-          });
-
-      // F2: "Automatisch" shows columns until a conversation opens; one case per page (#1966).
-      for (const width of [1440, 390])
-        test(`views: automatic shows columns without a selection at ${width}, from the server on`, async () => {
-          const page = await open(`${boxPath}?layout=auto`, width, width === 390 ? 844 : 900);
+      // #2507: on a phone the list always has its head; the reader hides it and Back brings it back.
+      for (const selected of [false, true])
+        test(`390${selected ? " with a conversation" : ""}: the list shows its head with tabs and Compose`, async () => {
+          const page = await open(`${boxPath}${selected ? "?conversation=Conv01" : ""}`, 390, 844);
           try {
-            const firstRow = page.locator('.mail-list-entry[data-lines="1"]').first();
-            await firstRow.waitFor({ state: "visible" });
-            // The server already drew the columns: the first row does not move once the page is interactive.
-            const before = (await firstRow.boundingBox())!;
-            await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-            expect((await firstRow.boundingBox())!.y).toBe(before.y);
-            expect(await page.locator(".mail-reader-title").count()).toBe(0);
-            expect(await page.locator("[data-mail-day-group]").count()).toBeGreaterThan(0);
-            if (width >= 768) {
-              await page.locator(".mail-columns-head").waitFor({ state: "visible" });
-              expect(before.height).toBeCloseTo(44, 0);
-              await page.locator("[data-mail-view-menu]").waitFor({ state: "visible" });
-            } else {
-              // Phones: compact two-line rows without the column header.
-              expect(await page.locator(".mail-columns-head").isVisible()).toBe(false);
-              expect(before.height).toBeCloseTo(65, 0);
+            const head = page.locator(".mail-workspace > .k2b-app-workspace__head");
+            const headShown = async () => {
+              expect(await head.isVisible()).toBe(true);
+              expect(await tabs(page).getByRole("link", { name: /^All/ }).isVisible()).toBe(true);
+              expect(await page.locator("[data-workspace-primary]").isVisible()).toBe(true);
+            };
+            const recordedHead = async (name: "server" | "hydrated") =>
+              (JSON.parse((await page.locator("html").getAttribute(`data-${name}-geometry`))!) as Frame).find(
+                (part) => part.part === "k2b-app-workspace__head",
+              );
+            const serverHead = await recordedHead("server");
+            if (!selected) {
+              // The server's first frame and the first hydrated one already have the head, so it never appears late.
+              expect(serverHead?.height).toBeGreaterThan(0);
+              expect((await recordedHead("hydrated"))?.height).toBe(serverHead?.height);
+              await headShown();
+              return;
             }
-            if (screenshots) await page.screenshot({ path: join(screenshots, `views-columns-light-${width}.png`) });
+            expect(serverHead?.height).toBe(0);
+            expect(await head.isVisible()).toBe(false);
+            await page.locator(".mail-reader-back").click();
+            await page.waitForFunction(() => !new URL(location.href).searchParams.has("conversation"));
+            await settled(page);
+            await headShown();
           } finally {
             await close(page);
           }
         });
-      // S2: hiding the list is a View menu switch with [; × and Escape lead back to the unchanged list.
-      test("views: the View menu hides the list beside the reader, and [ shows it again", async () => {
-        const page = await open(`${boxPath}?conversation=Conv02`, 1440, 900);
+
+      /** List, handle and reader boxes, and every list row's height, as the page shows them now. */
+      const split = (page: Page) =>
+        page.evaluate(() => {
+          const box = (selector: string) => {
+            const element = document.querySelector(selector);
+            if (!element || element.getClientRects().length === 0) return null;
+            const { x, y, width, height } = element.getBoundingClientRect();
+            return { x, y, width, height };
+          };
+          return {
+            panes: box(".mail-split-panes"),
+            list: box(".mail-split-list"),
+            handle: box(".mail-list-handle"),
+            reader: box(".mail-split-reader"),
+            column: box(".mail-reading-column"),
+            toolbar: box("[data-mail-reader-toolbar]"),
+            bar: box(".mail-list-bar"),
+            rows: Array.from(document.querySelectorAll<HTMLElement>(".mail-list-entry"))
+              .filter((row) => row.getClientRects().length > 0)
+              .slice(0, 6)
+              .map((row) => Math.round(row.getBoundingClientRect().height)),
+            open: box(".mail-list-entry-active"),
+          };
+        });
+      const oneLine = 44;
+      const threeLines = 78;
+
+      // F8: list 40 % at least 320 px, reader the rest at least 480 px, no centered column, the density follows.
+      for (const [width, height] of [
+        [1440, 900],
+        [1920, 1080],
+        [2560, 1300],
+      ] as const)
+        test(`F8 at ${width}: list and reader share the full width, the list's width picks its density, server = hydrated`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv02`, width, height);
+          try {
+            const shown = await split(page);
+            const panes = shown.panes!.width;
+            const expected = Math.min(Math.max(320, panes * 0.4), panes - 492);
+            expect(Math.abs(shown.list!.width - expected)).toBeLessThanOrEqual(1);
+            expect(shown.handle!.width).toBe(12);
+            expect(Math.abs(shown.reader!.x + shown.reader!.width - (shown.panes!.x + panes))).toBeLessThanOrEqual(1);
+            // The reader's head and text use its whole width: nothing narrower stands centered in it.
+            const text = await page.locator(".mail-reader-scroll").evaluate((element) => {
+              const style = getComputedStyle(element);
+              return element.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
+            });
+            expect(Math.abs(shown.column!.width - text)).toBeLessThanOrEqual(1);
+            expect(shown.toolbar!.width).toBeGreaterThanOrEqual(shown.reader!.width - shown.handle!.width - 1);
+            expect(new Set(shown.rows)).toEqual(new Set([shown.list!.width >= 640 ? oneLine : threeLines]));
+            // The server's first frame already had this split and these rows.
+            const recorded = (name: "server" | "hydrated") =>
+              page
+                .locator("html")
+                .getAttribute(`data-${name}-geometry`)
+                .then((value) =>
+                  (JSON.parse(value!) as Frame).filter((part) => /mail-split-list|mail-list-handle|mail-list-entry/.test(part.part)),
+                );
+            expect(await recorded("hydrated")).toEqual(await recorded("server"));
+            if (screenshots) await page.screenshot({ path: join(screenshots, `split-light-${width}.png`) });
+          } finally {
+            await close(page);
+          }
+        });
+
+      test("F8: without an open conversation the list takes the full width in one line per row, with no empty reader", async () => {
+        const page = await open(boxPath, 1440, 900);
         try {
-          const list = page.locator("[data-mail-conversation-list]");
-          const toolbar = page.locator("[data-mail-reader-toolbar]");
-          const toggle = page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ });
-          await list.waitFor({ state: "visible" });
-          await page.locator("[data-mail-view-menu]").click();
-          expect(await toggle.getAttribute("aria-checked")).toBe("false");
-          expect(await toggle.isDisabled()).toBe(false);
-          expect(await toggle.textContent()).toContain("The reader uses the full width.");
-          expect(await toggle.locator(".k2b-kbd").isVisible()).toBe(true);
-          await toggle.click();
-          await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
-          expect(await list.isVisible()).toBe(false);
-          // The menu shows the switch on, and [ brings the list back without closing the conversation.
-          await page.locator("[data-mail-view-menu]").click();
-          expect(await toggle.getAttribute("aria-checked")).toBe("true");
-          await page.keyboard.press("Escape");
-          await page.locator("[data-mail-reader-heading]").focus();
-          await page.keyboard.press("[");
-          await list.waitFor({ state: "visible" });
-          expect(await toolbar.locator("[data-mail-reader-close]").count()).toBe(0);
-          expect(new URL(page.url()).searchParams.get("conversation")).toBe("Conv02");
-          await page.keyboard.press("[");
-          await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
-          expect(await list.isVisible()).toBe(false);
+          const shown = await split(page);
+          expect(shown.reader).toBeNull();
+          expect(shown.handle).toBeNull();
+          expect(Math.abs(shown.list!.width - shown.panes!.width)).toBeLessThanOrEqual(1);
+          expect(new Set(shown.rows)).toEqual(new Set([oneLine]));
+          // Date in every row, no column heads, no day groups.
+          expect(await page.locator(".mail-list-entry .mail-row-time").count()).toBe(await page.locator(".mail-list-entry").count());
+          expect(await page.getByText(/^(Today|Yesterday|This week|Earlier)$/).count()).toBe(0);
+          if (screenshots) await page.screenshot({ path: join(screenshots, "list-full-light-1440.png") });
         } finally {
           await close(page);
         }
       });
 
-      test("views: without a reader beside the list, the switch is off and names the reason", async () => {
-        for (const path of [boxPath, `${boxPath}?layout=auto&list=hidden`, `${boxPath}?layout=columns&conversation=Conv02`]) {
-          const page = await open(path, 1440, 900);
-          try {
-            await page.locator("[data-mail-view-menu]").click();
-            const toggle = page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ });
-            await toggle.waitFor({ state: "visible" });
-            expect(await toggle.isDisabled(), path).toBe(true);
-            expect(await toggle.getAttribute("aria-checked"), path).toBe("false");
-            expect(await toggle.textContent()).toContain("Only while reading beside the list.");
-            await page.keyboard.press("Escape");
-            await page.keyboard.press("[");
-            await settled(page);
-            expect(await page.locator("[data-mail-reader-close]").isVisible()).toBe(path.includes("conversation="));
-          } finally {
-            await close(page);
-          }
+      test("F8: the handle moves by pointer and keys, saves the share once a move ends, resets to 40 %, and a reload keeps it", async () => {
+        const page = await open(`${boxPath}?conversation=Conv02`, 1440, 900);
+        try {
+          const handle = page.locator(".mail-list-handle");
+          let saves = 0;
+          page.on("request", (request) => {
+            if (request.method() === "PATCH" && request.url().endsWith("/workspace-preference")) saves++;
+          });
+          /** The saved share the page sends when a move ends or resets, the first one that `matches`. */
+          const nextSave = (matches: (share: number | null) => boolean = () => true) =>
+            page
+              .waitForResponse(
+                (response) =>
+                  response.request().method() === "PATCH" &&
+                  response.url().endsWith("/workspace-preference") &&
+                  matches((response.request().postDataJSON() as { listShare: number | null }).listShare),
+              )
+              .then((response) => (response.request().postDataJSON() as { listShare: number | null }).listShare);
+          const before = await split(page);
+          const box = (await handle.boundingBox())!;
+          await page.mouse.move(box.x + box.width / 2, box.y + 200);
+          await page.mouse.down();
+          await page.mouse.move(box.x + box.width / 2 + 120, box.y + 200, { steps: 6 });
+          expect(saves).toBe(0);
+          const dropped = nextSave();
+          await page.mouse.up();
+          const share = await dropped;
+          expect(saves).toBe(1);
+          const dragged = await split(page);
+          expect(Math.abs(dragged.list!.width - (before.list!.width + 120))).toBeLessThanOrEqual(2);
+          expect(share!).toBeCloseTo(dragged.list!.width / dragged.panes!.width, 2);
+          // Arrow keys, Shift for larger steps, End and Home keep list and reader at their minimums.
+          await handle.focus();
+          await page.keyboard.press("ArrowLeft");
+          expect((await split(page)).list!.width).toBeLessThan(dragged.list!.width);
+          await page.keyboard.press("End");
+          const widest = await split(page);
+          expect(Math.abs(widest.reader!.width - widest.handle!.width - 480)).toBeLessThanOrEqual(1);
+          await page.keyboard.press("Home");
+          expect(Math.abs((await split(page)).list!.width - 320)).toBeLessThanOrEqual(1);
+          const stepSaved = nextSave((share) => share !== null && share > 320 / dragged.panes!.width + 0.03);
+          await page.keyboard.press("Shift+ArrowRight");
+          await stepSaved;
+          const stepped = await split(page);
+          expect(stepped.list!.width - 320).toBeGreaterThan(stepped.panes!.width * 0.04);
+          // A reload renders the saved share in its first frame.
+          await page.reload();
+          await ready(page);
+          expect(Math.abs((await split(page)).list!.width - stepped.list!.width)).toBeLessThanOrEqual(1);
+          // A double click goes back to 40 % and clears the saved share.
+          const cleared = nextSave((share) => share === null);
+          await handle.dblclick();
+          expect(await cleared).toBeNull();
+          const reset = await split(page);
+          expect(Math.abs(reset.list!.width - before.list!.width)).toBeLessThanOrEqual(1);
+          await handle.focus();
+          await page.keyboard.press("ArrowRight");
+          const entered = nextSave((share) => share === null);
+          await page.keyboard.press("Enter");
+          expect(await entered).toBeNull();
+          expect(Math.abs((await split(page)).list!.width - before.list!.width)).toBeLessThanOrEqual(1);
+          expect(await handle.getAttribute("role")).toBe("separator");
+          expect(await handle.getAttribute("aria-label")).toBe("Resize conversation list");
+        } finally {
+          await close(page);
         }
       });
 
-      for (const [layout, leave, motion] of [
-        ["columns", "close", "reduce"],
-        ["columns", "Escape", "reduce"],
-        ["hidden", "close", "reduce"],
-        ["hidden", "Escape", "reduce"],
-        // With motion, a view transition must not commit the list's first position over the restored one.
-        ["hidden", "close", "no-preference"],
-        ["columns", "Escape", "no-preference"],
-      ] as const)
-        test(`views: ${leave === "close" ? "×" : "Escape"} returns from a reader without the list (${layout}, ${motion} motion) to the same list`, async () => {
-          const page = await open(
-            layout === "columns" ? `${boxPath}?layout=columns` : `${boxPath}?layout=auto&list=hidden`,
-            1440,
-            560,
-            motion,
-          );
+      for (const via of ["handle", "window"] as const)
+        test(`F2 by ${via}: the switch between three lines and one keeps the selection, the open row's place, and the reader`, async () => {
+          // A short window, so the list scrolls and can keep the open row in place.
+          const page = await open(`${boxPath}?conversation=Conv09`, 1440, 480);
           try {
+            const row = page.locator('[data-conversation-id="Conv02"] .mail-list-checkbox');
+            await row.check();
             const scroller = page.locator('[data-scroll-preserve="mail-list-Box001"]');
-            const row = page.locator('[data-conversation-id="Conv09"] .mail-list-row').first();
-            await row.waitFor({ state: "visible" });
             await scroller.evaluate((element) => {
-              element.scrollTop = 160;
+              element.scrollTop = 420;
             });
             await settled(page);
-            const scrolled = await scroller.evaluate((element) => element.scrollTop);
-            expect(scrolled).toBeGreaterThan(0);
-            await row.click();
-            await page.waitForURL(/conversation=Conv09/);
-            const toolbar = page.locator("[data-mail-reader-toolbar]");
-            await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
-            expect(await page.locator("[data-mail-conversation-list]").isVisible()).toBe(false);
-            if (leave === "close") await toolbar.locator("[data-mail-reader-close]").click();
-            else await pressEscapeForWorkspace(page);
-            await page.waitForURL((url) => !url.searchParams.has("conversation"));
-            await page.locator("[data-mail-conversation-list]").waitFor({ state: "visible" });
+            const before = await split(page);
+            expect(before.open!.y).toBeGreaterThan(before.list!.y);
+            expect(before.list!.width).toBeLessThan(640);
+            expect(new Set(before.rows)).toEqual(new Set([threeLines]));
+            const reader = before.reader!.x + before.reader!.width;
+            if (via === "handle") {
+              await page.locator(".mail-list-handle").focus();
+              for (let step = 0; step < 4; step++) await page.keyboard.press("Shift+ArrowRight");
+            } else await page.setViewportSize({ width: 2200, height: 480 });
             await settled(page);
-            // The same list, at the same place, with the row that was open in focus.
-            expect(Math.abs((await scroller.evaluate((element) => element.scrollTop)) - scrolled)).toBeLessThanOrEqual(1);
-            expect(
-              await page.evaluate(() => document.activeElement?.closest("[data-conversation-id]")?.getAttribute("data-conversation-id")),
-            ).toBe("Conv09");
-            // Escape in a list without a reader changes nothing.
-            await pressEscapeForWorkspace(page);
-            await settled(page);
-            expect(new URL(page.url()).searchParams.has("conversation")).toBe(false);
+            const after = await split(page);
+            expect(after.list!.width).toBeGreaterThanOrEqual(640);
+            expect(new Set(after.rows)).toEqual(new Set([oneLine]));
+            expect(await row.isChecked()).toBe(true);
+            expect(new URL(page.url()).searchParams.get("conversation")).toBe("Conv09");
+            // The open row keeps its place in the viewport; the reader's far edge does not move with the handle.
+            expect(Math.abs(after.open!.y - before.open!.y)).toBeLessThanOrEqual(1);
+            if (via === "handle") expect(Math.abs(after.reader!.x + after.reader!.width - reader)).toBeLessThanOrEqual(1);
+            expect(Math.abs(after.bar!.height - before.bar!.height)).toBeLessThanOrEqual(0.5);
           } finally {
             await close(page);
           }
         });
 
-      if (screenshots)
-        test("optional View menu review screenshots", async () => {
-          const directory = join(resolve(screenshots), "view-menu");
-          mkdirSync(directory, { recursive: true });
-          for (const [width, height] of [
-            [1440, 900],
-            [1024, 768],
-            [390, 844],
-          ] as const) {
-            const page = await open(`${boxPath}?layout=auto&conversation=Conv02&theme=light`, width, height);
-            try {
-              await settled(page);
-              await page.screenshot({ path: join(directory, `${width}-reader.png`) });
-              if (width === 390) continue;
-              await page.locator("[data-mail-view-menu]").click();
-              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).waitFor({ state: "visible" });
-              await page.waitForTimeout(150);
-              await page.screenshot({ path: join(directory, `${width}-view-menu.png`) });
-              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).click();
-              await page.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
-              await page.mouse.move(0, 0);
-              await page.waitForTimeout(150);
-              await page.screenshot({ path: join(directory, `${width}-list-hidden.png`) });
-              await pressEscapeForWorkspace(page);
-              await page.waitForURL((url) => !url.searchParams.has("conversation"));
-              await page.locator("[data-mail-view-menu]").click();
-              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).waitFor({ state: "visible" });
-              await page.waitForTimeout(150);
-              await page.screenshot({ path: join(directory, `${width}-view-menu-unavailable.png`) });
-            } finally {
-              await close(page);
-            }
-          }
-        });
+      test("F2: V, which switched the view, shows once at the handle that the list's width decides", async () => {
+        const page = await open(`${boxPath}?conversation=Conv02&hints=density-by-width`, 1440, 900);
+        try {
+          const hint = page.locator(".k2b-moved-hint");
+          await page.locator("[data-mail-reader-heading]").focus();
+          const before = await split(page);
+          const seen = page.waitForRequest((request) => request.url().endsWith("/workspace-preference/seen-hints"));
+          await page.keyboard.press("v");
+          await hint.waitFor({ state: "visible" });
+          expect(await hint.textContent()).toContain("The list's width decides how it shows. Drag here.");
+          // The hint stands beside the handle and moves nothing.
+          const handle = (await page.locator(".mail-list-handle").boundingBox())!;
+          const shown = (await hint.boundingBox())!;
+          expect(shown.x).toBeGreaterThanOrEqual(handle.x + handle.width - 1);
+          expect(await split(page)).toEqual(before);
+          await hint.getByRole("button", { name: "Got it" }).click();
+          expect((await seen).postDataJSON()).toEqual({ hintId: "density-by-width" });
+          await hint.waitFor({ state: "hidden" });
+          await page.reload();
+          await ready(page);
+          await page.locator("[data-mail-reader-heading]").focus();
+          await page.keyboard.press("v");
+          await settled(page);
+          expect(await hint.count()).toBe(0);
+        } finally {
+          await close(page);
+        }
+      });
 
       test("views: the day's done line above the list", async () => {
         const page = await open(`${boxPath}?layout=auto&done=19,14`, 1440, 900);
