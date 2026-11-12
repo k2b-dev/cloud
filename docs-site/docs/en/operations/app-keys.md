@@ -152,7 +152,13 @@ not leave old replicas serving bootstrap or signed requests during the upgrade.
 Core now stores proof replay claims in the installation's shared Valkey. Every
 verified request claims its proof once with `SET NX`; the claim expires five
 minutes after the proof's expiry. All Core replicas must use the same Valkey
-and preserve these claims through their expiry. If rate admission or a replay
+and preserve these claims through their expiry: keep Valkey's default
+`maxmemory-policy noeviction`. An evicting policy (`allkeys-*` or
+`volatile-*`) can drop a claim early and accept a captured proof again; with
+`noeviction`, a full Valkey refuses the claim and Core answers 503 instead.
+A Valkey restart without persistence or a failover that loses recent writes
+reopens the same window for proofs issued in the last 32 seconds (30-second
+proof lifetime plus two seconds of clock tolerance). If rate admission or a replay
 claim is unavailable, Core returns HTTP 503 with `app_proof_unavailable` and
 `Retry-After: 1`. Restore Valkey availability and retry with a fresh proof.
 Core also skips refused-start diagnostics when it cannot check the replay

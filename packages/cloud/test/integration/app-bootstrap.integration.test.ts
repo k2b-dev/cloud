@@ -546,6 +546,25 @@ suiteFor(
     expect((await route.request(BOOTSTRAP_PATH, request(await signBootstrapProof(key)))).status).toBe(200);
   });
 
+  test("unavailable production rate admission fails closed with app_proof_unavailable", async () => {
+    const route = createAppBootstrapRoutes({ db: replicas[0] });
+    const proof = await signBootstrapProof(key);
+    const send = redis.send.bind(redis);
+    const unavailable = spyOn(redis, "send").mockImplementation(async (command, args) => {
+      if (command === "EVAL") throw new Error("Rate store unavailable");
+      return send(command, args);
+    });
+    try {
+      const response = await route.request(BOOTSTRAP_PATH, request(proof));
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ code: "app_proof_unavailable" });
+      expect(response.headers.get("Retry-After")).toBe("1");
+    } finally {
+      unavailable.mockRestore();
+    }
+    expect((await route.request(BOOTSTRAP_PATH, request(proof))).status).toBe(200);
+  });
+
   test("unavailable Valkey replay claims fail closed on both replicas with a retryable 503", async () => {
     const proof = await signBootstrapProof(key);
     const send = redis.send.bind(redis);

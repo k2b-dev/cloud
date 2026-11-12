@@ -326,25 +326,26 @@ export const getStoredAppKey = async (params: { appId: string; keyId: string }, 
   }
   if (params.keyId.length !== 36 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(params.keyId))
     return null;
-  const [row] = await db<(Row & { connections_allowed: boolean; installation_id: string; activity_due: boolean })[]>`
+  const [row] = await db<(Row & { connections_allowed: boolean; installation_id: string | null; activity_due: boolean })[]>`
     SELECT ${db.unsafe(columns)}, i.id AS installation_id,
       (c.last_used_at IS NULL OR c.last_used_at < now() - interval '1 minute') AS activity_due
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
-    JOIN auth.installation i ON i.singleton = true
+    LEFT JOIN auth.installation i ON i.singleton = true
     WHERE c.kind = 'app_key' AND c.id = ${params.keyId}::uuid
       AND sa.kind = 'resource_bound' AND sa.app_id = ${params.appId} AND sa.resource_type = 'cloud.app' AND sa.resource_id = ${params.appId}
   `;
   if (row && env.NODE_ENV !== "development" && isDevelopmentPublicKey(row.public_key)) return null;
-  return row
-    ? {
-        ...map(row),
-        connectionsAllowed: row.connections_allowed,
-        oauthIssueAllowed: row.oauth_issue_allowed,
-        installationId: row.installation_id,
-        activityDue: row.activity_due,
-      }
-    : null;
+  // A missing installation row is a Core setup fault (retryable 503), never an invalid proof.
+  if (!row) return null;
+  if (!row.installation_id) throw new Error("Core installation identity is not initialized; run Core migrations");
+  return {
+    ...map(row),
+    connectionsAllowed: row.connections_allowed,
+    oauthIssueAllowed: row.oauth_issue_allowed,
+    installationId: row.installation_id,
+    activityDue: row.activity_due,
+  };
 };
 
 /** Bootstrap and signed workload requests must query this directly; no cache. */
