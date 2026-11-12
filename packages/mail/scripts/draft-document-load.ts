@@ -24,6 +24,12 @@ and Sync namespace. Never starts containers or enables shared mailbox editing.
 Includes awareness, reconnect, abrupt transport termination, request abort and
 one TCP consumer that stops reading. Samples every second, records latency in
 fixed 10 ms histogram buckets, checks final convergence and drains all sockets.
+Per-step diagnostics correlate the first 8192 client-sent update IDs across both
+nodes in stages.json (1 ms signed buckets; includes probe/reconnect, so this is
+not the whole-run propagation distribution). Traces separate publish/ack, hub
+subscriber arrival, socket send, client receive and Yjs apply. The raw load
+clients send immediately; the browser provider also sends text immediately,
+throttles awareness to 100 ms, and the room batches notifications for 25 ms.
 Aborts when the one-minute host load exceeds 32. Run with nice -n 19 and
 --bounded for hard process budgets; --smol is a GC hint, not a heap cap.
 Client RSS is reported separately. No production throughput claim.

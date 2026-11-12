@@ -42,8 +42,8 @@ const baseUrl = `http://127.0.0.1:${fixture.port}`,
 const samples = `${out}/client-samples.ndjson`;
 const traceWriter = Bun.file(`${out}/client-trace.ndjson`).writer();
 let traceBytes = 0;
-const trace = (stage: string, fields: Record<string, unknown>) => {
-  const line = `${JSON.stringify({ at: performance.timeOrigin + performance.now(), stage, ...fields })}\n`;
+const trace = (stage: string, fields: Record<string, unknown>, at = performance.timeOrigin + performance.now()) => {
+  const line = `${JSON.stringify({ at, stage, ...fields })}\n`;
   traceBytes += Buffer.byteLength(line);
   if (traceBytes > 64 * MiB) throw new Error("Client trace disk budget exceeded");
   traceWriter.write(line);
@@ -148,8 +148,11 @@ try {
   });
   const send = (c: Client, packet: import("../../src/lib/draft-document-protocol").MailDraftDocumentRequest) => {
     if (c.socket?.readyState === 1) {
-      if (packet.type === "syncPublish") trace("client_send", { updateId: draftUpdateId(packet.payload.payload), peerId: c.peerId });
+      const start = performance.timeOrigin + performance.now();
+      const fields = packet.type === "syncPublish" ? { updateId: draftUpdateId(packet.payload.payload), peerId: c.peerId } : null;
+      if (fields) trace("client_send", fields, start);
       c.socket.send(JSON.stringify(packet));
+      if (fields) trace("client_send:end", { ...fields, durationMs: performance.timeOrigin + performance.now() - start });
     }
   };
   const connect = async (d: Draft, c: Client) => {
@@ -165,6 +168,7 @@ try {
       if (c.socket === socket) c.ready = false;
     });
     socket.addEventListener("message", (event) => {
+      const receivedAt = performance.timeOrigin + performance.now();
       try {
         const packet = mailDraftDocumentMessageSchema.parse(JSON.parse(String(event.data)));
         if (packet.type === "error") {
@@ -201,9 +205,15 @@ try {
         }
         if (packet.type !== "syncPush") return;
         for (const u of packet.payload.updates) {
+          const applyStart = performance.now();
           Y.applyUpdate(c.doc, fromBase64(u.payload));
-          if (!packet.payload.snapshot)
-            trace("peer_apply", { updateId: draftUpdateId(u.payload), peerId: c.peerId, originPeerId: u.originPeerId });
+          const applyMs = performance.now() - applyStart;
+          const appliedAt = performance.timeOrigin + performance.now();
+          if (!packet.payload.snapshot) {
+            const fields = { updateId: draftUpdateId(u.payload), peerId: c.peerId, originPeerId: u.originPeerId };
+            trace("client_receive", fields, receivedAt);
+            trace("peer_apply", { ...fields, durationMs: applyMs }, appliedAt);
+          }
           if (u.cursor) c.cursor = u.cursor;
           const pending = d.pending.get(u.payload);
           if (pending?.waiting.delete(c.index)) {

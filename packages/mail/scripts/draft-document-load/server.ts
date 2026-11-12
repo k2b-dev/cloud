@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import type { MailApiContext } from "../../src/api/public-resource-boundary";
 import type { MailRequestContext } from "../../src/service/auth";
-import { draftDocumentDiagnostics, draftTrace, draftTraceSpan } from "../../src/service/draft-document-diagnostics";
+import { draftDocumentDiagnostics, draftTrace, draftTraceSpan, draftUpdateId } from "../../src/service/draft-document-diagnostics";
 import type { Options } from "../draft-document-load";
 import { checkHost, within, writeSample } from "./common";
 
@@ -165,9 +165,33 @@ try {
     if (config.id === "cloud:mail:draft-documents") {
       const publish = topic.publish.bind(topic),
         latest = topic.latestCursor.bind(topic),
-        replay = topic.replay.bind(topic);
+        replay = topic.replay.bind(topic),
+        hub = topic.hub.bind(topic);
       topic.publish = (input) => draftTraceSpan("jetstream_publish_ack", () => publish(input));
       topic.latestCursor = (input) => draftTraceSpan("broker_lookup", () => latest(input));
+      topic.hub = (input) => {
+        const current = hub(input);
+        return {
+          close: () => current.close(),
+          subscribe: (options) => ({
+            async *[Symbol.asyncIterator]() {
+              for await (const event of current.subscribe(options)) {
+                const data = event.data;
+                if (
+                  data &&
+                  typeof data === "object" &&
+                  "kind" in data &&
+                  data.kind === "sync" &&
+                  "payload" in data &&
+                  typeof data.payload === "string"
+                )
+                  draftTrace("broker_fanout", { updateId: draftUpdateId(data.payload), peerId: undefined, role: "delivery" });
+                yield event;
+              }
+            },
+          }),
+        };
+      };
       topic.replay = (input) => ({
         async *[Symbol.asyncIterator]() {
           const start = performance.now();

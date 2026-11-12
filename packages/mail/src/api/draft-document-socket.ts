@@ -22,7 +22,7 @@ import { requireDraftAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { removeOrphanComposeSegmentMarks } from "../service/compose-renderer";
 import { DRAFT_SOCKET_LIMITS, draftDocumentBudget } from "../service/draft-document-budget";
-import { draftTrace, draftTraceContext, withDraftTrace } from "../service/draft-document-diagnostics";
+import { draftTrace, draftTraceContext, draftTraceSocketSend, withDraftTrace } from "../service/draft-document-diagnostics";
 import { mailDraftDocumentLog } from "../service/draft-document-log";
 import {
   draftDocumentSnapshotStore,
@@ -276,6 +276,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
                   return;
                 }
                 outboundBytes = bytes;
+                draftTraceSocketSend(data, ctx?.peerId ?? "");
                 ws.send(data);
               },
               close(code, reason) {
