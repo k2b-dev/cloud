@@ -153,3 +153,36 @@ test("every Skill mutation keeps the resolved authority and stops before effects
   }
   expect(reloadRoles).not.toHaveBeenCalled();
 });
+
+test.each(["code-authoring", { id: "Sk2345" }])("guests cannot explicitly load Code authoring by name or ID (%j)", async (selector) => {
+  spyOn(registry, "listApps").mockResolvedValue([]);
+  spyOn(appAccess, "usableAppIds").mockResolvedValue(new Set());
+  const client = new SQL("postgres://localhost/unused_test");
+  clients.push(client);
+  const tx = Object.assign(
+    new Proxy(client, {
+      apply(_target, _receiver, [strings]) {
+        expect(strings.join("?").replace(/\s+/g, " ").trim()).toStartWith("SELECT * FROM ai.skills");
+        return Promise.resolve([{ ...row, name: "code-authoring" }]);
+      },
+    }),
+    {
+      savepoint: async () => {
+        throw new Error("Guest loading must stop before a savepoint");
+      },
+    },
+  );
+  spyOn(sql, "begin").mockImplementation(async (run) => {
+    if (typeof run !== "function") throw new Error("Expected transaction callback");
+    return run(tx);
+  });
+  const guest = { ...authority, actor: { kind: "user" as const, user: { ...user, profile: "guest" as const } } };
+  expect(
+    await aiSkills.loadForTurn(
+      "33333333-3333-4333-8333-333333333333",
+      selector,
+      { actor: guest.actor, accessSubject: guest.accessSubject },
+      guest,
+    ),
+  ).toBeNull();
+});

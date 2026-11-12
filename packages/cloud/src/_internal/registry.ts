@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Ephemeral, EphemeralConfig, EphemeralEntry, MutexConfig } from "@k2b/sync";
+import { codeSdkExportName, validateCodeSdkNames } from "../code/sdk-names";
 import type { AppAppearanceColor } from "../contracts/app";
 import { appStatusIssues } from "../contracts/app-status";
 import { calendarSourceIssues } from "../contracts/calendar-source";
@@ -139,7 +140,45 @@ const observedRegistry = <T>(config: EphemeralConfig) => {
 const appsObserved = observedRegistry<AppRegistryEntry>(APP_REGISTRY_CONFIG);
 const capabilitiesObserved = observedRegistry<CapabilityRegistryRecord>(CAPABILITY_REGISTRY_CONFIG);
 export const appRegistry = appsObserved.published;
-export const capabilityRegistry = capabilitiesObserved.published;
+export const capabilityRegistry = lazySync(() => {
+  const registry = capabilitiesObserved.published();
+  return {
+    ...registry,
+    // Registration and SDK generation enforce the same names. The shared lock serializes
+    // competing app registrations, including an implicit name colliding with an explicit one.
+    upsert: async (input: Parameters<typeof registry.upsert>[0]) => {
+      if (input.key !== `capabilities/${input.value.appId}` || input.value.manifest.appId !== input.value.appId)
+        throw new Error("Capability registration key must match its app and manifest");
+      const incoming = input.value.manifest;
+      validateCodeSdkNames([incoming]);
+      const incomingName = incoming.sdkExportName ?? codeSdkExportName(incoming.appId);
+      const result = await appMembershipLock().withLock({ resource: `${input.tenantId ?? "default"}:code-sdk-exports` }, async (lock) => {
+        const snapshot = await registry.snapshot({ prefix: "capabilities/", tenantId: input.tenantId });
+        for (const entry of snapshot.entries) {
+          if (
+            !entry.value ||
+            typeof entry.value.appId !== "string" ||
+            entry.value.appId === input.value.appId ||
+            entry.key !== `capabilities/${entry.value.appId}`
+          )
+            continue;
+          let other: CapabilityManifest;
+          try {
+            other = parseCapabilityManifest(entry.value.manifest, entry.value.appId);
+          } catch {
+            continue;
+          }
+          if ((other.sdkExportName ?? codeSdkExportName(other.appId)) === incomingName)
+            throw new Error(`${input.value.appId}: SDK export name collision`);
+        }
+        if (Date.now() >= lock.expiresAt.getTime()) throw new Error("Capability registration lock expired");
+        return registry.upsert(input);
+      });
+      if (result === null) throw new Error("Capability registration lock unavailable");
+      return result;
+    },
+  };
+});
 
 /**
  * Follow the app registry until `signal` aborts. The watch first replays the

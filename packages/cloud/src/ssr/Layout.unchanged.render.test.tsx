@@ -6,8 +6,10 @@ import { createComponent } from "solid-js";
 import type { User } from "../contracts/shared";
 import type { RuntimeContext } from "./runtime";
 
-// Only pre-pageSwap APIs: the owner can regenerate these exact snapshots on origin/main.
+// This fixture uses only APIs predating pageSwap.
 // Relative island ids and frozen request data make the HTML portable between checkouts.
+// "Opt-out" means no pageSwap, not no panel or shared dialogs. Focus pages also carry the signed-in profile:
+// AccessDialog reads profile.userId for "You" independently of pageSwap. Keep the full HTML snapshot exact.
 setSystemTime(new Date("2026-10-01T12:00:00Z"));
 const uuid = spyOn(crypto, "randomUUID").mockReturnValue("11111111-1111-4111-8111-111111111111");
 const { plugin } = createConfig({ dev: true, rootDir: resolve(import.meta.dir, "../.."), componentRoots: [] });

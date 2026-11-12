@@ -44,6 +44,7 @@ export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: 
     if (error instanceof CodeOwnerUnavailableError)
       return fail(err.internal("Code owner is unavailable. Try again after its application recovers."));
     if (!(error instanceof CodeDataError)) throw error;
+    if (error.code === "code_guests_cannot_author") return fail({ code: error.code, status: 403 as const, message: error.message });
     if (error.code === "FORBIDDEN") return fail(err.forbidden(error.message));
     if (error.code === "NOT_FOUND") return fail(err.notFound("Code"));
     if (error.code === "CONFLICT") return fail(err.conflict(error.message));

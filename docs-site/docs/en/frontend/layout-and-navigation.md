@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-11-10
+updated: 2026-11-11
 ---
 
 # Layout and navigation
@@ -18,6 +18,10 @@ pages, breadcrumbs and a footer.
 
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it.
+
+Use `focusMode` for a dedicated editor or pop-out window. It hides the app bar
+and header while keeping the signed-in profile available to access dialogs and
+panels, so they can identify the current person just as on a regular page.
 
 Application authors put objects in the sidebar and views of the open object
 in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and

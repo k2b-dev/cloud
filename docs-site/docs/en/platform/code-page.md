@@ -67,9 +67,13 @@ Only people who manage the owner and editors or readers of the Code see the
 page. Readers see runs without their calls and no actions. Every part that
 cannot load shows an error with a way to try again.
 
-Automation names use the optional reviewed `entrypoints[].title` and fall back
-to the entrypoint identifier. This also applies to switch-on dialogs. Run
-history uses the title from the run's own version.
+Automation names use the optional reviewed `entrypoints[].title`. Without a
+title, an event reads by its title and place, a page by its method and path,
+and a schedule by when it runs ("Mondays 08:00", or a one-time date and time
+with its zone). Anything else shows its entrypoint identifier. Switch-on
+dialogs, the chat version card and Administration › Code use the same names.
+A run reads by the title from its own version, else as the listed automation
+with the same entrypoint, else by its identifier.
 
 ## Refused calls
 
@@ -236,7 +240,7 @@ Return 403 to deny or `return next()` to continue. Use a private path prefix
 when the app also serves public routes: matching middleware runs there too,
 with `c.user === null`. Resource page templates deny
 access until you fill their allowed group IDs. Public routes always receive
-`c.user === null`. See [explicit UID, handle, group and Grids checks](code-sdk.md#zugriff-prüfen).
+`c.user === null`. See [explicit UID, handle, group and Grids checks](code-sdk.md#check-access).
 
 ## Webhooks (R1: ohne Secret)
 
@@ -247,7 +251,7 @@ take only the ID from the body, read the real state through `http.fetch` with
 an opaque secret marker and declared origin, then act. Never put a secret in
 the source or use a URL token as protection. Let `/hooks/` through a global
 access middleware, or apply the access check only to a private prefix.
-See the [complete example and secret binding](code-sdk.md#webhooks-r1-ohne-secret).
+See the [complete example and secret binding](code-sdk.md#webhooks-without-signature-verification).
 
 ## Database storage and export
 

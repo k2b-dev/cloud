@@ -60,6 +60,8 @@ export const CodeActivationPreviewSchema = z
     codeId: CodeIdSchema,
     title: z.string(),
     ownerKind: z.enum(["person", "resource", "app"]),
+    /** For Code of an app: the app's name from the registry, which names its service account; null when unknown. */
+    appName: z.string().nullable().optional(),
     automations: z
       .array(
         z
@@ -69,6 +71,11 @@ export const CodeActivationPreviewSchema = z
             route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).strict().optional(),
             /** The event it follows: its title from the catalog, null when unknown, and its place named as a target. */
             event: z.object({ type: z.string(), title: z.string().nullable(), place: PreviewTargetSchema }).strict().optional(),
+            /** A repeating schedule's five-field expression, so the card can say when it runs. */
+            cron: z.string().optional(),
+            /** A one-time schedule's instant and the zone it is read in. */
+            at: z.string().optional(),
+            timeZone: z.string().optional(),
           })
           .strict(),
       )

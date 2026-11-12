@@ -12,6 +12,8 @@ above through `load_tools` if they are missing. Their JSON results are the
 same contracts as `cld code`; keep them intact. Cloud shows Code under the
 name **feat/code**: a person who says feat/code means Code.
 
+Guests cannot create Code or submit versions; if a guest asks, kindly explain that Code authoring is available to Cloud members and suggest asking a member for help.
+
 ## Workflow
 
 1. **Choose the owner.** Omit `owner` in `code_init({title})` for personal Code:
@@ -37,6 +39,14 @@ name **feat/code**: a person who says feat/code means Code.
    `mail.mailbox(id)`; `owner` stays the fixed handle. The zero-argument `.app()`
    factory is removed; a resource Type named `app` still has its typed `.app(id)` factory.
    Streaming reads keep their `FileRef`; Actions return domain data directly.
+   Omit the input when no field, ref or retry key is required; `{}` remains valid.
+   Import named types such as `Mail_Message_ReadData` from `@sdk` for helpers.
+   Call routes as `app.get(path, options, handler)` with the handler last;
+   `app.get(path, handler, options)` remains a compatibility overload.
+   Use `c.req.path` and `c.req.method` for routing. Name event callbacks `event`
+   and read `event.data`, keeping the envelope and payload distinct.
+   If the checker says an operation exists under another path, use that path;
+   do not move operations or guess aliases.
 3. **Write.** `code_write({codeId, path, content})` replaces one file in
    the server-held draft and returns paths and byte counts. Write one file
    per call; use `{codeId, path, delete: true}` to remove one or
@@ -105,7 +115,7 @@ and start with the [database template](references/template-database.md).
 | Let Gustav do open-ended work with tools | `core.ai.chat(chatId).run` (personal Code) | [AI](references/ai.md) |
 | Rebuild an Assistant routine as Code | Personal Code: the routine's schedule and time zone, then `deliver` for a fixed result or `run` for open-ended work | [Rebuild](references/rebuild.md), [Schedules](references/schedules.md), [AI](references/ai.md) |
 | Post into a team chat conversation | `chat.message.post` | [Capabilities](references/capabilities.md), [event to chat](references/template-event-to-chat.md) |
-| Create or update a task in a Space | `spaces.task.create`, `spaces.task.update` | [Capabilities](references/capabilities.md), [form app](references/template-form-app.md) |
+| Create or update a task in a Space | `spaces.space(id).task.create`, `spaces.space(id).task.update` | [Capabilities](references/capabilities.md), [form app](references/template-form-app.md) |
 | A page with key figures, charts and tables | `app.get` with `c.page(<Page>…)`: `Stats`/`Stat`, `Chart.*`, `Table`/`Column` | [Pages](references/pages.md), [dashboard](references/template-dashboard-page.md) |
 | A form that changes something | `Form` with `Field.*`, handled by `app.post` | [Pages](references/pages.md), [form app](references/template-form-app.md) |
 | Show one record | `Detail` with `Item` | [Pages](references/pages.md) |
@@ -113,9 +123,11 @@ and start with the [database template](references/template-database.md).
 | Call an external HTTPS service, with a secret | `http.fetch` with `secrets.NAME` | [Access and secrets](references/access.md) |
 | Decide who sees a page | `c.user` (`id`, `username`, `groupIds`, `groupNames`, `kind`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
 | A page without the Cloud layout, such as a public survey | `{ public: true, layout: "plain" }` | [Pages](references/pages.md), [survey](references/template-survey.md) |
+| Generate a PDF, CSV, ODS, chart or DATEV/SEPA file | `pdf`, `sheet`, `chart`, `finance` from `@sdk` | [FileRef](references/file-ref.md), [generated file](references/template-generated-file.md) |
 | Pass a file from Mail or Files to another app | `FileRef` from a read stream into an Action's `file` input | [FileRef](references/file-ref.md), [mail invoices](references/template-mail-invoices.md) |
+| Check something before an app sends it, such as a customer message | The app's submitted event, rules from a note, `core.ai.generate`, then the app's approve or reject Action | [Review before sending](references/review-before-send.md) |
 
-## Zugriff prüfen
+## Check access
 
 Start with `app.use("/private", async (c, next) => { … })` before protected
 routes. Compare `c.user.id`, `username`, `groupIds` or `groupNames` explicitly;
@@ -126,10 +138,10 @@ private path prefix. Never compare an identifier against a mixed list. [Access c
 shows fixed user IDs, handles, groups and a Grids allowlist; each denied
 request returns 403. Public routes have `c.user === null`.
 
-## Webhooks (R1: ohne Secret)
+## Webhooks without signature verification
 
 Use a public POST route; R1 has no signature verification and forwards no
-incoming headers or cookies to Code. **ID nehmen → beim Dienst nachlesen → handeln**:
+incoming headers or cookies to Code. **Read the ID → fetch the trusted state → act**:
 read only the notification's ID, fetch the real state through `http.fetch`
 with a secret placeholder and approved origin, then act. Never put a secret
 in the source or a token in the URL. See the [checked webhook example and
@@ -157,6 +169,8 @@ secret binding](references/access.md#webhooks-r1-ohne-secret).
   recover; otherwise let the run fail visibly.
 - Write examples, fixtures and names without real people, mailboxes or IDs
   from this chat.
+- When someone wants a check before something is sent, use the
+  [review-before-sending pattern](references/review-before-send.md).
 
 Studio apps and their data have been retired without transfer. For a one-off
 chat computation, load `assistant-code-mode` and use inline `code_run`.
@@ -175,6 +189,7 @@ the real checker. Adapt names, IDs and texts; keep the structure.
 | [Weekly report](references/template-weekly-report.md) | personal | Weekly local schedule, AI summary, delivery to a Gustav chat |
 | [Task due tomorrow](references/template-task-due-tomorrow.md) | personal | Spaces events and a daily schedule assign tomorrow’s tasks and notify a team chat |
 | [Event to chat](references/template-event-to-chat.md) | mailbox | Post a short note into a team chat for each new message |
+| [Generate a file](references/template-generated-file.md) | personal | Generate a CSV as a FileRef and pass it to a receiving app Action |
 | [Mail invoices to an app](references/template-mail-invoices.md) | mailbox | Pass invoice attachments to an import app as FileRefs, then tag the conversation |
 
 In the Cloud repository the templates are the files in `templates/` beside

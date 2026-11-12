@@ -241,7 +241,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
     ]);
     expect(await readCodeAdminApproval(first.version.id, reviewer)).toMatchObject({
       status: "approved",
-      automations: [{ entrypoint: "weekly", title: "Lieferungen eintragen" }],
+      automations: [{ entrypoint: "weekly", title: "Lieferungen eintragen", cron: "0 8 * * 1" }],
       canApprove: false,
       decision: { approved: true, decidedByName: "Ben Schulz" },
     });
@@ -310,6 +310,11 @@ databaseSuite()("C22 Administration › Code read model", () => {
     expect((await readCodeRun({ codeId: "c_origin", runId }, author)).run).toMatchObject({
       entrypoint: "weekly",
       title: "Lieferungen eintragen",
+    });
+    // Administration names the run from the version it ran, schedule included, as the Code page names its automation.
+    expect((await readCodeAdminCode("c_origin", reviewer)).runs[0]).toMatchObject({
+      entrypoint: "weekly",
+      automation: { entrypoint: "weekly", title: "Lieferungen eintragen", cron: "0 8 * * 1" },
     });
     // A person's Code has no owner page to link to.
     expect(read.links).toEqual([]);
