@@ -70,6 +70,7 @@ An app has no permissions of its own on objects: alone, it reaches objects only 
   and Cloud rate limits. Commit state before retryable effects with stable keys; an effect
   that must survive a crash is an outbox row in the same transaction (`defineLive`, `createPgOutbox`).
   A settings write over an unreadable stored value fails with `setting_unreadable`; merge only over `settings.read()` with `stored !== "unreadable"`.
+- Keep the database out of live paths: check access when a socket opens and on access changes, fan out over NATS, and save lazily in batches. Run no SQL, row lock, or stored-document load per message, keystroke, or delivery. Read **Live updates** (`/en/docs/automation/live-updates#keep-the-database-out-of-the-live-path`).
 
 ## Reuse public building blocks
 
@@ -89,6 +90,8 @@ alternative:
   `@k2b/cloud/server` for rate limits;
 - `@k2b/cloud/workflows` only when work needs a durable, inspectable,
   recoverable process rather than one bounded job.
+- `defineLive()` for live updates and `@k2b/cloud/shared-text` for
+  collaborative text; never a second socket, presence, or Yjs path beside them.
 
 Import `sql`, `redis`, `lazySync` and `storage` from `@k2b/cloud`; never import `sql` or `redis` values from `bun`. Standard entrypoints initialize native clients before app code; separate data processes use `@k2b/cloud/start`. Use `createSql()` and `createRedis()` for owned pools, preserving limits and lifecycle; create them after startup, not while importing a module. Read **Platform start and connections** (`/en/docs/build/platform-start`).
 
