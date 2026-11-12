@@ -1,14 +1,12 @@
 # Media preview
 
-`Lightbox` presents one or more images in a modal viewer. `VideoPlayer` plays one video with the browser's own controls. `PdfViewer` shows a PDF, from its bytes, its address, or a request, with pdf.js. `ZoomPanViewport` makes any content, such as a diagram, zoomable, pannable, and viewable fullscreen. The caller owns media access, URLs, and generation.
+`Lightbox` is the one large view of a file: an image, a PDF, a video, an audio file, text, Markdown, code, or a document through its preview PDF. `VideoPlayer` plays one video with the browser's own controls. `PdfViewer` shows a PDF, from its bytes, its address, or a request, with pdf.js. `ZoomPanViewport` makes any content, such as a diagram, zoomable, pannable, and viewable fullscreen. The caller owns media access, URLs, and generation.
 
 ## Use media preview
 
-Use `Lightbox` when a page already shows an image or thumbnail and readers need a larger view.
+Use `Lightbox` whenever a file opens large: an attachment, a stored file, an image in a text, a result. Do not build an own dialog, `PanelDialog`, or modal that shows a file large; a dialog's buttons go into the Lightbox's action pill. The repository check `file-previews` enforces this for Cloud apps; third-party apps follow the same convention.
 
-Use `VideoPlayer` wherever a stored video should play in place, such as a file preview or an attachment dialog. Do not wrap it in a `Lightbox`.
-
-Use `PdfViewer` wherever a PDF should be read in place: a stored file, an attachment, or a document a user action generates. Use a normal download link when inline inspection is not part of the task.
+Use `VideoPlayer` wherever a stored video should play in place on the page. Use `PdfViewer` wherever a PDF is read in place on a page or inside a working flow, such as a document a user action generates. Use a normal download link when inline inspection is not part of the task.
 
 Use `ZoomPanViewport` when content has detail that does not fit its box, such as a diagram, plan, or large SVG. Do not use it for photos that already open in a `Lightbox`, or for content that should scroll.
 
@@ -18,7 +16,8 @@ Use `ZoomPanViewport` when content has detail that does not fit its box, such as
 import {
   Lightbox,
   type LightboxAction,
-  type LightboxImage,
+  type LightboxItem,
+  type LightboxProps,
   PdfThumbnails,
   type PdfThumbnailsProps,
   PdfViewer,
@@ -36,15 +35,22 @@ import {
 } from "@k2b/ui";
 ```
 
-## Images
+## Lightbox
 
-Each `LightboxImage` has a required `src` and optional `alt` and `downloadUrl`. Pass a meaningful `alt` for informative images. Omit it only when the image is decorative.
+Pass `items`, the shown `index`, `onIndexChange`, and `onClose`; the caller owns the index, so it can follow a selection behind the Lightbox, and removes the component on close. Each `LightboxItem` has a `name` (it never wraps; the pill gives way with an ellipsis) and gives what the file has:
 
-An image may also carry `actions`: further things to do with that image, each a short `label`, a Tabler `icon` class, and `onClick`. They sit before **Download** in the same style and show their label on wider screens. Cloud apps use one for **Save to Files**. Keep the list short; the bar holds a few buttons, not a menu.
+- `src`: an address on this site the browser reads directly, for an image, a video, an audio file, or a PDF; a function resolves it when the file is shown, such as a short-lived signed address, and **Try again** asks it for a fresh one;
+- `load`: text, Markdown, code, or a PDF's bytes, drawn by the `FileView` renderers;
+- `preview`: a preview PDF, such as one converted from an Office file; a rejection shows **Preview not possible** with Open and Download;
+- `file`: path, media type, and size, which choose the renderer as in `FileView`; it defaults to the name.
 
-`initialIndex` selects the first visible image. The parent owns the open state and removes the component through `onClose`.
+Each loader receives an `AbortSignal` that aborts when the person moves to another file, closes the Lightbox, or tries again; pass it to `fetch` so nothing keeps loading. A video plays in `VideoPlayer`, which asks a `src` function for a fresh address when a signed one runs out and goes on at the same time. On a video or audio file, ← and → seek five seconds and Space plays and pauses, wherever the focus is and in every engine; the edge buttons and the film strip step to the next file.
 
-Two or three images show dots to switch between them. From four images on, a [`ThumbnailStrip`](#thumbnail-strip) replaces the dots. Pass a small version of each image as `thumbnail`; without it the strip loads `src`, which costs bandwidth for large photos. The counter, caption, buttons, arrows, dots, and strip float over the picture on dark glass (`k2b-overlay-surface`).
+Anything else shows its icon, **There is no preview for this file**, and Download. The Lightbox loads the file itself: a placeholder appears after a short wait, a failure offers **Try again**, and nothing around the file moves.
+
+The head holds the name pill on the left, with `meta` such as "PDF · 412 KB", and the action pill on the right: the blue **Open** pill when `open` names where the file opens, the caller's own control from `actions={(item) => …}` such as **Select** in a file chooser, the item's `actions` (a short `label`, a Tabler `icon`, and `onClick`; Cloud apps use one for **Save to Files**), Download from `downloadUrl` (or `onDownload` for a file the app hands out itself, such as through a short-lived lease), and Close. Markdown lifts its first heading into the name pill.
+
+Large round buttons at the screen edges step between files on the middle of the document; the first and last file hide theirs. ← and →, a [`ThumbnailStrip`](#thumbnail-strip) from two files on, and a swipe on a phone step too; there is no "2 / 8" counter. The only pill at the bottom holds zoom (−, +, 0 fits) and the page or sheet of a PDF or document; it keeps its place for other files. Escape, Close, a press beside the file, or a pull down on a phone close it, and focus returns to the opener. A veil keeps the page visible: light in the light theme, dark in the dark theme. On a phone the Lightbox fills the screen.
 
 ## Thumbnail strip
 
@@ -154,9 +160,16 @@ Without a height, the viewport takes the height of its content. Give it a height
 ## API reference
 
 ```ts
-type LightboxImage = {
-  src: string; alt?: string; downloadUrl?: string;
-  actions?: readonly LightboxAction[]; thumbnail?: string;
+type LightboxItem = {
+  name: string; meta?: string; file?: FileViewFile; src?: string | ((signal: AbortSignal) => Promise<string>);
+  load?: (signal: AbortSignal) => Promise<FileViewContent>; preview?: (signal: AbortSignal) => Promise<Blob>; thumbnail?: string;
+  downloadUrl?: string; onDownload?: () => void; open?: { label?: string; onOpen: () => void };
+  actions?: readonly LightboxAction[];
+};
+
+type LightboxProps = {
+  items: readonly LightboxItem[]; index: number; onIndexChange: (index: number) => void;
+  onClose: () => void; actions?: (item: LightboxItem) => JSX.Element;
 };
 
 type ThumbnailStripItem = { id: string; name: string; thumbnail?: string | (() => JSX.Element); dirty?: boolean };
@@ -174,7 +187,8 @@ type PdfViewerProps = {
   title: string; data?: Blob | ArrayBuffer | string; request?: PdfViewerRequest; autoLoad?: boolean;
   disabled?: boolean; emptyText?: string; loadLabel?: string; open?: boolean | string;
   zoom?: boolean; fit?: "width" | "page"; page?: number;
-  onReady?: () => void; onError?: (error: unknown) => void; class?: string;
+  scale?: number; onReady?: (document: { pages: number }) => void; onPage?: (index: number) => void;
+  onError?: (error: unknown) => void; class?: string;
 };
 
 type PdfThumbnailsProps = {
@@ -205,11 +219,11 @@ type ZoomPanViewportProps = {
 };
 ```
 
-`Lightbox` requires `images: LightboxImage[]` and `onClose: () => void`; `initialIndex?: number` defaults to 0. Omitted labels use localized defaults; without `autoLoad`, `request` runs only after the load action.
+`Lightbox` requires `items`, `index`, `onIndexChange`, and `onClose`. Omitted labels use localized defaults; without `autoLoad`, `request` runs only after the load action.
 
 ## Accessibility
 
-The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`. A dialog that an image action opens above the lightbox keeps its own keys: Escape closes that dialog, and arrow keys stay in its fields.
+The Lightbox is a native modal dialog named after the shown file. Its edge buttons, film strip, zoom controls, and actions are labeled controls; ← and → step (on video and audio they seek), `+`, `-`, and `0` zoom, Space closes it (on video and audio it plays and pauses). Focus starts on the file, so the keys work at once, and returns to the opener on close. Loading is a polite status and a failure an alert with **Try again**. A dialog that an action opens above the Lightbox keeps its own keys: Escape closes that dialog, and arrow keys stay in its fields.
 
 `PdfViewer` names its page area with `title`. The pill's icons carry their names as tooltips and accessible names; the state actions are native buttons named by their visible labels. Keep `loadLabel` specific when several documents appear on one page. The loading state is a polite status and the error state an alert; when a document turns out not to be drawable, the viewer announces that politely. While a placeholder shows, the viewer itself holds keyboard focus that would otherwise drop; once the first page is drawn, focus moves on to the pages.
 
@@ -230,18 +244,16 @@ The server may render their initial markup, but modal behavior, network requests
 ## Example
 
 ```tsx
-const [lightboxOpen, setLightboxOpen] = createSignal(false);
+const [shown, setShown] = createSignal<number | null>(null);
 
-const images: LightboxImage[] = [
-  {
-    src: "/api/files/cover/preview",
-    alt: "Report cover",
-    downloadUrl: "/api/files/cover/download",
-  },
+const items: LightboxItem[] = [
+  { name: "Cover.png", meta: "PNG · 1.2 MB", src: "/api/files/cover/preview", downloadUrl: "/api/files/cover/download" },
+  // A short-lived address, resolved when the file is shown and again on Try again.
+  { name: "Report.pdf", meta: "PDF · 412 KB", src: () => leaseFor("report.pdf"), onDownload: () => saveReport() },
 ];
 
-<Show when={lightboxOpen()}>
-  <Lightbox images={images} onClose={() => setLightboxOpen(false)} />
+<Show when={shown() !== null}>
+  <Lightbox items={items} index={shown()!} onIndexChange={setShown} onClose={() => setShown(null)} />
 </Show>
 
 <PdfViewer

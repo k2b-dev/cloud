@@ -19,7 +19,7 @@ import { documentAllowsPublicLinks } from "../../../document-sharing";
 import { recordDisplayTitle } from "../records/record-display";
 import { errorMessage } from "../utils/api-helpers";
 import DocumentArchiveContentsDialog from "./DocumentArchiveContentsDialog";
-import { canPreviewDocumentArtifact, openDocumentArtifactPreview } from "./DocumentArtifactPreviewDialog";
+import { canPreviewDocumentArtifact, openDocumentArtifactPreview } from "./DocumentArtifactPreview";
 import { openDocumentLinkDialog } from "./DocumentLinkDialog";
 import DocumentSourcesDialog from "./DocumentSourcesDialog";
 import { documentFormatLabel, formatDocumentDateTime, formatDocumentRelativeTime } from "./document-workspace-utils";

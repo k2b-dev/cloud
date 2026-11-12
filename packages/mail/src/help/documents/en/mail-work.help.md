@@ -254,7 +254,7 @@ Mail never opens an unsubscribe link only because you preview or read a message.
 
 Received attachments stay with the message that carried them. Choose an attachment chip to open or download it in a new browser tab.
 
-**Preview** opens text, CSV, JSON, images, PDFs, audio, and video in a dialog. When a text file is Markdown and starts with a heading, that heading becomes the title, with the file name and size below it. The dialog header has **Download attachment**, and for text, CSV, and JSON also **Copy**. On a phone, the preview fills the screen.
+**Preview** opens text, CSV, JSON, images, PDFs, audio, and video in a full-screen preview. When a text file is Markdown and starts with a heading, that heading becomes the name at the top left, followed by the file name and size. The buttons at the top right are **Save to**, **Download**, and for text, CSV, and JSON also **Copy text**. The preview holds all attachments of the message, or of the conversation when you open it from the details panel. Use the arrow keys, the buttons at the edges, or the strip at the bottom to move between them. On a phone, swipe sideways.
 
 With **Manage** access, you can also create a public download link for an attachment. Mail shows the URL only when you create the link. You can protect it with a password, an expiry time, and a limit on download sessions. To review or revoke existing links, open **… → Shared links**.
 

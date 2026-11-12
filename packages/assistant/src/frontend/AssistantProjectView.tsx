@@ -13,6 +13,7 @@ import {
   IconButton,
   InlineGuidance,
   Lightbox,
+  type LightboxItem,
   Placeholder,
   prompts,
   ScrollArea,
@@ -30,10 +31,10 @@ import {
   AssistantContextSection,
   AssistantContextViewAll,
   assistantContextCountTitle,
+  assistantFileLightboxItem,
   assistantProjectFileSource,
   downloadAssistantContextFile,
   isAssistantContextImage,
-  loadAssistantContextImages,
   openAssistantCloudReference,
   openAssistantContextFiles,
   openAssistantKnowledgeSearch,
@@ -97,9 +98,7 @@ export default function AssistantProjectView(props: Props) {
   let loadMoreSentinel: HTMLDivElement | undefined;
   const [contextAction, setContextAction] = createSignal<string | null>(null);
   const [contextPanel, setContextPanel] = createSignal<HTMLElement>();
-  const [lightbox, setLightbox] = createSignal<{ images: Awaited<ReturnType<typeof loadAssistantContextImages>>; index: number } | null>(
-    null,
-  );
+  const [lightbox, setLightbox] = createSignal<{ items: LightboxItem[]; index: number } | null>(null);
   const projectFileSource = assistantProjectFileSource(props.project.id, () => context.data()?.files ?? []);
   const contextFiles = (): AssistantContextFile[] =>
     (context.data()?.files ?? []).map((file) => ({
@@ -113,21 +112,16 @@ export default function AssistantProjectView(props: Props) {
   const imageFiles = () => contextFiles().filter(isAssistantContextImage);
   const regularFiles = () => contextFiles().filter((file) => !isAssistantContextImage(file));
   const canWrite = () => props.project.permission !== "read";
-  const openImages = async (selected?: AssistantContextFile) => {
-    try {
-      const images = await loadAssistantContextImages(contextFiles());
-      const index = selected
-        ? Math.max(
-            0,
-            images.findIndex((entry) => entry.file.id === selected.id),
-          )
-        : 0;
-      setLightbox({ images, index });
-    } catch (error) {
-      void prompts.error(error instanceof Error ? error.message : text("Images could not be loaded."), {
-        title: text("Could not open images"),
-      });
-    }
+  // Each image reads itself when the Lightbox shows it, which also says when one cannot be loaded.
+  const openImages = (selected?: AssistantContextFile) => {
+    const images = imageFiles();
+    setLightbox({
+      items: images.map((file) => assistantFileLightboxItem(file)),
+      index: Math.max(
+        0,
+        images.findIndex((file) => file.id === selected?.id),
+      ),
+    });
   };
 
   const readError = async (response: Pick<Response, "json">, fallback: string) => {
@@ -645,7 +639,12 @@ export default function AssistantProjectView(props: Props) {
       </div>
       <Show when={lightbox()}>
         {(state) => (
-          <Lightbox images={state().images.map((entry) => entry.image)} initialIndex={state().index} onClose={() => setLightbox(null)} />
+          <Lightbox
+            items={state().items}
+            index={state().index}
+            onIndexChange={(index) => setLightbox({ ...state(), index })}
+            onClose={() => setLightbox(null)}
+          />
         )}
       </Show>
     </ScrollArea>

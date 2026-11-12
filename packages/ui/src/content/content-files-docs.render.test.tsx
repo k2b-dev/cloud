@@ -131,7 +131,15 @@ describe("@k2b/ui content style coverage", () => {
       createComponent(PdfViewer, { request: async () => new Blob([], { type: "application/pdf" }), title: "Report" }),
     );
     const lightbox = renderToString(() =>
-      createComponent(Lightbox, { images: [{ src: "/a.png", alt: "A", downloadUrl: "/a.png" }, { src: "/b.png" }], onClose: () => {} }),
+      createComponent(Lightbox, {
+        items: [
+          { src: "/a.png", name: "A.png", downloadUrl: "/a.png" },
+          { src: "/b.png", name: "B.png" },
+        ],
+        index: 0,
+        onIndexChange: () => {},
+        onClose: () => {},
+      }),
     );
     const source = await renderFileView({
       file: { path: "/src/app.ts", mediaType: "text/plain" },

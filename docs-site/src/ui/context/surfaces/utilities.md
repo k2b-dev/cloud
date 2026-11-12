@@ -122,7 +122,7 @@ When the system asks for less transparency or more contrast, the layer turns
 solid; forced colors draw a real border. `--k2b-overlay-surface`,
 `--k2b-overlay-surface-hover`, `--k2b-overlay-edge`, `--k2b-overlay-ring`,
 `--k2b-overlay-lift`, and `--k2b-overlay-solid` hold the values. A stage that
-is always dark, such as `Lightbox`, sets dark values on itself. The
+is always dark sets dark values on itself; the `Lightbox` follows the theme. The
 `glass-surfaces` check keeps backdrop blur on this class and on dialog
 backdrops.
 

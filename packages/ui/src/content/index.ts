@@ -88,23 +88,22 @@ export { FileGrid, type FileGridGroup, type FileGridOpenProps, type FileGridProp
 export { default as FileTree, type FileTreeActions, type FileTreeEntry, type FileTreeProps } from "./FileTree";
 export { type FileType, FileTypeIcon, type FileTypeIconProps, fileKindLabel, fileTypeOf } from "./FileTypeIcon";
 export {
-  canPreviewFile,
   default as FileView,
   type FileViewContent,
-  type FileViewFile,
-  type FileViewPreviewKind,
   type FileViewProps,
   type FileViewRenderer,
   type FileViewRendererProps,
   formatFileViewSize,
-  getFileViewPreviewKind,
 } from "./FileView";
 export { FlowAmount, type FlowAmountDirection, type FlowAmountProps, flowDirection } from "./FlowAmount";
+// Choosing a renderer needs no renderer: these come from their own small module, so an app that only asks which kind
+// a file is never loads FileView and its PDF, video and code dependencies.
+export { canPreviewFile, type FileViewFile, type FileViewPreviewKind, getFileViewPreviewKind } from "./file-view-preview";
 export type { KbdProps } from "./Kbd";
 export { Kbd } from "./Kbd";
 export type { LabelChipProps } from "./LabelChip";
 export { LabelChip } from "./LabelChip";
-export type { LightboxAction, LightboxImage } from "./Lightbox";
+export type { LightboxAction, LightboxItem, LightboxProps } from "./Lightbox";
 export { default as Lightbox } from "./Lightbox";
 export type { LoadMoreProps } from "./LoadMore";
 export { LoadMore } from "./LoadMore";

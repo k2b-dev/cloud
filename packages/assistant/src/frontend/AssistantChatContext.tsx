@@ -6,6 +6,7 @@ import {
   type DetailPanelActionSecondary,
   FileView,
   Lightbox,
+  type LightboxItem,
   MarkdownView,
   Placeholder,
   prompts,
@@ -26,10 +27,10 @@ import {
   AssistantContextSection,
   AssistantContextViewAll,
   assistantContextCountTitle,
+  assistantFileLightboxItem,
   assistantProjectFileSource,
   confirmOpenAssistantLink,
   isAssistantContextImage,
-  loadAssistantContextImages,
   openAssistantCloudReference,
   openAssistantContextFiles,
   openAssistantKnowledgeSearch,
@@ -275,9 +276,7 @@ function AssistantChatContextView(
       ),
     });
   };
-  const [lightbox, setLightbox] = createSignal<{ images: Awaited<ReturnType<typeof loadAssistantContextImages>>; index: number } | null>(
-    null,
-  );
+  const [lightbox, setLightbox] = createSignal<{ items: LightboxItem[]; index: number } | null>(null);
   // The snapshot carries the newest sources; the Sources overview loads older ones on request.
   const sourcePages = createChatSourcePages(() => props.state.snapshot());
   const olderSources = createMemo(() => splitAssistantConversationSources(sourcePages.extra()));
@@ -330,25 +329,20 @@ function AssistantChatContextView(
         const voiceInputs = () => files().filter((file) => file.dictationRecordedAt);
         const hasMixedScope = (items: readonly AssistantContextFile[]) =>
           items.some((file) => file.scope === "chat") && items.some((file) => file.scope === "project");
-        const openImages = async (selected?: AssistantContextFile) => {
+        // Each image reads itself when the Lightbox shows it, which also says when one cannot be loaded.
+        const openImages = (selected?: AssistantContextFile) => {
           if (props.onOpenView) {
             openFiles(images(), selected);
             return;
           }
-          try {
-            const loaded = await loadAssistantContextImages(files());
-            const index = selected
-              ? Math.max(
-                  0,
-                  loaded.findIndex((entry) => entry.file.id === selected.id),
-                )
-              : 0;
-            setLightbox({ images: loaded, index });
-          } catch (error) {
-            void prompts.error(error instanceof Error ? error.message : text("Images could not be loaded."), {
-              title: text("Could not open images"),
-            });
-          }
+          const shown = images();
+          setLightbox({
+            items: shown.map((file) => assistantFileLightboxItem(file)),
+            index: Math.max(
+              0,
+              shown.findIndex((file) => file.id === selected?.id),
+            ),
+          });
         };
         const chatSources = () => [...value().chat.sources, ...olderSources().sources];
         const chatReferences = () => [...value().chat.references, ...olderSources().references];
@@ -629,8 +623,9 @@ function AssistantChatContextView(
             <Show when={lightbox()}>
               {(state) => (
                 <Lightbox
-                  images={state().images.map((entry) => entry.image)}
-                  initialIndex={state().index}
+                  items={state().items}
+                  index={state().index}
+                  onIndexChange={(index) => setLightbox({ ...state(), index })}
                   onClose={() => setLightbox(null)}
                 />
               )}

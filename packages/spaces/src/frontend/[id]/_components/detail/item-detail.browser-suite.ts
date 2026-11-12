@@ -960,7 +960,7 @@ describe("Spaces item detail in a browser", () => {
     ["desktop", desktop, "en"],
     ["phone", phone, "de"],
   ] as const)
-    test(`${name}: a video attachment shows its first frame and plays in a dialog that fits the whole reel`, async () => {
+    test(`${name}: a video attachment shows its first frame and plays in the Lightbox, the whole reel in view`, async () => {
       rangeRequests.length = 0;
       const page = await open(view, { locale, attachments: [reelAttachment] });
       try {
@@ -982,43 +982,43 @@ describe("Spaces item detail in a browser", () => {
         ).toBe(1);
 
         await tile.click();
-        await page.waitForSelector(".spaces-video-dialog[open] .k2b-video-player__video");
-        await page.waitForFunction(() => (document.querySelector(".spaces-video-dialog video") as HTMLVideoElement).readyState >= 1);
-        expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Reel for approval.webm");
-        const body = (await page.locator(".spaces-video-dialog .k2b-panel-dialog__body").boundingBox())!;
-        const frame = (await page.locator(".spaces-video-dialog .k2b-video-player").boundingBox())!;
-        // The player fills the body: a portrait reel shows at the body's full height, uncropped.
-        expect(frame.width).toBeGreaterThan(body.width - 2 * 24 - 2);
-        expect(frame.height).toBeGreaterThan(body.height - 24 - 4 - 2);
-        expect(frame.y + frame.height).toBeLessThanOrEqual(body.y + body.height);
+        await page.waitForSelector("dialog.k2b-lightbox[open] .k2b-video-player__video");
+        await page.waitForFunction(() => (document.querySelector(".k2b-lightbox video") as HTMLVideoElement).readyState >= 1);
+        // The player has the focus, so Space and the arrows work in the video at once.
+        await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Reel for approval.webm");
+        const stage = (await page.locator(".k2b-lightbox__stage").boundingBox())!;
+        const frame = (await page.locator(".k2b-lightbox .k2b-video-player").boundingBox())!;
+        // The whole reel stays in view on the stage.
+        expect(frame.y).toBeGreaterThanOrEqual(stage.y);
+        expect(frame.y + frame.height).toBeLessThanOrEqual(stage.y + stage.height + 1);
         if (view === phone) {
-          const dialog = (await page.locator(".spaces-video-dialog").boundingBox())!;
+          const dialog = (await page.locator("dialog.k2b-lightbox").boundingBox())!;
           expect([dialog.x, dialog.y, dialog.width, dialog.height]).toEqual([0, 0, 390, 844]);
         }
-        const download = page.locator(".spaces-video-dialog .k2b-panel-dialog__actions a");
+        const download = page.locator(".k2b-lightbox__actions a[download]");
         expect(await download.getAttribute("href")).toBe("/api/spaces/Space1/items/Item01/attachments/Reel01/content?download=true");
         expect(rangeRequests.some((range) => range !== null)).toBe(true);
         // The reel plays: play() resolves once it does. Muted, it needs no user gesture in either engine.
-        await page.$eval(".spaces-video-dialog video", (element) => {
+        await page.$eval(".k2b-lightbox video", (element) => {
           const video = element as HTMLVideoElement;
           video.muted = true;
           return video.play();
         });
         await page.keyboard.press("Escape");
-        await page.waitForSelector(".spaces-video-dialog", { state: "detached" });
+        await page.waitForSelector("dialog.k2b-lightbox", { state: "detached" });
       } finally {
         await page.context().close();
       }
     }, 30_000);
 
-  test("a video the browser cannot play announces its fallback and keeps focus in the dialog", async () => {
+  test("a video the browser cannot play announces its fallback and keeps focus in the Lightbox", async () => {
     const page = await open(desktop, { locale: "en", attachments: [brokenAttachment] });
     try {
       await page.getByRole("button", { name: "Broken.mov", exact: true }).click();
-      await page.waitForSelector(".spaces-video-dialog .k2b-video-player__fallback[role=alert]");
-      expect(await page.locator(".spaces-video-dialog .k2b-video-player__fallback").innerText()).toContain("This video cannot play here");
-      // Focus started on the video, which the fallback replaced; it must not drop to the page behind the dialog.
-      expect(await page.evaluate(() => document.querySelector(".spaces-video-dialog")!.contains(document.activeElement))).toBe(true);
+      await page.waitForSelector(".k2b-lightbox .k2b-video-player__fallback[role=alert]");
+      expect(await page.locator(".k2b-lightbox .k2b-video-player__fallback").innerText()).toContain("This video cannot play here");
+      // Focus started on the video, which the fallback replaced; it must not drop to the page behind the Lightbox.
+      expect(await page.evaluate(() => document.querySelector("dialog.k2b-lightbox")!.contains(document.activeElement))).toBe(true);
     } finally {
       await page.context().close();
     }

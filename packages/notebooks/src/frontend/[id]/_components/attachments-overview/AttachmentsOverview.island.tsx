@@ -132,7 +132,7 @@ const AttachmentsOverview = (props: Props) => {
                       ? t().previewNamedAttachment({ filename: att.filename })
                       : t().downloadNamedAttachment({ filename: att.filename })
                   }
-                  onClick={() => openAttachment(props.notebookId, att)}
+                  onClick={() => openAttachment(props.notebookId, att, items())}
                 >
                   {att.kind === "image" ? (
                     <img

@@ -5,7 +5,7 @@ section: Conventions
 order: 1284
 description: Look up visual UI, interaction, and accessibility rules with their canonical owners and checks.
 tags: [conventions, ui, interaction, accessibility, audit]
-updated: 2026-11-07
+updated: 2026-11-11
 ---
 
 # Frontend conventions
@@ -78,6 +78,7 @@ patterns with `rg -n` in the application's `src` directory.
 | IX-19 | Leave island failures to the boundary Cloud gives each island, without an `ErrorBoundary` around an island's root, and handle errors in event handlers and async callbacks where they happen. | A failing island shows a notice with **Try again** while the rest of the page keeps working. | Manual: search for `ErrorBoundary` at island roots; read event handlers and async callbacks for a handled error, such as a mutation's `error()` or a toast. | [When an island fails](/en/docs/frontend/islands-and-hydration#when-an-island-fails) |
 | IX-20 | Hide progressive row actions with `k2b-progressive-row` and `k2b-progressive-action`, or under `@media (any-hover: hover)` in custom CSS, never with `(hover: hover)`, `(hover: none)`, `(pointer: fine)`, or Tailwind's `hover:` and `group-hover:` variants. | A tablet's primary pointer stays the finger when a mouse is attached. | `packages/ui/src/styles/css-hygiene-contract.test.ts` covers `@k2b/ui`; Manual: search for `"hover: hover\|hover: none\|pointer: fine\|group-hover:opacity"`; check that row actions always show on a touch-only phone and appear on hover and keyboard focus with a mouse. | [Controls and feedback](/en/docs/frontend/styling-and-accessibility#keep-controls-and-feedback-consistent) |
 | IX-21 | Keep happy paths: a known path that moves keeps working or shows a one-time MovedHint at the old place, only for people who may use the new path. Mail is the exception: no hint at the old place (maintainer decision, 17 October 2026). | Familiar paths still lead people to the result. | Manual: follow the old path, dismiss or use the hint, then reload; a seen hint stays absent from the server render. | [MovedHint](/en/ui/feedback/moved-hint) |
+| IX-22 | Open a file large, such as an attachment, a stored file, or an image in a text, only with `Lightbox`, never in an own dialog, panel dialog, or modal; the dialog's buttons go into the Lightbox's action pill. A working flow that shows a document as one part, such as generating it, keeps its dialog. | Every file opens the same way, with the same keys, states, and recovery, in every app. | `bun scripts/check.ts file-previews` covers built-in apps, with reasons for kept dialogs in its allow-list; Manual: search for `"PdfViewer\|<img\|<video"` inside `Dialog`, `PanelDialog`, `prompts.dialog`, and `dialogCore.open`. | [Media preview](/en/ui/content/media) |
 
 ## Accessibility (A11Y)
 
