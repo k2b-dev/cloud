@@ -14,7 +14,8 @@ import { useAiToolDisclosure } from "./tool-disclosure";
 export function CloudCardBlock(props: { args: unknown }) {
   const card = () => (isRecord(props.args) ? props.args : null);
   const emoji = () => (typeof card()?.emoji === "string" ? String(card()?.emoji).trim() : "");
-  const title = () => String(card()?.title ?? "Card");
+  const locale = useLocale();
+  const title = () => String(card()?.title ?? aiChatMessages(locale()).cardFallback);
   const value = () => String(card()?.value ?? "");
   const caption = () => (typeof card()?.caption === "string" ? String(card()!.caption) : "");
   const legacyTrend = () => {
@@ -70,7 +71,7 @@ export function CloudSurveyBlock(props: {
   const [submitted, setSubmitted] = createSignal(false);
   const submission = mutation.create<void, unknown>({
     mutation: async (result) => {
-      if (!props.onSubmit) throw new Error("Survey submission is unavailable.");
+      if (!props.onSubmit) throw new Error(t().surveyFailed);
       await props.onSubmit(result);
     },
     onSuccess: () => setSubmitted(true),
@@ -116,19 +117,21 @@ export function CloudSurveyBlock(props: {
 
           <div class="mt-4 space-y-4">
             <For each={questions()}>
-              {(question) => {
+              {(question, index) => {
                 const id = () => String(question.id ?? "");
+                // The answer key may hold spaces or repeat; the DOM label ID comes from the question's place instead.
+                const labelId = () => `${surveyId}-question-${index()}`;
                 const options = () => (Array.isArray(question.options) ? (question.options as unknown[]).filter(isRecord) : []);
                 return (
                   <div>
-                    <p class="text-xs font-medium text-primary">
+                    <p id={labelId()} class="text-xs font-medium text-primary">
                       {String(question.label ?? "")}
                       <Show when={question.required}>
                         <span class="text-red-500"> *</span>
                       </Show>
                     </p>
                     <Show when={question.type === "single"}>
-                      <div class="mt-2 grid gap-1.5">
+                      <div class="mt-2 grid gap-1.5" role="radiogroup" aria-labelledby={labelId()}>
                         <For each={options()}>
                           {(option) => (
                             <label
@@ -154,7 +157,7 @@ export function CloudSurveyBlock(props: {
                       </div>
                     </Show>
                     <Show when={question.type === "multiple"}>
-                      <div class="mt-2 grid gap-1.5">
+                      <div class="mt-2 grid gap-1.5" role="group" aria-labelledby={labelId()}>
                         <For each={options()}>
                           {(option) => (
                             <label
@@ -181,7 +184,7 @@ export function CloudSurveyBlock(props: {
                     <Show when={question.type === "text"}>
                       <input
                         class="input mt-1 h-9 w-full text-sm"
-                        aria-label={String(question.label ?? "")}
+                        aria-labelledby={labelId()}
                         disabled={disabled()}
                         placeholder={typeof question.placeholder === "string" ? question.placeholder : ""}
                         value={String(answers()[id()] ?? "")}
@@ -191,6 +194,7 @@ export function CloudSurveyBlock(props: {
                     <Show when={question.type === "rating"}>
                       <Slider
                         class="mt-2"
+                        aria-label={String(question.label ?? "") || t().surveyKind}
                         disabled={disabled()}
                         min={typeof question.min === "number" ? question.min : 1}
                         max={typeof question.max === "number" ? question.max : 5}
@@ -299,6 +303,7 @@ export function CloudTextEditorBlock(props: {
   onSubmit?: (result: unknown) => void | Promise<void>;
 }) {
   const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   const editor = () => (isRecord(props.args) ? props.args : null);
   const format = () => (editor()?.format === "markdown" ? "markdown" : "plain");
   const initialContent = () => (typeof editor()?.content === "string" ? String(editor()!.content) : "");
@@ -307,11 +312,11 @@ export function CloudTextEditorBlock(props: {
   const [submitted, setSubmitted] = createSignal(false);
   const submission = mutation.create<void, unknown>({
     mutation: async (result) => {
-      if (!props.onSubmit) throw new Error("Text submission is unavailable.");
+      if (!props.onSubmit) throw new Error(t().textEditorUnavailable);
       await props.onSubmit(result);
     },
     onSuccess: () => setSubmitted(true),
-    onError: (submissionError) => setError(submissionError.message || "Could not submit the text. Try again."),
+    onError: (submissionError) => setError(submissionError.message || t().textEditorFailed),
   });
   const disabled = () => Boolean(props.disabled || submitted() || submission.loading() || !props.onSubmit);
   const submit = async () => {
@@ -322,15 +327,15 @@ export function CloudTextEditorBlock(props: {
     setError(null);
     if (submission.loading()) return;
     const result = await prompts.form({
-      title: "Suggest changes",
+      title: t().textEditorSuggest,
       icon: "ti ti-message",
-      confirmText: "Send feedback",
+      confirmText: t().textEditorSendFeedback,
       size: "medium",
       fields: {
         feedback: {
           type: "text",
-          label: "What should change?",
-          placeholder: "Describe what you want to be different.",
+          label: t().textEditorFeedbackLabel,
+          placeholder: t().textEditorFeedbackPlaceholder,
           multiline: true,
           lines: 4,
           required: true,
@@ -349,7 +354,7 @@ export function CloudTextEditorBlock(props: {
         onValueChange={setContent}
         lines={14}
         maxLength={CLOUD_AI_TEXT_EDITOR_MAX_CHARS}
-        aria-label={String(editor()?.title ?? "Review text")}
+        aria-label={String(editor()?.title ?? t().textEditorReview)}
         spellcheck
         disabled={disabled()}
         showStats={false}
@@ -365,20 +370,14 @@ export function CloudTextEditorBlock(props: {
         </span>
         <Show
           when={!props.disabled && !submitted() && props.onSubmit}
-          fallback={<p class="ml-auto text-xs text-dimmed">{props.disabledLabel ?? "Waiting for the assistant to continue."}</p>}
+          fallback={<p class="ml-auto text-xs text-dimmed">{props.disabledLabel ?? t().surveyWaiting}</p>}
         >
           <div class="ml-auto flex flex-wrap justify-end gap-2">
             <Button variant="secondary" size="sm" disabled={submission.loading()} onClick={() => void requestChanges()}>
-              Suggest changes
+              {t().textEditorSuggest}
             </Button>
-            <Button
-              variant="ai"
-              size="sm"
-              loading={submission.loading()}
-              loadingLabel={aiChatMessages(locale()).answerSubmitting}
-              onClick={() => void submit()}
-            >
-              {String(editor()?.submitLabel ?? "Continue")}
+            <Button variant="ai" size="sm" loading={submission.loading()} loadingLabel={t().answerSubmitting} onClick={() => void submit()}>
+              {String(editor()?.submitLabel ?? t().textEditorContinue)}
             </Button>
           </div>
         </Show>
@@ -393,8 +392,17 @@ export function CloudTextEditorResultBlock(props: { blockId?: string; args?: unk
   const result = () => (isRecord(props.result) ? props.result : null);
   const content = () => (typeof result()?.content === "string" ? String(result()!.content) : "");
   const feedback = () => (result()?.submitted === false && typeof result()?.feedback === "string" ? String(result()!.feedback) : "");
-  const format = () => (result()?.format === "markdown" ? "Markdown" : "Plain text");
-  const state = () => (feedback() ? (props.continuing ? "revising" : "changes requested") : props.continuing ? "waiting" : "submitted");
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  const format = () => (result()?.format === "markdown" ? "Markdown" : t().textEditorPlain);
+  const state = () =>
+    feedback()
+      ? props.continuing
+        ? t().textEditorRevising
+        : t().textEditorChangesRequested
+      : props.continuing
+        ? t().textEditorWaiting
+        : t().textEditorSubmitted;
   return (
     <details
       class="group w-full min-w-0 text-xs"
@@ -403,9 +411,9 @@ export function CloudTextEditorResultBlock(props: { blockId?: string; args?: unk
     >
       <summary class="inline-flex min-h-7 max-w-full cursor-pointer list-none items-center gap-1.5 py-1 leading-none text-dimmed transition-colors hover:text-primary">
         <i class="ti ti-edit shrink-0 text-base leading-none" aria-hidden="true" />
-        <span class="shrink-0 font-medium">text editor</span>
+        <span class="shrink-0 font-medium">{t().textEditor}</span>
         <span class="min-w-0 truncate">
-          {String(editor()?.title ?? "Review text")} · {state()}
+          {String(editor()?.title ?? t().textEditorReview)} · {state()}
         </span>
         <i
           class="ti ti-chevron-right shrink-0 text-base leading-none opacity-60 transition-transform group-open:rotate-90"
@@ -413,9 +421,9 @@ export function CloudTextEditorResultBlock(props: { blockId?: string; args?: unk
         />
       </summary>
       <div class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70 px-2.5 py-2 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
-        <p class="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-dimmed">{feedback() ? "Feedback" : format()}</p>
+        <p class="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-dimmed">{feedback() ? t().textEditorFeedback : format()}</p>
         <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-primary">
-          {feedback() || content() || "Empty text submitted."}
+          {feedback() || content() || t().textEditorEmpty}
         </pre>
       </div>
     </details>

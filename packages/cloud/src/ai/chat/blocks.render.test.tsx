@@ -3,11 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { type Accessor, createComponent, createRoot, createSignal } from "solid-js";
+import { type Accessor, createComponent, createRoot, createSignal, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { CodeCheckResultSchema } from "../../code/checker-contract";
 import { aiAttachmentMarker } from "../attachments";
 import type { AiActiveTurn } from "../client/projection";
+import { CloudAiSurveyInputSchema, CloudAiTextEditorInputSchema } from "../default-tool-contracts";
 import type { AiTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import type { AiTurnPhase } from "./turn-layout";
@@ -1286,8 +1287,41 @@ describe("survey presentation", () => {
     );
     expect(html).toContain(">Umfrage</p>");
     expect(html).toContain("Absenden");
-    expect(html).toContain('aria-label="In welchen Ordner?"');
+    // The input is named by its visible question, not by a copy that can drift from it.
+    const labelledBy = /<input[^>]*aria-labelledby="([^"]+)"/.exec(html)?.[1];
+    expect(labelledBy).toBeTruthy();
+    expect(html).toContain(`id="${labelledBy}" class="text-xs font-medium text-primary">In welchen Ordner?`);
     expect(html).not.toMatch(/>Survey<|>Submit</);
+  });
+
+  test("names each answer by its own question even when answer keys hold spaces or repeat", () => {
+    const html = renderToString(() =>
+      createComponent(CloudSurveyBlock, {
+        args: CloudAiSurveyInputSchema.parse({
+          title: "Kontakt",
+          questions: [
+            { id: "contact name", type: "text", label: "Name" },
+            {
+              id: "contact name",
+              type: "single",
+              label: "Rolle",
+              options: [
+                { label: "Kunde", value: "customer" },
+                { label: "Lieferant", value: "supplier" },
+              ],
+            },
+          ],
+        }),
+        onSubmit: () => {},
+      }),
+    );
+    const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+    const references = [...html.matchAll(/aria-labelledby="([^"]+)"/g)].map((match) => match[1]!);
+    expect(references).toHaveLength(2);
+    for (const reference of references) expect(ids).toContain(reference);
+    // Without a label from the model, the button speaks the reader's language.
+    expect(html).toContain("Submit");
   });
 
   test("renders accepted survey answers in the shared user bubble", () => {
@@ -1481,6 +1515,48 @@ describe("text editor presentation", () => {
     expect(html).toContain("13 / 20,000");
     expect(html).toContain("Use draft");
     expect(html).toContain("20,000");
+  });
+
+  test("speaks the reader's language in the editor and in its receipt", () => {
+    const inGerman = (render: () => JSX.Element) =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return render();
+          },
+        }),
+      );
+    const editor = inGerman(() =>
+      createComponent(CloudTextEditorBlock, {
+        // Parsed like a real call, so a schema default cannot put English back.
+        args: CloudAiTextEditorInputSchema.parse({ title: "Antwort", content: "Hallo" }),
+        onSubmit: async () => undefined,
+      }),
+    );
+    expect(editor).toContain('aria-label="Antwort"');
+    expect(editor).toContain("Änderungen vorschlagen");
+    expect(editor).toContain("Weiter");
+    expect(editor).not.toMatch(/Suggest changes|Review text|>Continue</);
+    const receipt = inGerman(() =>
+      createComponent(AiTurnBlockView, {
+        block: {
+          id: "text-editor-call",
+          kind: "tool",
+          callId: "call-3",
+          name: "text_editor",
+          args: { content: "Hallo" },
+          status: "completed",
+          frontendMode: "client_interaction",
+          result: { submitted: false, feedback: "Kürzer, bitte." },
+        },
+        turnId: "turn-1",
+      }),
+    );
+    expect(receipt).toContain("Texteditor");
+    expect(receipt).toContain("Text prüfen · Änderungen gewünscht");
+    expect(receipt).toContain("Rückmeldung");
+    expect(receipt).not.toMatch(/text editor|changes requested|Feedback</);
   });
 
   test("collapses accepted text immediately and keeps the exact source in details", () => {
