@@ -171,7 +171,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
     >`INSERT INTO mail.conversations (short_id, mailbox_id, subject, participant_summary, latest_message_at) VALUES (${shortId}, ${mailboxId}::uuid, 'Test', 'Customer', now()) RETURNING id`;
     const [message] = await sql<
       { id: string }[]
-    >`INSERT INTO mail.message_contents (short_id, mailbox_id, message_id, subject, normalized_subject, internal_date, size_bytes, content_hash, hydration_status, plain_text) VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<assigned-${suffix}-${position}@example.test>`}, 'Test', 'test', now(), 4, ${String(position).repeat(64)}, 'complete', 'Body') RETURNING id`;
+    >`INSERT INTO mail.message_contents (short_id, mailbox_id, message_id, subject, normalized_subject, internal_date, size_bytes, content_hash, hydration_status, plain_text) VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<assigned-${suffix}-${position}@example.test>`}, 'Test', 'test', now(), 4, ${position.toString(16).padStart(64, "0")}, 'complete', 'Body') RETURNING id`;
     if (!conversation || !message) throw new Error("Conversation fixture missing");
     await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position) VALUES (${conversation.id}::uuid, ${message.id}::uuid, 0)`;
     await sql`INSERT INTO mail.message_addresses (message_id, role, position, email, normalized_email) VALUES (${message.id}::uuid, 'from', 0, 'customer@example.test', 'customer@example.test')`;
@@ -181,6 +181,19 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
     if (!ref) throw new Error("Message fixture missing");
     await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id) VALUES (${ref.id}::uuid, ${inboxId}::uuid, ${message.id}::uuid)`;
     return { id: conversation.id, shortId, messageId: message.id, refId: ref.id };
+  };
+  let nextConversationPosition = 3;
+  const freshVisibleConversation = async () => {
+    c1 = await createConversation(nextConversationPosition++);
+    unwrap(
+      await collaboration.applyConversationAssignments({
+        context: contextFor(owner),
+        mailboxId,
+        conversationIds: [c1.shortId],
+        assigneeUserIds: [writer.id, reader.id],
+        mode: "replace",
+      }),
+    );
   };
   const assignWriter = (mode: "add" | "remove") =>
     collaboration.applyConversationAssignments({
@@ -497,13 +510,13 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
     });
 
   test("visible reply drafts support updates, leases, recovery, attachments and scheduled send", async () => {
-    expect(
-      unwrap(await drafts.createDraft({ context: contextFor(writer), mailboxId, input: { ...draftInput(), intent: undefined } })).intent,
-    ).toBe("reply");
-    for (const intent of ["reply_all", "forward"] as const) {
+    for (const intent of [undefined, "reply_all", "forward"] as const) {
       const created = unwrap(await drafts.createDraft({ context: contextFor(writer), mailboxId, input: { ...draftInput(), intent } }));
       expect(created.conversationId).toBe(c1.id);
-      expect(created.intent).toBe(intent);
+      expect(created.intent).toBe(intent ?? "reply");
+      unwrap(
+        await drafts.discardDraft({ context: contextFor(writer), mailboxId, draftId: created.id, expectedRevision: created.revision }),
+      );
     }
     let draft = unwrap(await createReply());
     expect(unwrap(await drafts.getDraft(contextFor(writer), mailboxId, draft.id)).conversationId).toBe(c1.id);
@@ -790,6 +803,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
     // Earlier acceptance tests intentionally left commands queued; remove their ordering barrier.
     await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE mailbox_id = ${mailboxId}::uuid AND kind <> 'send'`;
     for (const revoke of ["assignment", "grant"] as const) {
+      await freshVisibleConversation();
       const command = unwrap(await queueState());
       const send = unwrap(await queueSend(writer, unwrap(await createReply())));
       expect(await commandStillAuthorized(await stored(command.id), "write")).toBe(true);
@@ -831,6 +845,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
   });
 
   test("a mailbox-wide read grant beside assigned write access stops queued writes, as it refuses new ones", async () => {
+    await freshVisibleConversation();
     await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE mailbox_id = ${mailboxId}::uuid AND kind <> 'send'`;
     const command = unwrap(await queueState());
     const send = unwrap(await queueSend(writer, unwrap(await createReply())));
@@ -854,6 +869,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
   });
 
   test("a scheduled reply stops, like its cancellation, once its source or outgoing message leaves the conversation", async () => {
+    await freshVisibleConversation();
     const draft = unwrap(await createReply());
     const send = unwrap(await queueSend(writer, draft));
     const [outbox] = await sql<
