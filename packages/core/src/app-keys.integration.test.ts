@@ -203,8 +203,10 @@ databaseSuite()("Core app-key registry and admin API", () => {
     expect(registered.ok).toBe(true);
     if (!registered.ok) return;
     const coordinates = { appId: "revocation", keyId: registered.data.keyId };
-    expect(await getActiveAppKey(coordinates)).not.toBeNull();
-    await touchAppKey(coordinates);
+    const active = await getActiveAppKey(coordinates);
+    expect(active).not.toBeNull();
+    if (!active) throw new Error("Missing active key");
+    await touchAppKey(active);
     expect((await getActiveAppKey(coordinates))?.lastUsedAt).not.toBeNull();
     expect((await appKeys.revoke({ ...coordinates, actor, appId: "another-app" })).ok).toBe(false);
     const response = await routes.request(`/revocation/keys/${coordinates.keyId}`, { method: "DELETE" });
@@ -216,7 +218,7 @@ databaseSuite()("Core app-key registry and admin API", () => {
     expect(row?.status).toBe("revoked");
     expect(row?.revoked_by).toBe(actor.id);
     expect(row?.revoked_at).not.toBeNull();
-    await touchAppKey(coordinates);
+    await touchAppKey(active);
     const [untouched] = await sql<
       { last_used_at: Date }[]
     >`SELECT last_used_at FROM auth.service_account_credentials WHERE id = ${coordinates.keyId}::uuid`;

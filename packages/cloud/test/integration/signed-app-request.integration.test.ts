@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, expect, jest, test } from "bun:test";
+import { afterAll, beforeAll, expect, jest, spyOn, test } from "bun:test";
 import { authenticateSignedAppRequest } from "@k2b/cloud/api";
 import type { AppKey } from "@k2b/cloud/app-key";
 import { mandates } from "@k2b/cloud/services";
 import { authenticateBootstrap } from "@k2b/cloud/services/app-bootstrap";
-import { appKeys, getActiveAppKey } from "@k2b/cloud/services/app-keys";
+import { appKeys, getActiveAppKey, touchAppKey } from "@k2b/cloud/services/app-keys";
 import { SQL } from "bun";
 import { Hono } from "hono";
 import { createLocalJWKSet, decodeJwt, exportJWK, generateKeyPair } from "jose";
@@ -20,7 +20,7 @@ import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { migrate as migrateOAuth } from "../../../oauth/src/migrate";
 import { BOOTSTRAP_PATH, signAppProof, signBootstrapProof } from "../../src/runtime/bootstrap-protocol";
-import { sql } from "../../src/runtime/clients";
+import { redis, sql } from "../../src/runtime/clients";
 import { verifyAccessToken } from "../../src/services/oauth-tokens";
 
 const NOW = Date.UTC(2030, 0, 2, 3, 4, 5);
@@ -92,6 +92,105 @@ suiteFor(
       },
     };
   };
+
+  test("ten signed calls each read once, write only on first use and claim one Valkey nonce, separate from domain SQL", async () => {
+    const enrolled = await appKeys.register({ actor, appId: "signed-cost", publicKey: APP_KEY_FIXTURES[0].publicKey });
+    if (!enrolled.ok) throw new Error(enrolled.error.message);
+    const appKey = { ...key, appId: "signed-cost", keyId: enrolled.data.keyId };
+    const statements: { auth: string[]; domain: string[] } = { auth: [], domain: [] };
+    let phase: keyof typeof statements = "auth";
+    // Count only executed statements; unsafe(columns) constructs a fragment, not another read.
+    const counted = new Proxy(replicas[0], {
+      apply(target, receiver, args) {
+        statements[phase].push(args[0].join("?"));
+        return Reflect.apply(target, receiver, args);
+      },
+      get(target, property) {
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const route = new Hono().post(path, async (c) => {
+      const authenticated = await authenticateSignedAppRequest(c, "identity:invoke", { db: counted, ingress: admitted, admit: admitted });
+      if (authenticated instanceof Response) return authenticated;
+      phase = "domain";
+      await counted`SELECT 1 AS domain_work`;
+      return c.json({ appId: authenticated.appId });
+    });
+    const send = redis.send.bind(redis);
+    const commands = spyOn(redis, "send").mockImplementation(send);
+    try {
+      for (let index = 0; index < 10; index++) {
+        statements.auth.length = 0;
+        statements.domain.length = 0;
+        phase = "auth";
+        commands.mockClear();
+        const request = await signed(appKey, "{}");
+        const response = await route.request(path, request.init);
+        expect(response.status).toBe(200);
+        expect(statements.auth.filter((statement) => /^\s*SELECT\b/i.test(statement))).toHaveLength(1);
+        expect(statements.auth.filter((statement) => !/^\s*SELECT\b/i.test(statement))).toHaveLength(index === 0 ? 1 : 0);
+        expect(statements.domain).toHaveLength(1);
+        expect(commands.mock.calls).toHaveLength(1);
+        expect(commands.mock.calls[0]).toEqual([
+          "SET",
+          [`cloud:app-proof:${appKey.keyId}:${decodeJwt(request.proof).jti}`, "1", "NX", "PX", "330000"],
+        ]);
+      }
+    } finally {
+      commands.mockRestore();
+    }
+  });
+
+  test("Valkey replay failure returns a retryable 503 before domain work and leaves the proof usable", async () => {
+    const request = await signed(key, "{}");
+    const send = redis.send.bind(redis);
+    const unavailable = spyOn(redis, "send").mockImplementation(async (command, args) => {
+      if (command === "SET") throw new Error("Replay store unavailable PRIVATE");
+      return send(command, args);
+    });
+    try {
+      for (const route of routes) {
+        const response = await route.request(path, request.init);
+        expect(response.status).toBe(503);
+        expect(response.headers.get("Retry-After")).toBe("1");
+        expect(response.headers.get("Cache-Control")).toBe("no-store");
+        expect(await response.json()).toEqual({
+          code: "app_proof_unavailable",
+          message: "App request authentication is temporarily unavailable",
+        });
+      }
+    } finally {
+      unavailable.mockRestore();
+    }
+    expect((await routes[1].request(path, request.init)).status).toBe(200);
+  });
+
+  test("a stale activity result cannot update a timestamp already written by another replica", async () => {
+    const enrolled = await appKeys.register({ actor, appId: "activity-guard", publicKey: APP_KEY_FIXTURES[0].publicKey });
+    if (!enrolled.ok) throw new Error(enrolled.error.message);
+    const stale = await getActiveAppKey({ appId: "activity-guard", keyId: enrolled.data.keyId }, replicas[0]);
+    if (!stale) throw new Error("Missing activity fixture");
+    expect(stale.activityDue).toBe(true);
+    await replicas[1]`UPDATE auth.service_account_credentials SET last_used_at = now() WHERE id = ${stale.keyId}::uuid`;
+    const [before] = await sql`SELECT last_used_at FROM auth.service_account_credentials WHERE id = ${stale.keyId}::uuid`;
+    await touchAppKey(stale, replicas[0]);
+    const [after] = await sql`SELECT last_used_at FROM auth.service_account_credentials WHERE id = ${stale.keyId}::uuid`;
+    expect(after?.last_used_at).toEqual(before?.last_used_at);
+    expect((await getActiveAppKey(stale))?.activityDue).toBe(false);
+  });
+
+  test("an expired key is refused immediately on both warm replicas", async () => {
+    const warm = await signed(thirdPartyKey, "{}");
+    expect((await routes[0].request(path, warm.init)).status).toBe(200);
+    const request = await signed(thirdPartyKey, "{}");
+    await sql`UPDATE auth.service_account_credentials SET expires_at = now() - interval '1 second' WHERE id = ${thirdPartyKey.keyId}::uuid`;
+    try {
+      for (const route of routes) expect((await route.request(path, request.init)).status).toBe(401);
+    } finally {
+      await sql`UPDATE auth.service_account_credentials SET expires_at = NULL WHERE id = ${thirdPartyKey.keyId}::uuid`;
+    }
+  });
 
   test("two different requests in one run and a lost-response retry consume distinct proofs, preserving domain idempotency", async () => {
     const first = await signed(key, JSON.stringify({ runId: "run-1", idempotencyKey: "effect-1", input: "one" }));
