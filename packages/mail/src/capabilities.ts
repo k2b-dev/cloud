@@ -2746,7 +2746,7 @@ const actionDefinitions = {
   "draft.create": {
     title: "Create draft",
     description:
-      "Create an idempotent editable mail draft with an optional small inline attachment. For Gustav and other service accounts, this is a suggestion people see in the conversation, labelled with the account's name. After a person edits it, the account can change it only at a person’s request. Each conversation has one open reply draft across all authors and modes. Creation returns that draft unchanged. An autonomous suggestion returns creationOutcome suggestion_skipped when the box is occupied by a human, adopted, or another author's draft. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
+      "Create an idempotent editable mail draft with an optional small inline attachment. For Gustav and other service accounts, this is a suggestion people see in the conversation, labelled with the account's name. After a person edits it, the account can change it only at a person’s request. Each conversation has one open user-origin reply draft across all authors and modes; private automatic replies are separate. Content-free creation returns that draft unchanged, with creationOutcome suggestion_skipped for an autonomous request against a human, adopted, or another author's draft. Supplied body, subject, recipients or attachments return DRAFT_REPLY_BOX_OCCUPIED (409), naming the existing draft; update it explicitly instead. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
     input: c.DraftCreateInputSchema,
     data: c.DraftMutationDataSchema,
     destructive: false,
@@ -2868,6 +2868,7 @@ const actionDefinitions = {
         context: requestContext(context),
         mailboxId: scope.data.id,
         input: { idempotencyKey: stableUuid(key.data), origin, draft: draftContent },
+        rejectOccupiedContent: drafts.hasDraftCreationContent(input),
       });
       if (!result.ok) return result;
       // Attachment uploads return the draft again, without the warnings about its body.
@@ -2980,7 +2981,7 @@ const actionDefinitions = {
   "draft.intent": {
     title: "Switch reply mode",
     description:
-      "Switch the conversation's reply draft between reply, reply_all and forward. Rebuild recipients, subject and source attachments; preserve body text and personal attachments. Requires the current revision; scheduled/sending drafts cannot switch.",
+      "Switch the conversation's reply draft between reply, reply_all and forward. Rebuild To/Cc and source attachments; preserve body, personal attachments, manual Bcc and custom subjects. Add default Bcc; swap Re:/Fwd: only for the unchanged derived subject. Requires the current revision; scheduled/sending drafts cannot switch.",
     input: c.DraftSwitchIntentInputSchema,
     data: c.DraftMutationDataSchema,
     destructive: false,
@@ -3035,7 +3036,8 @@ const actionDefinitions = {
   },
   "draft.consolidation.acknowledge": {
     title: "Acknowledge draft consolidation",
-    description: "Clear consolidatedCount after showing the one-time notice. Does not change content or revision.",
+    description:
+      "A person with write access can clear consolidatedCount on an open draft after showing the notice. Service accounts cannot acknowledge it. Does not change content or revision.",
     input: c.DraftAcknowledgeConsolidationInputSchema,
     data: c.DraftMutationDataSchema,
     destructive: false,

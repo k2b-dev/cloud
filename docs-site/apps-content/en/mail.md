@@ -533,7 +533,8 @@ above the newest message grow into the draft at that place; on a phone the bar
 waits at the bottom and the draft opens at the top over the full width. Mail
 creates the shared draft (`draft-seeds` and `materialize`) before anyone types.
 A conversation has one reply draft. Reply, Reply all and Forward use the same
-draft; repeated creation returns its current content. **Compose** puts **New message**
+draft; content-free creation returns its current content. Supplying new content
+when it already exists returns a conflict instead of dropping that content. **Compose** puts **New message**
 at the top of the list with an empty conversation beside it.
 
 - The URL carries the open draft as `?draft=`, so reload and Back open it
@@ -940,34 +941,49 @@ A changed copy saved in another mail client's Drafts folder also adopts the
 suggestion when Mail applies the edit. Reconciling an identical copy and
 retrying an export do not adopt it.
 
-Each conversation has one open reply draft across all authors and origins.
-An untouched suggestion is that draft. A repeated creation returns it unchanged;
-a request from another automated author, or a suggestion request after human
-creation or adoption, returns `creationOutcome: suggestion_skipped`. No second
-suggestion or inline attachment is added. Creation keys that previously mapped
-to a draft keep their idempotency contract.
+Each conversation has one open reply draft with `origin = 'user'`, including
+untouched and adopted suggestions and workflow review drafts. Private automatic
+replies use `origin = 'workflow'` and do not occupy that box. An untouched
+suggestion is the one draft. Content-free creation returns the existing draft;
+an autonomous request against another author's or an adopted draft reports
+`creationOutcome: suggestion_skipped`.
+
+API, CLI and capability creation with a new body, subject, recipients or
+attachments returns `DRAFT_REPLY_BOX_OCCUPIED` (409) when the box is occupied.
+The message includes the existing draft ID. Open that draft and update it
+explicitly with its current revision; the rejected content was not saved.
+Creation keys already mapped to a draft retain their original retry contract.
+Explicit API subjects are preserved, and `includeSourceAttachments` can copy
+source files into Reply, Reply all or Forward.
 
 Use `mail.draft.intent` with `intent` (`reply`, `reply_all`, `forward`) and the
 current `expectedRevision` to change modes. The equivalent HTTP operation is
 `POST /api/mail/mailboxes/:mailboxId/drafts/:draftId/intent`. It re-derives
-recipients, subject and forwarded source attachments, preserving body text and
-personal attachments. Switching away from Forward removes its copied source
-attachments. A stale revision returns 409. Shared documents advance their
-generation, so older editors must synchronize before writing again.
+To/Cc and forwarded source attachments, preserving body text, personal
+attachments and manually added Bcc while adding the sender's default Bcc.
+It changes Re:/Fwd: only while the subject still matches the derived source
+subject; a user-edited subject stays unchanged. Switching away from Forward
+removes the source attachments added for that mode. Files explicitly copied into
+Reply or Reply all remain as personal attachments through later mode changes.
+A stale revision returns 409. Shared documents advance their generation, so older editors must synchronize before writing again.
 
 Scheduled and sending drafts retain the reply place until sent or discarded.
-Automatic replies are suppressed with `reply_draft_exists` if it is occupied.
-A workflow that continues an existing reply returns `reused: true`;
-`scheduleDraftSend` refuses that output with `DRAFT_REPLY_BOX_OCCUPIED` so
-the existing text receives a manual send review.
+Automatic replies keep their separate lifecycle. A workflow review reply that
+finds the box occupied returns `DRAFT_REPLY_BOX_OCCUPIED`; it never schedules
+the person's existing text.
 Merging conversations that both have an open reply draft returns a recoverable
 409; send or discard one before merging. External-provider edits and offline
 recovery use recovery copies when a reply already exists, preserving both texts.
 
-The one-time upgrade keeps the most recently edited draft and erases the others.
+The one-time upgrade preserves a committed send; two committed sends in one
+conversation require resolution before startup. Otherwise human or adopted
+drafts rank ahead of untouched suggestions, then by content edit evidence.
+It erases the other drafts and writes a conversation activity for each removal;
+terminal submission and command history stays intact.
 The draft read model returns `consolidatedCount`; show the notice before clearing
 it through `mail.draft.consolidation.acknowledge` or
 `POST /api/mail/mailboxes/:mailboxId/drafts/:draftId/consolidation/acknowledge`.
+Only people with write access can acknowledge an open draft's notice.
 See [F6 operator guidance](/en/docs/operations/mail-reply-draft-consolidation)
 for the irreversible migration and its logged counts.
 

@@ -3303,6 +3303,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         context: requestContext(c),
         mailboxId: internalMailboxId(c),
         input: await internalInput(c, c.req.valid("json")),
+        rejectOccupiedContent: drafts.hasDraftCreationContent(c.req.valid("json")),
       }),
     ),
   )

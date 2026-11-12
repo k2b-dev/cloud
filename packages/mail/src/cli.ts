@@ -869,7 +869,7 @@ const draftContentFlags = {
   }),
   includeSourceAttachments: flag.boolean({
     name: "include-source-attachments",
-    description: "Copy source-message attachments into a forward draft",
+    description: "Copy source-message attachments into a reply or forward draft",
   }),
 };
 
@@ -1640,7 +1640,6 @@ const runConversationActions = async (params: {
   return failed.length > 0 ? 1 : undefined;
 };
 
-const replySubject = (subject: string): string => (/^re:/i.test(subject) ? subject : `Re: ${subject}`);
 const forwardSubject = (subject: string): string => (/^fwd?:/i.test(subject) ? subject : `Fwd: ${subject}`);
 
 /** The message to reply to or forward: `--message`, or the conversation's latest message. */
@@ -2791,8 +2790,8 @@ const everydayCommands = (t: Translate) => {
     command("reply", {
       summary: t({ en: "Create a reply draft in a conversation", de: "Einen Antwortentwurf in einer Unterhaltung anlegen" }),
       description: t({
-        en: "Returns the existing conversation draft unchanged, or replies to the latest message unless --message names another one. Recipients and subject come from that message. Send the draft with `cld mail send <draft>`.",
-        de: "Öffnet den vorhandenen Unterhaltungsentwurf unverändert oder antwortet auf die neueste Nachricht, außer --message nennt eine andere. Empfänger und Betreff kommen aus dieser Nachricht. Senden mit `cld mail send <entwurf>`.",
+        en: "Without content, opens the existing conversation draft. Supplied content conflicts if a draft exists. Otherwise replies to the latest message unless --message names another one. Recipients and subject come from that message. Send the draft with `cld mail send <draft>`.",
+        de: "Öffnet ohne Inhalt den vorhandenen Unterhaltungsentwurf. Übergebener Inhalt führt bei vorhandenem Entwurf zum Konflikt. Antwortet sonst auf die neueste Nachricht, außer --message nennt eine andere. Empfänger und Betreff kommen aus dieser Nachricht. Senden mit `cld mail send <entwurf>`.",
       }),
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
@@ -2811,7 +2810,11 @@ const everydayCommands = (t: Translate) => {
         identity: flag.string({
           description: t({ en: "Sender identity ID; default the mailbox default", de: "Absenderidentität; Standard die des Postfachs" }),
         }),
-        body: bodyFlag,
+        body: flag.input({
+          fileName: "body-file",
+          stdinName: "body-stdin",
+          description: t({ en: "Plaintext or Markdown body", de: "Text oder Markdown" }),
+        }),
         format: flag.enum(["plain", "markdown"] as const),
       },
       examples: ['cld mail reply Convo1 --body "Thanks, done."', "cld mail reply Convo1 --all --body-file answer.md --json"],
@@ -2821,7 +2824,7 @@ const everydayCommands = (t: Translate) => {
         const [source, senderIdentityId, body] = await Promise.all([
           resolveSourceMessage(ctx, mailbox.id, conversationId, flags.message, t),
           resolveSenderIdentityId(ctx, mailbox.id, flags.identity, t),
-          readCliInput(flags.body, { label: "message body", required: true }),
+          readCliInput(flags.body, { label: "message body" }),
         ]);
         const draft = await readApi<MailDraft>(
           ctx,
@@ -2832,7 +2835,7 @@ const everydayCommands = (t: Translate) => {
             to: [],
             cc: [],
             bcc: [],
-            subject: replySubject(source.subject),
+            subject: "",
             body: body ?? "",
             ...(flags.format ? { format: flags.format } : {}),
             conversationId,
@@ -2854,8 +2857,8 @@ const everydayCommands = (t: Translate) => {
     command("forward", {
       summary: t({ en: "Create a forward draft from a conversation", de: "Einen Weiterleitungsentwurf aus einer Unterhaltung anlegen" }),
       description: t({
-        en: "Returns the existing conversation draft unchanged, or forwards the latest message unless --message names another one, with its text and attachments. Send the draft with `cld mail send <draft>`.",
-        de: "Öffnet den vorhandenen Unterhaltungsentwurf unverändert oder leitet die neueste Nachricht weiter, außer --message nennt eine andere, mit Text und Anhängen. Senden mit `cld mail send <entwurf>`.",
+        en: "Supplied content conflicts if a conversation draft exists. Otherwise forwards the latest message unless --message names another one, with its text and attachments. Send the draft with `cld mail send <draft>`.",
+        de: "Übergebener Inhalt führt bei vorhandenem Unterhaltungsentwurf zum Konflikt. Leitet sonst die neueste Nachricht weiter, außer --message nennt eine andere, mit Text und Anhängen. Senden mit `cld mail send <entwurf>`.",
       }),
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
@@ -2907,7 +2910,7 @@ const everydayCommands = (t: Translate) => {
             conversationId,
             intent: "forward",
             sourceMessageId: source.id,
-            ...(flags.noAttachments || source.attachments.length === 0 ? {} : { includeSourceAttachments: true }),
+            includeSourceAttachments: !flags.noAttachments,
           }),
         );
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;

@@ -13,14 +13,12 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
-import { prepareAutomaticReplyInTransaction } from "./automatic-reply";
 import { readDraftDocument } from "./draft-documents";
 import { acquireDraftLease, heartbeatDraftLease } from "./draft-leases";
 import { finishReplyDraftRetirements } from "./draft-retirement";
 import { uploadDraftAttachmentStream } from "./draft-uploads";
 import * as drafts from "./drafts";
 import { createMailbox } from "./mailboxes";
-import { EMPTY_MESSAGE_PROTOCOL_FACTS } from "./message-protocol";
 
 const suite = suiteFor("database", "nats", "valkey");
 const at = "2026-11-01T12:00:00.000Z";
@@ -90,6 +88,20 @@ suite("one reply draft per conversation", () => {
   });
   const create = async (intent: "reply" | "reply_all" | "forward" = "reply") =>
     unwrap(await drafts.createDraft({ context: owner, mailboxId, input: input(await thread(), intent) }));
+  const editable = (draft: MailDraft) => ({
+    senderIdentityId: draft.senderIdentityId,
+    signatureTemplateId: draft.signatureTemplateId,
+    quoteSource: draft.quoteSource,
+    to: draft.to,
+    cc: draft.cc,
+    bcc: draft.bcc,
+    subject: draft.subject,
+    body: draft.body,
+    format: draft.format,
+    priority: draft.priority,
+    requestDeliveryReceipt: draft.requestDeliveryReceipt,
+    requestReadReceipt: draft.requestReadReceipt,
+  });
   const attach = (draft: MailDraft) =>
     uploadDraftAttachmentStream({
       context: owner,
@@ -101,6 +113,33 @@ suite("one reply draft per conversation", () => {
       byteLength: 4,
       stream: Readable.from("note"),
     });
+
+  const legacySuggestion = async (draft: MailDraft, state = "draft") => {
+    const [copy] = await sql<{ id: string; short_id: string }[]>`INSERT INTO mail.drafts
+      (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id, author_kind, author_id,
+        last_editor_kind, last_editor_id, body_markdown, state, created_at, content_edited_at)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${draft.conversationId}::uuid, ${draft.sourceMessageId}::uuid, 'reply',
+        ${identityId}::uuid, 'service_account', ${accountId}::uuid, 'service_account', ${accountId}::uuid,
+        'Newer untouched suggestion', ${state}, '2026-12-01', '2026-12-01') RETURNING id, short_id`;
+    return copy!;
+  };
+  const beginLegacyMigration = async () => {
+    await sql`DROP INDEX IF EXISTS mail.drafts_one_open_reply_idx`.simple();
+    await sql`DELETE FROM mail.schema_migrations WHERE version = 4`;
+  };
+  let bindingId: string;
+  const submission = async (draftId: string, state: string) => {
+    const [command] = await sql<{ id: string }[]>`INSERT INTO mail.commands
+      (mailbox_id, kind, state, actor_kind, access_subject_kind, idempotency_key, request_hash, target, payload)
+      VALUES (${mailboxId}::uuid, 'send', ${["scheduled", "undo_window"].includes(state) ? "queued" : "failed"},
+        'system', 'system', ${crypto.randomUUID()}, ${"a".repeat(64)}, '{}', '{}') RETURNING id`;
+    const [row] = await sql<{ id: string }[]>`INSERT INTO mail.outbox_submissions
+      (short_id, mailbox_id, draft_id, command_id, sender_identity_id, selected_binding_id, stable_message_id, state,
+        requested_at, mime_date, scheduled_at, draft_snapshot)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${draftId}::uuid, ${command!.id}::uuid,
+        ${identityId}::uuid, ${bindingId}::uuid, ${crypto.randomUUID()}, ${state}, ${at}, ${at}, ${at}, '{"body":"Historical content"}') RETURNING id`;
+    return row!.id;
+  };
 
   beforeAll(async () => {
     const [person] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name, mail)
@@ -117,6 +156,15 @@ suite("one reply draft per conversation", () => {
       VALUES (${newShortId()}, ${mailboxId}::uuid, 'Team', 'team@example.test', 'mailbox', 'verified', true) RETURNING id, short_id`;
     identityId = identity!.id;
     identityShortId = identity!.short_id;
+    const [connection] = await sql<{ id: string }[]>`INSERT INTO mail.provider_connections
+      (owner_mailbox_id, name, email, username, imap_host, imap_port, imap_tls_mode, smtp_host, smtp_port, smtp_tls_mode, secret_kind, encrypted_secret)
+      VALUES (${mailboxId}::uuid, 'B1 test transport', 'team@example.test', 'team', 'imap.example.test', 993, 'implicit',
+        'smtp.example.test', 465, 'implicit', 'password', 'test-only') RETURNING id`;
+    const [resource] = await sql<{ id: string }[]>`INSERT INTO mail.remote_resources
+      (mailbox_id, remote_locator, server_identity, scope_fingerprint) VALUES (${mailboxId}::uuid, '{}', '{}', ${"b".repeat(64)}) RETURNING id`;
+    const [binding] = await sql<{ id: string }[]>`INSERT INTO mail.provider_bindings
+      (remote_resource_id, connection_id, remote_locator) VALUES (${resource!.id}::uuid, ${connection!.id}::uuid, '{}') RETURNING id`;
+    bindingId = binding!.id;
     const [account] = await sql<
       { id: string }[]
     >`INSERT INTO auth.service_accounts (name, kind) VALUES ('B1 Gustav', 'agent') RETURNING id`;
@@ -261,6 +309,7 @@ suite("one reply draft per conversation", () => {
     try {
       const body = {
         ...input(source),
+        body: "",
         conversationId: source.conversationShortId,
         sourceMessageId: source.sourceShortId,
         senderIdentityId: identityShortId,
@@ -278,18 +327,30 @@ suite("one reply draft per conversation", () => {
       );
       expect(result.data.id).toBe(first.id);
       expect(result.data.creationOutcome).toBe("existing");
-      const skipped = unwrap(
-        await mailCapabilities.actions["draft.create"].run(
-          DraftCreateInputSchema.parse({
-            ...body,
-            mailboxId: mailboxShortId,
-            attachments: [{ filename: "do-not-add.txt", contentType: "text/plain", base64: "bm8=" }],
-          }),
-          cap(gustav),
-        ),
+      const occupied = await mailCapabilities.actions["draft.create"].run(
+        DraftCreateInputSchema.parse({
+          ...body,
+          mailboxId: mailboxShortId,
+          attachments: [{ filename: "do-not-add.txt", contentType: "text/plain", base64: "bm8=" }],
+        }),
+        cap(gustav),
       );
-      expect(skipped.data.creationOutcome).toBe("suggestion_skipped");
-      expect(skipped.data.attachments).toHaveLength(0);
+      expect(occupied).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
+      if (!occupied.ok) expect(occupied.error.message).toContain(first.id);
+      const contentConflict = await api.request(`/mailboxes/${mailboxShortId}/drafts`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ ...body, body: "Keep my new text" }),
+      });
+      expect(contentConflict.status).toBe(409);
+      expect(await contentConflict.json()).toMatchObject({ code: "DRAFT_REPLY_BOX_OCCUPIED", message: expect.stringContaining(first.id) });
+      for (const supplied of [{ body: "New text" }, { subject: "New subject" }, { to: [{ address: "new@example.test" }] }]) {
+        const conflict = await mailCapabilities.actions["draft.create"].run(
+          DraftCreateInputSchema.parse({ ...body, ...supplied, mailboxId: mailboxShortId }),
+          cap(),
+        );
+        expect(conflict).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
+      }
       const switched = await api.request(`/mailboxes/${mailboxShortId}/drafts/${first.id}/intent`, {
         method: "POST",
         headers,
@@ -301,12 +362,22 @@ suite("one reply draft per conversation", () => {
       token.mockRestore();
     }
   });
-  for (const mode of ["lock", "shared"] as const)
+  for (const mode of ["lock", "shared"] as const) {
     test(`mode switch derives recipients, subject and attachments in both directions (${mode})`, async () => {
       let draft = await create();
       await sql`UPDATE mail.drafts SET edit_mode = ${mode} WHERE id = ${draft.id}::uuid`;
       const documentBefore = mode === "shared" ? unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id })) : null;
       draft = unwrap(await attach(draft));
+      draft = unwrap(
+        await drafts.updateDraft({
+          context: owner,
+          mailboxId,
+          draftId: draft.id,
+          expectedRevision: draft.revision,
+          input: { ...editable(draft), bcc: [{ address: "private@example.test" }] },
+        }),
+      );
+      await sql`UPDATE mail.sender_identities SET default_bcc = '[{"address":"audit@example.test"}]' WHERE id = ${identityId}::uuid`;
       // Attach a source file using an existing complete blob; no external storage needed.
       const [part] = await sql<{ id: string }[]>`INSERT INTO mail.message_parts (message_id, part_path, content_type, size_bytes)
       VALUES (${draft.sourceMessageId}::uuid, '1', 'text/plain', 4) RETURNING id`;
@@ -323,12 +394,10 @@ suite("one reply draft per conversation", () => {
       expect((await change("forward", draft.revision - 1)).ok).toBeFalse();
       draft = unwrap(await change("forward"));
       expect(draft.subject).toBe("Fwd: Question");
+      expect(draft.bcc.map((a) => a.address)).toEqual(["private@example.test", "audit@example.test"]);
       expect(draft.to).toEqual([]);
       expect(draft.cc).toEqual([]);
       expect(draft.attachments.map((a) => a.filename).sort()).toEqual(["personal.txt", "source.txt"]);
-      // Legacy initial forward copies had no provenance column; personal uploads still survive.
-      await sql`UPDATE mail.draft_attachments a SET forwarded_source_message_id = NULL, created_at = d.created_at
-        FROM mail.drafts d WHERE a.draft_id = d.id AND d.id = ${draft.id}::uuid AND a.filename = 'source.txt'`;
       draft = unwrap(await change("reply"));
       expect(draft.subject).toBe("Re: Question");
       expect(draft.to.map((a) => a.address)).toEqual(["customer@example.test"]);
@@ -341,63 +410,143 @@ suite("one reply draft per conversation", () => {
       expect(draft.body).toBe("My text");
       if (mode === "shared")
         expect(unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id })).fresh.content.subject).toBe(draft.subject);
+      await sql`UPDATE mail.sender_identities SET default_bcc = '[]' WHERE id = ${identityId}::uuid`;
     });
-  test("workflow and automatic replies reuse the box without sending its existing content", async () => {
-    const draft = await create();
-    const [workflow] = await sql<{ id: string }[]>`INSERT INTO workflows.workflow(app_id, scope_id, key, name, created_by_kind)
-      VALUES ('mail', ${mailboxId}, ${newShortId()}, 'B1 automated reply', 'system') RETURNING id`;
-    const [version] = await sql<{ id: string }[]>`INSERT INTO workflows.version(workflow_id, revision, source, source_hash, plan,
-      language_id, language_version, manifest_hash, created_by_kind)
-      VALUES (${workflow!.id}::uuid, 1, 'source', ${"a".repeat(64)}, '{}', 'test', 1, ${"b".repeat(64)}, 'system') RETURNING id`;
-    const workflowVersionId = version!.id;
-    const [run] = await sql<{ id: string }[]>`INSERT INTO workflows.run(app_id, scope_id, workflow_id, workflow_version_id,
-      mode, authorization_snapshot, idempotency_key, occurred_at)
-      VALUES ('mail', ${mailboxId}, ${workflow!.id}::uuid, ${workflowVersionId}::uuid, 'execute', '{}', 'b1-reply', ${at}) RETURNING id`;
-    const result = unwrap(
-      await sql.begin((tx) =>
-        drafts.createWorkflowReplyDraftInTransaction({
-          db: tx,
+    test(`mode switch preserves a user-edited subject (${mode})`, async () => {
+      let draft = await create();
+      await sql`UPDATE mail.drafts SET edit_mode = ${mode} WHERE id = ${draft.id}::uuid`;
+      draft = unwrap(
+        await drafts.updateDraft({
+          context: owner,
           mailboxId,
-          workflowVersionId,
-          draftId: crypto.randomUUID(),
-          conversationId: draft.conversationId!,
-          sourceMessageId: draft.sourceMessageId!,
-          senderIdentityId: identityId,
-          recipient: { name: null, address: "customer@example.test" },
-          subject: "Auto",
-          body: "Automation",
-          format: "plain",
+          draftId: draft.id,
+          expectedRevision: draft.revision,
+          input: { ...editable(draft), subject: "Re: My own subject" },
         }),
-      ),
-    );
-    expect(result).toMatchObject({ id: draft.id, reused: true });
-    const suppressed = unwrap(
-      await sql.begin((tx) =>
-        prepareAutomaticReplyInTransaction({
-          db: tx,
+      );
+      const preview = unwrap(
+        await drafts.previewDraftIntent({
+          context: owner,
           mailboxId,
-          workflowVersionId,
-          workflowRunId: run!.id,
-          stepKey: "reply",
-          messageId: draft.sourceMessageId!,
-          conversationId: draft.conversationId!,
-          senderIdentityId: identityId,
-          subject: "Auto",
-          body: "Automation",
-          format: "plain",
-          protocolFacts: { ...EMPTY_MESSAGE_PROTOCOL_FACTS, returnPath: "<customer@example.test>" },
-          occurredAt: at,
-          minimumIntervalHours: 1,
-          schedule: { mode: "always" },
+          draftId: draft.id,
+          expectedRevision: draft.revision,
+          intent: "forward",
         }),
-      ),
+      );
+      expect(preview.subject).toBe("Re: My own subject");
+      draft = unwrap(
+        await drafts.switchDraftIntent({
+          context: owner,
+          mailboxId,
+          draftId: draft.id,
+          expectedRevision: draft.revision,
+          intent: "forward",
+        }),
+      );
+      expect(draft.subject).toBe("Re: My own subject");
+      draft = unwrap(
+        await drafts.switchDraftIntent({
+          context: owner,
+          mailboxId,
+          draftId: draft.id,
+          expectedRevision: draft.revision,
+          intent: "reply_all",
+        }),
+      );
+      expect(draft.subject).toBe("Re: My own subject");
+    });
+  }
+  test("creation preserves caller subjects and copies requested source attachments for reply and reply-all", async () => {
+    let first = await create();
+    first = unwrap(await attach(first));
+    const [part] = await sql<{ id: string }[]>`INSERT INTO mail.message_parts (message_id, part_path, content_type, size_bytes)
+      VALUES (${first.sourceMessageId}::uuid, '1', 'text/plain', 4) RETURNING id`;
+    await sql`INSERT INTO mail.attachments (short_id, message_id, part_id, blob_id, filename, content_type, size_bytes, checksum)
+      SELECT ${newShortId()}, ${first.sourceMessageId}::uuid, ${part!.id}::uuid, blob_id, 'source.txt', content_type, byte_length, content_hash
+      FROM mail.draft_attachments WHERE draft_id = ${first.id}::uuid LIMIT 1`;
+    unwrap(await drafts.discardDraft({ context: owner, mailboxId, draftId: first.id, expectedRevision: first.revision }));
+    for (const intent of ["reply", "reply_all"] as const) {
+      const draft = unwrap(
+        await drafts.createDraft({
+          context: owner,
+          mailboxId,
+          input: {
+            ...input({ conversationId: first.conversationId!, sourceMessageId: first.sourceMessageId! }, intent),
+            subject: "Chosen by caller",
+            includeSourceAttachments: true,
+          },
+        }),
+      );
+      expect(draft.subject).toBe("Chosen by caller");
+      expect(draft.attachments.map((a) => a.filename)).toEqual(["source.txt"]);
+      let switched = unwrap(
+        await drafts.switchDraftIntent({
+          context: owner,
+          mailboxId,
+          draftId: draft.id,
+          expectedRevision: draft.revision,
+          intent: intent === "reply" ? "reply_all" : "reply",
+        }),
+      );
+      expect(switched.attachments.map((a) => a.filename)).toEqual(["source.txt"]);
+      for (const mode of ["forward", "reply"] as const) {
+        switched = unwrap(
+          await drafts.switchDraftIntent({
+            context: owner,
+            mailboxId,
+            draftId: switched.id,
+            expectedRevision: switched.revision,
+            intent: mode,
+          }),
+        );
+        expect(switched.attachments).toHaveLength(mode === "forward" ? 2 : 1);
+      }
+      unwrap(await drafts.discardDraft({ context: owner, mailboxId, draftId: switched.id, expectedRevision: switched.revision }));
+    }
+    const legacy = unwrap(
+      await drafts.createDraft({
+        context: owner,
+        mailboxId,
+        input: input({ conversationId: first.conversationId!, sourceMessageId: first.sourceMessageId! }, "forward"),
+      }),
     );
-    expect(suppressed).toMatchObject({ state: "suppressed", reasons: ["reply_draft_exists"] });
-    expect(await sql`SELECT id FROM mail.outbox_submissions WHERE draft_id = ${draft.id}::uuid`).toHaveLength(0);
-    expect(unwrap(await drafts.getDraft(owner, mailboxId, draft.id)).body).toBe("My text");
-    await sql`DELETE FROM workflows.run WHERE id = ${run!.id}::uuid`;
-    await sql`DELETE FROM workflows.version WHERE id = ${workflowVersionId}::uuid`;
-    await sql`DELETE FROM workflows.workflow WHERE id = ${workflow!.id}::uuid`;
+    await sql`UPDATE mail.draft_attachments SET forwarded_source_message_id = NULL WHERE draft_id = ${legacy.id}::uuid`;
+    await beginLegacyMigration();
+    await migrate();
+    const reply = unwrap(
+      await drafts.switchDraftIntent({ context: owner, mailboxId, draftId: legacy.id, expectedRevision: legacy.revision, intent: "reply" }),
+    );
+    expect(reply.attachments).toHaveLength(0);
+    unwrap(await drafts.discardDraft({ context: owner, mailboxId, draftId: reply.id, expectedRevision: reply.revision }));
+  });
+  test("a failed automatic reply remains outside the person's reply box", async () => {
+    const source = await thread();
+    const automaticId = crypto.randomUUID();
+    const [automatic] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
+      (id, short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id,
+        origin, delivery_class, author_kind, author_id, last_editor_kind, last_editor_id, state, body_markdown)
+      VALUES (${automaticId}::uuid, ${newShortId()}, ${mailboxId}::uuid, ${source.conversationId}::uuid,
+        ${source.sourceMessageId}::uuid, 'reply', ${identityId}::uuid, 'workflow', 'automatic_reply',
+        'workflow', ${crypto.randomUUID()}::uuid, 'workflow', ${crypto.randomUUID()}::uuid, 'draft', 'Failed automatic reply') RETURNING id`;
+    const person = unwrap(await drafts.createDraft({ context: owner, mailboxId, input: input(source) }));
+    expect(person.id).not.toBe(automatic!.id);
+    expect((await drafts.getDraft(owner, mailboxId, automatic!.id)).ok).toBeFalse();
+    const again = unwrap(await drafts.createDraft({ context: owner, mailboxId, input: input(source) }));
+    expect(again.id).toBe(person.id);
+    const workflow = await sql.begin((tx) =>
+      drafts.createWorkflowReviewReplyDraftInTransaction({
+        db: tx,
+        mailboxId,
+        workflowVersionId: crypto.randomUUID(),
+        draftId: crypto.randomUUID(),
+        conversationId: source.conversationId,
+        sourceMessageId: source.sourceMessageId,
+        senderIdentityId: identityId,
+        body: "Review reply",
+        format: "markdown",
+      }),
+    );
+    expect(workflow).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
   });
   test("switching honors another editor's lease and capability revision checks", async () => {
     const draft = await create();
@@ -432,6 +581,77 @@ suite("one reply draft per conversation", () => {
     await sql`UPDATE mail.drafts SET state = 'draft' WHERE id = ${loser!.id}::uuid`;
     expect(await migrate()).toEqual({ deletedDrafts: 1, affectedConversations: 1, completed: true });
   });
+  test("F6 keeps a scheduled send ahead of a newer suggestion and preserves terminal history", async () => {
+    for (const pendingState of ["scheduled", "undo_window"]) {
+      const committed = await create();
+      await sql`UPDATE mail.drafts SET state = ${pendingState === "scheduled" ? "scheduled" : "sending"} WHERE id = ${committed.id}::uuid`;
+      const sendId = await submission(committed.id, pendingState);
+      await beginLegacyMigration();
+      const suggestion = await legacySuggestion(committed);
+      for (const state of ["failed", "reconciled_unsent", "cancelled"]) await submission(suggestion.id, state);
+      const before =
+        await sql`SELECT * FROM mail.outbox_submissions WHERE draft_id IN (${committed.id}::uuid, ${suggestion.id}::uuid) ORDER BY id`;
+      const commands = await sql`SELECT * FROM mail.commands WHERE id IN (SELECT command_id FROM mail.outbox_submissions
+      WHERE draft_id IN (${committed.id}::uuid, ${suggestion.id}::uuid)) ORDER BY id`;
+      expect(await migrate()).toMatchObject({ deletedDrafts: 1, affectedConversations: 1 });
+      expect(unwrap(await drafts.getDraft(owner, mailboxId, committed.id)).state).toBe(
+        pendingState === "scheduled" ? "scheduled" : "sending",
+      );
+      expect(
+        await sql`SELECT * FROM mail.outbox_submissions WHERE draft_id IN (${committed.id}::uuid, ${suggestion.id}::uuid) ORDER BY id`,
+      ).toEqual(before);
+      expect(
+        await sql`SELECT * FROM mail.commands WHERE id IN (SELECT command_id FROM mail.outbox_submissions
+      WHERE draft_id IN (${committed.id}::uuid, ${suggestion.id}::uuid)) ORDER BY id`,
+      ).toEqual(commands);
+      expect((await sql`SELECT state FROM mail.outbox_submissions WHERE id = ${sendId}::uuid`)[0]?.state).toBe(pendingState);
+    }
+  });
+  test("F6 keeps human and adopted drafts ahead of a newer untouched suggestion", async () => {
+    for (const adopted of [false, true]) {
+      const human = await create();
+      if (adopted)
+        await sql`UPDATE mail.drafts SET author_kind = 'service_account', author_id = ${accountId}::uuid,
+      adopted_at = '2026-11-01' WHERE id = ${human.id}::uuid`;
+      await sql`UPDATE mail.drafts SET content_edited_at = '2026-11-01' WHERE id = ${human.id}::uuid`;
+      await beginLegacyMigration();
+      const suggestion = await legacySuggestion(human);
+      expect(await migrate()).toMatchObject({ deletedDrafts: 1 });
+      expect(unwrap(await drafts.getDraft(owner, mailboxId, human.id)).body).toBe("My text");
+      expect((await sql`SELECT state FROM mail.drafts WHERE id = ${suggestion.id}::uuid`)[0]?.state).toBe("discarded");
+    }
+  });
+  test("two committed sends refuse before the F6 marker and preserve both sends", async () => {
+    const first = await create();
+    await sql`UPDATE mail.drafts SET state = 'scheduled' WHERE id = ${first.id}::uuid`;
+    await submission(first.id, "scheduled");
+    await beginLegacyMigration();
+    const second = await legacySuggestion(first, "sending");
+    const secondSend = await submission(second.id, "undo_window");
+    await expect(migrate()).rejects.toThrow("2 committed sends. Let them send or cancel them with the previous Mail image");
+    expect(await sql`SELECT version FROM mail.schema_migrations WHERE version = 4`).toHaveLength(0);
+    expect(
+      await sql`SELECT id FROM mail.drafts WHERE conversation_id = ${first.conversationId}::uuid AND state IN ('scheduled', 'sending')`,
+    ).toHaveLength(2);
+    // The previous image cancels the second send; retrying keeps the committed first one.
+    await sql`UPDATE mail.outbox_submissions SET state = 'cancelled' WHERE id = ${secondSend}::uuid`;
+    await sql`UPDATE mail.drafts SET state = 'draft' WHERE id = ${second.id}::uuid`;
+    expect(await migrate()).toMatchObject({ deletedDrafts: 1 });
+  });
+  test("F6 handles multiple conversations in one bounded transaction", async () => {
+    const first = await create();
+    const second = await create();
+    await beginLegacyMigration();
+    const copies = [await legacySuggestion(first), await legacySuggestion(second)];
+    expect(await migrate()).toMatchObject({ deletedDrafts: 2, affectedConversations: 2 });
+    const transactions = await sql`SELECT DISTINCT xmin::text FROM mail.drafts
+      WHERE id = ANY(${sql.array(
+        copies.map((copy) => copy.id),
+        "UUID",
+      )}) AND state = 'discarded'`;
+    expect(transactions).toHaveLength(1);
+    expect(await sql`SELECT 1 FROM pg_indexes WHERE schemaname = 'mail' AND indexname = 'drafts_reply_consolidation_idx'`).toHaveLength(0);
+  });
   test("F6 keeps real last edit, scrubs discarded content and attachments, counts once and acknowledges", async () => {
     let older = await create();
     older = unwrap(await attach(older));
@@ -455,17 +675,21 @@ suite("one reply draft per conversation", () => {
     await sql`UPDATE mail.draft_document_revisions SET created_at = '2026-11-30' WHERE draft_id = ${older.id}::uuid`;
     await sql`UPDATE mail.drafts SET content_edited_at = NULL WHERE id = ${older.id}::uuid`;
     await sql`UPDATE mail.draft_provider_snapshots SET created_at = '2026-11-30' WHERE draft_id = ${older.id}::uuid`;
-    // Cross the 100-draft transaction budget. Origins share the same box.
+    // Cross the 100-draft budget, including user-origin workflow review drafts.
     await sql`INSERT INTO mail.drafts (short_id, mailbox_id, conversation_id, source_message_id, intent,
       sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id, origin, body_markdown, created_at)
       SELECT 'B1' || lpad(n::text, 4, '0'), ${mailboxId}::uuid, ${source.conversationId}::uuid,
-        ${source.sourceMessageId}::uuid, 'forward', ${identityId}::uuid, 'workflow', ${crypto.randomUUID()}::uuid, 'workflow', ${crypto.randomUUID()}::uuid, 'workflow',
+        ${source.sourceMessageId}::uuid, 'forward', ${identityId}::uuid, 'workflow', ${crypto.randomUUID()}::uuid, 'workflow', ${crypto.randomUUID()}::uuid, 'user',
         'Old automated copy', '2026-10-01' FROM generate_series(1, 103) n`;
     const result = await migrate();
     expect(result).toEqual({ deletedDrafts: 104, affectedConversations: 1, completed: true });
     const kept = unwrap(await drafts.getDraft(owner, mailboxId, older.id));
     expect(kept.consolidatedCount).toBe(104);
     expect(kept.body).toBe("My text");
+    const activity = await sql<{ metadata: { count: number; reason: string } }[]>`SELECT metadata FROM mail.activity_events
+      WHERE conversation_id = ${source.conversationId}::uuid AND action = 'draft.discarded'`;
+    expect(activity).toHaveLength(104);
+    expect(activity.every((event) => event.metadata.count === 1 && event.metadata.reason === "reply_draft_consolidation")).toBeTrue();
     expect(await sql`SELECT id FROM mail.draft_attachments WHERE draft_id = ${loser!.id}::uuid`).toHaveLength(0);
     const [erased] = await sql<
       { state: string; body_markdown: string; doc_state: Uint8Array | null }[]
@@ -476,9 +700,12 @@ suite("one reply draft per conversation", () => {
     expect(await sql`SELECT 1 FROM mail.reply_draft_retirements WHERE draft_id = ${loser!.id}::uuid`).toHaveLength(0);
     expect((await heartbeatDraftLease({ context: owner, mailboxId, draftId: loser!.id, token: lease.token })).ok).toBeFalse();
     expect(await migrate()).toEqual(result);
+    expect((await drafts.acknowledgeDraftConsolidation({ context: gustav, mailboxId, draftId: older.id })).ok).toBeFalse();
     const acknowledged = unwrap(await drafts.acknowledgeDraftConsolidation({ context: owner, mailboxId, draftId: older.id }));
     expect(acknowledged.consolidatedCount).toBe(0);
     expect(acknowledged.revision).toBe(kept.revision);
+    await sql`UPDATE mail.drafts SET state = 'sent' WHERE id = ${older.id}::uuid`;
+    expect((await drafts.acknowledgeDraftConsolidation({ context: owner, mailboxId, draftId: older.id })).ok).toBeFalse();
     expect(await migrate()).toEqual(result);
   });
 });

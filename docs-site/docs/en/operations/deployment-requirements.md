@@ -1315,17 +1315,22 @@ shows the signature below the text.
 ### Mail reply drafts and suggestions
 
 Stop all older Mail replicas before upgrading. Mail now keeps one open reply
-draft for every conversation, including suggestions and workflow replies.
-The irreversible F6 migration retains the most recently edited reply draft,
-erases the others, records schema marker `4 (one_reply_draft)`, and logs counts.
+draft for every conversation with `origin = 'user'`, including suggestions and
+workflow review replies. Private automatic replies remain outside this box.
+The irreversible F6 migration preserves committed sends (refusing two in one
+conversation), then prefers human/adopted drafts to untouched suggestions,
+then content edit evidence. It erases the other drafts, writes activity entries,
+records schema marker `4 (one_reply_draft)`, and logs counts.
 Back up before upgrading; there is no SQL downgrade. Follow
 [Mail reply draft consolidation](/en/docs/operations/mail-reply-draft-consolidation)
 for delivery prerequisites, cleanup, counts and restart behavior.
 
 Suggestions remain adopted after a person's first edit. Check that autonomous
 updates to an adopted suggestion return `DRAFT_ADOPTED` (409). A suggestion
-creation request with an occupied reply draft returns that draft with
-`creationOutcome: suggestion_skipped`; it changes no content or attachments.
+creation request without content can return `creationOutcome: suggestion_skipped`
+when the reply box is occupied. Supplied body, subject, recipients or attachments
+return `DRAFT_REPLY_BOX_OCCUPIED` (409) with the existing draft ID instead.
+Neither outcome changes the occupied draft.
 
 ### Mail mailbox logos
 

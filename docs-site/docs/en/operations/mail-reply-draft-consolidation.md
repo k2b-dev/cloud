@@ -22,29 +22,36 @@ database before this upgrade. F6 permanently erases the other reply drafts;
 there is no undo or SQL downgrade. Restoring the pre-upgrade backup is the
 recovery path. Earlier images refuse schema marker `4 (one_reply_draft)`.
 
-A scheduled draft and a draft awaiting delivery occupy the same place as an
-editable draft. The unique constraint covers `draft`, `scheduled` and `sending`,
-for every origin: people, untouched or adopted service-account suggestions,
-workflow review drafts and automatic replies. `sent` and `discarded` release
-that place.
+The reply box covers `origin = 'user'`: human drafts, untouched and adopted
+service-account suggestions, and workflow review drafts with that origin.
+`draft`, `scheduled` and `sending` occupy the box; `sent` and `discarded` release
+it. Private automatic replies use `origin = 'workflow'` and remain outside the
+box, including failed automatic replies that return to `draft`.
 
-F6 cancels queued, cancellable sends belonging to removed drafts and removes
-their unsent conversation entries. Before committing marker 4 or erasing anything, a preflight refuses duplicated
-conversations with a running, accepted, uncertain or inconsistent pending send.
-The predecessor can still start after that refusal: use it to reconcile the
-delivery, stop it, then retry the upgrade. This prevents erasing evidence of a possible send.
-The surviving draft keeps its delivery state and schedule.
+F6 never cancels a committed send. A draft in `scheduled`, or in `sending` with
+an `undo_window` or `scheduled` submission, survives consolidation. If a
+conversation has two or more committed sends, startup refuses before marker 4
+or any deletion. The error reports their count: let them send or cancel them
+using the previous Mail image, stop it, then retry the upgrade. In-flight,
+uncertain and inconsistent deliveries also require reconciliation first.
 
 ## What F6 keeps and removes
 
-For each conversation with multiple open reply drafts, F6 keeps the most recent
-content edit. It uses the later of `content_edited_at` and stored shared-document
+A committed send has first priority. Otherwise human-authored and adopted
+drafts rank ahead of untouched service-account suggestions. Within that
+priority, F6 uses the later of `content_edited_at` and stored shared-document
 revisions after revision 1. When neither direct signal exists, an exported
 provider revision snapshot after revision 1 is the best available proxy, though
-export can lag behind the edit. Creation time is the final fallback; creation time and ID break ties.
-Legacy rows without revision evidence have no trustworthy last-edit timestamp.
-`updated_at` is deliberately excluded: adoption, document checkpoints and idle
-maintenance also update it.
+export can lag behind the edit. Creation time is the final fallback; creation
+time and ID break ties. Legacy rows without revision evidence have no trustworthy
+last-edit timestamp. `updated_at` is excluded because adoption, document
+checkpoints and idle maintenance also update it.
+
+Removed drafts have no active submissions. F6 leaves their terminal
+`failed`, `reconciled_unsent` and `cancelled` submissions and command history
+unchanged. One `draft.discarded` activity per removed draft records
+`reason: reply_draft_consolidation`, `count: 1` and the surviving draft ID.
+The conversation shows that these drafts were removed during consolidation.
 
 Every removed draft follows the discard and provider-retirement boundary. F6
 erases its body, envelope, attachments, recovery copies and document snapshots,
@@ -61,7 +68,8 @@ can show that notice once and clear it with
 `POST /api/mail/mailboxes/:mailboxId/drafts/:draftId/consolidation/acknowledge`,
 `mail.draft.consolidation.acknowledge`, or
 `cld mail draft acknowledge-consolidation <draft-id>`. Acknowledgement requires
-write access and changes no content revision.
+a person with write access to an open draft; service accounts cannot acknowledge
+it. Acknowledgement changes no content revision.
 
 ## Observe and resume the migration
 
@@ -74,17 +82,28 @@ The new columns use metadata-only defaults. The nonnegative-count check is
 added without scanning under the column-addition lock and validated after that
 transaction commits, while ordinary writes remain available.
 
-F6 commits at most 100 discarded drafts per batch under Mail's existing
-transaction-scoped migration lock. It locks the affected mailbox and draft
-rows, without holding an exclusive table lock across consolidation. Progress
-and each survivor's count commit with the deletions. An interrupted run resumes
-from that checkpoint. The unique index is built with `CREATE UNIQUE INDEX
-CONCURRENTLY`, outside the batch transactions; startup waits for it. If another
-startup is building the draft index, retry startup after that build finishes.
-A completed marker makes later starts skip the destructive work.
+F6 builds a temporary supporting partial index concurrently, excluding sent,
+discarded, new-message and private workflow drafts. Building it requires a
+fixed number of scans over the table, including historical sent rows; it does
+not rescan those millions of rows for each conversation. Each batch groups the
+open reply index once, then handles several duplicate conversations, up to
+100 deletions per transaction. A conversation with more than 100 losers spans
+batches. The same index supports a bounded keyset pass that identifies legacy Forward
+attachment copies before mode switching becomes available. Explicit source
+copies created in Reply or Reply all after the upgrade remain personal files.
+The supporting index is removed after the final unique index is valid.
 
-After startup, create a reply twice and confirm both requests return the same
-ID. Switch its mode with its current revision, check recipients and attachments,
-and acknowledge any consolidation notice after displaying it. An automatic
-reply that finds an occupied reply draft is suppressed with
-`reply_draft_exists`; it never sends the existing draft.
+Each batch uses Mail's existing transaction-scoped migration lock and locks the
+affected mailbox and draft rows. It holds no exclusive table lock across
+consolidation. Progress, activities and survivor counts commit together;
+interrupted runs resume from that checkpoint. The unique index is built with
+`CREATE UNIQUE INDEX CONCURRENTLY`, outside batch transactions; startup waits
+for it. Index-build detection checks that specific index, so unrelated draft
+indexes do not block F6. If another startup is building a migration index, retry
+after its build finishes. A completed marker skips the destructive work.
+
+After startup, create a reply twice without content and confirm both requests
+return the same ID. Supplied content to an occupied box must return
+`DRAFT_REPLY_BOX_OCCUPIED` (409), with the existing draft ID in the message.
+Switch modes with the current revision and inspect recipients and attachments.
+Show any consolidation notice before acknowledging it.

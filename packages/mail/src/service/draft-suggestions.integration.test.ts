@@ -700,7 +700,7 @@ suite("Mail service-account suggestions", () => {
     }
   });
 
-  test("a second capability creation returns the suggestion without appending its inline attachment", async () => {
+  test("a second capability creation rejects supplied content and leaves the suggestion unchanged", async () => {
     const thread = await conversation();
     const [sender] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.sender_identities WHERE id = ${identityId}::uuid`;
     const [source] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.message_contents WHERE id = ${thread.messageId}::uuid`;
@@ -720,13 +720,15 @@ suite("Mail service-account suggestions", () => {
         { ...capability(gustav), idempotencyKey },
       );
     const first = unwrap(await create("Original", "first.txt", "original-attachment"));
-    const second = unwrap(await create("Different", "second.txt", "duplicate-attachment"));
-    expect(second.data.id).toBe(first.data.id);
-    expect(second.data.attachments.map((attachment) => attachment.filename)).toEqual(["first.txt"]);
+    const second = await create("Different", "second.txt", "duplicate-attachment");
+    expect(second).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
+    if (!second.ok) expect(second.error.message).toContain(first.data.id);
+    expect(first.data.attachments.map((attachment) => attachment.filename)).toEqual(["first.txt"]);
     const [stored] = await sql<{ id: string }[]>`SELECT id FROM mail.drafts WHERE short_id = ${first.data.id}`;
     const adopted = unwrap(await save(unwrap(await drafts.getDraft(owner, mailboxId, stored!.id)), owner, { body: "Adopted" }));
-    const retry = unwrap(await create("Different", "second.txt", "duplicate-attachment"));
-    expect(retry.data.id).toBe(first.data.id);
+    const retry = await create("Different", "second.txt", "duplicate-attachment");
+    expect(retry).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
+    expect(unwrap(await create("Original", "first.txt", "original-attachment")).data.id).toBe(first.data.id);
     expect(unwrap(await drafts.getDraft(owner, mailboxId, adopted.id)).body).toBe("Adopted");
   });
 

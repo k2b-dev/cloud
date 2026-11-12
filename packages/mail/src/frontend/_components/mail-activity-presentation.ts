@@ -47,6 +47,7 @@ export const mailActivityLabel = (event: MailActivityEvent, locale = "en"): stri
   const t = resolved.t;
   if (event.action === "conversation.collaboration_updated" || event.action === "conversation.work_state_changed")
     return collaborationPresentation(event, locale).label;
+  if (event.action === "draft.discarded" && event.metadata.reason === "reply_draft_consolidation") return t.activityDraftConsolidated;
   if (event.action === "conversation.kept" && event.metadata.carriedFrom) return t.activityKeptCarried;
   const labels: Readonly<Record<string, string>> = {
     "conversation.comment_created": t.activityCommentCreated,
@@ -120,7 +121,7 @@ export const mailActivityActorLabel = (event: MailActivityEvent, locale = "en"):
 export const showMailActivityInline = (event: MailActivityEvent): boolean =>
   inlineActions.has(event.action) &&
   (event.outcome === "confirmed" || event.outcome === "failed") &&
-  (!event.action.startsWith("draft.") || event.actor.kind === "workflow");
+  (!event.action.startsWith("draft.") || event.actor.kind === "workflow" || event.metadata.reason === "reply_draft_consolidation");
 
 export type PresentedMailActivity = MailActivityEvent & {
   actorLabel: string;

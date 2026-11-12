@@ -402,7 +402,7 @@ export const requireDraftAccess = async (
   const [draft] = await db<{ visible: boolean }[]>`
     SELECT ${draftVisibleTo(allowed.data, sql`d`)} AS visible
     FROM mail.drafts d
-    WHERE d.id = ${draftId}::uuid AND d.mailbox_id = ${mailboxId}::uuid
+    WHERE d.id = ${draftId}::uuid AND d.mailbox_id = ${mailboxId}::uuid AND d.origin = 'user'
   `;
   return draft?.visible === true ? allowed : fail(err.notFound("Draft"));
 };

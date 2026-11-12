@@ -137,7 +137,7 @@ suite("mail baseline schema", () => {
     expect(index?.definition).toContain("UNIQUE");
     expect(index?.definition).toContain("conversation_id");
     expect(index?.definition).toContain("sending");
-    expect(index?.definition).not.toContain("origin");
+    expect(index?.definition).toContain("origin = 'user'");
     expect(
       await sql`SELECT indexname FROM pg_indexes WHERE schemaname = 'mail'
         AND indexname IN ('drafts_untouched_suggestion_idx', 'drafts_untouched_suggestion_author_idx')`,

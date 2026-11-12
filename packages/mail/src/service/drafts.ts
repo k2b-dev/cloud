@@ -57,9 +57,10 @@ import { lockDraftDocumentInTransaction } from "./draft-documents";
 import { newDraftEditMode } from "./draft-edit-mode";
 import { retireDraftInTransaction } from "./draft-retirement";
 import { legacySignature, publicDraftContent, resolveDraftSignature, validateIdentity } from "./draft-validation";
-import { lockConversationReplyDraft } from "./reply-draft-box";
+import { lockConversationReplyDraft, replyDraftOccupied } from "./reply-draft-box";
 
 export { resolveDraftSignature, validateIdentity } from "./draft-validation";
+export { hasDraftCreationContent } from "./reply-draft-box";
 
 import { requireDraftLeaseAvailable, withOwnedDraftLease } from "./draft-leases";
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
@@ -137,6 +138,7 @@ export const wakeDraftProjection = async <T extends { id: string }>(result: Resu
 
 type DbDraft = {
   id: string;
+  short_id: string;
   mailbox_id: string;
   conversation_id: string | null;
   lifecycle_conversation_id?: string | null;
@@ -205,6 +207,7 @@ const DRAFT_BODY_PREVIEW_LENGTH = 240;
 
 const draftColumns = () => sql`
   d.id,
+  d.short_id,
   d.mailbox_id,
   d.conversation_id,
   d.intent,
@@ -477,12 +480,11 @@ const deriveReplyMode = async (params: {
   mailboxId: string;
   sourceMessageId: string;
   intent: Exclude<DraftIntent, "new">;
-  subject?: string;
 }): Promise<Result<{ to: MailAddress[]; cc: MailAddress[]; subject: string }>> => {
   const [source] = await params.db<{ subject: string }[]>`SELECT subject FROM mail.message_contents
     WHERE id = ${params.sourceMessageId}::uuid AND mailbox_id = ${params.mailboxId}::uuid`;
   if (!source) return fail(err.notFound("Message"));
-  const base = (params.subject?.trim() || source.subject).replace(/^(?:\s*(?:re|fw|fwd)\s*:\s*)+/iu, "");
+  const base = source.subject.replace(/^(?:\s*(?:re|fw|fwd)\s*:\s*)+/iu, "");
   const recipients =
     params.intent === "forward"
       ? ok({ to: [] as MailAddress[], cc: [] as MailAddress[] })
@@ -517,7 +519,12 @@ const insertActivity = async (params: {
   `;
 };
 
-const copyForwardAttachments = async (params: { db: typeof sql; draftId: string; sourceMessageId: string }): Promise<Result<number>> => {
+const copyForwardAttachments = async (params: {
+  db: typeof sql;
+  draftId: string;
+  sourceMessageId: string;
+  forwarded: boolean;
+}): Promise<Result<number>> => {
   const [invalid] = await params.db<{ invalid: boolean }[]>`
     SELECT EXISTS (
       SELECT 1
@@ -558,7 +565,7 @@ const copyForwardAttachments = async (params: { db: typeof sql; draftId: string;
         short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position, forwarded_source_message_id
       ) VALUES (
         ${shortId}, ${params.draftId}::uuid, ${attachment.blob_id}::uuid, ${attachment.filename},
-        ${attachment.content_type}, ${attachment.byte_length}, ${attachment.content_hash}, ${(next?.position ?? 0) + Number(attachment.position)}, ${params.sourceMessageId}::uuid
+        ${attachment.content_type}, ${attachment.byte_length}, ${attachment.content_hash}, ${(next?.position ?? 0) + Number(attachment.position)}, ${params.forwarded ? params.sourceMessageId : null}::uuid
       )
     `,
     );
@@ -719,9 +726,6 @@ const prepareComposeDraftInTransaction = async (params: {
     params.db,
   );
   if (!visibleSource.ok) return visibleSource;
-  if (parsed.data.includeSourceAttachments && draftContext.data.intent !== "forward") {
-    return fail(err.badInput("Original attachments can only be included when forwarding a message"));
-  }
   let signatureTemplateId = parsed.data.signatureTemplateId;
   if (signatureTemplateId === undefined) {
     signatureTemplateId = await resolveDefaultSignatureTemplateId({
@@ -742,7 +746,6 @@ const prepareComposeDraftInTransaction = async (params: {
           mailboxId: params.mailboxId,
           sourceMessageId: draftContext.data.sourceMessageId!,
           intent: draftContext.data.intent,
-          subject: parsed.data.subject,
         });
   if (!mode.ok) return mode;
   const initialSubject =
@@ -751,9 +754,9 @@ const prepareComposeDraftInTransaction = async (params: {
           db: params.db,
           mailboxId: params.mailboxId,
           conversationId: draftContext.data.conversationId!,
-          subject: mode.data.subject,
+          subject: parsed.data.subject || mode.data.subject,
         })
-      : mode.data.subject;
+      : parsed.data.subject || mode.data.subject;
   const initialRecipients = draftContext.data.intent === "forward" ? { to: parsed.data.to, cc: parsed.data.cc } : mode.data;
   const initialCc = mergeDefaultCc({
     to: initialRecipients.to,
@@ -784,7 +787,8 @@ const prepareComposeDraftInTransaction = async (params: {
     return fail(err.badInput(initialContent.error.issues[0]?.message ?? "Invalid draft"));
   }
   const attachments =
-    draftContext.data.intent === "forward" && parsed.data.includeSourceAttachments !== false
+    parsed.data.includeSourceAttachments === true ||
+    (draftContext.data.intent === "forward" && parsed.data.includeSourceAttachments !== false)
       ? await prepareSourceAttachments(params.db, draftContext.data.sourceMessageId)
       : ok([]);
   if (!attachments.ok) return attachments;
@@ -803,6 +807,7 @@ const insertComposeDraftInTransaction = async (params: {
   prepared: PreparedComposeDraft;
   content: DraftEditableContent;
   adopted?: true;
+  rejectOccupiedContent?: boolean;
   materializationKey?: string;
   materializationRequestHash?: string;
 }): Promise<Result<MailDraft>> => {
@@ -829,11 +834,12 @@ const insertComposeDraftInTransaction = async (params: {
   if (params.prepared.intent !== "new" && params.prepared.conversationId) {
     const occupied = await lockConversationReplyDraft(params.db, params.prepared.conversationId);
     const [existing] = occupied
-      ? await params.db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${occupied.id}::uuid`
+      ? await params.db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${occupied.id}::uuid AND d.origin = 'user'`
       : [];
     if (existing) {
       const access = await requireDraftAccess(params.context, params.mailboxId, existing.id, "write", params.db);
       if (!access.ok) return access;
+      if (params.rejectOccupiedContent) return fail(replyDraftOccupied(existing.short_id));
       const adopted = await refreshDraftAdoption({ db: params.db, draftId: existing.id });
       const suggestionRequest = params.actor.kind === "service_account" && !humanDraftEditor(params.context) && !params.adopted;
       const ownSuggestion = existing.author_kind === "service_account" && existing.author_id === actorId(params.actor) && adopted === null;
@@ -900,6 +906,7 @@ const insertComposeDraftInTransaction = async (params: {
       db: params.db,
       draftId: row.id,
       sourceMessageId: params.prepared.sourceMessageId,
+      forwarded: params.prepared.intent === "forward",
     });
     if (!copied.ok) return copied;
     attachmentCount = copied.data;
@@ -933,6 +940,7 @@ export const createDraft = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   input: DraftContentInput;
+  rejectOccupiedContent?: boolean;
 }): Promise<Result<MailDraft>> => {
   const actor = mutableActor(params.context);
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
@@ -950,6 +958,7 @@ export const createDraft = async (params: {
         actor,
         prepared: prepared.data,
         content: prepared.data.content,
+        rejectOccupiedContent: params.rejectOccupiedContent,
       });
     });
     return withFormattingWarnings(await wakeDraftProjection(result));
@@ -1108,6 +1117,7 @@ const insertDerivedDraftInTransaction = async (params: {
       db: params.db,
       draftId: created.id,
       sourceMessageId: params.prepared.messageId,
+      forwarded: false,
     });
     if (!copied.ok) return copied;
     attachmentCount = copied.data;
@@ -1242,6 +1252,7 @@ export const materializeDraftSeed = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   input: MaterializeDraftSeedInput;
+  rejectOccupiedContent?: boolean;
 }): Promise<Result<MailDraft>> => {
   const parsed = internalMaterializeDraftSeedInputSchema.safeParse(params.input);
   if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid compose request"));
@@ -1364,6 +1375,7 @@ export const materializeDraftSeed = async (params: {
         actor,
         prepared,
         content,
+        rejectOccupiedContent: params.rejectOccupiedContent,
         materializationKey: parsed.data.idempotencyKey,
         materializationRequestHash: requestHash,
       });
@@ -1593,7 +1605,6 @@ export const createDeliveryRecoveryDraft = async (params: {
 };
 
 type WorkflowDraftResult = {
-  reused?: boolean;
   id: string;
   revision: number;
   senderIdentityId: string;
@@ -1616,15 +1627,10 @@ const insertWorkflowReplyDraftInTransaction = async (params: {
   format: "plain" | "markdown";
   deliveryClass: DraftDeliveryClass;
 }): Promise<Result<WorkflowDraftResult>> => {
-  const occupied = await lockConversationReplyDraft(params.db, params.conversationId);
-  if (occupied)
-    return ok({
-      id: occupied.id,
-      revision: Number(occupied.revision),
-      senderIdentityId: occupied.sender_identity_id,
-      deliveryClass: occupied.delivery_class,
-      reused: true,
-    });
+  if (params.deliveryClass === "normal") {
+    const occupied = await lockConversationReplyDraft(params.db, params.conversationId);
+    if (occupied && occupied.id !== params.draftId) return fail(replyDraftOccupied(occupied.short_id));
+  }
   const content = internalDraftContentSchema.safeParse({
     conversationId: params.conversationId,
     intent: "reply",
@@ -1833,6 +1839,51 @@ export const createWorkflowDraftInTransaction = async (params: {
     : fail(err.conflict("Workflow draft id is in use"));
 };
 
+const prepareReplyModeChange = async (params: {
+  db: typeof sql;
+  context: MailRequestContext;
+  mailboxId: string;
+  row: DbDraft;
+  intent: Exclude<DraftIntent, "new">;
+}): Promise<Result<PreparedComposeDraft>> => {
+  const { row } = params;
+  if (row.intent === "new" || !row.source_message_id || !row.conversation_id) return conflict("Only a reply draft can change mode");
+  const previous = await deriveReplyMode({
+    db: params.db,
+    mailboxId: params.mailboxId,
+    sourceMessageId: row.source_message_id,
+    intent: row.intent,
+  });
+  if (!previous.ok) return previous;
+  const previousSubject =
+    row.intent === "forward"
+      ? previous.data.subject
+      : await applyConversationReferenceToReplySubjectInTransaction({
+          db: params.db,
+          mailboxId: params.mailboxId,
+          conversationId: row.conversation_id,
+          subject: previous.data.subject,
+        });
+  const customSubject = row.subject !== previousSubject;
+  const prepared = await prepareComposeDraftInTransaction({
+    db: params.db,
+    context: params.context,
+    mailboxId: params.mailboxId,
+    input: {
+      ...internalDraftEditableContentSchema.strip().parse(mapDraft(row)),
+      subject: "",
+      to: [],
+      cc: [],
+      conversationId: row.conversation_id,
+      sourceMessageId: row.source_message_id,
+      intent: params.intent,
+      includeSourceAttachments: params.intent === "forward",
+    },
+  });
+  if (!prepared.ok || !customSubject) return prepared;
+  return ok({ ...prepared.data, content: { ...prepared.data.content, subject: row.subject } });
+};
+
 export const previewDraftIntent = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -1847,28 +1898,16 @@ export const previewDraftIntent = async (params: {
     if (!row) return fail(err.notFound("Draft"));
     if (row.intent === "new" || row.state !== "draft" || Number(row.revision) !== params.expectedRevision)
       return conflict("Draft changed or cannot switch reply mode");
-    const prepared = await prepareComposeDraftInTransaction({
+    const prepared = await prepareReplyModeChange({
       db: tx,
       context: params.context,
       mailboxId: params.mailboxId,
-      input: {
-        ...internalDraftEditableContentSchema.strip().parse(mapDraft(row)),
-        subject: "",
-        to: [],
-        cc: [],
-        bcc: [],
-        conversationId: row.conversation_id,
-        sourceMessageId: row.source_message_id,
-        intent: params.intent,
-        includeSourceAttachments: params.intent === "forward",
-      },
+      row,
+      intent: params.intent,
     });
     if (!prepared.ok) return prepared;
     const own = await tx<{ id: string }[]>`SELECT id FROM mail.draft_attachments WHERE draft_id = ${row.id}::uuid
-    AND removed_at IS NULL AND forwarded_source_message_id IS NULL
-    AND NOT (${row.intent === "forward"} AND created_at = ${row.created_at}
-      AND EXISTS (SELECT 1 FROM mail.attachments source WHERE source.message_id = ${row.source_message_id}::uuid
-        AND source.blob_id = mail.draft_attachments.blob_id))`;
+    AND removed_at IS NULL AND forwarded_source_message_id IS NULL`;
     const personalIds = new Set(own.map((a) => a.id));
     return ok({
       ...mapDraft(row),
@@ -1918,28 +1957,12 @@ export const switchDraftIntent = async (params: {
         if (!row) return fail(err.notFound("Draft"));
       }
       if (row.intent === params.intent) return ok(mapDraft(row));
-      // Before provenance existed, initial forward copies were inserted in the creation transaction.
-      // A later personal upload has its own created_at, even if it uses the same blob.
-      if (row.intent === "forward")
-        await tx`UPDATE mail.draft_attachments a SET forwarded_source_message_id = d.source_message_id
-        FROM mail.drafts d WHERE d.id = ${row.id}::uuid AND a.draft_id = d.id AND a.created_at = d.created_at
-          AND a.forwarded_source_message_id IS NULL AND a.removed_at IS NULL
-          AND EXISTS (SELECT 1 FROM mail.attachments source WHERE source.message_id = d.source_message_id AND source.blob_id = a.blob_id)`;
-      const prepared = await prepareComposeDraftInTransaction({
+      const prepared = await prepareReplyModeChange({
         db: tx,
         context: params.context,
         mailboxId: params.mailboxId,
-        input: {
-          ...internalDraftEditableContentSchema.strip().parse(mapDraft(row)),
-          subject: "",
-          to: [],
-          cc: [],
-          bcc: [],
-          conversationId: row.conversation_id,
-          sourceMessageId: row.source_message_id,
-          intent: params.intent,
-          includeSourceAttachments: params.intent === "forward",
-        },
+        row,
+        intent: params.intent,
       });
       if (!prepared.ok) return prepared;
       const retained = parseArray(row.attachments);
@@ -1975,7 +1998,7 @@ export const switchDraftIntent = async (params: {
         doc_state = CASE WHEN edit_mode = 'shared' THEN ${state ? Buffer.from(state) : null} ELSE doc_state END
         WHERE id = ${row.id}::uuid`;
       if (params.intent === "forward") {
-        const copied = await copyForwardAttachments({ db: tx, draftId: row.id, sourceMessageId: row.source_message_id! });
+        const copied = await copyForwardAttachments({ db: tx, draftId: row.id, sourceMessageId: row.source_message_id!, forwarded: true });
         if (!copied.ok) throw Object.assign(new Error(copied.error.message), copied.error);
       }
       await recordDraftDocumentRevision({ ...params, db: tx });
@@ -1997,12 +2020,13 @@ export const acknowledgeDraftConsolidation = async (params: {
   mailboxId: string;
   draftId: string;
 }): Promise<Result<MailDraft>> => {
+  if (params.context.actor.kind !== "user") return fail(err.forbidden("Only a person can acknowledge draft consolidation"));
   const result = await sql.begin(async (tx) => {
     const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
     if (!allowed.ok) return allowed;
     const [row] = await tx<DbDraft[]>`UPDATE mail.drafts d SET consolidated_count = 0
-      WHERE d.id = ${params.draftId}::uuid RETURNING ${draftColumns()}`;
-    if (!row) return fail(err.notFound("Draft"));
+      WHERE d.id = ${params.draftId}::uuid AND d.state IN ('draft', 'scheduled', 'sending') RETURNING ${draftColumns()}`;
+    if (!row) return conflict("Only an open draft can acknowledge consolidation");
     await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId, conversationId: row.conversation_id });
     return ok(mapDraft(row));
   });
@@ -2364,7 +2388,7 @@ export const getDraft = async (context: MailRequestContext, mailboxId: string, d
       ORDER BY outbox.created_at DESC, outbox.id DESC
       LIMIT 1
     ) lifecycle ON true
-    WHERE d.id = ${draftId}::uuid AND d.mailbox_id = ${mailboxId}::uuid
+    WHERE d.id = ${draftId}::uuid AND d.mailbox_id = ${mailboxId}::uuid AND d.origin = 'user'
   `;
     let [row] = await load();
     if (!row) return fail(err.notFound("Draft"));

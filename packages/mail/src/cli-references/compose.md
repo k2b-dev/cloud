@@ -198,9 +198,13 @@ cld --json mail conversation drafts <conversation-id> --limit 20
 
 Treat `draft get` as the authoritative state before a terminal edit. Another Mail tab or collaborator may have scheduled, sent, discarded, or revised the draft since the previous read. Draft writes remain revision-fenced and reject a draft that is no longer editable; fetch the current state instead of retrying stale content. The Mail browser UI receives realtime lifecycle updates, while the CLI deliberately re-reads durable state per command.
 
-A conversation has one open reply draft. Repeating reply, reply-all, forward or
-`draft create` returns that draft unchanged, even if another mode was requested.
-Read its current content before editing. For a reply or forward, start from the conversation. Both commands use its latest message unless `--message` names another one, and the mailbox's verified default identity unless `--identity` names another one:
+A conversation has one open reply draft. Repeating `reply` (including `--all`)
+or `draft create` without content returns that draft unchanged, even if another
+mode was requested. `forward` supplies recipients and quoted source text, so it
+conflicts with an occupied box; use `draft intent` to forward the existing draft. Supplying a body, subject, recipients or attachments returns
+`DRAFT_REPLY_BOX_OCCUPIED` (409) if the box is occupied; the message names its ID,
+and the CLI exits non-zero. Read that draft and update it explicitly. Repeating
+the original idempotency key retains its retry contract. For a reply or forward, start from the conversation. Both commands use its latest message unless `--message` names another one, and the mailbox's verified default identity unless `--identity` names another one:
 
 ```bash
 cld --json mail reply <conversation-id> --body-file body.md
@@ -218,13 +222,19 @@ cld --json mail draft intent <draft-id> --intent forward --revision <current-rev
 cld --json mail draft acknowledge-consolidation <draft-id>
 ```
 
-`draft intent` re-derives recipients, subject and copied source attachments;
-body text and personal uploads remain. Leaving Forward removes the source
-copies. A stale revision or a scheduled/sending draft returns a conflict. Shared
-editors synchronize a new document generation after a mode change.
+`draft intent` re-derives To/Cc and copied source attachments. Body text,
+personal uploads and manually added Bcc remain; the sender's default Bcc is
+added. Re:/Fwd: changes only if the subject still matches the derived source
+subject. A user-edited subject stays unchanged. Creation preserves an explicit
+API subject, and `--include-source-attachments` also works for Reply and Reply
+all. Leaving Forward removes the source copies added for that mode. Files
+explicitly copied into Reply or Reply all remain as personal attachments.
+A stale revision or a scheduled/sending draft returns a conflict. Shared editors synchronize a new document generation after a mode change.
 `consolidatedCount` reports how many other drafts the F6 upgrade erased. Clear
-it only after displaying the notice. Autonomous suggestion requests report
-`creationOutcome: suggestion_skipped` when the reply place is already occupied.
+it only after displaying the notice. Only a person with write access can
+acknowledge an open draft. Content-free autonomous suggestion requests can report
+`creationOutcome: suggestion_skipped`; supplied content conflicts instead.
+Private automatic replies do not occupy the box.
 
 `draft create` covers new messages and every draft field:
 

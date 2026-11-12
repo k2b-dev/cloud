@@ -15,7 +15,6 @@ import { evaluateResponseSchedule, nextResponseScheduleInstant } from "./respons
 type SqlClient = typeof sql;
 
 type AutomaticReplyBusinessSuppressionReason =
-  | "reply_draft_exists"
   | "outside_response_schedule"
   | "recipient_rate_limited"
   | "mailbox_rate_limited"
@@ -223,7 +222,7 @@ export const prepareAutomaticReplyInTransaction = async (params: {
     else suppressionReasons.push(decision.reason);
 
     const effectId = crypto.randomUUID();
-    const suppress = async (reasons: AutomaticReplySuppressionReason[]): Promise<Result<PreparedAutomaticReply>> => {
+    if (suppressionReasons.length > 0) {
       await params.db`
         INSERT INTO mail.automatic_reply_effects (
           id, mailbox_id, workflow_version_id, workflow_run_id, step_key, message_id, conversation_id,
@@ -232,7 +231,7 @@ export const prepareAutomaticReplyInTransaction = async (params: {
         ) VALUES (
           ${effectId}::uuid, ${params.mailboxId}::uuid, ${params.workflowVersionId}::uuid, ${params.workflowRunId}::uuid,
           ${params.stepKey}, ${params.messageId}::uuid, ${params.conversationId}::uuid, ${params.senderIdentityId}::uuid,
-          ${recipient}, 'suppressed', ${sql.array(reasons, "TEXT")},
+          ${recipient}, 'suppressed', ${sql.array(suppressionReasons, "TEXT")},
           ${requestHash}, ${params.protocolFacts}::jsonb, NULL
         )
       `;
@@ -242,12 +241,11 @@ export const prepareAutomaticReplyInTransaction = async (params: {
         ) VALUES (
           ${params.mailboxId}::uuid, 'workflow', ${params.workflowVersionId}::uuid,
           'automatic_reply.suppressed', 'confirmed', 'automatic_reply', ${effectId}::uuid,
-          ${{ messageId: params.messageId, conversationId: params.conversationId, recipient, reasons: reasons }}::jsonb
+          ${{ messageId: params.messageId, conversationId: params.conversationId, recipient, reasons: suppressionReasons }}::jsonb
         )
       `;
-      return ok({ state: "suppressed", effectId, reasons: reasons });
-    };
-    if (suppressionReasons.length > 0) return suppress(suppressionReasons);
+      return ok({ state: "suppressed", effectId, reasons: suppressionReasons });
+    }
 
     if (!recipient) return fail(err.internal("Automatic reply recipient validation was bypassed"));
 
@@ -266,7 +264,6 @@ export const prepareAutomaticReplyInTransaction = async (params: {
       format: params.format,
     });
     if (!draft.ok) return draft;
-    if (draft.data.reused) return suppress(["reply_draft_exists"]);
     await params.db`
       INSERT INTO mail.automatic_reply_effects (
         id, mailbox_id, workflow_version_id, workflow_run_id, step_key, message_id, conversation_id,
