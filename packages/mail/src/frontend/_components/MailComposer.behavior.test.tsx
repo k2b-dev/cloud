@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { contactDirectory, defineCapabilities } from "@k2b/cloud/contracts";
 import { crypto as cryptoUtils, encoding } from "@k2b/stdlib";
+import { createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import * as Y from "yjs";
 import { z } from "zod";
@@ -931,8 +932,10 @@ describe("MailComposer robustness", () => {
   let leaves: string[];
   let opened: string[];
   let hostControls: import("./MailComposer").MailInlineDraftControls | undefined;
+  let materialized: string[] = [];
 
   beforeEach(() => {
+    materialized = [];
     dom = createDomTestHarness();
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
     Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: OfflineWebSocket });
@@ -1006,6 +1009,9 @@ describe("MailComposer robustness", () => {
       templates?: { id: string; name: string }[];
       canShareAttachments?: boolean;
       ready?: boolean;
+      /** Mounts the draft as the reply box (Mail v5) with these signals. */
+      box?: { suspended?: () => boolean; hold?: () => boolean };
+      uploads?: { id: string; filename: string; byteLength: number; receivedBytes: number }[];
     } = {},
   ) => {
     const [{ default: MailComposer }, { LocaleProvider }] = await Promise.all([import("./MailComposer"), import("@k2b/ui")]);
@@ -1020,6 +1026,7 @@ describe("MailComposer robustness", () => {
             signatures={{ templates: options.templates ?? [], personalDefaults: [] }}
             initialDraft={draft}
             initialSeed={options.seed}
+            unfinishedUploads={options.uploads}
             initialPanes={{ version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } }}
             returnHref="/app/mail/Box001"
             popout={options.popout}
@@ -1037,6 +1044,17 @@ describe("MailComposer robustness", () => {
                     messageLabel: () => null,
                     leave: (outcome) => leaves.push(outcome),
                     openDraft: (draftId) => opened.push(draftId),
+                    ...(options.box
+                      ? {
+                          box: {
+                            modeMenu: () => <button type="button" data-test-mode-menu />,
+                            suspended: options.box.suspended ?? (() => false),
+                            holdCreate: options.box.hold ?? (() => false),
+                            autofocus: false,
+                            materialized: (draft: MailDraft) => materialized.push(draft.id),
+                          },
+                        }
+                      : {}),
                   }
                 : undefined
             }
@@ -1066,6 +1084,139 @@ describe("MailComposer robustness", () => {
     await hostControls!.collapse({ preserveDraft: true });
     expect(leaves).toEqual(["closed"]);
     expect(requests.some((request) => request.endsWith("/discard"))).toBe(false);
+  });
+
+  const replyDraft: MailDraft = { ...initialDraft, conversationId: "Conv01", intent: "reply", sourceMessageId: "Msg001" };
+  const replySeed: MailDraftSeed = {
+    ...initialSeed,
+    conversationId: "Conv01",
+    intent: "reply",
+    sourceMessageId: "Msg001",
+    content: { ...initialSeed.content, body: "" },
+  };
+
+  test("the reply box: a failed send turns the bar light red in place, and Send again retries", async () => {
+    const { prompts } = await import("@k2b/ui");
+    const dialog = spyOn(prompts, "error").mockResolvedValue(undefined);
+    let failures = 1;
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/commands") && failures-- > 0) {
+          requests.push("POST /commands (failed)");
+          return Response.json({ code: "SMTP_UNAVAILABLE", message: "The mail server does not answer." }, { status: 503 });
+        }
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount({ host: true, draft: replyDraft, box: {} });
+      sendButton().click();
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-send-failed]")));
+      const bar = dom.root.querySelector<HTMLElement>("[data-mail-send-failed]")!;
+      expect(bar.textContent).toContain("Not sent.");
+      expect(bar.textContent).toContain("The mail server does not answer.");
+      expect(bar.textContent).toContain("Your text is saved.");
+      expect(dom.root.querySelector("button.mail-compose-action")).toBeNull();
+      expect(dialog).not.toHaveBeenCalled();
+      expect(leaves).toEqual([]);
+      dom.root.querySelector<HTMLButtonElement>("[data-mail-send-again]")!.click();
+      await waitFor(() => leaves.includes("sent"));
+    } finally {
+      dialog.mockRestore();
+    }
+  });
+
+  test("a suspended reply box (internal note mode) is hidden, inert, and never sends", async () => {
+    const [suspended, setSuspended] = createSignal(false);
+    await mount({ host: true, draft: replyDraft, box: { suspended } });
+    setSuspended(true);
+    const section = dom.root.querySelector<HTMLElement>("[data-mail-reply-box='mail']")!;
+    expect(section.hidden).toBe(true);
+    expect(section.hasAttribute("inert")).toBe(true);
+    sendShortcut(view().contentDOM);
+    hostControls!.send();
+    hostControls!.sendAt("2026-10-12T08:00:00.000Z");
+    await Bun.sleep(120);
+    expect(requests.some((request) => request.endsWith("/safety-review") || request.endsWith("/commands"))).toBe(false);
+    setSuspended(false);
+    sendShortcut(view().contentDOM);
+    await waitFor(sent);
+  });
+
+  test("offline, the reply box keeps writing, waits with Send, and says why", async () => {
+    await mount({ host: true, draft: replyDraft, box: {} });
+    dom.window.dispatchEvent(new dom.window.Event("offline"));
+    await waitFor(() => sendButton().disabled);
+    expect(dom.root.querySelector("[data-mail-save-status]")!.textContent).toContain("Offline · kept here");
+    expect(dom.root.textContent).toContain("Sending works again once you are back online.");
+    expect(view().state.readOnly).toBe(false);
+    sendShortcut(view().contentDOM);
+    await Bun.sleep(80);
+    expect(sent()).toBe(false);
+    dom.window.dispatchEvent(new dom.window.Event("online"));
+    await waitFor(() => !sendButton().disabled);
+  });
+
+  test("an upload in the reply box shows its progress, and Send waits with the reason", async () => {
+    const files = await import("@k2b/cloud/browser/files");
+    const choose = spyOn(files, "chooseFiles").mockResolvedValue([new File(["%PDF"], "offer.pdf", { type: "application/pdf" })]);
+    const serve = globalThis.fetch;
+    const never = new Promise<Response>(() => {});
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes("/attachment-uploads")) return never;
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount({ host: true, draft: replyDraft, box: {} });
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Attach files"]')!.click();
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-save-status]")?.textContent?.includes("Uploading · 0 %")));
+      expect(sendButton().disabled).toBe(true);
+      expect(dom.root.querySelector('[role="progressbar"]')).not.toBeNull();
+      expect(dom.root.textContent).toContain("Wait until the upload has finished.");
+      expect(dom.root.querySelector('button[aria-label*="offer.pdf"]')).not.toBeNull();
+    } finally {
+      choose.mockRestore();
+    }
+  });
+
+  test("a suggestion shows plum with its account until the first keystroke adopts it", async () => {
+    await mount({ host: true, draft: { ...replyDraft, suggestion: true, suggestedBy: "Gustav" }, box: {} });
+    const section = () => dom.root.querySelector<HTMLElement>("[data-mail-reply-box='mail']")!;
+    expect(section().hasAttribute("data-suggestion")).toBe(true);
+    expect(dom.root.querySelector("[data-mail-reply-suggestion]")!.textContent).toContain("Suggestion from Gustav");
+    expect(dom.root.textContent).toContain("Type to take it over, or send it as it is.");
+    view().dispatch({ changes: { from: view().state.doc.length, insert: "!" }, userEvent: "input.type" });
+    await waitFor(() => !section().hasAttribute("data-suggestion"));
+    expect(dom.root.querySelector("[data-mail-reply-suggestion]")).toBeNull();
+  });
+
+  test("a held reply place keeps typing on this device and creates the draft once the last send left", async () => {
+    const [hold, setHold] = createSignal(true);
+    await mount({ host: true, seed: replySeed, box: { hold }, ready: false });
+    view().dispatch({ changes: { from: 0, insert: "Written while the last reply waited" }, userEvent: "input.type" });
+    await Bun.sleep(1_000);
+    expect(requests.some((request) => request.endsWith("/draft-seeds/materialize"))).toBe(false);
+    expect(sendButton().disabled).toBe(true);
+    setHold(false);
+    await waitFor(() => requests.some((request) => request.endsWith("/draft-seeds/materialize")));
+    expect(saves.at(-1)?.body).toBe("Written while the last reply waited");
+    await waitFor(() => materialized.length === 1);
+  });
+
+  test("the reply box's empty seed creates nothing until someone types", async () => {
+    await mount({ host: true, seed: replySeed, box: {}, ready: false });
+    await Bun.sleep(1_000);
+    // Rendering the signature is a read; nothing writes a draft.
+    expect(requests.filter((request) => request.startsWith("POST ") && !request.endsWith("/compose-signature"))).toEqual([]);
+    expect(dom.root.querySelector("[data-mail-save-status]")!.textContent).toBe("");
+    expect(view().contentDOM.getAttribute("aria-placeholder") ?? dom.root.textContent).toContain("Write a reply …");
   });
 
   test.each(["bernd", "bernd@firma"])("unfinished recipient text %p blocks Send, stays, and takes the focus", async (typed) => {

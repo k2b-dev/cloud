@@ -108,6 +108,11 @@ export const createMailDraftSession = (options: {
   isDisposed: () => boolean;
   onRecovered: () => void;
   onMaterialized: (draft: MailDraft) => void;
+  /**
+   * True while another send still holds the conversation's one reply place (its undo window): input stays in the
+   * local journal and the draft is created only once this turns false.
+   */
+  holdCreate?: Accessor<boolean>;
   /** A shared draft closed inside the page with text that neither the server nor this device holds. */
   onClosedUnsaved?: () => void;
   locale: Accessor<string>;
@@ -805,6 +810,7 @@ export const createMailDraftSession = (options: {
         }
       }
       let currentDraft = draft();
+      if (!currentDraft && options.initialSeed && untrack(() => options.holdCreate?.())) return null;
       if (!currentDraft && options.initialSeed) {
         const nextContent = options.content();
         setStatus("saving");
@@ -1222,6 +1228,8 @@ export const createMailDraftSession = (options: {
       stopScheduledSave();
       return;
     }
+    // A held reply place keeps the input in the journal; this effect runs again when the hold ends.
+    if (!currentDraft && options.holdCreate?.()) return;
     if (leaseConflict() || revisionConflict() || replyBoxOccupied() || saveTimer) return;
     // Coalesce the latest input without postponing autosave forever during
     // continuous typing. The shared promise keeps at most one save in flight.
@@ -1351,8 +1359,18 @@ export const createMailDraftSession = (options: {
       const kept = await client.flushLocal().catch(() => false);
       if (!kept && (sharedState()?.dirty || sharedState()?.rejectedEdit)) options.onClosedUnsaved?.();
     };
+    // A seed (the reply box before its first save) that holds typing creates its draft on the way out, unless another
+    // send still holds the reply place; then the journal keeps the text on this device.
+    const seedUnsaved =
+      !draft() &&
+      Boolean(options.initialSeed) &&
+      !options.holdCreate?.() &&
+      !replyBoxOccupied() &&
+      !authenticationRequired() &&
+      serializedContent() !== seedBaseline;
     stopScheduledSave();
     stopHeartbeat();
+    if (seedUnsaved) void persist();
     void saveSharedBeforeClose().finally(() => {
       sharedController.abort();
       client?.dispose();

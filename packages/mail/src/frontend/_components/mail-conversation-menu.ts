@@ -89,14 +89,6 @@ export const mailConversationMenuItems = (menu: MailConversationMenu): DropdownI
           disabled: respond.disabled,
           action: () => respond.run("reply", { window: false }),
         },
-        {
-          label: t.replyInNewWindow,
-          icon: "ti ti-app-window",
-          disabled: respond.disabled,
-          // A browser opens a window only during the click itself, also from a phone's menu sheet.
-          immediate: true,
-          action: () => respond.run("reply", { window: true }),
-        },
         ...(respond.replyAll
           ? [
               {

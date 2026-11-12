@@ -1,5 +1,5 @@
 import { text } from "@k2b/stdlib";
-import { IconButton, useLocale } from "@k2b/ui";
+import { IconButton, ProgressBar, useLocale } from "@k2b/ui";
 import type { Accessor } from "solid-js";
 import { For, Show } from "solid-js";
 import type { MailDraft } from "../../contracts";
@@ -62,6 +62,9 @@ export default function MailComposerAttachments(props: {
             <span class="chip max-w-full" role="listitem">
               <i class={`ti ${upload.error ? "ti-alert-circle text-red-500" : "ti-loader-2 animate-spin"}`} aria-hidden="true" />
               <span class="max-w-48 truncate">{upload.filename}</span>
+              <Show when={!upload.error}>
+                <ProgressBar class="w-16" size="xs" value={upload.progress} label={upload.filename} />
+              </Show>
               <span class="text-xs text-dimmed">{upload.error ?? `${upload.progress}%`}</span>
               <Show when={upload.error && upload.file}>
                 <IconButton

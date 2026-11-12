@@ -756,18 +756,6 @@
     container: mail-reader / inline-size;
   }
 
-  /* A saved draft shows as a dot on the pill's Reply. */
-  .mail-reader-draft-dot {
-    display: none;
-    position: absolute;
-    top: 0.25rem;
-    right: 0.25rem;
-    width: 0.375rem;
-    height: 0.375rem;
-    border-radius: 9999px;
-    background: var(--k2b-action-solid);
-  }
-
   .mail-reading-column {
     display: flex;
     width: 100%;
@@ -1089,38 +1077,7 @@
   }
 }
 
-/* The reply pill (layers and shadows, layer 3): a floating toolbar above the
-   newest message that sticks to the top of the reader while the messages
-   scroll. It replaces the reply box and the phone's bottom bar. It is a pill of
-   small controls like the Notebooks editor pills and the PdfViewer bar (@k2b/ui
-   `--k2b-pill-control`, `--k2b-pill-inset`): the same space around its buttons
-   on every side; touch screens keep the 44 px hit area. */
-.k2b-ui .mail-reader-reply-pill {
-  --k2b-toolbar-control: var(--k2b-pill-control);
-  --k2b-toolbar-inset: var(--k2b-pill-inset);
-  display: contents;
-}
-/* The floating toolbar with `edge="top"` sticks itself; its strip spans the
-   reading column, so the toolbar measures that row: as it narrows, labels give
-   way to icons, then actions move into More. The pill never reaches past the row. */
-.k2b-ui .mail-reader-reply-pill > .k2b-toolbar-float {
-  z-index: 5;
-  min-width: 0;
-  margin-block-end: 0.875rem;
-  padding: 0.25rem 0;
-  justify-content: flex-start;
-}
-.k2b-ui .mail-reader-reply-pill .mail-reader-pill-reply {
-  position: relative;
-  flex: none;
-  padding-inline: 0.75rem;
-}
-.k2b-ui .mail-reader-reply-pill .mail-reader-draft-dot {
-  display: block;
-}
-
-/* The draft inside the conversation: the pill grows into it above the newest
-   message. One flat surface with the 2 px field edge (focus blue), no shadow
+/* The draft inside the conversation (a new message in the flow, and the reply box below). One flat surface with the 2 px field edge (focus blue), no shadow
    and no card in a card. Heights follow the reader's column, not the window. */
 .k2b-ui .mail-reader-scroll {
   container: mail-reader / size;
@@ -1176,31 +1133,6 @@
   top: 0;
   z-index: 2;
   background: var(--k2b-surface);
-}
-/* Full screen, scrolled into the history: one fixed row keeps the draft's Send, the way back to its text, and the
-   way out of full screen. It stands above the history with a hairline, as the mockup's compact bar does. */
-.k2b-ui .mail-draft-fullscreen-bar {
-  position: sticky;
-  top: 0;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-inline: -0.25rem;
-  padding: 0.375rem 0.25rem;
-  background: var(--k2b-surface);
-  box-shadow: 0 1px 0 var(--k2b-border);
-}
-.k2b-ui .mail-draft-fullscreen-bar-title {
-  display: inline-flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 0.375rem;
-  overflow: hidden;
-  font-size: 0.8125rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 /* F8: from 1500 px of reader width, the history stands beside the draft in full screen; the draft stays in place
    while the history scrolls. Lines keep the length the recipient sees. */
@@ -1481,58 +1413,6 @@
   content: none;
 }
 
-/* The conversation's other drafts: quiet rows under the open draft, one click opens one in its place. */
-.k2b-ui .mail-reader-drafts {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  margin: 0 0 0.875rem;
-  padding: 0;
-  list-style: none;
-}
-.k2b-ui .mail-reader-draft-row {
-  display: flex;
-  width: 100%;
-  min-height: 2.5rem;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem 0.75rem;
-  border-radius: 0.75rem;
-  background: var(--k2b-surface);
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
-  font-size: 0.8125rem;
-  text-align: start;
-  color: var(--k2b-text-secondary);
-}
-.k2b-ui .mail-reader-draft-row:hover {
-  background: var(--k2b-edge-hover-bg);
-}
-.k2b-ui .mail-reader-draft-row:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
-}
-.k2b-ui .mail-reader-draft-row-intent {
-  flex: none;
-  font-weight: 600;
-  color: var(--k2b-text);
-}
-.k2b-ui .mail-reader-draft-row-meta {
-  flex: none;
-  color: var(--k2b-text-muted);
-}
-.k2b-ui .mail-reader-draft-row-preview {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.k2b-ui .mail-reader-draft-row-open {
-  flex: none;
-  font-weight: 500;
-  color: var(--k2b-text-muted);
-}
-
 /* Phones: the draft is always full screen and spans the full width without a frame. Its text stands on the same
    edge as the messages' text; the history follows under a quiet heading. */
 @media not all and (min-width: 48rem) {
@@ -1564,9 +1444,6 @@
     font-weight: 600;
     color: var(--k2b-text-muted);
   }
-  .k2b-ui .mail-reader-draft-row-meta {
-    display: none;
-  }
   /* One row of tools above the keyboard; a long status shortens instead of pushing Send onto a second row. */
   .k2b-ui .mail-inline-draft-tools {
     flex-wrap: nowrap;
@@ -1580,16 +1457,12 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  /* F1: on a phone the pill waits at the bottom, in thumb reach, while a draft still opens at the top. It moves to
-     the end of the column and sticks to the bottom edge; the column fills the reader, so the pill sits at the bottom
-     also beside a short conversation. */
+  /* On a phone the reply box waits at the bottom of the conversation, in thumb reach. */
   .k2b-ui .mail-reading-column {
     min-height: calc(100cqh - 1rem);
   }
-  .k2b-ui .mail-reader-reply-pill > .k2b-toolbar-float {
-    order: 99;
-    inset-block: auto 0;
-    margin-block: auto 0;
+  .k2b-ui .mail-reply-box-frame {
+    margin-block-start: auto;
   }
 }
 
@@ -2148,4 +2021,242 @@
 .mail-event__skeleton-time {
   width: 2.5rem;
   height: 0.75rem;
+}
+
+/* The reply box (Mail v5): always open under the newest message, one reply draft, and the internal note. One flat
+   surface with the 2 px field edge; every state keeps the same place and height, so nothing above or below moves. */
+.k2b-ui .mail-reply-box-frame {
+  display: flex;
+  flex-direction: column;
+  margin-block-end: 0.875rem;
+}
+.k2b-ui .mail-reply-box,
+.k2b-ui .mail-inline-draft.mail-reply-box {
+  min-height: 12.5rem;
+  margin-block-end: 0;
+}
+.k2b-ui .mail-reply-box[hidden] {
+  display: none;
+}
+.k2b-ui .mail-reply-box-pending,
+.k2b-ui .mail-reply-box-note,
+.k2b-ui .mail-reply-box-state {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.875rem;
+  background: var(--k2b-surface);
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
+}
+/* Scheduled and detached: one quiet row in the box's place, with its ways back. */
+.k2b-ui .mail-reply-box-state {
+  min-height: 3.25rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--k2b-text-secondary);
+}
+.k2b-ui .mail-reply-box-state > .ti {
+  font-size: 1rem;
+  color: var(--k2b-text-muted);
+}
+.k2b-ui .mail-reply-box-skeleton {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-block: 0.5rem;
+}
+.k2b-ui .mail-reply-box-skeleton > span {
+  height: 0.75rem;
+  border-radius: 9999px;
+  background: var(--k2b-surface-muted);
+}
+.k2b-ui .mail-reply-box-skeleton > span:nth-child(1) {
+  width: 9rem;
+}
+.k2b-ui .mail-reply-box-skeleton > span:nth-child(2) {
+  width: 60%;
+}
+.k2b-ui .mail-reply-box-skeleton > span:nth-child(3) {
+  width: 40%;
+  margin-block-start: auto;
+}
+.k2b-ui .mail-reply-box-head {
+  display: flex;
+  min-height: 2rem;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+.k2b-ui .mail-reply-box-recipients {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.k2b-ui .mail-reply-box-cc {
+  display: inline-flex;
+  flex: none;
+  gap: 0.125rem;
+  margin-inline-start: auto;
+}
+/* The mode arrow: icon and chevron, a quiet control at the start of the first row. */
+.k2b-ui .mail-reply-box-mode {
+  display: inline-flex;
+  min-height: 1.75rem;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  padding-inline: 0.375rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  white-space: nowrap;
+}
+.k2b-ui .mail-reply-box-mode:hover {
+  background: var(--k2b-edge-hover-bg);
+}
+.k2b-ui .mail-reply-box-mode:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
+}
+.k2b-ui .mail-reply-box-mode > .ti {
+  font-size: 1rem;
+}
+.k2b-ui .mail-reply-box-mode .mail-reply-box-mode-chevron {
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+}
+.k2b-ui .mail-reply-box-mode-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+/* One-time lines inside the box: the consolidation notice and text written while the last reply waited. */
+.k2b-ui .mail-reply-box-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block: 0.125rem 0.25rem;
+  padding: 0.25rem 0.25rem 0.25rem 0.5rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+  font-size: 0.8125rem;
+  color: var(--k2b-text-secondary);
+}
+.k2b-ui .mail-reply-box-line > .ti {
+  color: var(--k2b-text-muted);
+}
+/* A suggestion from the assistant: plum (AI) until someone types, with its account and a way to discard it. */
+.k2b-ui .mail-reply-box-suggestion {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.75rem;
+  font-size: 0.8125rem;
+  color: var(--k2b-ai-accent);
+}
+.k2b-ui .mail-reply-box-suggestion-hint {
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2b-ui .mail-reply-box-previewing {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+}
+.k2b-ui .mail-reply-box-foot {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.25rem;
+}
+.k2b-ui .mail-reply-box-tools {
+  flex-wrap: nowrap;
+  margin-inline-start: 0.25rem;
+}
+.k2b-ui .mail-reply-box-wide-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+.k2b-ui .mail-reply-box-assistant {
+  color: var(--k2b-ai-accent);
+}
+.k2b-ui .mail-reply-box-status {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.3125rem;
+  margin-inline: auto 0.25rem;
+  overflow: hidden;
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+  white-space: nowrap;
+}
+.k2b-ui .mail-reply-box-status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A failed send or note save turns the bar light red in place: the reason, and the retry where the action was. */
+.k2b-ui .mail-reply-box-foot[data-tone="danger"] {
+  gap: 0.5rem;
+  margin-inline: -0.875rem;
+  margin-block-end: -0.5rem;
+  padding: 0.375rem 0.875rem;
+  border-end-start-radius: 0.875rem;
+  border-end-end-radius: 0.875rem;
+  background: color-mix(in srgb, var(--k2b-edge-danger) 10%, var(--k2b-surface));
+  color: color-mix(in srgb, var(--k2b-edge-danger) 70%, var(--k2b-text));
+}
+.k2b-ui .mail-reply-box-failure {
+  min-width: 0;
+  flex: 1;
+  font-size: 0.8125rem;
+}
+/* On a wide screen the overflow menu does not repeat the tools the bar shows. */
+@media (min-width: 48rem) {
+  .k2b-ui .mail-reply-box-phone-only {
+    display: none;
+  }
+}
+@container mail-reader (max-width: 34rem) {
+  .k2b-ui .mail-reply-box-wide-tools,
+  .k2b-ui .mail-reply-box-assistant-label,
+  .k2b-ui .mail-reply-box-status-text {
+    display: none;
+  }
+}
+
+/* Phones: the reply box keeps its frame at the bottom of the conversation, and its bar keeps one row. */
+@media not all and (min-width: 48rem) {
+  .k2b-ui .mail-inline-draft.mail-reply-box,
+  .k2b-ui .mail-inline-draft.mail-reply-box:focus-within {
+    min-height: 12.5rem;
+    margin-inline: 0;
+    padding-inline: 0.75rem;
+    border-radius: 0.875rem;
+    background: var(--k2b-surface);
+    box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
+  }
+  .k2b-ui .mail-inline-draft.mail-reply-box:focus-within {
+    box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
+  }
+  .k2b-ui .mail-inline-draft.mail-reply-box::after {
+    content: none;
+  }
+  .k2b-ui .mail-reply-box-wide-tools,
+  .k2b-ui .mail-reply-box-status-text {
+    display: none;
+  }
+  .k2b-ui .mail-reply-box-foot[data-tone="danger"] {
+    margin-inline: -0.75rem;
+    padding-inline: 0.75rem;
+  }
 }
