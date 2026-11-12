@@ -179,7 +179,12 @@ const fixture = (repair?: SharedTextSnapshotRepair) => {
       return worker;
     },
   };
-  const log = { id: "test.text", topic: () => topic, firstSequence: async () => control.firstSequence };
+  const log = {
+    writer: () => ({ ...writer, extend: async () => true }),
+    id: "test.text",
+    topic: () => topic,
+    firstSequence: async () => control.firstSequence,
+  };
   const logger = {
     info: (...args: unknown[]) => {
       infos.push(args);
@@ -732,7 +737,8 @@ test("repair can settle an already saved document or a document without retained
     f.states.set("doc", { state: null, cursor: cursor(10), text: "saved", restoreRevision: "revision" });
     if (latest === null) f.latest.delete("doc");
     await f.run();
-    expect(f.replays).toEqual([]);
+    // Even a covered snapshot checks the retained tail before attempting repair.
+    expect(f.replays).toHaveLength(latest ? 1 : 0);
     expect(f.publications[0]!.expectedAfter).toBe(latest);
     expect(f.saves[0]![1].text).toBe("saved!");
     const input = f.saves[0]![1];
@@ -863,4 +869,16 @@ test("flush-now refuses a skipped write, changed generation and uncovered reques
     f.states.set(id, { ...input });
   };
   await expect(f.pipeline.flushNow("doc", { targetCursor: cursor(11) })).rejects.toThrow("did not persist");
+});
+
+test("a snapshot repair cannot overwrite a restore fence while its SQL transaction is pending", async () => {
+  const f = fixture({ maxLength: 100, plan: () => [{ from: 0, to: 0, insert: "repair" }] });
+  f.events[0]!.data = { kind: "freeze", payload: "", restoreRevision: "next:opaque", originNodeId: "restore-node", originPeerId: null };
+  await expect(f.run()).rejects.toThrow("GENERATION_CHANGED");
+  expect(f.publications).toHaveLength(0);
+  expect(f.saves).toHaveLength(0);
+  // A rolled-back restore compensates the marker with the committed revision.
+  f.events[0]!.data.restoreRevision = "revision";
+  await f.run();
+  expect(f.saves[0]![1].text).toBe("repair");
 });

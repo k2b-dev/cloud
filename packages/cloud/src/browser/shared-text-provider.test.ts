@@ -490,3 +490,35 @@ for (const readyGeneration of [GENERATION, "replacement"]) {
     expect(failures).toEqual(readyGeneration === GENERATION ? [] : ["RESYNC_REQUIRED"]);
   });
 }
+
+test("a frozen document retains journal input and resends it after thaw; close is terminal", () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-12T12:00:00Z"));
+  try {
+    const fatal: string[] = [];
+    const { provider, socket, local } = fixture({ onFatal: (error) => fatal.push(error.code) });
+    socket.ready();
+    local.getText("codemirror").insert(0, "own unsent text");
+    const publication = publishes(socket)[0]!;
+    const journal = provider.pendingState();
+    socket.message({ type: "error", payload: { code: "DOCUMENT_FROZEN", message: "Frozen" } });
+    socket.onclose?.({ code: 1013, reason: "DOCUMENT_FROZEN" });
+    expect(provider.hasUnsentChanges()).toBe(true);
+    expect(provider.pendingState()).toEqual(journal);
+    expect(fatal).toEqual([]);
+    jest.advanceTimersByTime(2_000);
+    const next = Socket.instances.at(-1)!;
+    next.open();
+    next.ready();
+    expect(publishes(next)).toEqual([publication]);
+    next.sync(publication.payload.payload);
+    expect(provider.hasUnsentChanges()).toBe(false);
+    next.message({ type: "error", payload: { code: "DOCUMENT_CLOSED", message: "Closed" } });
+    expect(fatal).toEqual(["DOCUMENT_CLOSED"]);
+    jest.advanceTimersByTime(10_000);
+    expect(Socket.instances).toHaveLength(2);
+  } finally {
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});

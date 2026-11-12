@@ -71,6 +71,8 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
         },
         getByShortId: async ({ shortId }: { shortId: string }) => ({ ...note, id: shortId === "ghijkl" ? "second-note" : note.id }),
         get: async ({ id }: { id: string }) => (id === note.id && missingFirstNote ? null : { ...note, id }),
+        getRoomAccessState: async ({ noteId }: { noteId: string }) =>
+          noteId === note.id && missingFirstNote ? null : { ...note, id: noteId, restoreRevision: "0" },
         getYjsStateWithCursor: async () => ({ restoreRevision: "0" }),
         deliverAtRestoreRevision: async (input: { deliver: () => undefined }) => {
           input.deliver();

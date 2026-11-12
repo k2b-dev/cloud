@@ -16,7 +16,7 @@ afterEach(() => {
   jest.useRealTimers();
 });
 const waitFor = async (check: () => boolean) => {
-  for (let i = 0; i < 100 && !check(); i++) await Bun.sleep(1);
+  while (!check()) await Bun.sleep(1);
   expect(check()).toBe(true);
 };
 const stream = <T>() => {
@@ -49,6 +49,7 @@ const fixture = () => {
   const invalidations = stream<void>();
   const live = stream<TopicEvent<SharedTextEvent>>();
   let authenticateWait: Promise<void> | undefined;
+  let revalidateWait: Promise<void> | undefined;
   let denied = false,
     revoked = false;
   let sql = 0,
@@ -56,7 +57,9 @@ const fixture = () => {
   let failure: Error | undefined;
   let head: string | null = null;
   const entries: TopicEvent<SharedTextEvent>[] = [];
+  const replays: number[] = [];
   const topic = {
+    cursorSequence: (cursor: string) => Number(cursor.split(".").at(-1)),
     cursorAt: (sequence: number) => `s6t.room.${sequence}`,
     latestCursor: async () => head,
     publish: async (input: { data: SharedTextEvent; tenantId?: string }) => {
@@ -76,12 +79,21 @@ const fixture = () => {
     },
     replay: async function* (options: { after?: string; until?: string }) {
       if (failure) throw failure;
-      yield* entries.filter((e) => Number(e.cursor.split(".").at(-1)) > Number(options.after?.split(".").at(-1) ?? 0));
+      const batch = entries.filter(
+        (e) =>
+          Number(e.cursor.split(".").at(-1)) > Number(options.after?.split(".").at(-1) ?? 0) &&
+          (!options.until || Number(e.cursor.split(".").at(-1)) <= Number(options.until.split(".").at(-1))),
+      );
+      replays.push(batch.length);
+      yield* batch;
     },
     hub: () => ({ subscribe: ({ signal }: { signal: AbortSignal }) => live.read(signal) }),
     live: ({ signal }: { signal: AbortSignal }) => stream<TopicEvent<SharedTextEvent>>().read(signal),
   };
-  bindProcessSync({ topic: () => topic } as unknown as Sync);
+  bindProcessSync({
+    topic: () => topic,
+    mutex: () => ({ withLock: async (_input: unknown, run: () => Promise<unknown>) => run() }),
+  } as unknown as Sync);
   const messages: SharedTextRoomMessages = {
     notFound: "missing",
     sessionExpired: "expired",
@@ -106,6 +118,7 @@ const fixture = () => {
   };
   const sent: Array<{ type: string; payload: { code?: string; updates?: unknown[] } }> = [];
   const closed: number[] = [];
+  const ready = Promise.withResolvers<void>();
   const room = createSharedTextRoom({
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     protocol: {
@@ -149,7 +162,9 @@ const fixture = () => {
       awarenessUser: (user) => ({ userId: user.id, name: "User", color: "#fff" }),
       revalidate: async () => {
         sql++;
-        return { ok: !revoked, code: "ACCESS_REVOKED" };
+        const ok = !revoked;
+        await revalidateWait;
+        return { ok, code: "ACCESS_REVOKED" };
       },
       invalidations: (_ctx, signal) => invalidations.read(signal),
       recover: async () => {
@@ -158,7 +173,14 @@ const fixture = () => {
     },
   });
   const ctx = createSharedTextRoomContext<{ id: string }, SharedTextRoomMessages>(
-    { send: (data) => sent.push(JSON.parse(data)), close: (code) => closed.push(code) },
+    {
+      send: (data) => {
+        const message = JSON.parse(data);
+        sent.push(message);
+        if (message.type === "ready") ready.resolve();
+      },
+      close: (code) => closed.push(code),
+    },
     "credential",
     messages,
   );
@@ -166,16 +188,21 @@ const fixture = () => {
   const request = (type: string, payload: object) => connection.receive(JSON.stringify({ type, payload: { docId: "public", ...payload } }));
   return {
     room,
+    ready: ready.promise,
     ctx,
     connection,
     sent,
     closed,
     invalidations,
     entries,
+    replays,
     sql: () => sql,
     snapshots: () => snapshots,
     holdAuthentication: (wait: Promise<void>) => {
       authenticateWait = wait;
+    },
+    holdRevalidation: (wait: Promise<void>) => {
+      revalidateWait = wait;
     },
     deny: () => {
       denied = true;
@@ -230,7 +257,7 @@ test("idle sessions schedule no access checks and execute zero SQL over virtual 
   const timeouts = spyOn(globalThis, "setTimeout");
   const f = fixture();
   await f.join();
-  for (let i = 0; i < 100 && !f.sent.some((m) => m.type === "ready"); i++) await Promise.resolve();
+  await f.ready;
   expect(f.sent.some((m) => m.type === "ready")).toBe(true);
   const joined = f.sql();
   try {
@@ -272,6 +299,73 @@ test("an identity invalidation during join cannot be lost before access subscrip
     expect(f.sent.some((message) => message.type === "ready")).toBe(false);
   } finally {
     released.resolve();
+    await f.connection.close();
+  }
+});
+
+test("each accepted edit advances the base: replay stays bounded across a long session", async () => {
+  const f = fixture();
+  const doc = new Y.Doc();
+  doc.clientID = 42;
+  try {
+    await f.join();
+    await f.ready;
+    const joined = f.sql();
+    let baseCursor = "s6t.room.0";
+    for (let index = 0; index < 50; index++) {
+      const vector = Y.encodeStateVector(doc);
+      doc.getText("codemirror").insert(index, "x");
+      await f.room.handle(f.ctx, {
+        type: "edit",
+        payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(doc, vector)), baseCursor, restoreRevision: "0" },
+      });
+      baseCursor = f.entries.at(-1)!.cursor;
+    }
+    expect(f.entries).toHaveLength(50);
+    expect(Math.max(...f.replays)).toBeLessThanOrEqual(1);
+    expect(f.sql()).toBe(joined);
+  } finally {
+    doc.destroy();
+    await f.connection.close();
+  }
+});
+
+test("retention loss during admission requires reopen rather than internal error", async () => {
+  const f = fixture();
+  try {
+    await f.join();
+    await f.ready;
+    f.fail(new RetentionGapError("s6t.room.0", "s6t.room.2"));
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: { docId: "public", payload: "AAA=", baseCursor: "s6t.room.0", restoreRevision: "0" },
+    });
+    expect(f.sent.at(-1)?.payload.code).toBe("RESYNC_REQUIRED");
+    expect(f.closed.at(-1)).toBe(1012);
+  } finally {
+    await f.connection.close();
+  }
+});
+
+test("revalidation is single-flight and an invalidation during its query is checked again", async () => {
+  const f = fixture();
+  const release = Promise.withResolvers<void>();
+  try {
+    await f.join();
+    await f.ready;
+    const joined = f.sql();
+    f.holdRevalidation(release.promise);
+    const first = f.room.revalidate(f.ctx);
+    const repeated = Array.from({ length: 20 }, () => f.room.revalidate(f.ctx));
+    expect(repeated.every((task) => task === first)).toBe(true);
+    f.revoke();
+    release.resolve();
+    await first;
+    await waitFor(() => f.closed.length > 0);
+    expect(f.sql() - joined).toBe(2);
+    expect(f.sent.at(-1)?.payload.code).toBe("ACCESS_REVOKED");
+  } finally {
+    release.resolve();
     await f.connection.close();
   }
 });

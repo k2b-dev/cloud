@@ -14,7 +14,8 @@ Use `@k2b/cloud/shared-text` for text that people and agents write at the same
 time. One retained log carries updates; a snapshot in the application's own
 Postgres table holds durable state. The server API owns logs and rooms;
 `@k2b/cloud/browser/shared-text` owns browser providers and device journals. Callers must
-authorize access before calling `read`, `edit`, `change`, `inverse`, or `accept`.
+authorize each HTTP action. Rooms check access at connect or join and revoke
+connections through events; edits and awareness use that bound access.
 
 ## Declare one log per kind of document
 
@@ -295,14 +296,17 @@ Dispose the controller when the editor closes.
 
 ## Admit delayed browser input before acknowledging it
 
-Use `documents.accept(docId, { actor, update, baseCursor, restoreRevision,
+Use `documents.accept(docId, { snapshot, actor, update, baseCursor, restoreRevision,
 originNodeId, originPeerId, maxLength?, signal? })` for browser updates when structural
 history is enabled. `baseCursor` is the state the browser had observed when it
 made the edit. Keep that cursor with pending bytes across reconnects; assigning
 a newer replay cursor to old input would erase the check's context.
 
-The service reconstructs current state and checks structural changes since
-that base before publishing against the captured document head. Ordinary
+Supply the authorized snapshot from join or resync as `snapshot`; admission
+never loads the store. The room advances its base with live events and local
+publications. Admission reuses covered state and structural history, reads only
+the missing log tail, and checks changes since that base before publishing
+against the captured document head. Ordinary
 Markdown input and server `edit` calls receive the same classification: edits
 that preserve table scaffolding remain concurrently mergeable, while changes
 to that scaffolding require conservative recovery. Stale input crossing such
@@ -343,7 +347,7 @@ snapshot revision. Omitting it for a versioned event raises an error.
 Custom browser transports must retain this metadata and start from a snapshot
 with its matching revision. Browser writes must carry their originating revision,
 including full-state reconnects and retries. Validate it against the joined
-session and current store before publishing; retain that originating revision
+session and ordered generation markers before publishing; retain that originating revision
 in the log event to cover a restore during publication. Never assign the current
 store revision to bytes from a different document. A client holding a different document version must
 preserve unsent text and reopen the current version. Do not merge a replacement
@@ -351,13 +355,13 @@ snapshot into the old Y.Doc. Upgrade all log readers and browser transports
 before enabling these server actions or automatic repair; older readers do not
 understand this revision fence.
 
-An authoritative socket receipt or replay-ready message must also be ordered
-against store-only replacement. Notebooks validates and sends it synchronously
-under a shared lock on the note row. Replacement takes the exclusive lock and
-checks accepted live content through the captured log head before replacing an
-empty target. Snapshot text alone cannot establish that the target is empty.
-Transports and replacement writers must both follow this ordering before it
-can be relied on during a rollout.
+Replacement writes a generation marker into the document log before committing
+the restored SQL state. The marker and publication CAS reject old admissions
+even before the workspace outbox event arrives; delivery needs no SQL row fence.
+Replacement checks accepted live content through the captured log head before
+replacing an empty target. Snapshot text alone cannot establish that the target
+is empty. Upgrade all admission readers before enabling replacement markers;
+old nodes cannot enforce this boundary.
 
 ## Connect a browser editor
 
@@ -651,8 +655,9 @@ An existing Sync topic can reserve an ID with an empty awareness publication
 (`AA==`): add `2 ** 32` to its returned `streamSequence`. Keep that topic's
 sequence across process and broker restarts.
 
-Authorize document access before each `publish(bytes)` call and apply the
-transport's existing payload limits. The method accepts exactly one local
+Bind document access at connect or join, revoke it through the relevant source
+events, and apply the transport's existing payload limits to `publish(bytes)`.
+Awareness uses the bound connection identity and needs no SQL access lookup. The method accepts exactly one local
 state with an optional relative-position `cursor: { anchor, head }` or null.
 Both positions must name `textName`, with a null or absent `type`; item IDs,
 null items, and association values retain their Yjs meaning. It returns an
@@ -670,7 +675,8 @@ state per 100 ms, so a selection drag cannot flood the server. On the server,
 keep at most one unprocessed awareness message per connection: a later one
 replaces it, it does not count against the connection's message limit, and any
 other message ends the replacement, so a cursor never overtakes an edit sent
-before it. Check access for every awareness message you process.
+before it. Check in-memory document membership for every awareness message;
+access changes close the connection through events.
 Return the connection's peer ID in the replay-ready response and include it
 as the origin of cursor updates, so the browser can skip its own rewritten
 echo. Remote timeout removals stay local. A new connection receives a fresh
@@ -845,9 +851,12 @@ Implement `SharedTextRoomAdapter<User, Messages, Context>`:
 Capture an invalidation cursor before checking access and subscribe from it
 after joining. This covers mutations between authorization and subscription
 without a second scheduled check. Forward identity invalidations with
-`subscribeIdentityAccessChanged` from `@k2b/cloud/events` to
-`room.revalidate(context)`, and release that subscription when the socket
-ends. It remembers an event during join and checks it before replay starts.
+`subscribeIdentityAccessChanged(callback, { userId, sid, serviceAccountId })`
+from `@k2b/cloud/events` to `room.revalidate(context)`, and release that
+subscription when the socket ends. Subjects restrict delivery to affected
+principals/sessions; only settings and signing-key revocation are global.
+Revalidation is single-flight per context, and reads permission and revision
+metadata rather than the text snapshot. It remembers an event during join and checks it before replay starts.
 For the application-entry socket guard, pass
 `guardAppAccessSocket(context, appId, handlers, { eventOnly: true })`.
 
@@ -869,24 +878,42 @@ transactional outbox for these sources:
   including FreeIPA synchronization and its effective-group projection.
 - Account authentication epoch, category/admin status, expiration or deletion;
   FreeIPA account locks; category-enabled and administrator-group settings.
-- Session revocation, replacement, expiration or deletion; signing-key changes;
-  service-account status and credential revocation, scope or expiry changes.
+- Session revocation, replacement, expiration or deletion; signing-key state
+  changes or deletion; service-account status and credential revocation, scope
+  or expiry changes. Extending a signing key's verification window and writing
+  an unchanged directory lock do not emit invalidations.
 - Account and session expiry deadlines, and shared-workstation idle deadlines.
   Deadline rows are queued at the source and delivered when due; real input
-  replaces the idle deadline. This adds no access scan or socket timer.
+  replaces the idle deadline; an idle-policy change reschedules existing
+  families. Authentication does not rewrite these deadlines. This adds no
+  access scan. The application socket guard also sets one local timeout for
+  the credential's known expiry (session proof/account/credential deadline),
+  closing with `1008 SESSION_EXPIRED` even when Core is unavailable. This
+  timeout performs no SQL and is cancelled when the socket ends.
 
 Notebooks supplies its existing `workspace.invalidated`, `note.updated` and
-`note.deleted` events for grants, locks, restores, moves and deletion. Mail's
-existing live topic carries access hints for mailbox grants, assigned-only
-grants, conversation assignments and mailbox soft or hard deletion; changes
-to the referenced grant also produce Core's identity invalidation. Mail's
-current schema has no separate restricted-member relation or persistent
-mailbox lock: an application adding either must publish the same access hint.
+`note.deleted` events for grants, locks, restores, moves and deletion. A restore
+also CAS-publishes a generation marker before committing its snapshot, so old
+rooms cannot acknowledge edits while outbox delivery is delayed. A rollback
+compensates the marker; if the restoring process crashes before commit, retry
+that restore to replace the conservative fence before reopening the document.
 External directory changes become effective when the existing directory sync
 writes them locally; the room introduces no new directory polling.
-Notebooks browser rooms use session credentials. An adapter accepting OAuth or
-service-account credentials must supply its own token-expiry events; those
-credential lifetimes are not account/session deadlines.
+
+Mail has not adopted this room yet. Its adapter must publish and consume
+sources for mailbox grants, assigned-only access, conversation assignments,
+and mailbox soft/hard deletion. There are no unused Mail triggers in this
+platform extraction. The current schema has no separate restricted-member
+relation or persistent mailbox lock; adding either must include its source
+event. An adapter accepting other credentials must supply a known expiry to
+its socket guard or publish token-expiry events; account/session deadlines
+do not represent every credential lifetime.
+
+Before accepting event-only rooms, call `requireIdentityAccessEvents()` from
+`@k2b/cloud/events` during application startup. It refuses startup until Core
+has installed the scoped event sources. Deploy Core first, with live delivery
+running, then the application. Notebooks applies this guard. Existing
+Notebooks browser-session cases continue to take effect without polling.
 
 ### Bound each connection
 
@@ -915,18 +942,79 @@ non-newer cursors atomically, including during rolling upgrades.
 
 Call the snapshot pipeline's `flushNow(docId, { signal?, restoreRevision?,
 targetCursor? })` before an action that needs committed text. It captures the
-latest accepted cursor, uses the same writer and persistence algorithm as the
-background job, then returns the stored `{ state, text, cursor,
-restoreRevision }`. It returns null for a missing document and throws on a
-changed generation, busy writer, skipped save or uncovered cursor. Retry a
-busy writer through the caller's bounded action retry. A target cursor can
-require coverage beyond the captured head.
+latest accepted cursor, waits for the document's writer lease within the
+caller signal and a 120-second deadline, and returns the stored
+`{ state, text, cursor, restoreRevision }`. It returns null for a missing
+document and throws on cancellation, a changed generation, a skipped save
+or an uncovered cursor. A target cursor can require coverage beyond the
+captured head. A flush alone permits later edits.
 
-Authorization and freezing further edits remain application responsibilities.
-For sending, first wait for browser edits to be accepted, freeze publication
-through the application's existing lifecycle mechanism, then flush that
-revision/cursor and send the returned persisted text. A flush alone does not
-prevent an edit accepted after its captured head.
+### Freeze, submit, thaw or close
+
+A room configured with `snapshots.flushNow` exposes:
+
+```ts
+room.freeze(docId, { signal? }): Promise<SharedTextRoomFreeze | null>
+room.thaw(docId, { signal?, freezeCursor? }): Promise<string | null>
+room.closeDocument(docId, { signal?, freezeCursor? }): Promise<string | null>
+// SharedTextRoomFreeze:
+// { state: Uint8Array, text: string, cursor: string,
+//   restoreRevision: string, expiresAt: number }
+```
+
+First wait for the browser's visible input to be accepted. `freeze` publishes
+an ordered marker using the document log's expected-head CAS, drains all
+accepted input through that marker, persists it through `flushNow`, and returns
+that exact state and marker cursor. It fails on a competing publication; retry
+the bounded action from the new head. Across nodes, an edit is either ordered
+before the marker or rejected without an acknowledgement as `DOCUMENT_FROZEN`
+(close 1013). The browser keeps its input/journal and reconnects to resend it.
+Snapshot repair cannot change the frozen state.
+
+The freeze is a nonrenewing 60-second lease starting at marker publication.
+A crashed owner therefore cannot block admission beyond 60 seconds plus the
+operator's inter-node clock skew. Nodes must have synchronized clocks.
+Complete the durable submit/send transition before `expiresAt`; if the
+remaining lease is insufficient, cancel and retry. `freeze` also checks that
+the lease is still current after persistence. Pass the returned cursor as
+`freezeCursor` to thaw or close: a stale or expired owner cannot release or
+close a later freeze. On cancellation/failure, `thaw` appends an open marker.
+`closeDocument` appends a terminal marker and closes sockets on every node
+with `1008 DOCUMENT_CLOSED`; the browser stops reconnecting. Close the room
+before exposing the terminal domain transition. These methods return the
+marker cursor, or null for a missing document.
+
+Lifecycle methods require a log with `whenFull: "reject"` and no age expiry.
+Keep terminal/active lifecycle markers when pruning history; deleting those
+markers would remove the admission fence. The room rejects lifecycle calls
+against an expiring or evicting log. Notebooks keeps its existing topic
+configuration and does not call these optional lifecycle methods.
+
+Validation and publication run under the same per-document NATS admission
+lease on every node, including server edits, freeze, thaw and close. Editors
+therefore queue behind one owner instead of repeatedly racing the head CAS.
+The lease lasts 10 seconds; acquisition and admission share a 5-second
+cancellation budget. Contenders wait 25 ms between acquisition attempts, with
+at most 101 attempts. A busy or timed-out admission closes with `1012
+STREAM_FAILED`; the browser keeps its journal and reconnects with backoff.
+A stalled or expired owner still has to pass expected-head CAS. Ordinary
+server edits retry at most three CAS conflicts, with 25/50 ms backoff,
+reusing the prepared update identities. Freeze releases admission after its
+marker and drains persistence outside that lease.
+
+An uncontended edit adds four NATS KV operations for admission acquisition
+and release, plus the existing head lookup and CAS publication: **zero SQL
+per edit**. The lifecycle check itself is an in-memory comparison on a cache
+hit. Delayed events on another node cannot bypass the fence.
+
+A disposable per-context state and head cache advances with live input and
+successful local publications. An up-to-date edit needs no state replay.
+Structural history and uncovered state share a contiguous replay cache,
+capped at one declared log payload budget per binding (128 KiB if omitted).
+Covered history and local receipts need no new replay consumer; a miss reads
+only uncovered history. Evicted history is read from the retained log again.
+An admission retention gap requests a clean resync instead of an internal-error
+close.
 
 ## Open a browser document
 
