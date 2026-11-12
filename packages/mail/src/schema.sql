@@ -959,6 +959,7 @@ CREATE TABLE mail.draft_attachments (
     "position" integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     removed_at timestamp with time zone,
+    forwarded_source_message_id uuid,
     CONSTRAINT draft_attachments_byte_length_check CHECK ((byte_length >= 0)),
     CONSTRAINT draft_attachments_content_hash_check CHECK ((char_length(content_hash) = 64)),
     CONSTRAINT draft_attachments_content_type_check CHECK (((char_length(content_type) >= 1) AND (char_length(content_type) <= 255))),
@@ -1116,6 +1117,8 @@ CREATE TABLE mail.drafts (
     author_kind text NOT NULL,
     author_id uuid,
     adopted_at timestamp with time zone,
+    consolidated_count integer NOT NULL DEFAULT 0 CHECK (consolidated_count >= 0),
+    content_edited_at timestamp with time zone,
     to_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     cc_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     bcc_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -1182,8 +1185,8 @@ CREATE UNIQUE INDEX drafts_materialization_idempotency_idx ON mail.drafts USING 
 
 CREATE INDEX drafts_open_conversation_idx ON mail.drafts USING btree (mailbox_id, conversation_id) WHERE ((origin = 'user'::text) AND (state = 'draft'::text) AND (conversation_id IS NOT NULL));
 
-CREATE UNIQUE INDEX drafts_untouched_suggestion_author_idx ON mail.drafts (mailbox_id, conversation_id, author_id)
-WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL;
+CREATE UNIQUE INDEX drafts_one_open_reply_idx ON mail.drafts (conversation_id)
+WHERE intent <> 'new' AND state IN ('draft', 'scheduled', 'sending');
 
 CREATE INDEX drafts_origin_state_idx ON mail.drafts USING btree (mailbox_id, origin, state, updated_at DESC);
 

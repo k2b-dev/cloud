@@ -3323,6 +3323,47 @@ const mailOperationsApi = new Hono<MailApiContext>()
     );
   })
   .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/intent",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Switch reply mode, preserving body text",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(draftSchema, "Reply draft"),
+        409: jsonResponse(ErrorResponseSchema, "Stale revision or draft not editable"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    v("json", z.object({ expectedRevision: z.number().int().positive(), intent: z.enum(["reply", "reply_all", "forward"]) }).strict()),
+    async (c) =>
+      respondDrafts(
+        c,
+        drafts.switchDraftIntent({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+          ...c.req.valid("json"),
+        }),
+      ),
+  )
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/consolidation/acknowledge",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Acknowledge the one-time draft consolidation notice",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(draftSchema, "Reply draft") },
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    async (c) =>
+      respondDrafts(
+        c,
+        drafts.acknowledgeDraftConsolidation({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+        }),
+      ),
+  )
+  .post(
     "/mailboxes/:mailboxId/drafts/:draftId/safety-review",
     v("param", mailboxAndIdParamSchema("draftId")),
     v("json", composeSafetyReviewInputSchema),

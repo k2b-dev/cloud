@@ -13,6 +13,7 @@ import {
   restoreMailWorkflowProjectedState,
 } from "../service/workflow-projected-state";
 import { createMailWorkflowValueResolver } from "../service/workflow-runtime-values";
+import { MAIL_WORKFLOW_ACTIONS } from "./actions";
 import { bindMailWorkflow, validateMailWorkflowTemplateReferences } from "./binder";
 import { buildMailWorkflowCatalog, type MailWorkflowCatalog, snapshotMailWorkflowCatalog } from "./catalog";
 import { mailWorkflows } from "./module";
@@ -1315,3 +1316,28 @@ steps:
     expect(tagged).toBe(scenario.expected);
   });
 }
+
+test("a workflow cannot schedule a reply draft returned from an occupied reply box", async () => {
+  const result = await MAIL_WORKFLOW_ACTIONS.scheduleDraftSend.run(
+    {
+      runId: "b1-reused-draft",
+      stepKey: "send",
+      effectKey: "b1-reused-draft:send",
+      invocation: {
+        workflowId: "b1",
+        mode: "execute",
+        channel: "event",
+        actor: {},
+        inputs: {},
+        occurredAt: "2026-11-01T12:00:00.000Z",
+        idempotencyKey: "b1",
+      },
+      binding: () => undefined,
+      resolveReference: async () => ({ id: "Draft1", revision: 1, senderIdentityId: "Ident1", reused: true }),
+      variableSnapshot: () => ({}),
+      heartbeat: async () => {},
+    },
+    { draft: "existingReply", scheduledAt: "2026-11-02T12:00:00.000Z" },
+  );
+  expect(result).toMatchObject({ state: "failed", code: "DRAFT_REPLY_BOX_OCCUPIED", retryable: false });
+});

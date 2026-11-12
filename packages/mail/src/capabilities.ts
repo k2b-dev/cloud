@@ -573,6 +573,7 @@ const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
     })),
     attachmentsTruncated: draft.attachments.length > 50,
     suggestion: draft.suggestion,
+    consolidatedCount: draft.consolidatedCount ?? 0,
     revision: draft.revision,
     state: draft.state,
     createdAt: draft.createdAt,
@@ -597,6 +598,7 @@ const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds, locale?: string)
     recipientsTruncated: recipients.truncated,
     attachmentCount: draft.attachments.length,
     suggestion: draft.suggestion,
+    consolidatedCount: draft.consolidatedCount ?? 0,
     revision: draft.revision,
     state: draft.state,
     updatedAt: draft.updatedAt,
@@ -604,6 +606,7 @@ const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds, locale?: string)
 };
 
 const mapDraftMutation = (draft: MailDraft, ids: DraftPublicIds) => ({
+  creationOutcome: draft.creationOutcome,
   signatureTemplateId: draft.signatureTemplateId ? requirePublicId(ids.composeTemplates, draft.signatureTemplateId) : null,
   quoteSource: draft.quoteSource,
   id: requirePublicId(ids.drafts, draft.id),
@@ -616,6 +619,7 @@ const mapDraftMutation = (draft: MailDraft, ids: DraftPublicIds) => ({
   })),
   attachmentsTruncated: draft.attachments.length > 50,
   suggestion: draft.suggestion,
+  consolidatedCount: draft.consolidatedCount ?? 0,
   revision: draft.revision,
   state: draft.state,
   ...(draft.formattingWarnings ? { formattingWarnings: draft.formattingWarnings } : {}),
@@ -2742,7 +2746,7 @@ const actionDefinitions = {
   "draft.create": {
     title: "Create draft",
     description:
-      "Create an idempotent editable mail draft with an optional small inline attachment. For Gustav and other service accounts, this is a suggestion people see in the conversation, labelled with the account's name. After a person edits it, the account can change it only at a person’s request. A conversation has at most one untouched suggestion per account; another create by the same account returns that account's suggestion, never another account's. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
+      "Create an idempotent editable mail draft with an optional small inline attachment. For Gustav and other service accounts, this is a suggestion people see in the conversation, labelled with the account's name. After a person edits it, the account can change it only at a person’s request. Each conversation has one open reply draft across all authors and modes. Creation returns that draft unchanged. An autonomous suggestion returns creationOutcome suggestion_skipped when the box is occupied by a human, adopted, or another author's draft. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
     input: c.DraftCreateInputSchema,
     data: c.DraftMutationDataSchema,
     destructive: false,
@@ -2878,7 +2882,11 @@ const actionDefinitions = {
             })
           : ok(true);
       if (!original.ok) return original;
-      for (const attachment of original.data ? input.attachments : []) {
+      for (const attachment of original.data &&
+      result.data.creationOutcome !== "existing" &&
+      result.data.creationOutcome !== "suggestion_skipped"
+        ? input.attachments
+        : []) {
         const bytes = Buffer.from(attachment.base64, "base64");
         const hash = createHash("sha256").update(bytes).digest("hex");
         if (result.data.attachments.some((existing) => existing.filename === attachment.filename && existing.contentHash === hash))
@@ -2902,7 +2910,13 @@ const actionDefinitions = {
       return ok({
         data,
         receipt: mailReceipt("draft.create", context.locale, { draft: draftSlot(publicDraftId, result.data.subject, context.locale) }),
-        summary: capabilitySummary(t.createdDraft({ subject: reviewSubject(result.data.subject, context) })),
+        summary: capabilitySummary(
+          (result.data.creationOutcome === "suggestion_skipped"
+            ? t.skippedReplySuggestion
+            : result.data.creationOutcome === "existing"
+              ? t.existingReplyDraft
+              : t.createdDraft)({ subject: reviewSubject(result.data.subject, context) }),
+        ),
         ...draftMetadata(scope.data.shortId, publicDraftId, result.data.subject),
       });
     },
@@ -2959,6 +2973,101 @@ const actionDefinitions = {
         data,
         receipt: mailReceipt("draft.update", context.locale, { draft: draftSlot(input.draftId, result.data.subject, context.locale) }),
         summary: capabilitySummary(t.updatedDraft({ subject: reviewSubject(result.data.subject, context) })),
+        ...draftMetadata(input.mailboxId, input.draftId, result.data.subject),
+      });
+    },
+  },
+  "draft.intent": {
+    title: "Switch reply mode",
+    description:
+      "Switch the conversation's reply draft between reply, reply_all and forward. Rebuild recipients, subject and source attachments; preserve body text and personal attachments. Requires the current revision; scheduled/sending drafts cannot switch.",
+    input: c.DraftSwitchIntentInputSchema,
+    data: c.DraftMutationDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    policy: { silent: "shared" },
+    review: async (input: z.output<typeof c.DraftSwitchIntentInputSchema>, context: CapabilityExecutionContext) => {
+      const current = await requireDraftForReview(input.mailboxId, input.draftId, context);
+      if (!current.ok) return current;
+      if (current.data.revision !== input.expectedRevision) return fail(err.conflict("Draft changed before review"));
+      const scope = await resolveDraftScope(input.mailboxId, input.draftId, context);
+      if (!scope.ok) return scope;
+      const proposed = await drafts.previewDraftIntent({
+        context: requestContext(context),
+        mailboxId: scope.data.mailbox.id,
+        draftId: scope.data.draftId,
+        intent: input.intent,
+        expectedRevision: input.expectedRevision,
+      });
+      if (!proposed.ok) return proposed;
+      return ok(
+        mailActionReviews["draft.intent"](
+          context.locale,
+          { draft: draftSlot(input.draftId, proposed.data.subject, context.locale) },
+          {
+            ...(await draftAudienceOptions(current.data.mailboxId, input.mailboxId, context)),
+            preview: draftPreview(proposed.data, context.locale),
+            content: draftReviewContent(proposed.data),
+            links: [openLink(`${draftReadHref(input.mailboxId, input.draftId)}?revision=${input.expectedRevision}`)],
+          },
+        ),
+      );
+    },
+    run: async (input: z.output<typeof c.DraftSwitchIntentInputSchema>, context: CapabilityExecutionContext) => {
+      const scope = await resolveDraftScope(input.mailboxId, input.draftId, context);
+      if (!scope.ok) return scope;
+      const result = await drafts.switchDraftIntent({
+        context: requestContext(context),
+        mailboxId: scope.data.mailbox.id,
+        draftId: scope.data.draftId,
+        intent: input.intent,
+        expectedRevision: input.expectedRevision,
+      });
+      if (!result.ok) return result;
+      return ok({
+        data: mapDraftMutation(result.data, await draftPublicIds([result.data])),
+        receipt: mailReceipt("draft.intent", context.locale, { draft: draftSlot(input.draftId, result.data.subject, context.locale) }),
+        summary: capabilitySummary(mailCapabilityMessages(context.locale).updatedDraft({ subject: result.data.subject })),
+        ...draftMetadata(input.mailboxId, input.draftId, result.data.subject),
+      });
+    },
+  },
+  "draft.consolidation.acknowledge": {
+    title: "Acknowledge draft consolidation",
+    description: "Clear consolidatedCount after showing the one-time notice. Does not change content or revision.",
+    input: c.DraftAcknowledgeConsolidationInputSchema,
+    data: c.DraftMutationDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    policy: { silent: "shared" },
+    review: async (input: z.output<typeof c.DraftAcknowledgeConsolidationInputSchema>, context: CapabilityExecutionContext) => {
+      const current = await requireDraftForReview(input.mailboxId, input.draftId, context);
+      if (!current.ok) return current;
+      return ok(
+        mailActionReviews["draft.consolidation.acknowledge"](
+          context.locale,
+          { draft: draftSlot(input.draftId, current.data.subject, context.locale) },
+          { ...(await draftAudienceOptions(current.data.mailboxId, input.mailboxId, context)) },
+        ),
+      );
+    },
+    run: async (input: z.output<typeof c.DraftAcknowledgeConsolidationInputSchema>, context: CapabilityExecutionContext) => {
+      const scope = await resolveDraftScope(input.mailboxId, input.draftId, context);
+      if (!scope.ok) return scope;
+      const result = await drafts.acknowledgeDraftConsolidation({
+        context: requestContext(context),
+        mailboxId: scope.data.mailbox.id,
+        draftId: scope.data.draftId,
+      });
+      if (!result.ok) return result;
+      return ok({
+        data: mapDraftMutation(result.data, await draftPublicIds([result.data])),
+        receipt: mailReceipt("draft.consolidation.acknowledge", context.locale, {
+          draft: draftSlot(input.draftId, result.data.subject, context.locale),
+        }),
+        summary: capabilitySummary(mailCapabilityMessages(context.locale).acknowledgedDraftConsolidation({ subject: result.data.subject })),
         ...draftMetadata(input.mailboxId, input.draftId, result.data.subject),
       });
     },

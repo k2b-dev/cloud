@@ -532,8 +532,8 @@ separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
 above the newest message grow into the draft at that place; on a phone the bar
 waits at the bottom and the draft opens at the top over the full width. Mail
 creates the shared draft (`draft-seeds` and `materialize`) before anyone types.
-An existing draft with the same purpose opens instead of a second one, and the
-conversation lists its other drafts as rows. **Compose** puts **New message**
+A conversation has one reply draft. Reply, Reply all and Forward use the same
+draft; repeated creation returns its current content. **Compose** puts **New message**
 at the top of the list with an empty conversation beside it.
 
 - The URL carries the open draft as `?draft=`, so reload and Back open it
@@ -940,19 +940,36 @@ A changed copy saved in another mail client's Drafts folder also adopts the
 suggestion when Mail applies the edit. Reconciling an identical copy and
 retrying an export do not adopt it.
 
-Each conversation has at most one untouched suggestion per author, the service
-account that created it. Gustav and another automated account can each keep
-their own suggestion in the same conversation; each shows its account's name,
-for example "Suggestion from Gustav". Another `draft.create` by the same
-account returns that account's existing suggestion without changing its
-content or adding the new request's inline attachments; it never returns
-another account's suggestion. This also applies while its send is pending, so
-Undo can restore it. Update it explicitly with its current revision to
-revise it. Every creation key keeps returning its original draft after adoption,
-so retrying an earlier request cannot create another suggestion. Merging two
-conversations that both hold an untouched suggestion from the same account
-returns `DRAFT_SUGGESTION_CONFLICT` (409) and preserves both conversations.
-Edit or discard one of those suggestions before merging them.
+Each conversation has one open reply draft across all authors and origins.
+An untouched suggestion is that draft. A repeated creation returns it unchanged;
+a request from another automated author, or a suggestion request after human
+creation or adoption, returns `creationOutcome: suggestion_skipped`. No second
+suggestion or inline attachment is added. Creation keys that previously mapped
+to a draft keep their idempotency contract.
+
+Use `mail.draft.intent` with `intent` (`reply`, `reply_all`, `forward`) and the
+current `expectedRevision` to change modes. The equivalent HTTP operation is
+`POST /api/mail/mailboxes/:mailboxId/drafts/:draftId/intent`. It re-derives
+recipients, subject and forwarded source attachments, preserving body text and
+personal attachments. Switching away from Forward removes its copied source
+attachments. A stale revision returns 409. Shared documents advance their
+generation, so older editors must synchronize before writing again.
+
+Scheduled and sending drafts retain the reply place until sent or discarded.
+Automatic replies are suppressed with `reply_draft_exists` if it is occupied.
+A workflow that continues an existing reply returns `reused: true`;
+`scheduleDraftSend` refuses that output with `DRAFT_REPLY_BOX_OCCUPIED` so
+the existing text receives a manual send review.
+Merging conversations that both have an open reply draft returns a recoverable
+409; send or discard one before merging. External-provider edits and offline
+recovery use recovery copies when a reply already exists, preserving both texts.
+
+The one-time upgrade keeps the most recently edited draft and erases the others.
+The draft read model returns `consolidatedCount`; show the notice before clearing
+it through `mail.draft.consolidation.acknowledge` or
+`POST /api/mail/mailboxes/:mailboxId/drafts/:draftId/consolidation/acknowledge`.
+See [F6 operator guidance](/en/docs/operations/mail-reply-draft-consolidation)
+for the irreversible migration and its logged counts.
 
 ## Check failed synchronization
 

@@ -6418,3 +6418,40 @@ test("draft create and update carry the explicit quote choice", async () => {
     expect.objectContaining({ draft: expect.objectContaining({ quoteSource: null }) }),
   ]);
 });
+
+test("draft intent and acknowledge-consolidation use the revision-checked reply operations", async () => {
+  const bodies: Array<{ path: string; body: unknown }> = [];
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (request.method === "POST" && path.startsWith(`/api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID}/`)) {
+      bodies.push({ path, body: await request.json() });
+      return api(draftFixture({ intent: "forward", revision: 8, consolidatedCount: 0 }));
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const changed = await runCli(origin, [
+    "--json",
+    "mail",
+    "draft",
+    "intent",
+    DRAFT_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--intent",
+    "forward",
+    "--revision",
+    "7",
+  ]);
+  expect(changed.exitCode).toBe(0);
+  expect(JSON.parse(changed.stdout)).toMatchObject({ intent: "forward", revision: 8 });
+  const acknowledged = await runCli(origin, ["--json", "mail", "draft", "acknowledge-consolidation", DRAFT_ID, "--mailbox", MAILBOX_ID]);
+  expect(acknowledged.exitCode).toBe(0);
+  expect(bodies).toEqual([
+    { path: `/api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID}/intent`, body: { intent: "forward", expectedRevision: 7 } },
+    { path: `/api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID}/consolidation/acknowledge`, body: {} },
+  ]);
+  const staleInput = await runCli(origin, ["mail", "draft", "intent", DRAFT_ID, "--mailbox", MAILBOX_ID, "--intent", "forward"]);
+  expect(staleInput.exitCode).not.toBe(0);
+});

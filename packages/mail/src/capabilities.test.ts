@@ -385,6 +385,36 @@ describe("mail capabilities", () => {
 
   test("adoption refusals are ordinary localized capability errors", async () => {
     spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    spyOn(drafts, "previewDraftIntent").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
+    spyOn(drafts, "switchDraftIntent").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
+    spyOn(drafts, "acknowledgeDraftConsolidation").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
     spyOn(drafts, "updateDraft").mockResolvedValue(
       fail({ code: "DRAFT_ADOPTED", status: 409, message: "A person has edited this draft. Ask them to initiate further changes." }),
     );
@@ -733,7 +763,9 @@ describe("mail capabilities", () => {
       "conversation.summary.write",
       "conversation.tag.update",
       "draft.attachment.add",
+      "draft.consolidation.acknowledge",
       "draft.create",
+      "draft.intent",
       "draft.patch",
       "draft.update",
       "folder.display.set",
@@ -813,8 +845,10 @@ describe("mail capabilities", () => {
       "delivery.cancel",
       "draft.attachment.add",
       "draft.attachment.remove",
+      "draft.consolidation.acknowledge",
       "draft.create",
       "draft.discard",
+      "draft.intent",
       "draft.patch",
       "draft.send",
       "draft.update",
@@ -852,8 +886,10 @@ describe("mail capabilities", () => {
       "delivery.cancel",
       "draft.attachment.add",
       "draft.attachment.remove",
+      "draft.consolidation.acknowledge",
       "draft.create",
       "draft.discard",
+      "draft.intent",
       "draft.patch",
       "draft.send",
       "draft.update",
@@ -1528,6 +1564,16 @@ describe("mail capabilities", () => {
         },
       ],
     });
+    spyOn(drafts, "previewDraftIntent").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
     const results = [
       await mailCapabilities.actions["conversation.summary.write"].review(
         { mailboxId, conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared summary" },
@@ -1535,6 +1581,8 @@ describe("mail capabilities", () => {
       ),
       await mailCapabilities.actions["conversation.reference.ensure"].review({ mailboxId, conversationId }, context),
 
+      await mailCapabilities.actions["draft.consolidation.acknowledge"].review({ mailboxId, draftId }, context),
+      await mailCapabilities.actions["draft.intent"].review({ mailboxId, draftId, expectedRevision: 2, intent: "forward" }, context),
       await mailCapabilities.actions["draft.patch"].review(
         { mailboxId, draftId, expectedRevision: 2, patch: { subject: "Changed" } },
         context,
@@ -1667,6 +1715,36 @@ describe("mail capabilities", () => {
       data: { items: [{ subject: "Planning session" }], nextCursor: null },
     } as never);
     spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: draftFixture } as never);
+    spyOn(drafts, "previewDraftIntent").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
+    spyOn(drafts, "switchDraftIntent").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
+    spyOn(drafts, "acknowledgeDraftConsolidation").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
     spyOn(drafts, "updateDraft").mockResolvedValue({ ok: true, data: draftFixture } as never);
     spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: draftFixture } as never);
     spyOn(drafts, "discardDraft").mockResolvedValue({ ok: true, data: undefined } as never);
@@ -1821,6 +1899,17 @@ describe("mail capabilities", () => {
             DraftCreateInputSchema.parse({ mailboxId, senderIdentityId, subject: "Release follow-up" }),
             idempotentContext,
           ),
+      },
+      {
+        localId: "draft.intent",
+        action: mailCapabilities.actions["draft.intent"],
+        run: () =>
+          mailCapabilities.actions["draft.intent"].run({ mailboxId, draftId, expectedRevision: 2, intent: "forward" }, idempotentContext),
+      },
+      {
+        localId: "draft.consolidation.acknowledge",
+        action: mailCapabilities.actions["draft.consolidation.acknowledge"],
+        run: () => mailCapabilities.actions["draft.consolidation.acknowledge"].run({ mailboxId, draftId }, idempotentContext),
       },
       {
         localId: "draft.update",
@@ -3284,6 +3373,7 @@ describe("mail capabilities", () => {
       recipientsTruncated: true,
       attachmentCount: 1000,
       suggestion: false,
+      consolidatedCount: 0,
       revision: 1,
       state: "draft" as const,
       updatedAt: timestamp,

@@ -1412,6 +1412,10 @@ export const MAIL_WORKFLOW_ACTIONS = {
           format: values.format === "plain" ? "plain" : "markdown",
         });
         if (!draft.ok) return resultFailure(draft.error);
+        const publicDraftId = await publicResourceId(tx, "drafts", draft.data.id);
+        const actualSenderIdentityId = await publicResourceId(tx, "senderIdentities", draft.data.senderIdentityId);
+        const output = { ...draft.data, id: publicDraftId, senderIdentityId: actualSenderIdentityId };
+        if (draft.data.reused) return { state: "succeeded", output };
         const activityId = await insertActivity({
           db: tx,
           mailboxId: scope.mailboxId,
@@ -1428,19 +1432,15 @@ export const MAIL_WORKFLOW_ACTIONS = {
             workflowStepKey: ctx.stepKey,
           },
         });
-        const publicDraftId = await publicResourceId(tx, "drafts", draft.data.id);
         return {
           state: "succeeded",
-          output: withMailWorkflowCollaborationEvent(
-            { ...draft.data, id: publicDraftId, senderIdentityId: publicSenderIdentityId },
-            {
-              mailboxId: scope.mailboxId,
-              conversationId,
-              reason: "draft",
-              targetId: draft.data.id,
-              activityId,
-            },
-          ),
+          output: withMailWorkflowCollaborationEvent(output, {
+            mailboxId: scope.mailboxId,
+            conversationId,
+            reason: "draft",
+            targetId: draft.data.id,
+            activityId,
+          }),
         };
       }),
   }),
@@ -1453,8 +1453,15 @@ export const MAIL_WORKFLOW_ACTIONS = {
     plan: async () => planned("Schedule a workflow draft for sending."),
     run: (ctx, values) =>
       attempt(async () => {
-        const scope = await loadScope(ctx);
         const draft = await resolveObject(ctx, values.draft, "draft");
+        if (draft.reused === true)
+          return {
+            state: "failed",
+            code: "DRAFT_REPLY_BOX_OCCUPIED",
+            retryable: false,
+            message: "This reply draft already existed. Review it manually instead of sending it from this workflow.",
+          };
+        const scope = await loadScope(ctx);
         const draftId = await internalResourceId(sql, "drafts", scope.mailboxId, asText(draft.id, "draft.id"), "Draft");
         const senderIdentityId = await internalResourceId(
           sql,

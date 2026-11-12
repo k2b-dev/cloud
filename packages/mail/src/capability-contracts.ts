@@ -663,6 +663,7 @@ export const DraftDataSchema = z
     attachments: z.array(DraftAttachmentDataSchema).max(50),
     attachmentsTruncated: z.boolean(),
     suggestion: z.boolean(),
+    consolidatedCount: z.number().int().nonnegative(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     createdAt: TimestampSchema,
@@ -678,6 +679,7 @@ export const DraftSummaryDataSchema = compactResourceViewSchema("mail.draft")
     recipientsTruncated: z.boolean(),
     attachmentCount: z.number().int().nonnegative(),
     suggestion: z.boolean(),
+    consolidatedCount: z.number().int().nonnegative(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     updatedAt: TimestampSchema,
@@ -686,6 +688,7 @@ export const DraftSummaryDataSchema = compactResourceViewSchema("mail.draft")
 export const DraftListDataSchema = z.array(DraftSummaryDataSchema).max(100);
 export const DraftMutationDataSchema = z
   .object({
+    creationOutcome: z.enum(["created", "existing", "suggestion_skipped"]).optional(),
     id: ResourceShortIdSchema,
     signatureTemplateId: ResourceShortIdSchema.nullable(),
     quoteSource: draftEditableContentInputSchema.shape.quoteSource,
@@ -704,6 +707,7 @@ export const DraftMutationDataSchema = z
       .max(50),
     attachmentsTruncated: z.boolean(),
     suggestion: z.boolean(),
+    consolidatedCount: z.number().int().nonnegative(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     formattingWarnings: composeFormattingWarningsSchema
@@ -762,6 +766,15 @@ export const DraftUpdateInputSchema = z
     draft: draftEditableContentInputSchema.describe("Complete editable draft content replacing the current content."),
   })
   .strict();
+export const DraftSwitchIntentInputSchema = z
+  .object({
+    mailboxId: MailboxIdInputSchema,
+    draftId: DraftIdInputSchema,
+    expectedRevision: ExpectedRevisionInputSchema,
+    intent: z.enum(["reply", "reply_all", "forward"]).describe("Reply mode to derive from the source message, preserving body text."),
+  })
+  .strict();
+export const DraftAcknowledgeConsolidationInputSchema = z.object({ mailboxId: MailboxIdInputSchema, draftId: DraftIdInputSchema }).strict();
 export const DraftPatchInputSchema = z
   .object({
     mailboxId: MailboxIdInputSchema,

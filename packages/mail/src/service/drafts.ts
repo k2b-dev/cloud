@@ -32,7 +32,7 @@ import {
   type MailPriority,
   type MaterializeDraftSeedInput,
 } from "../contracts";
-import { readDraftDocument as draftDocumentContent } from "../lib/draft-document";
+import { createDraftDocument, readDraftDocument as draftDocumentContent } from "../lib/draft-document";
 import { withShortIdDb } from "../lib/short-id";
 import { deriveReplyAddressObjects } from "../reply-recipients";
 import {
@@ -55,14 +55,16 @@ import { withDraftDocumentCommit } from "./draft-document-log";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { lockDraftDocumentInTransaction } from "./draft-documents";
 import { newDraftEditMode } from "./draft-edit-mode";
+import { retireDraftInTransaction } from "./draft-retirement";
 import { legacySignature, publicDraftContent, resolveDraftSignature, validateIdentity } from "./draft-validation";
+import { lockConversationReplyDraft } from "./reply-draft-box";
 
 export { resolveDraftSignature, validateIdentity } from "./draft-validation";
 
 import { requireDraftLeaseAvailable, withOwnedDraftLease } from "./draft-leases";
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
 import { enqueueDraftProjection, enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
-import { mailLive } from "./live";
+import { enqueueMailInvalidation, mailLive } from "./live";
 import type { AttachmentDownload } from "./messages";
 
 const InternalIdSchema = z.string().uuid();
@@ -169,6 +171,7 @@ type DbDraft = {
   state: MailDraft["state"];
   attachments: DraftAttachment[] | string;
   recovery_copy_count: string | number;
+  consolidated_count: number;
   created_at: Date | string;
   updated_at: Date | string;
 };
@@ -205,6 +208,7 @@ const draftColumns = () => sql`
   d.mailbox_id,
   d.conversation_id,
   d.intent,
+  d.consolidated_count,
   d.source_message_id,
   d.derived_from_message_id,
   d.derivation_kind,
@@ -346,6 +350,7 @@ const mapDraft = (row: DbDraft): MailDraft => ({
           ? "Workflow"
           : "Mail provider"),
   recoveryCopyCount: Number(row.recovery_copy_count),
+  consolidatedCount: row.consolidated_count,
   revision: Number(row.revision),
   editMode: row.edit_mode,
   generation: String(row.doc_generation),
@@ -466,6 +471,25 @@ const resolveInitialReplyRecipients = async (params: {
   return recipients.to.length > 0 ? ok(recipients) : fail(err.badInput("The source message has no reply recipient"));
 };
 
+/** Shared by creation and mode changes; source content owns the reply/forward subject. */
+const deriveReplyMode = async (params: {
+  db: typeof sql;
+  mailboxId: string;
+  sourceMessageId: string;
+  intent: Exclude<DraftIntent, "new">;
+  subject?: string;
+}): Promise<Result<{ to: MailAddress[]; cc: MailAddress[]; subject: string }>> => {
+  const [source] = await params.db<{ subject: string }[]>`SELECT subject FROM mail.message_contents
+    WHERE id = ${params.sourceMessageId}::uuid AND mailbox_id = ${params.mailboxId}::uuid`;
+  if (!source) return fail(err.notFound("Message"));
+  const base = (params.subject?.trim() || source.subject).replace(/^(?:\s*(?:re|fw|fwd)\s*:\s*)+/iu, "");
+  const recipients =
+    params.intent === "forward"
+      ? ok({ to: [] as MailAddress[], cc: [] as MailAddress[] })
+      : await resolveInitialReplyRecipients({ ...params, intent: params.intent });
+  return recipients.ok ? ok({ ...recipients.data, subject: `${params.intent === "forward" ? "Fwd" : "Re"}: ${base}` }) : recipients;
+};
+
 const insertActivity = async (params: {
   db: typeof sql;
   mailboxId: string;
@@ -523,16 +547,18 @@ const copyForwardAttachments = async (params: { db: typeof sql; draftId: string;
     WHERE attachment.message_id = ${params.sourceMessageId}::uuid
     ORDER BY ${attachmentMimeOrder()}
   `;
+  const [next] = await params.db<{ position: number }[]>`SELECT coalesce(max(position), -1)::int + 1 AS position
+    FROM mail.draft_attachments WHERE draft_id = ${params.draftId}::uuid`;
   for (const attachment of source) {
     await withShortIdDb(
       params.db,
       "draftAttachment",
       (db, shortId) => db`
       INSERT INTO mail.draft_attachments (
-        short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position
+        short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position, forwarded_source_message_id
       ) VALUES (
         ${shortId}, ${params.draftId}::uuid, ${attachment.blob_id}::uuid, ${attachment.filename},
-        ${attachment.content_type}, ${attachment.byte_length}, ${attachment.content_hash}, ${attachment.position}
+        ${attachment.content_type}, ${attachment.byte_length}, ${attachment.content_hash}, ${(next?.position ?? 0) + Number(attachment.position)}, ${params.sourceMessageId}::uuid
       )
     `,
     );
@@ -708,37 +734,39 @@ const prepareComposeDraftInTransaction = async (params: {
     const signature = await requireSelectableSignature(params.db, params.context, params.mailboxId, signatureTemplateId);
     if (!signature.ok) return signature;
   }
+  const mode =
+    draftContext.data.intent === "new"
+      ? ok({ to: parsed.data.to, cc: parsed.data.cc, subject: parsed.data.subject })
+      : await deriveReplyMode({
+          db: params.db,
+          mailboxId: params.mailboxId,
+          sourceMessageId: draftContext.data.sourceMessageId!,
+          intent: draftContext.data.intent,
+          subject: parsed.data.subject,
+        });
+  if (!mode.ok) return mode;
   const initialSubject =
     draftContext.data.intent === "reply" || draftContext.data.intent === "reply_all"
       ? await applyConversationReferenceToReplySubjectInTransaction({
           db: params.db,
           mailboxId: params.mailboxId,
           conversationId: draftContext.data.conversationId!,
-          subject: parsed.data.subject,
+          subject: mode.data.subject,
         })
-      : parsed.data.subject;
-  const initialRecipients =
-    draftContext.data.intent === "reply" || draftContext.data.intent === "reply_all"
-      ? await resolveInitialReplyRecipients({
-          db: params.db,
-          mailboxId: params.mailboxId,
-          sourceMessageId: draftContext.data.sourceMessageId!,
-          intent: draftContext.data.intent,
-        })
-      : ok({ to: parsed.data.to, cc: parsed.data.cc });
-  if (!initialRecipients.ok) return initialRecipients;
+      : mode.data.subject;
+  const initialRecipients = draftContext.data.intent === "forward" ? { to: parsed.data.to, cc: parsed.data.cc } : mode.data;
   const initialCc = mergeDefaultCc({
-    to: initialRecipients.data.to,
-    cc: initialRecipients.data.cc,
+    to: initialRecipients.to,
+    cc: initialRecipients.cc,
     bcc: parsed.data.bcc,
     defaultCc: identity.data.defaultCc,
   });
   const initialContent = internalDraftEditableContentSchema.safeParse({
     senderIdentityId: parsed.data.senderIdentityId,
-    to: initialRecipients.data.to,
+    to: initialRecipients.to,
     cc: initialCc,
     bcc: mergeDefaultBcc({
-      to: initialRecipients.data.to,
+      to: initialRecipients.to,
       cc: initialCc,
       bcc: parsed.data.bcc,
       defaultBcc: identity.data.defaultBcc,
@@ -755,9 +783,10 @@ const prepareComposeDraftInTransaction = async (params: {
   if (!initialContent.success) {
     return fail(err.badInput(initialContent.error.issues[0]?.message ?? "Invalid draft"));
   }
-  const attachments = parsed.data.includeSourceAttachments
-    ? await prepareSourceAttachments(params.db, draftContext.data.sourceMessageId)
-    : ok([]);
+  const attachments =
+    draftContext.data.intent === "forward" && parsed.data.includeSourceAttachments !== false
+      ? await prepareSourceAttachments(params.db, draftContext.data.sourceMessageId)
+      : ok([]);
   if (!attachments.ok) return attachments;
   return ok({
     ...draftContext.data,
@@ -797,21 +826,32 @@ const insertComposeDraftInTransaction = async (params: {
     }
     return ok(draft);
   };
-  if (params.actor.kind === "service_account" && !humanDraftEditor(params.context) && !params.adopted && params.prepared.conversationId) {
-    // One untouched suggestion per conversation and author: an account only ever gets its own suggestion back.
-    const author = actorId(params.actor);
-    const key = `mail:suggestion:${params.mailboxId}:${params.prepared.conversationId}:${author}`;
-    await params.db`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
-    const [existing] = await params.db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d
-      WHERE d.mailbox_id = ${params.mailboxId}::uuid AND d.conversation_id = ${params.prepared.conversationId}::uuid
-        AND d.state IN ('draft', 'scheduled', 'sending') AND d.author_kind = 'service_account' AND d.author_id = ${author}::uuid
-        AND d.adopted_at IS NULL
-      FOR UPDATE`;
+  if (params.prepared.intent !== "new" && params.prepared.conversationId) {
+    const occupied = await lockConversationReplyDraft(params.db, params.prepared.conversationId);
+    const [existing] = occupied
+      ? await params.db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${occupied.id}::uuid`
+      : [];
     if (existing) {
       const access = await requireDraftAccess(params.context, params.mailboxId, existing.id, "write", params.db);
       if (!access.ok) return access;
       const adopted = await refreshDraftAdoption({ db: params.db, draftId: existing.id });
-      if (adopted === null) return rememberRequest(mapDraft(existing));
+      const suggestionRequest = params.actor.kind === "service_account" && !humanDraftEditor(params.context) && !params.adopted;
+      const ownSuggestion = existing.author_kind === "service_account" && existing.author_id === actorId(params.actor) && adopted === null;
+      if (params.adopted) {
+        await storeRecoveryCopy({
+          db: params.db,
+          draftId: existing.id,
+          baseRevision: Number(existing.revision),
+          content: params.content,
+          actor: params.actor,
+        });
+        await enqueueMailInvalidation(params.db, { mailboxId: params.mailboxId, conversationId: existing.conversation_id });
+      }
+      const draft = {
+        ...mapDraft({ ...existing, adopted_at: adopted }),
+        creationOutcome: suggestionRequest && !ownSuggestion ? ("suggestion_skipped" as const) : ("existing" as const),
+      };
+      return ownSuggestion ? rememberRequest(draft) : ok(draft);
     }
   }
   const rows = await withShortIdDb(
@@ -886,7 +926,7 @@ const insertComposeDraftInTransaction = async (params: {
     },
   });
   await queueDraftProjectionInTransaction({ db: params.db, draftId: row.id });
-  return rememberRequest(mapDraft(created));
+  return rememberRequest({ ...mapDraft(created), creationOutcome: "created" });
 };
 
 export const createDraft = async (params: {
@@ -1553,6 +1593,7 @@ export const createDeliveryRecoveryDraft = async (params: {
 };
 
 type WorkflowDraftResult = {
+  reused?: boolean;
   id: string;
   revision: number;
   senderIdentityId: string;
@@ -1575,6 +1616,15 @@ const insertWorkflowReplyDraftInTransaction = async (params: {
   format: "plain" | "markdown";
   deliveryClass: DraftDeliveryClass;
 }): Promise<Result<WorkflowDraftResult>> => {
+  const occupied = await lockConversationReplyDraft(params.db, params.conversationId);
+  if (occupied)
+    return ok({
+      id: occupied.id,
+      revision: Number(occupied.revision),
+      senderIdentityId: occupied.sender_identity_id,
+      deliveryClass: occupied.delivery_class,
+      reused: true,
+    });
   const content = internalDraftContentSchema.safeParse({
     conversationId: params.conversationId,
     intent: "reply",
@@ -1676,7 +1726,7 @@ export const createWorkflowReplyDraftInTransaction = async (params: {
   subject: string;
   body: string;
   format: "plain" | "markdown";
-}): Promise<Result<{ id: string; revision: number }>> =>
+}): Promise<Result<WorkflowDraftResult>> =>
   insertWorkflowReplyDraftInTransaction({
     ...params,
     to: [params.recipient],
@@ -1696,27 +1746,17 @@ export const createWorkflowReviewReplyDraftInTransaction = async (params: {
   body: string;
   format: "plain" | "markdown";
 }): Promise<Result<WorkflowDraftResult>> => {
-  const [source] = await params.db<{ subject: string }[]>`
-    SELECT subject
-    FROM mail.message_contents
-    WHERE id = ${params.sourceMessageId}::uuid
-      AND mailbox_id = ${params.mailboxId}::uuid
-    FOR SHARE
-  `;
-  if (!source) return fail(err.badInput("Workflow reply source is unavailable"));
-  const recipients = await resolveInitialReplyRecipients({
+  const mode = await deriveReplyMode({
     db: params.db,
     mailboxId: params.mailboxId,
     sourceMessageId: params.sourceMessageId,
     intent: "reply",
   });
-  if (!recipients.ok) return recipients;
-  const subject = /^\s*re\s*:/iu.test(source.subject) ? source.subject : `Re: ${source.subject}`;
+  if (!mode.ok) return mode;
   return insertWorkflowReplyDraftInTransaction({
     ...params,
-    ...recipients.data,
+    ...mode.data,
     bcc: [],
-    subject,
     deliveryClass: "normal",
   });
 };
@@ -1791,6 +1831,183 @@ export const createWorkflowDraftInTransaction = async (params: {
   return existing
     ? ok({ id: existing.id, revision: Number(existing.revision), senderIdentityId: existing.sender_identity_id, deliveryClass: "normal" })
     : fail(err.conflict("Workflow draft id is in use"));
+};
+
+export const previewDraftIntent = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  draftId: string;
+  expectedRevision: number;
+  intent: Exclude<DraftIntent, "new">;
+}): Promise<Result<MailDraft>> =>
+  sql.begin(async (tx) => {
+    const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
+    if (!allowed.ok) return allowed;
+    const [row] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${params.draftId}::uuid`;
+    if (!row) return fail(err.notFound("Draft"));
+    if (row.intent === "new" || row.state !== "draft" || Number(row.revision) !== params.expectedRevision)
+      return conflict("Draft changed or cannot switch reply mode");
+    const prepared = await prepareComposeDraftInTransaction({
+      db: tx,
+      context: params.context,
+      mailboxId: params.mailboxId,
+      input: {
+        ...internalDraftEditableContentSchema.strip().parse(mapDraft(row)),
+        subject: "",
+        to: [],
+        cc: [],
+        bcc: [],
+        conversationId: row.conversation_id,
+        sourceMessageId: row.source_message_id,
+        intent: params.intent,
+        includeSourceAttachments: params.intent === "forward",
+      },
+    });
+    if (!prepared.ok) return prepared;
+    const own = await tx<{ id: string }[]>`SELECT id FROM mail.draft_attachments WHERE draft_id = ${row.id}::uuid
+    AND removed_at IS NULL AND forwarded_source_message_id IS NULL
+    AND NOT (${row.intent === "forward"} AND created_at = ${row.created_at}
+      AND EXISTS (SELECT 1 FROM mail.attachments source WHERE source.message_id = ${row.source_message_id}::uuid
+        AND source.blob_id = mail.draft_attachments.blob_id))`;
+    const personalIds = new Set(own.map((a) => a.id));
+    return ok({
+      ...mapDraft(row),
+      ...prepared.data.content,
+      intent: params.intent,
+      attachments: [...parseArray(row.attachments).filter((a) => personalIds.has(a.id)), ...prepared.data.attachments],
+    });
+  });
+
+/** A mode is a structural edit. Shared documents advance their generation atomically with the mode. */
+export const switchDraftIntent = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  draftId: string;
+  expectedRevision: number;
+  intent: Exclude<DraftIntent, "new">;
+}): Promise<Result<MailDraft>> => {
+  if (
+    !["reply", "reply_all", "forward"].includes(params.intent) ||
+    !Number.isSafeInteger(params.expectedRevision) ||
+    params.expectedRevision < 1
+  )
+    return fail(err.badInput("Invalid reply mode or revision"));
+  const actor = mutableActor(params.context);
+  if (!actor) return fail(err.forbidden("Draft editor is invalid"));
+  const lease = await requireDraftLeaseAvailable(params);
+  if (!lease.ok) return lease;
+  try {
+    const result = await withDraftDocumentCommit(async (tx) => {
+      const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
+      if (!allowed.ok) return allowed;
+      let [row] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d
+        WHERE d.id = ${params.draftId}::uuid AND d.origin = 'user' FOR UPDATE OF d`;
+      if (!row) return fail(err.notFound("Draft"));
+      if (row.state !== "draft" || row.intent === "new") return conflict("Only an editable reply draft can change mode");
+      if (Number(row.revision) !== params.expectedRevision) return conflict("Draft changed before its mode could be switched");
+      const writable = await requireDraftContentWrite({ db: tx, context: params.context, draftId: params.draftId });
+      if (!writable.ok) return writable;
+      if (row.edit_mode === "shared") {
+        const locked = await lockDraftDocumentInTransaction({ ...params, db: tx });
+        if (!locked.ok) return locked;
+        const projected = await locked.data.project();
+        if (!projected.ok) return projected;
+        // Pending browser edits must be saved before the person retries the structural edit.
+        if (projected.data.revision !== params.expectedRevision) return conflict("Draft changed before its mode could be switched");
+        [row] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${params.draftId}::uuid`;
+        if (!row) return fail(err.notFound("Draft"));
+      }
+      if (row.intent === params.intent) return ok(mapDraft(row));
+      // Before provenance existed, initial forward copies were inserted in the creation transaction.
+      // A later personal upload has its own created_at, even if it uses the same blob.
+      if (row.intent === "forward")
+        await tx`UPDATE mail.draft_attachments a SET forwarded_source_message_id = d.source_message_id
+        FROM mail.drafts d WHERE d.id = ${row.id}::uuid AND a.draft_id = d.id AND a.created_at = d.created_at
+          AND a.forwarded_source_message_id IS NULL AND a.removed_at IS NULL
+          AND EXISTS (SELECT 1 FROM mail.attachments source WHERE source.message_id = d.source_message_id AND source.blob_id = a.blob_id)`;
+      const prepared = await prepareComposeDraftInTransaction({
+        db: tx,
+        context: params.context,
+        mailboxId: params.mailboxId,
+        input: {
+          ...internalDraftEditableContentSchema.strip().parse(mapDraft(row)),
+          subject: "",
+          to: [],
+          cc: [],
+          bcc: [],
+          conversationId: row.conversation_id,
+          sourceMessageId: row.source_message_id,
+          intent: params.intent,
+          includeSourceAttachments: params.intent === "forward",
+        },
+      });
+      if (!prepared.ok) return prepared;
+      const retained = parseArray(row.attachments);
+      const [forwarded] = await tx<
+        { count: number; bytes: number }[]
+      >`SELECT count(*)::int AS count, coalesce(sum(byte_length), 0)::bigint AS bytes
+        FROM mail.draft_attachments WHERE draft_id = ${row.id}::uuid AND removed_at IS NULL AND forwarded_source_message_id IS NOT NULL`;
+      const capacity = draftAttachmentCapacity({
+        count: retained.length - Number(forwarded?.count ?? 0) + prepared.data.attachments.length,
+        bytes:
+          retained.reduce((sum, a) => sum + a.byteLength, 0) -
+          Number(forwarded?.bytes ?? 0) +
+          prepared.data.attachments.reduce((sum, a) => sum + a.byteLength, 0),
+      });
+      if (!capacity.ok) return capacity;
+      const content = prepared.data.content;
+      const publicContent = await publicDraftContent(tx, params.mailboxId, content);
+      if (!publicContent.ok) return publicContent;
+      const doc = row.edit_mode === "shared" ? createDraftDocument(publicContent.data) : null;
+      let state: Uint8Array | null = null;
+      try {
+        state = doc ? Y.encodeStateAsUpdate(doc) : null;
+      } finally {
+        doc?.destroy();
+      }
+      await tx`UPDATE mail.draft_attachments SET removed_at = now() WHERE draft_id = ${row.id}::uuid
+        AND forwarded_source_message_id IS NOT NULL AND removed_at IS NULL`;
+      await tx`UPDATE mail.drafts SET intent = ${params.intent}, to_addresses = ${content.to}::jsonb,
+        cc_addresses = ${content.cc}::jsonb, bcc_addresses = ${content.bcc}::jsonb, subject = ${content.subject},
+        revision = revision + 1, last_editor_kind = ${actor.kind}, last_editor_id = ${actorId(actor)}::uuid,
+        adopted_at = CASE WHEN ${humanDraftEditor(params.context)} THEN coalesce(adopted_at, now()) ELSE adopted_at END,
+        doc_generation = doc_generation + CASE WHEN edit_mode = 'shared' THEN 1 ELSE 0 END,
+        doc_state = CASE WHEN edit_mode = 'shared' THEN ${state ? Buffer.from(state) : null} ELSE doc_state END
+        WHERE id = ${row.id}::uuid`;
+      if (params.intent === "forward") {
+        const copied = await copyForwardAttachments({ db: tx, draftId: row.id, sourceMessageId: row.source_message_id! });
+        if (!copied.ok) throw Object.assign(new Error(copied.error.message), copied.error);
+      }
+      await recordDraftDocumentRevision({ ...params, db: tx });
+      await queueDraftProjectionInTransaction({ db: tx, draftId: row.id });
+      await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId, conversationId: row.conversation_id });
+      const [saved] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${row.id}::uuid`;
+      return saved ? ok(mapDraft(saved)) : fail(err.internal("Draft mode update returned no row"));
+    });
+    if (result.ok) mailLive.wake();
+    return wakeDraftProjection(result);
+  } catch (error) {
+    log.error("Failed to switch draft mode", { draftId: params.draftId, error });
+    return fail(err.internal("Failed to switch draft mode"));
+  }
+};
+
+export const acknowledgeDraftConsolidation = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  draftId: string;
+}): Promise<Result<MailDraft>> => {
+  const result = await sql.begin(async (tx) => {
+    const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
+    if (!allowed.ok) return allowed;
+    const [row] = await tx<DbDraft[]>`UPDATE mail.drafts d SET consolidated_count = 0
+      WHERE d.id = ${params.draftId}::uuid RETURNING ${draftColumns()}`;
+    if (!row) return fail(err.notFound("Draft"));
+    await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId, conversationId: row.conversation_id });
+    return ok(mapDraft(row));
+  });
+  if (result.ok) mailLive.wake();
+  return result;
 };
 
 export const updateDraft = async (params: {
@@ -2147,7 +2364,7 @@ export const getDraft = async (context: MailRequestContext, mailboxId: string, d
       ORDER BY outbox.created_at DESC, outbox.id DESC
       LIMIT 1
     ) lifecycle ON true
-    WHERE d.id = ${draftId}::uuid AND d.mailbox_id = ${mailboxId}::uuid AND d.origin = 'user'
+    WHERE d.id = ${draftId}::uuid AND d.mailbox_id = ${mailboxId}::uuid
   `;
     let [row] = await load();
     if (!row) return fail(err.notFound("Draft"));
@@ -2608,7 +2825,7 @@ export const discardDraft = async (params: {
         targetId: draftId,
         metadata: { revision: Number(updated.revision) },
       });
-      retirementSnapshotId = await queueDraftProjectionInTransaction({ db: tx, draftId: updated.id });
+      retirementSnapshotId = await retireDraftInTransaction(tx, updated.id);
       return ok(mapDraft(updated));
     });
     if (result.ok) mailLive.wake();

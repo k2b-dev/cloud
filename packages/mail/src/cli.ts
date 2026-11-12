@@ -861,7 +861,7 @@ const draftContentFlags = {
     description: "Conversation id for reply or forward drafts",
   }),
   intent: flag.enum(["new", "reply", "reply_all", "forward"] as const, {
-    description: "Immutable draft intent",
+    description: "Draft mode",
   }),
   sourceMessage: flag.string({
     name: "source-message",
@@ -959,6 +959,25 @@ const readComposeDraftInput = async (input: Parameters<typeof readCliInput>[0]) 
 
 const createDraft = async (ctx: CloudCliContext, mailboxId: string, flags: Parameters<typeof readDraftContent>[0]): Promise<MailDraft> =>
   readApi(ctx, `/mailboxes/${mailboxId}/drafts`, jsonRequest("POST", await readDraftContent(flags, ctx.options.locale)));
+
+const printExistingReplyDraft = (ctx: CloudCliContext, draft: MailDraft): boolean => {
+  if (draft.creationOutcome !== "existing" && draft.creationOutcome !== "suggestion_skipped") return false;
+  ctx.print(
+    localizeCloudCliText(
+      ctx.options.locale,
+      draft.creationOutcome === "suggestion_skipped"
+        ? {
+            en: `Suggestion skipped: reply draft ${draft.id} already exists.`,
+            de: `Vorschlag übersprungen: Antwortentwurf ${draft.id} ist bereits vorhanden.`,
+          }
+        : {
+            en: `Opened existing reply draft ${draft.id} (${draft.intent}, revision ${draft.revision}).`,
+            de: `Vorhandenen Antwortentwurf ${draft.id} geöffnet (${draft.intent}, Revision ${draft.revision}).`,
+          },
+    ),
+  );
+  return true;
+};
 
 /** Tells what formatting email leaves out of a message. JSON output carries the same list as `formattingWarnings`. */
 const printFormattingWarnings = (ctx: CloudCliContext, warnings: ComposeFormattingWarning[] | undefined) => {
@@ -2772,8 +2791,8 @@ const everydayCommands = (t: Translate) => {
     command("reply", {
       summary: t({ en: "Create a reply draft in a conversation", de: "Einen Antwortentwurf in einer Unterhaltung anlegen" }),
       description: t({
-        en: "Replies to the latest message unless --message names another one. Recipients and subject come from that message. Send the draft with `cld mail send <draft>`.",
-        de: "Antwortet auf die neueste Nachricht, außer --message nennt eine andere. Empfänger und Betreff kommen aus dieser Nachricht. Senden mit `cld mail send <entwurf>`.",
+        en: "Returns the existing conversation draft unchanged, or replies to the latest message unless --message names another one. Recipients and subject come from that message. Send the draft with `cld mail send <draft>`.",
+        de: "Öffnet den vorhandenen Unterhaltungsentwurf unverändert oder antwortet auf die neueste Nachricht, außer --message nennt eine andere. Empfänger und Betreff kommen aus dieser Nachricht. Senden mit `cld mail send <entwurf>`.",
       }),
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
@@ -2822,6 +2841,7 @@ const everydayCommands = (t: Translate) => {
           }),
         );
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
+        if (printExistingReplyDraft(ctx, draft)) return;
         printFormattingWarnings(ctx, draft.formattingWarnings);
         ctx.print(
           t({
@@ -2834,8 +2854,8 @@ const everydayCommands = (t: Translate) => {
     command("forward", {
       summary: t({ en: "Create a forward draft from a conversation", de: "Einen Weiterleitungsentwurf aus einer Unterhaltung anlegen" }),
       description: t({
-        en: "Forwards the latest message unless --message names another one, with its text and attachments. Send the draft with `cld mail send <draft>`.",
-        de: "Leitet die neueste Nachricht weiter, außer --message nennt eine andere, mit Text und Anhängen. Senden mit `cld mail send <entwurf>`.",
+        en: "Returns the existing conversation draft unchanged, or forwards the latest message unless --message names another one, with its text and attachments. Send the draft with `cld mail send <draft>`.",
+        de: "Öffnet den vorhandenen Unterhaltungsentwurf unverändert oder leitet die neueste Nachricht weiter, außer --message nennt eine andere, mit Text und Anhängen. Senden mit `cld mail send <entwurf>`.",
       }),
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
@@ -2891,6 +2911,7 @@ const everydayCommands = (t: Translate) => {
           }),
         );
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
+        if (printExistingReplyDraft(ctx, draft)) return;
         printFormattingWarnings(ctx, draft.formattingWarnings);
         ctx.print(
           t({
@@ -7091,6 +7112,7 @@ const specialistCommands = {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
         const draft = await createDraft(ctx, mailbox.id, flags);
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
+        if (printExistingReplyDraft(ctx, draft)) return;
         ctx.print(`Created draft ${draft.id} (revision ${draft.revision}). ${cloudResourceUrl(ctx, { type: "mail.draft", id: draft.id })}`);
         printFormattingWarnings(ctx, draft.formattingWarnings);
       },
@@ -8436,6 +8458,60 @@ const specialistCommands = {
   ],
 };
 
+const replyDraftCommands = (t: Translate) => [
+  command("draft intent", {
+    summary: t({ en: "Switch reply mode while keeping body text", de: "Antwortart wechseln und den Text behalten" }),
+    args: { draftId: arg.required({ description: t({ en: "Draft id", de: "Entwurfs-ID" }) }) },
+    flags: {
+      ...mailboxFlag,
+      intent: flag.enum(["reply", "reply_all", "forward"] as const, {
+        required: true,
+        description: t({ en: "Reply mode", de: "Antwortart" }),
+      }),
+      revision: flag.int({
+        required: true,
+        min: 1,
+        description: t({ en: "Expected current revision", de: "Erwartete aktuelle Revision" }),
+      }),
+    },
+    run: async ({ ctx, args, flags }) => {
+      const mailbox = await resolveMailbox(ctx, flags.mailbox);
+      const draft = await readApi<MailDraft>(
+        ctx,
+        `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}/intent`,
+        jsonRequest("POST", { expectedRevision: flags.revision, intent: flags.intent }),
+      );
+      if (printStructured(ctx, draft)) return;
+      ctx.print(
+        localizeCloudCliText(ctx.options.locale, {
+          en: `Draft ${draft.id}: ${draft.intent}, revision ${draft.revision}.`,
+          de: `Entwurf ${draft.id}: ${draft.intent}, Revision ${draft.revision}.`,
+        }),
+      );
+    },
+  }),
+  command("draft acknowledge-consolidation", {
+    summary: t({ en: "Clear the one-time draft consolidation notice", de: "Einmaligen Hinweis zur Entwurfszusammenführung bestätigen" }),
+    args: { draftId: arg.required({ description: t({ en: "Draft id", de: "Entwurfs-ID" }) }) },
+    flags: mailboxFlag,
+    run: async ({ ctx, args, flags }) => {
+      const mailbox = await resolveMailbox(ctx, flags.mailbox);
+      const draft = await readApi<MailDraft>(
+        ctx,
+        `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}/consolidation/acknowledge`,
+        jsonRequest("POST", {}),
+      );
+      if (printStructured(ctx, draft)) return;
+      ctx.print(
+        localizeCloudCliText(ctx.options.locale, {
+          en: "Draft consolidation notice acknowledged.",
+          de: "Hinweis zu zusammengeführten Entwürfen bestätigt.",
+        }),
+      );
+    },
+  }),
+];
+
 /** Built per request locale: everyday commands and their groups follow it. */
 const mailCommands = (locale?: string) => {
   const t: Translate = (text) => localizeCloudCliText(locale, text);
@@ -8463,7 +8539,13 @@ const mailCommands = (locale?: string) => {
       }),
       conversation: t({ en: "Inspect, merge, and split conversations", de: "Unterhaltungen prüfen, zusammenführen und teilen" }),
     },
-    commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t), ...automationLogCommands(t)],
+    commands: [
+      ...everydayCommands(t),
+      ...specialistCommands.commands,
+      ...replyDraftCommands(t),
+      ...composeLogoCommands(t),
+      ...automationLogCommands(t),
+    ],
   });
 };
 
