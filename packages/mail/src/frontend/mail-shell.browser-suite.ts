@@ -2446,18 +2446,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             headDetails: Boolean(toggle && getComputedStyle(toggle).display !== "none"),
           };
         });
-      // Where the shared frame differs from the mockup's: a Detail column keeps an 8 px inset and the card a 1 px edge,
-      // while the list's gap to the reader is 12 px instead of 16 px, so a reader beside a column is 6 px narrower.
-      const COLUMN_EDGES = 6;
       const table = [
-        { width: 1440, height: 900, panel: 0, list: 320, reader: 800, detail: "waiting" },
+        { width: 1440, height: 900, panel: 0, list: 320, reader: 800 },
         // The mockup drew the sidebar as a column in a 952 px card. Below a 64 rem host the shared sidebar is the
         // overlay (#1380), so the reader also gets the 240 px: 952 - 2 - 332.
-        { width: 1440, height: 900, panel: 416, list: 320, reader: 618, detail: "waiting" },
-        { width: 1920, height: 1080, panel: 0, list: 440, reader: 680 - COLUMN_EDGES, detail: "column" },
-        { width: 1920, height: 1080, panel: 416, list: 334, reader: 842, detail: "waiting" },
-        { width: 2560, height: 1080, panel: 0, list: 440, reader: 1320 - COLUMN_EDGES, detail: "column" },
-        { width: 2560, height: 1080, panel: 416, list: 440, reader: 896 - COLUMN_EDGES, detail: "column" },
+        { width: 1440, height: 900, panel: 416, list: 320, reader: 618 },
+        // Mail v5 has no Detail column: the reader takes its room.
+        { width: 1920, height: 1080, panel: 0, list: 440, reader: 1162 },
+        { width: 1920, height: 1080, panel: 416, list: 334, reader: 842 },
+        { width: 2560, height: 1080, panel: 0, list: 440, reader: 1802 },
+        { width: 2560, height: 1080, panel: 416, list: 440, reader: 1378 },
       ] as const;
 
       section("wide", () => {
@@ -2726,20 +2724,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           });
         for (const row of table) {
           const label = `${row.width}${row.panel ? ` with a ${row.panel} px panel` : ""}`;
-          test(`F2 at ${label}: list, reader, reading column and Detail follow the 1920/2560 table, server = hydrated = settled`, async () => {
+          test(`F2 at ${label}: list, reader and reading column follow the 1920/2560 table, server = hydrated = settled`, async () => {
             const page = await open(widePath({ panel: row.panel }), row.width, row.height as 900);
             try {
               const frame = await wide(page);
               expect(Math.abs(frame.list - row.list), `${label}: list ${frame.list}`).toBeLessThanOrEqual(4);
               expect(Math.abs(frame.reader!.width - row.reader), `${label}: reader ${frame.reader!.width}`).toBeLessThanOrEqual(4);
-              // At most 760 px, centred in the reader; the toolbar is centred at at most 800 px.
+              // At most 760 px, centred in the reader; the head spans the whole reader.
               expect(frame.column!.width, `${label}: reading column`).toBeLessThanOrEqual(760.5);
               const readerCentre = frame.reader!.x + frame.reader!.width / 2;
               expect(Math.abs(frame.column!.x + frame.column!.width / 2 - readerCentre), `${label}: column centre`).toBeLessThanOrEqual(1);
-              expect(frame.toolbar!.width, `${label}: toolbar width`).toBeLessThanOrEqual(800.5);
-              expect(Math.abs(frame.toolbar!.x + frame.toolbar!.width / 2 - readerCentre), `${label}: toolbar centre`).toBeLessThanOrEqual(
-                0.5,
-              );
               // Opening the conversation marks it read after hydration; that changes no geometry.
               const read = (parts: Frame) => parts.map((part) => ({ ...part, part: part.part.replace(" mail-list-entry-unread", "") }));
               const server = read(await recordedFrame(page, "server"));

@@ -198,9 +198,11 @@ export default function MailReaderHead(props: {
   };
   onMount(() => {
     measure();
-    if (typeof ResizeObserver === "undefined" || !chipList) return;
+    // The row keeps its size whichever chips it hides, so measuring never feeds back into the observer.
+    const row = chipRow();
+    if (typeof ResizeObserver === "undefined" || !row) return;
     const observer = new ResizeObserver(() => measure());
-    observer.observe(chipList);
+    observer.observe(row);
     onCleanup(() => observer.disconnect());
   });
   createMemo(() => {
