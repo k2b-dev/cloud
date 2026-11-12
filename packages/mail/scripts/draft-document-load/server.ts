@@ -169,6 +169,17 @@ try {
       await next();
     })
     .get("/drafts/:draftId/socket", transport.upgradeMailDraftDocumentSocket)
+    .post("/__load/sql", async (c) => {
+      if (!options.statementProbe) return c.json({ error: "Not a statement probe" }, 400);
+      if (c.req.query("reset")) {
+        await meter`SELECT pg_stat_statements_reset(0, oid, 0) FROM pg_database WHERE datname=current_database()`;
+        return c.json({ ok: true });
+      }
+      const statements = await meter`SELECT calls::int, rows::text, query FROM pg_stat_statements
+        WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database()) ORDER BY calls DESC, query`;
+      await writeFile(`${out}/one-edit-statements.json`, JSON.stringify(statements, null, 2));
+      return c.json({ ok: true });
+    })
     .post("/__load/abort", async (c) => {
       requestAborts.get(c.req.query("connection") ?? "")?.abort();
       return c.json({ ok: true });

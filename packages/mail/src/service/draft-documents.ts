@@ -12,6 +12,7 @@ import {
   normalizeDraftDocumentContent,
   readDraftDocument as projectDocument,
 } from "../lib/draft-document";
+import type { DraftSocketAuthorization } from "./draft-document-access";
 import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
 import { removeOrphanComposeSegmentMarks } from "./compose-renderer";
@@ -67,7 +68,7 @@ type DraftRow = {
   request_read_receipt: boolean;
 };
 
-type Target = { context: MailRequestContext; mailboxId: string; draftId: string; signal?: AbortSignal };
+type Target = { context: MailRequestContext; mailboxId: string; draftId: string; signal?: AbortSignal; socketAuthorization?: DraftSocketAuthorization };
 export type DraftDocumentSnapshot = { state: Uint8Array; cursor: string | null; content: DraftEditableContent };
 export type DraftDocumentRead = {
   generation: string;
@@ -165,7 +166,11 @@ export const lockDraftDocumentInTransaction = async (
   // Retain the represented person in the log even if SQL projection rolls back.
   const documentActor = personalPrincipal(context);
 
+  let lockedRow: DraftRow | undefined;
   const loadRow = async (): Promise<DraftRow | null> => {
+    // The row is exclusively locked for this transaction. Socket admission need
+    // not reread it at each validation callback.
+    if (params.socketAuthorization && lockedRow) return lockedRow;
     const [row] = await awaitDraftDocumentQuery(
       db<DraftRow[]>`
       SELECT d.*, CASE WHEN d.quote_source THEN jsonb_build_object('locale', d.quote_locale, 'timeZone', d.quote_time_zone) ELSE NULL END AS quote_context, sender.short_id AS sender_short_id, signature.short_id AS signature_short_id
@@ -177,15 +182,16 @@ export const lockDraftDocumentInTransaction = async (
     `,
       params.signal,
     );
+    if (params.socketAuthorization && row) lockedRow = row;
     return row ?? null;
   };
   params.signal?.throwIfAborted();
-  const entry = await requireDraftAccess(context, mailboxId, draftId, params.permission ?? "write", db);
-  if (!entry.ok) return entry;
   await lockDraftDocumentCoverage(db);
   const initial = await loadRow();
   // An authorized request may have waited behind send or an assignment change.
-  const allowed = await requireDraftAccess(context, mailboxId, draftId, params.permission ?? "write", db);
+  const allowed = params.socketAuthorization
+    ? (params.socketAuthorization.valid() ? ok() : fail(err.forbidden("Draft connection authorization expired")))
+    : await requireDraftAccess(context, mailboxId, draftId, params.permission ?? "write", db);
   if (!allowed.ok) return allowed;
   if (!initial) return fail(err.notFound("Draft"));
   let row: DraftRow = initial;
@@ -200,7 +206,9 @@ export const lockDraftDocumentInTransaction = async (
   let publishedCursor: string | null = null;
   const assertWritable = async (expectedGeneration: string): Promise<Result<void>> => {
     params.signal?.throwIfAborted();
-    const permission = await requireDraftAccess(context, mailboxId, draftId, "write", db);
+    const permission = params.socketAuthorization
+      ? (params.socketAuthorization.valid() ? ok() : fail(err.forbidden("Draft connection authorization expired")))
+      : await requireDraftAccess(context, mailboxId, draftId, "write", db);
     if (!permission.ok) return permission;
     const current = await loadRow();
     if (!current) return fail(err.notFound("Draft"));
@@ -211,7 +219,15 @@ export const lockDraftDocumentInTransaction = async (
   };
 
   /** Transport conversion is mailbox-scoped; UUIDs never enter the Y.Doc. */
+  let validated: { key: string; value: Result<{ senderIdentityId: string; signatureTemplateId: string | null }> } | undefined;
   const validateContent = async (content: DraftEditableContent, stored: DraftRow) => {
+    const key = JSON.stringify(content);
+    if (params.socketAuthorization && validated?.key === key) return validated.value;
+    const result = await validateUncached(content, stored);
+    if (params.socketAuthorization) validated = { key, value: result };
+    return result;
+  };
+  const validateUncached = async (content: DraftEditableContent, stored: DraftRow) => {
     if (content.signatureTemplateId === undefined) return conflict("Shared documents require an explicit signature choice");
     const [identity] = await db<{ id: string }[]>`
       SELECT id FROM mail.sender_identities
@@ -371,7 +387,7 @@ export const lockDraftDocumentInTransaction = async (
       if (docId !== draftId) throw new Error("Transaction-bound draft store cannot access another draft");
       const ready = await assertWritable(input.restoreRevision);
       if (!ready.ok) throw new Error(ready.error.message);
-      await refreshDraftAdoption({ db, draftId, signal: params.signal });
+      if (!params.socketAuthorization) await refreshDraftAdoption({ db, draftId, signal: params.signal });
       const sequence = mailDraftDocumentLog.topic().cursorSequence(input.cursor);
       if (row.doc_cursor && mailDraftDocumentLog.topic().cursorSequence(row.doc_cursor) !== Number(row.doc_seq))
         throw new Error("Stored draft cursor and sequence disagree");
@@ -399,6 +415,8 @@ export const lockDraftDocumentInTransaction = async (
           priority = ${content.priority}, request_delivery_receipt = ${content.requestDeliveryReceipt},
           request_read_receipt = ${content.requestReadReceipt},
           doc_state = ${Buffer.from(input.state)}, doc_cursor = ${input.cursor}, doc_seq = ${sequence},
+          adopted_at = CASE WHEN ${Boolean(params.socketAuthorization)} AND ${actor.kind} = 'user'
+            AND doc_state IS DISTINCT FROM ${Buffer.from(input.state)} THEN COALESCE(adopted_at, now()) ELSE adopted_at END,
           last_editor_kind = ${actor.kind}, last_editor_id = ${actor.id}::uuid, revision = revision + 1
         WHERE id = ${draftId}::uuid AND mailbox_id = ${mailboxId}::uuid AND origin = 'user'
           AND edit_mode = 'shared' AND state = 'draft' AND doc_frozen_cursor IS NULL
@@ -412,7 +430,8 @@ export const lockDraftDocumentInTransaction = async (
         VALUES (${draftId}::uuid, ${input.restoreRevision}::bigint, ${Number(updated.revision)}, ${Buffer.from(input.state)}, ${input.cursor})
       `;
       await queueDraftProjectionInTransaction({ db, draftId });
-      draftDocumentSnapshotWritten(db);
+      draftDocumentSnapshotWritten(db, { kind: "commit", draftId, generation, cursor: input.cursor,
+        previousCursor: row.doc_cursor, frozen: false });
       row = {
         ...row,
         doc_state: input.state,
@@ -424,6 +443,7 @@ export const lockDraftDocumentInTransaction = async (
         quote_context: content.quoteSource,
         body_markdown: content.body,
       };
+      if (params.socketAuthorization) lockedRow = row;
       return { status: "saved", revision: Number(updated.revision), durable: { state: input.state, cursor: input.cursor, content } };
     },
   };
@@ -448,14 +468,17 @@ export const lockDraftDocumentInTransaction = async (
   const acceptUpdate = async (input: AcceptInput, revisionBase?: number): Promise<Result<DraftDocumentAdmission>> => {
     const ready = await assertWritable(input.generation);
     if (!ready.ok) return ready;
-    const writable = await requireDraftContentWrite({ db, context, draftId, signal: input.signal ?? params.signal });
-    if (!writable.ok) return writable;
+    if (!params.socketAuthorization) {
+      const writable = await requireDraftContentWrite({ db, context, draftId, signal: input.signal ?? params.signal });
+      if (!writable.ok) return writable;
+    }
     if (input.generation !== generation) return recovery("Draft generation changed; retain the submitted content for recovery");
     // Raw bytes larger than the entire event budget cannot possibly fit.
     // Reject them before Yjs allocates decoded structures; Sync checks the
     // exact base64 envelope and metadata at publication.
     if (input.update.byteLength > MAX_LOG_ENVELOPE_BYTES) return recovery("Draft update exceeds the document log payload budget");
     let invalid: string | null = null;
+    let admittedState: Uint8Array | undefined;
     draftTrace("accept_start");
     const admitted = await bound
       .accept(draftId, {
@@ -482,6 +505,7 @@ export const lockDraftDocumentInTransaction = async (
           }
           const valid = await validateContent(content, row);
           if (!valid.ok) invalid = valid.error.message;
+          else admittedState = state;
           return valid.ok;
         },
         validate: async () => (await assertWritable(input.generation)).ok,
@@ -495,10 +519,14 @@ export const lockDraftDocumentInTransaction = async (
     publishedCursor = admitted.cursor;
     draftTrace("publish_accepted");
     try {
-      await refreshDraftAdoption({ db, draftId, signal: input.signal ?? params.signal });
+      if (!params.socketAuthorization) await refreshDraftAdoption({ db, draftId, signal: input.signal ?? params.signal });
       // Read all types, not only the body. The row lock prevents another Mail
       // admission/freeze from publishing before this snapshot is committed.
-      const fresh = await draftTraceSpan("post_publish_reconstruct", () => bound.read(draftId, { signal: input.signal ?? params.signal }));
+      // accept validates exactly this merged state under our exclusive lock.
+      // Reconstructing it from SQL + broker again adds no evidence.
+      const fresh = params.socketAuthorization && admittedState
+        ? { state: admittedState, cursor: admitted.cursor }
+        : await draftTraceSpan("post_publish_reconstruct", () => bound.read(draftId, { signal: input.signal ?? params.signal }));
       if (!fresh?.state || fresh.cursor !== admitted.cursor) throw new Error("Accepted draft cursor could not be reconstructed exactly");
       const state = fresh.state;
       const saved = await draftTraceSpan("persist_snapshot", () => persistSnapshot(state, admitted.cursor, input.signal ?? params.signal));
@@ -703,6 +731,8 @@ export const lockDraftDocumentInTransaction = async (
         doc_frozen_generation: generation,
         doc_frozen_revision: saved.revision,
       };
+      draftDocumentSnapshotWritten(db, { kind: "commit", draftId, generation, cursor: frozen.cursor,
+        previousCursor: row.doc_cursor, frozen: true });
       return ok({ state: frozen.state, cursor: frozen.cursor, generation, revision: saved.revision, content: decode(frozen.state) });
     },
   };

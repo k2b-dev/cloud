@@ -16,6 +16,7 @@ and Sync namespace. Never starts containers or enables shared mailbox editing.
   --burst-bytes N  First editor's paste/delete burst (default 0, up to 256 KiB;
                    requires body-bytes >= burst-bytes)
   --rss-mib N      Server RSS abort budget (default 1024)
+  --statement-probe One edit after join, no awareness or disruptions; counts SQL statements
   --bounded       Separate systemd scopes: server 2 CPUs/1536 MiB, clients 1 CPU/512 MiB
   --out PATH      New result directory (default .local/mail-draft-load/<timestamp>)
   --help          Show this help
@@ -33,6 +34,7 @@ export function options(args: string[]) {
     args,
     options: {
       bounded: { type: "boolean" },
+      "statement-probe": { type: "boolean" },
       drafts: { type: "string" },
       clients: { type: "string" },
       seconds: { type: "string" },
@@ -43,7 +45,7 @@ export function options(args: string[]) {
       out: { type: "string" },
     },
   });
-  const number = (key: Exclude<keyof typeof values, "bounded">, fallback: number, min: number, max: number) => {
+  const number = (key: Exclude<keyof typeof values, "bounded" | "statement-probe">, fallback: number, min: number, max: number) => {
     const value = values[key] === undefined ? fallback : Number(values[key]);
     if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(`--${key} must be ${min}..${max}`);
     return value;
@@ -54,6 +56,7 @@ export function options(args: string[]) {
   if (burstBytes > bodyBytes) throw new Error("--body-bytes must cover --burst-bytes");
   return {
     bounded: values.bounded === true,
+    statementProbe: values["statement-probe"] === true,
     drafts: number("drafts", 10, 1, 500),
     clients: number("clients", 3, 2, 8),
     seconds: number("seconds", 60, 1, 600),

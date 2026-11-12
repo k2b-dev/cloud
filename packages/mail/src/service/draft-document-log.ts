@@ -3,6 +3,7 @@ import { logger } from "@k2b/cloud/services";
 import { type SharedTextSyncEvent, sharedText } from "@k2b/cloud/shared-text";
 import { fail } from "@k2b/stdlib";
 import { RetentionGapError, StoreFullError, type TopicEvent } from "@k2b/sync";
+import { draftDocumentAwarenessTopic, type DraftDocumentCommit } from "./draft-document-events";
 import { mailDraftDocumentMessages } from "../lib/draft-document-protocol";
 
 export const MAX_LOG_ENVELOPE_BYTES = 8_100_000 + 4096;
@@ -104,8 +105,15 @@ export const stopDraftDocumentPruning = async (): Promise<void> => {
 };
 const snapshots = new WeakSet<typeof sql>();
 const fullTransactions = new WeakSet<typeof sql>();
-export const draftDocumentSnapshotWritten = (db: typeof sql): void => {
+const commits = new WeakMap<typeof sql, Map<string, DraftDocumentCommit>>();
+export const draftDocumentSnapshotWritten = (db: typeof sql, notice?: DraftDocumentCommit & { draftId: string }): void => {
   snapshots.add(db);
+  if (notice) {
+    let pending = commits.get(db);
+    if (!pending) { pending = new Map(); commits.set(db, pending); }
+    const previous = pending.get(notice.draftId);
+    pending.set(notice.draftId, { ...notice, previousCursor: previous?.previousCursor ?? notice.previousCursor });
+  }
 };
 /** Call only around the outer transaction: publication alone never schedules a prune. */
 export const afterDraftDocumentCommit = async <T>(transaction: (observe: (db: typeof sql) => void) => Promise<T>): Promise<T> => {
@@ -120,6 +128,12 @@ export const afterDraftDocumentCommit = async <T>(transaction: (observe: (db: ty
   } finally {
     if (db) {
       const wrote = snapshots.delete(db);
+      const notices = commits.get(db);
+      commits.delete(db);
+      if (committed && notices) for (const [draftId, data] of notices) {
+        try { await draftDocumentAwarenessTopic().publish({ tenantId: draftId, data }); }
+        catch (error) { log.warn("Committed draft notice unavailable; reconnect recovers from SQL", { error }); }
+      }
       const full = fullTransactions.delete(db);
       if ((committed && wrote) || full) requestDraftDocumentPrune();
     }

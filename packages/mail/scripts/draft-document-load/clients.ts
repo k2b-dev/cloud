@@ -180,7 +180,7 @@ try {
                 payload: toBase64(Y.encodeStateAsUpdate(c.doc)),
               },
             });
-          send(c, {
+          if (!options.statementProbe) send(c, {
             type: "awarenessPublish",
             payload: {
               docId: d.short_id,
@@ -275,7 +275,7 @@ try {
   // pause() actually exercises kernel and server WebSocket backpressure.
   const first = drafts.values().next().value;
   let slow: Socket | undefined;
-  if (first) {
+  if (first && !options.statementProbe) {
     slow = createConnection({ host: "127.0.0.1", port });
     cleanup.push(() => slow?.destroy());
     await new Promise<void>((done, fail) => {
@@ -315,6 +315,10 @@ try {
       slow?.on("data", onData);
     });
   }
+  if (options.statementProbe) {
+    await Bun.sleep(500);
+    await fetch(`${baseUrl}/__load/sql?reset=1`, { method: "POST" });
+  }
   started = performance.now();
   await sample();
   let reconnectDone = false,
@@ -325,7 +329,7 @@ try {
     const now = performance.now();
     const elapsed = now - started;
     // Graceful reconnect waits for acknowledgement; abrupt disconnect and request abort may interrupt a write.
-    if (first) {
+    if (first && !options.statementProbe) {
       const a = first.clients[0]!,
         b = first.clients[1]!;
       if (!reconnectDone && elapsed > options.seconds * 250 && !a.pending) {
@@ -356,6 +360,7 @@ try {
     for (const d of drafts.values())
       for (const c of d.clients) {
         const now = performance.now();
+        if (options.statementProbe && (editCount || c.index !== 0)) continue;
         if (c.pending && now - c.sentAt > ackBudgetMs) throw new Error("Durable acknowledgement timeout");
         if (!c.ready || c.pending || now < c.next) continue;
         const text = c.doc.getText("codemirror");
@@ -387,7 +392,7 @@ try {
         send(c, { type: "syncPublish", payload: { docId: d.short_id, generation: c.generation, baseCursor: c.cursor, payload } });
         const position = Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(text, text.length));
         c.awareness.setLocalState({ cursor: { anchor: position, head: position } });
-        send(c, {
+        if (!options.statementProbe) send(c, {
           type: "awarenessPublish",
           payload: {
             docId: d.short_id,
@@ -409,6 +414,7 @@ try {
     await Bun.sleep(50);
   }
   if ([...drafts.values()].some((d) => d.pending.size)) throw new Error("Missing peer propagation");
+  if (options.statementProbe) await fetch(`${baseUrl}/__load/sql`, { method: "POST" });
   const response = await fetch(`${baseUrl}/__load/finish`, {
     method: "POST",
     headers: { "content-type": "application/json" },
