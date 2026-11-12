@@ -237,13 +237,14 @@ describe("Mail conversation reader", () => {
     expect(html).not.toContain("View as plain text");
   });
 
-  test("marks Reply in the pill when the conversation has a draft without rendering a header CTA", () => {
+  test("the reply box stands open under the newest message, without a pill, draft rows, or a Continue dialog", () => {
     const html = renderReader([draft]);
-
-    expect(html).toContain("data-mail-reply-pill");
-    expect(html).toContain('data-mail-toolbar-action="reply"');
-    expect(html).toContain('aria-label="Reply, draft available"');
-    expect(html).toContain("data-mail-draft-indicator");
+    const box = html.indexOf('data-mail-reply-box="pending"');
+    expect(box).toBeGreaterThan(html.indexOf('data-mail-message-id="Msg001"'));
+    // The server renders the box's placeholder at its height; the browser loads the draft into it.
+    expect(html).toContain("mail-reply-box-skeleton");
+    expect(html).not.toContain("data-mail-reply-pill");
+    expect(html).not.toContain("data-mail-draft-row");
     expect(html).not.toContain("Continue draft");
   });
 
@@ -351,18 +352,6 @@ describe("Mail conversation reader", () => {
     expect(html).toContain('data-variant="danger"');
   });
 
-  test("shows Reply all when it adds an original recipient", () => {
-    const groupMessage = {
-      ...message,
-      cc: [{ name: "Stakeholder", address: "stakeholder@example.com" }],
-    };
-    const html = renderReader([], { messages: [groupMessage] });
-
-    // Reply all is a pill action with its label while the row has room.
-    expect(html).toContain('aria-label="Reply all"');
-    expect(html).toMatch(/class="k2b-toolbar__text"[^>]*>Reply all</);
-  });
-
   test("the head holds Done, Archive, Delete, Later, Assign and “…”; the pill after the newest message only answers", () => {
     const groupMessage = { ...message, cc: [{ name: "Stakeholder", address: "stakeholder@example.com" }] };
     const html = renderReader([], {
@@ -383,16 +372,8 @@ describe("Mail conversation reader", () => {
     // No personal toolbar and no details toggle any more (Mail v5).
     expect(html).not.toContain("data-mail-details-trigger");
     expect(html).not.toContain("mail-reader-toolbar-action");
-    // The reply affordance follows the newest message at the end of the conversation.
-    const pillStart = html.indexOf("data-mail-reply-pill");
-    expect(pillStart).toBeGreaterThan(html.indexOf('data-mail-message-id="Msg001"'));
-    const pill = html.slice(pillStart);
-    const names = [...pill.matchAll(/aria-label="([^"]+)"/g)].map((match) => match[1]);
-    expect(names.filter((name) => ["Reply", "Reply all", "Forward", "Mark as done", "Assign"].includes(name ?? ""))).toEqual([
-      "Reply",
-      "Reply all",
-      "Forward",
-    ]);
+    // The reply box follows the newest message at the end of the conversation.
+    expect(html.indexOf("data-mail-reply-box")).toBeGreaterThan(html.indexOf('data-mail-message-id="Msg001"'));
   });
   test("a personal mailbox has no Assign in the head", () => {
     const html = renderReader([], { workStatus: "needs_action", assignment: null });

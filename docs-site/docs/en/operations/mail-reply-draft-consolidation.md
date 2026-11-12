@@ -85,7 +85,10 @@ can show that notice once and clear it with
 `mail.draft.consolidation.acknowledge`, or
 `cld mail draft acknowledge-consolidation <draft-id>`. Acknowledgement requires
 a person with write access to an open draft; service accounts cannot acknowledge
-it. Acknowledgement changes no content revision.
+it. Acknowledgement changes no content revision. The Mail reply box shows the
+notice once as "There were n drafts here. The most recently edited one is in
+the box." (n counts the survivor too) with **Got it**, which acknowledges it.
+It offers no way to open the removed drafts, because they no longer exist.
 
 ## Observe and resume the migration
 

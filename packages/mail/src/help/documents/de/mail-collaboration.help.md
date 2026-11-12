@@ -46,7 +46,7 @@ Alle, die das ganze Postfach ansehen können, sehen den Tab. Personen mit Zugrif
 
 ## Interne Notizen hinzufügen {icon="point"}
 
-Interne Notizen sehen alle, die das Postfach lesen können. Sie werden nie an E-Mail-Empfänger gesendet. Nutze sie für Übergaben, Entscheidungen und gemeinsamen Kontext. Jede Notiz steht zu ihrer Zeit in der Unterhaltung, als gelbe Kachel mit Schloss und **intern**. Notizen, die eine Automatisierung schreibt, sehen genauso aus. Mail benachrichtigt einzelne Personen nicht über Notizen. Ist eine Person für den nächsten Schritt zuständig, weise ihr die Unterhaltung zu.
+Interne Notizen sehen alle, die das Postfach lesen können. Sie werden nie an E-Mail-Empfänger gesendet. Nutze sie für Übergaben, Entscheidungen und gemeinsamen Kontext. Jede Notiz steht zu ihrer Zeit in der Unterhaltung, als gelbe Kachel mit Schloss und **intern**. Notizen, die eine Automatisierung schreibt, sehen genauso aus. Zum Schreiben wähle **Interne Notiz** im Pfeil der Antwortbox; die Box wird gelb, und **Notiz speichern** sendet nie etwas. Mail benachrichtigt einzelne Personen nicht über Notizen. Ist eine Person für den nächsten Schritt zuständig, weise ihr die Unterhaltung zu.
 
 Du kannst eigene Notizen 10 Minuten lang nach dem Veröffentlichen bearbeiten oder löschen: Wähle **…** an der Notiz. Notizen von Workflows und anderen Personen lassen sich nicht ändern, auch nicht mit Zugriff **Verwalten**. Eine gelöschte Notiz hinterlässt an ihrer Stelle die Zeile **Notiz gelöscht**, damit das Ereignis nicht still aus dem Verlauf des Teams verschwindet.
 

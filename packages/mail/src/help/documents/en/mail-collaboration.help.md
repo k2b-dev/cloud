@@ -47,7 +47,7 @@ Everyone who can view the whole mailbox sees the tab. People with access to assi
 
 ## Add internal notes {icon="point"}
 
-Internal notes are visible to people who can read the mailbox and are never sent to email recipients. Use them for handoffs, decisions, and shared context. Each note stands in the conversation at its time, as a yellow tile with a lock and **internal**. Notes that an automation writes look the same. Mail does not notify single people about notes. When one collaborator is responsible for the next step, assign the conversation.
+Internal notes are visible to people who can read the mailbox and are never sent to email recipients. Use them for handoffs, decisions, and shared context. Each note stands in the conversation at its time, as a yellow tile with a lock and **internal**. Notes that an automation writes look the same. To write one, choose **Internal note** in the mode arrow of the reply box; the box turns yellow, and **Save note** never sends anything. Mail does not notify single people about notes. When one collaborator is responsible for the next step, assign the conversation.
 
 You can edit or delete your own notes for 10 minutes after posting: choose **…** on the note. Nobody can change notes from workflows or from other people, not even with **Manage** access. A deleted note leaves the line **Note deleted** at its place, so the event does not silently disappear from the team history.
 

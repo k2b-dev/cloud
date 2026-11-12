@@ -256,7 +256,7 @@ describe("MailComposer in a floating window", () => {
 
   test("the window's head carries the save status; the bar starts with Send and ends with the trash", async () => {
     await mount();
-    await waitFor(() => status() === "Saved on server");
+    await waitFor(() => status() === "Saved");
     expect(statusSlot.querySelector("[role=status]")).not.toBeNull();
     // The window has its own Minimize, Maximize, and Close; the draft shows no intent, full screen, or collapse.
     expect(dom.root.querySelector(".mail-inline-draft-intent")).toBeNull();

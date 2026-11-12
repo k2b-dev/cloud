@@ -136,6 +136,23 @@ export function createMailConversationNotes(props: {
     onError: (error) => toast.error(error.message),
   });
 
+  /**
+   * Writes a new internal note and shows it in the timeline at once. It throws the server's reason, so the caller keeps
+   * the text and offers to save again; it never touches a draft.
+   */
+  const createNote = async (body: string, failed: string): Promise<ConversationComment> => {
+    const conversationId = props.conversationId();
+    if (!conversationId) throw new Error(failed);
+    const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].comments.$post({
+      param: { mailboxId: props.mailboxId(), conversationId },
+      json: { body },
+    });
+    if (!response.ok) throw new Error(await readApiError(response, failed));
+    const created = await response.json();
+    if (!disposed && props.conversationId() === created.conversationId) setNotes((current) => reconcileComments(current, [created]));
+    return created;
+  };
+
   onCleanup(() => {
     disposed = true;
     editNote.abort();
@@ -155,5 +172,6 @@ export function createMailConversationNotes(props: {
     },
     saving: () => editNote.loading(),
     remove: (note: ConversationComment) => void removeNote.mutate(note),
+    create: createNote,
   };
 }
