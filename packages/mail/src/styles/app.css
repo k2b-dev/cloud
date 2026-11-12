@@ -23,13 +23,16 @@
     min-width: 0;
     align-items: start;
     border-radius: var(--ui-radius-control);
-    /* Rows off screen skip rendering. Their stand-in size is the exact row height of the list's density, not a
-       remembered one: a row the list renders anew, as after hydration, has its final height in its first frame
-       (#1545), and a density switch moves rows above the view at once, so the open row can keep its place.
-       The scroller, which always renders, answers the width query and hands the size down: WebKit does not
-       evaluate a container query again on a row that skips rendering, so such a row kept its old size. */
+    /* Every row has the exact height of the list's density, also while it skips rendering off screen. A size the
+       browser remembers from an earlier frame never decides it: WebKit gives content-visibility: auto an implied
+       contain-intrinsic-size: auto, so a row rendered in three lines kept 78 px off screen after a switch to one
+       line. A fixed height lets a row the list renders anew, as after hydration, have its final height in its
+       first frame (#1545), and moves rows above the view at once on a density switch, so the open row keeps its
+       place. */
+    --mail-row-size: var(--mail-row-height-3);
+    block-size: var(--mail-row-size);
     content-visibility: auto;
-    contain-intrinsic-size: var(--mail-row-stand-in, var(--mail-row-height-3));
+    contain-intrinsic-size: var(--mail-row-size);
   }
 
   .mail-list-entry:hover {
@@ -191,11 +194,8 @@
   }
 
   @container mail-list (width >= 40rem) {
-    .mail-list-scroll {
-      --mail-row-stand-in: var(--mail-row-height-1);
-    }
-
     .mail-list-entry {
+      --mail-row-size: var(--mail-row-height-1);
       grid-template-columns: 2.25rem 1.75rem minmax(0, 1fr);
       align-items: center;
     }
