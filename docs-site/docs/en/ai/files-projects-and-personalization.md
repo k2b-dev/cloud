@@ -58,6 +58,28 @@ inline, and readers revalidate the current file before rendering.
 The file-content response carries `X-Cloud-Ai-File-Origin` so readers can check
 that the current file still has assistant origin.
 
+### Pass a chat file to another app
+
+The versioned Query `assistant.chat.file.read.v1({ chatId, path })` opens one
+chat file as a ten-minute, single-use read stream. Its Code SDK method returns
+a FileRef; pass that reference to an app Action with a write stream and a
+`file` input. The app decides whether the person may store or use the file.
+
+Chat ownership, archive state, allowed tools and Project access are checked
+again when the stream is read. The reference pins the file revision and refuses
+files above 50 MiB before loading bytes. Changed, deleted, expired or already
+used files fail. Read [Generate and transfer files](/en/docs/platform/code-sdk#generate-a-file)
+for Code helpers, transfer limits and retry rules.
+
+An application issuing its own file continuation can use
+`statAiConversationFile({ conversationId, ownerUserId, path })` from
+`@k2b/cloud/ai` to read metadata without loading content. Both this helper and
+`readAiConversationFile` check conversation ownership and refuse archived
+conversations. The byte reader accepts optional `version` and `maxBytes`;
+both limits apply in the database before content is loaded. The application
+still checks its own Project and operation access before issuing and redeeming
+a continuation.
+
 ### Separate results from working files
 
 The assistant keeps intermediate steps below `/temp/` in the chat, one folder

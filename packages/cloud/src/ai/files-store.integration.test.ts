@@ -139,6 +139,9 @@ suite("aiFileStore integration", () => {
     try {
       await aiFileStore.write({ ...input, origin: "user" });
       const file = (await aiFileStore.read(input))!;
+      expect(await aiFileStore.read({ ...input, maxBytes: file.size - 1 })).toBeNull();
+      expect(await aiFileStore.read({ ...input, version: file.version + 1 })).toBeNull();
+      expect((await aiFileStore.read({ ...input, version: file.version, maxBytes: file.size }))?.bytes).toEqual(file.bytes);
       const version = aiFileContentVersion({ ...file, id: `${conversation.id}:${input.path}:${file.version}` });
       await expect(writeAiConversationFile({ ...input, expectedVersion: null })).rejects.toThrow("version conflict");
       const results = await Promise.allSettled([

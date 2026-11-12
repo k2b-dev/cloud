@@ -37,6 +37,7 @@ import codeAuthoringTemplateDashboardPage from "./skills/code-authoring/template
 import codeAuthoringTemplateDatabase from "./skills/code-authoring/templates/database.md" with { type: "text" };
 import codeAuthoringTemplateEventToChat from "./skills/code-authoring/templates/event-to-chat.md" with { type: "text" };
 import codeAuthoringTemplateFormApp from "./skills/code-authoring/templates/form-app.md" with { type: "text" };
+import codeAuthoringTemplateGeneratedFile from "./skills/code-authoring/templates/generated-file.md" with { type: "text" };
 import codeAuthoringTemplateMailAutomation from "./skills/code-authoring/templates/mail-automation.md" with { type: "text" };
 import codeAuthoringTemplateMailInvoices from "./skills/code-authoring/templates/mail-invoices.md" with { type: "text" };
 import codeAuthoringTemplateSurvey from "./skills/code-authoring/templates/survey.md" with { type: "text" };
@@ -67,6 +68,7 @@ export const SKILLS = [
       "references/template-form-app.md": codeAuthoringTemplateFormApp,
       "references/template-mail-automation.md": codeAuthoringTemplateMailAutomation,
       "references/template-mail-invoices.md": codeAuthoringTemplateMailInvoices,
+      "references/template-generated-file.md": codeAuthoringTemplateGeneratedFile,
       "references/template-task-due-tomorrow.md": codeAuthoringTemplateTaskDueTomorrow,
       "references/template-survey.md": codeAuthoringTemplateSurvey,
       "references/template-weekly-report.md": codeAuthoringTemplateWeeklyReport,

@@ -28,6 +28,7 @@ import { codePolicyPreset, codePolicyRow } from "../../../../core/src/code/polic
 // `@/` imports, which this package's typecheck cannot follow, so a child process compiles them.
 const APPS = [
   ["core", "core/src/capabilities.ts", "aiCapabilities"],
+  ["assistant", "assistant/src/capabilities.ts", "assistantCapabilities"],
   ["mail", "mail/src/capabilities.ts", "mailCapabilities"],
   ["filesv2", "filesv2/src/capabilities.ts", "filesCapabilities"],
   ["spaces", "spaces/src/capabilities.ts", "spacesCapabilities"],
