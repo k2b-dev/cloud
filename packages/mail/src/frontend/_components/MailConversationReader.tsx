@@ -1072,6 +1072,9 @@ export default function MailConversationReader(props: {
               manageTags: () => void props.onManageTags(),
             },
             conversation: [
+              ...(props.mailboxWide && links.state() === "error"
+                ? [{ label: readerText().linkedRetry, icon: "ti ti-refresh", action: () => void links.retry() }]
+                : []),
               {
                 label: props.conversationSummary?.summary ? t().editSummary : t().createSummary,
                 icon: "ti ti-notes",

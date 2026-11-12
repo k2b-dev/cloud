@@ -149,10 +149,9 @@ export default function MailReaderHead(props: {
         ariaLabel: props.onManageTags ? t().tagChipLabel({ name: tag.name }) : undefined,
         action: props.onManageTags ?? undefined,
       });
+    // Links that could not load show no chip; the conversation's "…" offers to load them again.
     if (props.linked.enabled) {
-      if (props.linked.state === "error")
-        list.push({ id: "linked", kind: "linked", label: t().linkedUnavailable, icon: "ti ti-link-off", action: props.linked.retry });
-      else if (props.linked.items.length > 0)
+      if (props.linked.state === "ready" && props.linked.items.length > 0)
         list.push({
           id: "linked",
           kind: "linked",
