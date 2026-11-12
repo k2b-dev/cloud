@@ -37,6 +37,10 @@ export const migrateEventsSchema = async (tx: TransactionSQL): Promise<void> => 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_events_outbox_coalesce
     ON events.outbox (app_id, coalesce_key) WHERE coalesce_key IS NOT NULL
   `.simple();
+  // Deadline invalidations are future-dated in this same outbox. Due rows must
+  // remain cheap to claim while many long-lived session expiries are pending.
+  await tx`CREATE INDEX IF NOT EXISTS idx_events_outbox_due ON events.outbox (kind, app_id, next_attempt_at, seq)`.simple();
+  await tx`CREATE INDEX IF NOT EXISTS idx_events_outbox_key ON events.outbox (app_id, kind, ordering_key)`.simple();
   // The only write path, for the TypeScript API and for application SQL triggers.
   // A coalesce key joins live rows of one transaction: the last payload wins, the first seq stays.
   await tx`

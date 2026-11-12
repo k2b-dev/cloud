@@ -2,6 +2,7 @@ import { expect, mock, test } from "bun:test";
 import { RetentionGapError } from "@k2b/sync";
 import type { Context } from "hono";
 import { WSContext, type WSEvents } from "hono/ws";
+import { createWsInvalidations } from "../test/ws-invalidations";
 
 // Keep the transport/module fixture inside its own process so package-wide
 // test runs never replace the real application modules used by other suites.
@@ -26,6 +27,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const subscribedAfter: string[] = [];
   const adoptions: unknown[] = [];
   const replayGap = { head: null as string | null, gapBelow: null as string | null, failure: null as Error | null };
+  const invalidations = createWsInvalidations();
   let events: WSEvents | undefined;
   let missingFirstNote = false;
   let holdFirstLeave = false;
@@ -37,6 +39,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       await new Promise<void>((resolve) => config.signal?.addEventListener("abort", () => resolve(), { once: true }));
   };
   const note = { id: "test-note", notebookId: "test-notebook", lockedAt: null };
+  mock.module("@k2b/cloud/events", () => ({ subscribeIdentityAccessChanged: () => () => {} }));
   mock.module("@k2b/cloud/server", () => ({
     getLocale: () => "en",
     guardAppAccessSocket: async (_c: Context, _appId: string, events: WSEvents) => events,
@@ -89,7 +92,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
         get: async () => ({ id: note.notebookId }),
         permission: { get: async () => "write" },
       },
-      workspaceEvents: { live: waitUntilAborted },
+      workspaceEvents: { live: invalidations.live, latestCursor: async () => "s6t.events.0" },
       presence: {
         snapshot: async () => ({ participants: [], cursor: "0" }),
         watch: waitUntilAborted,
@@ -106,13 +109,8 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     },
   }));
   mock.module("./service/presence", () => ({ PRESENCE_HEARTBEAT_INTERVAL_MS: 10_000 }));
-  mock.module("./service/yjs-sync", () => ({
-    NODE_ID: "fixture-node",
-    toBase64: () => "",
-    isValidYjsUpdate: () => true,
-    isStorageExhausted: (error: unknown) => /insufficient (storage )?resources/i.test(String(error)),
-    maxStreamCursor: (_previous: string | null, next: string) => next,
-    createYjsTopic: () => ({
+  mock.module("./service/yjs-sync", () => {
+    const topic = () => ({
       latestCursor: async () => replayGap.head,
       cursorAt: () => "s6t.fixture.0",
       replay: async function* (config: { after: string }) {
@@ -130,9 +128,29 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
         publishEntered.resolve();
         return published.promise;
       },
-    }),
-    createYjsAwarenessTopic: () => ({ live: waitUntilAborted }),
-  }));
+    });
+    return {
+      notebooksTextLog: {
+        topic,
+        withStore: () => ({
+          accept: async (
+            docId: string,
+            input: Omit<Parameters<typeof import("./service")["notebooksService"]["note"]["acceptYjsUpdate"]>[0], "noteId">,
+          ) => {
+            const { notebooksService } = await import("./service");
+            return notebooksService.note.acceptYjsUpdate({ ...input, noteId: docId });
+          },
+        }),
+      },
+      NODE_ID: "fixture-node",
+      toBase64: () => "",
+      isValidYjsUpdate: () => true,
+      isStorageExhausted: (error: unknown) => /insufficient (storage )?resources/i.test(String(error)),
+      maxStreamCursor: (_previous: string | null, next: string) => next,
+      createYjsTopic: topic,
+      createYjsAwarenessTopic: () => ({ live: waitUntilAborted }),
+    };
+  });
   mock.module("./service/yjs-snapshot-worker", () => ({
     yjsSnapshotWorker: {
       queueSnapshotSave: async (input: unknown) => {
@@ -236,12 +254,6 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   }, 10_000);
 
   test("reader expiry racing a new watch cannot overwrite that note or leak its lease", async () => {
-    const originalSetTimeout = globalThis.setTimeout;
-    let refreshWorkspace: (() => Promise<void>) | undefined;
-    globalThis.setTimeout = ((callback: () => Promise<void>, delay: number, ...args: unknown[]) => {
-      if (delay === 10_000) refreshWorkspace = callback;
-      return originalSetTimeout(callback, delay, ...args);
-    }) as typeof setTimeout;
     await app.request("/");
     const handlers = events!;
     const sent: Array<{ type: string; payload: { noteId?: string } }> = [];
@@ -264,7 +276,8 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       expect(sent.some((m) => m.type === "notes.presence.snapshot" && m.payload.noteId === "abcdef")).toBe(true);
       missingFirstNote = true;
       holdFirstLeave = true;
-      const expiring = refreshWorkspace!();
+      invalidations.emit();
+      const expiring = readerLeaveEntered.promise;
       await readerLeaveEntered.promise;
       await send("notes.workspace.presence.watch", { noteId: "ghijkl", presencePeerId: peer });
       // All unblocked mock I/O completes before releasing the old note's removal.
@@ -279,7 +292,6 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       readerLeaveReleased.resolve();
       missingFirstNote = false;
       holdFirstLeave = false;
-      globalThis.setTimeout = originalSetTimeout;
       await handlers.onClose?.(new CloseEvent("close"), socket);
     }
   });

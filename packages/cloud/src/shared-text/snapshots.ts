@@ -1,5 +1,6 @@
 import { type Job, type JobConfig, RetentionGapError, type Topic, type Worker } from "@k2b/sync";
 import * as Y from "yjs";
+import { lazySync } from "../_internal/process-sync";
 import { logger } from "../services/logging";
 import { validateChanges } from "./changes";
 import { compareStreamCursor } from "./cursor";
@@ -116,6 +117,147 @@ const createSnapshots = <Input>(
     // A final unload at a newer cursor must not coalesce with an already settling snapshot.
     await job().submit({ key: `${request.docId}:${sequence}`, coalesce: true, orderingKey: request.docId, input: input.encode(request) });
   };
+  const mutex = lazySync((sync) => sync.mutex({ id: `${log.id}:snapshot-writer`, ttlMs: ACK_WAIT_MS, retry: { maxAttempts: 1 } }));
+  const persist = async (request: SharedTextSnapshotRequest, signal: AbortSignal, heartbeat: () => Promise<void>) => {
+    const { docId } = request;
+    let heartbeatError: unknown;
+    const timer = setInterval(() => {
+      void heartbeat().catch((error) => {
+        heartbeatError = error;
+      });
+    }, 15_000);
+    try {
+      const topic = log.topic();
+      const initial = await store.load(docId, { signal: signal });
+      // Head BEFORE the document's latest event: once it is applied up to
+      // that event, the head is a valid (fresher) cursor for the snapshot.
+      const head = await topic.head();
+      // Cover queued older cursors in one replay; later jobs skip already saved state.
+      const target = await topic.latestCursor({ tenantId: docId });
+      if (!target && !repair) {
+        output.warn("Snapshot skipped: no retained events for the note", { docId, requestedCursor: request.targetCursor });
+        return;
+      }
+      const requestedAt = Date.now();
+      if (!initial) return;
+      const covered = !target || !!(initial.cursor && compareStreamCursor(initial.cursor, target) >= 0);
+      if (covered && !repair) return;
+      const doc = createDoc(initial);
+      const contributors = new Map<string, SharedTextContributor>();
+      try {
+        let reachedTarget = covered;
+        try {
+          if (!covered && target)
+            for await (const event of topic.replay({
+              tenantId: docId,
+              after: initial.cursor ?? topic.cursorAt(0),
+              until: target,
+              signal: signal,
+            })) {
+              const applied = applySharedTextEvent(doc, event, docId, initial.restoreRevision);
+              if (applied && event.data.actor)
+                contributors.set(`${event.data.actor.kind}:${event.data.actor.id}`, {
+                  ...event.data.actor,
+                  lastContributedAt: event.publishedAt,
+                });
+              reachedTarget = event.cursor === target;
+            }
+        } catch (error) {
+          // Preserve all valid retained updates and unresolved dependencies;
+          // record the missing/invalid history once in the DLQ after recovery.
+          if (error instanceof RetentionGapError || error instanceof MalformedSharedTextEventError)
+            await store.recover(docId, error, { signal: signal });
+          throw error;
+        }
+        signal.throwIfAborted();
+        if (heartbeatError) throw heartbeatError;
+        if (!reachedTarget) throw new Error("Snapshot replay did not reach its target");
+        await heartbeat();
+        signal.throwIfAborted();
+        let cursor = target && compareStreamCursor(target, head) > 0 ? target : head;
+        if (repair && !doc.store.pendingStructs && !doc.store.pendingDs) {
+          const text = doc.getText(SHARED_TEXT_NAME);
+          const planned = repair.plan(text.toString());
+          if (planned.some((change) => change.from !== change.to)) throw new RangeError("Snapshot repair may only insert text");
+          const changes = planned.length ? validateChanges(text.toString(), planned, repair.maxLength) : [];
+          if (changes.length) {
+            const before = Y.encodeStateVector(doc);
+            doc.transact(() => {
+              for (const change of [...changes].reverse()) text.insert(change.from, change.insert);
+            }, "snapshot-repair");
+            signal.throwIfAborted();
+            if (heartbeatError) throw heartbeatError;
+            // A conflict retries the whole ordered job from the current store
+            // and tenant head; never publish a plan over a newer document.
+            const published = await topic.publish({
+              tenantId: docId,
+              expectedAfter: target,
+              data: {
+                kind: "sync",
+                payload: toBase64(Y.encodeStateAsUpdate(doc, before)),
+                originNodeId: sharedTextNodeId,
+                originPeerId: null,
+                restoreRevision: initial.restoreRevision,
+              },
+            });
+            cursor = published.cursor;
+          } else if (covered) return;
+        } else if (covered) return;
+        signal.throwIfAborted();
+        await store.save(docId, {
+          state: Y.encodeStateAsUpdate(doc),
+          text: doc.getText(SHARED_TEXT_NAME).toString(),
+          cursor,
+          restoreRevision: initial.restoreRevision,
+          requestedAt,
+          actor: null,
+          contributors: [...contributors.values()],
+        });
+      } finally {
+        doc.destroy();
+      }
+    } finally {
+      clearInterval(timer);
+    }
+  };
+  const write = async (request: SharedTextSnapshotRequest, signal: AbortSignal, heartbeat: () => Promise<void>) => {
+    const lease = mutex();
+    // A flush and a queued job share the same document lease on every node.
+    const result = await lease.withLock({ resource: request.docId, signal }, async (lock) => {
+      let leaseLost = false;
+      const renew = async () => {
+        await heartbeat();
+        if (!(await lease.extend(lock, { ttlMs: ACK_WAIT_MS }))) leaseLost = true;
+        if (leaseLost) throw new Error("Shared text snapshot writer lease was lost");
+      };
+      await persist(request, signal, renew);
+      return true;
+    });
+    if (!result) throw new Error("Shared text snapshot writer is busy; retry the flush");
+  };
+  const flushNow = async (docId: string, options: { signal?: AbortSignal; restoreRevision?: string; targetCursor?: string } = {}) => {
+    const signal = options.signal ?? AbortSignal.timeout(ACK_WAIT_MS);
+    signal.throwIfAborted();
+    const initial = await store.load(docId, { signal });
+    if (!initial) return null;
+    if (options.restoreRevision !== undefined && initial.restoreRevision !== options.restoreRevision)
+      throw new Error("Shared text generation changed before flush");
+    const topic = log.topic();
+    const latest = await topic.latestCursor({ tenantId: docId });
+    const target =
+      options.targetCursor && (!latest || compareStreamCursor(options.targetCursor, latest) > 0) ? options.targetCursor : latest;
+    if (target && (!initial.cursor || compareStreamCursor(initial.cursor, target) < 0))
+      await write({ docId, targetCursor: target, reason: "flush" }, signal, async () => {});
+    const persisted = await store.load(docId, { signal });
+    signal.throwIfAborted();
+    if (
+      !persisted ||
+      persisted.restoreRevision !== initial.restoreRevision ||
+      (target && (!persisted.cursor || compareStreamCursor(persisted.cursor, target) < 0))
+    )
+      throw new Error("Shared text flush did not persist the accepted cursor");
+    return persisted;
+  };
   const start = async (): Promise<void> => {
     if (worker) {
       await worker;
@@ -143,109 +285,7 @@ const createSnapshots = <Input>(
           return { action: "retry" };
         },
       },
-      async (context) => {
-        const request = input.decode(context.input);
-        const { docId } = request;
-        let heartbeatError: unknown;
-        const timer = setInterval(() => {
-          void context.heartbeat().catch((error) => {
-            heartbeatError = error;
-          });
-        }, 15_000);
-        try {
-          const topic = log.topic();
-          const initial = await store.load(docId, { signal: context.signal });
-          // Head BEFORE the document's latest event: once it is applied up to
-          // that event, the head is a valid (fresher) cursor for the snapshot.
-          const head = await topic.head();
-          // Cover queued older cursors in one replay; later jobs skip already saved state.
-          const target = await topic.latestCursor({ tenantId: docId });
-          if (!target && !repair) {
-            output.warn("Snapshot skipped: no retained events for the note", { docId, requestedCursor: request.targetCursor });
-            return;
-          }
-          const requestedAt = Date.now();
-          if (!initial) return;
-          const covered = !target || !!(initial.cursor && compareStreamCursor(initial.cursor, target) >= 0);
-          if (covered && !repair) return;
-          const doc = createDoc(initial);
-          const contributors = new Map<string, SharedTextContributor>();
-          try {
-            let reachedTarget = covered;
-            try {
-              if (!covered && target)
-                for await (const event of topic.replay({
-                  tenantId: docId,
-                  after: initial.cursor ?? topic.cursorAt(0),
-                  until: target,
-                  signal: context.signal,
-                })) {
-                  const applied = applySharedTextEvent(doc, event, docId, initial.restoreRevision);
-                  if (applied && event.data.actor)
-                    contributors.set(`${event.data.actor.kind}:${event.data.actor.id}`, {
-                      ...event.data.actor,
-                      lastContributedAt: event.publishedAt,
-                    });
-                  reachedTarget = event.cursor === target;
-                }
-            } catch (error) {
-              // Preserve all valid retained updates and unresolved dependencies;
-              // record the missing/invalid history once in the DLQ after recovery.
-              if (error instanceof RetentionGapError || error instanceof MalformedSharedTextEventError)
-                await store.recover(docId, error, { signal: context.signal });
-              throw error;
-            }
-            context.signal.throwIfAborted();
-            if (heartbeatError) throw heartbeatError;
-            if (!reachedTarget) throw new Error("Snapshot replay did not reach its target");
-            await context.heartbeat();
-            context.signal.throwIfAborted();
-            let cursor = target && compareStreamCursor(target, head) > 0 ? target : head;
-            if (repair && !doc.store.pendingStructs && !doc.store.pendingDs) {
-              const text = doc.getText(SHARED_TEXT_NAME);
-              const planned = repair.plan(text.toString());
-              if (planned.some((change) => change.from !== change.to)) throw new RangeError("Snapshot repair may only insert text");
-              const changes = planned.length ? validateChanges(text.toString(), planned, repair.maxLength) : [];
-              if (changes.length) {
-                const before = Y.encodeStateVector(doc);
-                doc.transact(() => {
-                  for (const change of [...changes].reverse()) text.insert(change.from, change.insert);
-                }, "snapshot-repair");
-                context.signal.throwIfAborted();
-                if (heartbeatError) throw heartbeatError;
-                // A conflict retries the whole ordered job from the current store
-                // and tenant head; never publish a plan over a newer document.
-                const published = await topic.publish({
-                  tenantId: docId,
-                  expectedAfter: target,
-                  data: {
-                    kind: "sync",
-                    payload: toBase64(Y.encodeStateAsUpdate(doc, before)),
-                    originNodeId: sharedTextNodeId,
-                    originPeerId: null,
-                    restoreRevision: initial.restoreRevision,
-                  },
-                });
-                cursor = published.cursor;
-              } else if (covered) return;
-            } else if (covered) return;
-            context.signal.throwIfAborted();
-            await store.save(docId, {
-              state: Y.encodeStateAsUpdate(doc),
-              text: doc.getText(SHARED_TEXT_NAME).toString(),
-              cursor,
-              restoreRevision: initial.restoreRevision,
-              requestedAt,
-              actor: null,
-              contributors: [...contributors.values()],
-            });
-          } finally {
-            doc.destroy();
-          }
-        } finally {
-          clearInterval(timer);
-        }
-      },
+      async (context) => write(input.decode(context.input), context.signal, () => context.heartbeat()),
     );
     try {
       await worker;
@@ -382,5 +422,5 @@ const createSnapshots = <Input>(
     lastBacklog = report;
     return { checked, queued, advanced };
   };
-  return { queue, start, stop, reconcile, backlog: () => lastBacklog };
+  return { queue, flushNow, start, stop, reconcile, backlog: () => lastBacklog };
 };

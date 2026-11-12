@@ -100,7 +100,8 @@ type WatchOptions = {
   check: () => Promise<boolean>;
   denied: () => void;
   subscribe: (changed: () => void) => () => void;
-  intervalMs?: number;
+  intervalMs?: number | false;
+  checkInitially?: boolean;
   timeoutMs?: number;
 };
 
@@ -144,11 +145,11 @@ export const watchAppAccess = (options: WatchOptions): (() => void) => {
       }
     }
   };
-  const timer = setInterval(() => void check(), options.intervalMs ?? APP_ACCESS_RECHECK_MS);
-  timer.unref?.();
+  const timer = options.intervalMs === false ? undefined : setInterval(() => void check(), options.intervalMs ?? APP_ACCESS_RECHECK_MS);
+  timer?.unref?.();
   unsubscribe = options.subscribe(() => void check());
   // Close the race between the handshake's check and subscribing to changes.
-  void check();
+  if (options.checkInitially !== false) void check();
   return stop;
 };
 
@@ -158,7 +159,12 @@ const subscribeApp = async (appId: string): Promise<(changed: () => void) => () 
 };
 
 /** Used by shared live updates and custom sockets; close always releases the watcher. */
-export const guardAppAccessSocket = async (c: Context<AuthContext>, appId: string, events: WSEvents): Promise<WSEvents> => {
+export const guardAppAccessSocket = async (
+  c: Context<AuthContext>,
+  appId: string,
+  events: WSEvents,
+  options: { eventOnly?: boolean } = {},
+): Promise<WSEvents> => {
   let app: AccessApp | null;
   try {
     app = await getApp(appId);
@@ -188,6 +194,7 @@ export const guardAppAccessSocket = async (c: Context<AuthContext>, appId: strin
       connections.add(shutdown);
       stop = watchAppAccess({
         check: revalidate,
+        ...(options.eventOnly ? { intervalMs: false as const, checkInitially: false } : {}),
         subscribe,
         denied: () => {
           connections.delete(shutdown);

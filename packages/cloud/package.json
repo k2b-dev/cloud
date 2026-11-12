@@ -138,6 +138,7 @@
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
+    "@codemirror/state": "6.7.6",
     "@firecrawl/anydoc": "0.2.4",
     "@napi-rs/canvas": "1.1.0",
     "pdfjs-dist": "6.5.438",

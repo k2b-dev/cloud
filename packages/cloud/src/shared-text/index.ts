@@ -11,6 +11,23 @@ export {
   toBase64,
 } from "./events";
 export { sharedText } from "./log";
+export {
+  createSharedTextRoom,
+  createSharedTextRoomContext,
+  isSharedTextStorageExhausted,
+  type SharedTextRoomAccess,
+  type SharedTextRoomAdapter,
+  type SharedTextRoomContext,
+  type SharedTextRoomMessages,
+  type SharedTextRoomSnapshot,
+  type SharedTextRoomSocket,
+} from "./room";
+export {
+  createSharedTextRoomSchemas,
+  SHARED_TEXT_ROOM_ERROR_CODE,
+  SharedTextRestoreRevisionSchema,
+  type SharedTextRoomProtocol,
+} from "./room-protocol";
 export type { SharedTextSnapshotBacklog, SharedTextSnapshotRepair, SharedTextSnapshotRequest, SharedTextSnapshotStore } from "./snapshots";
 export { sharedTextSnapshotJobConfig } from "./snapshots";
 export { planStructuralInverse, type SharedTextStructuralHistory, validateStructuralIngress } from "./structural-history";

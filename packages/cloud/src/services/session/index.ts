@@ -5,6 +5,7 @@ import { HTTPException } from "hono/http-exception";
 import { env } from "../../config/env";
 import { PWA_AUTH_PATH, PWA_COOKIES } from "../../contracts/pwa";
 import type { User } from "../../contracts/shared";
+import { scheduleSessionIdleAccessChanged } from "../../events/app-access";
 import { sql } from "../../runtime/clients";
 import { getLocale } from "../../server/locale";
 import { describeRequest } from "../../server/request-context";
@@ -127,6 +128,7 @@ const authenticateVerified = async (credential: CloudSessionClaims): Promise<Aut
   });
   if (!loaded) return null;
   const { user, pwaDeviceId, idle } = loaded;
+  if (idle) await sql.begin((tx) => scheduleSessionIdleAccessChanged(tx, credential.sid, idle.timeoutSeconds));
   if (isAccountExpired(user.accountExpires)) {
     await endSessions(sql, user.id);
     return null;
@@ -271,6 +273,8 @@ const insertFamily = async (
       NOT EXISTS (SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid), ${options.pwaDeviceId ?? null}, ${options.appDeviceId ?? null},
       ${options.sharedWorkstation && !options.pwaDeviceId ? issuedAt : null})
   `;
+  if (options.sharedWorkstation && !options.pwaDeviceId)
+    await scheduleSessionIdleAccessChanged(tx, sid, await sharedWorkstationIdleSeconds());
   const notice = options.knownBrowser
     ? await rememberSignIn(tx, { ...options.knownBrowser, userId, firstName: noticeFirstName(user.given_name), now: issuedAt })
     : null;
@@ -415,13 +419,17 @@ const copyFamily = async (tx: SQL, from: string, to: { sid: string; authEpoch: n
  */
 const recordInput = async (signIn: { userId: string; sid: string }): Promise<SessionIdle | null> => {
   const timeoutSeconds = await sharedWorkstationIdleSeconds();
-  const [row] = await sql<Array<{ sid: string }>>`
+  const row = await sql.begin(async (tx) => {
+    const [row] = await tx<Array<{ sid: string }>>`
     UPDATE auth.session_families SET last_input_at = now()
     WHERE sid = ${signIn.sid}::uuid AND user_id = ${signIn.userId}::uuid AND pwa_device_id IS NULL
       AND revoked_at IS NULL AND expires_at > now()
       AND last_input_at > now() - ${timeoutSeconds} * interval '1 second'
     RETURNING sid
   `;
+    if (row) await scheduleSessionIdleAccessChanged(tx, signIn.sid, timeoutSeconds);
+    return row;
+  });
   return row ? { remainingSeconds: timeoutSeconds, timeoutSeconds } : null;
 };
 
@@ -431,12 +439,16 @@ const recordInput = async (signIn: { userId: string; sid: string }): Promise<Ses
  */
 const startIdleLimit = async (signIn: { userId: string; sid: string }): Promise<SessionIdle | null> => {
   const timeoutSeconds = await sharedWorkstationIdleSeconds();
-  const [row] = await sql<Array<{ sid: string }>>`
+  const row = await sql.begin(async (tx) => {
+    const [row] = await tx<Array<{ sid: string }>>`
     UPDATE auth.session_families SET last_input_at = now()
     WHERE sid = ${signIn.sid}::uuid AND user_id = ${signIn.userId}::uuid AND pwa_device_id IS NULL
       AND revoked_at IS NULL AND expires_at > now() AND last_input_at IS NULL
     RETURNING sid
   `;
+    if (row) await scheduleSessionIdleAccessChanged(tx, signIn.sid, timeoutSeconds);
+    return row;
+  });
   return row ? { remainingSeconds: timeoutSeconds, timeoutSeconds } : null;
 };
 
@@ -452,13 +464,17 @@ const setSharedWorkstation = async (
 ): Promise<{ sharedWorkstation: boolean; idle: SessionIdle | null }> => {
   const timeoutSeconds = await sharedWorkstationIdleSeconds();
   // A session whose idle limit passed while this request ran stays ended: neither marking nor unmarking revives it.
-  const [family] = await sql<Array<{ expires_at: Date }>>`
+  const family = await sql.begin(async (tx) => {
+    const [family] = await tx<Array<{ expires_at: Date }>>`
     UPDATE auth.session_families SET last_input_at = CASE WHEN ${shared} THEN now() ELSE NULL END
     WHERE sid = ${signIn.sid}::uuid AND user_id = ${signIn.userId}::uuid AND pwa_device_id IS NULL
       AND revoked_at IS NULL AND expires_at > now()
       AND (last_input_at IS NULL OR last_input_at > now() - ${timeoutSeconds} * interval '1 second')
     RETURNING expires_at
   `;
+    if (family && shared) await scheduleSessionIdleAccessChanged(tx, signIn.sid, timeoutSeconds);
+    return family;
+  });
   if (!family) throw new HTTPException(401, { message: "Authentication required" });
   setSharedWorkstationCookie(c, shared);
   if (shared) forgetSignInMemory(c);

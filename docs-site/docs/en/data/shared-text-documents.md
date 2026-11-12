@@ -5,14 +5,15 @@ section: Data
 order: 430
 description: Let people and agents edit the same text through a retained log and application-owned snapshots.
 tags: [data, text, collaboration, sync, yjs]
-updated: 2026-11-08
+updated: 2026-11-12
 ---
 
 # Shared text documents
 
 Use `@k2b/cloud/shared-text` for text that people and agents write at the same
 time. One retained log carries updates; a snapshot in the application's own
-Postgres table holds durable state. This is a server-only API. Callers must
+Postgres table holds durable state. The server API owns logs and rooms;
+`@k2b/cloud/browser/shared-text` owns browser providers and device journals. Callers must
 authorize access before calling `read`, `edit`, `change`, `inverse`, or `accept`.
 
 ## Declare one log per kind of document
@@ -802,3 +803,145 @@ The older send snapshot alone does not cover that state.
 This boundary does not change the topic's retention policy. Do not activate
 an application that promises retention until snapshot coverage while its
 installed Sync topic can still expire or evict uncovered updates.
+
+## Connect a collaboration room
+
+`createSharedTextRoom({ protocol, adapter, log, awarenessTopic, snapshots,
+logger?, maxLength?, validateState? })` owns join, catch-up, live delivery,
+trusted awareness, resync and snapshot queueing. Import it and
+`createSharedTextRoomContext` from `@k2b/cloud/shared-text`. Create one room
+per document kind, then one context and connection per socket:
+
+```ts
+const context = createSharedTextRoomContext(socket, credential, messages);
+const connection = room.connect(context);
+// Forward each text frame to connection.receive(frame).
+// Await connection.close() when the socket ends; await room.drain() on shutdown.
+```
+
+The socket supplies `send(string)` and `close(code, reason)`. The optional
+connection extension handles application messages on the same socket and
+releases application subscriptions on close. It does not participate in
+collaboration admission. `protocol` supplies message names, document-ID
+validation, cursor validation, the payload limit, and `decode`/`encode` to
+map application wire keys to `docId`. Room restore revisions are canonical
+nonnegative PostgreSQL bigint strings. Keep existing wire names, log and
+awareness declarations, snapshot job IDs and codecs during migration so
+older tabs and pods can continue using the same resources.
+
+Implement `SharedTextRoomAdapter<User, Messages, Context>`:
+
+| Adapter member | Application responsibility |
+| --- | --- |
+| `authenticate(credential)` | Resolve the current principal at join; return null for an invalid credential. |
+| `authorize(publicDocId, user, messages)` | Check read/write access once and return the canonical `resolvedDocId`, `canWrite`, optional scope and invalidation cursor. |
+| `load(docId)` | Load one anchored snapshot with state, text, cursor and restore revision. |
+| `actor(user)`, `awarenessUser(user)` | Supply trusted audit and awareness identities; never trust names or IDs from client frames. |
+| `revalidate(context)` | Recheck only after an invalidation; return lost access, lock, deletion or changed generation. |
+| `invalidations(context, signal)` | Subscribe to relevant committed permission and lifecycle events; abort releases the subscription. |
+| `recover(docId, cause, signal)` | Apply the application's existing retention-gap recovery. |
+| `join(context)`, `leave(context)` | Optional application presence hooks. |
+
+Capture an invalidation cursor before checking access and subscribe from it
+after joining. This covers mutations between authorization and subscription
+without a second scheduled check. Forward identity invalidations with
+`subscribeIdentityAccessChanged` from `@k2b/cloud/events` to
+`room.revalidate(context)`, and release that subscription when the socket
+ends. It remembers an event during join and checks it before replay starts.
+For the application-entry socket guard, pass
+`guardAppAccessSocket(context, appId, handlers, { eventOnly: true })`.
+
+### Check access at connect or join, revoke through events
+
+Access is checked once when connecting or joining a document. Reconnects
+check again. The room performs no access polling, periodic revalidation,
+or SQL on edits, awareness messages, live delivery or an idle connection.
+Only a revocation/lifecycle event may cause the adapter to query current
+access. A lost write grant closes an existing writer too. Applications must
+publish invalidations for every mutation that changes access or generation.
+An unavailable invalidation stream closes the room; reconnect establishes
+current access and a new stream.
+
+Core publishes `identity.access.changed` through its existing live topic and
+transactional outbox for these sources:
+
+- User, nested-group, service-account membership and group-manager changes,
+  including FreeIPA synchronization and its effective-group projection.
+- Account authentication epoch, category/admin status, expiration or deletion;
+  FreeIPA account locks; category-enabled and administrator-group settings.
+- Session revocation, replacement, expiration or deletion; signing-key changes;
+  service-account status and credential revocation, scope or expiry changes.
+- Account and session expiry deadlines, and shared-workstation idle deadlines.
+  Deadline rows are queued at the source and delivered when due; real input
+  replaces the idle deadline. This adds no access scan or socket timer.
+
+Notebooks supplies its existing `workspace.invalidated`, `note.updated` and
+`note.deleted` events for grants, locks, restores, moves and deletion. Mail's
+existing live topic carries access hints for mailbox grants, assigned-only
+grants, conversation assignments and mailbox soft or hard deletion; changes
+to the referenced grant also produce Core's identity invalidation. Mail's
+current schema has no separate restricted-member relation or persistent
+mailbox lock: an application adding either must publish the same access hint.
+External directory changes become effective when the existing directory sync
+writes them locally; the room introduces no new directory polling.
+Notebooks browser rooms use session credentials. An adapter accepting OAuth or
+service-account credentials must supply its own token-expiry events; those
+credential lifetimes are not account/session deadlines.
+
+### Bound each connection
+
+The room queues at most 200 non-awareness frames. Awareness coalesces to the
+latest waiting state without overtaking edits. Sync delivery flushes after
+100 updates, 256,000 encoded payload characters, or 25 ms. Awareness payloads
+are limited to 256,000 characters; sync frames use the declared protocol
+limit plus 1,000 characters of framing. Applications supply their document
+length/validation budget and the retained log and awareness topic budgets.
+
+Backpressure closes with 1013; gaps and cursor mismatches request resync and
+close with 1012. Transient stream/storage failures also use 1012, internal
+errors use 1011, and access failures use 1008. Error codes remain stable;
+applications supply localized messages. Dirty documents queue a snapshot every
+8 seconds and on leave/shutdown, using the existing ordered snapshot pipeline.
+A failed final enqueue makes drain retry instead of discarding accepted work.
+
+### Scale and flush before a durable action
+
+Fan-out and acknowledgements travel through NATS, including back to the
+publishing socket. Process memory holds only disposable connection state.
+Any pod can accept a reconnect. Snapshot jobs retain their existing partitioned
+ordering; synchronous flush and background writers additionally share one
+per-document distributed lease. Stores must still fence generation and
+non-newer cursors atomically, including during rolling upgrades.
+
+Call the snapshot pipeline's `flushNow(docId, { signal?, restoreRevision?,
+targetCursor? })` before an action that needs committed text. It captures the
+latest accepted cursor, uses the same writer and persistence algorithm as the
+background job, then returns the stored `{ state, text, cursor,
+restoreRevision }`. It returns null for a missing document and throws on a
+changed generation, busy writer, skipped save or uncovered cursor. Retry a
+busy writer through the caller's bounded action retry. A target cursor can
+require coverage beyond the captured head.
+
+Authorization and freezing further edits remain application responsibilities.
+For sending, first wait for browser edits to be accepted, freeze publication
+through the application's existing lifecycle mechanism, then flush that
+revision/cursor and send the returned persisted text. A flush alone does not
+prevent an edit accepted after its captured head.
+
+## Open a browser document
+
+`createSharedTextProvider` remains the transport-independent provider. Use
+`openSharedTextDocument` from `@k2b/cloud/browser/shared-text` to add the device
+journal, generation recovery, durable receipts and provider lifecycle.
+Supply the authorization endpoint adapter, generation parser/comparator,
+`createProvider`, document/user/journal IDs, localized messages and callbacks.
+Its returned client exposes `provider`, `refresh`, `retry`, `discard`, `flush`
+and `dispose`. Browser `flush()` writes pending input to the device journal;
+server `flushNow()` commits accepted text to Postgres.
+
+The device journal is cleared only by a covering durable receipt, never by a
+transport echo. Only pending, accepted input requests durable receipts at the
+snapshot cadence; this is separate from room access validation. Call `refresh`
+for application snapshot/lifecycle events. Preserve journal namespaces during
+migration. `changesBetween`, `rebaseOnto` and `applyToYText` support the lazy
+first-edit transition without loading an editor-specific application package.

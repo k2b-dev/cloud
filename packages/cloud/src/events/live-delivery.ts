@@ -61,7 +61,7 @@ const logStaleRows = async (appId: string): Promise<void> => {
   const [row] = await sql<{ count: number; oldest_seconds: number | null }[]>`
     SELECT COUNT(*)::int AS count, EXTRACT(EPOCH FROM now() - MIN(created_at))::int AS oldest_seconds
     FROM events.outbox
-    WHERE kind = 'live' AND app_id = ${appId} AND created_at < now() - interval '60 seconds'
+    WHERE kind = 'live' AND app_id = ${appId} AND next_attempt_at <= now() AND created_at < now() - interval '60 seconds'
   `;
   if (row && row.count > 0) log.warn("Live updates wait to be published", { appId, count: row.count, oldestSeconds: row.oldest_seconds });
 };
