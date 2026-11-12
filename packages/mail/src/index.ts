@@ -17,6 +17,7 @@ import {
 } from "./migrate";
 import { createMailNotificationService } from "./notifications";
 import { router } from "./router";
+import { secretOwners } from "./secret-owners";
 import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
 
 import { applicationAiRuntime } from "./service/application-ai-runtime";
@@ -42,6 +43,7 @@ const stopMailRuntimes = (): Promise<void> =>
   ]);
 
 const result = await app.start({
+  secretOwners,
   capabilities: mailCapabilities,
   fetch: router.fetch,
   help: mailHelp,

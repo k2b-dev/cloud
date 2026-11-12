@@ -170,45 +170,78 @@ async function readCredential(name: string) {
 The owner's migration must create `name` as a unique key and `value_encrypted`
 as a text column. Keep decrypted credentials on the server.
 
-> Every application that reads the table must run with exactly the same
-> `APP_SECRET` value as the writer. With a different value, `secrets.decrypt`
-> throws. Start readers only after the owner's setup has created the table.
+> Every application that reads the table needs a ring containing the writer's
+> root. Without it, `secrets.decrypt` throws. Start readers only after the owner's setup has created the table.
 
-## Keep the encryption key stable
+## Declare encrypted data for rotation
 
-Every application instance must use the same stable `APP_SECRET`. Cloud has no
-built-in rotation or previous-key fallback.
+Every application that owns encrypted table columns declares them once at
+startup. Settings are already covered by Core's platform owner; do not declare
+application settings again.
 
-After a key change, `secrets.decrypt` throws for existing encrypted application
-values. Settings reads use `envFallback` or the default when a stored row cannot
-be decrypted or fails validation. Administration shows that row as unreadable.
-Writes over it fail with HTTP 409 `setting_unreadable` unless the caller
-explicitly replaces it. Reset deletes the stored row.
+```ts
+import { createSecretOwner } from "@k2b/cloud/services";
 
-At startup, Cloud leaves a setting row it cannot decrypt unchanged. It logs
-the key, never the value. Environment bootstrap, such as `app.url` from
-`APP_URL`, only fills settings that have no stored row. Reads under the wrong
-key still use `envFallback` or the default.
+await app.start({
+  fetch: router.fetch,
+  secretOwners: [createSecretOwner({
+    id: "integration-credentials",
+    table: "inventory.integration_credentials",
+    primaryKey: ["id"],
+    columns: ["value_encrypted"],
+  })],
+});
+```
 
-Some applications also derive short-lived signatures from `APP_SECRET`, such as
-Grids pagination cursors and Files editor links. Those stop working after a key
-change.
+Use a stable owner ID, the complete primary key in its database order, and all
+ciphertext columns of that row. SQL identifiers are lowercase identifiers, and
+the table is schema-qualified. The table and columns must exist after the app's
+setup. Every retained non-null, nonempty value is checked, including disabled
+records. Null and empty lifecycle sentinels are left alone. All listed columns
+are replaced in one compare-and-swap statement; one unreadable value leaves the
+whole row unchanged. Domain timestamps, revisions and expiry remain unchanged.
+If a table has an update trigger, its owner must ensure ciphertext-only rewrap
+does not count as a domain edit.
 
-Rotating the key requires an offline migration:
+If the application caches these rows, provide
+`invalidate: async (row) => invalidateCredentialCache(row.key[0]!)`.
+`row.key` contains the primary-key values as strings in declaration order.
+Invalidation runs after commit and repeats on already-current rows while
+PREVIOUS is configured, covering a crash between commit and invalidation. It
+must be idempotent. Without an owning cache, omit it. No decrypted values or
+ciphertext are sent through registry metadata or NATS.
 
-1. Stop every application.
-2. Decrypt every stored value with the old key and encrypt it with the new key:
-   all settings rows and every encrypted application column.
-3. Start all applications with the new `APP_SECRET` value.
+For a custom store, `SecretOwner` from `@k2b/cloud/services` supplies the same
+contract: `id`, `scan(after, limit)`, `compareAndSwap(row, values)`, and optional
+`invalidate(row)`. `scan` returns bounded, consistently ordered pages of
+`{ key: string[], values: Record<string, string | null> }`; only ciphertext
+belongs in `values`. CAS must compare every old ciphertext and the complete
+primary key, preserve domain metadata, and return false when a concurrent edit,
+delete or payload clear wins. Resolve CAS only after its database commit.
+The framework decrypts and re-encrypts raw plaintext without parsing domain JSON.
+It scans one page of at most 100 rows per registry maintenance heartbeat, rotates
+between owners, retries failed pages, and drains accepted work during shutdown.
 
-Cloud has no tool for this migration. Losing the old key makes existing
-encrypted values unrecoverable. Back up the key separately from the database
-and restrict access to both.
+Declare `secretOwners: []` when the app owns no durable ciphertext. Omission
+means unknown, so strict rotation status cannot certify that app.
+The framework and Gateway use `createSecretMaintenance` for this lifecycle;
+applications normally use the `app.start()` declaration above. Core supplies
+`platformSecretOwners()` for shared settings, AI credentials, outgoing mail,
+notifications and storage buckets. These platform owners run only under Core.
 
-Cloud refuses to start without `APP_SECRET`.
+## Keep the encryption roots recoverable
 
-See [Runtime configuration](/en/docs/operations/runtime-configuration) for
-container configuration.
+Readers try current, then PREVIOUS or NEXT. Writers use current. The legacy
+ciphertext format and hex/passphrase normalization stay unchanged.
+Follow [Rotate APP_SECRET](/en/docs/operations/app-secret-rotation) before
+changing the root; Core and Gateway consume its environment ring and other
+apps inherit the complete ring through bootstrap unless locally pinned.
+
+When no configured root can read a value, `secrets.decrypt` throws. Settings
+reads use the environment fallback or default, preserve the stored row, and
+report it as unreadable. Writes still require explicit replacement intent.
+Keep recovery roots separately from database backups. An old backup can still
+need a root that the running installation has retired.
 
 ## Coordinate work through Sync
 

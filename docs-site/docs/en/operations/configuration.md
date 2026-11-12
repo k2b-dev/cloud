@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-11-11
+updated: 2026-11-12
 ---
 
 # Configuration reference
@@ -41,7 +41,9 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `WORKFLOW_AI_QUEUE_TIMEOUT_MS` | number | runtime | `60000` | no | Deprecated: bootstraps `ai.workflow_queue_timeout_ms` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Maximum workflow AI queue wait in milliseconds; recovery fails overdue or lost deliveries visibly so an operator can retry the workflow. |
 | `APP_URL` | string | runtime | unset | no | Public Cloud URL used to bootstrap the `app.url` setting; the stored setting wins once written. |
 | `GOTENBERG_URL` | string | runtime | unset | no | Deprecated: env only bootstraps `gotenberg.url`; remove after `cld admin settings status --env` succeeds. Internal Gotenberg base URL used to bootstrap the `gotenberg.url` PDF rendering setting; the stored setting wins once written. |
-| `APP_SECRET` | string | secret | empty | no | Deployment-wide secret for at-rest settings encryption and signed cursors; generate once with `openssl rand -hex 32` and never change it after data has been written. File alternative: `APP_SECRET_FILE`. |
+| `APP_SECRET` | string | secret | empty | no | Deployment-wide secret for at-rest encryption and purpose signing; generate with `openssl rand -hex 32` and follow the APP_SECRET rotation procedure before changing it. File alternative: `APP_SECRET_FILE`. |
+| `APP_SECRET_NEXT` | string | secret | unset | no | Optional 64-hex-character next APP_SECRET, distributed before cutover; mutually exclusive with APP_SECRET_PREVIOUS and distinct from APP_SECRET. File alternative: `APP_SECRET_NEXT_FILE`. |
+| `APP_SECRET_PREVIOUS` | string | secret | unset | no | Optional previous APP_SECRET retained for reads and automatic data rewrap; remove only after strict secrets status and token expiry, following the rotation guide. File alternative: `APP_SECRET_PREVIOUS_FILE`. |
 | `ADMIN_LOGIN_TOKEN` | string | secret | empty | no | Core only: temporary first-administrator or recovery login token; remove it after normal administrator sign-in works. File alternative: `ADMIN_LOGIN_TOKEN_FILE`. |
 | `GATEWAY_TRUSTED_PROXIES` | list | runtime | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` | no | Deprecated: bootstraps `gateway.trusted_proxies` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated IP addresses or CIDR ranges of the reverse proxies allowed to name the client in `X-Forwarded-For`; the default trusts loopback and private networks, which covers Traefik on a Docker network. Set the proxy's exact address or subnet when clients on private networks reach the gateway directly or through a proxy that appends to their `X-Forwarded-For`. Invalid bootstrap input with no stored row and invalid stored proxy lists stop gateway startup. |
 | `OUTGOING_MAIL_ALLOWED_TARGETS` | list | runtime | empty list | no | Deprecated: bootstraps `outgoing_mail.allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for outgoing mail SMTP and bounce IMAP connections; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` are ignored with a bootstrap warning. |

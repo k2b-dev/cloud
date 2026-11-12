@@ -9,6 +9,7 @@ import { router } from "./router";
 import { gatewayHealthWidgetHandler } from "./widgets";
 
 export default await app.start({
+  secretOwners: [],
   fetch: router.fetch,
   capabilities: gatewayOpsCapabilities,
   help: gatewayOpsHelp,

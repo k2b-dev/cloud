@@ -4,7 +4,12 @@ import { z } from "zod";
 import { APP_INSTANCE_PREFIX, appInstanceRegistry, readAppRegistrySnapshot } from "../_internal/registry";
 import { startBounded, waitWithin } from "../api/fanout";
 import { env } from "../config/env";
-import { APP_MIGRATION_TRIGGER_PATH, AppBootstrapMetadataSchema, type AppMigrationStatus } from "../contracts/app-migration";
+import {
+  APP_MIGRATION_TRIGGER_PATH,
+  AppBootstrapMetadataSchema,
+  type AppMigrationStatus,
+  SecretRotationMetadataSchema,
+} from "../contracts/app-migration";
 import type { User } from "../contracts/shared";
 import { sql } from "../runtime/clients";
 import { isDevelopmentPublicKey } from "../runtime/development-keys";
@@ -13,7 +18,14 @@ import type { LastRejectedStart } from "./app-keys";
 import { coreEvidenceIssues, readAppMigrationObservation } from "./app-migration-evidence";
 import { signMigrationProbe } from "./identity/invocation-token";
 
-export type MigrationInstance = { appId: string; instanceId: string; hostname: string; bootstrap?: unknown; legacyEvidence?: unknown };
+export type MigrationInstance = {
+  appId: string;
+  instanceId: string;
+  hostname: string;
+  bootstrap?: unknown;
+  secrets?: unknown;
+  legacyEvidence?: unknown;
+};
 /** A missing process or an old producer cannot prove completion. Check every replica. */
 export const evaluateAppMigration = (input: {
   activeKeys: { appId: string; keyId: string }[];
@@ -44,6 +56,7 @@ export const evaluateAppMigration = (input: {
       .map((i) => {
         const parsed = AppBootstrapMetadataSchema.safeParse(i.bootstrap);
         const bootstrap = parsed.success ? parsed.data : null;
+        const secretMetadata = SecretRotationMetadataSchema.safeParse(i.secrets);
         const status =
           !bootstrap || (bootstrap.mode === "core" && !input.activeKeys.some((key) => key.appId === appId && key.keyId === bootstrap.keyId))
             ? "unknown"
@@ -55,6 +68,7 @@ export const evaluateAppMigration = (input: {
           instanceId: i.instanceId,
           hostname: i.hostname,
           bootstrap,
+          secrets: secretMetadata.success ? secretMetadata.data : null,
           status,
           allowed: status === "core" || (status === "env" && allowedEnv),
         };
@@ -150,6 +164,7 @@ export const readAppMigrationStatus = async (input: {
     instanceId: z.string().min(1),
     hostname: z.string(),
     bootstrap: z.unknown().optional(),
+    secrets: z.unknown().optional(),
     legacyEvidence: z.unknown().optional(),
   });
   for (const entry of instances.entries) {

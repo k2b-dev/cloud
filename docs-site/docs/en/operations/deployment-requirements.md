@@ -665,7 +665,8 @@ environment fallback.
 
 | Configuration | Recipient | When required |
 | --- | --- | --- |
-| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Built-in application services | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway also receives Postgres, Valkey, NATS and the same `APP_SECRET` to validate encrypted settings before serving HTTP; it does not receive Core signing credentials. |
+| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Built-in application services | Common application baseline. Every app must use the installation encryption ring for settings and credentials. The gateway also receives Postgres, Valkey, NATS and the same `APP_SECRET` to validate encrypted settings before serving HTTP; it does not receive Core signing credentials. |
+| `APP_SECRET_NEXT`, `APP_SECRET_PREVIOUS` | **Core and Gateway**, plus locally pinned apps | Optional, mutually exclusive overlap roots. Other apps bootstrap the whole ring from Core. Follow [APP_SECRET rotation](/en/docs/operations/app-secret-rotation) before replacing or removing a root. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | **Core only** | Core identity issuance; generate an independent 32-byte key as 64 hex characters. `CLOUD_IDENTITY_NEXT_KEY` / `CLOUD_IDENTITY_PREVIOUS_KEY` are temporary rotation inputs, also Core-only. |
 | `CLOUD_OAUTH_BROKER_SECRET` | **Core and OAuth only** | Deprecated legacy authentication for OAuth without an app key. Generate an independent 32-byte secret as 64 hex characters. Prefer an enrolled `oauth` app key; retain the secret only for the parallel release. |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | OAuth, background broker callers, resource-derived app discovery, and managed Assistant code hosts | Direct private Core origin, not the gateway. Compose supplies it. Code hosts use it for turn-bound capability callbacks and binary streams. |

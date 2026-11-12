@@ -51,8 +51,10 @@ app.public.post("/sign-in", async (c) => {
 `homeHtml`, `sitemapXml` and `invalidLinkHtml` are app-owned renderers.
 [One-time links](/en/docs/identity/one-time-links) explains the link contract,
 its `{ ok, data: { subject, createdAt } }` success result, and session ownership.
-The synchronous `appKey(name)` supplies the signing secret; the app decides
-how a subject may act. A link subject is not a Cloud principal.
+The synchronous `appKey(name)` supplies the current signing key; verify against
+`appKeys(name)` to preserve sessions during secret overlap (see
+[Sign an app session cookie](/en/docs/identity/one-time-links#sign-an-app-session-cookie)).
+The app decides how a subject may act. A link subject is not a Cloud principal.
 
 `app.public` exists on the app definition. Starting an app with public routes
 but without `public: true` fails with a clear declaration error. The flag is

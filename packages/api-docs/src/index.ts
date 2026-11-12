@@ -24,6 +24,7 @@ const router = new Hono<AuthContext>()
 router.get("/app/api-docs/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "minimal" }));
 
 export default await app.start({
+  secretOwners: [],
   fetch: router.fetch,
   help: apiDocsHelp,
 });

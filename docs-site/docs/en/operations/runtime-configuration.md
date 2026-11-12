@@ -50,7 +50,7 @@ Stop those processes before starting updated applications: the first startup
 for the new cache format removes existing `settings:*` entries and records a
 shared completion marker. Later starts skip that scan. Cleanup must succeed
 before continuing; losing the marker safely repeats it.
-Updated processes cache secret-kind settings only in encrypted form. Do not
+Updated processes bind all cached settings to the full secret ring in encrypted envelopes. Do not
 leave older application images running or available for automatic restart.
 Every application makes a settings startup attempt, then retries temporary Valkey
 failures using the remainder of its five-minute NATS and settings recovery
@@ -191,7 +191,7 @@ the process to apply a changed secret.
 
 File alternatives are supported for:
 
-- `APP_SECRET` and `ADMIN_LOGIN_TOKEN`;
+- `APP_SECRET`, `APP_SECRET_NEXT`, `APP_SECRET_PREVIOUS` and `ADMIN_LOGIN_TOKEN`;
 - `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`, `CLOUD_IDENTITY_NEXT_KEY` and
   `CLOUD_IDENTITY_PREVIOUS_KEY`;
 - `CLOUD_APP_KEY`, `CLOUD_OAUTH_BROKER_SECRET` and `CLOUD_APP_CREDENTIAL`;
@@ -289,7 +289,9 @@ environment variables. Applications using the shared HTTP transports supply
 | `NATS_ADMIN_CREDS_FILE` | Deprecated; Gateway Ops imports .creds **contents** into the secret `gateway.nats_admin_access` |
 | `NATS_ADMIN_NKEY_SEED_FILE` | Deprecated; imports user seed **contents** and selects `nkey`; mutually exclusive with `NATS_ADMIN_CREDS_FILE` |
 | `NATS_ADMIN_TLS_CA_FILE` | Deprecated; Gateway Ops imports CA PEM **contents** into `gateway.nats_admin_tls_ca` |
-| `APP_SECRET` | Encrypts settings and credentials |
+| `APP_SECRET` | Current root for encrypted settings, credentials and purpose signatures |
+| `APP_SECRET_NEXT` | Optional next root, 64 hex characters; distribute before cutover |
+| `APP_SECRET_PREVIOUS` | Optional previous root for reads and automatic rewrap; mutually exclusive with NEXT |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | Core-only KEK for private platform signing keys; exactly 64 hexadecimal characters |
 | `CLOUD_IDENTITY_NEXT_KEY` | Temporary next Core KEK, distributed before promotion |
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | Temporary previous Core KEK during a rolling rewrap |
@@ -476,10 +478,12 @@ subject names; it does not restrict access. The workload delivery channel carrie
 only newly issued app-bound workload credentials, never Core identity signing
 keys, key-encryption material, OAuth secrets, or person sessions.
 
-> Keep `APP_SECRET` stable and back it up. Cloud has no built-in key rotation;
-> changing it makes encrypted values unreadable. Settings then fall back to
-> their environment value or default; Cloud keeps the stored rows unchanged. See
-> [Keep the encryption key stable](/en/docs/data/secrets-and-persistent-state#keep-the-encryption-key-stable).
+> Keep encryption roots with the backups that need them. Rotate with
+> [APP_SECRET rotation](/en/docs/operations/app-secret-rotation): distribute NEXT,
+> roll, switch to current/PREVIOUS, roll, wait for strict status and token expiry,
+> then remove PREVIOUS and roll again. Core and Gateway read the environment ring;
+> other apps inherit the complete ring from Core. A locally pinned current uses
+> only its local NEXT/PREVIOUS; local rotation values without current fail startup.
 
 `app.start()` refuses to boot without `APP_SECRET`.
 

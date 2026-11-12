@@ -143,6 +143,7 @@ export const createCoreApiRouter = (options: CoreApiOptions) => {
 
 export { createAdminAppDomainRoutes } from "./admin-app-domains";
 export { createAdminAppKeyRoutes } from "./admin-app-keys";
+export { createAdminSecretsRoutes } from "./admin-secrets";
 export { createAppAccessRoutes } from "./app-access";
 /** Core-owned internal startup protocol; applications use @k2b/cloud/start. */
 export { createAppBootstrapRoutes } from "./app-bootstrap";

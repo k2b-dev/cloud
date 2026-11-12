@@ -18,6 +18,7 @@ router.get("/faq/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/admin/faq/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
+  secretOwners: [],
   fetch: router.fetch,
   help: faqHelp,
   openapi: apiRoutes,

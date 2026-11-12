@@ -93,7 +93,7 @@ The [network and AI migration](/en/docs/operations/deprecations-and-migrations)
 uses bootstrap only, without read-time environment fallbacks.
 Declare both when the environment value should
 apply in that case, as `app.url` does.
-See [Keep the encryption key stable](/en/docs/data/secrets-and-persistent-state#keep-the-encryption-key-stable)
+See [Rotate APP_SECRET](/en/docs/operations/app-secret-rotation)
 before changing `APP_SECRET`.
 
 ## Read and write values

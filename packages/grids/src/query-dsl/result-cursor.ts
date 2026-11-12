@@ -67,14 +67,20 @@ export const encodeDslResultCursor = (cursor: DslResultCursor, signingKey: strin
   return offsetToken;
 };
 
-export const decodeDslResultCursor = (token: string | null | undefined, signingKey: string): DslResultCursor | null => {
+export const decodeDslResultCursor = (token: string | null | undefined, signingKey: string | readonly string[]): DslResultCursor | null => {
   if (!token || !signingKey || token.length > MAX_GQL_RESULT_CURSOR_LENGTH) return null;
   try {
     const [payload, signature, extra] = token.split(".");
     if (!payload || !signature || extra !== undefined) return null;
-    const expected = Buffer.from(signatureFor(payload, signingKey), "utf8");
     const received = Buffer.from(signature, "utf8");
-    if (expected.length !== received.length || !timingSafeEqual(expected, received)) return null;
+    const keys = typeof signingKey === "string" ? [signingKey] : signingKey;
+    if (
+      !keys.some((key) => {
+        const expected = Buffer.from(signatureFor(payload, key), "utf8");
+        return expected.length === received.length && timingSafeEqual(expected, received);
+      })
+    )
+      return null;
 
     const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Partial<SerializedDslResultCursor>;
     if (

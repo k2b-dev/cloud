@@ -10,6 +10,7 @@ import { bindAppEvents } from "../events/app-events";
 import { startLiveOutbox } from "../events/live";
 import { appCatalogExists, usesLegacyCatalogRenewal } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
+import { createSecretMaintenance, type SecretOwner } from "../services/secret-owners";
 import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
@@ -375,6 +376,8 @@ export type StartOptions = {
    */
   openapi?: Hono<any>;
   lifecycle?: AppLifecycle;
+  /** Declare app-owned durable ciphertext; [] means none, omission is unknown. */
+  secretOwners?: readonly SecretOwner[];
   capabilities?: CapabilityDefinitions;
   /**
    * Handlers for declared dashboard widgets, keyed by widget id. The
@@ -871,12 +874,15 @@ export const defineApp = <
       const registryError = validateAppRegistryEntry(entry);
       if (registryError) throw new Error(`Invalid app registry entry: ${registryError}`);
 
+      const secretMaintenance = createSecretMaintenance(startOpts.secretOwners, startedAt);
+      cleanup.push(() => secretMaintenance.stop());
       // Both shared entries follow one process membership; creating it touches no Sync resources.
       const membership = createRegistryMembership(meta.id, {
         registry: appInstanceRegistry,
         lock: appMembershipLock,
         startedAt: entry.startedAt,
         bootstrap: connections().bootstrap,
+        secrets: secretMaintenance.metadata,
       });
       const publishHelp = createCatalogPublication();
       const publishSkills = createCatalogPublication();
@@ -885,6 +891,11 @@ export const defineApp = <
         registry: appRegistry(),
         membership,
         beforeWrite: async (force = false) => {
+          // Reuse registration maintenance; never hold its membership lease for
+          // database work. Failure remains visible as an unknown owner check.
+          void secretMaintenance
+            .tick()
+            .catch(() => log.error("Secret owner maintenance failed; retrying on the next heartbeat", { appId: meta.id }));
           const current = force ? null : await getApp(meta.id);
           if (compiledHelp)
             await publishHelp(compiledHelp.corpus.manifestHash, () => registerHelp(compiledHelp.corpus), {

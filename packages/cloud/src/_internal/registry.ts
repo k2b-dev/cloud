@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Ephemeral, EphemeralConfig, EphemeralEntry, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
+import type { SecretRotationMetadata } from "../contracts/app-migration";
 import { appStatusIssues } from "../contracts/app-status";
 import { calendarSourceIssues } from "../contracts/calendar-source";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
@@ -70,6 +71,7 @@ export type AppInstanceRecord = {
   bootstrap?: PlatformBootstrapMetadata;
   /** Core can durably observe both accepted legacy identity paths. */
   legacyEvidence?: 1;
+  secrets?: SecretRotationMetadata;
 };
 
 // The id and owner are a cross-version contract: all replicas must use the same lock.

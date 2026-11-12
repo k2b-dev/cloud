@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { envSource } from "../config/define-env";
 import { env } from "../config/env";
+import { validateAppSecretRing } from "./app-secret";
 import type { ConnectionSource, PlatformConnections, PlatformConnectionValues } from "./connections";
 
 type EnvKey = keyof typeof env.$specs;
@@ -56,7 +57,20 @@ export const resolveConnections = ({ appId, core }: { appId: string; core?: Plat
   const creds = choose("NATS_CREDS_FILE", () => contents("NATS_CREDS_FILE"), core?.nats.creds);
   const ca = choose("NATS_TLS_CA_FILE", () => contents("NATS_TLS_CA_FILE"), core?.nats.ca);
   const secret = choose("APP_SECRET", () => env.APP_SECRET, core?.appSecret.current) ?? "";
-  const rotation = core && !explicitlySet("APP_SECRET") ? core.appSecret : undefined;
+  const localCurrent = explicitlySet("APP_SECRET");
+  const localPrevious = explicitlySet("APP_SECRET_PREVIOUS");
+  const localNext = explicitlySet("APP_SECRET_NEXT");
+  if (!localCurrent && (localPrevious || localNext))
+    throw new Error("APP_SECRET_NEXT and APP_SECRET_PREVIOUS require an explicit local APP_SECRET");
+  const ring =
+    core && !localCurrent
+      ? { ...core.appSecret }
+      : {
+          current: secret,
+          ...(localPrevious ? { previous: env.APP_SECRET_PREVIOUS } : {}),
+          ...(localNext ? { next: env.APP_SECRET_NEXT } : {}),
+        };
+  validateAppSecretRing(ring);
   if (core) {
     if (servers.length === 0) throw new Error("NATS_SERVERS is required for platform start");
     if (!namespace.trim()) throw new Error("SYNC_NAMESPACE is required for platform start");
@@ -69,7 +83,7 @@ export const resolveConnections = ({ appId, core }: { appId: string; core?: Plat
     database: { url: database },
     valkey: { url: valkey },
     nats: { servers: [...servers], namespace, replicas, ignoreClusterUpdates, creds, ca },
-    appSecret: { current: secret, previous: rotation?.previous, next: rotation?.next },
+    appSecret: ring,
     sources: {
       database: { url: source("DATABASE_URL") },
       valkey: { url: source("REDIS_URL") },
@@ -83,8 +97,8 @@ export const resolveConnections = ({ appId, core }: { appId: string; core?: Plat
       },
       appSecret: {
         current: source("APP_SECRET"),
-        ...(rotation?.previous ? { previous: "core" as const } : {}),
-        ...(rotation?.next ? { next: "core" as const } : {}),
+        ...(ring.previous ? { previous: source("APP_SECRET") } : {}),
+        ...(ring.next ? { next: source("APP_SECRET") } : {}),
       },
     },
   };

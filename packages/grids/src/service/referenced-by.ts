@@ -93,15 +93,21 @@ export const encodeReferencedByCursor = (scope: ReferencedByCursorScope, boundar
 export const decodeReferencedByCursor = (
   value: string | null | undefined,
   scope: ReferencedByCursorScope,
-  key = signingKey(),
+  key: string | readonly string[] = Object.values(connections().appSecret).filter((root): root is string => root !== undefined),
 ): CursorBoundary | null => {
   if (!value || value.length > MAX_CURSOR_LENGTH) return null;
   try {
     const [payload, signature, extra] = value.split(".");
     if (!payload || !signature || extra !== undefined) return null;
-    const expected = Buffer.from(cursorSignature(payload, key), "utf8");
     const received = Buffer.from(signature, "utf8");
-    if (expected.length !== received.length || !timingSafeEqual(expected, received)) return null;
+    const keys = typeof key === "string" ? [key] : key;
+    if (
+      !keys.some((root) => {
+        const expected = Buffer.from(cursorSignature(payload, root), "utf8");
+        return expected.length === received.length && timingSafeEqual(expected, received);
+      })
+    )
+      return null;
     const parsed = StoredCursorSchema.safeParse(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")));
     if (!parsed.success || parsed.data.f !== cursorFingerprint(scope)) return null;
     return { fieldId: parsed.data.field, recordId: parsed.data.record };
@@ -192,7 +198,7 @@ export const listReferencedBy = async (params: {
     targetRecordId: params.targetRecordId,
     relationFieldId,
   };
-  const cursor = params.cursor ? decodeReferencedByCursor(params.cursor, scope, params.cursorSigningKey ?? signingKey()) : null;
+  const cursor = params.cursor ? decodeReferencedByCursor(params.cursor, scope, params.cursorSigningKey) : null;
   if (params.cursor && !cursor) return fail(err.badInput(messages.invalidReferencedByCursor));
   if (cursor) {
     const [boundary] = await client<Array<{ valid: boolean }>>`

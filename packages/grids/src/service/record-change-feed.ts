@@ -95,15 +95,21 @@ export const encodeRecordChangeFeedCursor = (
 export const decodeRecordChangeFeedCursor = (
   value: string | null | undefined,
   scope: RecordChangeFeedScope,
-  key = signingKey(),
+  key: string | readonly string[] = Object.values(connections().appSecret).filter((root): root is string => root !== undefined),
 ): RecordChangeFeedCursor | "expired" | null => {
   if (!value || value.length > MAX_CURSOR_LENGTH) return null;
   try {
     const [payload, suppliedSignature, extra] = value.split(".");
     if (!payload || !suppliedSignature || extra !== undefined) return null;
-    const expected = Buffer.from(signature(payload, key), "utf8");
     const supplied = Buffer.from(suppliedSignature, "utf8");
-    if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
+    const keys = typeof key === "string" ? [key] : key;
+    if (
+      !keys.some((root) => {
+        const expected = Buffer.from(signature(payload, root), "utf8");
+        return expected.length === supplied.length && timingSafeEqual(expected, supplied);
+      })
+    )
+      return null;
     const parsed = CursorSchema.safeParse(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")));
     if (!parsed.success || parsed.data.f !== fingerprint(scope)) return null;
     if (parsed.data.v === 1) return "expired";
@@ -126,7 +132,7 @@ export const listRecordChanges = async (params: {
   const messages = getGridsCrudMessages(params.locale);
   const limit = Math.min(Math.max(params.limit ?? DEFAULT_LIMIT, 1), RECORD_CHANGE_FEED_MAX_LIMIT);
   const key = params.cursorSigningKey ?? signingKey();
-  const boundary = params.cursor ? decodeRecordChangeFeedCursor(params.cursor, params.scope, key) : null;
+  const boundary = params.cursor ? decodeRecordChangeFeedCursor(params.cursor, params.scope, params.cursorSigningKey) : null;
   if (params.cursor && !boundary) return fail(err.badInput(messages.invalidChangeFeedCursor));
 
   const cutoff = new Date((params.now ?? new Date()).getTime() - RECORD_CHANGE_FEED_RETENTION_DAYS * 24 * 60 * 60 * 1_000);

@@ -3,6 +3,29 @@ import { z } from "zod";
 export const APP_MIGRATION_RECEIPT_PATH = "/api/_internal/identity/v1/migration-probe";
 export const APP_MIGRATION_TRIGGER_PATH = "/api/_internal/app-migration/v1";
 
+const rootId = z.string().regex(/^[A-Za-z0-9_-]{16}$/);
+export const SecretOwnerCheckSchema = z.object({
+  id: z.string().min(1),
+  rows: z.number().int().nonnegative(),
+  previousOnly: z.number().int().nonnegative(),
+  unreadable: z.number().int().nonnegative(),
+  checkedAt: z.iso.datetime().nullable(),
+});
+export type SecretOwnerCheck = z.infer<typeof SecretOwnerCheckSchema>;
+export const SecretRotationMetadataSchema = z
+  .object({
+    current: rootId,
+    previous: rootId.nullable(),
+    next: rootId.nullable(),
+    changedAt: z.iso.datetime(),
+    /** Missing means unknown; [] explicitly declares no durable ciphertext. */
+    owners: z.array(SecretOwnerCheckSchema).optional(),
+  })
+  .refine((ring) => !(ring.previous && ring.next) && ring.previous !== ring.current && ring.next !== ring.current, {
+    message: "Rotation metadata requires distinct roots and at most one overlap root",
+  });
+export type SecretRotationMetadata = z.infer<typeof SecretRotationMetadataSchema>;
+
 const source = z.enum(["env", "core"]);
 export const AppBootstrapMetadataSchema = z.object({
   keyId: z.uuid().optional(),
@@ -29,6 +52,7 @@ const instance = z.object({
   bootstrap: AppBootstrapMetadataSchema.nullable(),
   status: z.enum(["core", "env", "unknown"]),
   allowed: z.boolean(),
+  secrets: SecretRotationMetadataSchema.nullable().optional(),
 });
 export const AppMigrationObservationSchema = z.object({
   startedAt: z.iso.datetime().nullable(),

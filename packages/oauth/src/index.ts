@@ -33,6 +33,7 @@ router.get("/oauth/device/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/oauth/error/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "minimal" }));
 
 export default await app.start({
+  secretOwners: [],
   fetch: router.fetch,
   openapi: apiRoutes,
   lifecycle: {

@@ -368,6 +368,19 @@
       "expectations": [
         "Uses installLiveOutbox(db) from @k2b/cloud/events/testing before app migrations, refuses non-_test databases, and removes copied outbox DDL."
       ]
+    },
+    {
+      "id": 32,
+      "prompt": "Add encrypted credentials to a standalone Cloud app and prepare it for an APP_SECRET rotation without changing stored ciphertext formats.",
+      "expected_output": "Reads the persistent-state and APP_SECRET rotation guides, declares app-owned ciphertext through createSecretOwner and app.start secretOwners, keeps settings under Core, and uses ring readers with current-root writers and idempotent cache invalidation.",
+      "files": [],
+      "expectations": [
+        "Reads the canonical persistent-state and APP_SECRET rotation guides before changing encryption or owner declarations.",
+        "Uses createSecretOwner from @k2b/cloud/services with the existing schema-qualified table, primary key and ciphertext columns; app.start declares secretOwners or [] when none exist.",
+        "Leaves settings maintenance to Core, preserves domain timestamps and revisions, and supplies idempotent post-commit invalidation for app-owned caches.",
+        "Uses current-root writers and complete-ring readers; appKey signs while appKeys verifies purpose signatures during overlap.",
+        "Keeps an explicitly configured local APP_SECRET ring separate from Core and waits for strict status plus token lifetimes before removing the old root."
+      ]
     }
   ]
 }
