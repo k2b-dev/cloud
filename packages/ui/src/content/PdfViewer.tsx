@@ -48,7 +48,7 @@ export type PdfViewerProps = {
   page?: number;
   /** The first visible page is drawn; `pages` counts the document's pages, such as for a host's "4 pages". */
   onReady?: (document: { pages: number }) => void;
-  /** pdf.js could not open or draw the document; the viewer shows its error state. */
+  /** The request failed, or pdf.js could not open or draw the document; the viewer shows its error state. */
   onError?: (error: unknown) => void;
   /** The page in the middle of the view changed (zero-based), for a host that shows "Page 2 / 4" itself. */
   onPage?: (index: number) => void;
@@ -141,6 +141,8 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
     } catch (cause) {
       if (disposed || current !== generation) return;
       setError(cause instanceof Error ? cause.message : pdfMessages().pdfPreview);
+      // A host that shows its own states, such as the Lightbox, learns of a failed request as of an undrawable file.
+      props.onError?.(cause);
     } finally {
       if (!disposed && current === generation) setLoading(false);
       if (focused && document.activeElement === document.body) root?.focus();

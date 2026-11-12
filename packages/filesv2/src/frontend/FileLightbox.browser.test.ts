@@ -240,14 +240,18 @@ describe("Files in the Lightbox", () => {
     }
   });
 
-  test("a video streams from its lease by range requests", async () => {
+  test("a video streams from its lease by range requests and keeps the arrow keys for seeking", async () => {
     const session = await start(desktop);
     const { tab } = session;
     try {
       await show(tab, "Clip.webm");
-      await tab.locator(".k2b-lightbox__video").waitFor();
-      await tab.waitForFunction(() => (document.querySelector<HTMLVideoElement>(".k2b-lightbox__video")?.readyState ?? 0) >= 1);
+      await tab.locator(".k2b-lightbox__video video").waitFor();
+      await tab.waitForFunction(() => (document.querySelector<HTMLVideoElement>(".k2b-lightbox__video video")?.readyState ?? 0) >= 1);
       expect(session.media.some((request) => request.range !== null)).toBe(true);
+      // The player has the focus at once; → seeks in the video instead of stepping to the next file.
+      await tab.waitForFunction(() => document.activeElement?.tagName === "VIDEO");
+      await tab.keyboard.press("ArrowRight");
+      expect(await nameShown(tab)).toBe("Clip.webm");
     } finally {
       await tab.context().close();
     }

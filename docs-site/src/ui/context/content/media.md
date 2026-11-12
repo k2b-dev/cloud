@@ -44,6 +44,8 @@ Pass `items`, the shown `index`, `onIndexChange`, and `onClose`; the caller owns
 - `preview`: a preview PDF, such as one converted from an Office file; a rejection shows **Preview not possible** with Open and Download;
 - `file`: path, media type, and size, which choose the renderer as in `FileView`; it defaults to the name.
 
+Each loader receives an `AbortSignal` that aborts when the person moves to another file, closes the Lightbox, or tries again; pass it to `fetch` so nothing keeps loading. A video plays in `VideoPlayer`, which asks a `src` function for a fresh address when a signed one runs out and goes on at the same time; while the video has focus, the arrow keys seek in it instead of stepping to the next file.
+
 Anything else shows its icon, **There is no preview for this file**, and Download. The Lightbox loads the file itself: a placeholder appears after a short wait, a failure offers **Try again**, and nothing around the file moves.
 
 The head holds the name pill on the left, with `meta` such as "PDF · 412 KB", and the action pill on the right: the blue **Open** pill when `open` names where the file opens, the caller's own control from `actions={(item) => …}` such as **Select** in a file chooser, the item's `actions` (a short `label`, a Tabler `icon`, and `onClick`; Cloud apps use one for **Save to Files**), Download from `downloadUrl` (or `onDownload` for a file the app hands out itself, such as through a short-lived lease), and Close. Markdown lifts its first heading into the name pill.
@@ -159,8 +161,8 @@ Without a height, the viewport takes the height of its content. Give it a height
 
 ```ts
 type LightboxItem = {
-  name: string; meta?: string; file?: FileViewFile; src?: string | (() => Promise<string>);
-  load?: () => Promise<FileViewContent>; preview?: () => Promise<Blob>; thumbnail?: string;
+  name: string; meta?: string; file?: FileViewFile; src?: string | ((signal: AbortSignal) => Promise<string>);
+  load?: (signal: AbortSignal) => Promise<FileViewContent>; preview?: (signal: AbortSignal) => Promise<Blob>; thumbnail?: string;
   downloadUrl?: string; onDownload?: () => void; open?: { label?: string; onOpen: () => void };
   actions?: readonly LightboxAction[];
 };
@@ -185,7 +187,8 @@ type PdfViewerProps = {
   title: string; data?: Blob | ArrayBuffer | string; request?: PdfViewerRequest; autoLoad?: boolean;
   disabled?: boolean; emptyText?: string; loadLabel?: string; open?: boolean | string;
   zoom?: boolean; fit?: "width" | "page"; page?: number;
-  onReady?: () => void; onError?: (error: unknown) => void; class?: string;
+  scale?: number; onReady?: (document: { pages: number }) => void; onPage?: (index: number) => void;
+  onError?: (error: unknown) => void; class?: string;
 };
 
 type PdfThumbnailsProps = {

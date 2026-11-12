@@ -48,6 +48,8 @@ const result = await Bun.build({
       // A signed address resolved when shown: the first one has expired, "Try again" asks for a fresh one.
       { name: "Kaputt.png", meta: "PNG · 1 KB", downloadUrl: "/missing.png",
         src: () => later(window.signed++ === 0 ? "/missing.png" : picture("#93c5fd", 800, 600)) },
+      // An address the server refuses: the Lightbox shows its own failure, not an endless placeholder.
+      { name: "Gesperrt.pdf", meta: "PDF · 20 KB", src: "/forbidden.pdf" },
     ];
     const [index, setIndex] = createSignal(Number(query.get("index") ?? 0));
     const [open, setOpen] = createSignal(false);
@@ -96,6 +98,7 @@ const load = async ({ search = "", width = 1440, height = 900, dark = false, pho
     const path = new URL(route.request().url()).pathname.slice(1);
     if (path === "doc.pdf") return route.fulfill({ body: Buffer.from(pdf), contentType: "application/pdf" });
     if (path === "missing.png") return route.fulfill({ status: 404, body: "" });
+    if (path === "forbidden.pdf") return route.fulfill({ status: 403, json: { message: "You may not read this file." } });
     const asset = assets.get(path);
     if (asset) return route.fulfill({ body: Buffer.from(asset), contentType: path.endsWith(".js") ? "text/javascript" : undefined });
     if (path.endsWith(".woff2") || path.endsWith(".woff")) return route.fulfill({ path: resolve(ui, "dist", path) });
@@ -133,7 +136,7 @@ describe("@k2b/ui Lightbox", () => {
     try {
       await page.locator(".k2b-lightbox__image").waitFor();
       expect(await name(page)).toBe("Kommode-vorher.jpg");
-      expect(await page.locator(".k2b-lightbox").textContent()).not.toMatch(/\d+ \/ 6/);
+      expect(await page.locator(".k2b-lightbox").textContent()).not.toMatch(/\d+ \/ 7/);
       expect(await edge(page, "previous")).toBe("hidden");
       expect(await edge(page, "next")).toBe("visible");
       expect(await page.locator(".k2b-lightbox__percent").textContent()).toBe("100 %");
@@ -211,11 +214,14 @@ describe("@k2b/ui Lightbox", () => {
       await page.keyboard.press("ArrowRight");
       await page.getByText("The preview could not be loaded").waitFor();
       expect(await page.getByRole("button", { name: "Try again" }).count()).toBe(1);
-      expect(await edge(page, "next")).toBe("hidden");
       await shot(page, "lightbox-fehler-light-1440.png");
       await page.getByRole("button", { name: "Try again" }).click();
       await page.locator(".k2b-lightbox__image").waitFor();
       expect(await page.locator(".k2b-lightbox__content").getAttribute("data-state")).toBe("ready");
+      // A PDF the server refuses fails the same way; the last file hides the next button.
+      await page.keyboard.press("ArrowRight");
+      await page.getByText("The preview could not be loaded").waitFor();
+      expect(await edge(page, "next")).toBe("hidden");
     } finally {
       await page.context().close();
     }

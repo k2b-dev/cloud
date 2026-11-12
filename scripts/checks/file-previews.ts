@@ -22,10 +22,16 @@ export const ALLOWED: Readonly<Record<string, string>> = {
     "The video is the live camera of the scanner, not a file; its dialogs ask about scanned codes.",
 };
 
+/*
+ * The check reads one module at a time: a viewer counts when the same module also opens a dialog. That covers how apps
+ * built their own previews, and errs on the strict side: a page that shows a PDF in place and also asks a question in
+ * a dialog is reported too; such a module goes on ALLOWED with its reason. Pictures (`<img>`) are left to review, as a
+ * pattern cannot tell an avatar or an icon in a dialog from a picture shown large.
+ */
 /** Something that opens a dialog or modal in this module. */
 const opensDialog = /dialogCore\.open\s*\(|prompts\.dialog\s*[<(]|<PanelDialog[\s>]|<Dialog[\s>.]|<Modal[\s>]|\.showModal\s*\(/;
-/** A file shown large: the PDF viewer, the file renderers, or a video. */
-const preview = /<(?:PdfViewer|FileView|VideoPlayer|video)[\s>/]/g;
+/** A file shown large: the PDF viewer, the file renderers, a video, or an audio file. */
+const preview = /<(?:PdfViewer|FileView|VideoPlayer|video|audio)[\s>/]/g;
 
 export const rule: Rule = {
   name: "file-previews",

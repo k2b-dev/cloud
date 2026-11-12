@@ -124,7 +124,8 @@ describe("Spaces task attachments", () => {
     await settle();
     const dialog = dom.document.querySelector<HTMLDialogElement>("dialog.k2b-lightbox");
     expect(dialog?.getAttribute("aria-label")).toBe("Reel for approval.mov");
-    expect(dialog?.querySelector<HTMLVideoElement>("video.k2b-lightbox__video")?.getAttribute("src")).toBe(content);
+    // The shared player starts at the first frame, so the address carries its time fragment.
+    expect(dialog?.querySelector<HTMLVideoElement>(".k2b-lightbox__video video")?.getAttribute("src")).toBe(`${content}#t=0.001`);
     expect(dialog?.querySelector<HTMLAnchorElement>('a[aria-label="Download"]')?.getAttribute("href")).toBe(`${content}?download=true`);
     // Videos come first, as in the list; the next file is the image.
     dialog?.querySelector<HTMLButtonElement>('button[aria-label="Next file"]')?.click();

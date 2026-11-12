@@ -39,9 +39,10 @@ export function fileLightboxItem(
 ): LightboxItem {
   const kind = previewKind(entry);
   const office = previewSource(entry) === "office";
-  const lease = () => contentLease(baseId, entry.path, new AbortController().signal, t.failed).then((granted) => granted.url);
-  const readText = async () => {
-    const blob = await readPreview(baseId, entry, new AbortController().signal, t.failed);
+  // Every read follows the Lightbox's signal, so moving on or closing stops it; Copy text reads on its own.
+  const lease = (signal: AbortSignal) => contentLease(baseId, entry.path, signal, t.failed).then((granted) => granted.url);
+  const readText = async (signal: AbortSignal) => {
+    const blob = await readPreview(baseId, entry, signal, t.failed);
     return blob.text();
   };
   const commands: LightboxAction[] = [];
@@ -50,7 +51,7 @@ export function fileLightboxItem(
       label: t.copyText,
       icon: "ti ti-copy",
       onClick: () =>
-        void readText()
+        void readText(new AbortController().signal)
           .then((content) => navigator.clipboard.writeText(content))
           .then(
             () => toast.success(t.copied),
@@ -73,11 +74,15 @@ export function fileLightboxItem(
     src: kind === "pdf" ? inlinePdfHref(baseId, entry.path) : kind === "image" || kind === "video" || kind === "audio" ? lease : undefined,
     load:
       kind && TEXT_KINDS.has(kind)
-        ? async () => ({ encoding: "utf8" as const, content: await readText(), mediaType: previewFile(entry).mediaType ?? "text/plain" })
+        ? async (signal: AbortSignal) => ({
+            encoding: "utf8" as const,
+            content: await readText(signal),
+            mediaType: previewFile(entry).mediaType ?? "text/plain",
+          })
         : undefined,
     preview: office
-      ? async () => {
-          const result = await loadPreview(previewUrl(baseId, entry, "pdf"), new AbortController().signal);
+      ? async (signal: AbortSignal) => {
+          const result = await loadPreview(previewUrl(baseId, entry, "pdf"), signal);
           if (result.state !== "ready") throw new Error(t.failed);
           return result.blob;
         }

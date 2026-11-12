@@ -15,6 +15,7 @@ test("finds files shown large in an application's own dialog, not in the Lightbo
         "  <PanelDialog>",
         '    <PdfViewer data={blob} title="Invoice" />',
         '    <video src="/clip.mp4" controls />',
+        '    <audio src="/memo.m4a" controls />',
         "  </PanelDialog>",
         "));",
       ].join("\n"),
@@ -36,6 +37,7 @@ test("finds files shown large in an application's own dialog, not in the Lightbo
     expect(findings.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line}`).sort()).toEqual([
       "packages/demo/src/AttachmentDialog.tsx:3",
       "packages/demo/src/AttachmentDialog.tsx:4",
+      "packages/demo/src/AttachmentDialog.tsx:5",
     ]);
   } finally {
     await rm(root, { recursive: true, force: true });

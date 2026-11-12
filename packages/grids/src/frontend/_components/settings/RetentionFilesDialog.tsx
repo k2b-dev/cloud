@@ -49,14 +49,16 @@ const retentionFileItem = (baseId: string, file: RetentionFile, locale: string, 
     src: read ? previewHref : undefined,
     load:
       kind && !read
-        ? async (): Promise<FileViewContent> => {
-            const response = await fetch(previewHref);
+        ? // No return type here: Babel's TypeScript parser cannot read one on an arrow inside a conditional.
+          async (signal: AbortSignal) => {
+            const response = await fetch(previewHref, { signal });
             if (!response.ok) throw new Error(await errorMessage(response, failed));
-            return {
+            const content: FileViewContent = {
               encoding: "utf8",
               content: await response.text(),
               mediaType: response.headers.get("content-type")?.split(";", 1)[0] || file.mimeType,
             };
+            return content;
           }
         : undefined,
     thumbnail: kind === "image" ? previewHref : undefined,

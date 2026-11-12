@@ -10,6 +10,7 @@ import { type FileViewFile, getFileViewPreviewKind } from "./file-view-preview";
 import { useLightboxMessages } from "./lightbox-messages";
 import PdfViewer from "./PdfViewer";
 import { ThumbnailStrip } from "./ThumbnailStrip";
+import { VideoPlayer } from "./VideoPlayer";
 
 /** One more command for the shown file, in the action pill before Download: a short label, its icon, and what it does. */
 export type LightboxAction = { label: string; icon: string; onClick: () => void };
@@ -28,13 +29,14 @@ export type LightboxItem = {
   file?: FileViewFile;
   /**
    * An address on this site the browser reads directly: an image, video, audio file, or PDF. A function resolves it
-   * when the file is shown, such as a short-lived signed address; "Try again" asks it for a fresh one.
+   * when the file is shown, such as a short-lived signed address; "Try again" and a video that runs past its address
+   * ask it for a fresh one. Every loader receives a signal that aborts when the person moves on or closes.
    */
-  src?: string | (() => Promise<string>);
+  src?: string | ((signal: AbortSignal) => Promise<string>);
   /** Loads text, Markdown, code, or a PDF's bytes. */
-  load?: () => Promise<FileViewContent>;
+  load?: (signal: AbortSignal) => Promise<FileViewContent>;
   /** Loads a preview PDF, such as one converted from an Office file. A rejection shows "Preview not possible". */
-  preview?: () => Promise<Blob>;
+  preview?: (signal: AbortSignal) => Promise<Blob>;
   /** A small image for the film strip; without it the strip shows the file's type icon. */
   thumbnail?: string;
   /** Adds Download to the action pill. */
@@ -76,6 +78,8 @@ const zoomable = (kind: Kind) => kind === "image" || kind === "pdf" || kind === 
 const interactive = (target: EventTarget | null) =>
   target instanceof Element &&
   Boolean(target.closest("button, a[href], input, textarea, select, video, audio, [contenteditable=''], [contenteditable=true]"));
+/** A focused video or audio file keeps its keys: the arrows seek there instead of stepping to the next file. */
+const media = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("video, audio"));
 const bytes = (content: FileViewContent) =>
   content.encoding === "base64"
     ? new Blob([Uint8Array.from(atob(content.content), (character) => character.charCodeAt(0))], { type: "application/pdf" })
@@ -153,9 +157,11 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
           close();
           return true;
         case "ArrowLeft":
+          if (media(event.target)) return false;
           step(-1);
           return true;
         case "ArrowRight":
+          if (media(event.target)) return false;
           step(1);
           return true;
         case "+":
@@ -407,22 +413,48 @@ function LightboxStage(props: {
     </Show>
   );
 
+  // Each attempt owns a signal: moving on, closing, or trying again stops what the previous one still loads.
+  let loading: AbortController | undefined;
+  onCleanup(() => loading?.abort());
+  const signal = () => loading?.signal ?? new AbortController().signal;
+  const settle =
+    <T,>(then: (value: T) => void) =>
+    (value: T) => {
+      if (!signal().aborted) then(value);
+    };
+  const fail = () => {
+    if (!signal().aborted) failed();
+  };
+  const resolveSource = (): Promise<string | null> => {
+    const src = props.item.src;
+    return typeof src === "function" ? src(signal()) : Promise.resolve(src ?? null);
+  };
+
   // Addresses, PDFs from bytes and preview PDFs load here; the viewers then draw them.
   createEffect(
     on(attempt, () => {
+      loading?.abort();
+      loading = new AbortController();
       setState(props.kind === "none" ? "ready" : "loading");
       setDocument(null);
       setSource(null);
-      const src = props.item.src;
-      const address = typeof src === "function" ? src() : Promise.resolve(src ?? null);
-      if (props.kind === "office" && props.item.preview) props.item.preview().then(setDocument, failed);
-      else if (props.kind === "pdf" && !src) props.item.load?.().then((content) => setDocument(bytes(content)), failed);
-      else if (src)
-        address.then((value) => {
-          if (!value) return failed();
-          setSource(value);
-          if (props.kind === "pdf") setDocument(value);
-        }, failed);
+      if (props.kind === "office" && props.item.preview) props.item.preview(signal()).then(settle(setDocument), fail);
+      else if (props.kind === "pdf" && !props.item.src)
+        props.item.load?.(signal()).then(
+          settle((content: FileViewContent) => setDocument(bytes(content))),
+          fail,
+        );
+      else if (props.item.src)
+        resolveSource().then(
+          settle((value: string | null) => {
+            if (!value) return failed();
+            setSource(value);
+            if (props.kind === "pdf") setDocument(value);
+            // The video player shows its own loading; the frame is ready as soon as it has an address.
+            if (props.kind === "video") ready();
+          }),
+          fail,
+        );
     }),
   );
 
@@ -483,7 +515,18 @@ function LightboxStage(props: {
           </Match>
           <Match when={props.kind === "video" && source()}>
             {(src) => (
-              <video class="k2b-lightbox__video" src={src()} controls preload="metadata" onLoadedMetadata={ready} onError={failed} />
+              // The shared player renews a short-lived address and goes on at the same time; it has the keys at once.
+              <div
+                class="k2b-lightbox__video"
+                ref={(element) => requestAnimationFrame(() => element.querySelector("video")?.focus({ preventScroll: true }))}
+              >
+                <VideoPlayer
+                  src={src()}
+                  label={props.item.name}
+                  renew={typeof props.item.src === "function" ? () => resolveSource().then((value) => value ?? src()) : undefined}
+                  fallbackAction={download("secondary")}
+                />
+              </div>
             )}
           </Match>
           <Match when={props.kind === "audio" && source()}>
@@ -500,7 +543,7 @@ function LightboxStage(props: {
                 variant="plain"
                 file={props.item.file ?? { path: props.item.name }}
                 load={() =>
-                  props.item.load!().then(
+                  props.item.load!(signal()).then(
                     (content) => {
                       ready();
                       return content;

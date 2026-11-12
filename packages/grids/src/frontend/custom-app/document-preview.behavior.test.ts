@@ -8,7 +8,11 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-const messages = { previewDraftMeta: "Saved draft · no document issued", previewDocumentFailed: "The preview could not be created." };
+const messages = {
+  previewDraftMeta: "Saved draft · no document issued",
+  previewDocumentFailed: "The preview could not be created.",
+  previewOpenInTab: "Open in new tab",
+};
 
 domTest("a draft preview renders on request, names the server's reason when refused, and stops when the Lightbox closes", async () => {
   const dom = createDomTestHarness();
@@ -30,18 +34,30 @@ domTest("a draft preview renders on request, names the server's reason when refu
     // The draft note sits in the facts, and the item is a PDF the Lightbox loads; nothing is read before it shows.
     expect(item).toMatchObject({ name: "Invoice", meta: messages.previewDraftMeta, file: { mediaType: "application/pdf" } });
     expect(requests).toHaveLength(0);
-    await expect(item.load!()).rejects.toThrow("Due date is missing");
+    await expect(item.load!(new AbortController().signal)).rejects.toThrow("Due date is missing");
     expect(error.mock.calls.map(([message]) => message)).toEqual(["Due date is missing"]);
     expect(requests[0]).toMatchObject({ method: "POST" });
 
     // "Try again" in the Lightbox loads anew; the PDF arrives as its bytes.
     answer = () => new Response("%PDF-1.7", { headers: { "content-type": "application/pdf" } });
-    const content = await item.load!();
+    const shown = new AbortController();
+    const content = await item.load!(shown.signal);
     expect(content).toEqual({ encoding: "base64", content: btoa("%PDF-1.7"), mediaType: "application/pdf" });
     expect(requests).toHaveLength(2);
     expect(requests[1]?.signal?.aborted).toBe(false);
-    controller.abort();
+    // The rendered PDF opens in a tab, as the preview dialog offered, for example to print it.
+    const opened: (string | URL | undefined)[] = [];
+    const open = spyOn(window, "open").mockImplementation((url) => {
+      opened.push(url);
+      return null;
+    });
+    item.actions?.find((action) => action.label === "Open in new tab")?.onClick();
+    expect(opened).toHaveLength(1);
+    open.mockRestore();
+    // Moving on in the Lightbox, or closing the page, stops a render that still runs.
+    shown.abort();
     expect(requests[1]?.signal?.aborted).toBe(true);
+    controller.abort();
   } finally {
     error.mockRestore();
     dom.cleanup();

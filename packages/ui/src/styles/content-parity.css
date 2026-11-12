@@ -4950,6 +4950,10 @@
 .k2b-ui .k2b-lightbox__actions :is(.k2b-button, .k2b-icon-button) {
   border-radius: 999px;
 }
+/* Open and the app's commands keep their width; the name pill gives way first. */
+.k2b-ui :is(.k2b-lightbox__open, .k2b-lightbox__action) {
+  flex: none;
+}
 .k2b-ui .k2b-lightbox__separator {
   width: 1px;
   height: 1.125rem;
@@ -5078,11 +5082,9 @@
   width: min(100%, 56rem);
   height: 100%;
 }
+/* The player keeps its 16:9 frame inside the stage's height. */
 .k2b-ui .k2b-lightbox__video {
-  max-width: 100%;
-  max-height: calc(100cqh - 4.25rem);
-  border-radius: var(--k2b-radius-control);
-  background: #000;
+  width: min(100%, calc((100cqh - 4.25rem) * 16 / 9));
 }
 .k2b-ui .k2b-lightbox__audio {
   display: grid;
@@ -5100,8 +5102,11 @@
   padding: 2rem 2.5rem;
   border-radius: var(--k2b-radius-surface);
   background: var(--k2b-surface);
-  font-size: calc(1rem * var(--k2b-lightbox-text-scale, 1));
   --k2b-lightbox-text-scale: 1;
+}
+/* The renderers set their own sizes, so zoom scales what they draw: text, line height, tables and code alike. */
+.k2b-ui .k2b-lightbox__text > * {
+  zoom: var(--k2b-lightbox-text-scale);
 }
 .k2b-ui .k2b-lightbox__notice {
   display: grid;
