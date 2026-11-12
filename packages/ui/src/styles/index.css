@@ -6797,6 +6797,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
+.k2b-ui .k2b-floating-window__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .k2b-ui .k2b-floating-window__controls {
   display: flex;
   flex: none;

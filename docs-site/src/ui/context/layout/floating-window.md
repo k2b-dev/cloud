@@ -30,7 +30,7 @@ The `view` also receives that close function. Use it for actions inside the wind
 
 Options include `title`, `icon`, `accent`, initial width and height, minimum width and height, and an optional class.
 
-The helper restores focus to the previously focused element when the window closes.
+The helper restores focus to the previously focused element when the window closes. A window focuses itself when it opens, unless its content already placed the focus inside it, such as an editor.
 
 The window is a Solid root of its own with its own error boundary. When the
 `view` throws while it opens or on a later update, the window keeps its title
@@ -47,7 +47,7 @@ provided.
 
 Desktop windows can be moved and resized. Geometry stays inside the `area`, or the viewport without one. Clicking a window brings it in front of other floating windows. Moving or resizing a window never selects page text.
 
-The header shows the title on one line, ending with an ellipsis; pointing at a cut title shows all of it. An optional `status`, such as "Saved", follows the title. Then come Minimize, Maximize, and Close.
+The header shows the title on one line, ending with an ellipsis; pointing at a cut title shows all of it. An optional `status`, such as "Saved", follows the title. Optional `actions` of the content, such as Send, come next. Then come Minimize, Maximize, and Close. A minimized bar hides the status and the actions.
 
 ## States
 
@@ -59,7 +59,7 @@ A window is `normal`, `minimized`, or `maximized`.
 
 None of these states move other content on the page.
 
-Below 640 pixels, an open window is a full-screen sheet: Close stands first, the status sits below the title, and Minimize and Maximize are hidden. Movement and resizing are off. The sheet is modal for Tab and Escape.
+Below 640 pixels, an open window is a full-screen sheet: Close stands first, the status sits below the title, the actions stand at the end of the header, and Minimize and Maximize are hidden. Pass the main action of a long form, such as Send, as `actions` on a phone, so it stays within reach above the keyboard. Movement and resizing are off. The sheet is modal for Tab and Escape.
 
 ## Keep windows across reloads
 
@@ -82,7 +82,7 @@ type FloatingWindowBounds = { x?: number; y?: number; width: number; height: num
 type FloatingWindowState = "normal" | "minimized" | "maximized";
 
 type FloatingWindowProps = {
-  title: string; icon?: string; status?: JSX.Element; children: JSX.Element; onClose: () => void;
+  title: string; icon?: string; status?: JSX.Element; actions?: JSX.Element; children: JSX.Element; onClose: () => void;
   state?: FloatingWindowState; defaultState?: FloatingWindowState; onStateChange?: (state: FloatingWindowState) => void;
   rect?: FloatingWindowRect; onRectChange?: (rect: FloatingWindowRect) => void; placement?: "center" | "dock";
   area?: () => HTMLElement | null | undefined; initialWidth?: number; initialHeight?: number; minWidth?: number;

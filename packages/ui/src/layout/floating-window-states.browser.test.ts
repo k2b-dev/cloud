@@ -30,6 +30,12 @@ window.openWindow = (title, options = {}) => {
     },
     onStateChange: (state) => window.changes.push([title, state]),
     ...options,
+    get actions() {
+      if (!options.action) return undefined;
+      const button = document.createElement("button");
+      button.textContent = options.action;
+      return button;
+    },
     get children() {
       const field = document.createElement("textarea");
       field.setAttribute("aria-label", title + " text");
@@ -215,6 +221,41 @@ describe("@k2b/ui FloatingWindow states", () => {
       expect(await page.locator(".k2b-floating-window").count()).toBe(0);
     } finally {
       await page.close();
+    }
+  });
+
+  test("content actions stand in the header: before the window controls, at the end of a phone sheet, never on a bar", async () => {
+    const page = await open(1440, 900);
+    try {
+      await page.evaluate(() => window.openWindow("Workbench order", { action: "Send" }));
+      await settled(page);
+      const workbench = frame(page, "Workbench order");
+      const send = await workbench.getByRole("button", { name: "Send" }).boundingBox();
+      const minimize = await workbench.getByRole("button", { name: "Minimize" }).boundingBox();
+      const header = await workbench.locator("header").boundingBox();
+      expect(send!.x + send!.width).toBeLessThanOrEqual(minimize!.x);
+      expect(send!.y).toBeGreaterThanOrEqual(header!.y);
+      expect(send!.y + send!.height).toBeLessThanOrEqual(header!.y + header!.height);
+      await workbench.getByRole("button", { name: "Minimize" }).click();
+      await frameDone(page);
+      expect(await workbench.getByRole("button", { name: "Send" }).count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+    const phone = await open(390, 844);
+    try {
+      await phone.evaluate(() => window.openWindow("New message with a very long subject that does not fit", { action: "Send" }));
+      await settled(phone);
+      const sheet = frame(phone, "New message with a very long subject that does not fit");
+      const close = await sheet.getByRole("button", { name: "Close window" }).boundingBox();
+      const send = await sheet.getByRole("button", { name: "Send" }).boundingBox();
+      const title = await sheet.locator(".k2b-floating-window__title > span").boundingBox();
+      expect(close!.x).toBeLessThan(title!.x);
+      expect(send!.x).toBeGreaterThan(title!.x + title!.width);
+      expect(send!.x + send!.width).toBeLessThanOrEqual(390);
+      expect(title!.height).toBeLessThan(24);
+    } finally {
+      await phone.close();
     }
   });
 });
