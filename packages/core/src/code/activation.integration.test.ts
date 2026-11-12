@@ -517,7 +517,8 @@ databaseSuite()("durable Code activation", () => {
       fetchSpy.mockRestore();
     }
   });
-  test.each([
+  type OwnerAnswer = () => Promise<{ title: string; admin: boolean } | null>;
+  const placeCases: [string, OwnerAnswer, { title: string; typeTitle: string; href: null } | null][] = [
     ["may read", async () => ({ title: "Lager Nord", admin: false }), { title: "Lager Nord", typeTitle: "Item", href: null }],
     ["may not read", async () => null, null],
     [
@@ -528,7 +529,8 @@ databaseSuite()("durable Code activation", () => {
       null,
     ],
     ["reader too slow", () => new Promise<never>(() => {}), null],
-  ] as const)("the card names the own place only for a person who may read it (%s)", async (_case, readOwner, place) => {
+  ];
+  test.each(placeCases)("the card names the own place only for a person who may read it (%s)", async (_case, answer, place) => {
     const code = await newCode(),
       submitted = await version(code);
     // The Code account keeps the title its creator could read; it is never shown in someone else's preview.
@@ -537,7 +539,7 @@ databaseSuite()("durable Code activation", () => {
     const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
       readOwner: () => {
         reads++;
-        return readOwner();
+        return answer();
       },
       placeTimeoutMs: 20,
     });
