@@ -185,7 +185,7 @@ describe("Assistant chat context", () => {
   test("uses direct context viewers instead of an intermediate DetailPanel", async () => {
     const source = await Bun.file(resolve(import.meta.dir, "AssistantChatContext.tsx")).text();
     expect(source).toContain("openAssistantContextFiles");
-    expect(source).toContain("loadAssistantContextImages");
+    expect(source).toContain("assistantFileLightboxItem");
     expect(source).toContain("openAssistantKnowledgeSearch");
     expect(source).not.toContain("AssistantChatDetailPanel");
     expect(source).not.toContain("onViewDetail");

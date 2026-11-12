@@ -4,8 +4,8 @@ import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type { Attachment } from "../[id]/_components/editor/attachments-client";
 
-// The frame, the reading column, the phone layout and the title size need real layout, so the real attachments
-// overview runs in a browser with the shipped stylesheets.
+// Focus rings, stepping and the phone layout need a real browser, so the real attachments overview runs there with
+// the shipped stylesheets. The Lightbox's own layout is covered in @k2b/ui.
 const buildHarness = async (): Promise<string> => {
   const ui = new URL("../../../../ui/", import.meta.url).pathname;
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -76,9 +76,7 @@ const harness = await buildHarness();
 const css =
   (await buildCss(resolve(import.meta.dir, "../../../../../styles.css"))) +
   (await buildCss(resolve(import.meta.dir, "../../styles/app.css")));
-/** Milliseconds the content endpoint waits before it answers. */
-let delay = 0;
-/** Attachment ids whose content the page has read. */
+/** Attachment ids whose content the page has read, with the query it asked for. */
 const reads: string[] = [];
 const server = Bun.serve({
   port: 0,
@@ -90,8 +88,7 @@ const server = Bun.serve({
     const id = /^\/api\/notebooks\/nb0001\/attachments\/(\w+)\/content$/u.exec(url.pathname)?.[1] ?? "";
     const file = files[id];
     if (file) {
-      reads.push(id);
-      if (delay) await Bun.sleep(delay);
+      reads.push(`${id}${url.search}`);
       const inline = url.searchParams.get("inline") === "true";
       return new Response(file.body, { headers: { "Content-Type": inline ? file.mimeType : "application/octet-stream" } });
     }
@@ -116,37 +113,17 @@ afterAll(async () => {
 const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } };
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
 
-const open = async (context: BrowserContextOptions, index: number, ready: string, inlineViewer = true): Promise<Page> => {
+const mount = async (context: BrowserContextOptions): Promise<Page> => {
   const page = await (await browser.newContext(context)).newPage();
-  // Chromium's headless shell reports no inline PDF viewer and Playwright's WebKit reports one, so every test says
-  // which browser it is: by default one with a viewer, as a desktop browser or Safari on iOS.
-  await page.addInitScript(
-    (enabled) => Object.defineProperty(Navigator.prototype, "pdfViewerEnabled", { get: () => enabled }),
-    inlineViewer,
-  );
+  page.setDefaultTimeout(5_000);
   await page.goto(server.url.href);
   await page.evaluate((list) => window.mountAttachments(list, "en"), attachments);
-  await page.locator(".notebooks-attachment-tile__open").nth(index).click();
-  await page.locator(`.k2b-dialog[open] ${ready}`).waitFor();
   return page;
 };
+/** The name the Lightbox shows, which is also its accessible name. */
+const shownName = (page: Page) => page.locator("dialog.k2b-lightbox[open]").getAttribute("aria-label");
 
-const layout = (page: Page) =>
-  page.evaluate(() => {
-    const dialog = document.querySelector<HTMLElement>(".k2b-dialog[open]")!;
-    const box = (selector: string) => dialog.querySelector(selector)!.getBoundingClientRect();
-    const frame = dialog.getBoundingClientRect();
-    const style = getComputedStyle(dialog);
-    return {
-      frame: { left: frame.left, top: frame.top, width: frame.width, height: frame.height },
-      border: style.borderTopWidth,
-      title: Number.parseFloat(getComputedStyle(dialog.querySelector(".k2b-panel-dialog__heading h2")!).fontSize),
-      body: box(".k2b-panel-dialog__body"),
-      overflow: document.documentElement.scrollWidth > window.innerWidth || dialog.scrollWidth > dialog.clientWidth,
-    };
-  });
-
-describe("Notebook attachment preview layout", () => {
+describe("Notebook attachment preview", () => {
   test("a focused image tile shows its focus ring above the thumbnail", async () => {
     const page = await (await browser.newContext(desktop)).newPage();
     try {
@@ -166,127 +143,52 @@ describe("Notebook attachment preview layout", () => {
     }
   }, 30_000);
 
-  test("a document reads in a column whose title holds still while the file loads", async () => {
-    delay = 400;
-    const page = await (await browser.newContext(desktop)).newPage();
-    try {
-      await page.goto(server.url.href);
-      await page.evaluate((list) => window.mountAttachments(list, "en"), attachments);
-      await page.locator(".notebooks-attachment-tile__open").first().click();
-      await page.locator(".k2b-dialog[open] .notebooks-attachment-dialog__title-pending").waitFor();
-      const loading = await page.evaluate(() => ({
-        titleTop: document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__heading h2")!.getBoundingClientRect().top,
-        bodyTop: document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__body")!.getBoundingClientRect().top,
-      }));
-      await page.locator(".k2b-dialog[open] .k2b-content-markdown").waitFor();
-      const loaded = await layout(page);
-      expect(loaded.frame.width).toBe(640);
-      expect(loaded.title).toBe(24);
-      expect(loaded.body.top).toBe(loading.bodyTop);
-      expect(await page.evaluate(() => document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__heading h2")!.textContent)).toBe(
-        "Summer party 2026",
-      );
-      expect(
-        await page.evaluate(() => document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__heading h2")!.getBoundingClientRect().top),
-      ).toBe(loading.titleTop);
-      expect(loaded.overflow).toBeFalse();
-    } finally {
-      delay = 0;
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("on a phone the preview takes the whole screen without a border", async () => {
-    const page = await open(phone, 0, ".k2b-content-markdown");
-    try {
-      const shown = await layout(page);
-      expect(shown.frame).toEqual({ left: 0, top: 0, width: 390, height: 844 });
-      expect(shown.border).toBe("0px");
-      expect(shown.title).toBe(20);
-      expect(shown.overflow).toBeFalse();
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
   for (const [name, context] of [
     ["desktop", desktop],
     ["phone", phone],
   ] as const) {
-    test(`a PDF fills the frame's height on ${name}`, async () => {
-      const page = await open(context, 1, '.k2b-pdf-viewer:is([data-state="shown"], [data-state="undrawable"])');
+    test(`${name}: a tile opens the Lightbox with every attachment, and the arrow keys step through them`, async () => {
+      reads.length = 0;
+      const page = await mount(context);
       try {
-        const shown = await layout(page);
-        const frame = await page.evaluate(() => {
-          const body = document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__body")!;
-          const box = document.querySelector(".k2b-dialog[open] .k2b-pdf-viewer")!.getBoundingClientRect();
-          return { height: box.height, bottom: box.bottom, inset: Number.parseFloat(getComputedStyle(body).paddingBottom) };
+        await page.locator(".notebooks-attachment-tile__open").first().click();
+        const lightbox = page.locator("dialog.k2b-lightbox[open]");
+        // Markdown lifts its first heading into the name pill; the file name moves into the facts.
+        await lightbox.locator(".k2b-content-markdown").waitFor();
+        expect(await shownName(page)).toBe("Summer party 2026");
+        expect(await lightbox.locator(".k2b-lightbox__name").textContent()).toContain("Summer_party.md");
+        // The dialog's former buttons sit in the action pill: Save to Files, Download and Close.
+        const download = lightbox.locator('a[aria-label="Download"]');
+        expect(await download.getAttribute("href")).toBe("/api/notebooks/nb0001/attachments/Att001/content?v=1");
+        expect(await lightbox.locator(".k2b-lightbox__action").count()).toBe(1);
+        // The film strip names all four attachments of the list.
+        expect(await lightbox.locator(".k2b-thumbnail-strip__thumb").count()).toBe(4);
+
+        // The PDF loads from the inline address the content endpoint serves it at.
+        await page.keyboard.press("ArrowRight");
+        await page.waitForFunction(() => document.querySelector("dialog.k2b-lightbox")?.getAttribute("aria-label") === "Floor_plan.pdf");
+        await lightbox.locator(".k2b-pdf-viewer, .k2b-lightbox__notice").first().waitFor();
+        expect(reads).toContain("Att002?v=1&inline=true");
+
+        // The table and the picture follow.
+        await page.keyboard.press("ArrowRight");
+        await lightbox.locator(".k2b-content-file-view").waitFor();
+        expect(await shownName(page)).toBe("Stands.csv");
+        await page.keyboard.press("ArrowRight");
+        await lightbox.locator('img[alt="Stage.png"]').waitFor();
+
+        // The Lightbox covers the screen and nothing scrolls sideways.
+        const geometry = await page.evaluate(() => {
+          const box = document.querySelector("dialog.k2b-lightbox")!.getBoundingClientRect();
+          return { width: box.width, height: box.height, overflow: document.documentElement.scrollWidth > window.innerWidth };
         });
-        // The document reaches the body's inset at the bottom, so nothing scrolls around it.
-        expect(frame.bottom).toBeCloseTo(shown.body.bottom - frame.inset, 0);
-        expect(frame.height).toBeGreaterThan(shown.frame.height / 2);
-        expect(shown.overflow).toBeFalse();
+        expect(geometry).toEqual({ width: context.viewport!.width, height: context.viewport!.height, overflow: false });
+
+        await page.keyboard.press("Escape");
+        await lightbox.waitFor({ state: "detached" });
       } finally {
         await page.context().close();
       }
     }, 30_000);
   }
-
-  test("on a phone, a PDF pdf.js cannot draw shows the hint in the document's place", async () => {
-    reads.length = 0;
-    const page = await open(phone, 1, '.k2b-pdf-viewer[data-state="undrawable"]', false);
-    try {
-      const shown = await layout(page);
-      const hint = await page.evaluate(() => {
-        const body = document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__body")!;
-        const placeholder = document.querySelector(".k2b-dialog[open] .k2b-pdf-viewer__placeholder")!;
-        const box = placeholder.getBoundingClientRect();
-        return {
-          text: placeholder.textContent,
-          frames: document.querySelectorAll(".k2b-dialog[open] iframe").length,
-          height: box.height,
-          bottom: box.bottom,
-          inset: Number.parseFloat(getComputedStyle(body).paddingBottom),
-          overflow: placeholder.scrollHeight - placeholder.clientHeight,
-        };
-      });
-      expect(hint.text).toBe("This PDF cannot be shown hereOpen it in a new tab or download it to view it.");
-      expect(hint.frames).toBe(0);
-      // The same box the document fills with a viewer, and the hint fits it without scrolling.
-      expect(hint.bottom).toBeCloseTo(shown.body.bottom - hint.inset, 0);
-      expect(hint.height).toBeGreaterThan(shown.frame.height / 2);
-      expect(hint.overflow).toBe(0);
-      expect(shown.overflow).toBeFalse();
-      // pdf.js draws in every browser, so the preview fetched the document; this one has no pages, so the hint stays,
-      // and the header's open action is the way to the PDF.
-      expect(reads).toContain("Att002");
-      expect(await page.locator('.k2b-dialog[open] a[target="_blank"][href*="/attachments/Att002/content"]').count()).toBe(1);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("focus starts on the content as the preview opens, so Page Down scrolls a long document at once", async () => {
-    const page = await (await browser.newContext(desktop)).newPage();
-    try {
-      await page.goto(server.url.href);
-      await page.evaluate((list) => window.mountAttachments(list, "en"), attachments);
-      // Read in the task that opens the preview, before any frame: a busy browser can hold the next frame back while
-      // keys already arrive, so focus must not wait for it (#1456).
-      expect(
-        await page.evaluate(() => {
-          document.querySelector<HTMLElement>(".notebooks-attachment-tile__open")!.click();
-          return document.activeElement?.classList.contains("notebooks-attachment-dialog__content");
-        }),
-      ).toBeTrue();
-      // The dialog's own focus pass in the next frame and the loaded document leave it there.
-      await page.locator(".k2b-dialog[open] .k2b-content-markdown").waitFor();
-      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
-      expect(await page.evaluate(() => document.activeElement?.classList.contains("notebooks-attachment-dialog__content"))).toBeTrue();
-      await page.keyboard.press("PageDown");
-      await page.waitForFunction(() => document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__body")!.scrollTop > 0);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
 });

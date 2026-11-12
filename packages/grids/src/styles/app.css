@@ -686,30 +686,6 @@
 }
 
 
-.k2b-ui .grids-document-preview {
-  display: flex;
-  flex: 1 1 0%;
-  min-height: 0;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.k2b-ui .grids-document-preview > .k2b-inline-guidance {
-  flex-shrink: 0;
-}
-
-@media (max-width: 40rem) {
-  .k2b-ui .grids-document-preview-dialog .k2b-panel-dialog__header {
-    flex-wrap: wrap;
-  }
-
-  .k2b-ui .grids-document-preview-dialog .k2b-panel-dialog__actions {
-    order: 1;
-    width: 100%;
-    justify-content: flex-start;
-  }
-}
-
 .k2b-ui .grids-overview-workspace {
   background: var(--ui-surface);
 }

@@ -311,9 +311,10 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 - **File on its own line:** The link also shows the file size.
 - **Websites and email addresses:** These links stay part of the text with a thin underline. Website links end in a small ↗.
 - **Where links look this way:** Book view and PDF exports show links this way. The editor uses the same look with three differences. It shows only the link text for a heading, takes the file type from the link text, and shows no file sizes.
-- **Open an attachment:** Select an image to see it in fullscreen. Select a PDF, Markdown, text, JSON, or CSV file to open its preview.
-- **Preview actions:** The preview has **Download**. PDFs add **Open in new tab**, and text and JSON files add **Copy**.
-- **Other files:** Notebooks downloads other files, such as archives, audio, and video, after you confirm. The same applies to very large files and to images that the note cannot display.
+- **Open an attachment:** Select an image, a PDF, or a Markdown, text, JSON, or CSV file to see it in the full-screen preview.
+- **Preview actions:** The preview has **Save to** and **Download** at the top right. PDFs add **Open in new tab**, and text and JSON files add **Copy text**.
+- **Move between files:** When you open a file from the details panel or the attachments view, the preview holds all files of that list. Use the arrow keys, the buttons at the edges, or the strip at the bottom to move between them. On a phone, swipe sideways.
+- **Other files:** Notebooks downloads other files, such as archives, audio, and video, after you confirm. The same applies to very large files and to images that the note cannot display. In the preview, such files show **Download**.
 - **Where this works:** You can open attachments in the editor, in Book view, in the details panel, and in the attachments view.
 - **All notebook files:** Open **Attachments** at the bottom of the notebook sidebar to list and search all files in the notebook.
 :::

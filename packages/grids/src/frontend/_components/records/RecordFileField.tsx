@@ -1,26 +1,24 @@
-import { chooseFiles, SaveFilesButton } from "@k2b/cloud/browser/files";
-import { fileIcons } from "@k2b/stdlib";
+import { chooseFiles, SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
   canPreviewFile,
   DetailPanel,
-  dialogCore,
   FileDropTarget,
   FileGrid,
   FileTypeIcon,
-  FileView,
   type FileViewContent,
   fileKindLabel,
   formatFileViewSize,
+  getFileViewPreviewKind,
   IconButton,
   IconButtonLink,
-  PanelDialog,
-  panelDialogWorkspaceOptions,
+  Lightbox,
+  type LightboxItem,
   prompts,
   Tooltip,
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { PublicField as Field, PublicGridFile as GridFile } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
 import { createRetryToasts } from "../utils/feedback";
@@ -60,77 +58,43 @@ export async function refreshFilesAfterCommittedChange(
   }
 }
 
-function RecordFilePreviewDialog(props: { location: RecordFileLocation; file: GridFile; close: () => void }) {
-  const locale = useLocale();
-  const t = () => recordMessages.resolve([locale()]).t;
-  const downloadHref = () => recordFileContentHref(props.location, props.file);
-  const previewHref = () => recordFileContentHref(props.location, props.file, true);
+/**
+ * A record file in the Lightbox, with Save to Files and Download. Pictures, PDFs, video and audio read from the inline
+ * address; text loads; a file without a preview shows its facts and Download.
+ */
+export const recordFileLightboxItem = (location: RecordFileLocation, file: GridFile, locale: string): LightboxItem => {
+  const t = recordMessages.resolve([locale]).t;
+  const downloadHref = recordFileContentHref(location, file);
+  const previewHref = recordFileContentHref(location, file, true);
+  const facts = { path: file.filename, mediaType: file.mimeType, size: file.sizeBytes };
+  const kind = getFileViewPreviewKind(facts);
+  const read = kind === "image" || kind === "pdf" || kind === "video" || kind === "audio";
   const load = async (): Promise<FileViewContent> => {
-    const response = await fetch(previewHref());
-    if (!response.ok) throw new Error(await errorMessage(response, t().loadPreviewFailed));
+    const response = await fetch(previewHref);
+    if (!response.ok) throw new Error(await errorMessage(response, t.loadPreviewFailed));
     return {
       encoding: "utf8",
       content: await response.text(),
-      mediaType: response.headers.get("content-type")?.split(";", 1)[0] || props.file.mimeType,
+      mediaType: response.headers.get("content-type")?.split(";", 1)[0] || file.mimeType,
     };
   };
-
-  return (
-    <PanelDialog>
-      <PanelDialog.Header
-        title={props.file.filename}
-        subtitle={props.file.mimeType}
-        icon={`ti ${fileIcons.getFileIcon({
-          name: props.file.filename,
-          type: "file",
-          mimeType: props.file.mimeType,
-        })}`}
-        actions={
-          <>
-            <SaveFilesButton
-              size="sm"
-              files={() => [
-                { name: props.file.filename, content: downloadHref(), mediaType: props.file.mimeType, size: props.file.sizeBytes },
-              ]}
-            />
-            <Tooltip.Anchor content={t().downloadFile}>
-              <IconButtonLink
-                variant="ghost"
-                size="sm"
-                href={downloadHref()}
-                download={props.file.filename}
-                label={t().downloadNamed({ name: props.file.filename })}
-              >
-                <i class="ti ti-download" aria-hidden="true" />
-                <span class="sr-only">{t().downloadNamed({ name: props.file.filename })}</span>
-              </IconButtonLink>
-            </Tooltip.Anchor>
-          </>
-        }
-        close={props.close}
-      />
-      <PanelDialog.Body>
-        <FileView
-          file={{
-            path: props.file.filename,
-            mediaType: props.file.mimeType,
-            size: props.file.sizeBytes,
-          }}
-          load={load}
-          previewHref={previewHref()}
-          downloadHref={downloadHref()}
-          class="min-h-[24rem]"
-        />
-      </PanelDialog.Body>
-    </PanelDialog>
-  );
-}
-
-const openRecordFilePreview = (location: RecordFileLocation, file: GridFile) =>
-  dialogCore.open<void>(
-    (close) => <RecordFilePreviewDialog location={location} file={file} close={() => close()} />,
-    panelDialogWorkspaceOptions,
-  );
+  return {
+    name: file.filename,
+    meta: `${fileKindLabel({ name: file.filename, mediaType: file.mimeType }, locale)} · ${formatFileViewSize(file.sizeBytes, locale)}`,
+    file: facts,
+    src: read ? previewHref : undefined,
+    load: kind && !read ? load : undefined,
+    thumbnail: kind === "image" ? previewHref : undefined,
+    downloadUrl: downloadHref,
+    actions: [
+      {
+        label: saveFilesLabel(locale),
+        icon: SAVE_FILES_ICON,
+        onClick: () => void saveFiles([{ name: file.filename, content: downloadHref, mediaType: file.mimeType, size: file.sizeBytes }]),
+      },
+    ],
+  };
+};
 
 export default function RecordFileField(props: {
   tableId: string;
@@ -265,10 +229,13 @@ export default function RecordFileField(props: {
 
   const [root, setRoot] = createSignal<HTMLDivElement>();
   const isImage = (file: GridFile) => file.mimeType.startsWith("image/") && previewable(file);
+  // The field's files in the Lightbox, so the arrow keys step through all of them.
+  const [shown, setShown] = createSignal<number | null>(null);
+  const lightboxItems = createMemo(() => files().map((file) => recordFileLightboxItem(location(), file, locale())));
   /** A click previews what the browser can show and downloads the rest. */
   const openFile = (file: GridFile) => {
     if (previewable(file)) {
-      void openRecordFilePreview(location(), file);
+      setShown(Math.max(0, files().indexOf(file)));
       return;
     }
     const link = document.createElement("a");
@@ -359,6 +326,9 @@ export default function RecordFileField(props: {
           )}
           onOpen={openFile}
         />
+      </Show>
+      <Show when={shown() !== null && lightboxItems().length > 0}>
+        <Lightbox items={lightboxItems()} index={shown() ?? 0} onIndexChange={setShown} onClose={() => setShown(null)} />
       </Show>
       <Show when={props.canWrite}>
         <DetailPanel.Action
