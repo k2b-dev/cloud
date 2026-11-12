@@ -48,18 +48,23 @@ const item: MailListItem = {
   kept: false,
 };
 
-const renderRow = (value: MailListItem, columns?: { assignees: MailRowAssignee[] | null }, currentUserId: string | null = null) =>
+const renderRow = (
+  value: MailListItem,
+  assignees: MailRowAssignee[] | null = null,
+  currentUserId: string | null = null,
+  canWrite = false,
+) =>
   renderToString(() =>
     createComponent(MailConversationRow, {
       item: value,
-      ...(columns ? { columns } : {}),
+      assignees,
       requestUrl: new URL("https://cloud.example/app/mail/Box001?q=roadmap"),
       state: {
         selectedConversationId: null,
         selectedMessageId: null,
         selectedConversationIds: new Set<string>(),
         selectionMode: false,
-        canWrite: false,
+        canWrite,
         spamAction: "junk",
         currentUserId,
         dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
@@ -104,152 +109,71 @@ describe("Mail conversation kept marker", () => {
   });
 });
 
-describe("Mail conversation participants column", () => {
-  const team = [
-    "Lea Brandt",
-    "Tom Keller",
-    "Anna Roth",
-    "Ben Fischer",
-    "Clara Hoff",
-    "David Lang",
-    "Eva Pohl",
-    "Finn Braun",
-    "Greta Vogel",
-  ];
-  const cell = (html: string) => html.slice(html.indexOf("mail-row-participants-cell"), html.indexOf("mail-row-assignee-cell"));
-  const faces = (html: string) => cell(html).match(/class="k2b-avatar "/g)?.length ?? 0;
+describe("Mail conversation row marks (v5)", () => {
+  const plain = { ...item, attachmentMatch: null, attachmentCount: undefined };
 
-  test("one person: the sender the row names stands alone, gray, with no +n", () => {
-    const html = renderRow({ ...item, attachmentMatch: null }, { assignees: [] });
-    expect(faces(html)).toBe(1);
-    expect(cell(html)).toContain('aria-label="1 participant · External: Ada"');
-    expect(cell(html)).not.toContain("k2b-avatar-stack__more");
-    expect(cell(html)).not.toContain("data-tint");
+  test("one row for both densities: no line count, the date in the row, the checkbox for writers", () => {
+    const html = renderRow(plain, null, null, true);
+    expect(html).not.toContain("data-lines");
+    expect(html).toContain('class="mail-row-time-cell"');
+    expect(html).toContain('aria-label="Select Project Atlas"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(renderRow(plain)).not.toContain("mail-list-checkbox");
   });
 
-  test("nobody the reader can see wrote: the column stays empty instead of guessing a sender", () => {
-    const html = renderRow({ ...item, attachmentMatch: null, participantLabels: [] }, { assignees: [] });
-    expect(cell(html)).not.toContain("data-mail-participants");
-  });
-
-  test("three people: three faces, team members tinted, external gray", () => {
-    const html = renderRow(
-      {
-        ...item,
-        attachmentMatch: null,
-        participants: [{ name: "Petra Albers" }, { name: "Jonas Weber", kind: "user" }, { name: "Mira Schulz", kind: "user" }],
-      },
-      { assignees: [] },
-    );
-    expect(faces(html)).toBe(3);
-    expect(cell(html)).not.toContain("k2b-avatar-stack__more");
-    expect(cell(html)).toContain('aria-label="3 participants · External: Petra Albers · Team: Jonas Weber, Mira Schulz"');
-    expect(cell(html).match(/data-tint=/g)?.length).toBe(2);
-  });
-
-  test("seventeen people: three faces, then +14, and the tooltip names the listed ten and the rest", () => {
-    const html = renderRow(
-      {
-        ...item,
-        attachmentMatch: null,
-        participants: [{ name: "Sabine Jahn" }, ...team.map((name) => ({ name, kind: "user" as const }))],
-        participantCount: 17,
-      },
-      { assignees: [] },
-    );
-    expect(faces(html)).toBe(3);
-    expect(cell(html)).toContain(">+14</span>");
-    expect(cell(html)).toContain(`aria-label="17 participants · External: Sabine Jahn · Team: ${team.join(", ")} and 7 more"`);
-  });
-
-  test("an automation that wrote is square with a robot and named as one", () => {
-    const html = renderRow(
-      {
-        ...item,
-        attachmentMatch: null,
-        participants: [{ name: "Ada" }, { name: "Invoices", kind: "workflow" }],
-      },
-      { assignees: [] },
-    );
-    expect(cell(html)).toContain('data-shape="square"');
-    expect(cell(html)).toContain("ti ti-robot");
-    expect(cell(html)).toContain("Automations: Invoices");
-  });
-
-  test("the three-line row leaves the column out", () => {
-    expect(renderRow(item)).not.toContain("mail-row-participants-cell");
-  });
-});
-
-describe("Mail conversation responsible column", () => {
-  const cell = (html: string) => html.slice(html.indexOf("mail-row-assignee-cell"), html.indexOf("mail-row-status-cell"));
-  const faces = (html: string) => cell(html).match(/class="k2b-avatar "/g)?.length ?? 0;
-  const nora = { id: "Usr002", name: "Nora Example", src: "/api/accounts/users/Usr002/avatar?rev=a1" };
-  const robin = { id: "Usr001", name: "Robin Example" };
-
-  test("one person: their face and name, no +n", () => {
-    const html = renderRow({ ...item, attachmentMatch: null }, { assignees: [nora] }, "Usr001");
-    expect(faces(html)).toBe(1);
-    expect(cell(html)).toContain('src="/api/accounts/users/Usr002/avatar?rev=a1"');
-    expect(cell(html)).toContain(">Nora Example</span>");
-    expect(cell(html)).toContain('aria-label="Responsible: Nora Example"');
-    expect(cell(html)).not.toContain("mail-row-count");
-  });
-
-  test("several people: you come first as You, then +n, and the tooltip names everyone", () => {
-    const html = renderRow({ ...item, attachmentMatch: null }, { assignees: [nora, robin] }, "Usr001");
-    expect(faces(html)).toBe(1);
-    expect(cell(html)).toContain(">You</span>");
-    expect(cell(html)).toContain(">+1</span>");
-    expect(cell(html)).toContain('aria-label="Responsible: You, Nora Example"');
-  });
-
-  test("someone the reader may not list: a placeholder name and a gray face", () => {
-    const html = renderRow({ ...item, attachmentMatch: null }, { assignees: [{ id: "Usr009", name: "Unknown person", unknown: true }] });
-    expect(cell(html)).toContain(">Unknown person</span>");
-    expect(cell(html)).not.toContain("data-tint");
-  });
-
-  test("nobody responsible: the column says so", () => {
-    const html = renderRow({ ...item, attachmentMatch: null }, { assignees: [] });
-    expect(cell(html)).toContain(">Nobody</span>");
-    expect(cell(html)).not.toContain("data-mail-assignees");
-  });
-
-  test("a personal mailbox leaves the column out", () => {
-    expect(renderRow(item, { assignees: null })).not.toContain("mail-row-assignee-cell");
-  });
-});
-
-describe("Mail conversation three-line row participants", () => {
-  const line = (html: string) => html.slice(html.indexOf("mail-row-extra"));
-
-  test("others who wrote: a fourth line ends with up to three faces and +n", () => {
+  test("a draft says Draft beside the sender and names who writes it", () => {
     const html = renderRow({
-      ...item,
-      attachmentMatch: null,
-      participants: [
-        { name: "Ada" },
-        { name: "Jonas Weber", kind: "user" },
-        { name: "Mira Schulz", kind: "user" },
-        { name: "Lea Brandt", kind: "user" },
-      ],
+      ...plain,
+      drafts: { count: 1, editors: [{ id: "11111111-1111-4111-8111-111111111111", kind: "user", displayName: "Tom Behrens" }] },
     });
-    expect(html).toContain('data-lines="4"');
-    expect(line(html)).toContain("mail-row-extra-participants");
-    expect(line(html).match(/class="k2b-avatar "/g)?.length).toBe(3);
-    expect(line(html)).toContain(">+1</span>");
-    expect(line(html)).toContain('aria-label="4 participants · External: Ada · Team: Jonas Weber, Mira Schulz, Lea Brandt"');
+    expect(html).toContain('aria-label="Draft: Tom Behrens"');
+    expect(html).toMatch(/data-mail-row-draft[^>]*>Draft</);
+    expect(html).not.toContain("data-suggestion");
   });
 
-  test("only the sender wrote: the row keeps three lines", () => {
-    const html = renderRow({ ...item, attachmentMatch: null });
-    expect(html).toContain('data-lines="3"');
-    expect(html).not.toContain("mail-row-extra");
+  test("an untouched suggestion is ✦ Suggestion and names its account", () => {
+    const html = renderRow({ ...plain, drafts: { count: 1, editors: [], suggestedBy: "Gustav" } });
+    expect(html).toContain("data-suggestion");
+    expect(html).toContain('aria-label="Suggestion from Gustav"');
+    expect(html).toContain("ti ti-sparkles");
   });
 
-  test("the faces keep clear of a matched attachment's download button", () => {
-    const html = renderRow({ ...item, participants: [{ name: "Ada" }, { name: "Jonas Weber", kind: "user" }] });
-    expect(line(html)).toContain("data-clear-download");
+  test("Waiting stands as a word, Later as a clock with its day, and the message count after the sender", () => {
+    const html = renderRow({
+      ...plain,
+      workStatus: "waiting",
+      messageCount: 3,
+      // Two days ahead of now: its weekday.
+      snoozedUntil: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+    });
+    expect(html).toContain(">Waiting<");
+    expect(html).toMatch(/class="mail-row-snooze"[^>]*aria-label="until [A-Z][a-z]{2}"/);
+    expect(html).toContain('aria-label="3 messages"');
+    // A snooze that has passed shows nothing.
+    expect(renderRow({ ...plain, snoozedUntil: new Date(Date.now() - 60_000).toISOString() })).not.toContain("mail-row-snooze");
+  });
+
+  test("who is responsible: one face, you first as You, everyone in the label", () => {
+    const html = renderRow(
+      plain,
+      [
+        { id: "u2", name: "Nora Example" },
+        { id: "u1", name: "Robin Example" },
+      ],
+      "u1",
+    );
+    expect(html).toContain('aria-label="Responsible: You, Nora Example"');
+    expect(html).toContain("+1");
+    expect(renderRow(plain, [])).not.toContain("data-mail-assignees");
+    expect(renderRow(plain, [{ id: "u9", name: "Someone", unknown: true }])).toContain('aria-label="Responsible: Someone"');
+  });
+
+  test("the snooze day is the weekday within six days and the date after", async () => {
+    const { mailRowSnoozeDay } = await import("./MailConversationRow.tsx");
+    const now = new Date("2026-11-12T09:00:00Z");
+    // ICU data differ in the abbreviation's dot ("Fr." in browsers, "Fr" in some runtimes).
+    expect(mailRowSnoozeDay("2026-11-13T07:00:00Z", now, "de", "Europe/Berlin")).toMatch(/^Fr\.?$/);
+    expect(mailRowSnoozeDay("2026-11-13T07:00:00Z", now, "en", "Europe/Berlin")).toBe("Fri");
+    expect(mailRowSnoozeDay("2026-11-30T07:00:00Z", now, "de", "Europe/Berlin")).toBe("30.11.");
   });
 });

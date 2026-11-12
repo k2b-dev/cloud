@@ -320,6 +320,14 @@ describe("Mail workspace search return", () => {
     );
   };
   const input = () => dom.root.querySelector<HTMLInputElement>('input[name="q"]')!;
+  /** "More filters" in the filter button's menu, which opens the search builder. */
+  const moreFilters = async () => {
+    const button = dom.root.querySelector<HTMLButtonElement>("[data-mail-filter-button]")!;
+    button.click();
+    await Promise.resolve();
+    const menu = dom.document.getElementById(button.getAttribute("aria-controls")!)!;
+    [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent?.includes("More filters"))!.click();
+  };
   const type = (value: string) => {
     if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
     input().value = value;
@@ -366,7 +374,8 @@ describe("Mail workspace search return", () => {
       type("new");
       jest.advanceTimersByTime(100);
       if (action === "Reset") {
-        [...head.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Reset")!.click();
+        // The field's own clear button resets the search, as Reset beside it did.
+        head.querySelector<HTMLButtonElement>(".k2b-input-clear-action")!.click();
       } else {
         dom.root.querySelector<HTMLAnchorElement>(`a[href="${target}"]`)!.click();
       }
@@ -471,14 +480,12 @@ describe("Mail workspace search return", () => {
       sort: "newest" as const,
     };
     builderResult = { action: "apply", state, serialized: JSON.stringify(state) };
-    if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
-    dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
+    await moreFilters();
     await settle();
     expect(new URL(location.href).searchParams.get("searchFrom")).toBe("view=needs_action&conversation=one");
     expect(title()).toBe("Search results");
     builderResult = { action: "clear" };
-    if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
-    dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
+    await moreFilters();
     await settle();
     assertRoute("view=needs_action&conversation=one", "Needs action");
   });

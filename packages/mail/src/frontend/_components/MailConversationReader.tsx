@@ -167,8 +167,6 @@ export default function MailConversationReader(props: {
   /** `null` while the browser has not yet resolved Automatic for this island. */
   theme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
-  /** No list stands beside the reader on a large screen, so the reader offers × and Escape back to the list. */
-  listAway: boolean;
   detailsOpen: boolean;
   toolbarActions: readonly MailConversationToolbarActionId[];
   onToggleDetails: () => void;
@@ -1832,20 +1830,18 @@ export default function MailConversationReader(props: {
                   onClick={props.onToggleDetails}
                 />
               </Tooltip.Anchor>
-              <Show when={props.listAway}>
-                <IconButtonLink
-                  href={closeHref()}
-                  class="mail-reader-close"
-                  label={t().closeConversation}
-                  tooltip={t().closeConversationHint}
-                  navigation="enhanced"
-                  onNavigate={props.onClose}
-                  scroll="preserve"
-                  data-mail-reader-close
-                >
-                  <i class="ti ti-x" aria-hidden="true" />
-                </IconButtonLink>
-              </Show>
+              <IconButtonLink
+                href={closeHref()}
+                class="mail-reader-close"
+                label={t().closeConversation}
+                tooltip={t().closeConversationHint}
+                navigation="enhanced"
+                onNavigate={props.onClose}
+                scroll="preserve"
+                data-mail-reader-close
+              >
+                <i class="ti ti-x" aria-hidden="true" />
+              </IconButtonLink>
             </div>
             <header class="mail-reader-subject">
               <div class="mail-reader-title-line">

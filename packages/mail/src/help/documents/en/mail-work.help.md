@@ -9,13 +9,15 @@ kind: task
 
 ## Find the conversation you need {icon="search"}
 
-Open the magnifier in the head or press `/` to **Search mailbox**. Text search covers the current mailbox. **Everything** is selected by default. It covers the synchronized message fields and extracted attachment text.
+Type in the search field at the top of the mailbox, or press `/` to go to it. Text search covers the current mailbox. **Everything** is selected by default. It covers the synchronized message fields and extracted attachment text.
 
-To narrow the search, use the search-in button. Choose any combination of **Sender**, **Recipients**, **Subject**, **Message body**, and **Attachment names**. With several words, a message matches when each word appears somewhere in it, for example the sender's name and a word from the subject.
+To narrow the search, open the filter button next to the field. Under **Search in**, choose any combination of **Sender**, **Recipients**, **Subject**, **Message body**, and **Attachment names**. With several words, a message matches when each word appears somewhere in it, for example the sender's name and a word from the subject.
 
-**Place** starts at **Whole mailbox**. If you started in a folder, choose that folder to search only there. After you open search with the magnifier or `/`, clearing or deleting the text restores the starting view and keeps the field open. **Reset**, **Cancel**, or Escape returns to the view where you started; closing an open options menu with Escape leaves search open until you press Escape again.
+The place starts at **Whole mailbox**. If you started in a folder, choose that folder in the filter menu to search only there. Clearing or deleting the text restores the starting view. Escape in the field also returns to the view where you started.
 
-For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **More filters**. On a phone, **Search in**, **Place**, and **More filters …** share one menu, and its button names the current choice, such as **Everything · Whole mailbox**.
+Without a search, the filter button holds **Unread**, **Flagged**, **With attachment**, the date range, and a tag. Links that you saved with these filters keep working.
+
+For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **More filters …** in the filter menu.
 
 The filter dialog shows the current search as conditions that you can edit. Choose **Add filter** for another field. When several filters are active, choose whether all filters or any filter must match. **Advanced conditions** stays collapsed until you need alternative or nested groups.
 
