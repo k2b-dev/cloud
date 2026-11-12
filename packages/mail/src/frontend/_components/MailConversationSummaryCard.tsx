@@ -1,6 +1,7 @@
-import { Button, IconButton, MarkdownView, ProgressRing, Section, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
+import { Button, IconButton, MarkdownView, ProgressRing, Tooltip, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, createUniqueId, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
+import { mailReaderMessages } from "./mail-reader-messages";
 import { mailSummaryMessages } from "./mail-summary-messages";
 
 export type MailSummaryGenerateMode = "rolling" | "replace";
@@ -12,8 +13,9 @@ export const showsConversationSummary = (state: ConversationContentSummary | nul
 const formatTime = (iso: string, locale: string) => new Date(iso).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 
 /**
- * The conversation summary, a Section in the reader. An AI text has the AI tone (plum frame, title and ✦); a text a person wrote stays neutral.
- * Writing, failure and the daily limit replace the text in the same place, so the messages below never jump.
+ * The conversation summary as one row above the timeline. An AI text has the AI tone (plum label and ✦); a text a
+ * person wrote stays neutral. Writing, failure and the daily limit replace the text in the same line, so the messages
+ * below never jump; opening the row shows the whole text, its source and its tools.
  */
 export default function MailConversationSummaryCard(props: {
   state: ConversationContentSummary;
@@ -28,6 +30,7 @@ export default function MailConversationSummaryCard(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailSummaryMessages.resolve([locale()]).t);
+  const readerText = createMemo(() => mailReaderMessages.resolve([locale()]).t);
   const now = () => props.now?.() ?? Date.now();
   const [clock, setClock] = createSignal(now());
   const timer = setInterval(() => setClock(now()), 60_000);
@@ -100,46 +103,69 @@ export default function MailConversationSummaryCard(props: {
     </Tooltip.Anchor>
   );
 
-  // A topic of the reader: a Section island, plum frame, title and ✦ only for what the AI wrote.
+  const [expanded, setExpanded] = createSignal(false);
+  const bodyId = `mail-summary-${createUniqueId()}`;
+  /** The collapsed row's one line: the text without Markdown marks, or what the summary is doing instead. */
+  const line = () => {
+    switch (view()) {
+      case "writing":
+        return t().writing;
+      case "failed":
+        return failureText();
+      case "limited":
+        return limitText();
+      default:
+        return (props.state.summary ?? "")
+          .replace(/[#*_`>[\]()~|]/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+    }
+  };
+
+  // One row above the timeline (Mail v5): the label, the text on one line, and a chevron that opens the rest in place.
+  // Opening pushes only what follows; plum and ✦ only for what the AI wrote or writes.
   return (
-    <Section
-      class={`mx-auto my-3 w-full max-w-4xl text-sm text-primary${ai() ? " min-h-[13.75rem]" : ""}`}
-      size="md"
-      tone={ai() ? "ai" : undefined}
-      icon={ai() ? "ti ti-sparkles" : undefined}
-      title={
-        <>
+    <section
+      class="mail-summary-row"
+      data-mail-conversation-summary={view()}
+      data-mail-summary-ai={ai() ? "" : undefined}
+      data-expanded={expanded() ? "" : undefined}
+    >
+      <button
+        type="button"
+        class="mail-summary-row__toggle"
+        aria-expanded={expanded()}
+        aria-controls={bodyId}
+        aria-label={expanded() ? readerText().hideSummary : readerText().showSummary}
+        onClick={() => setExpanded(!expanded())}
+      >
+        <span class="mail-summary-row__label">
+          <Show when={ai()}>
+            <span aria-hidden="true">✦ </span>
+          </Show>
           {t().title}
           <Show when={ai()}>
             <span class="sr-only"> ({t().aiLabel})</span>
           </Show>
-        </>
-      }
-      meta={
-        view() === "writing" ? (
-          <span class="text-xs" aria-live="polite">
-            {t().writing}
-          </span>
-        ) : undefined
-      }
-      actions={
-        view() === "text" ? (
-          <>
-            <Show when={props.state.canGenerate}>{tool(t().rewrite, "ti-refresh", () => props.onGenerate("replace"))}</Show>
-            <Show when={props.canEdit}>{tool(t().edit, "ti-pencil", props.onEdit, props.editDisabled)}</Show>
-            <Tooltip.Anchor content={why()}>
-              <IconButton type="button" size="sm" variant="ghost" label={t().why}>
-                <i class="ti ti-info-circle" aria-hidden="true" />
-              </IconButton>
-            </Tooltip.Anchor>
-          </>
-        ) : undefined
-      }
-      state={view() === "writing" ? "loading" : "ready"}
-      loadingRows={4}
-      data-mail-conversation-summary={view()}
-      data-mail-summary-ai={ai() ? "" : undefined}
-    >
+        </span>
+        <span class="mail-summary-row__line" aria-live={view() === "writing" ? "polite" : undefined}>
+          {line()}
+        </span>
+        <i class={`ti ${expanded() ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />
+      </button>
+      <Show when={expanded()}>
+        <div class="mail-summary-row__body" id={bodyId}>
+          <Show when={view() === "text"}>
+            <div class="mail-summary-row__tools">
+              <Show when={props.state.canGenerate}>{tool(t().rewrite, "ti-refresh", () => props.onGenerate("replace"))}</Show>
+              <Show when={props.canEdit}>{tool(t().edit, "ti-pencil", props.onEdit, props.editDisabled)}</Show>
+              <Tooltip.Anchor content={why()}>
+                <IconButton type="button" size="sm" variant="ghost" label={t().why}>
+                  <i class="ti ti-info-circle" aria-hidden="true" />
+                </IconButton>
+              </Tooltip.Anchor>
+            </div>
+          </Show>
       <Switch>
         <Match when={view() === "failed"}>
           <p class="my-2.5 max-w-[62ch]" role="alert">
@@ -230,6 +256,8 @@ export default function MailConversationSummaryCard(props: {
           </Show>
         </Match>
       </Switch>
-    </Section>
+        </div>
+      </Show>
+    </section>
   );
 }
