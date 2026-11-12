@@ -113,15 +113,25 @@ export default function AssistantCodeVersionCard(props: {
     disposed = true;
   });
   const [nextRun, setNextRun] = createSignal<string | null>(null);
-  const load = async () => {
+  /** Reads overlap when a decision arrives during a read; only the newest one decides what the card shows. */
+  let reads = 0;
+  /**
+   * Reads the card's state from Core; false when Core did not answer. `live`: a read for a live update, which keeps a
+   * card that was shown as it is when it fails, so the update is tried again instead of turning the card into an error.
+   */
+  const load = async (live = false): Promise<boolean> => {
+    const read = ++reads;
     // A reload after a step keeps the card as it is until the new state arrives, so nothing jumps under the pointer.
     if (typeof loaded() !== "object") setLoaded(null);
     const preview = await loadCodeVersionPreview(props.codeId, props.versionId);
     // A running version shows its next run in the same paint as its line, so nothing moves once it arrives.
-    setNextRun(
-      typeof preview === "object" && preview.running === props.number ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null,
-    );
+    const next =
+      typeof preview === "object" && preview.running === props.number ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null;
+    if (read !== reads) return preview !== "failed";
+    if (preview === "failed" && live && loaded() !== null) return false;
+    setNextRun(next);
     setLoaded(preview);
+    return preview !== "failed";
   };
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
   const pending = pendingCodeVersionActivation(props.codeId, props.versionId);
@@ -202,15 +212,21 @@ export default function AssistantCodeVersionCard(props: {
     void load();
     // A card opened while an earlier attempt is unresolved continues with that attempt.
     if (pending.read()) void check();
-    // Only a card that waits for a decision follows them; every other state changes only by this person's own step.
+    // A card that waits for a decision follows them, and so does one still reading or showing an error, whose state is
+    // not known yet; every other state changes only by this person's own step.
     const decided = matchesAssistantInvalidation(["code-versions"]);
     onCleanup(
       live.register({
         matches: (invalidation) => {
           const current = loaded();
-          return typeof current === "object" && current?.readiness.state === "approval_pending" && decided(invalidation);
+          const open =
+            current === null || current === "failed" || (typeof current === "object" && current.readiness.state === "approval_pending");
+          return open && decided(invalidation);
         },
-        invalidate: load,
+        // A failed read keeps the card and fails the update, so the live channel tries it again.
+        invalidate: async () => {
+          if (!(await load(true))) throw new Error("The Code version could not be read again.");
+        },
       }),
     );
   });

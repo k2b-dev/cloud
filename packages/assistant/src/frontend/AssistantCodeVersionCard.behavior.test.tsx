@@ -512,3 +512,45 @@ test("a rejected version says so in the person's words and that nothing changed"
   expect(card.dom.root.textContent).not.toContain("rejected or revoked");
   expect(button(card.dom.root, "Switch on")).toBeUndefined();
 });
+
+test("a decision that arrives while the card still reads its first state is not lost", async () => {
+  let state: CodeVersionPreview["readiness"] = { state: "approval_pending" };
+  let releaseFirst = () => {};
+  const first = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  let answers = 0;
+  const card = await mount({
+    "activation/preview": async () => {
+      // The first answer was read before the decision and arrives after it.
+      const snapshot = { json: { data: preview({ readiness: state }) } };
+      if (answers++ === 0) await first;
+      return snapshot;
+    },
+  });
+  expect(card.dom.root.querySelector('[data-state="loading"]')).not.toBeNull();
+  state = { state: "ready" };
+  await card.live.apply([decided()]);
+  releaseFirst();
+  await tick();
+  expect(card.calls).toHaveLength(2);
+  expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
+});
+
+test("a decision whose read fails keeps the waiting card and is tried again by the live channel", async () => {
+  let state: CodeVersionPreview["readiness"] = { state: "approval_pending" };
+  let down = false;
+  const card = await mount({
+    "activation/preview": () => (down ? { status: 503 } : { json: { data: preview({ readiness: state }) } }),
+  });
+  state = { state: "ready" };
+  down = true;
+  // The live channel keeps its cursor when an update fails and offers it again.
+  await expect(card.live.apply([decided()])).rejects.toThrow();
+  expect(card.dom.root.textContent).toContain("A Cloud administrator must approve this version first.");
+  expect(card.dom.root.querySelector('[role="alert"]')).toBeNull();
+  down = false;
+  await card.live.apply([decided()]);
+  await tick();
+  expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
+});
