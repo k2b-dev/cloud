@@ -429,6 +429,32 @@ function LightboxStage(props: {
   const [source, setSource] = createSignal<string | null>(null);
   const failed = () => setState("failed");
   const ready = () => setState("ready");
+  /*
+   * A video or audio file takes the focus once its player is there, which can be a moment after the frame when the
+   * player's code still loads; so its own keys and the screen reader start on it in every engine. The focus moves only
+   * while it still rests on the stage or the page, never away from a control the person chose meanwhile.
+   */
+  const focusMediaWhenShown = (host: HTMLElement) => {
+    const take = () => {
+      const shown = host.querySelector<HTMLMediaElement>("video, audio");
+      if (!shown || !shown.isConnected) return false;
+      const active = document.activeElement;
+      const stage = host.closest(".k2b-lightbox__stage");
+      if (!active || active === document.body || active === stage || host.contains(active)) shown.focus({ preventScroll: true });
+      return true;
+    };
+    // The host is not in the page yet while its ref runs; the first look waits for the mount.
+    const watch = new MutationObserver(() => {
+      if (take()) watch.disconnect();
+    });
+    watch.observe(host, { childList: true, subtree: true });
+    onCleanup(() => watch.disconnect());
+    const look = () => {
+      if (take()) watch.disconnect();
+    };
+    queueMicrotask(look);
+    requestAnimationFrame(look);
+  };
   const downloadable = () => Boolean(props.item.downloadUrl || props.item.onDownload);
   const download = (variant: "primary" | "secondary") => (
     <Show
@@ -556,10 +582,7 @@ function LightboxStage(props: {
           <Match when={props.kind === "video" && source()}>
             {(src) => (
               // The shared player renews a short-lived address and goes on at the same time; it has the keys at once.
-              <div
-                class="k2b-lightbox__video"
-                ref={(element) => requestAnimationFrame(() => element.querySelector("video")?.focus({ preventScroll: true }))}
-              >
+              <div class="k2b-lightbox__video" ref={focusMediaWhenShown}>
                 <VideoPlayer
                   src={src()}
                   label={props.item.name}
@@ -571,7 +594,7 @@ function LightboxStage(props: {
           </Match>
           <Match when={props.kind === "audio" && source()}>
             {(src) => (
-              <div class="k2b-lightbox__audio">
+              <div class="k2b-lightbox__audio" ref={focusMediaWhenShown}>
                 <FileTypeIcon name={props.item.file?.path ?? props.item.name} size="lg" />
                 <audio src={src()} controls preload="metadata" onLoadedMetadata={ready} onError={failed} />
               </div>
