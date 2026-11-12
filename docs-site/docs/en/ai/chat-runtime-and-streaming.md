@@ -512,6 +512,10 @@ tables write each update in the transaction of the change, keyed
 written for every user who can read the Project at that moment, including
 nested groups and grants to all signed-in people; a grant change reaches the
 readers before and after it. A conversation change reaches only its owner.
+A Cloud administrator's decision on a submitted Code version writes
+`code-versions` for the person who submitted it, in the decision's
+transaction, so the version card in the chat shows the decision without
+polling.
 
 A socket follows only its own user's key, and its credential is checked again
 every 10 seconds; an ended session closes it with `1008`. A third-party UI

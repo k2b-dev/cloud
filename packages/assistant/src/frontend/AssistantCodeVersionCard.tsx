@@ -5,6 +5,7 @@ import { describeCodeTiming } from "@k2b/cloud/ssr/code-schedule";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { loadCodeNextRun } from "../code-summary";
+import { matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import {
   type CodeVersionActivation,
   type CodeVersionPreview,
@@ -69,9 +70,13 @@ function MayDoRow(props: { icon: string; what: string; where: string }) {
   );
 }
 
+/** The code a refused version carries when a Cloud administrator rejected it, or revoked its approval. */
+const REJECTED = "code_approval_revoked";
+
 /**
  * The saved version and its approval/credential state. Switching on creates no target rights.
- * Once switched on, a reload reads the same state from Core.
+ * Once switched on, a reload reads the same state from Core. While it waits for a Cloud administrator, their decision
+ * arrives on the person's live channel and the card reads its state again; nothing polls for it.
  */
 export default function AssistantCodeVersionCard(props: {
   codeId: string;
@@ -81,6 +86,7 @@ export default function AssistantCodeVersionCard(props: {
   onActivated?: () => void;
 }) {
   const locale = useLocale();
+  const live = useAssistantLive();
   const t = createMemo(() => assistantMessages.resolve([locale()]).t);
   // Targets read exactly as on the Code page.
   const pageT = createMemo(() => codePageMessages.resolve([locale()]).t);
@@ -107,15 +113,33 @@ export default function AssistantCodeVersionCard(props: {
     disposed = true;
   });
   const [nextRun, setNextRun] = createSignal<string | null>(null);
-  const load = async () => {
+  /**
+   * Reads overlap when a decision arrives during a read; only the newest one decides what the card shows, and an older
+   * one ends with the newest one's outcome, so nobody takes it as done before the card shows a state read after it.
+   */
+  let reads = 0;
+  let newest: Promise<boolean> = Promise.resolve(true);
+  /**
+   * Reads the card's state from Core; false when Core did not answer. `live`: a read for a live update, which keeps a
+   * card that was shown as it is when it fails, so the update is tried again instead of turning the card into an error.
+   */
+  const load = (live = false): Promise<boolean> => {
+    const read = ++reads;
     // A reload after a step keeps the card as it is until the new state arrives, so nothing jumps under the pointer.
     if (typeof loaded() !== "object") setLoaded(null);
-    const preview = await loadCodeVersionPreview(props.codeId, props.versionId);
-    // A running version shows its next run in the same paint as its line, so nothing moves once it arrives.
-    setNextRun(
-      typeof preview === "object" && preview.running === props.number ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null,
-    );
-    setLoaded(preview);
+    const run = (async (): Promise<boolean> => {
+      const preview = await loadCodeVersionPreview(props.codeId, props.versionId);
+      // A running version shows its next run in the same paint as its line, so nothing moves once it arrives.
+      const next =
+        typeof preview === "object" && preview.running === props.number ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null;
+      if (read !== reads) return newest;
+      if (preview === "failed" && live && loaded() !== null) return false;
+      setNextRun(next);
+      setLoaded(preview);
+      return preview !== "failed";
+    })();
+    newest = run;
+    return run;
   };
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
   const pending = pendingCodeVersionActivation(props.codeId, props.versionId);
@@ -196,6 +220,23 @@ export default function AssistantCodeVersionCard(props: {
     void load();
     // A card opened while an earlier attempt is unresolved continues with that attempt.
     if (pending.read()) void check();
+    // A card that waits for a decision follows them, and so does one still reading or showing an error, whose state is
+    // not known yet; every other state changes only by this person's own step.
+    const decided = matchesAssistantInvalidation(["code-versions"]);
+    onCleanup(
+      live.register({
+        matches: (invalidation) => {
+          const current = loaded();
+          const open =
+            current === null || current === "failed" || (typeof current === "object" && current.readiness.state === "approval_pending");
+          return open && decided(invalidation);
+        },
+        // A failed read keeps the card and fails the update, so the live channel tries it again.
+        invalidate: async () => {
+          if (!(await load(true))) throw new Error("The Code version could not be read again.");
+        },
+      }),
+    );
   });
 
   const preview = () => {
@@ -213,7 +254,11 @@ export default function AssistantCodeVersionCard(props: {
   };
   const refusedMessage = () => {
     const readiness = preview()?.readiness;
-    return readiness?.state === "refused" ? readiness.message : null;
+    return readiness?.state === "refused" && readiness.code !== REJECTED ? readiness.message : null;
+  };
+  const rejected = () => {
+    const readiness = preview()?.readiness;
+    return readiness?.state === "refused" && readiness.code === REJECTED;
   };
   const notAllowed = () => {
     const allowed = preview()?.allowed;
@@ -362,6 +407,20 @@ export default function AssistantCodeVersionCard(props: {
               <FeatCodeMark variant="glyph" decorative class="assistant-code-version__mark" />
               {t().codeVersionReady({ version: props.number, title: current().title })}
             </p>
+            <Show when={current().tests}>
+              {(tests) => (
+                <p class="assistant-code-version__checks">
+                  <span>
+                    <i class="ti ti-circle-check" aria-hidden="true" />
+                    {t().codeVersionChecked}
+                  </span>
+                  <span data-tone={tests().state === "passed" ? "ok" : tests().state === "failed" ? "warning" : undefined}>
+                    <i class={tests().state === "passed" ? "ti ti-test-pipe" : "ti ti-alert-triangle"} aria-hidden="true" />
+                    {t().codeVersionTests(tests())}
+                  </span>
+                </p>
+              )}
+            </Show>
             <Show when={current().automations?.length}>
               <p class="assistant-code-version__note">
                 {current()
@@ -475,7 +534,16 @@ export default function AssistantCodeVersionCard(props: {
               <p class="assistant-code-version__note">
                 <i class="ti ti-hourglass" aria-hidden="true" />
                 <span>
-                  {t().codeVersionApprovalPending} {t().codeVersionKeepsRunning({ version: current().running })}
+                  {t().codeVersionApprovalPending} {t().codeVersionKeepsRunning({ version: current().running })}{" "}
+                  {t().codeVersionApprovalLive}
+                </span>
+              </p>
+            </Show>
+            <Show when={rejected()}>
+              <p class="assistant-code-version__note" data-state="rejected">
+                <i class="ti ti-circle-x" aria-hidden="true" />
+                <span>
+                  {t().codeVersionRejected} {t().codeVersionNothingChanged({ version: current().running })}
                 </span>
               </p>
             </Show>

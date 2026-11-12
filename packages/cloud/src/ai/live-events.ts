@@ -9,6 +9,8 @@ export const AI_INVALIDATION_DOMAINS = [
   "project-list",
   "project-detail",
   "project-context",
+  /** A Cloud administrator decided a Code version the user submitted: its card in the chat reads its state again. */
+  "code-versions",
 ] as const;
 
 export const AiInvalidationDomainSchema = z.enum(AI_INVALIDATION_DOMAINS);

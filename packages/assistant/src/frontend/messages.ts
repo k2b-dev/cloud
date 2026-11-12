@@ -178,6 +178,18 @@ export const assistantMessages = i18n.define({
       codeVersionKeepsRunning: ({ version }: { version: number | null }) =>
         version ? `Until then version ${version} keeps running.` : "Until then nothing runs.",
       codeVersionApprovalPending: "A Cloud administrator must approve this version first.",
+      codeVersionApprovalLive: "This card shows their decision as soon as it is made.",
+      codeVersionRejected: "A Cloud administrator did not approve this version.",
+      codeVersionChecked: "Check passed",
+      codeVersionTests: ({
+        state,
+        passed,
+        total,
+      }: {
+        state: "passed" | "failed" | "none" | "unavailable";
+        passed: number;
+        total: number;
+      }) => (state === "none" ? "No tests" : state === "unavailable" ? "Tests could not run" : `Tests ${passed}/${total}`),
       codeVersionPhone: "Switching on is not possible on a phone. Open this chat on a computer.",
       codeVersionCredential: "Switching on needs a browser session or a personal sign-in.",
       codeVersionOn: ({ version, when }: { version: number; when: string }) => `Version ${version} switched on · ${when} · by you`,
@@ -422,6 +434,11 @@ export const assistantMessages = i18n.define({
       codeVersionDiff: "Unterschied",
       codeVersionKeepsRunning: ({ version }) => (version ? `Bis dahin läuft Version ${version} weiter.` : "Bis dahin läuft nichts."),
       codeVersionApprovalPending: "Diese Version muss erst ein Cloud-Admin freigeben.",
+      codeVersionApprovalLive: "Die Karte zeigt die Entscheidung, sobald sie fällt.",
+      codeVersionRejected: "Ein Cloud-Admin hat diese Version nicht freigegeben.",
+      codeVersionChecked: "Prüfung bestanden",
+      codeVersionTests: ({ state, passed, total }) =>
+        state === "none" ? "Keine Tests" : state === "unavailable" ? "Tests konnten nicht laufen" : `Tests ${passed}/${total}`,
       codeVersionPhone: "Am Telefon lässt sich nicht einschalten. Öffne diesen Chat am Computer.",
       codeVersionCredential: "Einschalten braucht eine Browser-Sitzung oder eine persönliche Anmeldung.",
       codeVersionOn: ({ version, when }) => `Version ${version} eingeschaltet · ${when} · von dir`,

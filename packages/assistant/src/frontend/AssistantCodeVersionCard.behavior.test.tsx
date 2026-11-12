@@ -1,6 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { AssistantLiveProvider, createAssistantLiveHub } from "./assistant-live";
 import { type CodeVersionPreview, codeVersionOwnPageHref, codeVersionPageHref } from "./code-activation";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -43,8 +44,13 @@ const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<
   }) as unknown as typeof fetch);
   const { default: Card } = await import("./AssistantCodeVersionCard");
   const activated: number[] = [];
+  const live = createAssistantLiveHub();
   const dispose = render(
-    () => <Card codeId={codeId} versionId={versionId} number={5} timeZone="UTC" onActivated={() => activated.push(1)} />,
+    () => (
+      <AssistantLiveProvider value={live}>
+        <Card codeId={codeId} versionId={versionId} number={5} timeZone="UTC" onActivated={() => activated.push(1)} />
+      </AssistantLiveProvider>
+    ),
     dom.root,
   );
   restore.push(() => {
@@ -53,8 +59,17 @@ const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<
     dom.cleanup();
   });
   await tick();
-  return { dom, calls, activated };
+  return { dom, calls, activated, live };
 };
+/** One update on the person's AI live channel, as Core's decision trigger writes it. */
+const decided = (domains: Array<"code-versions" | "conversation-detail"> = ["code-versions"]) => ({
+  type: "ai.invalidated" as const,
+  changeId: "77777777-7777-4777-8777-777777777777",
+  conversationId: null,
+  projectId: null,
+  domains,
+  at: "2026-11-12T08:00:00.000Z",
+});
 const button = (root: Element, name: string) =>
   [...root.querySelectorAll("button, a")].find((element) => element.textContent?.includes(name)) as HTMLElement | undefined;
 
@@ -446,4 +461,96 @@ test("a person who moved on while the switch waited keeps their place when the r
   await tick();
   expect(button(dom.root, "Try again")).toBeDefined();
   expect(dom.document.activeElement).toBe(composer);
+});
+
+test("the card says what Core saw at submission: the check passed and how many test cases did", async () => {
+  const passed = await mount({
+    "activation/preview": () => ({ json: { data: preview({ tests: { state: "passed", passed: 3, total: 3 } }) } }),
+  });
+  expect(passed.dom.root.querySelector(".assistant-code-version__checks")?.textContent).toBe("Check passedTests 3/3");
+  for (const undo of restore.splice(0)) undo();
+  const failed = await mount({
+    "activation/preview": () => ({ json: { data: preview({ tests: { state: "failed", passed: 2, total: 3 } }) } }),
+  });
+  expect(failed.dom.root.querySelector('[data-tone="warning"]')?.textContent).toBe("Tests 2/3");
+  for (const undo of restore.splice(0)) undo();
+  // A version submitted before Core recorded this shows no line rather than a guess.
+  const older = await mount({ "activation/preview": () => ({ json: { data: preview() } }) });
+  expect(older.dom.root.querySelector(".assistant-code-version__checks")).toBeNull();
+});
+
+test("a version waiting for a Cloud administrator shows their decision when it arrives live, without polling", async () => {
+  let state: CodeVersionPreview["readiness"] = { state: "approval_pending" };
+  const card = await mount({ "activation/preview": () => ({ json: { data: preview({ readiness: state }) } }) });
+  expect(card.dom.root.textContent).toContain("This card shows their decision as soon as it is made.");
+  expect(button(card.dom.root, "Switch on")).toBeUndefined();
+  // Nothing asks Core again while the card waits.
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  expect(card.calls).toHaveLength(1);
+  // Another view's update leaves the card alone.
+  await card.live.apply([decided(["conversation-detail"])]);
+  expect(card.calls).toHaveLength(1);
+  state = { state: "ready" };
+  await card.live.apply([decided()]);
+  await tick();
+  expect(card.calls.map((call) => call.route)).toEqual(["activation/preview", "activation/preview"]);
+  expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
+  // Once decided, the card no longer follows decisions: its next step is this person's own.
+  await card.live.apply([decided()]);
+  expect(card.calls).toHaveLength(2);
+});
+
+test("a rejected version says so in the person's words and that nothing changed", async () => {
+  let state: CodeVersionPreview["readiness"] = { state: "approval_pending" };
+  const card = await mount({ "activation/preview": () => ({ json: { data: preview({ readiness: state }) } }) });
+  state = { state: "refused", code: "code_approval_revoked", message: "This version approval is rejected or revoked." };
+  await card.live.apply([decided()]);
+  await tick();
+  const note = card.dom.root.querySelector('[data-state="rejected"]');
+  expect(note?.textContent).toBe("A Cloud administrator did not approve this version. Nothing changed, version 4 keeps running.");
+  // Core's own wording for operators stays off the card.
+  expect(card.dom.root.textContent).not.toContain("rejected or revoked");
+  expect(button(card.dom.root, "Switch on")).toBeUndefined();
+});
+
+test("a decision that arrives while the card still reads its first state is not lost", async () => {
+  let state: CodeVersionPreview["readiness"] = { state: "approval_pending" };
+  let releaseFirst = () => {};
+  const first = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  let answers = 0;
+  const card = await mount({
+    "activation/preview": async () => {
+      // The first answer was read before the decision and arrives after it.
+      const snapshot = { json: { data: preview({ readiness: state }) } };
+      if (answers++ === 0) await first;
+      return snapshot;
+    },
+  });
+  expect(card.dom.root.querySelector('[data-state="loading"]')).not.toBeNull();
+  state = { state: "ready" };
+  await card.live.apply([decided()]);
+  releaseFirst();
+  await tick();
+  expect(card.calls).toHaveLength(2);
+  expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
+});
+
+test("a decision whose read fails keeps the waiting card and is tried again by the live channel", async () => {
+  let state: CodeVersionPreview["readiness"] = { state: "approval_pending" };
+  let down = false;
+  const card = await mount({
+    "activation/preview": () => (down ? { status: 503 } : { json: { data: preview({ readiness: state }) } }),
+  });
+  state = { state: "ready" };
+  down = true;
+  // The live channel keeps its cursor when an update fails and offers it again.
+  await expect(card.live.apply([decided()])).rejects.toThrow();
+  expect(card.dom.root.textContent).toContain("A Cloud administrator must approve this version first.");
+  expect(card.dom.root.querySelector('[role="alert"]')).toBeNull();
+  down = false;
+  await card.live.apply([decided()]);
+  await tick();
+  expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
 });

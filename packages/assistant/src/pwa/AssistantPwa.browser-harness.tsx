@@ -537,7 +537,20 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
             }
           : params.get("code") === "full"
             ? CODE_VERSION_FULL
-            : CODE_VERSION,
+            : // `code=pending` waits for a Cloud administrator; `code=rejected` was not approved.
+              params.get("code") === "pending"
+              ? { ...CODE_VERSION, tests: { state: "passed", passed: 3, total: 3 }, readiness: { state: "approval_pending" } }
+              : params.get("code") === "rejected"
+                ? {
+                    ...CODE_VERSION,
+                    tests: { state: "failed", passed: 2, total: 3 },
+                    readiness: {
+                      state: "refused",
+                      code: "code_approval_revoked",
+                      message: "This version approval is rejected or revoked.",
+                    },
+                  }
+                : CODE_VERSION,
     });
   if (url.pathname === "/api/capabilities/v1/queries/core/code.automation.list")
     return json({

@@ -95,6 +95,18 @@ export const CodeActivationPreviewSchema = z
     /** Set when this is the running version: when it was switched on and by whom, as far as this person may see it. */
     activated: z.object({ at: z.iso.datetime(), byYou: z.boolean(), byName: z.string().nullable() }).strict().nullable(),
     allowed: CodeActivationAllowedSchema,
+    /**
+     * What Core saw when the version was submitted: its check passed, and its test cases from `test/*.json` ran with
+     * this result against fake data. Absent for versions submitted before Core recorded it.
+     */
+    tests: z
+      .object({
+        state: z.enum(["passed", "failed", "none", "unavailable"]),
+        passed: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
     /** `ready`, or what must happen first; `refused` carries Core's own reason for a version that can never switch on as it is. */
     readiness: z.discriminatedUnion("state", [
       z.object({ state: z.literal("ready") }).strict(),

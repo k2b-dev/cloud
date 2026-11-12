@@ -41,5 +41,16 @@ export async function migrate(db: SQL = sql): Promise<void> {
       FOR EACH ROW EXECUTE FUNCTION code.guard_version_evidence();
       CREATE OR REPLACE TRIGGER immutable_decision BEFORE UPDATE ON code.version_decisions
       FOR EACH ROW EXECUTE FUNCTION code.guard_version_evidence();`.simple();
+    // A decision reaches the version card of the person who submitted it on Core's AI live channel, in the decision's
+    // own transaction. A database without the AI schema has no such viewers.
+    await tx`CREATE OR REPLACE FUNCTION code.version_decision_live() RETURNS TRIGGER AS $$
+    BEGIN
+      IF to_regprocedure('ai.enqueue_live_for_user(uuid,uuid,text,text,text[])') IS NULL THEN RETURN NEW; END IF;
+      PERFORM ai.enqueue_live_for_user(gen_random_uuid(), (SELECT created_by FROM code.versions WHERE id=NEW.version_id),
+        NULL, NULL, ARRAY['code-versions']::text[]);
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql`.simple();
+    await tx`CREATE OR REPLACE TRIGGER decision_live AFTER INSERT ON code.version_decisions
+      FOR EACH ROW EXECUTE FUNCTION code.version_decision_live();`.simple();
   });
 }

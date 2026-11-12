@@ -44,7 +44,12 @@ import { assistantApi } from "../api/client";
 import AssistantCodeVersionCard from "../frontend/AssistantCodeVersionCard";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
 import { createAssistantDictation } from "../frontend/assistant-dictation";
-import { createAssistantLiveHub, followAssistantLive, matchesAssistantInvalidation } from "../frontend/assistant-live";
+import {
+  AssistantLiveProvider,
+  createAssistantLiveHub,
+  followAssistantLive,
+  matchesAssistantInvalidation,
+} from "../frontend/assistant-live";
 import { audioMessages } from "../frontend/audio-messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
@@ -969,7 +974,11 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                 <AiChatActionsProvider
                   actions={{
                     // The same version card as the workspace: on a phone it says where switching on works.
-                    renderCodeVersion: (version) => <AssistantCodeVersionCard {...version} timeZone={props.timeZone} />,
+                    renderCodeVersion: (version) => (
+                      <AssistantLiveProvider value={liveHub}>
+                        <AssistantCodeVersionCard {...version} timeZone={props.timeZone} />
+                      </AssistantLiveProvider>
+                    ),
                     actionDisabled: () => chat.runStatus() === "stopping",
                     onCheckAction: (request) => chat.checkAction(request),
                     onApproval: async (request, input) => {
