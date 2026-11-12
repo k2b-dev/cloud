@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { browserName, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { pdfFixture } from "../../test/pdf-fixture";
 
 // The Lightbox shows each kind of file on one stage: pictures, PDFs drawn by pdf.js, Markdown through FileView, a
@@ -279,19 +279,39 @@ describe("@k2b/ui Lightbox", () => {
       const box = (await page.locator("dialog.k2b-lightbox").boundingBox())!;
       expect([box.width, box.height]).toEqual([390, 844]);
       await shot(page, "lightbox-bild-light-390.png");
-      const swipe = (from: [number, number], to: [number, number]) =>
-        page.evaluate(
+      // Chromium takes a real touch through the driver. WebKit on Linux has no touch input and no Touch constructor,
+      // so there the same sequence arrives as touch events carrying their points, which is all the Lightbox reads.
+      const swipe = async (from: [number, number], to: [number, number]) => {
+        if (browserName === "chromium") {
+          const cdp = await page.context().newCDPSession(page);
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from[0], y: from[1] }] });
+          for (let step = 1; step <= 5; step++)
+            await cdp.send("Input.dispatchTouchEvent", {
+              type: "touchMove",
+              touchPoints: [{ x: from[0] + ((to[0] - from[0]) * step) / 5, y: from[1] + ((to[1] - from[1]) * step) / 5 }],
+            });
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          return;
+        }
+        await page.evaluate(
           ([from, to]) => {
             const stage = document.querySelector(".k2b-lightbox__stage")!;
-            const point = (x: number, y: number) => new Touch({ identifier: 1, target: stage, clientX: x, clientY: y });
-            stage.dispatchEvent(
-              new TouchEvent("touchstart", { bubbles: true, touches: [point(...from)], changedTouches: [point(...from)] }),
-            );
-            stage.dispatchEvent(new TouchEvent("touchmove", { bubbles: true, touches: [point(...to)], changedTouches: [point(...to)] }));
-            stage.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [point(...to)] }));
+            const send = (type: string, touches: [number, number][], changed: [number, number]) => {
+              const event = new Event(type, { bubbles: true });
+              const point = ([clientX, clientY]: [number, number]) => ({ identifier: 1, target: stage, clientX, clientY });
+              Object.defineProperties(event, {
+                touches: { value: touches.map(point) },
+                changedTouches: { value: [point(changed)] },
+              });
+              stage.dispatchEvent(event);
+            };
+            send("touchstart", [from], from);
+            send("touchmove", [to], to);
+            send("touchend", [], to);
           },
           [from, to] as const,
         );
+      };
       await swipe([320, 400], [80, 410]);
       expect(await name(page)).toContain("Angebot-0412");
       await swipe([200, 200], [205, 500]);

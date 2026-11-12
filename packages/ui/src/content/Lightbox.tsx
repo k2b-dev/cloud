@@ -1,16 +1,37 @@
-import { type Accessor, createEffect, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import {
+  type Accessor,
+  createEffect,
+  createSignal,
+  For,
+  type JSX,
+  lazy,
+  Match,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js";
 import { Button, ButtonLink, IconButton, IconButtonLink } from "../actions/Button";
 import { Toolbar } from "../actions/Toolbar";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { showTruncatedTitle } from "../internal/truncated-title";
 import { createDelayedLoading } from "../surfaces/Skeleton";
 import { FileTypeIcon } from "./FileTypeIcon";
-import FileView, { type FileViewContent } from "./FileView";
+import type { FileViewContent } from "./FileView";
 import { type FileViewFile, getFileViewPreviewKind } from "./file-view-preview";
 import { useLightboxMessages } from "./lightbox-messages";
-import PdfViewer from "./PdfViewer";
 import { ThumbnailStrip } from "./ThumbnailStrip";
-import { VideoPlayer } from "./VideoPlayer";
+
+/*
+ * The renderers load when a file needs them, so a page that offers the Lightbox carries only its frame: a gallery of
+ * pictures never loads the document, PDF and video code, and an app's first script stays within its budget.
+ */
+const renderers = () => import("./lightbox-renderers");
+const FileView = lazy(() => renderers().then((module) => ({ default: module.FileView })));
+const PdfViewer = lazy(() => renderers().then((module) => ({ default: module.PdfViewer })));
+const VideoPlayer = lazy(() => renderers().then((module) => ({ default: module.VideoPlayer })));
 
 /** One more command for the shown file, in the action pill before Download: a short label, its icon, and what it does. */
 export type LightboxAction = { label: string; icon: string; onClick: () => void };

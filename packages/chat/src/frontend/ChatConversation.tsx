@@ -1,4 +1,5 @@
 import { chooseFiles, SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { type CloudResourceRef, CloudResourceRefSchema } from "@k2b/cloud/contracts/capabilities";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
@@ -14,7 +15,6 @@ import {
   EmojiPicker,
   FileDropTarget,
   IconButtonLink,
-  Lightbox,
   MessageEventGroup,
   MessageEventRow,
   MessageRow,
@@ -31,7 +31,7 @@ import {
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, lazy, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { chatMessages } from "../messages";
 import {
   type AttachmentView,
@@ -186,6 +186,11 @@ export type ChatConversationProps = {
   onEscape: () => void;
 };
 
+/*
+ * The Lightbox and its renderers load when a reader opens an attachment, as Chat's other heavy parts do; a failed
+ * load offers a reload instead of opening nothing silently.
+ */
+const Lightbox = lazy(async () => (await importOnDemand(() => import("./chat-lightbox"))) ?? { default: () => null });
 const ROW_ESTIMATE = 60;
 const SYSTEM_ESTIMATE = 36;
 const EVENT_ESTIMATE = 26;
