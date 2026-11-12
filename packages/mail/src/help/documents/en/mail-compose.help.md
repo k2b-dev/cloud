@@ -15,9 +15,9 @@ You write in the conversation itself. In a conversation, choose **Reply**, **Rep
 Choose **New message** or press **Ctrl+Alt+N** (**⌘+⌥+N** on a Mac) for a new message. It opens as a floating window over the mailbox. The list and the open conversation behind it stay usable, and you can have several new messages open at once.
 
 - **Window head:** It shows the subject, until then "New message", and quietly where the draft stands: "Saved on server", "Saving draft...", or "Offline · saved here". Next to it are **Minimize**, **Maximize**, and **Close window**. Drag the head to move the window.
-- **Minimize** puts the window down as a bar at the bottom. Click the bar to bring it back. The list leaves room so that its last row stays reachable.
+- **Minimize** puts the window down as a bar at the bottom. Choose the bar to bring it back. The list leaves room so that its last row stays reachable.
 - **Maximize** enlarges the window over almost all of the app and dims the rest. Esc or **Restore size** makes it smaller again.
-- **Close** loses nothing: the draft waits in **Drafts**, and the notice "Draft is in “Drafts”" offers **Open**. Clicking a new message in **Drafts** opens it as a window again. A message you just started and did not change disappears when you close it.
+- **Close** loses nothing: the draft waits in **Drafts**, and the notice "Draft is in “Drafts”" offers **Open**. Choosing a new message in **Drafts** opens it as a window again. A message you just started and did not change disappears when you close it.
 - **Send** closes the window. The notice "Sending in … s" offers **Undo** while that is still possible; the window then opens again with the draft. **Send later** closes the window too, and **Change** in the notice takes the message back for editing.
 - **Send failed:** The window stays open, its bottom bar turns red and names the reason. Your text is saved. **Send again** stands where **Send** was.
 - **Offline** you keep writing; Mail keeps the text in this browser, and **Send** waits until the connection is back. While a file uploads, the head shows "Uploading · n %", and **Send** waits too.
