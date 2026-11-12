@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import type { SQL } from "bun";
+import { migrateUnusedCodeDatabases } from "./code-unused-databases";
 
 /** Additive Core migration. Existing AI/Assistant and workflow data are untouched. */
 export const migrate = async (db: SQL = sql): Promise<void> => {
@@ -187,5 +188,6 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
         CREATE OR REPLACE TRIGGER bounded_call BEFORE INSERT OR UPDATE ON code.calls FOR EACH ROW EXECUTE FUNCTION code.guard_call();
         CREATE OR REPLACE TRIGGER immutable_version_delete BEFORE DELETE ON code.versions FOR EACH ROW EXECUTE FUNCTION code.guard_version_delete();
     `.simple();
+    await migrateUnusedCodeDatabases(tx);
   });
 };

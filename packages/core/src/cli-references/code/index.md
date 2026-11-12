@@ -285,5 +285,9 @@ It does not include source, secrets or grants, or create a database. JSON/JSONL 
 `code_db_owner_full` means the owner has reached its reserved storage capacity.
 Delete unused Code or ask an administrator to raise
 `core.code.database_owner_bytes`; reads and exports remain available. The
-owner default is ten 100 MiB database ceilings. Pausing a Code preserves its
-database; deleting the Code removes it through the durable deletion job.
+owner default is ten 100 MiB database ceilings. An inactive Code's database is deleted after a visible deadline (30 days by
+default) when neither its latest nor selected version declares `database`.
+Reactivation or a database declaration ends the deadline. Editors can export or
+confirm **Delete now** on the Code page. `core.code.database_unused_days`
+controls the deadline; zero disables automatic deletion. Deleting the Code
+also removes its database through the durable deletion job.

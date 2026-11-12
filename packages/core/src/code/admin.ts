@@ -224,7 +224,7 @@ export async function readCodeAdminSummary(context: CodeContext): Promise<CodeAd
       WHERE r.status='pending' AND r.expires_at>now()) AS approvals,
     (SELECT count(*)::int FROM code.codes) AS codes,
     (SELECT count(DISTINCT group_id)::int FROM code.policy_rules WHERE group_id IS NOT NULL) AS groups,
-    (SELECT count(*)::int FROM code.cleanup_jobs) AS cleanup`;
+    ((SELECT count(*)::int FROM code.cleanup_jobs)+(SELECT count(*)::int FROM code.database_deletions)) AS cleanup`;
   return row ?? { approvals: 0, codes: 0, groups: 0, cleanup: 0 };
 }
 

@@ -136,8 +136,10 @@ export async function listCodeCleanupJobs(raw: z.input<typeof codeLifecycleContr
   const rows = await sql<
     (CleanupRow & { title: string; created_at: Date; next_attempt_at: Date; last_error: string | null; running: boolean })[]
   >`
-    SELECT j.*,c.title,(j.claimed_until>clock_timestamp()) IS TRUE AS running
-    FROM code.cleanup_jobs j JOIN code.codes c ON c.id=j.code_id
+    SELECT j.*,COALESCE(c.title,j.code_id) AS title,(j.claimed_until>clock_timestamp()) IS TRUE AS running
+    FROM (SELECT id,code_id,kind,attempts,next_attempt_at,claimed_until,last_error,created_at FROM code.cleanup_jobs
+      UNION ALL SELECT id,code_id,'database.delete' AS kind,attempts,next_attempt_at,claimed_until,last_error,created_at FROM code.database_deletions) j
+    LEFT JOIN code.codes c ON c.id=j.code_id
     WHERE (${input.codeId ?? null}::text IS NULL OR j.code_id=${input.codeId ?? null})
       AND (${input.cursor ?? null}::uuid IS NULL OR j.id>${input.cursor ?? null}::uuid)
     ORDER BY j.id LIMIT ${input.limit + 1}`;

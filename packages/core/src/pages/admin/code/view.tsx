@@ -1,6 +1,5 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { formatDateTime, formatRelative } from "@k2b/cloud/shared";
-import { CodeDatabaseStatus } from "@k2b/cloud/ssr/code-page";
 import { codeRunName } from "@k2b/cloud/ssr/code-page/targets";
 import type { DateContext } from "@k2b/stdlib";
 import {
@@ -32,17 +31,20 @@ import type {
   CodeAdminVersionSource,
 } from "../../../code/admin";
 import type { CodeOwner } from "../../../code/contracts";
+import type { UnusedCodeDatabase } from "../../../code/database-retention";
 import type { CodeCleanupJob } from "../../../code/lifecycle-contracts";
 import type { CodeRunnerMetrics } from "../../../code/scheduling-contracts";
 import CoreSettingsForm, { type SettingFieldDef } from "../settings/_components/CoreSettingsForm.island";
 import { CODE_POLICY_ROW_GROUPS, type CodeAreaQuery, type CodeAreaSection, codeAreaHref, codeAreaLevel, isWideCodeSection } from "./area";
 import CodeAccountHandle from "./CodeAccountHandle.island";
 import CodeApprovalReview, { type CodeApprovalCheck, type CodeApprovalReviewProps } from "./CodeApprovalReview.island";
+import CodeDatabaseControls from "./CodeDatabaseControls.island";
 import CodeListFilters from "./CodeListFilters.island";
 import CodePauseAction from "./CodePauseAction.island";
 import CodePolicyEditor from "./CodePolicyEditor.island";
 import CodePolicyPicker from "./CodePolicyPicker.island";
 import CodeRefusal from "./CodeRefusal.island";
+import CodeUnusedDatabases from "./CodeUnusedDatabases.island";
 import CodeVersionSource from "./CodeVersionSource.island";
 import type { CodeAdminMessages } from "./messages";
 
@@ -60,6 +62,7 @@ export type CodeAreaData = {
   policy: Loaded<CodeAdminPolicy>;
   effective: Loaded<CodeAdminEffective>;
   history: Loaded<CodeAdminPolicyChange[]>;
+  databases?: Loaded<{ items: UnusedCodeDatabase[]; nextCursor: string | null }>;
   cleanup: Loaded<{ items: CodeCleanupJob[]; nextCursor: string | null }>;
   runners: Loaded<CodeRunnerMetrics>;
   limits: Loaded<SettingFieldDef[]>;
@@ -94,6 +97,7 @@ const sectionIcon: Record<CodeAreaSection, string> = {
   effective: "ti ti-user-search",
   history: "ti ti-history",
   cleanup: "ti ti-recycle",
+  databases: "ti ti-database",
   limits: "ti ti-gauge",
   runners: "ti ti-server-2",
 };
@@ -343,6 +347,7 @@ export function CodeAreaView(props: Props) {
         {item("history", t.history)}
       </AppWorkspace.SidebarSection>
       <AppWorkspace.SidebarSection title={t.operations}>
+        {item("databases", t.unusedDatabases)}
         {item("cleanup", t.cleanup, { meta: count(summary?.cleanup) })}
         {item("limits", t.limits)}
         {item("runners", t.runners)}
@@ -681,7 +686,14 @@ export function CodeAreaView(props: Props) {
         <Show when={detail.database}>
           {(database) => (
             <div class="text-sm">
-              <CodeDatabaseStatus codeId={code.id} database={{ ...database(), canExport: true }} />
+              <CodeDatabaseControls
+                codeId={code.id}
+                database={{
+                  ...database(),
+                  canExport: true,
+                  ...(database().unused ? { unused: { ...database().unused!, canDelete: true } } : {}),
+                }}
+              />
             </div>
           )}
         </Show>
@@ -959,7 +971,7 @@ export function CodeAreaView(props: Props) {
           if (col.id === "job")
             return (
               <div class="min-w-0">
-                <p class="text-sm font-medium">{t.jobDelete}</p>
+                <p class="text-sm font-medium">{row.kind === "database.delete" ? t.jobDeleteDatabase : t.jobDelete}</p>
               </div>
             );
           if (col.id === "code")
@@ -989,6 +1001,19 @@ export function CodeAreaView(props: Props) {
       />
     );
   }
+  const databasesSection = (): JSX.Element => {
+    const page = data.databases;
+    if (!page || !ok(page)) return failure;
+    return (
+      <div class="grid content-start gap-4 px-2 pt-1 pb-6">
+        <p class="text-sm text-(--k2b-text-muted)">{t.unusedDatabasesLead}</p>
+        <Show when={page.items.length || query.after} fallback={<Placeholder icon="ti ti-database" title={t.noUnusedDatabases} />}>
+          <CodeUnusedDatabases rows={page.items} dateConfig={props.dateConfig} />
+          {moreLink(page.nextCursor, (after) => codeAreaHref({ sec: "databases", after }))}
+        </Show>
+      </div>
+    );
+  };
   const cleanupSection = (): JSX.Element => {
     const page = data.cleanup;
     if (!ok(page)) return failure;
@@ -1081,6 +1106,7 @@ export function CodeAreaView(props: Props) {
         effective: t.effective,
         history: t.history,
         cleanup: t.cleanup,
+        databases: t.unusedDatabases,
         limits: t.limits,
         runners: t.runners,
       }[section]
@@ -1099,15 +1125,17 @@ export function CodeAreaView(props: Props) {
     return undefined;
   };
   const wideContent = (): JSX.Element =>
-    section === "policy"
-      ? policyStandard()
-      : section === "history"
-        ? historySection()
-        : section === "cleanup"
-          ? cleanupSection()
-          : section === "runners"
-            ? runnersSection()
-            : limitsSection();
+    section === "databases"
+      ? databasesSection()
+      : section === "policy"
+        ? policyStandard()
+        : section === "history"
+          ? historySection()
+          : section === "cleanup"
+            ? cleanupSection()
+            : section === "runners"
+              ? runnersSection()
+              : limitsSection();
   const secondColumn = (): JSX.Element =>
     section === "approvals"
       ? approvalsList()

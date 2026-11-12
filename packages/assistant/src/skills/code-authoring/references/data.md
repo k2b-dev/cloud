@@ -39,8 +39,15 @@ Editors and administrators can export through the Code page or
 `cld code db export <code> --out ./database.sqlite`. This streams a consistent
 SQLite snapshot to a new private file; failed downloads remove partial files
 and existing files are never overwritten. There is no database import command.
-Export does not create a database. Pausing a Code or removing its database
-import from a newer version preserves historical data. Deleting the Code
+Export does not create a database. An inactive Code's database becomes unused
+when neither its latest nor selected version declares `database`. It is deleted
+after the visible deadline (30 days by default). New or recalculated deletion
+dates remain visible for at least seven days, including after retention is
+shortened or re-enabled. Reactivation or selecting a
+version that declares `database` ends the deadline. Historical versions alone
+do not preserve it. Editors can export or confirm **Delete now** on the Code
+page; administrators have an **Unused databases** list. Deletion releases the
+owner quota and a later database call starts empty. Deleting the Code also
 removes its database through the durable deletion job.
 
 DB use is recorded by the checker and submission evidence. It needs no per-call

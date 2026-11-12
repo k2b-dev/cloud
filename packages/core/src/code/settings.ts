@@ -218,6 +218,25 @@ export const CODE_SETTINGS = {
       translations: { de: { label: "Datenbank je Code (Bytes)", description: "Maximale Größe der bei Bedarf angelegten Code-Datenbank." } },
     },
   },
+  "core.code.database_unused_days": {
+    kind: "number",
+    integer: true,
+    min: 0,
+    max: 3650,
+    default: 30,
+    label: "Unused database retention (days)",
+    description:
+      "Delete inactive Code databases when neither the latest nor selected version declares database. Zero disables automatic deletion. New or recalculated deletion dates remain visible for at least seven days, including after reducing or re-enabling retention.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Frist für ungenutzte Datenbanken (Tage)",
+          description:
+            "Löscht Datenbanken inaktiver Codes, wenn weder die neueste noch die ausgewählte Version database deklariert. 0 schaltet die automatische Löschung aus. Neue oder neu berechnete Löschdaten sind mindestens sieben Tage vorher sichtbar, auch nach Verkürzen oder Wiedereinschalten.",
+        },
+      },
+    },
+  },
   "core.code.database_owner_bytes": {
     kind: "number",
     integer: true,
@@ -226,13 +245,13 @@ export const CODE_SETTINGS = {
     default: 10 * 104857600,
     label: "Database bytes per owner",
     description:
-      "Total reserved database capacity of one exact owner. Default: ten databases at the 100 MiB per-Code default. Existing reservations remain until the Code is deleted.",
+      "Total reserved database capacity of one exact owner. Default: ten databases at the 100 MiB per-Code default. Reservations are released when the database is deleted.",
     presentation: {
       translations: {
         de: {
           label: "Datenbankspeicher je Besitzer (Bytes)",
           description:
-            "Gesamte reservierte Datenbankkapazität eines exakten Besitzers. Standard: zehn Datenbanken mit je 100 MiB. Bestehende Reservierungen bleiben bis zur Löschung des Codes erhalten.",
+            "Gesamte reservierte Datenbankkapazität eines exakten Besitzers. Standard: zehn Datenbanken mit je 100 MiB. Reservierungen werden bei der Löschung der Datenbank freigegeben.",
         },
       },
     },

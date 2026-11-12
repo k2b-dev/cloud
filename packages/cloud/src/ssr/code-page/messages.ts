@@ -165,6 +165,15 @@ export const codePageMessages = i18n.define({
       databaseUsage: ({ used, limit }: { used: string; limit: string }) => `Database: ${used} MB of ${limit} MB`,
       databaseOwner: ({ used, limit }: { used: string; limit: string }) => `Owner reserved capacity: ${used} MB of ${limit} MB`,
       databaseExport: "Export SQLite database",
+      databaseDeleteAt: ({ date }: { date: string }) => `This database will be deleted on ${date}`,
+      databaseDelete: "Delete now",
+      databaseDeleteConfirm:
+        "Permanently delete this database? Export a copy first if you still need its contents. The Code stays available.",
+      databaseDeleteFailed: "The deletion could not be confirmed. Reload to check its current state before trying again.",
+      databaseDeleteFailedShort: "Deletion unconfirmed. Reload to check.",
+      databaseDeleting: "Deletion requested. Reload to check.",
+      databaseReload: "Reload",
+      databaseCancel: "Cancel",
       databaseUnavailable: "Database unavailable. Ask an administrator to check the RSQL connection.",
       usesDatabase: "Uses database",
       tabsLabel: "Code views",
@@ -475,6 +484,16 @@ export const codePageMessages = i18n.define({
       databaseOwner: ({ used, limit }: { used: string; limit: string }) =>
         `Reservierte Kapazität des Besitzers: ${used} MB von ${limit} MB`,
       databaseExport: "SQLite-Datenbank exportieren",
+      databaseDeleteAt: ({ date }) => `Diese Datenbank wird am ${date} gelöscht`,
+      databaseDelete: "Jetzt löschen",
+      databaseDeleteConfirm:
+        "Diese Datenbank endgültig löschen? Exportiere vorher eine Kopie, falls du die Inhalte noch brauchst. Der Code bleibt erhalten.",
+      databaseDeleteFailed:
+        "Die Löschung konnte nicht bestätigt werden. Lade die Seite neu, um den aktuellen Stand zu prüfen und es erneut zu versuchen.",
+      databaseDeleteFailedShort: "Löschung unbestätigt. Bitte neu laden.",
+      databaseDeleting: "Löschung beauftragt. Bitte neu laden.",
+      databaseReload: "Neu laden",
+      databaseCancel: "Abbrechen",
       databaseUnavailable: "Datenbank nicht verfügbar. Ein Administrator muss die RSQL-Verbindung prüfen.",
       usesDatabase: "Nutzt Datenbank",
       tabsLabel: "Ansichten des Codes",

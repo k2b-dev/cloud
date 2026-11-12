@@ -17,6 +17,7 @@ import {
   readCodeAdminSummary,
   readCodeAdminVersionSource,
 } from "../../../code/admin";
+import { listUnusedCodeDatabases } from "../../../code/database-retention";
 import { CODE_SETTINGS } from "../../../code/settings";
 import { ssr } from "../../../config";
 import { buildEntries } from "../settings/entries";
@@ -78,6 +79,7 @@ export default ssr<AuthContext>(async (c) => {
         policy: sec === "policy" || sec === "groups" || sec === "effective" ? await attempt(() => readCodeAdminPolicy(context)) : null,
         effective: sec === "effective" && query.id ? await attempt(() => readCodeAdminEffective(query.id ?? "", context)) : null,
         history: sec === "history" ? await attempt(() => readCodeAdminPolicyHistory(context)) : null,
+        databases: sec === "databases" ? await attempt(() => listUnusedCodeDatabases(context, query.after)) : null,
         cleanup: sec === "cleanup" ? await attempt(() => listCodeAdminCleanup(context, { cursor: query.after })) : null,
         runners: sec === "runners" ? await attempt(() => readCodeAdminRunners(context)) : null,
         limits:

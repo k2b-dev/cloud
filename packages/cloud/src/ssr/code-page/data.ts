@@ -21,6 +21,9 @@ const CodeSchema = z.object({
       state: z.enum(["unused", "ready", "unavailable"]),
       owner: z.object({ reserved: z.number(), limit: z.number() }).optional(),
       canExport: z.boolean().optional(),
+      unused: z
+        .object({ since: z.string(), deleteAt: z.string().nullable(), namespace: z.string(), canDelete: z.boolean().optional() })
+        .optional(),
     })
     .optional(),
   /** A2: the credentialless account handle; A3b uses this in the refusal notice. */

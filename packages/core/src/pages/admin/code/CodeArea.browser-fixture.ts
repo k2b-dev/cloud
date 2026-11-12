@@ -7,7 +7,7 @@ import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
-import { renderToString } from "solid-js/web";
+import { Dynamic, renderToString } from "solid-js/web";
 import {
   CODE_FIXTURE_STATES,
   codeFixtureData,
@@ -16,6 +16,7 @@ import {
   fixtureCodeDetail,
   fixtureData,
 } from "./CodeArea.fixture-data";
+import { fixtureDatabasePage } from "./CodeDatabase.fixture-data";
 
 const user: User = {
   id: FIXTURE_PEOPLE.ben,
@@ -41,7 +42,8 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "core-code-area-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
-  const { AdminLayout } = await import("@k2b/cloud/ssr");
+  const { AdminLayout, Layout } = await import("@k2b/cloud/ssr");
+  const { default: CodePage } = await import("@k2b/cloud/ssr/code-page");
   const { CodeAreaView } = await import("./view");
   const { codeAdminMessages } = await import("./messages");
   const { parseCodeAreaQuery } = await import("./area");
@@ -127,12 +129,22 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     const waiting = 4 - decisions.size;
     if (data && data.summary !== null && typeof data.summary === "object") data.summary = { ...data.summary, approvals: waiting };
     c.set("adminCodeApprovals", state === "noperm" ? undefined : waiting);
+    const databaseDemo = c.req.query("surface") === "database";
+    const databasePage = fixtureDatabasePage(locale);
     const body = renderToString(() =>
-      createComponent(AdminLayout, {
+      createComponent(databaseDemo ? Layout : AdminLayout, {
         c,
         title: t.area,
-        ownMain: true,
+        ownMain: !databaseDemo,
         get children() {
+          if (databaseDemo)
+            return createComponent(Dynamic, {
+              component: "div",
+              class: "p-4 sm:p-6",
+              get children() {
+                return createComponent(CodePage, { data: databasePage });
+              },
+            });
           return createComponent(CodeAreaView, {
             t,
             locale,
@@ -162,6 +174,11 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     requests.push({ path, body });
     if (state === "saving" && path !== "policy/preview") return new Promise(() => {});
     if (path === "decide" && state === "lost") return Response.json({ message: "Gateway timeout" }, { status: 504 });
+    if (path === "/api/code/authoring/database/delete") {
+      if (state === "conflict" || state === "savefail") return Response.json({ code: "CONFLICT" }, { status: 409 });
+      if (state === "lost") return Response.json({ message: "Gateway timeout" }, { status: 504 });
+      return Response.json({ data: { deleted: true } });
+    }
     if (path === "pause") {
       const paused = body && typeof body === "object" && "paused" in body ? body.paused === true : false;
       if (state === "savefail" && !paused)
@@ -237,12 +254,14 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     port: options.port ?? 0,
     async fetch(request) {
       const url = new URL(request.url);
+      if (url.pathname === "/branding/logo")
+        return new Response(Bun.file(resolve(import.meta.dir, "../../../../../cloud/public/logo.svg")));
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname.startsWith("/public/")) {
         const path = resolve(root, `.${url.pathname}`);
         return path.startsWith(`${publicDir}/`) ? new Response(Bun.file(path)) : new Response(null, { status: 404 });
       }
-      if (url.pathname.startsWith("/api/code/admin/")) return api(request, url);
+      if (url.pathname.startsWith("/api/code/admin/") || url.pathname === "/api/code/authoring/database/delete") return api(request, url);
       if (url.pathname.startsWith("/api/")) return Response.json({ message: "Synthetic fixture: service unavailable" }, { status: 503 });
       return pages.fetch(request);
     },

@@ -191,6 +191,13 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   const dbCreated: string[] = [];
   const dbCalls: Array<{ namespace: string; request: unknown }> = [];
   const dbQuotas: number[] = [];
+  const mappedDatabaseNamespace = async (codeId: string) => {
+    const mappings = await sql<{ namespace: string }[]>`SELECT namespace FROM code.databases WHERE code_id=${codeId}`;
+    expect(mappings).toHaveLength(1);
+    const namespace = mappings[0]!.namespace;
+    expect(namespace).toMatch(new RegExp(`^${codeDatabaseNamespace(codeId)}_[0-9a-f]{32}$`));
+    return namespace;
+  };
   let dbOwnerLimit: number = CODE_SETTINGS["core.code.database_owner_bytes"].default;
   const dbClient: CodeDatabaseClient = {
     create: async (namespace) => {
@@ -681,8 +688,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       SELECT code_id,${version!.id}::uuid,trigger,entrypoint,input,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit FROM code.runs WHERE id=${claims.runId}::uuid RETURNING id`;
     claims = { ...claims, versionId: version!.id, runId: run!.id, mandateId: mandate.data.id, mandateRevision: mandate.data.revision };
     expect(await (await send({ operation: "db.query", input })).json()).toEqual({ ok: true, data: dbResult });
-    expect(dbCreated).toEqual([codeDatabaseNamespace(claims.codeId)]);
-    expect(dbCalls.map((call) => call.namespace)).toEqual(Array(3).fill(codeDatabaseNamespace(claims.codeId)));
+    const namespace = await mappedDatabaseNamespace(claims.codeId);
+    expect(dbCreated).toEqual([namespace]);
+    expect(dbCalls.map((call) => call.namespace)).toEqual(Array(3).fill(namespace));
     expect(dbQuotas).toEqual(Array(3).fill(CODE_SETTINGS["core.code.database_bytes"].default));
   });
 
@@ -754,15 +762,14 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await resetFixture({ entry: true, database: true, permissions: [], policyRows: [] });
     const first = { ...claims };
     await send({ operation: "db.query", input: { sql: "SELECT 1" } });
+    const firstNamespace = await mappedDatabaseNamespace(first.codeId);
     await resetFixture({ entry: true, database: true, permissions: [], policyRows: [] });
     const second = { ...claims };
     await send({ operation: "db.query", input: { sql: "SELECT 2" } });
-    expect(dbCalls.map((call) => call.namespace)).toEqual([codeDatabaseNamespace(first.codeId), codeDatabaseNamespace(second.codeId)]);
-    await error(
-      { operation: "db.query", input: { sql: "SELECT 1", namespace: codeDatabaseNamespace(first.codeId) } },
-      "code_db_invalid",
-      400,
-    );
+    const secondNamespace = await mappedDatabaseNamespace(second.codeId);
+    expect(secondNamespace).not.toBe(firstNamespace);
+    expect(dbCalls.map((call) => call.namespace)).toEqual([firstNamespace, secondNamespace]);
+    await error({ operation: "db.query", input: { sql: "SELECT 1", namespace: firstNamespace } }, "code_db_invalid", 400);
     const signed = await signCodeRunToken(second, { issuer, signer, now, deadlineAt: now.getTime() + 300000 });
     const [header, payload, signature] = signed.split(".");
     const forged = Buffer.from(
