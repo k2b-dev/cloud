@@ -10,15 +10,18 @@ export type CodeDisplayProps = {
   language?: CodeDisplayLanguage;
   copy?: boolean;
   lineNumbers?: boolean;
+  /** Number of the first shown line, for an excerpt of a longer file, such as its end while it is still written. */
+  startLine?: number;
   class?: string;
 };
 
 export default function CodeDisplay(props: CodeDisplayProps) {
   const lines = () => highlightCodeDisplayLines(props.code, language());
   const lineNumbers = () => props.lineNumbers ?? true;
+  const startLine = () => Math.max(1, Math.floor(props.startLine ?? 1));
   // Numbers past three digits get a wider column, so a long file keeps every line aligned.
   const digits = () => {
-    const count = String(lines().length).length;
+    const count = String(startLine() + lines().length - 1).length;
     return lineNumbers() && count > 3 ? String(Math.min(count, 6)) : undefined;
   };
   const language = () => props.language ?? "text";
@@ -48,7 +51,7 @@ export default function CodeDisplay(props: CodeDisplayProps) {
             {(line, index) => (
               <div class="k2b-content-code-display__line" data-numbered={lineNumbers() ? "true" : undefined}>
                 <Show when={lineNumbers()}>
-                  <span class="k2b-content-code-display__number">{index() + 1}</span>
+                  <span class="k2b-content-code-display__number">{startLine() + index()}</span>
                 </Show>
                 <code innerHTML={line || " "} />
               </div>

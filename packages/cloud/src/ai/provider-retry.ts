@@ -16,6 +16,8 @@ export type AiProviderRetry = {
   retry: number;
   delayMs: number;
   issue: ProviderIssue | TimeoutIssue;
+  /** Calls whose arguments the failed attempt already showed; the retried call starts them over. */
+  previewedCallIds: string[];
 };
 
 const transientIssue = (issue: NessiIssue): issue is ProviderIssue | TimeoutIssue =>
@@ -64,6 +66,7 @@ export function retryTransientProviderErrors(
         const next = () => events.next();
         // Events before the first block (usage, issues) are held so that a retried attempt leaves no trace.
         const held: StreamEvent[] = [];
+        const previewedCallIds = new Set<string>();
         let committed = false;
         let pending: AiProviderRetry | null = null;
         try {
@@ -72,9 +75,15 @@ export function retryTransientProviderErrors(
             if (!committed && event.type === "issue" && transientIssue(event.issue)) {
               const delayMs = waitFor(retry, event.issue, request.signal);
               if (delayMs !== null) {
-                pending = { retry: retry + 1, delayMs, issue: event.issue };
+                pending = { retry: retry + 1, delayMs, issue: event.issue, previewedCallIds: [...previewedCallIds] };
                 break;
               }
+            }
+            // Arguments being written show at once; a retry takes them back (see the executor's provider_retry).
+            if (!committed && event.type === "tool_args_delta") {
+              previewedCallIds.add(event.callId);
+              yield event;
+              continue;
             }
             if (!committed && !isBlockEvent(event)) {
               held.push(event);
