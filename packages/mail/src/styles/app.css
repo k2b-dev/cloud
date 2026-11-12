@@ -2254,6 +2254,11 @@
 .k2b-ui .mail-workspace > .k2b-app-workspace__head:has(> .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views > [data-mail-head-search]) > .k2b-app-workspace__head-lead { flex: 1 1 auto; flex-wrap: nowrap; }
 .k2b-ui .mail-workspace > .k2b-app-workspace__head:has(> .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views > [data-mail-head-search]) .k2b-app-workspace__head-views { flex: 1 1 auto; }
 .mail-head-live { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; min-height: 2rem; }
+/* Phones wrap the head's parts by their basis: the search starts from none and grows, so "…" stays on its row. */
+@media not all and (min-width: 48rem) {
+  .k2b-ui .mail-workspace > .k2b-app-workspace__head:has(> .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views > [data-mail-head-search]) .k2b-app-workspace__head-views { flex: 1 1 0; min-width: 0; margin-inline-start: 0; }
+  .k2b-ui .mail-head-search-input { min-width: 0; }
+}
 .k2b-ui .mail-workspace[data-sidebar-collapsed="true"] [data-mail-head-title] {
   position: static; width: auto; height: auto; margin: 0; overflow: hidden; clip-path: none;
 }

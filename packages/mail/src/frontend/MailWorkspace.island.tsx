@@ -2848,8 +2848,13 @@ function createMailboxController(props: MailboxControllerProps) {
         json: { conversationIds, completion },
       });
       if (!response.ok) throw new Error(await readApiError(response, conversationText().completionFailed));
+      // A selection may hold a conversation that left the mailbox meanwhile: the others still change.
+      let failed = 0;
       for (const result of (await response.json()).results) {
-        if (result.status !== "ok") throw new Error(conversationText().completionFailed);
+        if (result.status !== "ok") {
+          failed += 1;
+          continue;
+        }
         const patch = { workStatus: result.workStatus, snoozedUntil: null, revision: result.revision };
         rememberPendingListState(result.conversationId, patch);
         setConversationListState(result.conversationId, patch);
@@ -2859,6 +2864,7 @@ function createMailboxController(props: MailboxControllerProps) {
       }
       const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
       if (refreshError) reportRefreshFailure(refreshError, conversationText().completionFailed);
+      if (failed > 0) throw new Error(conversationText().completionFailed);
     },
     onError: (error) => toast.error(error.message),
   });
