@@ -66,6 +66,7 @@ const open = async (width: number, height: number): Promise<Page> => {
       `<body class="k2b-ui"><main id="area"><button id="content">Behind</button></main></body></html>`,
   );
   await page.addScriptTag({ content: script });
+  await settled(page);
   return page;
 };
 const frame = (page: Page, title: string) =>
@@ -75,8 +76,6 @@ const box = async (page: Page, selector: string, title?: string): Promise<Box> =
   const rect = await target.first().evaluate((element) => element.getBoundingClientRect().toJSON());
   return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
 };
-/** The window changes geometry without animation; one frame lets layout and focus land. */
-const frameDone = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done(null))));
 const focusedLabel = (page: Page) =>
   page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? "");
 
@@ -92,7 +91,7 @@ describe("@k2b/ui FloatingWindow states", () => {
       const before = await box(page, "", "Workbench order");
 
       await frame(page, "Workbench order").getByRole("button", { name: "Minimize" }).click();
-      await frameDone(page);
+      await settled(page);
       const bar = await box(page, "", "Workbench order");
       expect(bar.height).toBe(42);
       expect(await field.count()).toBe(1);
@@ -101,7 +100,7 @@ describe("@k2b/ui FloatingWindow states", () => {
       expect(await frame(page, "Workbench order").getByRole("button", { name: "Minimize" }).count()).toBe(0);
 
       await page.getByRole("button", { name: "Restore Workbench order" }).click();
-      await frameDone(page);
+      await settled(page);
       expect(await box(page, "", "Workbench order")).toEqual(before);
       expect(await field.inputValue()).toBe("Oak, 2.4 m");
       expect(await focusedLabel(page)).toBe("Workbench order text");
@@ -112,7 +111,7 @@ describe("@k2b/ui FloatingWindow states", () => {
         window.openWindow("Course plan", { placement: "dock", defaultState: "minimized" });
       });
       await frame(page, "Workbench order").getByRole("button", { name: "Minimize" }).click();
-      await frameDone(page);
+      await settled(page);
       const bars = await Promise.all(["Workbench order", "Plane repair", "Course plan"].map((title) => box(page, "", title)));
       const area = await box(page, "#area");
       const sorted = [...bars].sort((a, b) => b.x - a.x);
@@ -147,7 +146,7 @@ describe("@k2b/ui FloatingWindow states", () => {
       const window_ = frame(page, "Oak planks");
 
       await window_.getByRole("button", { name: "Maximize" }).click();
-      await frameDone(page);
+      await settled(page);
       const area = await box(page, "#area");
       expect(await box(page, ".k2b-floating-window-scrim")).toEqual(area);
       const maximized = await box(page, "", "Oak planks");
@@ -163,7 +162,7 @@ describe("@k2b/ui FloatingWindow states", () => {
       }
       await page.getByLabel("Oak planks text").focus();
       await page.keyboard.press("Escape");
-      await frameDone(page);
+      await settled(page);
       expect(await box(page, "", "Oak planks")).toEqual(before);
       expect(await page.locator(".k2b-floating-window-scrim").count()).toBe(0);
       expect(await window_.getAttribute("aria-modal")).toBe("false");
@@ -172,14 +171,14 @@ describe("@k2b/ui FloatingWindow states", () => {
       // The button restores too and keeps the focus on itself.
       await window_.getByRole("button", { name: "Maximize" }).click();
       await window_.getByRole("button", { name: "Restore size" }).click();
-      await frameDone(page);
+      await settled(page);
       expect(await box(page, "", "Oak planks")).toEqual(before);
       expect(await focusedLabel(page)).toBe("Maximize");
 
       // A click on the scrim restores as well.
       await window_.getByRole("button", { name: "Maximize" }).click();
       await page.mouse.click(area.x + 4, area.y + area.height / 2);
-      await frameDone(page);
+      await settled(page);
       expect(await box(page, "", "Oak planks")).toEqual(before);
       expect(await box(page, "#content")).toEqual(behind);
     } finally {

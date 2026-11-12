@@ -19,7 +19,7 @@ import { AppWorkspace, ViewTabs, IconButton, LocaleProvider } from ${JSON.string
 export function Fixture(props) {
   const labels = {
     en: [{label:"Focus",count:12}, {label:"Needs action",count:12}, {label:"Assigned to me",count:5}, {label:"Waiting for a customer reply",count:2}, {label:"Not assigned",count:4}, {label:"Done"}],
-    de: [{label:"Fokus",count:12}, {label:"Wartet auf Antwort",count:2}, {label:"Nicht zugewiesen",count:4}, {label:"Mir zugewiesen",count:5}, {label:"Erledigt"}],
+    de: [{label:"Handlungsbedarf",count:12}, {label:"Wartet auf Antwort",count:2}, {label:"Nicht zugewiesen",count:4}, {label:"Mir zugewiesen",count:5}, {label:"Erledigt"}],
     short: [{label:"List"}, {label:"Board"}],
     three: [{label:"Waiting for a customer reply",count:2}, {label:"Assigned to someone else",count:4}, {label:"Recently answered by the team",count:9}],
   };
@@ -30,6 +30,10 @@ export function Fixture(props) {
   const fit = props.scenario.fit === "true";
   const [current, setCurrent] = createSignal(props.scenario.current || "1");
   if (typeof window !== "undefined") window.setView = setCurrent;
+  // A tab row of its own, outside a workspace head, like a list's bar beside its select-all checkbox.
+  if (props.scenario.bar === "true") return <LocaleProvider locale="en">
+    <div class="fixture-bar"><span class="fixture-bar-check" /><ViewTabs label="Views" items={items} current={current()} fit={fit} max={fit ? items.length : undefined} /></div>
+  </LocaleProvider>;
   return <LocaleProvider locale={props.scenario.labels === "de" ? "de" : "en"}>
     <AppWorkspace>
       <AppWorkspace.Head views={<ViewTabs label="Views" items={items} current={current()} fit={fit} max={fit ? items.length : undefined} />}
@@ -147,7 +151,8 @@ beforeAll(async () => {
       const hostWidth = Number(scenario.width) || 0;
       return new Response(
         `<!doctype html><html lang="${scenario.labels === "de" ? "de" : "en"}" dir="${scenario.dir === "rtl" ? "rtl" : "ltr"}"><head>
-<meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head>
+<meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>
+<style>.fixture-bar{display:flex;align-items:center;gap:4px}.fixture-bar-check{flex:none;width:36px}.fixture-bar>.k2b-view-tabs{flex:1 1 auto;min-width:0}</style></head>
 <body class="k2b-ui" style="margin:0"><div id="app" style="container:k2b-app-area / inline-size;height:900px;${hostWidth ? `width:${hostWidth}px` : ""}">${render(scenario)}</div>
 <div style="height:1600px" aria-hidden="true"></div>${hydrationScript}</body></html>`,
         { headers: { "Content-Type": "text/html" } },
@@ -239,7 +244,8 @@ for (const labels of ["en", "de"]) {
             });
           return { labels, tabs, scrollWidth: list.scrollWidth, clientWidth: list.clientWidth };
         });
-        expect(measurements.scrollWidth).toBeGreaterThan(measurements.clientWidth + 1);
+        // The strip must overflow by a clear margin in every engine, or nothing would press the tabs to shrink.
+        expect(measurements.scrollWidth).toBeGreaterThan(measurements.clientWidth + 24);
         expect(measurements.labels.length).toBeGreaterThan(0);
         expect(measurements.tabs).toHaveLength(4);
         for (const label of measurements.labels) expect(label.scroll, label.text ?? "label").toBeLessThanOrEqual(label.width);
@@ -584,6 +590,26 @@ test("a fitting strip brings views back when its host widens and lets them go wh
     expect(wide.count).toBe(0);
     expect(wide.shown.length).toBeGreaterThan(narrow.shown.length);
     await page.locator("#app").evaluate((app) => (app.style.width = "640px"));
+    await settled(page);
+    expect(await fitState(page)).toEqual(narrow);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a fitting strip outside a workspace head brings views back when its row widens and lets them go when it narrows", async () => {
+  const page = await browser!.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  try {
+    await load(page, { fit: "true", bar: "true", width: "480" });
+    const narrow = await fitState(page);
+    expect(narrow.count).toBeGreaterThan(0);
+    expect(narrow.overflow).toBeLessThanOrEqual(0.5);
+    await page.locator("#app").evaluate((app) => (app.style.width = "1440px"));
+    await settled(page);
+    const wide = await fitState(page);
+    expect(wide.count).toBe(0);
+    expect(wide.shown.length).toBeGreaterThan(narrow.shown.length);
+    await page.locator("#app").evaluate((app) => (app.style.width = "480px"));
     await settled(page);
     expect(await fitState(page)).toEqual(narrow);
   } finally {

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
@@ -102,10 +102,16 @@ test.skipIf(isServer)("keeps the bulk actions in their three groups and Junk and
 
     const later = await bar.openMenu("Later");
     expect(later.map((item) => item.textContent?.trim())).toEqual(["Tomorrow morning", "Monday morning"]);
-    later[0]!.click();
-    await settle();
+    // Thursday, 12 November 2026, 15:00 in the browser's zone: tomorrow morning is Friday at 8:00.
+    setSystemTime(new Date(2026, 10, 12, 15, 0, 0));
+    try {
+      later[0]!.click();
+      await settle();
+    } finally {
+      setSystemTime();
+    }
     expect(bar.later).toHaveLength(1);
-    expect(Date.parse(bar.later[0]!)).toBeGreaterThan(Date.now());
+    expect(new Date(bar.later[0]!)).toEqual(new Date(2026, 10, 13, 8, 0, 0));
 
     const items = await bar.openMenu();
     expect(items.map((item) => item.textContent?.trim())).toEqual(["Mark as junk", "Flag", "Mark as read"]);
