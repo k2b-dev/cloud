@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.2](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.21.1...npm-ssr-v0.21.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* **ssr:** release the updated JSX transform dependency ([#3214](https://github.com/k2b-dev/cloud/issues/3214)) ([773347a](https://github.com/k2b-dev/cloud/commit/773347a0f2d240db16b351d85bd709a1a63d45bb))
+
 ## [0.21.1](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.21.0...npm-ssr-v0.21.1) (2026-11-08)
 
 

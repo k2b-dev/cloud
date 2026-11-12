@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
-import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
-import "../../../../../scripts/fixtures/authorization-preload";
 import { useTestAppRegistry } from "../../../../../scripts/fixtures/app-registry";
+import { initializeTestPlatform, suiteFor, testInfra, useMigratedDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { quoteTestDatabase } from "../../../../../scripts/fixtures/test-infra-env";
 import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { accountLifecycle } from "../account-lifecycle";
@@ -17,6 +17,24 @@ import { createTestBrowserSignIn, createTestSession } from "../session/session.t
 import * as settings from "../settings";
 import { preserveTestSettings } from "../settings/settings.test-fixture";
 import { syncFromIpa, syncUser } from "./sync";
+
+// Keep successive directory observations inside one millisecond, in a private database.
+// PostgreSQL stores microseconds; converting an observation to Date must not reorder it before a prior lock.
+if (testInfra.database && testInfra.valkey && testInfra.nats) {
+  const database = await useMigratedDatabase("ipa_lock_clock");
+  afterAll(() => database.drop());
+  await sql`CREATE SCHEMA ipa_test_clock`;
+  await sql`CREATE SEQUENCE ipa_test_clock.ticks`;
+  await sql`CREATE TABLE ipa_test_clock.origin AS SELECT '2026-11-12T12:00:00.123000Z'::timestamptz AS at`;
+  await sql`CREATE FUNCTION ipa_test_clock.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS $$
+    SELECT at + nextval('ipa_test_clock.ticks') * interval '1 microsecond' FROM ipa_test_clock.origin
+  $$`;
+  await sql.unsafe(`ALTER DATABASE ${quoteTestDatabase(database.name)} SET search_path TO ipa_test_clock, public, pg_catalog`);
+  await sql.unsafe(`ALTER DATABASE ${quoteTestDatabase(database.name)} SET DateStyle TO 'German'`);
+  await sql.unsafe(`ALTER DATABASE ${quoteTestDatabase(database.name)} SET TimeZone TO 'Europe/Berlin'`);
+  await initializeTestPlatform();
+}
+await import("../../../../../scripts/fixtures/authorization-preload");
 
 const config = {
   "freeipa.enable": true,
@@ -182,11 +200,26 @@ suiteFor(
     remote.nsaccountlock = false;
     await syncFromIpa();
     const id = await userId();
-    // A lock recorded after the observation started, as by a concurrent sync.
-    await sql`UPDATE auth.user_ipa_data SET locked_at = now() + interval '1 hour' WHERE user_id = ${id}::uuid`;
-    expect((await syncUser(uid)).status).toBe("synced");
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    rpc.mockImplementationOnce(async ({ method }) => {
+      expect(method).toBe("user_show");
+      const snapshot = { ...remote };
+      started.resolve();
+      await release.promise;
+      return { id: 0, error: null, result: { result: snapshot } };
+    });
+    const olderSync = syncUser(uid);
+    try {
+      await started.promise;
+      remote.nsaccountlock = true;
+      expect((await syncUser(uid)).status).toBe("locked");
+    } finally {
+      release.resolve();
+      await olderSync;
+    }
     expect(await issues(id)).toBe(403);
-    await sql`UPDATE auth.user_ipa_data SET locked_at = now() - interval '1 hour' WHERE user_id = ${id}::uuid`;
+    remote.nsaccountlock = false;
     expect((await syncUser(uid)).status).toBe("synced");
     expect(await issues(id)).toBe(200);
   });
