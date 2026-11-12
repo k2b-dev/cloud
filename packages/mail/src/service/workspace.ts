@@ -1,7 +1,7 @@
 import { logger } from "@k2b/cloud/services";
 import { fail, i18n, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
-import type { AutomationLogItem } from "../contracts";
+import type { AutomationLogItem, MailWorkspacePreference } from "../contracts";
 import {
   type ConversationDraftSummary,
   type ConversationListDrafts,
@@ -51,7 +51,7 @@ import { listRowImageAttachments, type RowImages } from "./list-image-attachment
 import { mailLive } from "./live";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
-import { getMailboxViewPreference } from "./mailbox-preferences";
+import { getMailboxViewPreference, getMailboxWorkspacePreference } from "./mailbox-preferences";
 import * as mailboxes from "./mailboxes";
 import type { ConversationRowState, ConversationSummary, ConversationViewCounts, MailFolderView, MessageDetail } from "./messages";
 import * as messages from "./messages";
@@ -192,6 +192,7 @@ const workspaceMessage = (message: MessageDetail): MailWorkspaceMessage => {
 
 export type MailboxPageData = {
   viewPreference: MailViewPreference;
+  workspacePreference: MailWorkspacePreference;
   doneTodayCounts: MailDoneTodayCounts;
   receivingAddress: string | null;
   mailbox: Mailbox;
@@ -1080,6 +1081,7 @@ export const loadMailboxPageData = async (pageParams: {
     receivingAddress,
     listView,
     viewPreference,
+    workspacePreference,
     doneTodayCounts,
   ] = await Promise.all([
     mailboxes.getMailbox(params.context, params.mailboxId),
@@ -1099,10 +1101,12 @@ export const loadMailboxPageData = async (pageParams: {
     mailboxes.getMailboxReceivingAddress(params.mailboxId),
     list,
     getMailboxViewPreference(params.context, params.mailboxId),
+    getMailboxWorkspacePreference(params.context, params.mailboxId),
     getMailboxDoneTodayCounts(params.context, params.mailboxId),
   ]);
   if (!mailboxResult.ok) return fail(mailboxResult.error);
   if (!viewPreference.ok) return viewPreference;
+  if (!workspacePreference.ok) return workspacePreference;
   if (!doneTodayCounts.ok) return doneTodayCounts;
 
   const { scheduledMode, draftsMode, folderId } = listView;
@@ -1136,6 +1140,7 @@ export const loadMailboxPageData = async (pageParams: {
     mailbox: mailboxResult.data,
     receivingAddress,
     viewPreference: viewPreference.data,
+    workspacePreference: workspacePreference.data,
     doneTodayCounts: doneTodayCounts.data,
     permission: permission.data.permission,
     access: { scope: permission.data.scope, permission: permission.data.permission },

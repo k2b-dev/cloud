@@ -113,6 +113,8 @@ import {
   renderComposeSnippetInputSchema,
   searchBackendSchema,
   searchRequestSchema,
+  senderConversationsPageSchema,
+  senderConversationsQuerySchema,
   senderDispositionInputSchema,
   setComposeSignatureDefaultInputSchema,
   setConversationReminderSchema,
@@ -1323,6 +1325,42 @@ const mailOperationsApi = new Hono<MailApiContext>()
         itemId: c.req.valid("json").itemId,
       });
       return respondAppDependency(c, result);
+    },
+  )
+  .get(
+    "/mailboxes/:mailboxId/sender-conversations",
+    describeRoute({
+      tags: ["Mail:Context"],
+      summary: "List earlier conversations from one sender",
+      description:
+        "Exact From-address matches in this mailbox, newest first. The preview and total both respect assigned-only access. Optionally exclude the open conversation.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(senderConversationsPageSchema, "Up to five conversations and the total number of visible matches"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid sender query"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox or excluded conversation not found"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    v("query", senderConversationsQuerySchema),
+    async (c) => {
+      const query = c.req.valid("query");
+      const mailboxId = internalMailboxId(c);
+      const excluded = query.excludeConversationId
+        ? await publicResources.resolveMailboxPublicId("conversations", mailboxId, query.excludeConversationId)
+        : undefined;
+      if (query.excludeConversationId && !excluded) return respond(c, fail(err.notFound("Conversation")));
+      return respondConversations(
+        c,
+        conversationContext.listSenderConversations({
+          context: requestContext(c),
+          mailboxId,
+          email: query.email,
+          limit: query.limit,
+          excludeConversationId: excluded ?? undefined,
+        }),
+      );
     },
   )
   .get(

@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-11-06
+updated: 2026-11-12
 ---
 
 # Mail
@@ -1084,6 +1084,55 @@ Cmd/Ctrl+Shift+K searches conversations across accessible mailboxes. Cmd/Ctrl+Al
 When the Assistant asks to send or change a draft, choose **Read the complete proposal** to inspect the full proposed text, recipients and attachment list. The proposal can include unsaved changes. The draft link opens the current draft, which may have changed since the question was asked.
 
 If the sending content changes after your check, Mail stops and queues no message. Open the draft, check it again and approve a new attempt. A signature that changes with the current time may need editing first. Mail does not retry or approve the new content automatically.
+
+## Reader notes, sender history, and workspace preferences
+
+The initial workspace data and `GET /api/mail/mailboxes/{mailboxId}/workspace-detail/{conversationId}`
+include `comments` and `commentsCursor`. These are the existing internal notes:
+plain text, author name and avatar, creation and edit times, deletion markers,
+and `canEdit`/`canDelete`. Only the author can edit or delete within ten minutes.
+Deleted notes have `body: null`. Saving a note never creates a draft or sends mail.
+The newest 100 notes arrive in creation order. Fetch older notes through
+`GET /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/comments`
+with `order=newest`, `limit`, and `cursor=commentsCursor`. Each page is in creation
+order; prepend it to the timeline. Note changes invalidate the open reader through
+Mail's existing live channel, including for assigned-only readers.
+
+For earlier conversations from one sender, use
+`GET /api/mail/mailboxes/{mailboxId}/sender-conversations?email=ada%40example.test`.
+The response is `{ items, total }`; each item has `id`, `subject`,
+`participantSummary`, `latestMessageAt`, and nullable `preview`. It returns at most
+five conversations, newest first, where the exact address appears in From on an
+active message. Recipients and matching subjects do not count. `limit` accepts
+1–5; `excludeConversationId` leaves out the open conversation from both the
+preview and total. Both results respect the caller's conversation access,
+including assigned-only access. The matching capability is `conversation.by_sender`
+with `{ mailboxId, email, excludeConversationId?, limit? }`; its items carry
+conversation refs and open links. From the terminal:
+
+```bash
+cld --json mail conversation by-sender ada@example.test --mailbox Support --limit 5 --exclude CvB234
+```
+
+For all matching messages, build a search URL using
+`mailExactAddressSearch("from", address)` from Mail's `search-url.ts`, and put its
+successful `value` in the `search` query parameter. This keeps the exact From
+condition and newest-first order.
+
+Workspace data includes `workspacePreference: { listShare, seenHints }` in the
+first server snapshot and workspace reloads. Read it separately with
+`GET /api/mail/mailboxes/{mailboxId}/workspace-preference`. Set the list's share
+with `PATCH` on that route and `{ "listShare": 0.4 }`; values must be 0–1.
+`null` restores the default 40%. Preferences belong to the current person and
+mailbox and require read access, including assigned-only access.
+
+Mark a hint seen with
+`PUT /api/mail/mailboxes/{mailboxId}/workspace-preference/seen-hints` and
+`{ "hintId": "filters-moved" }`. Known IDs are `reader-head-moved`,
+`filters-moved`, `toolbar-moved`, `density-by-width`, and `drafts-consolidated`.
+Unknown IDs are rejected. Marking a hint twice changes nothing; concurrent
+updates keep every hint and the saved width. The existing `/view` preference
+continues to support its current callers.
 
 ## Compose signature fragments
 

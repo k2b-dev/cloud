@@ -19,6 +19,7 @@ import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
+import { migrateWorkspacePreferences } from "./service/workspace-preferences-migrate";
 
 type SqlClient = typeof sql;
 
@@ -759,6 +760,7 @@ export const migrate = async (): Promise<void> => {
         await migrateAiDailyBudget(tx);
         await migrateSourceNames(tx);
         await migrateConversationSummaries(tx);
+        await migrateWorkspacePreferences(tx);
         await migrateWorkflowAi(tx);
       });
       return;

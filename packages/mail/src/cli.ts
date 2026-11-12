@@ -108,6 +108,7 @@ import {
   type SavedConversationViewFilter,
   type ScheduledSendPage,
   SENDER_VERIFICATION_WAIT_MS,
+  type SenderConversationsPage,
   type SenderIdentity,
   type SenderIdentityStatusReason,
   savedConversationViewFilterSchema,
@@ -5971,6 +5972,29 @@ const specialistCommands = {
           `Contacts: ${value.contacts.status === "ready" ? value.contacts.items.length : value.contacts.status === "absent" ? "no contact directory installed" : "unavailable"}`,
         );
         if (value.contacts.status === "ready" && value.contacts.nextCursor) ctx.print(`Next Contacts cursor: ${value.contacts.nextCursor}`);
+      },
+    }),
+    command("conversation by-sender", {
+      summary: "List the newest conversations from an exact sender address",
+      args: { email: arg.required({ description: "Sender From address" }) },
+      flags: {
+        ...mailboxFlag,
+        exclude: flag.string({ description: "Conversation id to leave out" }),
+        limit: flag.int({ min: 1, max: 5, default: 5 }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const query = new URLSearchParams({ email: args.email, limit: String(flags.limit ?? 5) });
+        if (flags.exclude) query.set("excludeConversationId", requireMailResourceId(flags.exclude, "Conversation id"));
+        const page = await readApi<SenderConversationsPage>(ctx, `/mailboxes/${mailbox.id}/sender-conversations?${query}`);
+        const items = page.items.map((resource) => withCloudResourcePermalink(ctx, "mail.conversation", resource));
+        if (printStructured(ctx, { ...page, items })) return;
+        ctx.print(`${page.total} conversations`);
+        printTable(ctx, items, items, [
+          { key: "latestMessageAt", label: "DATE" },
+          { key: "subject", label: "SUBJECT" },
+          { key: "id", label: "CONVERSATION ID" },
+        ]);
       },
     }),
     command("conversation related", {

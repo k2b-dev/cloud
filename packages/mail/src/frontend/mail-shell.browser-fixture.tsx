@@ -480,6 +480,7 @@ export function mailboxData(url: URL): MailboxPageData {
   const selectedMailbox = mailboxes.find((box) => box.id === url.pathname.split("/").at(-1)) ?? mailboxes[0]!;
   return {
     // Older shell tests pin "list and reader"; the columns view (F2) opts in with ?layout=auto|columns.
+    workspacePreference: { listShare: null, seenHints: [] },
     viewPreference: {
       large: url.searchParams.get("layout") === "auto" ? "auto" : url.searchParams.get("layout") === "columns" ? "columns" : "split",
       phone: "compact",

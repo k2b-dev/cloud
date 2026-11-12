@@ -343,6 +343,46 @@ export const relatedMailQuerySchema = z
   })
   .strict();
 
+/** Sender history is a preview of at most five conversations; total counts only visible matches. */
+export const senderConversationsQuerySchema = z
+  .object({
+    email: z.email().max(320),
+    excludeConversationId: ResourceShortIdSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(5).default(5),
+  })
+  .strict();
+export const senderConversationsPageSchema = z
+  .object({
+    items: z.array(relatedMailSummarySchema).max(5),
+    total: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SenderConversationsPage = z.infer<typeof senderConversationsPageSchema>;
+
+export const MAIL_WORKSPACE_HINT_IDS = [
+  "reader-head-moved",
+  "filters-moved",
+  "toolbar-moved",
+  "density-by-width",
+  "drafts-consolidated",
+] as const;
+export const mailWorkspaceHintIdSchema = z.enum(MAIL_WORKSPACE_HINT_IDS);
+export type MailWorkspaceHintId = z.infer<typeof mailWorkspaceHintIdSchema>;
+export const DEFAULT_MAIL_LIST_SHARE = 0.4;
+export const mailWorkspacePreferenceSchema = z
+  .object({
+    listShare: z.number().min(0).max(1).nullable(),
+    seenHints: z.array(mailWorkspaceHintIdSchema).max(MAIL_WORKSPACE_HINT_IDS.length),
+  })
+  .strict();
+export type MailWorkspacePreference = z.infer<typeof mailWorkspacePreferenceSchema>;
+export const mailWorkspacePreferenceChangeSchema = z
+  .object({
+    listShare: mailWorkspacePreferenceSchema.shape.listShare,
+  })
+  .strict();
+export const markMailWorkspaceHintSeenSchema = z.object({ hintId: mailWorkspaceHintIdSchema }).strict();
+
 export const relatedConversationReasonSchema = z
   .object({
     kind: z.enum(["participant", "subject"]),

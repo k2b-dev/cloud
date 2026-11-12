@@ -183,6 +183,17 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             id: "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche oder einem Fokusergebnis oder einer typisierten Ressource ref zurückgegeben wird.",
           },
         },
+        "conversation.by_sender": {
+          title: "Unterhaltungen eines Absenders finden",
+          description:
+            "Findet bis zu fünf neueste Unterhaltungen mit Nachrichten von genau dieser Absenderadresse und zählt die sichtbaren Treffer. Die offene Unterhaltung kann ausgeschlossen werden. Zurückgegebene Referenzen lassen sich mit conversation.read öffnen.",
+          input: {
+            mailboxId: "Postfach-ID aus mailbox.list.",
+            email: "Genaue E-Mail-Adresse im Von-Feld.",
+            excludeConversationId: "Offene Unterhaltung, die bei Vorschau und Anzahl ausgelassen wird.",
+            limit: "Maximale Anzahl der Unterhaltungen, höchstens fünf.",
+          },
+        },
         "conversation.related": {
           title: "Verwandte E-Mails finden",
           description:
