@@ -7,7 +7,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, pageErrors as collectPageErrors, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import { browserName, pageErrors as collectPageErrors, launchBrowser, settled } from "../../../ui/test/browser";
 import type { MailSearchExpression, MailWorkspacePreference } from "../contracts";
 import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
 import { mailTagSearch } from "../search-url";
@@ -2637,22 +2637,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           { path: widePath(), width: 1920, height: 1080 },
           { path: `${boxPath}?conversation=Conv01`, width: 834, height: 1194 },
         ] as const)
-          test(`reader at ${item.width}: Reply all and Forward live in the pill, not the head, and stay in …`, async () => {
+          test(`reader at ${item.width}: Reply all and Forward live in the reply box, not the head, and stay in …`, async () => {
             const page = await open(item.path, item.width, item.height);
             try {
               const label = `${item.width}`;
-              await page.waitForFunction(
-                () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
-              );
-              for (const name of ["Reply all", "Forward"]) {
+              await page.locator("[data-mail-reply-box-frame]").waitFor();
+              for (const name of ["Reply all", "Forward"])
                 expect(
                   await page.locator("[data-mail-reader-toolbar]").getByRole("button", { name, exact: true }).count(),
                   `${label}: ${name} in head`,
                 ).toBe(0);
-                const inPill = await page.locator("[data-mail-reply-pill]").getByRole("button", { name, exact: true }).isVisible();
-                const inPillMore = await page.locator("[data-mail-reply-pill]").getByRole("button", { name: "More actions" }).isVisible();
-                expect(inPill || inPillMore, `${label}: ${name} reachable in the pill`).toBe(true);
-              }
               expect(
                 await page.locator("[data-mail-details-trigger], [data-app-workspace-detail-toggle]").count(),
                 `${label}: no Details`,
@@ -2921,146 +2915,42 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           [390, 844],
           [320, 640],
         ] as const)
-          test(`the reply pill at ${width} never reaches past itself or the reader: labels give way to icons, then actions move into More`, async () => {
+          test(`the reply box at ${width} stays inside the reader, below the newest message`, async () => {
             const page = await open(`${boxPath}?conversation=Conv01&theme=dark`, width, height);
             try {
-              await page.waitForFunction(
-                () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
-              );
+              const frame = page.locator("[data-mail-reply-box-frame]");
+              await frame.waitFor();
               const fit = await page.evaluate(() => {
-                const pill = document.querySelector<HTMLElement>("[data-mail-reply-pill] .k2b-toolbar")!;
+                const box = document.querySelector<HTMLElement>("[data-mail-reply-box-frame]")!.getBoundingClientRect();
                 const reader = document.querySelector<HTMLElement>(".mail-reader-scroll")!.getBoundingClientRect();
-                const box = pill.getBoundingClientRect();
-                const controls = Array.from(pill.querySelectorAll<HTMLElement>("button")).filter(
-                  (button) => button.getClientRects().length > 0 && !button.closest("[data-overflow]"),
-                );
-                const outside = controls
-                  .map((button) => ({
-                    name: button.getAttribute("aria-label") ?? button.textContent?.trim(),
-                    box: button.getBoundingClientRect(),
-                  }))
-                  .filter(({ box: control }) => control.left < box.left - 0.5 || control.right > box.right + 0.5)
-                  .map(({ name }) => name);
-                const labels = Array.from(pill.querySelectorAll<HTMLElement>(".k2b-toolbar__text")).filter(
-                  (label) => label.getClientRects().length > 0,
-                ).length;
+                const messages = document.querySelector<HTMLElement>("[data-mail-conversation-messages]")!.getBoundingClientRect();
                 return {
                   inReader: box.left >= reader.left - 0.5 && box.right <= reader.right + 0.5,
-                  outside,
-                  reply: controls.find((button) => button.classList.contains("mail-reader-pill-reply"))?.textContent?.trim(),
-                  labels,
-                  labelled: pill.querySelectorAll(".k2b-toolbar__action[data-text]:not([data-overflow])").length,
-                  compact: pill.hasAttribute("data-compact"),
-                  more: controls.some((button) => button.closest(".k2b-toolbar__more")),
+                  below: box.top >= messages.bottom - 0.5,
                 };
               });
-              expect(fit.inReader, `${width} pill inside the reader`).toBe(true);
-              expect(fit.outside, `${width} controls inside the pill`).toEqual([]);
-              // Reply always keeps its word.
-              expect(fit.reply, `${width} Reply`).toBe("Reply");
-              // Labels show only while there is room; a compact pill shows none, and More comes only after labels went.
-              if (fit.compact) expect(fit.labels, `${width} labels`).toBe(0);
-              else expect(fit.labels, `${width} labels`).toBe(fit.labelled);
-              if (fit.more) expect(fit.compact, `${width} More after labels`).toBe(true);
-              // The widest reader has room for every label.
-              if (width === 1920) expect(fit.compact, "1920 shows the labels").toBe(false);
+              expect(fit.inReader, `${width} box inside the reader`).toBe(true);
+              expect(fit.below, `${width} box below the newest message`).toBe(true);
+              expect(await page.locator("[data-mail-reply-pill]").count()).toBe(0);
             } finally {
               await close(page);
             }
           });
 
-        test("a team mailbox's pill row from 760 to 240 px: never clipped, Reply stays, More fills by priority", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01&team=1`, 1440, 900);
-          try {
-            const pending = () =>
-              page.waitForFunction(
-                () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
-              );
-            await pending();
-            const order = ["Forward", "Reply all"];
-            for (let width = 760; width >= 240; width -= 10) {
-              await page.evaluate((width) => {
-                document.querySelector<HTMLElement>("[data-mail-reading-column]")!.style.width = `${width}px`;
-              }, width);
-              await pending();
-              await page.evaluate(
-                () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
-              );
-              const state = await page.evaluate(() => {
-                const strip = document.querySelector<HTMLElement>("[data-mail-reply-pill] .k2b-toolbar-float")!;
-                const pill = strip.querySelector<HTMLElement>(".k2b-toolbar")!;
-                const row = strip.getBoundingClientRect();
-                const box = pill.getBoundingClientRect();
-                const present = Array.from(pill.querySelectorAll<HTMLElement>(".k2b-toolbar__action")).map((action) => ({
-                  name: action.getAttribute("aria-label")!,
-                  moved: action.hasAttribute("data-overflow"),
-                }));
-                return {
-                  inside: box.left >= row.left - 0.5 && box.right <= row.right + 0.5,
-                  fits: pill.scrollWidth <= Math.ceil(row.width) + 0.5,
-                  reply: pill.querySelector(".mail-reader-pill-reply")?.getClientRects().length ?? 0,
-                  present: present.map((action) => action.name),
-                  moved: present.filter((action) => action.moved).map((action) => action.name),
-                };
-              });
-              expect(state.inside, `${width} inside`).toBe(true);
-              expect(state.fits, `${width} fits`).toBe(true);
-              expect(state.reply, `${width} Reply`).toBe(1);
-              // What moved into More is always the first actions of the priority order that this pill has.
-              const expected = order.filter((name) => state.present.includes(name)).slice(0, state.moved.length);
-              expect(new Set(state.moved), `${width} More order`).toEqual(new Set(expected));
-            }
-          } finally {
-            await close(page);
-          }
-        });
-
-        test("phone: the reply pill after the newest message, in thumb reach, offers Reply, Reply all and Forward; Done is in the head", async () => {
+        test("phone: the reply box waits at the bottom of the conversation, in thumb reach; Done is in the head", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
           try {
-            const bar = page.locator("[data-mail-reply-pill] .k2b-toolbar");
-            await page.waitForFunction(
-              () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
-            );
-            expect(await bar.isVisible()).toBe(true);
-            const names = await bar
-              .locator("button")
-              .evaluateAll((elements) =>
-                elements
-                  .filter((element) => element.getClientRects().length > 0 && !element.closest("[data-overflow]"))
-                  .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
-              );
-            // Reply leads and keeps its word; every action is reachable in the pill or, when the phone is too narrow
-            // for its engine's metrics, under More, which then is the last control.
-            expect(names[0]).toBe("Reply");
-            const inMore = names.includes("More actions")
-              ? await (async () => {
-                  await bar.getByRole("button", { name: "More actions" }).click();
-                  const rows = await page.getByRole("menuitem").allTextContents();
-                  await page.keyboard.press("Escape");
-                  return rows.map((row) => row.trim());
-                })()
-              : [];
-            // Mail v5: the pill only answers; Done and Assign stand in the head.
-            const reachable = new Set([...names.filter((name) => name !== "More actions"), ...inMore]);
-            for (const name of ["Reply", "Reply all", "Forward"]) expect(reachable.has(name), name).toBe(true);
-            expect([...reachable].every((name) => ["Reply", "Reply all", "Forward"].includes(name))).toBe(true);
-            // F1: the pill waits at the bottom of the reader, below the newest message, never below the screen.
+            const box = page.locator("[data-mail-reply-box-frame]");
+            await box.waitFor();
             const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
-            const strip = (await bar.boundingBox())!;
             const newest = (await page.locator("[data-mail-conversation-messages] [data-mail-message-id]").last().boundingBox())!;
-            expect(strip.y).toBeGreaterThanOrEqual(newest.y + newest.height - 0.5);
-            expect(strip.y + strip.height).toBeLessThanOrEqual(scroller.y + scroller.height + 0.5);
-            expect(strip.y + strip.height).toBeGreaterThan(scroller.y + scroller.height * 0.8);
-            // A floating pill on layer 3 carries the toolbar shadow.
-            expect(await bar.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
+            const frame = (await box.boundingBox())!;
+            expect(frame.y).toBeGreaterThanOrEqual(newest.y + newest.height - 0.5);
+            expect(frame.x).toBeGreaterThanOrEqual(scroller.x - 0.5);
+            expect(frame.x + frame.width).toBeLessThanOrEqual(scroller.x + scroller.width + 0.5);
             // The head keeps ×, the subject, Done and "…" on a phone; there is no details control any more.
             expect(await page.locator('[data-mail-reader-toolbar] [data-mail-toolbar-action="done"]').isVisible()).toBe(true);
             expect(await page.locator("[data-mail-details-trigger]").count()).toBe(0);
-            // Keyboard: the pill is one tab stop with arrow keys inside.
-            await bar.getByRole("button", { name: "Reply", exact: true }).focus();
-            await page.keyboard.press("ArrowRight");
-            expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(names[1]!);
             // Touch: Done marks the conversation done.
             await page.route("**/api/mail/mailboxes/Box001/conversations/completion", (route) =>
               route.fulfill({
@@ -3314,9 +3204,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             };
             expect(await settledMenuState({ open: true, title: false })).toEqual({ open: true, title: false });
             // Answers lead; taking the conversation follows, high and visible, then Done.
-            expect(rowItems.slice(0, 3)).toEqual(["Reply", "Reply in new window", "Forward"]);
-            expect(rowItems[3]).toBe("Assign to meNora Example stays responsible");
-            expect(rowItems[4]).toBe("Mark as done");
+            expect(rowItems.slice(0, 2)).toEqual(["Reply", "Forward"]);
+            expect(rowItems[2]).toBe("Assign to meNora Example stays responsible");
+            expect(rowItems[3]).toBe("Mark as done");
             expect(rowItems).toContain("Archive");
             expect(rowItems.at(-1)).toBe("Copy conversation Cloud ID");
             await dismiss(page, dropdown);
@@ -3367,20 +3257,18 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("Reply stands in the pill and once on each open message; a message's right-click and … reply to that message", async () => {
+        test("the reply box stands open and each open message has one reply arrow; a message's right-click and … reply into the box", async () => {
           const page = await open(`${boxPath}?conversation=Conv01&identity=1`);
           try {
-            await page.waitForFunction(
-              () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
-            );
-            // Mail v5: besides the pill, each open message has one reply arrow beside its date; nothing else replies.
+            await page.locator("[data-mail-reply-box-frame]").waitFor();
+            // Mail v5: besides the box, each open message has one reply arrow beside its date; nothing else replies.
             expect(await page.locator('[data-mail-message-id="Msg001"] [data-mail-message-reply]').count()).toBe(1);
             const visible = await page.locator(".mail-reader").evaluate((reader) =>
               Array.from(reader.querySelectorAll<HTMLElement>("button, a"))
                 .filter(
                   (element) =>
                     element.getClientRects().length > 0 &&
-                    !element.closest("[data-mail-reply-pill]") &&
+                    !element.closest("[data-mail-reply-box-frame]") &&
                     !element.hasAttribute("data-mail-message-reply"),
                 )
                 .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "")
@@ -3392,13 +3280,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             for (const name of ["Reply", "Forward"])
               expect(await page.locator(dropdown).getByRole("menuitem", { name, exact: true }).count(), `${name} in …`).toBe(1);
             await dismiss(page, dropdown);
-            // Right-click on the message: Reply starts the draft in the conversation from this message's own menu.
-            const seed = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/draft-seeds"));
+            // Right-click on the message: Reply lands in the box; no second draft, no "Continue draft?" dialog.
             await message.locator("[data-mail-message-header]").click({ button: "right" });
             await page.locator(contextMenu).getByRole("menuitem", { name: "Reply", exact: true }).click();
-            expect((await seed).postDataJSON()).toMatchObject({
-              origin: { kind: "compose", input: { intent: "reply", sourceMessageId: "Msg001" } },
-            });
+            expect(await page.locator("[data-mail-reply-box-frame]").count()).toBe(1);
+            expect(await page.getByRole("dialog").count()).toBe(0);
           } finally {
             await close(page);
           }
@@ -3411,7 +3297,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(await toolbar.locator('[data-mail-toolbar-action="archive"]').isVisible()).toBe(true);
             const done = toolbar.getByRole("button", { name: "Done", exact: true });
             expect(await done.isVisible()).toBe(true);
-            expect(await page.locator("[data-mail-reply-pill]").getByRole("button", { name: "Mark as done" }).count()).toBe(0);
+            expect(await page.locator("[data-mail-reply-box-frame]").getByRole("button", { name: "Mark as done" }).count()).toBe(0);
             await page.route("**/api/mail/mailboxes/Box001/conversations/completion", (route) =>
               route.fulfill({
                 json: { completion: "done", results: [{ conversationId: "Conv01", status: "ok", workStatus: "done", revision: 2 }] },
@@ -3424,7 +3310,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             // The reader's … menu has the row's order, and Archive keeps its path there.
             await page.getByRole("button", { name: "More conversation actions" }).click();
             const items = await menuEntries(page, dropdown);
-            expect(items.slice(0, 4)).toEqual(["Reply", "Reply in new window", "Reply all", "Forward"]);
+            expect(items.slice(0, 3)).toEqual(["Reply", "Reply all", "Forward"]);
             const archived = page.waitForRequest((request) => request.url().endsWith("/actions") && request.method() === "POST");
             await page.locator(dropdown).getByRole("menuitem", { name: "Archive", exact: true }).click();
             expect(JSON.stringify((await archived).postDataJSON())).toContain("archive");
@@ -3803,8 +3689,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     section("drafts", () => {
       /** A small Mail draft API: what the reader and the composer call around one draft, with what they sent. */
       /** `suggestedBy` names the automated account behind the untouched suggestion `DrfSug`. */
-      const draftApi = async (page: Page, suggestedBy = "Gustav") => {
+      const draftApi = async (page: Page, suggestedBy = "Gustav", options: { consolidated?: number; sendFails?: boolean } = {}) => {
         const calls: string[] = [];
+        const notes: string[] = [];
         const drafts = new Map<string, Record<string, unknown>>();
         const stamp = MAIL_SHELL_NOW;
         const makeDraft = (id: string, content: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
@@ -3848,6 +3735,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             { subject: "Fwd: Example request 1", body: "Hello Tom, here are the pickup details for Saturday." },
             {
               intent: "forward",
+              consolidatedCount: options.consolidated ?? 0,
             },
           ),
         );
@@ -3921,6 +3809,30 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             // Materialize answers how it got the draft; only a draft it created is fresh, so Escape discards it.
             return route.fulfill({ json: { ...created, creationOutcome: "created" } });
           }
+          if (method === "POST" && path === "/conversations/Conv01/comments") {
+            const body = request.postDataJSON();
+            notes.push(body.body);
+            return route.fulfill({
+              json: {
+                id: `Note0${notes.length}`,
+                conversationId: "Conv01",
+                body: body.body,
+                author: { kind: "user", id: "Usr001", displayName: "Ada Example", avatarHash: null },
+                referencedMessageId: null,
+                revision: 1,
+                canEdit: true,
+                canDelete: true,
+                editedAt: null,
+                deletedAt: null,
+                createdAt: stamp,
+                updatedAt: stamp,
+              },
+            });
+          }
+          if (method === "POST" && path === "/commands")
+            return options.sendFails
+              ? route.fulfill({ status: 503, json: { code: "SMTP_UNAVAILABLE", message: "The mail server does not answer." } })
+              : route.fulfill({ json: { id: "00000000-0000-4000-8000-0000000000f1", result: { conversationId: "Conv01" } } });
           if (path === "/compose-templates") return route.fulfill({ json: [{ id: "Sig001", kind: "signature", name: "Support" }] });
           if (path === "/compose-signature-defaults") return route.fulfill({ json: [] });
           if (method === "POST" && path === "/compose-signature")
@@ -3946,15 +3858,39 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               return route.fulfill({ json: saved });
             }
             if (rest === "" && method === "GET") return route.fulfill({ json: draft });
+            if (rest === "/safety-review")
+              return route.fulfill({
+                json: { revision: draft.revision, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) },
+              });
+            if (rest === "/consolidation/acknowledge") {
+              drafts.set(id!, { ...draft, consolidatedCount: 0 });
+              return route.fulfill({ json: { ...draft, consolidatedCount: 0 } });
+            }
+            if (rest === "/intent") {
+              const body = request.postDataJSON();
+              const switched = {
+                ...draft,
+                intent: body.intent,
+                subject: body.intent === "forward" ? "Fwd: Example request 1" : "Re: Example request 1",
+                to: body.intent === "forward" ? [] : draft.to,
+                revision: Number(draft.revision) + 1,
+              };
+              drafts.set(id!, switched);
+              return route.fulfill({ json: switched });
+            }
           }
           return route.fallback();
         });
-        return { calls, drafts, makeDraft };
+        return { calls, drafts, notes, makeDraft };
       };
-      const draftBox = (page: Page) => page.locator("[data-mail-inline-draft]:not([data-mail-inline-draft-pending])");
+      const draftBox = (page: Page) => page.locator("[data-mail-reply-box='mail']");
       const readyDraft = async (page: Page) => {
         await draftBox(page).waitFor();
-        await page.locator("[data-mail-inline-draft] .cm-content").waitFor();
+        await page.locator("[data-mail-reply-box='mail'] .cm-content").waitFor();
+      };
+      const chooseMode = async (page: Page, name: string) => {
+        await page.locator("[data-mail-reply-box-frame] [data-mail-reply-mode]").first().click();
+        await page.getByRole("menuitemradio", { name }).click();
       };
       /** Reply buttons that start a reply to the conversation; each open message keeps its own reply arrow beside its date. */
       const readerReplies = (page: Page) =>
@@ -3973,71 +3909,147 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       };
 
       for (const width of [1440, 390])
-        test(`${width}: Reply grows into the draft in place of the pill; Escape on an unchanged draft brings the pill back`, async () => {
+        test(`${width}: the reply box stands open under the newest message; opening creates no draft, the first typing does`, async () => {
           let api!: Awaited<ReturnType<typeof draftApi>>;
           const page = await open(`${boxPath}?conversation=Conv01&identity=1`, width, undefined, "reduce", async (next) => {
             api = await draftApi(next);
           });
           try {
-            await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
             await readyDraft(page);
-            // The pill became the draft: no second Reply anywhere in the reader, the caret is in the text.
+            // No pill, no Reply that opens a draft, and opening the conversation never moved the focus into the box.
             expect(await page.locator("[data-mail-reply-pill]").count()).toBe(0);
             expect(await readerReplies(page).count()).toBe(0);
-            await page.waitForFunction(() => document.activeElement?.closest(".cm-content") !== null);
-            expect(new URL(page.url()).searchParams.get("draft")).toBe("DrfNew");
-            expect(api.calls).toContain("POST /draft-seeds/materialize");
-            // Reduced motion: the state changes at once, nothing glides.
-            expect(await page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getAnimations().length)).toBe(0);
-            // The draft stands below the newest message (Mail v5).
+            expect(await page.evaluate(() => document.activeElement?.closest("[data-mail-reply-box]") ?? null)).toBeNull();
+            expect(await draftBox(page).textContent()).toContain("Example sender");
+            expect(api.calls).toContain("POST /draft-seeds");
+            expect(api.calls).not.toContain("POST /draft-seeds/materialize");
             const order = await page.evaluate(() => {
-              const draft = document.querySelector("[data-mail-inline-draft]")!.getBoundingClientRect();
+              const box = document.querySelector("[data-mail-reply-box='mail']")!.getBoundingClientRect();
               const messages = document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect();
-              return { draftTop: draft.top, messagesBottom: messages.bottom };
+              const send = document.querySelector("[data-mail-reply-box='mail'] footer")!.getBoundingClientRect();
+              return { boxTop: box.top, messagesBottom: messages.bottom, footHeight: send.height };
             });
-            expect(order.draftTop).toBeGreaterThanOrEqual(order.messagesBottom);
-            await page.keyboard.press("Escape");
-            await page.locator("[data-mail-reply-pill]").waitFor();
-            expect(await draftBox(page).count()).toBe(0);
-            await page.waitForFunction(() => !new URL(location.href).searchParams.has("draft"));
-            expect(api.calls).toContain("POST /drafts/DrfNew/discard");
+            expect(order.boxTop).toBeGreaterThanOrEqual(order.messagesBottom);
+            // The bar keeps one row, also on a phone.
+            expect(order.footHeight).toBeLessThan(56);
+            await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+            await page.keyboard.type("Saturday at 11 works.");
+            await eventually(() => api.drafts.get("DrfNew")?.body, "Saturday at 11 works.", "the first input creates the draft");
+            await page.waitForFunction(() =>
+              document.querySelector("[data-mail-reply-box='mail'] [data-mail-save-status]")?.textContent?.includes("Saved"),
+            );
           } finally {
             await close(page);
           }
         });
 
-      test("the pill grows into the draft below the newest message: the messages above it do not move", async () => {
+      test("the box takes its place without moving the messages above it", async () => {
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
           await draftApi(next);
         });
         try {
           const messagesTop = () =>
             page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top);
+          const pendingHeight = await page.evaluate(
+            () => document.querySelector("[data-mail-reply-box-frame]")?.getBoundingClientRect().height ?? 0,
+          );
           const before = await messagesTop();
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
           await readyDraft(page);
           await settled(page);
           expect(Math.abs((await messagesTop()) - before)).toBeLessThanOrEqual(0.5);
+          const readyHeight = await page.evaluate(
+            () => document.querySelector("[data-mail-reply-box-frame]")!.getBoundingClientRect().height,
+          );
+          expect(pendingHeight).toBeGreaterThan(0);
+          expect(readyHeight).toBeGreaterThanOrEqual(pendingHeight);
         } finally {
           await close(page);
         }
       });
 
-      test("typing saves the draft, and collapsing keeps it: no discard, the lease is released", async () => {
+      test("the mode menu switches Reply to Forward on the server and keeps the text", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
           api = await draftApi(next);
         });
         try {
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
           await readyDraft(page);
-          await page.keyboard.type("Saturday at 11 works.");
-          await eventually(() => api.drafts.get("DrfNew")?.body, "Saturday at 11 works.", "autosave");
-          await page.waitForFunction(() => document.querySelector(".mail-inline-draft-status")?.textContent?.includes("Saved"));
-          await page.locator("[data-mail-draft-collapse]").click();
-          await page.locator("[data-mail-reply-pill]").waitFor();
-          expect(api.calls).not.toContain("POST /drafts/DrfNew/discard");
-          expect(api.calls).toContain("DELETE /drafts/DrfNew/lease");
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("See the details below.");
+          await eventually(() => api.drafts.get("DrfNew")?.body, "See the details below.", "saved before the switch");
+          await chooseMode(page, "Forward");
+          await page.waitForFunction(
+            () => document.querySelector("[data-mail-reply-box='mail']")?.getAttribute("data-intent") === "forward",
+          );
+          expect(api.calls).toContain("POST /drafts/DrfNew/intent");
+          expect(await page.locator("[data-mail-reply-box='mail'] .cm-content").textContent()).toContain("See the details below.");
+          expect(api.calls.some((call) => call.endsWith("/discard"))).toBe(false);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("internal note: yellow, Mod+Enter saves the note and never sends; the reply comes back unchanged", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("Reply for the customer.");
+          await eventually(() => api.drafts.get("DrfNew")?.body, "Reply for the customer.", "reply saved");
+          await settled(page);
+          const heightBefore = await page.evaluate(
+            () => document.querySelector("[data-mail-reply-box-frame]")!.getBoundingClientRect().height,
+          );
+          await chooseMode(page, "Internal note");
+          const note = page.locator("[data-mail-reply-box='note']");
+          await note.waitFor();
+          expect(await draftBox(page).isHidden()).toBe(true);
+          expect(await note.textContent()).toContain("Only for the team.");
+          expect(await note.getByRole("button", { name: "Save note" }).isDisabled()).toBe(true);
+          // The note keeps the box's height: nothing moves.
+          const heightNote = await page.evaluate(
+            () => document.querySelector("[data-mail-reply-box-frame]")!.getBoundingClientRect().height,
+          );
+          expect(Math.abs(heightNote - heightBefore)).toBeLessThanOrEqual(1);
+          await note.locator("textarea").fill("Order the oak boards before Friday.");
+          await page.keyboard.press("Control+Enter");
+          await eventually(() => api.notes.length, 1, "note saved");
+          expect(api.notes).toEqual(["Order the oak boards before Friday."]);
+          expect(api.calls.some((call) => call.endsWith("/commands") || call.endsWith("/safety-review"))).toBe(false);
+          expect(JSON.stringify([...api.drafts.values()])).not.toContain("oak boards");
+          await page.locator("[data-mail-conversation-messages]").getByText("Order the oak boards before Friday.").waitFor();
+          await draftBox(page).waitFor();
+          expect(await page.locator("[data-mail-reply-box='mail'] .cm-content").textContent()).toContain("Reply for the customer.");
+          expect(await page.locator("[data-mail-reply-box='note']").count()).toBe(0);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("a failed send turns the bar light red in place; Send again retries", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next, "Gustav", { sendFails: true });
+        });
+        try {
+          await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("Ready to go.");
+          const footTop = () =>
+            page.evaluate(() => document.querySelector("[data-mail-reply-box='mail'] footer")!.getBoundingClientRect().top);
+          await eventually(() => api.drafts.get("DrfNew")?.body, "Ready to go.", "saved");
+          await settled(page);
+          const before = await footTop();
+          await page.keyboard.press("Control+Enter");
+          const bar = page.locator("[data-mail-send-failed]");
+          await bar.waitFor();
+          expect(await bar.textContent()).toContain("Not sent.");
+          expect(await bar.textContent()).toContain("Your text is saved.");
+          expect(Math.abs((await footTop()) - before)).toBeLessThanOrEqual(1);
+          expect(await bar.getByRole("button", { name: "Send again" }).isVisible()).toBe(true);
         } finally {
           await close(page);
         }
@@ -4049,9 +4061,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           api = await draftApi(next);
         });
         try {
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
           await readyDraft(page);
-          const signature = page.locator("[data-mail-draft-signature]");
+          const signature = page.locator("[data-mail-reply-box='mail'] [data-mail-draft-signature]");
           await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("Ada Example"));
           // Fixed: the block is not part of the editable text.
           expect(await signature.evaluate((element) => element.closest(".cm-content"))).toBeNull();
@@ -4064,36 +4075,33 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             "quote saved with locale and time zone",
           );
           expect(await quote.textContent()).toContain("Quote attached");
-          await quote.getByRole("button", { name: "Remove" }).click();
-          await eventually(() => api.drafts.get("DrfNew")?.quoteSource ?? null, null, "quote removed");
         } finally {
           await close(page);
         }
       });
 
-      test("Gustav's suggestion is already open in plum, its row says so, and the first typing takes it over", async () => {
+      test("Gustav's suggestion stands in the box in plum, its row says so, and the first typing takes it over", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?conversation=Conv01&identity=1&suggestion=1`, 1440, undefined, "reduce", async (next) => {
           api = await draftApi(next);
         });
         try {
           await readyDraft(page);
-          const draft = page.locator("[data-mail-inline-draft]");
+          const draft = draftBox(page);
           expect(await draft.getAttribute("data-suggestion")).toBe("");
           expect(await draft.textContent()).toContain("Suggestion from Gustav");
+          expect(await draft.textContent()).toContain("Type to take it over, or send it as it is.");
           expect(await page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]').getAttribute("data-suggestion")).toBe("");
-          // Never a second Reply while the suggestion stands in the pill's place.
-          expect(await readerReplies(page).count()).toBe(0);
           expect(api.calls).not.toContain("POST /drafts/DrfSug/lease");
-          await page.locator("[data-mail-inline-draft] .cm-content").click();
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
           await page.keyboard.type(" Thanks!");
-          await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-suggestion"));
+          await page.waitForFunction(() => !document.querySelector("[data-mail-reply-box='mail']")?.hasAttribute("data-suggestion"));
         } finally {
           await close(page);
         }
       });
 
-      test("another automated account's suggestion carries that account's name, in plum, in the draft and its row", async () => {
+      test("another automated account's suggestion carries that account's name, in plum, in the box and its row", async () => {
         const page = await open(
           `${boxPath}?conversation=Conv01&identity=1&suggestion=1&suggestionBy=Rechnungseingang`,
           1440,
@@ -4105,31 +4113,14 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         );
         try {
           await readyDraft(page);
-          const draft = page.locator("[data-mail-inline-draft]");
+          const draft = draftBox(page);
           expect(await draft.getAttribute("data-suggestion")).toBe("");
           expect(await draft.textContent()).toContain("Suggestion from Rechnungseingang");
           expect(await draft.textContent()).not.toContain("Gustav");
           const row = page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]');
           expect(await row.getAttribute("data-suggestion")).toBe("");
-          // The row says "✦ Suggestion" and names the account in its label.
           expect(await row.textContent()).toContain("Suggestion");
           expect(await row.getAttribute("aria-label")).toBe("Suggestion from Rechnungseingang");
-        } finally {
-          await close(page);
-        }
-      });
-
-      test("a collapsed suggestion waits as a row and does not open again by itself", async () => {
-        const page = await open(`${boxPath}?conversation=Conv01&identity=1&suggestion=1`, 1440, undefined, "reduce", async (next) => {
-          await draftApi(next);
-        });
-        try {
-          await readyDraft(page);
-          await page.locator("[data-mail-draft-collapse]").click();
-          await page.locator('[data-mail-draft-row="DrfSug"]').waitFor();
-          // settled: nothing may reopen it after the collapse finished.
-          await settled(page);
-          expect(await page.locator("[data-mail-inline-draft]").count()).toBe(0);
         } finally {
           await close(page);
         }
@@ -4181,7 +4172,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(api.calls).toContain("POST /draft-seeds/materialize");
           await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
           await eventually(() => api.drafts.get("DrfNew")?.subject, "Pickup on Saturday", "subject saved");
-          await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved on server" }).waitFor();
+          await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
           // Minimized, it is a bar at the bottom; the list keeps its last row above it.
           await composeWindow(page).getByRole("button", { name: "Minimize" }).click();
           await page.waitForFunction(() => document.querySelector(".mail-compose-window")?.getAttribute("data-state") === "minimized");
@@ -4254,39 +4245,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
-      test("full screen, scrolled into the history: one fixed row keeps Send and leads back to the text", async () => {
-        // A laptop with little height: the history is longer than the reader, so the draft can scroll out of view.
-        const page = await open(`${boxPath}?conversation=Conv02&identity=1`, 1440, 560, "reduce", async (next) => {
-          await draftApi(next);
-        });
-        try {
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
-          await readyDraft(page);
-          await page.locator("[data-mail-draft-fullscreen]").click();
-          expect(await page.locator("[data-mail-draft-bar]").count()).toBe(0);
-          // The whole history above the draft, then scroll up until the draft has left the reader.
-          if (await page.locator("[data-mail-older-messages]").count()) await page.locator("[data-mail-older-messages]").click();
-          // Older messages are one line each; opened, they make the history taller than the reader.
-          const collapsed = page.locator('[data-mail-message-header][aria-expanded="false"]');
-          while ((await collapsed.count()) > 0) await collapsed.first().click();
-          await settled(page);
-          await page.evaluate(() => {
-            const frame = document.querySelector("[data-mail-inline-draft-frame]")!;
-            let scroller: Element | null = frame.parentElement;
-            while (scroller && scroller.scrollHeight <= scroller.clientHeight) scroller = scroller.parentElement;
-            scroller?.scrollTo({ top: 0 });
-          });
-          const bar = page.locator("[data-mail-draft-bar]");
-          await bar.waitFor();
-          expect(await bar.getByRole("button", { name: "Send" }).isVisible()).toBe(true);
-          await bar.getByRole("button", { name: "Back to the text" }).click();
-          await page.waitForFunction(() => document.activeElement?.closest("[data-mail-inline-draft] .cm-content") !== null);
-          await page.locator("[data-mail-draft-bar]").waitFor({ state: "detached" });
-        } finally {
-          await close(page);
-        }
-      });
-
       test("a conversation with a colleague's draft shows a draft chip with who writes it", async () => {
         const page = await open(`${boxPath}?drafts=1`, 1440);
         try {
@@ -4306,78 +4264,49 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           api = await draftApi(next);
         });
         try {
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
           await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
           await page.keyboard.type("Not lost");
-          // Leave before the 700 ms autosave: save even if no writing lease was acquired yet.
+          // Leave before the 700 ms autosave: the draft is created and saved on the way out.
           await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
           await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
-          await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]"));
           await eventually(() => api.drafts.get("DrfNew")?.body, "Not lost", "saved on leave");
-          if (api.calls.includes("POST /drafts/DrfNew/lease")) {
-            await eventually(() => api.calls.includes("DELETE /drafts/DrfNew/lease"), true, "lease released after the save");
-            const saveIndex = api.calls.lastIndexOf("PUT /drafts/DrfNew");
-            expect(saveIndex, "the save comes before the release").toBeLessThan(api.calls.indexOf("DELETE /drafts/DrfNew/lease"));
-          } else {
-            expect(api.calls).not.toContain("DELETE /drafts/DrfNew/lease");
-          }
-          expect(new URL(page.url()).searchParams.has("draft")).toBe(false);
-          // Back returns to the first conversation with its draft open again, as the person left it.
-          await page.goBack();
-          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
-          expect(new URL(page.url()).searchParams.get("draft")).toBe("DrfNew");
-          await readyDraft(page);
-          expect(await page.locator("[data-mail-inline-draft] .cm-content").textContent()).toContain("Not lost");
         } finally {
           await close(page);
         }
       });
 
-      test("a colleague's draft is a row; it opens in place, and a reload keeps it open", async () => {
+      test("a colleague's reply draft stands in the box in its mode, and a reload keeps it there", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?conversation=Conv01&identity=1&drafts=1`, 1440, undefined, "reduce", async (next) => {
           api = await draftApi(next);
         });
         try {
-          const row = page.locator('[data-mail-draft-row="Drf001"]');
-          await row.waitFor();
-          expect(await row.textContent()).toContain("Jonas Example");
-          await row.click();
           await readyDraft(page);
           expect(api.calls).toContain("GET /drafts/Drf001");
-          expect(await page.locator('[data-mail-draft-row="Drf001"]').count()).toBe(0);
-          expect(new URL(page.url()).searchParams.get("draft")).toBe("Drf001");
+          expect(await draftBox(page).getAttribute("data-intent")).toBe("forward");
+          expect(await page.locator("[data-mail-draft-row]").count()).toBe(0);
           await page.reload();
           await ready(page);
           await readyDraft(page);
-          expect(await page.locator("[data-mail-inline-draft]").getAttribute("data-intent")).toBe("forward");
+          expect(await draftBox(page).getAttribute("data-intent")).toBe("forward");
         } finally {
           await close(page);
         }
       });
 
-      test("full screen moves the list aside, is remembered, and Escape leaves it before collapsing", async () => {
-        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
-          await draftApi(next);
+      test("F6: the one-time line names how many drafts were here; Got it removes it", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1&drafts=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next, "Gustav", { consolidated: 2 });
         });
         try {
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
-          await readyDraft(page);
-          const listVisible = () =>
-            page.evaluate(() => {
-              const pane = document.querySelector(".mail-workspace .mail-split-list");
-              return Boolean(pane && pane.getClientRects().length > 0 && pane.getBoundingClientRect().width > 0);
-            });
-          expect(await listVisible()).toBe(true);
-          await page.locator("[data-mail-draft-fullscreen]").click();
-          await page.waitForFunction(() => document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-fullscreen"));
-          await eventually(listVisible, false, "list aside in full screen");
-          expect(decodeURIComponent((await storedCookie(page, "cloud_mail_workspace"))?.value ?? "")).toContain('"draftFullscreen":true');
-          await page.locator("[data-mail-inline-draft] .cm-content").click();
-          await page.keyboard.press("Escape");
-          await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-fullscreen"));
-          expect(await draftBox(page).count()).toBe(1);
-          await eventually(listVisible, true, "list back after full screen");
+          const line = page.locator("[data-mail-reply-consolidated]");
+          await line.waitFor();
+          expect(await line.textContent()).toContain("There were 3 drafts here. The most recently edited one is in the box.");
+          await line.getByRole("button", { name: "Got it" }).click();
+          await line.waitFor({ state: "detached" });
+          expect(api.calls).toContain("POST /drafts/Drf001/consolidation/acknowledge");
         } finally {
           await close(page);
         }
@@ -4387,9 +4316,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         test("draft review screenshots", async () => {
           const directory = resolve(screenshots);
           mkdirSync(directory, { recursive: true });
-          const shoot = async (name: string, theme: "light" | "dark", width: number, path: string, act?: (page: Page) => Promise<void>) => {
+          const shoot = async (
+            name: string,
+            theme: "light" | "dark",
+            width: number,
+            path: string,
+            act?: (page: Page) => Promise<void>,
+            api: { consolidated?: number; sendFails?: boolean } = {},
+          ) => {
             const page = await open(`${path}&theme=${theme}`, width, undefined, "reduce", async (next) => {
-              await draftApi(next);
+              await draftApi(next, "Gustav", api);
             });
             try {
               await act?.(page);
@@ -4400,40 +4336,57 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           };
           const reply = async (page: Page) => {
-            await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
             await readyDraft(page);
+            await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
             await page.keyboard.type("Saturday at 11 works well. The chairs are ready in hall A.");
           };
           const thread = `${boxPath}?conversation=Conv01&identity=1`;
           for (const theme of ["light", "dark"] as const)
             for (const width of [1440, 390]) {
-              await shoot("01-thread-pill", theme, width, thread);
-              await shoot("02-draft-open", theme, width, thread, reply);
+              await shoot("01-box-empty", theme, width, thread, readyDraft);
+              await shoot("02-box-reply", theme, width, thread, reply);
+              await shoot("03-box-note", theme, width, thread, async (page) => {
+                await readyDraft(page);
+                await chooseMode(page, "Internal note");
+                await page
+                  .locator("[data-mail-reply-box='note'] textarea")
+                  .fill("Frau Lindqvist moves mid December. Deliver before the 12th.");
+              });
             }
-          for (const width of [1440, 1920])
-            await shoot("03-draft-fullscreen", "light", width, thread, async (page) => {
-              await reply(page);
-              await page.locator("[data-mail-draft-fullscreen]").click();
-            });
-          await shoot("04-draft-preview", "light", 1440, thread, async (page) => {
-            await reply(page);
-            await page.locator("[data-mail-draft-preview]").click();
-            await page.locator(".mail-inline-draft-preview iframe").waitFor();
-          });
-          await shoot("05-draft-rows", "light", 1440, `${thread}&drafts=1`);
-          await shoot("05-draft-rows", "light", 390, `${thread}&drafts=1`);
-          for (const width of [1440, 390])
-            await shoot("06-gustav-suggestion", "light", width, `${thread}&suggestion=1`, async (page) => {
-              await readyDraft(page);
-            });
-          await shoot("06-gustav-suggestion", "dark", 1440, `${thread}&suggestion=1`, async (page) => {
+          await shoot("04-box-mode-menu", "light", 1440, thread, async (page) => {
             await readyDraft(page);
+            await page.locator("[data-mail-reply-box-frame] [data-mail-reply-mode]").first().click();
+            await page.getByRole("menuitemradio", { name: "Internal note" }).waitFor();
           });
+          await shoot(
+            "05-box-send-failed",
+            "light",
+            1440,
+            thread,
+            async (page) => {
+              await reply(page);
+              await page.keyboard.press("Control+Enter");
+              await page.locator("[data-mail-send-failed]").waitFor();
+            },
+            { sendFails: true },
+          );
+          await shoot("06-box-suggestion", "light", 1440, `${thread}&suggestion=1`, readyDraft);
+          await shoot("06-box-suggestion", "dark", 1440, `${thread}&suggestion=1`, readyDraft);
+          await shoot(
+            "07-box-consolidated",
+            "light",
+            1440,
+            `${thread}&drafts=1`,
+            async (page) => {
+              await page.locator("[data-mail-reply-consolidated]").waitFor();
+            },
+            { consolidated: 2 },
+          );
           const compose = async (page: Page) => {
             await page.locator("[data-workspace-primary]").first().click();
             await readyWindow(page);
             await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
-            await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved on server" }).waitFor();
+            await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
           };
           // A phone shows Compose with the list, not beside an open conversation.
           for (const [theme, width] of [
@@ -4455,10 +4408,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await composeWindow(page).getByRole("button", { name: "Close window" }).click();
             await page.locator("[data-k2b-toast-container]", { hasText: "Draft is in “Drafts”" }).waitFor();
           });
-          await shoot("07-quote-attached", "light", 1440, thread, async (page) => {
+          await shoot("08-box-preview", "light", 1440, thread, async (page) => {
             await reply(page);
-            await page.locator("[data-mail-draft-quote]").getByRole("button").click();
-            await page.waitForFunction(() => document.querySelector("[data-mail-draft-quote]")?.textContent?.includes("attached"));
+            await page.locator("[data-mail-reply-box='mail'] button[aria-label='More']").click();
+            await page.getByRole("menuitemcheckbox", { name: "Preview (how the mail arrives)" }).click();
+            await page.locator(".mail-inline-draft-preview iframe").waitFor();
           });
         }, 240_000);
     });

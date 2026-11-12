@@ -614,3 +614,52 @@
   z-index: 10;
   transform: translateX(-50%);
 }
+
+/* The internal note: the same box in the note's yellow, with no recipients, signature, or attachments. Its button
+   is dark with a lock, and it says who sees the note. */
+.k2b-ui .mail-reply-box-note {
+  background: var(--mail-note-surface);
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--mail-note-edge);
+  color: var(--mail-note-ink);
+}
+.k2b-ui .mail-reply-box-note:focus-within {
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--mail-note-ink) 45%, var(--mail-note-edge));
+}
+.k2b-ui .mail-reply-box-note .mail-reply-box-mode {
+  color: var(--mail-note-ink);
+}
+.k2b-ui .mail-reply-box-note-audience {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  color: var(--mail-note-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2b-ui .mail-reply-box-note-badge {
+  flex: none;
+}
+.k2b-ui .mail-reply-box-note-text .k2b-input-shell {
+  --k2b-edge-color: transparent;
+  background: transparent;
+  color: var(--mail-note-ink);
+}
+.k2b-ui .mail-reply-box-note-text textarea::placeholder {
+  color: var(--mail-note-muted);
+}
+.k2b-ui .mail-reply-box-space {
+  min-height: 0.5rem;
+  flex: 1 1 auto;
+  cursor: text;
+}
+.k2b-ui .mail-reply-box-note .mail-reply-box-status {
+  color: var(--mail-note-muted);
+}
+.k2b-ui .k2b-button.mail-reply-box-note-save {
+  background: var(--mail-note-ink);
+  color: var(--mail-note-surface);
+}
+.k2b-ui .k2b-button.mail-reply-box-note-save:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--mail-note-ink) 88%, var(--mail-note-surface));
+}

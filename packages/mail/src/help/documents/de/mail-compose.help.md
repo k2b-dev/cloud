@@ -9,11 +9,20 @@ order: 30
 
 ## Eine Nachricht beginnen {icon="square-plus"}
 
-Du schreibst direkt in der Unterhaltung. Wähle in einer Unterhaltung **Antworten**, **Allen** oder **Weiterleiten** in der schwebenden Leiste unter der neuesten Nachricht, **Antworten** an einer Nachricht oder **Auswahl zitieren** an einer Nachricht. Die Leiste wächst an derselben Stelle zum Entwurf, unter der neuesten Nachricht, und die Schreibmarke steht im Text. Mail legt den gemeinsamen Entwurf an, bevor du tippst.
+Du antwortest in der Antwortbox. Sie steht offen unter der neuesten Nachricht jeder Unterhaltung, in der du schreiben darfst. Jede Unterhaltung hat genau einen Antwortentwurf. Das Öffnen einer Unterhaltung legt keinen Entwurf an; Mail legt ihn an, wenn du das erste Zeichen tippst.
+
+- **Art:** Der Pfeil links in der Box bietet **Antworten**, **Allen antworten**, **Weiterleiten** und **Interne Notiz**. Ein Wechsel zwischen den drei Mail-Arten behält deinen Text; Mail setzt Empfänger und Betreff neu. **Antworten** an einer Nachricht, **Auswahl zitieren**, die Taste **R** und das **…**-Menü der Unterhaltung schreiben alle in dieselbe Box.
+- **Leiste:** **Senden ▾** sendet, oder **Später senden** um **Morgen früh**, **Montag früh** oder zu einer gewählten Zeit. Daneben stehen Formatierung, Anhänge, Link, Emoji, Bild, Signatur, **Assistent** und **…** mit **Vorschau (so kommt die Mail an)**, **Zitat anhängen**, **Kalendereinladung**, **Zustelloptionen**, **Nur Text**, **Betreff bearbeiten**, **In ein Fenster lösen** und **Änderungen wiederherstellen**. Rechts zeigt die Box leise „Gespeichert“, „Speichert …“ oder „Offline · hier gesichert“. Der Papierkorb verwirft die Antwort nach einer Rückfrage.
+- **Zustände:** Solange eine Datei hochlädt, zeigt die Box „Lädt hoch · n %“, und **Senden** wartet. Offline schreibst du weiter, und **Senden** wartet. Bei einem Fehler beim Senden wird die Leiste hellrot und nennt den Grund; dein Text ist gespeichert, und **Erneut senden** steht an der Stelle von **Senden**. Eine geplante Antwort zeigt „Senden geplant“ mit **Zeit ändern** und **Abbrechen und bearbeiten**.
+- **Rückgängig:** Nach **Senden** steht die Nachricht sofort am Ende der Unterhaltung mit „Wird in n s gesendet“ und **Rückgängig**, und die Box ist wieder leer. Was du dann tippst, bleibt in diesem Browser und wird zum nächsten Entwurf, sobald die Nachricht raus ist. Wählst du **Rückgängig**, kommt die Antwort zurück in die Box, und die Box bietet das inzwischen Getippte mit **Änderungen wiederherstellen** an.
+- **Fenster:** **…** › **In ein Fenster lösen** legt die Antwort in ein schwebendes Fenster. Die Box zeigt dann „In einem Fenster geöffnet“ mit **Zurückholen**.
+- **Einmaliger Hinweis:** Wo eine Unterhaltung früher mehrere Entwürfe hatte, nennt die Box einmal ihre Zahl. Der zuletzt bearbeitete steht in der Box; **Verstanden** entfernt den Hinweis.
+
+**Interne Notiz:** Wähle **Interne Notiz** im Pfeil. Die Box wird gelb und zeigt „Nur für das Team. … sieht sie nie.“ Sie hat keine Empfänger, keine Signatur und keine Anhänge. **Notiz speichern** (oder **Strg+Enter**) speichert die Notiz in der Unterhaltung; sie sendet nie etwas. Dein Antwortentwurf bleibt gespeichert und kommt nach der Notiz unverändert zurück. Ungespeicherter Notiztext bleibt in diesem Tab, wenn du eine andere Unterhaltung öffnest. Kann die Notiz nicht gespeichert werden, wird die Leiste hellrot, dein Text bleibt, und **Erneut speichern** versucht es noch einmal.
 
 Wähle **Neue Nachricht** oder drücke **Strg+Alt+N** (**⌘+⌥+N** auf dem Mac) für eine neue Nachricht. Sie öffnet als schwebendes Fenster über dem Postfach. Liste und offene Unterhaltung dahinter bleiben bedienbar, und du kannst mehrere neue Nachrichten zugleich offen haben.
 
-- **Kopf des Fensters:** Er zeigt den Betreff, bis dahin „Neue Nachricht“, und leise den Stand: „Auf dem Server gespeichert“, „Entwurf wird gespeichert…“ oder „Offline · hier gesichert“. Daneben stehen **Minimieren**, **Vergrößern** und **Fenster schließen**. Ziehe das Fenster am Kopf an eine andere Stelle.
+- **Kopf des Fensters:** Er zeigt den Betreff, bis dahin „Neue Nachricht“, und leise den Stand: „Gespeichert“, „Speichert …“ oder „Offline · hier gesichert“. Daneben stehen **Minimieren**, **Vergrößern** und **Fenster schließen**. Ziehe das Fenster am Kopf an eine andere Stelle.
 - **Minimieren** legt das Fenster als Leiste unten ab. Wähle die Leiste, um es zurückzuholen. Die Liste lässt Platz, damit ihre letzte Zeile erreichbar bleibt.
 - **Vergrößern** legt das Fenster über fast die ganze App und dunkelt den Rest ab. Esc oder **Verkleinern** holt es auf seine Größe zurück.
 - **Schließen** verliert nichts: Der Entwurf liegt danach in **Entwürfe**, und der Hinweis „Entwurf liegt in ‚Entwürfe‘“ bietet **Öffnen** an. Wählst du eine neue Nachricht in **Entwürfe**, öffnet sie wieder als Fenster. Eine gerade begonnene Nachricht ohne Änderung verschwindet beim Schließen.
@@ -25,13 +34,12 @@ Wähle **Neue Nachricht** oder drücke **Strg+Alt+N** (**⌘+⌥+N** auf dem Mac
 
 Nach dem Senden wird aus der neuen Nachricht eine Unterhaltung.
 
-Der Kopf des Entwurfs zeigt die Empfänger, **Cc, Bcc**, **…**, **Vollbild** und **Einklappen (Esc)**. Eine leise Zeile darunter zeigt Absender und Betreff. Esc verlässt zuerst das Vollbild und klappt dann den Entwurf ein. Ein gerade begonnener Entwurf ohne Änderung verschwindet beim Einklappen; jeder andere Entwurf wird gespeichert und bleibt in der Unterhaltung.
+In der Box und im Fenster:
 
-- **Platz:** Der Entwurf nimmt etwa 60 Prozent der Höhe des Lesebereichs ein und wächst mit deinem Text. **Vollbild** schiebt Liste und Details zur Seite; Mail merkt sich diese Wahl in diesem Browser. Auf einem breiten Bildschirm steht der Verlauf neben dem Entwurf.
 - **Signatur:** Die gewählte Signatur folgt dem Text als fester Block, genau so, wie Mail sie beim Senden einfügt. Wechsle sie mit der Signatur-Schaltfläche in den Werkzeugen des Entwurfs.
 - **Zitat:** Eine Antwort bietet **Zitat anhängen** für die Nachricht an, auf die sie antwortet. Das Zitat ist im Entwurf eingeklappt und geht nach der Signatur mit, mit Datum in deiner Sprache und Zeitzone.
 - **Vorschau:** zeigt die Mail genau so, wie sie ankommt, mit dem Design des Postfachs. Der Editor selbst bleibt im ruhigen Cloud-Stil.
-- **Eigenes Fenster:** **…** › **In eigenem Fenster** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht nie ein zweiter Entwurf. Alte Links auf die Seite des Editors öffnen die Unterhaltung mit offenem Entwurf. Links auf eine neue Nachricht und alte Links auf ein eigenes Fenster öffnen Mail mit dem Fenster des Entwurfs.
+- **Alte Links:** Links auf die Seite des Editors für eine Antwort öffnen die Unterhaltung mit dem Entwurf in der Box. Links auf eine neue Nachricht und alte Links auf ein eigenes Fenster öffnen Mail mit dem Fenster des Entwurfs.
 
 Wähle unter **Von** eine bestätigte Absenderidentität, füge Empfänger hinzu und gib Betreff und Text ein. **Cc/Bcc** zeigt die weiteren Empfängerfelder. Empfänger sehen die Bcc-Liste nie. Deine eigene Kopie in Gesendet behält sie, sodass jedes E-Mail-Programm zeigt, wen du in Bcc gesetzt hast.
 
@@ -96,9 +104,9 @@ Dein Standardformat steht unter **… → Einstellungen → Schreiben → Format
 
 ## Einen vorhandenen Entwurf einer Unterhaltung fortsetzen {icon="pencil"}
 
-Entwürfe gehören zum Postfach, nicht nur zu dem Browser, der sie erstellt hat. Eine Unterhaltung zeigt ihre Entwürfe: den offenen an der Stelle der Leiste, jeden weiteren als Zeile mit Autor, Änderungszeit und Vorschau. Wähle eine Zeile, um den Entwurf an Ort und Stelle zu öffnen. **Antworten**, **Allen** oder **Weiterleiten** öffnen einen vorhandenen Entwurf mit demselben Zweck, statt einen zweiten zu beginnen. In der Liste zeigt eine Unterhaltung mit Entwürfen **Entwurf** oder die Anzahl der Entwürfe mit den Personen, die daran schreiben.
+Entwürfe gehören zum Postfach, nicht nur zu dem Browser, der sie erstellt hat. Eine Unterhaltung hat einen Antwortentwurf, und er steht immer in der Antwortbox. **Antworten**, **Allen antworten** und **Weiterleiten** ändern seine Art, statt einen zweiten zu beginnen. In der Liste zeigt eine Unterhaltung mit Entwürfen **Entwurf** oder die Anzahl der Entwürfe mit den Personen, die daran schreiben.
 
-Ein Vorschlag von Gustav oder einem anderen automatischen Konto ist ein echter Entwurf, der schon offen in der Unterhaltung steht, in Pflaume, mit dem Namen des Kontos, zum Beispiel **Vorschlag von Gustav**, und **Tippe, um ihn zu übernehmen, oder sende ihn so**. Er geht nie von selbst raus; **Senden** sendet ihn unverändert. Sobald jemand etwas ändert, auch die Empfänger, ist er ein normaler Entwurf, und das Konto ersetzt ihn nie. Jedes Konto hat in einer Unterhaltung höchstens einen solchen Vorschlag.
+Ein Vorschlag von Gustav oder einem anderen automatischen Konto ist dieser eine Antwortentwurf, in der Antwortbox, in Pflaume, mit dem Namen des Kontos, zum Beispiel **Vorschlag von Gustav**, und **Tippe, um ihn zu übernehmen, oder sende ihn so**. Er geht nie von selbst raus; **Senden** sendet ihn unverändert. Sobald jemand etwas ändert, auch die Empfänger, ist er ein normaler Entwurf, und das Konto ersetzt ihn nie. Jedes Konto hat in einer Unterhaltung höchstens einen solchen Vorschlag.
 
 Mail speichert den gemeinsamen Entwurf, während du arbeitest. Außerdem führt Mail im Browser ein Wiederherstellungsprotokoll für Änderungen, die den Server noch nicht erreicht haben. Nach einem Neuladen oder einer unterbrochenen Verbindung kann Mail diese Browseränderungen wiederherstellen.
 

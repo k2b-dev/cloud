@@ -11,6 +11,7 @@ import {
   type Completion,
   Dropdown,
   type DropdownItem,
+  EmojiPicker,
   FileDropTarget,
   formatShortcut,
   IconButton,
@@ -28,7 +29,20 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { TextEditorController } from "@k2b/ui/text-editor";
-import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+} from "solid-js";
 import { Portal } from "solid-js/web";
 import { apiClient } from "../../api/client";
 import { MailDraftCalendarInputSchema, mailCommandMessages } from "../../commands";
@@ -79,6 +93,8 @@ import { mailDraftJournalKey, serializeMailDraftContent } from "./mail-draft-jou
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
 import { createMailDraftSession } from "./mail-draft-session";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
+import { mailSendLaterPresets } from "./mail-reply-box";
+import { mailReplyBoxMessages } from "./mail-reply-box-messages";
 import { writeMailSenderPreference } from "./mail-sender-preference";
 
 class ComposeSafetyCancelled extends Error {}
@@ -100,8 +116,45 @@ export type MailInlineDraftControls = {
   collapse: (options?: { preserveDraft?: boolean }) => Promise<void>;
   /** The same Send as the draft's own button, with every review and guard. */
   send: () => void;
+  /** The same scheduled Send as "Send later", for a time the host already chose. */
+  sendAt: (scheduledAt: string) => void;
   /** Moves the caret back into the text, at its end. */
   focusText: () => void;
+  /** The editor is there and the draft takes input. */
+  ready: Accessor<boolean>;
+  /** The text as the editor holds it now. */
+  text: () => string;
+  /** True once someone typed or changed anything here. */
+  changed: () => boolean;
+  /** Appends text after a blank line as one undo step, through the editor, so it saves like typing. */
+  appendText: (text: string) => void;
+  /** Saves what is typed and gives the edit lease back; the draft stays mounted and takes input again later. */
+  release: () => Promise<void>;
+  /** Forgets this device's copy of a draft that was never created on the server. */
+  forgetLocal: () => void;
+};
+
+/**
+ * The reply box under a conversation (Mail v5): always open, one reply draft. The box owns the mode menu, the internal
+ * note, and the states around the draft; the composer keeps every save, lease, and send rule.
+ */
+export type MailReplyBoxHost = {
+  /** The mode arrow at the start of the first row. */
+  modeMenu: () => JSX.Element;
+  /** One-time lines inside the box above the recipients, such as the consolidation notice. */
+  banner?: () => JSX.Element;
+  /** The box shows the internal note instead: the draft is hidden, inert, and can never send. */
+  suspended: Accessor<boolean>;
+  /** Another send holds the reply place: typing stays local, and Send waits. */
+  holdCreate: Accessor<boolean>;
+  /** Puts the caret into the text once it takes input, because the person asked for this box. */
+  autofocus: boolean;
+  /** A draft that started as a local seed now exists on the server. */
+  materialized: (draft: MailDraft) => void;
+  /** "Open in a window": the draft is saved and released; the box hands it to a compose window. */
+  detach: (draftId: string) => void;
+  /** The text typed while `holdCreate` is true, for the box to keep per conversation. */
+  buffer: (text: string) => void;
 };
 
 /**
@@ -123,6 +176,8 @@ export type MailComposerHost = {
   messageLabel: (messageId: string) => string | null;
   /** A new message tells the list its subject and recipients while someone types them. */
   summary?: (value: { subject: string; to: string[] }) => void;
+  /** The reply box under a conversation; without it the draft keeps the older inline layout. */
+  box?: MailReplyBoxHost;
   /**
    * The draft stands in a floating window. The window's head shows the save status; on a phone sheet it also holds Send,
    * since the bottom bar can sit under the keyboard. A failed send keeps the window open with the reason in its bar.
@@ -300,8 +355,11 @@ export default function MailComposer(props: {
     onRecovered: () => toast(t().unsavedChangesRestored, { title: t().draftRecovered }),
     // The draft already left the screen: the error says so, and opening the draft again brings back what is saved.
     onClosedUnsaved: () => toast.error(t().closedUnsaved, { title: t().draftCouldNotBeSaved }),
+    holdCreate: () => props.host?.box?.holdCreate() ?? false,
     onMaterialized: (materialized) => {
-      if (props.initialSeed) {
+      props.host?.box?.materialized(materialized);
+      if (props.initialSeed && props.host?.box) clearInitialSeed();
+      else if (props.initialSeed) {
         clearInitialSeed();
         window.history.replaceState(
           window.history.state,
@@ -395,8 +453,10 @@ export default function MailComposer(props: {
     );
   const saveState = () => {
     if (status() === "error" || status() === "readonly") return "";
+    // One quiet status in every place: Saved, Saving …, or Offline · kept here.
+    if (!online()) return t().draftSavedOffline;
     if (status() === "saving" || status() === "preparing") return t().savingDraft;
-    return saveStatus() === "saved" ? t().draftSaved : saveStatus() === "local" ? t().draftSavedLocally : t().draftSavePending;
+    return saveStatus() === "saved" ? t().draftSaved : t().savingDraft;
   };
   const conversationId = () => draft()?.conversationId ?? initial.conversationId;
   const composeWithAi = mutations.create<void, void>({
@@ -554,6 +614,8 @@ export default function MailComposer(props: {
   createEffect(() => {
     const element = readyEditor();
     if (!element || initialEditorFocusApplied || !editable() || (!props.initialSeed && !props.host)) return;
+    // The reply box is always there: opening a conversation never moves the focus into it, only a person's request does.
+    if (props.host?.box && !props.host.box.autofocus) return;
     initialEditorFocusApplied = true;
     queueMicrotask(() => {
       if (disposed || !element.view.dom.isConnected) return;
@@ -622,6 +684,8 @@ export default function MailComposer(props: {
       // A composing IME owns Enter; Safari reports the key that ends a composition as keyCode 229.
       if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      // The reply box's internal note owns its own Mod+Enter; a suspended draft never sends from a shortcut.
+      if (props.host?.box?.suspended()) return;
       event.preventDefault();
       event.stopPropagation();
       // A held key repeats; one press sends once.
@@ -982,6 +1046,26 @@ export default function MailComposer(props: {
   /** The reason the last send failed, shown in a window's bar until the next attempt. */
   const [sendFailure, setSendFailure] = createSignal<string | null>(null);
   let lastDeliveryAttempt: PreparedDelivery | null = null;
+  /** The reply box and a window show why a send failed in their bar, in place of Send; the page keeps the dialog. */
+  const reportDeliveryError = (message: string) =>
+    props.host?.box || props.host?.window ? void setSendFailure(message) : prompts.error(message);
+  const [online, setOnline] = createSignal(typeof navigator === "undefined" ? true : navigator.onLine);
+  onMount(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener("online", up);
+    window.addEventListener("offline", down);
+    onCleanup(() => {
+      window.removeEventListener("online", up);
+      window.removeEventListener("offline", down);
+    });
+  });
+  /** A send that cannot start now: the reply box is a note, another send holds the reply place, or the device is offline. */
+  const boxBlocksSend = () => {
+    const box = props.host?.box;
+    if (!box) return false;
+    return box.suspended() || (!draft() && box.holdCreate()) || !online();
+  };
   let deliveryPreparationController: AbortController | null = null;
   const deliveryFingerprint = (delivery: { scheduledAt?: string }) =>
     JSON.stringify({
@@ -1008,6 +1092,7 @@ export default function MailComposer(props: {
     },
     onSuccess: ({ command, attempt }) => {
       lastDeliveryAttempt = null;
+      setSendFailure(null);
       draftSession.forgetJournal(attempt.draftId, { closed: true });
       const returnHref = props.returnHref;
       const scheduled = Boolean(attempt.scheduledAt);
@@ -1044,9 +1129,7 @@ export default function MailComposer(props: {
         return;
       }
       if (error instanceof ComposeSafetyCancelled) return;
-      // A window keeps the draft open and says it in its bar, with Send again in Send's place.
-      if (props.host?.window) return void setSendFailure(error.message);
-      return prompts.error(error.message);
+      return reportDeliveryError(error.message);
     },
   });
 
@@ -1112,10 +1195,10 @@ export default function MailComposer(props: {
   };
 
   const sendDraft = async (delivery: { scheduledAt?: string }) => {
-    if (!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0) return;
-    setSendFailure(null);
+    if (!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || boxBlocksSend()) return;
     const reservation = composerTransition.reserve("send");
     if (!reservation) return;
+    setSendFailure(null);
     const preparation = new AbortController();
     deliveryPreparationController = preparation;
     try {
@@ -1129,15 +1212,22 @@ export default function MailComposer(props: {
         previousAttempt !== null &&
         previousAttempt.scheduledAt === delivery.scheduledAt &&
         previousAttempt.contentFingerprint === deliveryFingerprint(delivery);
-      if (reusable) await send.retry();
-      else {
-        lastDeliveryAttempt = await prepareDelivery(delivery, preparation.signal);
-        await send.mutate(lastDeliveryAttempt);
+      // The reviews take time; the person may have turned the box to a note or left meanwhile. Nothing goes out then.
+      const stillSendable = (draftId: string | undefined) =>
+        !disposed && !boxBlocksSend() && (draftId === undefined || draft()?.id === draftId);
+      if (reusable) {
+        if (!stillSendable(previousAttempt?.draftId)) throw new ComposeSafetyCancelled();
+        await send.retry();
+      } else {
+        const prepared = await prepareDelivery(delivery, preparation.signal);
+        if (!stillSendable(prepared.draftId)) throw new ComposeSafetyCancelled();
+        lastDeliveryAttempt = prepared;
+        await send.mutate(prepared);
       }
     } catch (error) {
       if (error instanceof ComposeSafetyAttachmentRequested) attachAfterDeliveryReview = true;
       else if (!(error instanceof ComposeSafetyCancelled) && !(error instanceof ComposeRecipientPending)) {
-        await prompts.error(error instanceof Error ? error.message : t().messageNotReadySend);
+        await reportDeliveryError(error instanceof Error ? error.message : t().messageNotReadySend);
       }
     } finally {
       preparation.abort();
@@ -1147,7 +1237,7 @@ export default function MailComposer(props: {
   };
 
   const schedule = async () => {
-    if (!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0) return;
+    if (!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || boxBlocksSend()) return;
     const reservation = composerTransition.reserve("send");
     if (!reservation) return;
     let scheduledAt: string | null = null;
@@ -1300,7 +1390,9 @@ export default function MailComposer(props: {
             variant: "danger",
           }));
         if (!confirmed || abortSignal.aborted) return false;
+        draftSession.abandonSeed();
         clearInitialSeed();
+        if (props.initialSeed) draftSession.forgetJournal(props.initialSeed.id, { closed: true });
         return true;
       }
       // Only a draft this click created and nobody changed goes without asking: it holds nothing to lose.
@@ -1463,7 +1555,26 @@ export default function MailComposer(props: {
   props.host?.register({
     collapse,
     send: () => void sendDraft({}),
+    sendAt: (scheduledAt) => void sendDraft({ scheduledAt }),
     focusText: () => focusEditorAtEnd(),
+    ready: () => editable() && Boolean(readyEditor()),
+    text: () => untrack(body),
+    changed: () => untrack(() => serializeMailDraftContent(content()) !== initialSerializedContent),
+    appendText: (text) => {
+      if (editorActions) editorActions.appendText(text);
+      else setBody((current) => `${current}${current.endsWith("\n") || !current ? "" : "\n\n"}${text}`);
+    },
+    release: async () => {
+      if (!untrack(draft)) return;
+      if (untrack(hasUnsavedChanges) && !(await persist())) return;
+      const current = untrack(draft);
+      if (current && untrack(lease)) await releaseLease(current).catch(() => releaseLeaseOnExit());
+    },
+    forgetLocal: () => {
+      if (!props.initialSeed || untrack(draft)) return;
+      draftSession.abandonSeed();
+      draftSession.forgetJournal(props.initialSeed.id, { closed: true });
+    },
   });
 
   let conflictDialogOpen = false;
@@ -1634,17 +1745,6 @@ export default function MailComposer(props: {
     const windowSlots = host.window;
     const windowT = () => mailComposeWindowMessages.resolve([locale()]).t;
     // A window writes on offline and keeps the text here; Send waits until the connection is back.
-    const [online, setOnline] = createSignal(typeof navigator === "undefined" || navigator.onLine !== false);
-    onMount(() => {
-      if (!windowSlots) return;
-      const update = () => setOnline(navigator.onLine !== false);
-      window.addEventListener("online", update);
-      window.addEventListener("offline", update);
-      onCleanup(() => {
-        window.removeEventListener("online", update);
-        window.removeEventListener("offline", update);
-      });
-    });
     const sendBlocked = () =>
       !editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || (Boolean(windowSlots) && !online());
     const uploadPercent = () => {
@@ -1721,6 +1821,712 @@ export default function MailComposer(props: {
             },
           ]),
     ];
+    /** Why the draft cannot be edited or sent right now, each with its way out; shared by both inline layouts. */
+    const DraftNotices = () => (
+      <>
+        <Show when={verifiedIdentities().length === 0}>
+          <MailSenderUnavailableNotice
+            identities={props.identities}
+            onOpenSettings={props.canManageMailbox ? () => void openSenderSettings() : undefined}
+            opening={senderSettingsOpening()}
+          />
+        </Show>
+        <Show when={status() === "error" || status() === "readonly"}>
+          <div
+            class="mail-inline-draft-notice"
+            data-tone={status() === "error" || connectionUnavailable() ? "danger" : "neutral"}
+            role="status"
+          >
+            <span class="min-w-0 flex-1">{collaborationStatus()}</span>
+            <Show when={draftSession.occupiedReplyDraftId()}>
+              {(id) =>
+                props.host?.box ? (
+                  <Button variant="secondary" size="sm" type="button" onClick={() => openOtherDraft(id())}>
+                    {t().openExistingReplyDraft}
+                  </Button>
+                ) : (
+                  <ButtonLink
+                    variant="secondary"
+                    size="sm"
+                    href={mailDraftHref(props.mailboxId, id(), props.returnHref, { popout: props.popout })}
+                  >
+                    {t().openExistingReplyDraft}
+                  </ButtonLink>
+                )
+              }
+            </Show>
+            <Show
+              when={
+                !draftSession.occupiedReplyDraftId() &&
+                !isShared() &&
+                (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))
+              }
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                loading={saveLifecycleCopy.loading()}
+                onClick={() => void recoverSaveError()}
+              >
+                {draftSession.revisionConflict() ? (draft()?.conversationId ? t().recoverChanges : t().saveAsNewDraft) : t().retry}
+              </Button>
+            </Show>
+            <Show when={status() === "readonly" && (authenticationRequired() || (draft() && (lease() || leaseConflict())))}>
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                disabled={signingIn()}
+                aria-busy={signingIn()}
+                onClick={handleReadonlyAction}
+              >
+                {readonlyActionLabel()}
+              </Button>
+            </Show>
+            <Show when={draftSession.revisionConflict()}>
+              <Button variant="secondary" size="sm" type="button" onClick={() => void copyLifecycleText()}>
+                {t().copyText}
+              </Button>
+            </Show>
+          </div>
+        </Show>
+        <Show when={draftSession.localCopyFailed()}>
+          <div class="mail-inline-draft-notice" data-tone="danger" role="status">
+            {t().localRecoveryUnavailable}
+          </div>
+        </Show>
+        <Show when={draft()?.restSourceDraftId}>
+          {(source) => (
+            <div class="mail-inline-draft-notice" data-tone="neutral">
+              <span class="min-w-0 flex-1">{sharedT().restLabel}</span>
+              <Button size="sm" variant="secondary" type="button" onClick={() => openOtherDraft(source())}>
+                {sharedT().restSource}
+              </Button>
+            </div>
+          )}
+        </Show>
+        <Show when={isShared() && !shared() && status() === "error"}>
+          <div class="mail-inline-draft-notice" data-tone="danger" role="alert">
+            <span class="min-w-0 flex-1">{statusMessage()}</span>
+            <Button size="sm" variant="secondary" onClick={() => void draftSession.retryShared()}>
+              {sharedT().retry}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => void draftSession.retryShared(false)}>
+              {sharedT().forget}
+            </Button>
+          </div>
+        </Show>
+        <Show when={lifecycleTransition() && !sharedState()?.recoveryDraft ? lifecycleTransition() : null}>
+          {(transition) => (
+            <MailComposerLifecycleNotice
+              transition={transition()}
+              savingCopy={saveLifecycleCopy.loading()}
+              onCopyText={() => void copyLifecycleText()}
+              onSaveAsNew={() => void saveLifecycleCopy.mutate()}
+              onOpenMessage={openLifecycleMessage}
+            />
+          )}
+        </Show>
+        <Show when={sharedState()?.recoveryDraft || sharedState()?.restUnchanged}>
+          <div class="mail-inline-draft-notice" data-tone="neutral" role="status">
+            <span class="min-w-0 flex-1">{sharedState()?.recoveryDraft ? sharedT().restSaved : sharedT().restUnchanged}</span>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                const recovery = sharedState()?.recoveryDraft;
+                if (recovery) openOtherDraft(recovery.id);
+                else window.location.reload();
+              }}
+            >
+              {sharedState()?.recoveryDraft ? sharedT().openRest : sharedT().reopen}
+            </Button>
+          </div>
+        </Show>
+      </>
+    );
+    if (host.box) {
+      const box = host.box;
+      const r = () => mailReplyBoxMessages.resolve([locale()]).t;
+      const surfaceId = createUniqueId();
+      /** Saves the draft (creating it from the seed if needed), gives the lease back, and lets the box open its window. */
+      const detachDraft = async () => {
+        if (uploadsInProgress()) return void (await prompts.error(t().finishUploadsBeforeMove));
+        const reservation = composerTransition.reserve("handoff");
+        if (!reservation) return;
+        stopScheduledSave();
+        try {
+          const saved = await persist();
+          if (!saved || disposed) throw new Error(statusMessage() || t().requestedWindowFailed);
+          try {
+            await releaseLease(saved);
+          } catch {
+            await releaseLeaseOnExit();
+          }
+          draftSession.allowNavigation();
+          box.detach(saved.id);
+        } catch (error) {
+          if (!disposed) await prompts.error(error instanceof Error ? error.message : t().requestedWindowFailed);
+        } finally {
+          composerTransition.release(reservation);
+        }
+      };
+      const [subjectOpen, setSubjectOpen] = createSignal(false);
+      const [emojiAnchor, setEmojiAnchor] = createSignal<HTMLElement | null>(null);
+      let emojiButton: HTMLButtonElement | undefined;
+      const changedHere = () => serializeMailDraftContent(content()) !== initialSerializedContent;
+      const holdActive = () => !draft() && box.holdCreate();
+      // While another send holds the place, the box keeps what is typed for this conversation, also across navigation.
+      // Only this seed's own typing writes the buffer, so mounting a fresh seed never wipes what an earlier one kept.
+      let bufferedHere = false;
+      createEffect(() => {
+        const text = body();
+        if (!holdActive()) return;
+        if (changedHere()) bufferedHere = true;
+        if (bufferedHere) box.buffer(changedHere() ? text : "");
+      });
+      const activeUploads = () => uploads().filter((upload) => !upload.error);
+      const uploadPercent = () => {
+        const list = activeUploads();
+        return list.length ? Math.floor(list.reduce((sum, upload) => sum + upload.progress, 0) / list.length) : null;
+      };
+      /** Why Send waits, said where Send is: uploads, offline, or the last reply still on its way. */
+      const sendBlockedReason = () =>
+        uploads().length > 0 ? r().uploadReason : !online() ? r().offlineReason : holdActive() ? r().holdReason : null;
+      /** The quiet status at its fixed place: what is happening to the text right now. */
+      const boxStatus = (): { icon: string; text: string; tone?: "busy" } | null => {
+        const percent = uploadPercent();
+        if (percent !== null) return { icon: "ti-upload", text: r().uploading({ percent }), tone: "busy" };
+        if (!online()) return { icon: "ti-cloud-off", text: r().offline };
+        if (status() === "error" || status() === "readonly") return null;
+        // An empty box that nobody touched has nothing to save yet.
+        if (!draft() && !changedHere()) return null;
+        if (holdActive()) return { icon: "ti-device-laptop", text: r().savedHere };
+        if (status() === "saving") return { icon: "ti-loader-2", text: r().saving, tone: "busy" };
+        const state = saveStatus();
+        if (state === "saved") return { icon: "ti-cloud-check", text: r().saved };
+        return { icon: "ti-loader-2", text: r().saving, tone: "busy" };
+      };
+      const sendDisabled = () => !editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || boxBlocksSend();
+      const sendLaterItems = (): DropdownItem[] => {
+        const timeZone = props.dateConfig.timeZone ?? "UTC";
+        const shown = mailSendLaterPresets(new Date(), timeZone);
+        // The time is taken at the click, so a menu left open across midnight still means the next morning.
+        const at = (preset: "tomorrow" | "monday") => mailSendLaterPresets(new Date(), timeZone)[preset];
+        return [
+          {
+            sectionLabel: t().sendLater,
+            items: [
+              {
+                label: r().sendLaterTomorrow,
+                icon: "ti ti-sunrise",
+                trailing: <span class="text-xs text-dimmed">{dates.formatDateTime(shown.tomorrow, props.dateConfig)}</span>,
+                action: () => void sendDraft({ scheduledAt: at("tomorrow") }),
+              },
+              {
+                label: r().sendLaterMonday,
+                icon: "ti ti-calendar-week",
+                trailing: <span class="text-xs text-dimmed">{dates.formatDateTime(shown.monday, props.dateConfig)}</span>,
+                action: () => void sendDraft({ scheduledAt: at("monday") }),
+              },
+              { label: r().sendLaterCustom, icon: "ti ti-clock", action: () => void schedule() },
+            ],
+          },
+        ];
+      };
+      const toggleQuote = () =>
+        setQuoteSource((current) => (current ? null : { locale: locale(), timeZone: props.dateConfig.timeZone ?? "UTC" }));
+      const insertAtCaret = (text: string) => {
+        const view = editorController?.view;
+        if (!view || !editable()) return;
+        view.dispatch(view.state.replaceSelection(text), { userEvent: "input" });
+        view.focus();
+      };
+      const insertLink = async () => {
+        const view = editorController?.view;
+        const selected = view ? view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to) : "";
+        const values = await prompts.form({
+          title: r().insertLink,
+          icon: "ti ti-link",
+          fields: {
+            url: { type: "text", label: r().linkAddress, required: true },
+            text: { type: "text", label: r().linkText, default: selected },
+          },
+          confirmText: r().insertLink,
+        });
+        if (!values || disposed) return;
+        const url = String(values.url ?? "").trim();
+        if (!url) return;
+        const label = String(values.text ?? "").trim();
+        insertAtCaret(format() === "markdown" && label ? `[${label}](${url})` : label ? `${label} (${url})` : url);
+      };
+      const moreItems = (): DropdownItem[] => [
+        {
+          items: [
+            ...(format() === "markdown"
+              ? [
+                  {
+                    label: r().preview,
+                    icon: "ti ti-eye",
+                    choice: "checkbox" as const,
+                    checked: inlinePreview,
+                    action: () => setInlinePreview((value) => !value),
+                  },
+                ]
+              : []),
+            ...(quoteLabel()
+              ? [
+                  {
+                    label: quoteSource() ? r().removeQuote : r().attachQuote,
+                    icon: "ti ti-quote",
+                    disabled: !editable(),
+                    action: toggleQuote,
+                  },
+                ]
+              : []),
+            ...(props.calendarIntegrationAvailable
+              ? [
+                  {
+                    label: r().calendar,
+                    icon: "ti ti-calendar-plus",
+                    disabled: !editable(),
+                    action: () => void addCalendarInvitation().catch((error: unknown) => prompts.error(String(error))),
+                  },
+                ]
+              : []),
+            {
+              label: r().deliveryOptions,
+              icon: "ti ti-mail-cog",
+              disabled: !editable(),
+              ...(deliveryOptionsSummary().length > 0
+                ? { trailing: <span class="text-xs text-dimmed">{deliveryOptionsSummary().join(", ")}</span> }
+                : {}),
+              action: () => void editDeliveryOptions(),
+            },
+            {
+              label: r().plainText,
+              icon: "ti ti-align-left",
+              choice: "checkbox" as const,
+              checked: () => format() === "plain",
+              disabled: !editable(),
+              action: () => setFormat((current) => (current === "plain" ? "markdown" : "plain")),
+            },
+            {
+              label: r().editSubject,
+              icon: "ti ti-heading",
+              choice: "checkbox" as const,
+              checked: subjectOpen,
+              action: () => setSubjectOpen((value) => !value),
+            },
+          ],
+        },
+        // On a phone the bar keeps one row; the tools that do not fit wait here.
+        {
+          items: [
+            {
+              label: r().insertLink,
+              icon: "ti ti-link",
+              class: "mail-reply-box-phone-only",
+              disabled: !editable(),
+              action: () => void insertLink(),
+            },
+            {
+              label: r().image,
+              icon: "ti ti-photo",
+              class: "mail-reply-box-phone-only",
+              disabled: !editable(),
+              action: () => void chooseAttachments(),
+            },
+          ],
+        },
+        {
+          items: [
+            { label: r().detach, icon: "ti ti-app-window", disabled: !editable(), action: () => void detachDraft() },
+            ...(editable() && ((draft()?.recoveryCopyCount ?? 0) > 0 || draftSession.localRecoveryCopies().length > 0)
+              ? [{ label: t().recoverChanges, icon: "ti ti-history", action: () => void restoreRecoveryCopy() }]
+              : []),
+          ],
+        },
+      ];
+      return (
+        <section
+          ref={setSurface}
+          class="mail-inline-draft mail-reply-box"
+          data-mail-inline-draft
+          data-mail-reply-box="mail"
+          data-intent={composerIntent()}
+          data-suggestion={suggestionUntouched() ? "" : undefined}
+          data-send-failed={sendFailure() ? "" : undefined}
+          aria-label={t().inlineDraftLabel({ intent: inlineIntentLabel() })}
+          hidden={box.suspended()}
+          inert={box.suspended() ? true : undefined}
+        >
+          <FileDropTarget
+            for={surface()}
+            label={t().dropFiles}
+            disabled={!editable() || box.suspended()}
+            onDrop={(files) => {
+              if (files.length > 0 && !disposed) void attachments.addFiles(files);
+            }}
+          />
+          <Show when={suggestionUntouched()}>
+            <div class="mail-reply-box-suggestion" data-mail-reply-suggestion>
+              <i class="ti ti-sparkles" aria-hidden="true" />
+              <strong>{r().suggestionLead({ name: draft()?.suggestedBy ?? draft()?.lastEditedByDisplayName ?? "" })}</strong>
+              <span class="mail-reply-box-suggestion-hint">{r().suggestionHint}</span>
+              <Button
+                variant="ghost"
+                size="xs"
+                type="button"
+                class="ml-auto"
+                disabled={!editable() || discard.loading()}
+                onClick={() => void discardDraft()}
+              >
+                {r().discardSuggestion}
+              </Button>
+            </div>
+          </Show>
+          {box.banner?.()}
+          <header class="mail-inline-draft-head mail-reply-box-head">
+            {box.modeMenu()}
+            <div class="mail-inline-draft-recipients mail-reply-box-recipients">
+              <MailRecipientInput
+                register={registerRecipientField}
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().recipients}
+                value={to}
+                onChange={setTo}
+                disabled={fieldsDisabled()}
+                readOnly={paused()}
+              />
+            </div>
+            <Show when={verifiedIdentities().length > 1}>
+              <IdentitySwitcher />
+            </Show>
+            <Show when={sharedPeers().length > 0}>
+              <span class="mail-inline-draft-peers" data-mail-draft-peers role="status">
+                <For each={sharedPeers().slice(0, 3)}>
+                  {(peer) => (
+                    <span class="mail-inline-draft-peer" style={{ "--mail-peer-color": peer.color }} aria-hidden="true">
+                      {peer.name
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((part) => part[0]!.toUpperCase())
+                        .join("")}
+                    </span>
+                  )}
+                </For>
+                {t().writingAlong({
+                  names: sharedPeers()
+                    .map((peer) => peer.name)
+                    .join(", "),
+                  count: sharedPeers().length,
+                })}
+              </span>
+            </Show>
+            <Show when={!showCc()}>
+              <span class="mail-reply-box-cc">
+                <Button variant="ghost" size="xs" type="button" disabled={!editable()} onClick={() => setShowCc(true)}>
+                  Cc
+                </Button>
+                <Button variant="ghost" size="xs" type="button" disabled={!editable()} onClick={() => setShowCc(true)}>
+                  Bcc
+                </Button>
+              </span>
+            </Show>
+          </header>
+          <Show when={showCc()}>
+            <div class="mail-inline-draft-rows">
+              <span class="mail-inline-draft-field-label">Cc</span>
+              <MailRecipientInput
+                register={registerRecipientField}
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().ccRecipients}
+                value={cc}
+                onChange={setCc}
+                disabled={fieldsDisabled()}
+                readOnly={paused()}
+              />
+              <span class="mail-inline-draft-field-label">Bcc</span>
+              <MailRecipientInput
+                register={registerRecipientField}
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().bccRecipients}
+                value={bcc}
+                onChange={setBcc}
+                disabled={fieldsDisabled()}
+                readOnly={paused()}
+              />
+            </div>
+          </Show>
+          <Show when={subjectOpen() || composerIntent() === "new"}>
+            <div class="mail-inline-draft-meta">
+              <span class="mail-inline-draft-meta-subject">
+                <span class="shrink-0 text-dimmed">{t().subject}</span>
+                <TextInput
+                  class="mail-inline-draft-subject"
+                  aria-label={t().subject}
+                  value={subject}
+                  onValueChange={setSubject}
+                  maxLength={998}
+                  disabled={fieldsDisabled()}
+                  readOnly={paused()}
+                />
+              </span>
+            </div>
+          </Show>
+          <DraftNotices />
+          <Show when={inlinePreview()}>
+            <div class="mail-reply-box-previewing" role="status">
+              <i class="ti ti-eye" aria-hidden="true" />
+              <span class="min-w-0 flex-1">{r().previewing}</span>
+              <Button variant="ghost" size="xs" type="button" onClick={() => setInlinePreview(false)}>
+                {r().backToWriting}
+              </Button>
+            </div>
+          </Show>
+          <MailComposerEditor
+            shared={shared}
+            sharedState={sharedState}
+            onTableCheck={setTableNeedsCheck}
+            format={format}
+            body={body}
+            onBodyInput={setBody}
+            editable={editable}
+            paused={paused}
+            completions={slashCompletion}
+            panes={currentComposerPanes}
+            onPanesChange={updateComposerPanes}
+            preview={preview}
+            previewError={previewError}
+            previewPending={() => previewQuery.loading() || previewQuery.refreshing()}
+            onRetryPreview={retryPreview}
+            onEditorReady={editorReady}
+            liveDictation={props.liveDictation}
+            onAttachImages={() => void chooseAttachments()}
+            onDroppedImages={(files) => {
+              if (editable()) void attachments.addFiles(files);
+            }}
+            inline={{ preview: inlinePreview, formatting: inlineFormatting, placeholder: () => r().placeholder }}
+          />
+          <MailComposerAttachments
+            attachments={() => draft()?.attachments ?? props.initialSeed?.attachments ?? []}
+            uploads={uploads}
+            editable={editable}
+            canShare={Boolean(props.canShareAttachments)}
+            shareLoading={attachments.shareLoading}
+            onInsertLink={(attachmentId) => void attachments.insertAttachmentLink(attachmentId)}
+            onRemove={(attachmentId) => void attachments.removeAttachment(attachmentId)}
+            onRetryUpload={(upload) => void attachments.retryUpload(upload)}
+            onCancelUpload={(upload) => void attachments.cancelUpload(upload).catch((error) => prompts.error(error.message))}
+          />
+          <Show when={!inlinePreview()}>
+            <MailInlineSignature
+              mailboxId={props.mailboxId}
+              senderIdentityId={identityId}
+              signatureTemplateId={signatureTemplateId}
+              format={format}
+            />
+          </Show>
+          <div class="mail-inline-draft-space" aria-hidden="true" onClick={focusEditorAtEnd} />
+          <Show when={!inlinePreview() && quoteLabel()}>
+            {(label) => (
+              <div class="mail-inline-draft-quote" data-mail-draft-quote>
+                <i class="ti ti-quote" aria-hidden="true" />
+                <span class="min-w-0 flex-1 truncate">
+                  {quoteSource() ? t().quoteAttached({ label: label() }) : t().quoteOffer({ label: label() })}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  disabled={!editable()}
+                  aria-pressed={Boolean(quoteSource())}
+                  onClick={toggleQuote}
+                >
+                  {quoteSource() ? t().removeQuote : t().attachQuote}
+                </Button>
+              </div>
+            )}
+          </Show>
+          {/* One bar at a fixed place. A failed send turns it light red in place: the reason, and Send again where Send was. */}
+          <Show
+            when={sendFailure()}
+            fallback={
+              <footer class="mail-inline-draft-foot mail-reply-box-foot">
+                <SplitButton
+                  class="mail-compose-action"
+                  size="sm"
+                  type="button"
+                  loading={send.loading()}
+                  disabled={sendDisabled()}
+                  menuLabel={t().moreSendOptions}
+                  menuPosition="top-left"
+                  tooltip={sendBlockedReason() ?? `${t().send} (${sendShortcutLabel()})`}
+                  aria-describedby={sendBlockedReason() ? `${surfaceId}-blocked` : undefined}
+                  data-mail-reply-send
+                  items={sendLaterItems()}
+                  onClick={() => void sendDraft({})}
+                >
+                  {t().send}
+                </SplitButton>
+                <span class="mail-inline-draft-tools mail-reply-box-tools">
+                  <Show when={format() === "markdown"}>
+                    <Tooltip.Anchor content={t().formatting}>
+                      <IconButton
+                        type="button"
+                        size="sm"
+                        label={t().formatting}
+                        aria-pressed={inlineFormatting()}
+                        disabled={!editable() || inlinePreview()}
+                        onClick={() => setInlineFormatting((value) => !value)}
+                      >
+                        <i class="ti ti-typography" aria-hidden="true" />
+                      </IconButton>
+                    </Tooltip.Anchor>
+                  </Show>
+                  <Tooltip.Anchor content={t().attachFiles}>
+                    <IconButton
+                      type="button"
+                      size="sm"
+                      label={t().attachFiles}
+                      disabled={!editable()}
+                      onClick={() => void chooseAttachments()}
+                    >
+                      <i class="ti ti-paperclip" aria-hidden="true" />
+                    </IconButton>
+                  </Tooltip.Anchor>
+                  <span class="mail-reply-box-wide-tools">
+                    <Tooltip.Anchor content={r().insertLink}>
+                      <IconButton type="button" size="sm" label={r().insertLink} disabled={!editable()} onClick={() => void insertLink()}>
+                        <i class="ti ti-link" aria-hidden="true" />
+                      </IconButton>
+                    </Tooltip.Anchor>
+                    <Tooltip.Anchor content={r().emoji}>
+                      <IconButton
+                        ref={emojiButton}
+                        type="button"
+                        size="sm"
+                        label={r().emoji}
+                        disabled={!editable()}
+                        onClick={() => setEmojiAnchor((current) => (current ? null : (emojiButton ?? null)))}
+                      >
+                        <i class="ti ti-mood-smile" aria-hidden="true" />
+                      </IconButton>
+                    </Tooltip.Anchor>
+                    <Tooltip.Anchor content={r().image}>
+                      <IconButton type="button" size="sm" label={r().image} disabled={!editable()} onClick={() => void chooseAttachments()}>
+                        <i class="ti ti-photo" aria-hidden="true" />
+                      </IconButton>
+                    </Tooltip.Anchor>
+                    <Show when={signatureChoiceVisible()}>
+                      <MailComposerSignature
+                        quiet
+                        signatures={props.signatures}
+                        value={signatureTemplateId()}
+                        senderDefaultId={senderDefaultSignatureId()}
+                        disabled={!editable()}
+                        onChange={setSignatureTemplateId}
+                      />
+                    </Show>
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    class="mail-inline-draft-ai mail-reply-box-assistant"
+                    title={t().writeWithAi}
+                    aria-label={t().writeWithAi}
+                    disabled={!editable() || uploads().length > 0 || composeWithAi.loading()}
+                    onClick={() =>
+                      void composeWithAi
+                        .mutate()
+                        .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : t().assistantFailed))
+                    }
+                  >
+                    <i class="ti ti-sparkles" aria-hidden="true" />
+                    <span class="mail-reply-box-assistant-label">{r().assistant}</span>
+                  </Button>
+                  <Dropdown.Root position="top-left" width="19rem" items={moreItems()}>
+                    <Dropdown.Trigger iconOnly type="button" variant="ghost" size="sm" label={r().moreTools}>
+                      <i class="ti ti-dots" aria-hidden="true" />
+                    </Dropdown.Trigger>
+                  </Dropdown.Root>
+                </span>
+                <span
+                  class="mail-inline-draft-status mail-reply-box-status"
+                  data-mail-save-status={saveStatus()}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <Show when={boxStatus()}>
+                    {(current) => (
+                      <>
+                        <i class={`ti ${current().icon}${current().icon === "ti-loader-2" ? " animate-spin" : ""}`} aria-hidden="true" />
+                        <span class="mail-reply-box-status-text">{current().text}</span>
+                      </>
+                    )}
+                  </Show>
+                </span>
+                <span id={`${surfaceId}-blocked`} class="sr-only">
+                  {sendBlockedReason() ?? ""}
+                </span>
+                <Tooltip.Anchor content={r().discardReply}>
+                  <IconButton
+                    type="button"
+                    size="sm"
+                    label={r().discardReply}
+                    data-mail-reply-discard
+                    disabled={!editable() || discard.loading() || (!draft() && !changedHere())}
+                    onClick={() => void discardDraft()}
+                  >
+                    <i class="ti ti-trash" aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+              </footer>
+            }
+          >
+            {(failure) => (
+              <footer class="mail-inline-draft-foot mail-reply-box-foot" data-tone="danger" role="alert" data-mail-send-failed>
+                <i class="ti ti-alert-triangle" aria-hidden="true" />
+                <span class="mail-reply-box-failure">
+                  <strong>{r().notSentLead}</strong> {failure()} {r().textSaved}
+                </span>
+                <Button
+                  size="sm"
+                  type="button"
+                  data-mail-send-again
+                  loading={send.loading()}
+                  disabled={sendDisabled()}
+                  onClick={() => void sendDraft({})}
+                >
+                  {r().sendAgain}
+                </Button>
+                <Tooltip.Anchor content={r().discardReply}>
+                  <IconButton
+                    type="button"
+                    size="sm"
+                    label={r().discardReply}
+                    disabled={!editable() || discard.loading()}
+                    onClick={() => void discardDraft()}
+                  >
+                    <i class="ti ti-trash" aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+              </footer>
+            )}
+          </Show>
+          <EmojiPicker.Popover
+            anchor={emojiAnchor()}
+            label={r().emoji}
+            onPick={(emoji) => insertAtCaret(emoji)}
+            onClose={() => setEmojiAnchor(null)}
+          />
+        </section>
+      );
+    }
     const sendButton = () => (
       <SplitButton
         class="mail-compose-action"
@@ -1902,120 +2708,7 @@ export default function MailComposer(props: {
           </div>
         </Show>
 
-        <Show when={verifiedIdentities().length === 0}>
-          <MailSenderUnavailableNotice
-            identities={props.identities}
-            onOpenSettings={props.canManageMailbox ? () => void openSenderSettings() : undefined}
-            opening={senderSettingsOpening()}
-          />
-        </Show>
-        <Show when={status() === "error" || status() === "readonly"}>
-          <div
-            class="mail-inline-draft-notice"
-            data-tone={status() === "error" || connectionUnavailable() ? "danger" : "neutral"}
-            role="status"
-          >
-            <span class="min-w-0 flex-1">{collaborationStatus()}</span>
-            <Show when={draftSession.occupiedReplyDraftId()}>
-              {(id) => (
-                <ButtonLink
-                  variant="secondary"
-                  size="sm"
-                  href={mailDraftHref(props.mailboxId, id(), props.returnHref, { popout: props.popout })}
-                >
-                  {t().openExistingReplyDraft}
-                </ButtonLink>
-              )}
-            </Show>
-            <Show
-              when={
-                !draftSession.occupiedReplyDraftId() &&
-                !isShared() &&
-                (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))
-              }
-            >
-              <Button
-                variant="secondary"
-                size="sm"
-                type="button"
-                loading={saveLifecycleCopy.loading()}
-                onClick={() => void recoverSaveError()}
-              >
-                {draftSession.revisionConflict() ? (draft()?.conversationId ? t().recoverChanges : t().saveAsNewDraft) : t().retry}
-              </Button>
-            </Show>
-            <Show when={status() === "readonly" && (authenticationRequired() || (draft() && (lease() || leaseConflict())))}>
-              <Button
-                variant="secondary"
-                size="sm"
-                type="button"
-                disabled={signingIn()}
-                aria-busy={signingIn()}
-                onClick={handleReadonlyAction}
-              >
-                {readonlyActionLabel()}
-              </Button>
-            </Show>
-            <Show when={draftSession.revisionConflict()}>
-              <Button variant="secondary" size="sm" type="button" onClick={() => void copyLifecycleText()}>
-                {t().copyText}
-              </Button>
-            </Show>
-          </div>
-        </Show>
-        <Show when={draftSession.localCopyFailed()}>
-          <div class="mail-inline-draft-notice" data-tone="danger" role="status">
-            {t().localRecoveryUnavailable}
-          </div>
-        </Show>
-        <Show when={draft()?.restSourceDraftId}>
-          {(source) => (
-            <div class="mail-inline-draft-notice" data-tone="neutral">
-              <span class="min-w-0 flex-1">{sharedT().restLabel}</span>
-              <Button size="sm" variant="secondary" type="button" onClick={() => openOtherDraft(source())}>
-                {sharedT().restSource}
-              </Button>
-            </div>
-          )}
-        </Show>
-        <Show when={isShared() && !shared() && status() === "error"}>
-          <div class="mail-inline-draft-notice" data-tone="danger" role="alert">
-            <span class="min-w-0 flex-1">{statusMessage()}</span>
-            <Button size="sm" variant="secondary" onClick={() => void draftSession.retryShared()}>
-              {sharedT().retry}
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => void draftSession.retryShared(false)}>
-              {sharedT().forget}
-            </Button>
-          </div>
-        </Show>
-        <Show when={lifecycleTransition() && !sharedState()?.recoveryDraft ? lifecycleTransition() : null}>
-          {(transition) => (
-            <MailComposerLifecycleNotice
-              transition={transition()}
-              savingCopy={saveLifecycleCopy.loading()}
-              onCopyText={() => void copyLifecycleText()}
-              onSaveAsNew={() => void saveLifecycleCopy.mutate()}
-              onOpenMessage={openLifecycleMessage}
-            />
-          )}
-        </Show>
-        <Show when={sharedState()?.recoveryDraft || sharedState()?.restUnchanged}>
-          <div class="mail-inline-draft-notice" data-tone="neutral" role="status">
-            <span class="min-w-0 flex-1">{sharedState()?.recoveryDraft ? sharedT().restSaved : sharedT().restUnchanged}</span>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                const recovery = sharedState()?.recoveryDraft;
-                if (recovery) openOtherDraft(recovery.id);
-                else window.location.reload();
-              }}
-            >
-              {sharedState()?.recoveryDraft ? sharedT().openRest : sharedT().reopen}
-            </Button>
-          </div>
-        </Show>
+        <DraftNotices />
 
         <MailComposerEditor
           shared={shared}

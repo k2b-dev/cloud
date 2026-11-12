@@ -55,7 +55,14 @@ describe.skipIf(isServer)("Mail draft windows", () => {
       props.host.register({
         collapse: async () => props.host.leave("closed"),
         send: () => undefined,
+        sendAt: () => undefined,
         focusText: () => document.querySelector<HTMLElement>(`[data-fake-text="${props.draftId}"]`)?.focus(),
+        ready: () => true,
+        text: () => "",
+        changed: () => false,
+        appendText: () => undefined,
+        release: async () => undefined,
+        forgetLocal: () => undefined,
       });
       const text = document.createElement("textarea");
       text.setAttribute("data-fake-text", props.draftId);
