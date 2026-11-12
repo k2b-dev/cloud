@@ -1836,18 +1836,6 @@ function createMailboxController(props: MailboxControllerProps) {
   createEffect(() => {
     if (!selectionMode() && !searchControls.opened()) searchControls.releaseHeight();
   });
-  const toggleConversationSelectionMode = () => {
-    if (!canWrite()) return;
-    if (selectionMode()) clearConversationSelection();
-    else {
-      setSelectionMode(true);
-      queueMicrotask(() => {
-        if (!disposed && selectionMode())
-          document.querySelector<HTMLElement>(".mail-workspace [data-mail-selection-exit]")?.focus({ preventScroll: true });
-      });
-    }
-  };
-
   const actionTargetForItem = (item: MailListItem, actionId: MailActionId): MailBulkTarget | null =>
     mailActionTargetForItem({ item, actionId, viewFolderId: data.folderId, folders: data.folders, noSubject: t().noSubject });
 
@@ -3272,7 +3260,6 @@ function createMailboxController(props: MailboxControllerProps) {
     t,
     theme,
     toggleConversationSelection,
-    toggleConversationSelectionMode,
     toolbarActions,
     updateListMode,
     updateToolbarActions,
@@ -3356,7 +3343,6 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       onOpenDeliverySettings={() => void controller().openSettings("delivery")}
       onNavigate={controller().navigateWorkspace}
       onNavigateItem={controller().navigateConversation}
-      onToggleSelectionMode={controller().toggleConversationSelectionMode}
       onToggleSelection={controller().toggleConversationSelection}
       onClearSelection={controller().clearConversationSelection}
       onAddTags={controller().assignedOnly() ? undefined : controller().addTagsToSelection}

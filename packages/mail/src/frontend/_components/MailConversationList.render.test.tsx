@@ -50,7 +50,6 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       onOpenDeliverySettings: () => {},
       onNavigate: () => {},
       onNavigateItem: () => {},
-      onToggleSelectionMode: () => {},
 
       onToggleSelection: () => {},
       onClearSelection: () => {},

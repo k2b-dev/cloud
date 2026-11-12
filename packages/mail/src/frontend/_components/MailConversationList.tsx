@@ -78,7 +78,6 @@ export default function MailConversationList(props: {
   onOpenDeliverySettings: () => void;
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
   onNavigateItem: (href: string, item: MailListItem, activation: "keyboard" | "pointer") => void | Promise<void>;
-  onToggleSelectionMode: () => void;
   onToggleSelection: (item: MailListItem, range: boolean) => void;
   onClearSelection: () => void;
   onAddTags?: () => void | Promise<void>;

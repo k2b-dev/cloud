@@ -2273,8 +2273,8 @@
   height: 0.875rem;
   padding-inline: 0.1875rem;
   border-radius: 9999px;
-  background: var(--k2b-action-solid);
-  color: var(--k2b-action-solid-text, white);
+  background: var(--ui-app-accent-text);
+  color: var(--k2b-surface);
   font-size: 0.625rem;
   font-weight: 600;
   line-height: 0.875rem;
@@ -2282,7 +2282,7 @@
   pointer-events: none;
 }
 .mail-search-filter-count:empty { display: none; }
-.k2b-ui .mail-search-filter [data-mail-filter-button][data-active="true"] { color: var(--ui-app-accent-text); background: var(--ui-selected); }
+.k2b-ui .mail-search-filter [data-mail-filter-button][data-active="true"] { color: var(--ui-app-accent-text); background: var(--ui-app-selected); }
 
 /* F3: the tab row over list and reader. With the first selection the bulk actions take its place at the same
    height; its checkbox stands in the rows' checkbox column. */
@@ -2317,7 +2317,16 @@
   .mail-split[data-reader="open"] :is(.mail-split-list, .mail-list-bar) { display: none; }
   .k2b-ui .mail-split-reader > .mail-list-handle { display: none; }
   .mail-list-bar { padding-inline: 0.25rem 0.5rem; }
-  .k2b-ui .mail-workspace:has(> .k2b-app-workspace__content > .k2b-app-workspace__main[data-mobile-pane="reader"]) > .k2b-app-workspace__head { display: none; }
+  /* The shared phone head row raises its own specificity; this one names the head as often to stay above it. */
+  .k2b-ui
+    .mail-workspace:has(> .k2b-app-workspace__content > .k2b-app-workspace__main[data-mobile-pane="reader"])
+    > .k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head[data-row],
+  .k2b-ui
+    .mail-workspace:has(> .k2b-app-workspace__content > .k2b-app-workspace__main[data-mobile-pane="reader"])
+    > .k2b-app-workspace__content
+    > .k2b-app-workspace__detail-toggle.k2b-app-workspace__detail-toggle.k2b-app-workspace__detail-toggle {
+    display: none;
+  }
 }
 
 .mail-bulk-bar, .mail-bulk-summary, .mail-bulk-actions { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }

@@ -8,13 +8,15 @@ order: 20
 
 ## Die passende Unterhaltung finden {icon="search"}
 
-Öffne die Lupe im Kopf oder drücke `/`, um das Postfach zu durchsuchen. **Ort** steht zunächst auf **Ganzes Postfach**. Hast du in einem Ordner begonnen, kannst du die Suche dort auf diesen Ordner begrenzen. Wenn du die Suche mit der Lupe oder `/` geöffnet hast, bringt dich das X oder Löschen des Textes zur Ausgangsansicht zurück und lässt das Eingabefeld offen. **Zurücksetzen**, **Abbrechen** oder Escape bringt dich zur Ausgangsansicht zurück. Ist ein Optionsmenü offen, schließt das erste Escape nur dieses Menü.
+Tippe in das Suchfeld oben im Postfach, oder drücke `/`, um hineinzuspringen. Die Suche umfasst das aktuelle Postfach. Standardmäßig ist **Alles** ausgewählt. Das umfasst die synchronisierten Nachrichtenfelder und den aus Anhängen erkannten Text.
 
-Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardmäßig ist **Alles** ausgewählt. Das umfasst die synchronisierten Nachrichtenfelder und den aus Anhängen erkannten Text.
+Der Ort steht zunächst auf **Ganzes Postfach**. Hast du in einem Ordner begonnen, kannst du die Suche im Filter-Menü auf diesen Ordner begrenzen. Das X oder Löschen des Textes bringt dich zur Ausgangsansicht zurück. Escape im Suchfeld tut das auch.
 
-Um die Suche einzugrenzen, nutze die Schaltfläche für den Suchbereich. Wähle eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichteninhalt** und **Anhangsnamen**. Bei mehreren Wörtern passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
+Um die Suche einzugrenzen, öffne den Filter-Knopf neben dem Suchfeld. Wähle unter **Suchen in** eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichteninhalt** und **Anhangsnamen**. Bei mehreren Wörtern passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
 
-Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du **Weitere Filter**. Auf dem Smartphone stehen **Suchen in**, **Ort** und **Weitere Filter …** zusammen in einem Menü, dessen Knopf die aktuelle Wahl nennt, etwa **Alles · Ganzes Postfach**.
+Ohne Suche enthält der Filter-Knopf **Ungelesen**, **Markiert**, **Mit Anhang**, den Zeitraum und einen Tag. Links, die du mit diesen Filtern gespeichert hast, funktionieren weiter.
+
+Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du im Filter-Menü **Weitere Filter …**.
 
 Der Filterdialog zeigt die aktuelle Suche als Bedingungen, die du bearbeiten kannst. Wähle **Filter hinzufügen** für ein weiteres Feld. Sind mehrere Filter aktiv, legst du fest, ob alle oder mindestens einer zutreffen müssen. **Erweiterte Bedingungen** bleibt eingeklappt, bis du alternative oder verschachtelte Gruppen brauchst.
 

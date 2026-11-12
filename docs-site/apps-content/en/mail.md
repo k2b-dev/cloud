@@ -835,7 +835,8 @@ visible messages, newest first, then MIME attachment order, counting repeated
 checksums once. Message rows cover only that message. Qualifying files are JPEG,
 PNG, GIF, or WebP from 4 KiB through 25 MiB; inline parts with a content ID are
 excluded. A failed image lookup leaves the list available without image metadata. The
-columns view shows the thumbnails only where the list itself is at least 52 rem wide.
+Mail workspace no longer draws these thumbnails in its rows; the fields remain for
+API clients.
 
 `GET /api/mail/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/thumbnail`
 uses the same access check as opening the attachment. It validates the declared
@@ -1132,7 +1133,14 @@ Mark a hint seen with
 `filters-moved`, `toolbar-moved`, `density-by-width`, and `drafts-consolidated`.
 Unknown IDs are rejected. Marking a hint twice changes nothing; concurrent
 updates keep every hint and the saved width. The existing `/view` preference
-continues to support its current callers.
+continues to support its current callers; the Mail workspace no longer reads
+it, because the list's own width decides between one line and three lines
+per conversation.
+
+The workspace saves the share when a person ends a move of the handle between
+list and reader, one request for a series of key presses, and clears it with a
+reset. It shows `density-by-width` once when the person presses V, the old view
+key, and `filters-moved` once at the filter button beside the search field.
 
 ## Compose signature fragments
 

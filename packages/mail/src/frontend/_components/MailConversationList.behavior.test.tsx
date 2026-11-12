@@ -45,7 +45,6 @@ const listProps = (requestUrl: string) => ({
   onOpenDeliverySettings: () => {},
   onNavigate: () => {},
   onNavigateItem: () => {},
-  onToggleSelectionMode: () => {},
 
   onToggleSelection: () => {},
   onClearSelection: () => {},

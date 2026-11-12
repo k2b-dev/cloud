@@ -1762,6 +1762,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   matches((response.request().postDataJSON() as { listShare: number | null }).listShare),
               )
               .then((response) => (response.request().postDataJSON() as { listShare: number | null }).listShare);
+          await settled(page);
           const before = await split(page);
           const box = (await handle.boundingBox())!;
           await page.mouse.move(box.x + box.width / 2, box.y + 200);
@@ -1772,31 +1773,38 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.mouse.up();
           const share = await dropped;
           expect(saves).toBe(1);
+          await settled(page);
           const dragged = await split(page);
           expect(Math.abs(dragged.list!.width - (before.list!.width + 120))).toBeLessThanOrEqual(2);
           expect(share!).toBeCloseTo(dragged.list!.width / dragged.panes!.width, 2);
           // Arrow keys, Shift for larger steps, End and Home keep list and reader at their minimums.
           await handle.focus();
           await page.keyboard.press("ArrowLeft");
+          await settled(page);
           expect((await split(page)).list!.width).toBeLessThan(dragged.list!.width);
           await page.keyboard.press("End");
+          await settled(page);
           const widest = await split(page);
           expect(Math.abs(widest.reader!.width - widest.handle!.width - 480)).toBeLessThanOrEqual(1);
           await page.keyboard.press("Home");
+          await settled(page);
           expect(Math.abs((await split(page)).list!.width - 320)).toBeLessThanOrEqual(1);
           const stepSaved = nextSave((share) => share !== null && share > 320 / dragged.panes!.width + 0.03);
           await page.keyboard.press("Shift+ArrowRight");
           await stepSaved;
+          await settled(page);
           const stepped = await split(page);
           expect(stepped.list!.width - 320).toBeGreaterThan(stepped.panes!.width * 0.04);
           // A reload renders the saved share in its first frame.
           await page.reload();
           await ready(page);
+          await settled(page);
           expect(Math.abs((await split(page)).list!.width - stepped.list!.width)).toBeLessThanOrEqual(1);
           // A double click goes back to 40 % and clears the saved share.
           const cleared = nextSave((share) => share === null);
           await handle.dblclick();
           expect(await cleared).toBeNull();
+          await settled(page);
           const reset = await split(page);
           expect(Math.abs(reset.list!.width - before.list!.width)).toBeLessThanOrEqual(1);
           await handle.focus();
@@ -1804,6 +1812,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           const entered = nextSave((share) => share === null);
           await page.keyboard.press("Enter");
           expect(await entered).toBeNull();
+          await settled(page);
           expect(Math.abs((await split(page)).list!.width - before.list!.width)).toBeLessThanOrEqual(1);
           expect(await handle.getAttribute("role")).toBe("separator");
           expect(await handle.getAttribute("aria-label")).toBe("Resize conversation list");
@@ -1823,6 +1832,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await scroller.evaluate((element) => {
               element.scrollTop = 420;
             });
+            await settled(page);
             await settled(page);
             const before = await split(page);
             expect(before.open!.y).toBeGreaterThan(before.list!.y);
@@ -1853,6 +1863,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         try {
           const hint = page.locator(".k2b-moved-hint");
           await page.locator("[data-mail-reader-heading]").focus();
+          await settled(page);
           const before = await split(page);
           const seen = page.waitForRequest((request) => request.url().endsWith("/workspace-preference/seen-hints"));
           await page.keyboard.press("v");
@@ -2095,27 +2106,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await close(page);
           }
         });
-        test(`${path}: phone tabs are the card's first row`, async () => {
+        test(`${path}: on a phone the search is the card's first row and the tabs follow right below it`, async () => {
           const page = await open(path, 390);
           try {
-            const views = await tabs(page).boundingBox();
-            const workspace = await page.locator(".k2b-app-workspace").boundingBox();
-            expect(views).not.toBeNull();
-            expect(workspace).not.toBeNull();
-            if (!views || !workspace) throw new Error("Missing phone frame");
-            const filters =
-              (await page.locator(".k2b-app-workspace__head-filters").count()) > 0
-                ? await page.locator(".k2b-app-workspace__head-filters").boundingBox()
-                : null;
-            if (filters) expect(views.y + views.height).toBeLessThanOrEqual(filters.y + 0.5);
-            const rows = await page.locator(".mail-list-entry").first().boundingBox();
-            expect(views.y + views.height).toBeLessThanOrEqual(rows!.y);
-            const firstRowY = await page.locator(".k2b-app-workspace__head").evaluate((head) => {
-              const style = getComputedStyle(head);
-              return head.getBoundingClientRect().y + Number.parseFloat(style.paddingTop) + Number.parseFloat(style.borderTopWidth);
-            });
-            // The tabs share the head's first row with the actions, which may be taller and center the row.
-            expect(views.y - firstRowY, "Tabs occupy the head's first content row").toBeLessThan(8);
+            const views = (await tabs(page).boundingBox())!;
+            const head = (await page.locator(".mail-workspace > .k2b-app-workspace__head").boundingBox())!;
+            const search = (await page.locator("[data-mail-head-search]").boundingBox())!;
+            const rows = (await page.locator(".mail-list-entry").first().boundingBox())!;
+            // One head row: the search, its filter button and "…" share it.
+            expect(search.y + search.height).toBeLessThanOrEqual(head.y + head.height + 0.5);
+            expect(Math.abs(views.y - (head.y + head.height))).toBeLessThanOrEqual(1);
+            expect(views.y + views.height).toBeLessThanOrEqual(rows.y);
           } finally {
             await close(page);
           }
@@ -2430,8 +2431,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           [1680, 1050, false, 8, 99],
           [1680, 1050, true, 6, 99],
           [1280, 800, false, 4, 99],
-          [1280, 800, true, 2, 5],
-          [1024, 768, true, 1, 3],
+          // The tab row spans list and reader, so an open conversation leaves the tabs their room.
+          [1280, 800, true, 4, 99],
+          [1024, 768, true, 2, 99],
         ] as const)
           test(`S3 head at ${width}${reading ? " while reading" : ""}: the tabs fill the head's room, More counts the rest, Events stays whole`, async () => {
             const page = await open(`${boxPath}${reading ? "?conversation=Conv01" : ""}`, width, height);
@@ -2547,12 +2549,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
-        test("S3 head on a phone: the view strip keeps scrolling with its first views and More", async () => {
+        test("on a phone the tab row fits its first views in one line and More holds the rest", async () => {
           const page = await open(`${boxPath}`, 390, 844);
           try {
             await settled(page);
-            expect(await page.locator(".mail-workspace .k2b-view-tabs__item[data-fit-hidden]").count()).toBe(0);
-            expect((await headTabs(page)).shown).toEqual(["all", "needs_action", "mine"]);
+            const tabs = await headTabs(page);
+            expect(tabs.shown[0]).toBe("all");
+            expect(tabs.more).toBeGreaterThan(0);
+            expect(tabs.shown.length + tabs.more).toBe(tabs.flowing);
+            expect(tabs.overflow).toBeLessThanOrEqual(1);
+            expect(tabs.eventsWhole).toBe(true);
           } finally {
             await close(page);
           }
@@ -2578,8 +2584,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
 
         // S3: the reader's actions take their own row above the subject; a wide bar names them, a laptop shows icons.
         for (const [width, height, labels] of [
-          [1680, 1050, true],
-          [1440, 900, true],
+          // The reader takes 60 % beside the list now: at 1440 it shows the actions as icons.
+          [1920, 1080, true],
+          [1440, 900, false],
           [1280, 800, false],
         ] as const)
           test(`S3 reader bar at ${width}: actions above the subject, ${labels ? "with their names" : "as icons"}`, async () => {
@@ -2620,8 +2627,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
 
         // The longest German names of three other actions still fit the widest bar beside the named replies.
         for (const toolbar of ["reply,reply_all,forward,move,read,print", "reply,reply_all,forward,flag,tags,merge"])
-          test(`S3 reader bar at 1440 in German with ${toolbar}: every name fits`, async () => {
-            const page = await open(`${boxPath}?conversation=Conv01&locale=de&toolbar=${toolbar}`, 1440, 900);
+          test(`S3 reader bar at 1920 in German with ${toolbar}: every name fits`, async () => {
+            const page = await open(`${boxPath}?conversation=Conv01&locale=de&toolbar=${toolbar}`, 1920, 1080);
             try {
               const toolbarElement = page.locator("[data-mail-reader-toolbar]");
               await toolbarElement.locator("[data-mail-reader-heading]").waitFor({ state: "visible" });
@@ -2858,7 +2865,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             // Reads the reader widths that the four layout cases above measured, so it runs after them in the same file.
             test(`reader toolbar: the sweep of ${toolbar} ${locale} covers every reader tier`, () => {
               const readers = sweptReaders.get(`${toolbar} ${locale}`) ?? [];
-              expect(readers.length, "the four layout cases above ran first and measured 24 reader widths").toBe(24);
+              expect(readers.length, "the two layout cases above ran first and measured 16 reader widths").toBe(16);
               // Under 380, 380–440, 440–480, 480–520, 520–720 and from 720 px of reader.
               for (const [from, to] of [
                 [0, 380],

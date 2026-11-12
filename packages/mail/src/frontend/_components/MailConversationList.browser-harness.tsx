@@ -296,7 +296,6 @@ window.mountMailList = (options) => {
                     history.pushState(null, "", href);
                     open(new URL(href, location.href).searchParams.get("conversation"));
                   }}
-                  onToggleSelectionMode={noop}
                   onToggleSelection={noop}
                   onClearSelection={noop}
                   onAddTags={noop}

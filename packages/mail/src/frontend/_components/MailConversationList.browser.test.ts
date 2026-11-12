@@ -1389,6 +1389,7 @@ describe("Mail rows by the list's own width (F2)", () => {
   ] as const)
     test(`a ${listSize} px list draws every conversation on ${lines} line${lines === 1 ? "" : "s"} of one height, with the date in each`, async () => {
       const page = await load({ listSize, items: marked, shared: true });
+      await settled(page);
       const shown = await rows(page);
       expect(shown.every((entry) => entry.height === height && entry.lines === lines)).toBe(true);
       // The checkbox always shows, so the first check starts a selection.
@@ -1399,6 +1400,7 @@ describe("Mail rows by the list's own width (F2)", () => {
 
   test("marks: Draft in orange, ✦ Suggestion in plum, the count, Waiting, until Sat, lock, paperclip and who is responsible", async () => {
     const page = await load({ listSize: 700, items: marked, shared: true });
+    await settled(page);
     const draft = page.locator(`${row("Cv0001")} [data-mail-row-draft]`);
     expect((await draft.textContent())?.trim()).toBe("Draft");
     expect(await draft.getAttribute("aria-label")).toBe("Draft: Tom Behrens");

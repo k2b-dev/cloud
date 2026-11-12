@@ -109,7 +109,7 @@ Mail asks about takeover only when another person holds the reservation. Server-
 
 Drafts live in Cloud as shared drafts.
 
-- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer. The count is in the workspace head. Each draft looks like a conversation row: the recipients stand where the sender is, an orange **Draft** tag comes before the subject, and the row shows the preview, an attachment mark, and the edit time. In the columns view, the **Started by** column shows who started the draft.
+- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer. The count stands in the tab row. Each draft looks like a conversation row: the recipients stand where the sender is, **Draft** follows them in orange, and the row shows the subject, the preview, an attachment mark, who started the draft, and the edit time.
 - **Delete from the list:** Open the draft's **…** menu or right-click the row, then choose **Delete draft**. On a focused row, you can also press Delete or Backspace. Mail asks before it deletes the draft. The draft stays when somebody has it open in the composer or changed it in the meantime, and Mail tells you why. Drafts that are scheduled or being sent are not in this folder; cancel them in **Outbox** first.
 - **Reply indicator:** A conversation with drafts shows an indicator on Reply.
 - **CLI:** `cld mail draft list` lists these drafts, together with drafts that are scheduled or being sent.
