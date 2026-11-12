@@ -20,6 +20,7 @@ import {
   dialogCore,
   FilterChip,
   FloatingWindow,
+  type FloatingWindowState,
   IconButton,
   LinkCard,
   MarkdownView,
@@ -35,6 +36,7 @@ import {
   type PanesLayout,
   type PanesNode,
   Paper,
+  PersonPopover,
   Placeholder,
   PullToRefresh,
   removePanesItem,
@@ -2329,40 +2331,55 @@ const AnchoredPopoverDemo = () => {
 };
 
 const FloatingDemo = () => {
-  const [open, setOpen] = createSignal(false);
+  const [inspector, setInspector] = createSignal(false);
+  const [draft, setDraft] = createSignal(false);
+  const [draftState, setDraftState] = createSignal<FloatingWindowState>("normal");
+  const [draftText, setDraftText] = createSignal("");
   let scope: HTMLDivElement | undefined;
   return (
     <DemoCard
       id="floating-window"
       chip={{ kind: "component", name: "FloatingWindow", from: "@k2b/ui" }}
-      description="A movable, resizable utility window that fits the viewport, uses an explicit portal scope, and becomes an inset surface on mobile."
-      code={`const [open, setOpen] = createSignal(false);
+      description="A movable, resizable window. Minimize turns it into a bar at the bottom edge with its content kept alive, Maximize covers the area above a scrim until Escape, and on a phone it is a full-screen sheet."
+      code={`const [state, setState] = createSignal<FloatingWindowState>("normal");
 
-<div ref={appShell}>
-  <Button variant="secondary" onClick={() => setOpen(true)}>Open inspector</Button>
-  <Show when={open()}>
-    <FloatingWindow
-      title="Inspector"
-      icon="ti ti-adjustments"
-      initialWidth={520}
-      initialHeight={380}
-      resolveScope={() => appShell}
-      onClose={() => setOpen(false)}
+<Show when={open()}>
+  <FloatingWindow
+    title="Workbench quote"
+    status={<><i class="ti ti-cloud-check" aria-hidden="true" /> Saved</>}
+    placement="dock"
+    state={state()}
+    onStateChange={setState}
+    initialWidth={540}
+    initialHeight={460}
+    resolveScope={() => appShell}
+    onClose={() => setOpen(false)}
+  >
+    …
+  </FloatingWindow>
+</Show>`}
     >
-      …
-    </FloatingWindow>
-  </Show>
-</div>`}
-    >
-      <div ref={scope}>
-        <Button variant="secondary" onClick={() => setOpen(true)}>
+      <div ref={scope} class="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" onClick={() => setInspector(true)}>
           Open inspector
         </Button>
-        <Show when={open()}>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setDraftState("normal");
+            setDraft(true);
+          }}
+        >
+          Open docked draft
+        </Button>
+        <Show when={draft()}>
+          <span class="text-sm text-dimmed">State: {draftState()}</span>
+        </Show>
+        <Show when={inspector()}>
           <FloatingWindow
             title="Inspector"
             icon="ti ti-adjustments"
-            onClose={() => setOpen(false)}
+            onClose={() => setInspector(false)}
             initialWidth={520}
             initialHeight={380}
             resolveScope={() => scope}
@@ -2370,6 +2387,100 @@ const FloatingDemo = () => {
             <div class="ui-demo-pane">Portable floating content</div>
           </FloatingWindow>
         </Show>
+        <Show when={draft()}>
+          <FloatingWindow
+            title="Workbench quote for oak planks, 52 mm"
+            status={
+              <>
+                <i class="ti ti-cloud-check" aria-hidden="true" /> Saved
+              </>
+            }
+            placement="dock"
+            state={draftState()}
+            onStateChange={setDraftState}
+            initialWidth={540}
+            initialHeight={460}
+            onClose={() => setDraft(false)}
+            resolveScope={() => scope}
+          >
+            <div class="grid h-full gap-2 p-4">
+              <TextInput multiline aria-label="Message" placeholder="Write a message…" value={draftText()} onValueChange={setDraftText} />
+            </div>
+          </FloatingWindow>
+        </Show>
+      </div>
+    </DemoCard>
+  );
+};
+
+const personActions = [
+  { label: "All messages from this sender", icon: "ti ti-search" },
+  { label: "Open contact", icon: "ti ti-address-book" },
+  { label: "Automation for this sender …", icon: "ti ti-robot" },
+  { label: "Block sender", icon: "ti ti-ban" },
+];
+
+const PersonPopoverDemo = () => {
+  const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
+  const [state, setState] = createSignal("loaded");
+  const toggle = (event: MouseEvent & { currentTarget: HTMLElement }) => setAnchor(anchor() ? null : event.currentTarget);
+  return (
+    <DemoCard
+      id="person-popover"
+      chip={{ kind: "component", name: "PersonPopover", from: "@k2b/ui" }}
+      description="A card about one person: contact rows with copy and phone links, a list such as earlier conversations, and actions. Loading keeps the final size, without contact data only the address and the actions show, and a failed load offers a retry."
+      code={`<PersonPopover
+  anchor={anchor()}
+  onClose={() => setAnchor(null)}
+  name="Mara Lindqvist"
+  email="mara@lindqvist-joinery.example"
+  detail="Lindqvist Joinery · Owner"
+  phones={[{ number: "0461 555 0142", label: "Office" }]}
+  list={{ title: "Earlier conversations", items: conversations }}
+  actions={[{ label: "All messages from this sender", icon: "ti ti-search", onSelect: search }]}
+/>`}
+    >
+      <div class="grid gap-3">
+        <SegmentedControl
+          ariaLabel="State"
+          size="sm"
+          value={state}
+          onValueChange={setState}
+          options={[
+            { value: "loaded", label: "Loaded" },
+            { value: "loading", label: "Loading" },
+            { value: "partial", label: "No contact" },
+            { value: "error", label: "Failed" },
+          ]}
+        />
+        <div>
+          <Button variant="ghost" aria-haspopup="dialog" aria-expanded={anchor() !== null} onClick={toggle}>
+            {state() === "partial" ? "info@sawmill-north.example" : "Mara Lindqvist"}
+          </Button>
+        </div>
+        <PersonPopover
+          anchor={anchor()}
+          onClose={() => setAnchor(null)}
+          name={state() === "partial" ? undefined : "Mara Lindqvist"}
+          email={state() === "partial" ? "info@sawmill-north.example" : "mara@lindqvist-joinery.example"}
+          detail="Lindqvist Joinery · Owner"
+          phones={state() === "partial" ? undefined : [{ number: "0461 555 0142", label: "Office" }]}
+          loading={state() === "loading"}
+          error={state() === "error" ? { message: "Contact details could not be loaded.", onRetry: () => setState("loaded") } : undefined}
+          list={
+            state() === "partial"
+              ? undefined
+              : {
+                  title: "Earlier conversations",
+                  loading: state() === "loading",
+                  items: [
+                    { label: "Plane repair", meta: "3 messages · 14.09.2026 · done", href: "#person-popover" },
+                    { label: "Dovetail course", meta: "2 messages · 02.06.2026 · done", href: "#person-popover" },
+                  ],
+                }
+          }
+          actions={personActions}
+        />
       </div>
     </DemoCard>
   );
@@ -2532,6 +2643,11 @@ const items = [
   "anchored-popover": () => (
     <DemoGrid columns="one">
       <AnchoredPopoverDemo />
+    </DemoGrid>
+  ),
+  "person-popover": () => (
+    <DemoGrid columns="one">
+      <PersonPopoverDemo />
     </DemoGrid>
   ),
 };
