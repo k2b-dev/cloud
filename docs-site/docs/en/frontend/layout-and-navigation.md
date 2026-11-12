@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-11-11
+updated: 2026-11-12
 ---
 
 # Layout and navigation
@@ -161,6 +161,13 @@ While it is on:
   are used up. Mouse movement, scrolling, right and middle clicks only light up
   the hint. Modifier keys, Tab and IME composition do not lift it.
 - All Cloud tabs of the browser cover and show together and share the idle time.
+- Opening or loading a Cloud page counts as input, like a click: that page
+  never covers on arrival, every other tab shows its content again, and the
+  idle time starts over. A tab opened in the background or a prerendered page
+  counts once the person sees it; until then it covers with the other tabs.
+  A return with Back from the back-forward cache counts too. A covered page
+  that reloads stays covered, because the reload may be automatic, such as
+  after an update.
 - The shared workstation's sign-out warning always comes first: while it is
   open the privacy screen neither starts nor lifts, and its **Continue
   working** also lifts the privacy screen.
@@ -186,8 +193,7 @@ again. Keep islands small: everything inside one stays readable. A `blur` part
 also leaves the accessibility tree, so put a live region that names content
 inside it. An element with text of its own beside an island covers whole,
 the island included, because loose text cannot blur alone. Open dialogs and
-popovers cover too, also in pop-out pages without the app bar, and a tab that
-opens while the others are covered starts covered.
+popovers cover too, also in pop-out pages without the app bar.
 
 ## Render the application layout
 
