@@ -18,7 +18,7 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateEvents } from "../migrate/core/events";
 import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
-import type { CodeContext } from "./access";
+import { type CodeContext, CodeOwnerUnavailableError } from "./access";
 import { activateCodeVersion, cancelCodeActivation, previewCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 import { cleanupCodeActivation, codeActivationCleanupOutbox } from "./activation-maintenance";
 import * as authoringChecks from "./authoring-check";
@@ -467,9 +467,10 @@ databaseSuite()("durable Code activation", () => {
     );
   });
 
-  test("activation and preview never ask target apps, even for unknown and dynamic manifest targets", async () => {
+  test("activation and preview never ask target apps; the preview asks the owner's reader once, with the person's own rights", async () => {
     const code = await newCode();
     const submitted = await version(code, ["A", "B"]);
+    const placeReads: CodeContext[] = [];
     const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
         async () => {
@@ -479,8 +480,16 @@ databaseSuite()("durable Code activation", () => {
       ),
     );
     try {
-      const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner);
+      const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
+        readOwner: async (_owner, ctx) => {
+          placeReads.push(ctx);
+          return { title: "Owner", admin: false };
+        },
+      });
       expect(preview).not.toHaveProperty("rows");
+      // Only the owner's own reader, once, as the viewing person: no service account and no administrator path.
+      expect(placeReads).toHaveLength(1);
+      expect(placeReads[0]!.authority).toBe(owner.authority);
       // The card lists the Code page's targets from registry manifests: the own place first, every target new.
       if (code.owner.kind !== "resource") throw new Error("Expected resource Code");
       const target = (id: string, own: boolean) =>
@@ -507,6 +516,50 @@ databaseSuite()("durable Code activation", () => {
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+  test.each([
+    ["may read", async () => ({ title: "Lager Nord", admin: false }), { title: "Lager Nord", typeTitle: "Item", href: null }],
+    ["may not read", async () => null, null],
+    [
+      "reader unreachable",
+      async () => {
+        throw new CodeOwnerUnavailableError("Code owner reader unavailable");
+      },
+      null,
+    ],
+    ["reader too slow", () => new Promise<never>(() => {}), null],
+  ] as const)("the card names the own place only for a person who may read it (%s)", async (_case, readOwner, place) => {
+    const code = await newCode(),
+      submitted = await version(code);
+    // The Code account keeps the title its creator could read; it is never shown in someone else's preview.
+    await sql`UPDATE auth.service_accounts SET title='Stored account title' WHERE id=${code.serviceAccountId}::uuid`;
+    let reads = 0;
+    const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
+      readOwner: () => {
+        reads++;
+        return readOwner();
+      },
+      placeTimeoutMs: 20,
+    });
+    expect(reads).toBe(1);
+    expect(preview.place).toEqual(place);
+    // Without a title the own place stays a target like any other: type and ID, and the card shows no error.
+    expect(preview.readiness).toEqual({ state: "ready" });
+    expect(preview.targets?.[0]?.target).toMatchObject({ own: true, title: "", typeTitle: "Item" });
+    expect(JSON.stringify(preview)).not.toContain("Stored account title");
+  });
+  test("an owner manager without a Code share is authorized and named by the same single reader answer", async () => {
+    const code = await newCode(),
+      submitted = await version(code);
+    const reads: string[] = [];
+    const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, context(nextOwnerId), {
+      readOwner: async (_owner, ctx) => {
+        reads.push(ctx.authority.accessSubject.type === "user" ? ctx.authority.accessSubject.userId : "");
+        return { title: "Lager Nord", admin: true };
+      },
+    });
+    expect(reads).toEqual([nextOwnerId]);
+    expect(preview.place).toEqual({ title: "Lager Nord", typeTitle: "Item", href: null });
   });
   test("an explicit Code editor cannot bypass the current owner manager check", async () => {
     const code = await newCode(),

@@ -119,6 +119,7 @@ export const codePermission = async (
   context: CodeContext,
   db: SQL = sql,
   ownerCheck: "read" | "edit" | "skip" = "read",
+  readOwner: typeof readCodeOwner = readCodeOwner,
 ): Promise<CodePermission | null> => {
   const user = codePerson(context);
   const cloudAdmin = user.roles.includes("admin");
@@ -134,7 +135,7 @@ export const codePermission = async (
   if (permission === "write" || permission === "admin") return "editor";
   if (code.owner.kind !== "person" && ownerCheck !== "skip") {
     try {
-      const owner = await readCodeOwner(code.owner, context);
+      const owner = await readOwner(code.owner, context);
       if (owner?.admin) return "editor";
     } catch (error) {
       if (!(error instanceof CodeOwnerUnavailableError) || ownerCheck === "edit" || (permission !== "read" && !cloudAdmin)) throw error;
@@ -144,8 +145,14 @@ export const codePermission = async (
   return permission === "read" || cloudAdmin ? "reader" : null;
 };
 /** Missing and inaccessible Code have the same result. */
-export const requireCodePermission = async (code: Code, context: CodeContext, editor = false, db: SQL = sql): Promise<CodePermission> => {
-  const permission = await codePermission(code, context, db, editor ? "edit" : "read");
+export const requireCodePermission = async (
+  code: Code,
+  context: CodeContext,
+  editor = false,
+  db: SQL = sql,
+  readOwner: typeof readCodeOwner = readCodeOwner,
+): Promise<CodePermission> => {
+  const permission = await codePermission(code, context, db, editor ? "edit" : "read", readOwner);
   if (!permission || (editor && permission !== "editor")) throw new CodeDataError("NOT_FOUND", "Code not found.");
   if (editor) codePerson(context, true);
   return permission;
