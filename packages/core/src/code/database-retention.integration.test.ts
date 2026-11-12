@@ -73,7 +73,7 @@ databaseSuite()("Unused Code database retention", () => {
     const [v] = await executor<
       { id: string }[]
     >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes)
-      VALUES(${id},${number},'{}','fixture',${"a".repeat(64)},${"b".repeat(64)},${JSON.stringify({ database })}::jsonb,0,7) RETURNING id`;
+      VALUES(${id},${number},'{}','fixture',${"a".repeat(64)},${"b".repeat(64)},${JSON.stringify({ database })}::text::jsonb,0,7) RETURNING id`;
     return v!.id;
   }
   async function age(id: string) {
@@ -148,6 +148,20 @@ databaseSuite()("Unused Code database retention", () => {
     connection?.mockRestore();
     setSystemTime();
     await db?.drop();
+  });
+  test("migration preserves a legacy namespace and admits only incarnations belonging to the same Code", async () => {
+    const id = await fixture();
+    await migrateCode();
+    const [legacy] = await sql<{ namespace: string }[]>`SELECT namespace FROM code.databases WHERE code_id=${id}`;
+    expect(legacy?.namespace).toBe(`code_${id}`);
+    const namespace = `code_${id}_${"a".repeat(32)}`;
+    await sql`UPDATE code.databases SET namespace=${namespace} WHERE code_id=${id}`;
+    await migrateCode();
+    const [incarnation] = await sql<{ namespace: string }[]>`SELECT namespace FROM code.databases WHERE code_id=${id}`;
+    expect(incarnation?.namespace).toBe(namespace);
+    await expect(
+      sql`UPDATE code.databases SET namespace=${`code_c_other_${"a".repeat(32)}`} WHERE code_id=${id}`.execute(),
+    ).rejects.toThrow();
   });
   test("deadline runs in the read model, survives migration and stops immediately on reactivation", async () => {
     const id = await fixture();
@@ -349,6 +363,29 @@ databaseSuite()("Unused Code database retention", () => {
     expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(1);
     expect(await unused(ready)).toBeUndefined();
     expect(await sql`SELECT code_id FROM code.databases`).toHaveLength(50);
+  });
+  test("queued event runs cannot starve later expiry or prevent fresh visible notice", async () => {
+    for (let i = 0; i < 50; i++) {
+      const id = await fixture();
+      const [v] = await sql<{ id: string }[]>`SELECT id FROM code.versions WHERE code_id=${id}`;
+      await sql`UPDATE code.codes SET active_version_id=${v!.id}::uuid WHERE id=${id}`;
+      await sql`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,payload_bytes,calls_limit)
+        VALUES(${id},${v!.id}::uuid,'event','onEvent',4,1)`;
+    }
+    const ready = await fixture();
+    expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(1);
+    expect(await unused(ready)).toBeUndefined();
+    expect(await sql`SELECT code_id FROM code.databases`).toHaveLength(50);
+    await changeDays(3);
+    expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(0);
+    const deleteAt = new Date(fixed.getTime() + DATABASE_EXPIRY_NOTICE_MS);
+    const dates = await sql<{ unused_delete_at: Date; unused_shown_at: Date }[]>`
+      SELECT unused_delete_at,unused_shown_at FROM code.databases`;
+    expect(dates).toHaveLength(50);
+    for (const date of dates) expect(date).toEqual({ unused_delete_at: deleteAt, unused_shown_at: fixed });
+    await sql`DELETE FROM code.runs`;
+    expect(await expireUnusedCodeDatabases(deleteAt, signal())).toBe(50);
+    expect(await sql`SELECT code_id FROM code.databases`).toHaveLength(0);
   });
   test("shortening retention persists the same visible advance notice in Code and admin before expiry", async () => {
     const id = await fixture();

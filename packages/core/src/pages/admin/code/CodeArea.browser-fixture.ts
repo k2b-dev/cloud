@@ -16,6 +16,7 @@ import {
   fixtureCodeDetail,
   fixtureData,
 } from "./CodeArea.fixture-data";
+import { fixtureDatabasePage } from "./CodeDatabase.fixture-data";
 
 const user: User = {
   id: FIXTURE_PEOPLE.ben,
@@ -43,7 +44,6 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
   Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
   const { AdminLayout, Layout } = await import("@k2b/cloud/ssr");
   const { default: CodePage } = await import("@k2b/cloud/ssr/code-page");
-  const { codePageFixture } = await import("../../../../../cloud/src/ssr/code-page/code-page.fixture");
   const { CodeAreaView } = await import("./view");
   const { codeAdminMessages } = await import("./messages");
   const { parseCodeAreaQuery } = await import("./area");
@@ -130,21 +130,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     if (data && data.summary !== null && typeof data.summary === "object") data.summary = { ...data.summary, approvals: waiting };
     c.set("adminCodeApprovals", state === "noperm" ? undefined : waiting);
     const databaseDemo = c.req.query("surface") === "database";
-    const databasePage = codePageFixture("paused", locale);
-    if (databasePage.state.kind === "ready")
-      databasePage.state.code.database = {
-        bytes: 4194304,
-        limit: 104857600,
-        state: "ready",
-        canExport: true,
-        owner: { reserved: 104857600, limit: 1048576000 },
-        unused: {
-          since: "2026-11-01T12:00:00.000Z",
-          deleteAt: "2026-12-01T12:00:00.000Z",
-          namespace: "code_c_demo_fixture",
-          canDelete: true,
-        },
-      };
+    const databasePage = fixtureDatabasePage(locale);
     const body = renderToString(() =>
       createComponent(databaseDemo ? Layout : AdminLayout, {
         c,

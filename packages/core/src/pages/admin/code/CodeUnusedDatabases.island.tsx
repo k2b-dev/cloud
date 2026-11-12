@@ -3,7 +3,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { ButtonLink, DataTable, useLocale } from "@k2b/ui";
 import type { UnusedCodeDatabase } from "../../../code/database-retention";
 import { codeAreaHref } from "./area";
-import CodeDatabaseControls from "./CodeDatabaseControls.island";
+import CodeDatabaseControls from "./CodeDatabaseControls";
 import { codeAdminMessages } from "./messages";
 
 /** Row details keep owner, measurements and access reachable on a phone. */

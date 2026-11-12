@@ -373,11 +373,13 @@ test("an unconfirmed unused database deletion keeps recovery visible", async () 
 
 test("unused database pending deletion stays disabled and keeps its geometry in dark mode", async () => {
   await goto("sec=databases&state=saving&theme=dark", { width: 390, height: 844 });
+  await settled(page);
   const remove = page.getByRole("button", { name: "Jetzt löschen", exact: true });
   const before = await remove.boundingBox();
   await remove.click();
   await page.getByRole("dialog").getByRole("button", { name: "Jetzt löschen", exact: true }).click();
   expect(await remove.isDisabled()).toBe(true);
+  await settled(page);
   expect(await remove.boundingBox()).toEqual(before);
   expect(fixture.requests).toHaveLength(1);
 });

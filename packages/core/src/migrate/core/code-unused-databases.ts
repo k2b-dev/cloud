@@ -21,7 +21,8 @@ export async function migrateUnusedCodeDatabases(tx: SQL): Promise<void> {
   END $$ LANGUAGE plpgsql`.simple();
   await installDatabaseRetentionSettingTrigger(tx);
   // Old mappings retain their namespace. Every new mapping has an immutable incarnation suffix.
-  await tx`ALTER TABLE code.databases DROP CONSTRAINT IF EXISTS databases_namespace_check`.simple();
+  // The legacy check references two columns, so Postgres names it after the table.
+  await tx`ALTER TABLE code.databases DROP CONSTRAINT IF EXISTS databases_check`.simple();
   await tx`DO $$ BEGIN
     IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='code.databases'::regclass AND conname='databases_namespace_incarnation') THEN
       ALTER TABLE code.databases ADD CONSTRAINT databases_namespace_incarnation

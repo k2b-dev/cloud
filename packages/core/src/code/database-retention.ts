@@ -112,11 +112,14 @@ export async function expireUnusedCodeDatabases(now: Date, signal: AbortSignal) 
     await tx`SET LOCAL lock_timeout='100ms'`;
     await tx`SET LOCAL statement_timeout='2s'`;
     const policy = await lockDatabaseRetentionPolicy(tx);
+    // Paused event runs can remain queued indefinitely. Exclude them only from expiry,
+    // so changes to the visible deadline still reach these databases.
     return tx<{ code_id: string }[]>`SELECT code_id FROM code.databases
       WHERE unused_since IS NOT NULL
         AND NOT EXISTS(SELECT 1 FROM code.database_deletions x WHERE x.namespace=code.databases.namespace)
         AND (unused_policy_revision IS DISTINCT FROM ${policy.revision}::bigint
-        OR unused_days IS DISTINCT FROM ${policy.days} OR (${policy.days}>0 AND (unused_shown_at IS NULL OR unused_delete_at<=${now})))
+        OR unused_days IS DISTINCT FROM ${policy.days} OR (${policy.days}>0 AND (unused_shown_at IS NULL OR (unused_delete_at<=${now}
+          AND NOT EXISTS(SELECT 1 FROM code.runs r WHERE r.code_id=code.databases.code_id AND r.state IN ('queued','running'))))))
       ORDER BY unused_since,code_id LIMIT 50`;
   });
   let count = 0;
