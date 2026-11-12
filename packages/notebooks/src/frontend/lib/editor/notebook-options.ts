@@ -5,7 +5,7 @@ import { extractDataBlocks } from "@k2b/editor/markdown/lib/named-blocks";
 import { extractNotebookDirectiveRanges } from "@k2b/editor/markdown/lib/query-blocks";
 import { ySyncAnnotation } from "y-codemirror.next";
 import { deriveNoteTitle, hasUsableNoteTitle } from "../../../lib/note-title";
-import { openAttachedImage, openAttachmentById } from "../attachment-preview";
+import { openAttachmentById } from "../attachment-preview";
 import { navigateToNotebookNote } from "../soft-navigation";
 import { attachmentFromContentUrl, buildAttachmentContentUrl, confirmAndDownload, extractAttachmentId } from "./attachment-url";
 
@@ -33,9 +33,11 @@ export const notebookUrlOptions = (notebookId: string): MarkdownUrlOptions => ({
     if (attachmentId) void openAttachmentById(notebookId, attachmentId, label);
     else void navigateToNotebookNote(url);
   },
-  openImage: (image, url, label) => {
+  // The stored type decides, as for a link: a picture opens in the Lightbox, an SVG or a PDF written with image syntax
+  // takes its own path.
+  openImage: (_image, url, label) => {
     const attachment = attachmentFromContentUrl(url, window.location.href);
-    if (attachment) openAttachedImage(image, attachment.notebookId, attachment.attachmentId, label);
+    if (attachment) void openAttachmentById(attachment.notebookId, attachment.attachmentId, label || "image");
     else void confirmAndDownload(label || "image", url);
   },
 });

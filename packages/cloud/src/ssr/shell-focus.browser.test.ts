@@ -210,7 +210,7 @@ for (const [width, height, touch, inset] of [
       await settled(page);
       const original = await boxes(page);
       // From 1680 px the app bar shows names by default; hiding and restoring it keeps either width.
-      expect(original.rail.width).toBe(width >= 1680 ? 216 : width < 1024 ? 60 : 56);
+      expect(original.rail.width).toBe(width >= 1680 ? 208 : width < 1024 ? 60 : 56);
       // No sidebar button above the apps: the first app follows Home at the rail's gap.
       const gap = await page.locator(".layout-rail").evaluate((rail) => parseFloat(getComputedStyle(rail).rowGap));
       expect(original.apps.top).toBe(original.logo.bottom + gap);

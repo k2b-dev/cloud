@@ -258,7 +258,7 @@ Mail öffnet nie einen Abmeldelink, nur weil du eine Nachricht in der Vorschau s
 
 Empfangene Anhänge bleiben bei der Nachricht, die sie gebracht hat. Wähle einen Anhang, um ihn in einem neuen Browser-Tab zu öffnen oder herunterzuladen.
 
-**Vorschau** öffnet Text, CSV, JSON, Bilder, PDFs, Audio und Video in einem Dialog. Ist eine Textdatei Markdown und beginnt mit einer Überschrift, wird diese Überschrift zum Titel, darunter stehen Dateiname und Größe. Der Kopf des Dialogs enthält **Anhang herunterladen**, bei Text, CSV und JSON auch **Kopieren**. Auf dem Smartphone füllt die Vorschau den Bildschirm.
+**Vorschau** öffnet Text, CSV, JSON, Bilder, PDFs, Audio und Video in einer Vollbild-Vorschau. Ist eine Textdatei Markdown und beginnt mit einer Überschrift, steht diese Überschrift oben links als Name, danach Dateiname und Größe. Oben rechts stehen **Speichern in**, **Herunterladen** und bei Text, CSV und JSON auch **Text kopieren**. Die Vorschau enthält alle Anhänge der Nachricht, oder der Unterhaltung, wenn du sie im Detailbereich öffnest. Wechsle mit den Pfeiltasten, den Schaltflächen am Rand oder dem Streifen unten. Auf dem Smartphone wischst du zur Seite.
 
 Mit Zugriff **Verwalten** erstellst du auch einen öffentlichen Download-Link für einen Anhang. Mail zeigt die URL nur beim Erstellen des Links. Du kannst ihn mit einem Passwort, einem Ablaufzeitpunkt und einer Grenze für Download-Sitzungen schützen. Um vorhandene Links zu prüfen oder zu widerrufen, öffne **… → Freigabelinks**.
 

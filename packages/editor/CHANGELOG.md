@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.2](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.11.1...npm-editor-v0.11.2) (2026-11-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.55.0 to 0.56.0
+
 ## [0.11.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.11.0...npm-editor-v0.11.1) (2026-11-11)
 
 

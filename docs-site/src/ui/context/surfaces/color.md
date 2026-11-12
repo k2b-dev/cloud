@@ -258,6 +258,15 @@ six-digit accent works. See
 [Define an application](/en/docs/build/define-app#set-the-application-appearance) and
 [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#keep-color-roles-independent).
 
+Each app's icon in the app bar carries a third derived color, the color on
+the canvas. It lies directly on the open app's tinted gradient, so Cloud
+darkens the accent in light mode and lightens it in dark mode only until it
+keeps 3:1 (WCAG 1.4.11) against every stop of that gradient, the tablet bar's
+gradient, and the hover fill on them. An app without an accent uses the same
+palette tone as its tile in the app grid. The app bar editor's tiles keep the
+same 3:1 for their glyphs. Names, counts, and the bar's own controls stay
+neutral.
+
 Plum means AI. `--k2b-ai-accent` (`#8e1b6f` light, `#f0abdc` dark) and
 `--k2b-ai-surface` mark AI surfaces, which also carry ✦ or the
 word "KI", so no app color may look like it: keep the accent and every

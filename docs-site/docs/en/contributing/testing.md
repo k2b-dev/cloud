@@ -719,10 +719,10 @@ branch:
   then for one frame:
   `await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))`.
   Waiting for the content alone is not a frame: a test that read focus after
-  it failed in WebKit CI (#1456). Where keys must reach the target at once, as
-  in the Notebooks attachment preview, the target carries `autofocus`, and the
-  test reads focus in the same `page.evaluate` that opens the dialog, before
-  any frame can pass.
+  it failed in WebKit CI (#1456). Where keys must reach the target at once,
+  the target carries `autofocus` or, as in the `Lightbox`, the component
+  focuses it while it opens, and the test reads focus in the same
+  `page.evaluate` that opens the dialog, before any frame can pass.
 - `PdfViewer` draws with pdf.js in both engines, so a browser test that needs
   pages gives it a real PDF, such as `pdfFixture()` from
   `packages/ui/test/pdf-fixture.ts`. A few bytes that only start with

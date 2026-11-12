@@ -9,6 +9,7 @@ import { sql } from "../../runtime/clients";
 import { getLocale } from "../../server/locale";
 import { describeRequest } from "../../server/request-context";
 import { isAccountCategoryAllowed } from "../account-category-policy";
+import { isAccountLocked } from "../account-lock";
 import { isAccountExpired } from "../account-model";
 import { audit } from "../audit";
 import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "../identity/constants";
@@ -236,6 +237,7 @@ const insertFamily = async (
   const expiresAt = new Date(issuedAt.getTime() + options.ttlSeconds * 1_000);
   if (!(await isAccountCategoryAllowed(user, tx)))
     throw new HTTPException(403, { message: "This account category is disabled. Contact an administrator." });
+  if (await isAccountLocked(userId, tx)) throw new HTTPException(403, { message: "This account is locked. Contact an administrator." });
   const epoch = Number(user.auth_epoch);
   if (!Number.isSafeInteger(epoch) || epoch < 0) throw new Error("User auth_epoch is invalid");
   if (options.authEpoch !== undefined && epoch !== options.authEpoch) throw new SessionEpochChangedError();
@@ -766,26 +768,27 @@ export const session = {
 
   /** Signs the account out everywhere: every session, every paired sign-in device and every paired phone, audited per device.
    * Returns the new authentication epoch so a following sign-in can stay bound to this sign-out. */
-  revokeAllForUser: async (userId: string): Promise<number> => {
-    return sql.begin(async (tx) => {
-      const authEpoch = await endSessions(tx, userId);
-      await revokePhones(tx, userId, "sign_out_everywhere");
-      // A paired device approves new sign-ins on its own, so a lost one would outlive the epoch change.
-      const devices = await tx<Array<{ id: string }>>`
+  revokeAllForUser: (userId: string): Promise<number> => sql.begin((tx) => session.revokeAllForUserInTransaction(tx, userId)),
+
+  /** `revokeAllForUser` inside the caller's transaction, so the sign-out commits together with the change that needs it. */
+  revokeAllForUserInTransaction: async (tx: SQL, userId: string): Promise<number> => {
+    const authEpoch = await endSessions(tx, userId);
+    await revokePhones(tx, userId, "sign_out_everywhere");
+    // A paired device approves new sign-ins on its own, so a lost one would outlive the epoch change.
+    const devices = await tx<Array<{ id: string }>>`
         UPDATE auth.app_devices SET revoked_at = now() WHERE user_id = ${userId}::uuid AND revoked_at IS NULL RETURNING id
       `;
-      for (const device of devices)
-        await audit.record(
-          {
-            action: "auth.app.device.revoke",
-            outcome: "allowed",
-            target: { type: "app_device", id: device.id },
-            metadata: { targetUserId: userId, provenance: "system", reason: "sign_out_everywhere" },
-          },
-          tx,
-        );
-      return authEpoch;
-    });
+    for (const device of devices)
+      await audit.record(
+        {
+          action: "auth.app.device.revoke",
+          outcome: "allowed",
+          target: { type: "app_device", id: device.id },
+          metadata: { targetUserId: userId, provenance: "system", reason: "sign_out_everywhere" },
+        },
+        tx,
+      );
+    return authEpoch;
   },
 
   authenticate: authenticateToken,

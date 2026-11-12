@@ -1699,7 +1699,7 @@ const StructuredDemo = () => (
   </DemoCard>
 );
 
-// Six images, so the gallery shows its thumbnail strip instead of dots.
+// Six pictures, so the Lightbox shows its film strip and steps with its edge buttons.
 const gallery = (
   [
     ["06b6d4", "Cyan field"],
@@ -1712,6 +1712,8 @@ const gallery = (
 ).map(([color, alt]) => ({
   src: `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='540'%3E%3Crect width='960' height='540' fill='%23${color}'/%3E%3C/svg%3E`,
   alt,
+  name: `${alt}.svg`,
+  meta: "SVG · 960 × 540",
 }));
 /** A two-page sample PDF built in the browser, so the demo shows pdf.js drawing a real document. */
 const samplePdf = (): Blob => {
@@ -1743,6 +1745,7 @@ const samplePdf = (): Blob => {
 
 const MediaDemo = () => {
   const [open, setOpen] = createSignal(false);
+  const [shown, setShown] = createSignal(0);
   const [strip, setStrip] = createSignal("0");
   const [pickedPages, setPickedPages] = createSignal<ReadonlySet<number>>(new Set([0]));
   const togglePage = (index: number) =>
@@ -1781,12 +1784,13 @@ const MediaDemo = () => {
         { kind: "component", name: "PdfViewer", from: "@k2b/ui" },
         { kind: "component", name: "ThumbnailStrip", from: "@k2b/ui" },
       ]}
-      description="Application-owned media with a thumbnail strip from four images, the strip on its own with an unsaved dot and a + tile, a PDF rendered on demand, a PDF shown from its bytes with zoom and selectable text, and a dialog whose viewer shows the server's reason with a retry."
+      description="Application-owned media: a Lightbox over six pictures with its film strip and edge buttons, the strip on its own with an unsaved dot and a + tile, a PDF rendered on demand, a PDF shown from its bytes with zoom and selectable text, and a report dialog whose viewer shows the server's reason with a retry."
       code={`const [open, setOpen] = createSignal(false);
+const [shown, setShown] = createSignal(0);
 
 <Button variant="secondary" onClick={() => setOpen(true)}>Open gallery</Button>
 <Show when={open()}>
-  <Lightbox images={images} initialIndex={0} onClose={() => setOpen(false)} />
+  <Lightbox items={items} index={shown()} onIndexChange={setShown} onClose={() => setOpen(false)} />
 </Show>
 <PdfViewer request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." open />
 <PdfViewer data={pdfBlob} title="Report" />
@@ -1801,7 +1805,7 @@ const MediaDemo = () => {
         </Button>
       </div>
       <Show when={open()}>
-        <Lightbox images={gallery} initialIndex={0} onClose={() => setOpen(false)} />
+        <Lightbox items={gallery} index={shown()} onIndexChange={setShown} onClose={() => setOpen(false)} />
       </Show>
       <div class="ui-thumbnail-strip-demo">
         <ThumbnailStrip

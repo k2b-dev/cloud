@@ -168,7 +168,7 @@ import { SAVE_FILES_ICON, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2
   `files`, an accessor of `{ name, content, mediaType?, size? }`, where
   `content` is a `Blob` or a same-origin URL such as the download route.
   With `all`, its label saves every file of a list.
-- In menus and in a `Lightbox` image's `actions`, use
+- In menus and in a `Lightbox` item's `actions`, use
   `saveFilesLabel(locale)` and `SAVE_FILES_ICON` and call `saveFiles()`.
 - The label names the application once the page knows that exactly one
   stores files, for example **Save report.pdf to Files**, and says
