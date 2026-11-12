@@ -5,12 +5,17 @@ import { migrate as auth } from "../../../core/src/migrate/core/auth";
 import { migrate as events } from "../../../core/src/migrate/core/events";
 import { migrate } from "../../../core/src/migrate/core/room-access-events";
 import { migrate as settings } from "../../../core/src/migrate/core/settings";
+import { sharedWorkstationIdleSeconds } from "../services/session/shared-workstation";
+import { lockSettingChanges, resetChangedSettings, writeKey } from "../services/settings/store";
 import { scheduleSessionIdleAccessChanged } from "./app-access";
 import { liveOutbox } from "./live-delivery";
 
 databaseSuite()("room access sources use Core's transactional live outbox", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   const user = crypto.randomUUID();
+  const group = crypto.randomUUID();
+  const parent = crypto.randomUUID();
+  const account = crypto.randomUUID();
   const kid = crypto.randomUUID();
   const sid = crypto.randomUUID();
   beforeAll(async () => {
@@ -31,8 +36,7 @@ databaseSuite()("room access sources use Core's transactional live outbox", () =
   const due = () => sql<{ payload: { d: { type: string } } }[]>`SELECT payload FROM events.outbox
     WHERE app_id = 'core' AND kind = 'live' AND next_attempt_at <= clock_timestamp()`;
   const clear = () => sql`DELETE FROM events.outbox`;
-  // Statement-level sources include sync bulk writes and FK cascades. Exercise
-  // each subscribed table, even when a source's write affects no rows.
+  // Empty/no-op writes must never fan out authentication work.
   for (const [table, column] of [
     ["user_groups_v2", "user_id"],
     ["ipa_user_effective_groups", "group_name"],
@@ -50,11 +54,80 @@ databaseSuite()("room access sources use Core's transactional live outbox", () =
     ["session_families", "revoked_at"],
     ["signing_keys", "verify_until"],
   ])
-    test(`${table} mutations publish an identity invalidation`, async () => {
+    test(`${table} no-op mutations publish no invalidation`, async () => {
       await clear();
       await sql.unsafe(`UPDATE auth.${table} SET ${column} = ${column}`);
-      expect((await due()).map((row) => row.payload.d.type)).toEqual(["identity.access.changed"]);
+      expect(await due()).toHaveLength(0);
     });
+  test("real source mutations publish scoped identity invalidations", async () => {
+    await sql`INSERT INTO auth.groups(id, cn, name, provider) VALUES (${group}::uuid, 'room-group', 'room-group', 'local'), (${parent}::uuid, 'room-parent', 'room-parent', 'local')`;
+    await sql`INSERT INTO auth.service_accounts(id, name, kind) VALUES (${account}::uuid, 'room-service', 'standalone')`;
+    const changes: Array<[string, () => Promise<unknown>]> = [
+      ["membership", async () => await sql`INSERT INTO auth.user_groups_v2(user_id, group_id) VALUES (${user}::uuid, ${group}::uuid)`],
+      [
+        "directory membership",
+        async () => await sql`INSERT INTO auth.ipa_user_effective_groups(user_id, group_name) VALUES (${user}::uuid, 'room-directory')`,
+      ],
+      [
+        "group hierarchy",
+        async () => await sql`INSERT INTO auth.group_groups_v2(parent_group_id, child_group_id) VALUES (${parent}::uuid, ${group}::uuid)`,
+      ],
+      [
+        "user manager",
+        async () => await sql`INSERT INTO auth.group_manager_users_v2(group_id, user_id) VALUES (${group}::uuid, ${user}::uuid)`,
+      ],
+      [
+        "group manager",
+        async () =>
+          await sql`INSERT INTO auth.group_manager_groups_v2(group_id, manager_group_id) VALUES (${parent}::uuid, ${group}::uuid)`,
+      ],
+      ["group", async () => await sql`UPDATE auth.groups SET name = 'room-renamed' WHERE id = ${group}::uuid`],
+      ["grant", async () => await sql`INSERT INTO auth.access(user_id, permission) VALUES (${user}::uuid, 'read')`],
+      ["service account", async () => await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${account}::uuid`],
+      [
+        "service membership",
+        async () =>
+          await sql`INSERT INTO auth.service_account_groups(service_account_id, group_id) VALUES (${account}::uuid, ${group}::uuid)`,
+      ],
+      [
+        "service manager",
+        async () =>
+          await sql`INSERT INTO auth.group_manager_service_accounts(service_account_id, group_id) VALUES (${account}::uuid, ${group}::uuid)`,
+      ],
+      [
+        "credential",
+        async () =>
+          await sql`INSERT INTO auth.service_account_credentials(service_account_id, name, token_prefix, secret_hash) VALUES (${account}::uuid, 'room', 'room-prefix', 'hash')`,
+      ],
+      ["epoch", async () => await sql`UPDATE auth.users SET auth_epoch = auth_epoch + 1 WHERE id = ${user}::uuid`],
+      [
+        "session",
+        async () => await sql`UPDATE auth.session_families SET expires_at = expires_at + interval '1 minute' WHERE sid = ${sid}::uuid`,
+      ],
+    ];
+    for (const [name, mutate] of changes) {
+      await clear();
+      await mutate();
+      const rows = await due();
+      expect(rows.length, name).toBeGreaterThan(0);
+      for (const row of rows) expect(row.payload.d).toMatchObject({ type: "identity.access.changed" });
+    }
+  });
+  test("signer extension and repeated directory lock writes emit nothing; revocation does", async () => {
+    await clear();
+    await sql`UPDATE auth.signing_keys SET verify_until = verify_until + interval '1 day' WHERE kid = ${kid}`;
+    await sql`INSERT INTO auth.user_ipa_data(user_id) VALUES (${user}::uuid)`;
+    await sql`UPDATE auth.user_ipa_data SET locked_at = NULL WHERE user_id = ${user}::uuid`;
+    expect(await due()).toHaveLength(0);
+    await sql`UPDATE auth.user_ipa_data SET locked_at = '2026-11-12T12:00:00Z' WHERE user_id = ${user}::uuid`;
+    expect(await due()).toHaveLength(1);
+    await clear();
+    await sql`UPDATE auth.user_ipa_data SET locked_at = locked_at WHERE user_id = ${user}::uuid`;
+    expect(await due()).toHaveLength(0);
+    await sql`UPDATE auth.signing_keys SET state = 'retired', retired_at = now() WHERE kid = ${kid}`;
+    expect(await due()).toHaveLength(1);
+    await sql`DELETE FROM auth.user_ipa_data WHERE user_id = ${user}::uuid`;
+  });
   for (const key of [
     "freeipa.groups.admin",
     "user.session.shared_workstation_idle_minutes",
@@ -99,7 +172,7 @@ databaseSuite()("room access sources use Core's transactional live outbox", () =
       published.push(row.ordering_key);
     });
     await outbox.reconcile();
-    expect(published).toEqual(["identity.access", "identity.access"]);
+    expect(published.sort()).toEqual([`identity.access:${user}`, `identity.access:${sid}`].sort());
     const deadlines = () => sql`SELECT ordering_key FROM events.outbox ORDER BY ordering_key`;
     expect(await deadlines()).toHaveLength(2);
     await sql`UPDATE auth.users SET account_expires = now() + interval '3 days' WHERE id = ${user}::uuid`;
@@ -137,7 +210,49 @@ databaseSuite()("room access sources use Core's transactional live outbox", () =
     await migrate();
     expect(await sql`SELECT id FROM events.outbox ORDER BY seq`).toEqual(before);
   });
-  test("concurrent authentications retain one idle deadline; deleting a family cancels it", async () => {
+  test("changing the idle policy reschedules existing families once at the source", async () => {
+    await clear();
+    await sql`UPDATE auth.session_families SET last_input_at = clock_timestamp() WHERE sid = ${sid}::uuid`;
+    await sql.begin((tx) =>
+      resetChangedSettings(tx, "user.session.shared_workstation_idle_minutes", 20, undefined, { value: 10, stored: "readable" }),
+    );
+    const rows = await sql<
+      { anchored: boolean; payload: { d: { userId: string; sid: string } } }[]
+    >`SELECT o.next_attempt_at = sf.last_input_at + interval '20 minutes' AS anchored, o.payload
+      FROM events.outbox o JOIN auth.session_families sf ON o.ordering_key = 'identity.deadline.idle:' || sf.sid::text WHERE sf.sid = ${sid}::uuid`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.anchored).toBe(true);
+    expect(rows[0]!.payload.d).toMatchObject({ userId: user, sid });
+  });
+  test("input racing a policy change schedules from the committed policy", async () => {
+    await clear();
+    const key = "user.session.shared_workstation_idle_minutes";
+    const policyLocked = Promise.withResolvers<void>();
+    const releasePolicy = Promise.withResolvers<void>();
+    const writer = sql.begin(async (tx) => {
+      await lockSettingChanges(tx, key);
+      policyLocked.resolve();
+      await releasePolicy.promise;
+      await writeKey(key, 20, tx, { replaceUnreadable: true });
+    });
+    await policyLocked.promise;
+    const inputStarted = Promise.withResolvers<void>();
+    const input = sql.begin(async (tx) => {
+      inputStarted.resolve();
+      const timeoutSeconds = await sharedWorkstationIdleSeconds(tx);
+      await tx`UPDATE auth.session_families SET last_input_at = clock_timestamp() WHERE sid = ${sid}::uuid`;
+      await scheduleSessionIdleAccessChanged(tx, sid, timeoutSeconds);
+      return timeoutSeconds;
+    });
+    await inputStarted.promise;
+    releasePolicy.resolve();
+    await writer;
+    expect(await input).toBe(1_200);
+    const [row] = await sql<{ anchored: boolean }[]>`SELECT o.next_attempt_at = sf.last_input_at + interval '20 minutes' AS anchored
+      FROM events.outbox o JOIN auth.session_families sf ON o.ordering_key = 'identity.deadline.idle:' || sf.sid::text WHERE sf.sid = ${sid}::uuid`;
+    expect(row?.anchored).toBe(true);
+  });
+  test("concurrent input updates retain one idle deadline; deleting a family cancels it", async () => {
     await clear();
     await Promise.all([60, 120, 180].map((seconds) => sql.begin((tx) => scheduleSessionIdleAccessChanged(tx, sid, seconds))));
     expect(await sql`SELECT id FROM events.outbox`).toHaveLength(1);

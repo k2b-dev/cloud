@@ -85,6 +85,16 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   const filters = Object.entries(config.where ?? {}).map(([column, value]) => ({ column: identifier(column, "filter column"), value }));
   const matches = (alias: "current" | "busy") =>
     filters.reduce((fragment, { column, value }) => sql`${fragment} AND ${sql.unsafe(alias)}.${sql.unsafe(column)} = ${value}`, sql``);
+  // A distinct expression keeps the wake index out of the busy-key probe's
+  // candidate plans, including after ANALYZE of an empty/churned outbox.
+  const wakeFilters = [...filters].sort((a, b) => a.column.localeCompare(b.column));
+  const wakeMatches = () =>
+    wakeFilters.length
+      ? sql`AND ARRAY[${sql.unsafe(wakeFilters.map(({ column }) => `current.${column}::text`).join(", "))}] = ${sql.array(
+          wakeFilters.map(({ value }) => value),
+          "text",
+        )}`
+      : sql``;
   // Sorted, so the order of the `where` entries cannot give one outbox two locks. Descending keeps the
   // lock that live outboxes (`kind`, `app_id`) always took, so replicas of two releases share it.
   const claimLock = pgOutboxKey(config.table, config.where);
@@ -142,8 +152,8 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
           current.next_attempt_at
         )) - clock_timestamp()))::double precision * 1000 AS wake_after_ms
         FROM ${sql.unsafe(table)} current
-        WHERE (current.claimed_until > now() OR current.next_attempt_at > now())
-          ${matches("current")}
+        WHERE GREATEST(current.claimed_until, current.next_attempt_at) > now()
+          ${wakeMatches()}
       `;
       wakeAfter(schedule?.wake_after_ms ?? null);
       // The busy probe runs per candidate (OFFSET 0 keeps the planner from turning it into a join, which
