@@ -140,10 +140,17 @@ const highlightMarkdownLine = (line: string): string => {
   const ref = /^(@[A-Za-z][\w-]*)$/.exec(escaped);
   if (ref) return `<span class="cd-md-ref">${ref[1]}</span>`;
 
-  const directive = /^(\s*:::)([A-Za-z][\w-]*)?(.*)$/.exec(escaped);
+  // Consume each prefix once before checking its remainder. Keeping them in
+  // separate matches prevents retrying shorter prefixes when the tail fails.
+  const directive = /^\s*:::/.exec(escaped);
   if (directive) {
-    const name = directive[2] ? `<span class="cd-md-directive">${directive[2]}</span>` : "";
-    return `${directive[1] ? `<span class="cd-md-syntax">${directive[1]}</span>` : ""}${name}${highlightMarkdownInline(directive[3] ?? "")}`;
+    const rest = escaped.slice(directive[0].length);
+    const name = /^[A-Za-z][\w-]*/.exec(rest)?.[0] ?? "";
+    const tail = /^(.*)$/.exec(rest.slice(name.length));
+    if (tail) {
+      const highlightedName = name ? `<span class="cd-md-directive">${name}</span>` : "";
+      return `<span class="cd-md-syntax">${directive[0]}</span>${highlightedName}${highlightMarkdownInline(tail[1] ?? "")}`;
+    }
   }
 
   const fence = /^(```)(.*)$/.exec(escaped);
@@ -155,13 +162,17 @@ const highlightMarkdownLine = (line: string): string => {
   const table = /^(\s*\|)(.*)(\|\s*)$/.exec(escaped);
   if (table) return `<span class="cd-md-syntax">${table[1]}</span>${table[2]}<span class="cd-md-syntax">${table[3]}</span>`;
 
-  const task = /^(\s*(?:[-*+]|\d+\.)\s+)(\[[ xX]\])(\s+.*)$/.exec(escaped);
-  if (task) {
-    return `<span class="cd-md-syntax">${task[1]}</span><span class="cd-md-checkbox">${task[2]}</span>${highlightMarkdownInline(task[3] ?? "")}`;
+  const list = /^\s*(?:[-*+]|\d+\.)\s+/.exec(escaped);
+  if (list) {
+    const rest = escaped.slice(list[0].length);
+    const task = /^(\[[ xX]\])(\s+)/.exec(rest);
+    const taskTail = task && /^(.*)$/.exec(rest.slice(task[0].length));
+    if (task && taskTail) {
+      return `<span class="cd-md-syntax">${list[0]}</span><span class="cd-md-checkbox">${task[1]}</span>${highlightMarkdownInline((task[2] ?? "") + (taskTail[1] ?? ""))}`;
+    }
+    const tail = /^(.*)$/.exec(rest);
+    if (tail) return `<span class="cd-md-syntax">${list[0]}</span>${highlightMarkdownInline(tail[1] ?? "")}`;
   }
-
-  const list = /^(\s*(?:[-*+]|\d+\.)\s+)(.*)$/.exec(escaped);
-  if (list) return `<span class="cd-md-syntax">${list[1]}</span>${highlightMarkdownInline(list[2] ?? "")}`;
 
   return highlightMarkdownInline(escaped);
 };
@@ -189,10 +200,10 @@ export const highlightCodeDisplayLines = (code: string, language: CodeDisplayLan
   if (language === "markdown" || language === "md") {
     let fencedLanguage: string | undefined;
     return lines.map((line) => {
-      const fence = /^(```)(\w+)?(.*)$/.exec(line);
-      if (fence) {
+      const fence = /^```(\w*)/.exec(line);
+      if (fence && /^.*$/.test(line.slice(fence[0].length))) {
         const highlightedFence = highlightMarkdownLine(line);
-        fencedLanguage = fencedLanguage ? undefined : fence[2];
+        fencedLanguage = fencedLanguage ? undefined : fence[1] || undefined;
         return highlightedFence;
       }
       return isCodeLanguage(fencedLanguage) ? highlightCode(line || " ") : highlightMarkdownLine(line || " ");
