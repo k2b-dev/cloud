@@ -70,7 +70,6 @@ export type AppInstanceRecord = {
   /** Missing on older instances means unknown, never env or successful bootstrap. */
   bootstrap?: PlatformBootstrapMetadata;
   /** Core can durably observe both accepted legacy identity paths. */
-  legacyEvidence?: 1;
   secrets?: SecretRotationMetadata;
 };
 

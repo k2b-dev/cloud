@@ -13,8 +13,6 @@ const owners: Record<string, readonly string[]> = {
   "packages/cloud/src/_internal/define-app.ts": [...handles],
   "packages/cloud/src/services/app-migration.ts": ["appInstanceRegistry"],
   "packages/cloud/src/services/secret-status.ts": ["appInstanceRegistry"],
-  "packages/cloud/src/services/app-migration-evidence.ts": ["appInstanceRegistry"],
-  "packages/cloud/src/services/identity/workload-runtime.ts": ["appInstanceRegistry"],
   "packages/cloud/bench/registry.ts": ["appRegistry", "capabilityRegistry"],
 };
 

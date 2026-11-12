@@ -12,7 +12,6 @@ import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 const root = mkdtempSync(join(tmpdir(), "accounts-automatic-rows-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: keysPage } = await import("./service-accounts/page");
 const { default: auditPage } = await import("./audit/page");
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -35,12 +34,10 @@ const user = {
 } satisfies User;
 const empty = { items: [], page: 1, perPage: 100, total: 0, hasNext: false };
 
-for (const surface of ["service-accounts", "audit"] as const) {
+{
+  const surface = "audit";
   test(`${surface} renders translated counts and reload-safe toggles while preserving filters`, async () => {
-    const list =
-      surface === "service-accounts"
-        ? spyOn(services.serviceAccountCredentials, "listOverview").mockResolvedValue({ ...empty, hiddenAutomaticCount: 32 })
-        : spyOn(services.audit, "list").mockResolvedValue({ ...empty, hiddenAutomaticCount: 32 });
+    const list = spyOn(services.audit, "list").mockResolvedValue({ ...empty, hiddenAutomaticCount: 32 });
     const spies = [
       list,
       stubRailSnapshot(),
@@ -54,11 +51,9 @@ for (const surface of ["service-accounts", "audit"] as const) {
       c.set("runtime", { apps: [] });
       await next();
     });
-    app.get(`/app/accounts/${surface}`, ...(surface === "service-accounts" ? keysPage : auditPage));
+    app.get(`/app/accounts/${surface}`, ...auditPage);
     const filters =
-      surface === "service-accounts"
-        ? "search=Runtime&kind=agent&status=revoked&extra=keep"
-        : "search=Runtime&actor=Ada&target=Team&action=service_account_credential.create&actionGroup=service_accounts&serviceAccountId=machine&outcome=allowed&provider=local&days=7&extra=keep";
+      "search=Runtime&actor=Ada&target=Team&action=service_account_credential.create&actionGroup=service_accounts&serviceAccountId=machine&outcome=allowed&provider=local&days=7&extra=keep";
     try {
       for (const locale of ["en", "de"]) {
         const render = async (query: string) => {
@@ -82,13 +77,7 @@ for (const surface of ["service-accounts", "audit"] as const) {
         };
         const hidden = await render(`${filters}&page=3`);
         expect(hidden.html).toContain(
-          surface === "service-accounts"
-            ? locale === "de"
-              ? "32 automatische App-Schlüssel sind ausgeblendet."
-              : "32 automatic app keys are hidden."
-            : locale === "de"
-              ? "32 automatische App-Einträge sind ausgeblendet."
-              : "32 automatic app entries are hidden.",
+          locale === "de" ? "32 automatische App-Einträge sind ausgeblendet." : "32 automatic app entries are hidden.",
         );
         expect(list.mock.calls.at(-1)?.[0]?.filter?.automatic).toBe("hide");
         expect(hidden.link?.text).toBe(locale === "de" ? "Anzeigen" : "Show");
@@ -99,13 +88,9 @@ for (const surface of ["service-accounts", "audit"] as const) {
         const shown = await render(`${shownParams}&page=4`);
         expect(list.mock.calls.at(-1)?.[0]?.filter?.automatic).toBe("include");
         expect(shown.html).toContain(
-          surface === "service-accounts"
-            ? locale === "de"
-              ? "Automatische App-Schlüssel sind sichtbar. Sie rotieren selbst und verschwinden mit der Umstellung auf App-Schlüssel."
-              : "Automatic app keys are visible. They rotate automatically and will disappear with the switch to app keys."
-            : locale === "de"
-              ? "Automatische App-Einträge sind sichtbar."
-              : "Automatic app entries are visible.",
+          locale === "de"
+            ? "Automatische App-Einträge aus früherer Zugangsdatenrotation sind sichtbar."
+            : "Automatic app entries from earlier runtime credential rotation are visible.",
         );
         expect(shown.html).toContain('name="automatic" value="1"');
         expect(shown.link?.text).toBe(locale === "de" ? "Ausblenden" : "Hide");
@@ -118,9 +103,7 @@ for (const surface of ["service-accounts", "audit"] as const) {
       const zero = await app.request(`/app/accounts/${surface}`);
       expect(await zero.text()).not.toContain('<a href="/app/accounts/' + surface + '?automatic=1"');
       const zeroShown = await app.request(`/app/accounts/${surface}?automatic=1`, { headers: { "Accept-Language": "en" } });
-      expect(await zeroShown.text()).toContain(
-        surface === "service-accounts" ? "Automatic app keys are visible." : "Automatic app entries are visible.",
-      );
+      expect(await zeroShown.text()).toContain("Automatic app entries from earlier runtime credential rotation are visible.");
     } finally {
       for (const spy of spies) spy.mockRestore();
     }

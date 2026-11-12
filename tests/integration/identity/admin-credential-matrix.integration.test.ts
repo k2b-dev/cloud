@@ -19,7 +19,6 @@ import {
 } from "../../../packages/cloud/src/services/identity/invocation-token";
 import { listIdentityJwks } from "../../../packages/cloud/src/services/identity/key-ring";
 import { getIdentityRuntimeConfig } from "../../../packages/cloud/src/services/identity/runtime-config";
-import { authenticateWorkloadCredential } from "../../../packages/cloud/src/services/identity/workload-auth";
 import { verifyAccessToken } from "../../../packages/cloud/src/services/oauth-tokens";
 import { toPgTextArray, toPgUuidArray } from "../../../packages/cloud/src/services/postgres";
 import { serviceAccountCredentials } from "../../../packages/cloud/src/services/service-account-credentials";
@@ -272,21 +271,18 @@ suite("Admin credential matrix", () => {
     });
     if (!standalone.ok) throw new Error(standalone.error.message);
     credentials.set("standalone service-account API key", bearer(standalone.data.token));
-    const workloadHeaders = await webSession();
-    workloadHeaders.set("content-type", "application/json");
-    workloadHeaders.set("x-forwarded-for", uniqueCallerAddress());
-    const workload = await identityRoutes.request(`/workloads/${prefix}/credentials`, {
-      method: "POST",
-      headers: workloadHeaders,
-      body: JSON.stringify({ name: `${prefix}-workload`, scopes: ["identity:invoke"] }),
-    });
-    expect(workload.status).toBe(201);
-    const workloadBody: unknown = await workload.json();
-    if (!workloadBody || typeof workloadBody !== "object" || !("token" in workloadBody) || typeof workloadBody.token !== "string") {
-      throw new Error("Workload issuer did not return a token");
-    }
-    expect(await authenticateWorkloadCredential({ token: workloadBody.token, appId: prefix, scope: "identity:invoke" })).not.toBeNull();
-    credentials.set("app workload key", bearer(workloadBody.token));
+    // A persisted former app token is still refused at every ordinary admin boundary.
+    const workloadPrefix = "0123456789abcdef01234567";
+    const workloadSecret = "ab".repeat(32);
+    const workloadHash = `sha256:${createHash("sha256").update(workloadSecret).digest("hex")}`;
+    const [workloadAccount] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id, created_by)
+      VALUES (${`${prefix}-workload`}, 'resource_bound', ${prefix}, 'cloud.app', ${prefix}, ${adminId}::uuid) RETURNING id`;
+    if (!workloadAccount) throw new Error("Missing former app account");
+    await sql`INSERT INTO auth.service_account_credentials (service_account_id, name, kind, token_prefix, secret_hash, scopes)
+      VALUES (${workloadAccount.id}::uuid, 'Former app token', 'api_token', ${workloadPrefix}, ${workloadHash}, ARRAY['identity:invoke']::text[])`;
+    credentials.set("app workload key", bearer(`cld_${workloadPrefix}_${workloadSecret}`));
     // The platform's own verifier accepts each invocation fixture, so a 401 below comes from the admin route.
     const invocationKey = createLocalJWKSet(await listIdentityJwks("invocation"));
     const invocation = async (label: string, authority: InvocationAuthority) => {

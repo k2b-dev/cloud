@@ -8,7 +8,6 @@ import { type AuthContext, auth, jsonResponse, respond, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
 import { appKeys } from "../services/app-keys";
 import { readAppMigrationStatus } from "../services/app-migration";
-import { beginAppMigrationObservation } from "../services/app-migration-evidence";
 
 const appId = z.string().refine((value) => {
   try {
@@ -72,7 +71,6 @@ export const createAdminAppKeyRoutes = (
   authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin"),
   service: typeof appKeys = appKeys,
   migration: typeof readAppMigrationStatus = readAppMigrationStatus,
-  beginObservation = beginAppMigrationObservation,
 ) =>
   new Hono<AuthContext>()
     .use("*", noTransform())
@@ -86,7 +84,7 @@ export const createAdminAppKeyRoutes = (
       "/status",
       describeRoute({
         tags: ["App keys"],
-        summary: "Check bootstrap, signed probes and clean legacy-use observation",
+        summary: "Check every replica's bootstrap and fresh signed probes",
         responses: { 200: jsonResponse(AppMigrationStatusSchema, "Migration evidence and attention reasons") },
       }),
       v(
@@ -95,26 +93,14 @@ export const createAdminAppKeyRoutes = (
           .object({
             expect: z.string().optional(),
             allowEnv: z.string().optional(),
-            windowSeconds: z.coerce
-              .number()
-              .int()
-              .positive()
-              .max(Number.MAX_SAFE_INTEGER / 1000)
-              .optional(),
           })
           .transform((q) => ({
-            ...(q.windowSeconds !== undefined ? { windowSeconds: q.windowSeconds } : {}),
             expect: (q.expect ?? "").split(/[\s,]+/).filter(Boolean),
             allowEnv: (q.allowEnv ?? "").split(/[\s,]+/).filter(Boolean),
           }))
-          .pipe(z.object({ expect: z.array(appId), allowEnv: z.array(appId), windowSeconds: z.number().optional() })),
+          .pipe(z.object({ expect: z.array(appId), allowEnv: z.array(appId) })),
       ),
       (c) => respond(c, () => migration({ actor: c.get("user"), ...c.req.valid("query"), signal: c.req.raw.signal })),
-    )
-    .post(
-      "/observation",
-      describeRoute({ tags: ["App keys"], summary: "Begin a representative legacy-use observation after all Core replicas are upgraded" }),
-      (c) => respond(c, () => beginObservation({ actor: c.get("user") })),
     )
     .get(
       "/keys",

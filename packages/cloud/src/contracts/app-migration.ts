@@ -55,13 +55,6 @@ const instance = z.object({
   allowed: z.boolean(),
   secrets: SecretRotationMetadataSchema.nullable().optional(),
 });
-export const AppMigrationObservationSchema = z.object({
-  startedAt: z.iso.datetime().nullable(),
-  lastLegacyUseAt: z.iso.datetime().nullable(),
-  observedAt: z.iso.datetime(),
-  windowSeconds: z.number().int().positive().nullable(),
-  complete: z.boolean(),
-});
 export const AppMigrationProbeSchema = z.object({
   keyId: z.uuid(),
   broker: z.boolean(),
@@ -70,7 +63,6 @@ export const AppMigrationProbeSchema = z.object({
 });
 export const AppMigrationStatusSchema = z.object({
   needsAttention: z.boolean(),
-  observation: AppMigrationObservationSchema,
   registryIssues: z.array(z.object({ key: z.string(), reason: z.string() })),
   apps: z.array(
     z.object({

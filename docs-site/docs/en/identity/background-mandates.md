@@ -80,7 +80,7 @@ Pausing and revoking stay allowed. `POST /api/me/mandates`, Assistant routines
 Built-in applications that share Postgres create the mandate and owning
 workload in one transaction. A separately deployed application that cannot
 share that transaction creates a pending mandate, persists the workload, and
-then confirms it with a signed app request (or legacy workload credential). A pending mandate
+then confirms it with a signed app request. A pending mandate
 cannot issue invocations. Revoke it when persistence fails; Core also revokes
 unconfirmed mandates after the bounded confirmation window.
 
@@ -98,7 +98,7 @@ sequence. Core always derives the user subject from that session; the request
 contains only the bounded owner app, workload coordinates, policy, and optional
 expiry. Persist the returned ID and revision first, then call
 `POST /api/_internal/identity/v1/mandates/<mandateId>/confirm` with the same
-revision and a signed app request (or legacy workload credential). Ordinary `mandates.create(...)`
+revision and a signed app request. Ordinary `mandates.create(...)`
 remains the atomic same-transaction path and is confirmed immediately.
 Before confirming, the owning app must verify that the persisted workload
 belongs to the mandate's subject; knowing a workload ID is not proof of ownership.
@@ -209,72 +209,14 @@ the platform signs each final request, including every safe retry. Core resolves
 the key to `cloud.app/<appId>` with `identity:invoke`, checks revocation directly,
 and applies the current mandate and grant checks.
 
-### Legacy credentials during this release
+The app key is required for every signed transmission. A keyless data process
+fails before sending with an error naming `CLOUD_APP_KEY_FILE`. Set
+`CLOUD_CORE_INTERNAL_ORIGIN` to Core's private listener; mandate calls never
+fall back to the public gateway. Revoking the key or disabling its app account
+stops subsequent signed calls. See
+[runtime configuration](/en/docs/operations/runtime-configuration).
 
-Apps without an app key retain the deprecated workload-credential path.
-Core automatically delivers an app-bound `identity:invoke` credential to each
-registered app instance. Use `getAppWorkloadCredential()` from
-`@k2b/cloud/services` at call time so rotation takes effect. It returns
-`undefined` when no valid credential is available; dependent work must fail
-closed with a visible reason. A transient refresh failure keeps the current
-token available until it expires. Never cache the returned token or pass it to a browser
-or target app.
-
-Set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin. Workload
-broker routes are not reachable through the public gateway, and the helper
-does not fall back to the public origin for mandate calls. For host-run apps,
-deprecated `CLOUD_APP_CREDENTIAL` is an optional explicit override; it wins over automatic
-delivery and remains operator-managed. See [runtime configuration](/en/docs/operations/runtime-configuration)
-for rotation, revocation, health diagnostics, and the shared-infrastructure trust limit.
-
-For an explicit host-run override, an administrator opens **Administration → Apps** (`/admin/apps`), opens the owning app,
-then **Keys**, unfolds **Tokens for host operation**, chooses **Create token**, and enters a name and
-optional expiration time in the dialog. The old address `/admin/app-credentials` opens the Apps page with a hint.
-The token is shown once. Save it in the deployment's secret store and inject it
-only into that app. The table lists credentials across all apps and supports revocation.
-
-The CLI exposes the same operations. For example, using an administrator profile:
-
-```sh
-cld admin app-credentials apps
-cld admin app-credentials list mail
-(umask 077; cld admin app-credentials create mail --name production --yes > mail-credential.txt)
-cld admin app-credentials revoke mail <credential-id> --yes
-```
-
-The create command prints the token once (structured output includes token and
-metadata). Transfer it into the deployment secret store and remove the temporary
-file. Use `--expires-at` with a future ISO 8601 timestamp to set the expiration time.
-Create/list/revoke also work for an explicit app ID before it registers; the UI
-selector and `apps` command show registered applications.
-
-Core's administrator API provides the same creation operation:
-
-```http
-POST /api/admin/identity/workloads/inventory/credentials
-Content-Type: application/json
-
-{"name":"Inventory background work","scopes":["identity:invoke"]}
-```
-
-The raw token appears only in this credential-creation response. List bounded
-credential metadata across apps with `GET /api/admin/identity/workloads/credentials`,
-or for one app with `GET /api/admin/identity/workloads/inventory/credentials`, and
-revoke one exact credential with
-`DELETE /api/admin/identity/workloads/inventory/credentials/<credentialId>`.
-Revoking an automatic runtime credential disables the app's workload access
-across all instances and restarts. Restore it in the app's **Keys** column with
-**Turn on again**, with `cld admin app-credentials enable <app> --yes`,
-or with `PATCH /api/admin/identity/workloads/<app>` and `{"status":"active"}`.
-The shared capability client refreshes a broker-rejected workload credential
-and retries once; persistent credential rejection returns HTTP 503 so workers
-can retry later. Subject and target authorization failures remain permanent.
-
-For a host-run override, rotate by creating a new credential, deploying it to the owning app, verifying
-broker calls, and then revoking the old credential. Do not reuse the OAuth
-broker secret; it is shared only by Core and OAuth for OAuth issuance.
-
-The same app-key proof or legacy app-bound credential owns the remote mandate lifecycle under
+The same app-key proof owns the remote mandate lifecycle under
 `/api/_internal/identity/v1/mandates/<mandateId>`. It may read its mandate,
 confirm a pending workload, narrow policy, pause, or revoke. It cannot create
 user authority, broaden policy, or resume a paused mandate. Core derives the
@@ -285,7 +227,7 @@ For remote lifecycle requests, use `sendAppRequest` from
 `@k2b/cloud/services/identity` with the final `Request` and `{ appId }`.
 Call it again for every safe retry. It signs the exact method, path including
 query, and body with a fresh proof and disables redirects. Without an app key,
-it uses the legacy workload credential. It sets `X-Cloud-App-Id` in both modes
+it fails before transport, naming `CLOUD_APP_KEY_FILE`. It sets `X-Cloud-App-Id`
 and rejects a conflicting caller-supplied app identity before sending.
 It never retries an uncertain transmission on its own.
 
@@ -325,14 +267,13 @@ const result = await invokeCapability(
 );
 ```
 
-The helper signs with the app key, or uses the legacy workload credential when
-no key is configured. Only Core receives it. Core checks the app binding and
+The helper signs with the required app key. Only Core receives the proof. Core checks the app binding and
 `identity:invoke` scope, reloads the mandate and subject,
 matches the target and operation, signs one target-specific invocation, and
 dispatches through the live capability schema. The target then performs its
 ordinary effect-time permission checks.
 
-An app workload credential cannot use the ordinary interactive capability
+An app proof cannot use the ordinary interactive capability
 route to bypass the mandate.
 
 ## Assistant routine runtime grants

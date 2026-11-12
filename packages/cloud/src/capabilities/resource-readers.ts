@@ -1,6 +1,5 @@
 import { getProcessApplicationId } from "../_internal/process-identity";
 import { getCapability } from "../_internal/registry";
-import { getAppWorkloadCredential } from "../_internal/workload-credential";
 import { env } from "../config/env";
 import {
   CloudResourceRefSchema,
@@ -31,9 +30,7 @@ export const readResourcePrincipals = async (options: {
   requestId?: string;
 }): Promise<ResourceReadersResult> => {
   const ref = CloudResourceRefSchema.parse(options.ref);
-  // Core issues the credential automatically; an explicit CLOUD_APP_CREDENTIAL override wins.
-  const credential = getAppWorkloadCredential();
-  if (!env.CLOUD_APP_KEY && !credential) return { state: "not_configured", reason: "no_credential" };
+  if (!env.CLOUD_APP_KEY) return { state: "not_configured", reason: "no_credential" };
   if (!env.CLOUD_CORE_INTERNAL_ORIGIN) return { state: "not_configured", reason: "no_internal_origin" };
   const callerAppId = getProcessApplicationId();
   if (!callerAppId) return { state: "not_configured", reason: "no_app_identity" };
@@ -54,7 +51,6 @@ export const readResourcePrincipals = async (options: {
     ResourceReadableDataSchema,
     {
       workload: { appId: callerAppId },
-      ...(credential ? { authorization: `Bearer ${credential}` } : {}),
       signal: options.signal,
       locale: options.locale,
       requestId: options.requestId,

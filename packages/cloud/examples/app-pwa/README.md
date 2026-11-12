@@ -29,19 +29,18 @@ bun add /absolute/path/to/k2b-cloud-package.tgz
 bun run typecheck
 ```
 
-The operator must connect this service to the Cloud installation's Postgres,
-Valkey, NATS JetStream and Core identity services. Core must have completed its
-normal migrations and setup first. Use the installation's existing
-`DATABASE_URL`, `REDIS_URL`, `NATS_SERVERS`, `SYNC_NAMESPACE`, `SYNC_REPLICAS`
-and `APP_SECRET`. Supply secrets through the runtime environment. A separate
-browser profile for the iPad avoids carrying employee sessions onto it.
+The operator must enroll the `visit-demo` app key and provide it through
+`CLOUD_APP_KEY_FILE`, together with `CLOUD_CORE_INTERNAL_ORIGIN` naming Core's
+direct private listener origin. Core must have completed its normal migrations
+and setup first. Core supplies the installation's connections at startup;
+explicit connection environment values still win independently when needed.
+A separate browser profile for the iPad avoids carrying employee sessions onto it.
 
-Set Cloud's public URL (`app.url`, bootstrapped from `APP_URL`) to its exact
-HTTPS address. The example resolves it with `publicCloudOrigin` and passes it
-to the App-PWA service and the browser. HTTP and guessed request origins are
-rejected. Set `CLOUD_IDENTITY_JWKS_ORIGIN` only if the deployment already uses a
-private Core verification endpoint; no employee credential or cross-app
-workload credential belongs in this example.
+Set Cloud's public URL (`app.url`, bootstrapped from `APP_URL` in Core) to its
+exact HTTPS address. The example resolves it with `publicCloudOrigin` and
+passes it to the App-PWA service and browser. HTTP and guessed request origins
+are rejected. The app key identifies the service; employee access still uses
+the employee's own session and permissions.
 
 In `src/config.ts`, set `baseUrl` to the service address reachable from the
 Cloud gateway. The example uses `http://visit-demo:3000` on the private network.

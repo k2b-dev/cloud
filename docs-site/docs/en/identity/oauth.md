@@ -527,10 +527,9 @@ until expiry. Current-client validation and domain authorization still apply
 on each request.
 
 Core signs OAuth tokens. The OAuth application owns the public protocol,
-clients, consent, authorization codes, refresh grants and discovery. Core and
-OAuth require the configured broker secret; see
+clients, consent, authorization codes, refresh grants and discovery. OAuth authenticates with its app key and explicit `oauth:issue` grant; see
 [Runtime configuration](/en/docs/operations/runtime-configuration) for setup.
-If the signer or broker secret is unavailable, OAuth cannot start or issue tokens.
+If the signer or app key is unavailable, OAuth cannot start or issue tokens.
 
 A rejected grant returns `invalid_grant`. An uncertain issuance outcome returns
 `server_error` and is not retried automatically. A refresh grant is released

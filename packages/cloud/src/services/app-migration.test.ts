@@ -3,7 +3,7 @@ import { evaluateAppMigration, type MigrationInstance, readAppMigrationStatus } 
 
 const keyId = "22222222-2222-4222-8222-222222222222";
 const bootstrap = (mode: "core" | "env") => ({
-  mode,
+  mode: "core",
   keyId,
   keyFormat: "cloud-app-key-v1",
   protocol: 1,
@@ -24,16 +24,9 @@ const evaluate = (instances: MigrationInstance[] = [], other: Partial<Parameters
   evaluateAppMigration({
     activeKeys: [{ appId: "mail", keyId }],
     registeredApps: ["mail"],
-    instances: [{ appId: "core", instanceId: "core-one", hostname: "host", legacyEvidence: 1 }, ...instances],
+    instances,
     expect: [],
     allowEnv: [],
-    observation: {
-      startedAt: "2030-01-01T00:00:00.000Z",
-      lastLegacyUseAt: null,
-      observedAt: "2030-01-02T00:00:00.000Z",
-      windowSeconds: 86400,
-      complete: true,
-    },
     probes: [{ appId: "mail", keyId, broker: true, oauth: null }],
     ...other,
   });
@@ -60,6 +53,7 @@ test("unknown or malformed metadata never passes, even with an env exception", (
     undefined,
     {},
     { ...bootstrap("core"), keyId: undefined },
+    { ...bootstrap("core"), mode: "env" },
     { ...bootstrap("core"), protocol: 2 },
     { ...bootstrap("env"), sources: {} },
   ]) {
@@ -110,12 +104,11 @@ test("a replica must report a current key belonging to its app", () => {
   ).toBe(false);
 });
 
-test("successful bootstrap alone never passes without current broker and OAuth probes and a complete clean observation", () => {
+test("successful bootstrap alone never passes without current broker and OAuth probes", () => {
   for (const other of [
     { probes: [] },
     { probes: [{ appId: "mail", keyId, broker: false, oauth: null }] },
     { probes: [{ appId: "mail", keyId, broker: true, oauth: false }] },
-    { observation: undefined },
   ])
     expect(evaluate([instance("mail", "core")], other).needsAttention).toBe(true);
   expect(evaluate([instance("mail", "core")], { probes: [{ appId: "mail", keyId, broker: true, oauth: true }] }).needsAttention).toBe(
@@ -130,11 +123,6 @@ test("lastRejectedStart remains an attention reason until a successful bootstrap
   expect(result.apps[0]?.attentionReasons).toContain("last_rejected_start");
 });
 
-test("every live Core replica must advertise legacy evidence, even after a clean window", () => {
-  const result = evaluate([instance("mail", "core"), { appId: "core", instanceId: "old", hostname: "host" }]);
-  expect(result.needsAttention).toBe(true);
-  expect(result.registryIssues).toContainEqual({ key: "instances/core/old", reason: "core_legacy_evidence_missing" });
-});
 test("probe errors retain the affected key in attention reasons", () => {
   for (const reason of ["probe_timeout", "probe_failed"] as const) {
     const result = evaluate([instance("mail", "core")], { probes: [{ appId: "mail", keyId, broker: false, oauth: null, reason }] });

@@ -60,7 +60,7 @@ suite("first-login legal acceptance (isolated Postgres and Valkey)", () => {
       .get("/protected", auth.requireRole("authenticated"), (c) => c.json({ id: c.get("user").id }))
       .get("/pending", async (c) => c.json({ pending: !!(await legalConsent.pending(c)) }));
     server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: router.fetch });
-    process.env.CLOUD_IDENTITY_JWKS_ORIGIN = `http://127.0.0.1:${server.port}`;
+    process.env.CLOUD_CORE_INTERNAL_ORIGIN = `http://127.0.0.1:${server.port}`;
   });
   afterAll(async () => {
     await server?.stop(true);

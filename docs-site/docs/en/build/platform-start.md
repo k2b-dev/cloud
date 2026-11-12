@@ -130,7 +130,7 @@ an exemption.
 ## Start a custom data process
 
 Standard application entrypoints need no additional startup call. A separate
-server or data worker initializes before loading its domain module:
+server initializes before loading its domain module:
 
 ```ts
 import { startPlatform } from "@k2b/cloud/start";
@@ -142,10 +142,15 @@ const application = await startPlatform({
 export default application.default;
 ```
 
-`startPlatform<T>({ appId, load, source? }): Promise<T>` initializes connections
-and native clients, then returns `load()`'s module. For a worker with no module
-loader, `initializePlatform({ appId, source? }): Promise<void>` uses the same
-initializer. Each process initializes once; a second call throws
+`startPlatform<T>({ appId, load }): Promise<T>` initializes connections
+and native clients, then returns `load()`'s module. Serving applications require
+an enrolled app key, including the generated entry and development preload.
+For a non-serving script, migration or data command with explicit connection
+environment values, use `initializePlatform({ appId, source: "env" })` before
+importing the data module. This can run without a key when it makes no signed
+calls. `sendAppRequest` always requires a key and names `CLOUD_APP_KEY_FILE`
+when it is missing. `APP_DIR` changes paths, not the server identity requirement.
+Desktop's separate SQLite runtime keeps its own single-process startup. Each process initializes once; a second call throws
 `Platform has already started`. Core and Gateway always use `source: "env"`, selected by their application ID,
 and refuse app keys. Explicit `source: "env"` also refuses an app key.
 Repository test subprocesses can inherit the integration initializer through
@@ -173,8 +178,9 @@ Treat credentials as secrets; never return the snapshot in diagnostics.
 With `CLOUD_APP_KEY` or `CLOUD_APP_KEY_FILE`, startup requests connections from
 Core at `CLOUD_CORE_INTERNAL_ORIGIN` before importing application code. Explicit
 valid environment values, aliases, and supported mounted files take precedence
-per value; Core values beat environment defaults. Without a key, startup uses
-environment values.
+per value; Core values beat environment defaults. Keyless non-serving processes
+use environment values only through `initializePlatform({ appId, source: "env" })`.
+Core and Gateway always use environment values.
 Empty environment values are unset; explicit `false` remains false. Database
 and Valkey URLs must identify their services; Cloud supplies no localhost
 fallback. Missing NATS configuration and `APP_SECRET` still fail at the
@@ -185,9 +191,9 @@ restart. Storage settings continue to take effect without a restart.
 An invalid key or permanent protocol error stops startup without fallback.
 Network, TLS/CA, HTTP 429 and HTTP 503 errors retry within a five-minute budget
 with ten-second attempt deadlines. There is no HTTP listener while waiting.
-Keep existing infrastructure environment values until the platform-client
-import migration is complete; **key-only production operation is not yet
-supported** because remaining Bun-global clients still read the environment.
+**Key-only production operation is supported.** Third-party apps that still use
+Bun-global clients must retain their explicit connection environment values;
+those values continue to win per value.
 See [Runtime configuration](/en/docs/operations/runtime-configuration).
 
 Each registry instance has its own optional `bootstrap` metadata field:

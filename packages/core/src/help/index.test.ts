@@ -27,7 +27,7 @@ describe("coreHelp", () => {
     expect(coreHelp.getMarkdown("core-security", "de-CH")).toContain("API Keys wie Passwörter");
     expect(coreHelp.getMarkdown("core-notifications", "de-CH")).toContain("Zustellverlauf prüfen");
     expect(coreHelp.getMarkdown("core-admin", "de-CH")).toContain("Die Core-Administrationsseiten konfigurieren Plattformdienste");
-    expect(coreHelp.getMarkdown("core-admin", "de-CH")).toContain("**Tokens für Host-Betrieb**");
+    expect(coreHelp.getMarkdown("core-admin", "de-CH")).toContain("## App-Schlüssel rotieren");
     expect(coreHelp.getMarkdown("core-admin", "de-CH")).not.toContain("App-Zugang");
     expect(coreHelp.getMarkdown("core-start", "fr")).toBe(coreHelp.getMarkdown("core-start"));
   });

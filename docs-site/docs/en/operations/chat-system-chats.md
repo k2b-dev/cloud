@@ -313,7 +313,7 @@ may have the same title. Chat's member reconciliation excludes system chats,
 whose authority belongs to the owning application.
 
 The OpenAPI document at `/api/chat/openapi.json` describes request and response
-schemas. No additional environment variable or app workload credential is
+schemas. No additional environment variable or separate workload token is
 required for this request-driven slice.
 
 Thread discovery hints invalidate both the sidebar and the open directory.
