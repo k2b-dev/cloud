@@ -63,6 +63,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS scopes TEXT[]`.simple();
   await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS lifetime_seconds INTEGER`.simple();
   await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS context JSONB`.simple();
+  await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS oauth_issuer_app_id TEXT,
+    ADD COLUMN IF NOT EXISTS oauth_client_name TEXT,
+    ADD COLUMN IF NOT EXISTS oauth_grant_expires_at TIMESTAMPTZ`.simple();
   await db`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='auth.app_logins'::regclass AND conname='app_logins_context_bytes') THEN
       ALTER TABLE auth.app_logins ADD CONSTRAINT app_logins_context_bytes CHECK (context IS NULL OR octet_length(context::text) <= 512);
@@ -76,7 +79,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
         OR (kind='browser' AND device_authorization_id IS NULL AND client_id IS NULL AND scopes IS NULL AND lifetime_seconds IS NULL));
     END IF;
   END $$`.simple();
-  await db`CREATE UNIQUE INDEX IF NOT EXISTS app_logins_device_authorization ON auth.app_logins(device_authorization_id) WHERE device_authorization_id IS NOT NULL`.simple();
+  await db`DROP INDEX IF EXISTS auth.app_logins_device_authorization`.simple();
+  await db`CREATE UNIQUE INDEX IF NOT EXISTS app_logins_issuer_device_authorization
+    ON auth.app_logins(oauth_issuer_app_id,device_authorization_id) WHERE device_authorization_id IS NOT NULL`.simple();
   await db`CREATE INDEX IF NOT EXISTS app_logins_pending ON auth.app_logins(issuer, user_id, expires_at)`.simple();
   await db`CREATE INDEX IF NOT EXISTS app_logins_expiry ON auth.app_logins(expires_at)`.simple();
   await db`CREATE TABLE IF NOT EXISTS auth.app_device_proofs (

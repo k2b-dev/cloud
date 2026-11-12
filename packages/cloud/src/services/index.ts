@@ -316,3 +316,4 @@ export type { PreviewSource, PreviewReader, PreviewReadResult, PreviewVariant } 
 export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";
 
 export { type PurposeSecretRoots, purposeSecretCipher } from "./purpose-secrets";
+export { oauthClients, type OAuthClientRegistration } from "./oauth-clients";
