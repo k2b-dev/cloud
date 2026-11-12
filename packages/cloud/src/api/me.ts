@@ -128,6 +128,36 @@ const lastingAccessMessage = (c: Context<AuthContext>, code: "REAUTHENTICATE" | 
   return code === "REAUTHENTICATE" ? t.reauthenticate : t.forbidden;
 };
 
+/**
+ * SSH keys sign in to the directory's hosts. Like a new passkey, any change to them needs a confirmed browser
+ * sign-in: the list replaces the directory's keys, so even a shorter list can bring back a key removed elsewhere.
+ * The answer is null when allowed.
+ */
+const sshKeyChangeDenied = async (c: Context<AuthContext>): Promise<Response | null> => {
+  if (auth.isAppSession(c)) return webOnly(c);
+  const signIn = await auth.browserSignIn(c);
+  if (!signIn)
+    return c.json({ code: "BROWSER_SIGN_IN_REQUIRED", message: lastingAccessApiMessages.resolve([getLocale(c)]).t.sshKeysInBrowser }, 403);
+  try {
+    await requireConfirmedBrowserSignIn(sql, signIn, (code) => {
+      throw new ConfirmedBrowserSignInError(code);
+    });
+  } catch (error) {
+    if (error instanceof ConfirmedBrowserSignInError)
+      return c.json({ code: error.code, message: lastingAccessMessage(c, error.code) }, 403);
+    throw error;
+  }
+  return null;
+};
+
+/** Extending the account keeps its credentials alive, so a personal API key cannot do it on its own. */
+const requireUserActor = createMiddleware<AuthContext>(async (c, next) => {
+  if (c.get("actor")?.kind !== "user") {
+    return c.json({ code: "FORBIDDEN", message: "Credentials cannot extend the account. Sign in to extend it." }, 403);
+  }
+  return next();
+});
+
 /** The creation services fail with these codes only when the browser sign-in does not confirm the write. */
 const localizeLastingAccessResult = <T>(c: Context<AuthContext>, result: Result<T>): Result<T> =>
   !result.ok && (result.error.code === "REAUTHENTICATE" || result.error.code === "FORBIDDEN")
@@ -502,13 +532,17 @@ const app = new Hono<AuthContext>()
         200: jsonResponse(MessageResponseSchema, "Profile updated"),
         400: jsonResponse(ErrorResponseSchema, "Failed to update profile"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "SSH keys cannot be changed in the mobile app"),
+        403: jsonResponse(
+          ErrorResponseSchema,
+          "SSH key changes need a confirmed browser sign-in (BROWSER_SIGN_IN_REQUIRED or REAUTHENTICATE), not the mobile app",
+        ),
       },
     }),
     v("json", UpdateProfileSchema),
     async (c) => {
-      // SSH keys sign in to the directory's hosts and would outlive removing the phone.
-      if (c.req.valid("json").ipa?.sshPublicKeys !== undefined && auth.isAppSession(c)) return webOnly(c);
+      const keys = c.req.valid("json").ipa?.sshPublicKeys;
+      const denied = keys === undefined ? null : await sshKeyChangeDenied(c);
+      if (denied) return denied;
       return respond(c, async () => {
         const user = c.get("user");
         const data = c.req.valid("json");
@@ -985,6 +1019,7 @@ const app = new Hono<AuthContext>()
 
   .post(
     "/account-extension",
+    requireUserActor,
     describeRoute({
       tags: ["Me"],
       summary: "Extend current user account",
@@ -994,6 +1029,7 @@ const app = new Hono<AuthContext>()
         200: jsonResponse(ExtendAccountResponseSchema, "Account extension result"),
         400: jsonResponse(ErrorResponseSchema, "Unable to extend account"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Not permitted for API keys or other credentials"),
       },
     }),
     async (c) =>

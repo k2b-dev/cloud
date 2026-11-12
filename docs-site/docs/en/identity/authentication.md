@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-11-03
+updated: 2026-11-11
 ---
 
 # Request identity
@@ -351,6 +351,14 @@ sessions cannot create these credentials. The account API answers `403` with
 An older or no longer valid browser sign-in returns `403` with
 `REAUTHENTICATE`. Sign in again with the same account, then repeat the action.
 These error codes stay the same in every language.
+
+The same rule applies to the SSH public keys of a FreeIPA account, because
+they sign in to the directory's hosts: every `PATCH /api/me` that contains
+`ipa.sshPublicKeys` needs it, also one that only removes keys, because the list
+replaces the keys in FreeIPA. Change SSH keys under
+**Profile → Contact and SSH details** in a browser; other profile fields keep
+working with any credential. A personal API key cannot extend the account
+through `POST /api/me/account-extension` and gets `403` with `FORBIDDEN`.
 
 New OAuth refresh-token families require the same recent browser confirmation;
 see [OAuth clients and flows](/en/docs/identity/oauth). Rotating an existing

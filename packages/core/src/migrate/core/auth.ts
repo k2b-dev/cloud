@@ -304,6 +304,8 @@ export const migrate = async (): Promise<void> => {
     ON auth.user_ipa_data(uid_number)
     WHERE uid_number IS NOT NULL
   `.simple();
+  // When the sync first saw FreeIPA's own account lock (nsaccountlock); NULL while the account is not locked.
+  await sql`ALTER TABLE auth.user_ipa_data ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ`.simple();
   console.log("  ✓ auth.user_ipa_data table");
 
   // Committed before remote mutation, retained if the local promotion rolls back.

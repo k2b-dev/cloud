@@ -5,7 +5,7 @@ import { env } from "@k2b/cloud/config";
 import {
   type AppApprovalConfig,
   AppApprovalError,
-  isAccountCategoryAllowed,
+  isAccountAllowed,
   readAppApprovalConfig,
   serviceAccountMayHoldCredentials,
   toPgTextArray,
@@ -321,7 +321,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
     row.user_id !== null &&
     (!row.provider ||
       (row.profile !== "guest" && row.profile !== "user") ||
-      !(await isAccountCategoryAllowed({ provider: row.provider, profile: row.profile }, db)))
+      !(await isAccountAllowed({ id: row.user_id, provider: row.provider, profile: row.profile }, db)))
   )
     return null;
   if (row.user_id !== null && (row.uid === null || row.profile === null)) return null;

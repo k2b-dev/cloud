@@ -2,6 +2,7 @@ import type { SQLQuery } from "bun";
 import type { User } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { decodeAccountCategoryEnabled } from "../account-category-policy";
+import { accountLockedSql } from "../account-lock";
 import { buildRoles } from "../accounts/authz";
 import { resolveProviderProfile } from "../accounts/base-user";
 import { managedGroupIdsSubquery } from "../accounts/group-sql";
@@ -181,6 +182,7 @@ const loadSessionRow = async (
       AND u.auth_epoch = ${params.authEpoch}
       AND sf.revoked_at IS NULL
       AND sf.expires_at > now()
+      AND NOT ${accountLockedSql(sql`u.id`)}
       AND (${params.allowPendingLegalConsent === true} OR NOT sf.legal_pending OR EXISTS (
         SELECT 1 FROM auth.legal_acceptances la WHERE la.user_id = u.id
       ))

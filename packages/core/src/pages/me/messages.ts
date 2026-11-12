@@ -386,6 +386,8 @@ export const accountMessages = i18n.define({
       lastNamePlaceholder: "Last name...",
       displayNamePlaceholder: "Display name...",
       failedToUpdateDetails: "Failed to update details.",
+      sshKeyReauthenticate: "Changing SSH keys needs a sign-in from the last 10 minutes. Sign in again, then save the keys.",
+      sshKeysInBrowser: "Change SSH keys in Cloud in the browser.",
       invalidSshKey: "Invalid SSH public key format. Paste the content of your .pub file.",
       duplicateSshKey: "This key is already added.",
       detailVisibility: ({ holders }: { holders: string }) => `Phone, address, and SSH key fingerprints are visible to ${holders}.`,
@@ -844,6 +846,9 @@ export const accountMessages = i18n.define({
       lastNamePlaceholder: "Nachname...",
       displayNamePlaceholder: "Anzeigename...",
       failedToUpdateDetails: "Die Kontaktdaten konnten nicht aktualisiert werden.",
+      sshKeyReauthenticate:
+        "Zum Ändern von SSH-Schlüsseln brauchst du eine Anmeldung aus den letzten 10 Minuten. Melde dich erneut an und speichere die Schlüssel dann.",
+      sshKeysInBrowser: "SSH-Schlüssel änderst du in Cloud im Browser.",
       invalidSshKey: "Der öffentliche SSH-Schlüssel ist ungültig. Füge den Inhalt deiner .pub-Datei ein.",
       duplicateSshKey: "Dieser Schlüssel wurde bereits hinzugefügt.",
       detailVisibility: ({ holders }) => `Telefonnummer, Adresse und SSH-Schlüsselfingerabdrücke sind für ${holders} sichtbar.`,

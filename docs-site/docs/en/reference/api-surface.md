@@ -261,8 +261,9 @@ resource-grant resolution from credential eligibility. Code accounts have only
 the first property; see [Service accounts](/en/docs/identity/service-accounts#code-accounts).
 
 `readAccountCategoryPolicy` supplies server-side presentation settings;
-`isAccountCategoryAllowed` is for platform-owned credential eligibility checks,
-not application resource authorization. The browser-safe contracts barrel
+`isAccountCategoryAllowed` and the per-account `isAccountAllowed` are for
+platform-owned credential eligibility checks, not application resource
+authorization. The browser-safe contracts barrel
 exports `AccountCategory`, `AccountCategoryPolicySchema`, `accountCategory`
 and `accountCategoryLabel`. See
 [Account types](/en/docs/operations/account-categories) for their use.

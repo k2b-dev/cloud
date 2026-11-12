@@ -281,6 +281,10 @@ that created personal API keys using OAuth tokens or API keys now receives
 `403 BROWSER_SIGN_IN_REQUIRED`; create those keys in `/me/developer` instead.
 An older browser sign-in receives `403 REAUTHENTICATE` and requires signing in
 again. Resource and standalone service-account keys are unchanged.
+SSH public key changes of FreeIPA accounts follow the same rule: OAuth tokens,
+personal API keys and the Cloud app receive `403` for them, and
+`cld account ssh-keys add` and `remove` point to the profile page. Personal API
+keys can no longer extend their account.
 
 New browser-confirmed OAuth access sends a **New access** notice with email and
 browser delivery recommended. Keep the installation timezone and outgoing mail

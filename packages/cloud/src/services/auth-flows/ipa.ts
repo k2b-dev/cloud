@@ -13,6 +13,7 @@ type IpaLoginFailure =
   | { ok: false; status: 400; reason: "user_not_synced"; message: string }
   | { ok: false; status: 400; reason: "user_not_found"; message: string }
   | { ok: false; status: 403; reason: "account_expired"; message: string }
+  | { ok: false; status: 403; reason: "account_locked"; message: string }
   | { ok: false; status: 403; reason: "account_out_of_scope"; message: string }
   | { ok: false; status: 503; reason: "sync_unavailable"; message: string };
 
@@ -153,6 +154,8 @@ export const login = async (params: { username: string; password: string }): Pro
         reason: "account_expired",
         message: "Your FreeIPA account is expired. Contact an administrator.",
       };
+    case "locked":
+      return { ok: false, status: 403, reason: "account_locked", message: "Your FreeIPA account is locked. Contact an administrator." };
     case "out_of_scope":
       return {
         ok: false,

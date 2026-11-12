@@ -96,6 +96,8 @@ bun add hono
 bun add elysia
 ```
 
+`@k2b/ssr` brings its own JSX transform (`babel-preset-solid`) and serializer (`seroval`) as dependencies; you only add `solid-js` and an adapter.
+
 ### Package scope migration
 
 `@k2b/ssr` is the maintained successor to `@valentinkolb/ssr`. There are no
