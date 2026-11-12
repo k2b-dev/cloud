@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.67.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.66.0...npm-cloud-v0.67.0) (2026-11-12)
+
+
+### Features
+
+* **cloud:** the platform SQL pool size is configurable and URL pool options no longer reach Postgres ([#3148](https://github.com/k2b-dev/cloud/issues/3148)) ([b4ae997](https://github.com/k2b-dev/cloud/commit/b4ae997ff0e9fa6ea078fb95fcbccc32ed5a06c2))
+* **files:** a selection pill offers what fits, and PDFs merge in place ([#3158](https://github.com/k2b-dev/cloud/issues/3158)) ([f8a16ad](https://github.com/k2b-dev/cloud/commit/f8a16adc0a4658b54af8ceea355ecd61ebbfe54b))
+* **files:** every file shows its preview in the list, grid and details ([#3155](https://github.com/k2b-dev/cloud/issues/3155)) ([b215752](https://github.com/k2b-dev/cloud/commit/b215752455b8b40ae43d547e92ba824a05e1ac0e))
+
+
+### Bug Fixes
+
+* **assistant:** a new chat keeps its open command list while its draft is saved ([#3163](https://github.com/k2b-dev/cloud/issues/3163)) ([6edb27b](https://github.com/k2b-dev/cloud/commit/6edb27bd4498954dd01d9ff29bb73b18df53157b)), closes [#2233](https://github.com/k2b-dev/cloud/issues/2233)
+* **build:** budget installable icon rendering by CPU work ([#3190](https://github.com/k2b-dev/cloud/issues/3190)) ([622c9ca](https://github.com/k2b-dev/cloud/commit/622c9ca9f6e5b8031e13c68ae8fd40feb8965134)), closes [#3184](https://github.com/k2b-dev/cloud/issues/3184)
+* **cloud:** an account that FreeIPA locks can no longer sign in or use its sessions, API keys or tokens until FreeIPA unlocks it ([b6291dd](https://github.com/k2b-dev/cloud/commit/b6291dd95091a65b5b22d2075ec13721d59cfdca))
+* **cloud:** restore FreeIPA sign-in after unlocking ([#3219](https://github.com/k2b-dev/cloud/issues/3219)) ([ede688d](https://github.com/k2b-dev/cloud/commit/ede688d77eff1dbf4a477120c6a8912f28111e5e))
+* **cloud:** SSH key changes need a confirmed browser sign-in, and API keys can no longer extend the account ([b6291dd](https://github.com/k2b-dev/cloud/commit/b6291dd95091a65b5b22d2075ec13721d59cfdca))
+* **cloud:** the privacy screen covers the whole screen, app bar included ([#3188](https://github.com/k2b-dev/cloud/issues/3188)) ([dff2cc9](https://github.com/k2b-dev/cloud/commit/dff2cc9fc0d17cbe01afcf9d36e00f059b92ef57))
+* **core:** GeoIP upload status reads the stored size and description again ([#3169](https://github.com/k2b-dev/cloud/issues/3169)) ([b95a6db](https://github.com/k2b-dev/cloud/commit/b95a6dbb7733e50ffcd507d3ab6a4ad732765240))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.21.1 to 0.21.2
+    * @k2b/ui bumped from 0.55.0 to 0.56.0
+    * @k2b/editor bumped from 0.11.1 to 0.11.2
+
 ## [0.66.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.65.0...npm-cloud-v0.66.0) (2026-11-11)
 
 

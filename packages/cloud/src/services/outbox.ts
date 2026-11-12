@@ -15,8 +15,8 @@ import { logger } from "./logging";
  * claim takes rows in `sequence` order with several rows per ordering key, and
  * the dispatcher publishes keys concurrently and the rows of one key in order,
  * then completes the batch in one statement. A batch starts no publish after
- * its claim has ended, because the next claim takes its rows. A row that never
- * failed is due at once. Claims stay proportional to the batch, whatever the
+ * its claim has ended, because the next claim takes its rows. A fresh row is
+ * due at its `next_attempt_at` deadline. Claims stay proportional to the batch, whatever the
  * table's statistics say, with an index on the `where` columns and `sequence`,
  * and one on the `where` columns and `orderBy` limited to
  * `claimed_until IS NOT NULL OR attempts > 0`.
@@ -102,19 +102,22 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     if (deadline >= dueDeadline) return;
     clearTimeout(dueTimer);
     dueDeadline = deadline;
-    dueTimer = setTimeout(() => {
-      dueTimer = undefined;
-      dueDeadline = Infinity;
-      if (running) void run();
-    }, Math.ceil(delay));
+    dueTimer = setTimeout(
+      () => {
+        dueTimer = undefined;
+        dueDeadline = Infinity;
+        if (running) void run();
+      },
+      Math.min(2_147_483_647, Math.ceil(delay)),
+    );
     dueTimer.unref();
   };
 
   /**
    * Claims rows in sequence order, several per key, and never a row of a key
-   * that has a claimed row or one waiting for a retry. `next_attempt_at` only
-   * delays retries: it is the writer's transaction start, so a fresh row that
-   * committed later can carry an earlier one, or one after this claim began.
+   * that has a claimed row or one waiting for a retry. Fresh deadline rows
+   * wait until next_attempt_at too; their ordering keys are independent of
+   * immediate mutations.
    */
   const claim: PgOutbox<Row>["claim"] = (limit = batchSize) =>
     sql.begin(async (tx) => {
@@ -136,10 +139,10 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       const [schedule] = await tx<{ wake_after_ms: number | null }[]>`
         SELECT extract(epoch FROM (min(GREATEST(
           current.claimed_until,
-          CASE WHEN current.attempts > 0 THEN current.next_attempt_at END
+          current.next_attempt_at
         )) - clock_timestamp()))::double precision * 1000 AS wake_after_ms
         FROM ${sql.unsafe(table)} current
-        WHERE (current.claimed_until > now() OR (current.attempts > 0 AND current.next_attempt_at > now()))
+        WHERE (current.claimed_until > now() OR current.next_attempt_at > now())
           ${matches("current")}
       `;
       wakeAfter(schedule?.wake_after_ms ?? null);
@@ -150,7 +153,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
         WITH candidates AS MATERIALIZED (
           SELECT current.id
           FROM ${sql.unsafe(table)} current
-          WHERE (current.attempts = 0 OR current.next_attempt_at <= now())
+          WHERE current.next_attempt_at <= now()
             AND (current.claimed_until IS NULL OR current.claimed_until <= now())
             ${matches("current")}
             AND NOT EXISTS (

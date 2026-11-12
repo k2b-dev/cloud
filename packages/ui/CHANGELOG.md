@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.56.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.55.0...npm-ui-v0.56.0) (2026-11-12)
+
+
+### Features
+
+* **files:** a selection pill offers what fits, and PDFs merge in place ([#3158](https://github.com/k2b-dev/cloud/issues/3158)) ([f8a16ad](https://github.com/k2b-dev/cloud/commit/f8a16adc0a4658b54af8ceea355ecd61ebbfe54b))
+* **files:** every file shows its preview in the list, grid and details ([#3155](https://github.com/k2b-dev/cloud/issues/3155)) ([b215752](https://github.com/k2b-dev/cloud/commit/b215752455b8b40ae43d547e92ba824a05e1ac0e))
+* **ui:** one Lightbox shows every file, in every app ([#3195](https://github.com/k2b-dev/cloud/issues/3195)) ([46b7290](https://github.com/k2b-dev/cloud/commit/46b7290da45cf467fe7965003fb2042f49db375c))
+
+
+### Bug Fixes
+
+* **assistant:** a new chat keeps its open command list while its draft is saved ([#3163](https://github.com/k2b-dev/cloud/issues/3163)) ([6edb27b](https://github.com/k2b-dev/cloud/commit/6edb27bd4498954dd01d9ff29bb73b18df53157b)), closes [#2233](https://github.com/k2b-dev/cloud/issues/2233)
+* **ui:** code highlighting stays fast on long repetitive input ([#3205](https://github.com/k2b-dev/cloud/issues/3205)) ([4be193d](https://github.com/k2b-dev/cloud/commit/4be193d6c7ba661e7dbc5b6fabbb41f9dcd3ef7f))
+* **ui:** inputs draw one edge, and steppers fill up to it ([#3153](https://github.com/k2b-dev/cloud/issues/3153)) ([4434947](https://github.com/k2b-dev/cloud/commit/4434947a0316184a2dc649ec94efc0763fa4965f))
+* **ui:** the WebKit Tab test of the day view no longer scrolls by its own focus call ([#3216](https://github.com/k2b-dev/cloud/issues/3216)) ([22f59a6](https://github.com/k2b-dev/cloud/commit/22f59a6bbfe04a449abb47d4fccd989f24cb776b)), closes [#3215](https://github.com/k2b-dev/cloud/issues/3215)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.21.1 to 0.21.2
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 || ^0.21.0 to ^0.21.2
+
 ## [0.55.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.54.0...npm-ui-v0.55.0) (2026-11-11)
 
 

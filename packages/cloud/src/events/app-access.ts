@@ -1,5 +1,6 @@
 import type { SQL } from "bun";
 import { z } from "zod";
+import { invalidateIdentityRuntimeConfig } from "../services/identity/runtime-config";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { defineLivePublisher, liveTopic } from "./live-delivery";
@@ -28,6 +29,7 @@ export const subscribeAppAccessChanged = (appId: string, changed: () => void): (
     const controller = new AbortController();
     active = controller;
     const notifyAll = () => {
+      invalidateIdentityRuntimeConfig();
       for (const callbacks of listeners.values()) for (const callback of callbacks) callback();
     };
     void superviseRuntimeTask({
@@ -42,6 +44,13 @@ export const subscribeAppAccessChanged = (appId: string, changed: () => void): (
         for await (const event of source.follow({ after, signal })) {
           const parsed = change.safeParse(event.data.d);
           if (parsed.success) for (const callback of listeners.get(parsed.data.appId) ?? []) callback();
+          else if (
+            event.data.d &&
+            typeof event.data.d === "object" &&
+            "type" in event.data.d &&
+            event.data.d.type === "identity.access.changed"
+          )
+            notifyAll();
         }
       },
       onError: ({ error }) => {
@@ -66,3 +75,22 @@ export const subscribeAppAccessChanged = (appId: string, changed: () => void): (
     }
   };
 };
+
+/** Deferred rows use the existing retry gate so older dispatchers also honor the deadline.
+ * Replace one future invalidation; delivery uses Core's existing outbox, never a socket timer. */
+export const scheduleSessionIdleAccessChanged = async (tx: SQL, sid: string, timeoutSeconds: number): Promise<void> => {
+  const key = `identity.deadline.idle:${sid}`;
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+  await tx`DELETE FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND ordering_key = ${key}`;
+  // Derive the absolute deadline from the family, not a remaining duration read
+  // earlier by authentication: a delayed request must not extend the idle limit.
+  const [family] = await tx<{ deadline: string }[]>`SELECT (last_input_at + ${timeoutSeconds} * interval '1 second')::text AS deadline
+    FROM auth.session_families WHERE sid = ${sid}::uuid AND last_input_at IS NOT NULL AND revoked_at IS NULL`;
+  if (!family) return;
+  const id = crypto.randomUUID();
+  await tx`SELECT events.enqueue(${id}::uuid, 'core', 'live', ${key}, ${JSON.stringify({ v: 1, k: key, d: { type: "identity.access.changed" } })}::text::jsonb)`;
+  await tx`UPDATE events.outbox SET attempts = 1, next_attempt_at = GREATEST(clock_timestamp(), ${family.deadline}::timestamptz) WHERE id = ${id}::uuid`;
+};
+
+/** Identity/group/session mutations and deadline events, on Core's existing shared live follower. */
+export const subscribeIdentityAccessChanged = (changed: () => void): (() => void) => subscribeAppAccessChanged("*", changed);

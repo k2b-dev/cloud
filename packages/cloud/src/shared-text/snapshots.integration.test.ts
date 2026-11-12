@@ -532,3 +532,40 @@ testFor("nats")(
   },
   90_000,
 );
+
+testFor("nats")(
+  "flush-now shares the background writer lease across processes",
+  async () => {
+    await withFixture(async (f) => {
+      f.add("flush");
+      const receipt = await f.publish("flush", encode("visible"));
+      const saving = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      f.hooks.beforeSave = async () => {
+        saving.resolve();
+        await release.promise;
+      };
+      try {
+        await f.first.start();
+        await f.queue(f.first, "flush", receipt.cursor);
+        await Promise.race([
+          saving.promise,
+          Bun.sleep(5_000).then(() => {
+            throw new Error("writer did not start");
+          }),
+        ]);
+        await expect(f.second.flushNow("flush", { restoreRevision: "0", targetCursor: receipt.cursor })).rejects.toThrow();
+        expect(f.maxInFlight.get("flush")).toBe(1);
+        release.resolve();
+        await until(() => f.states.get("flush")?.cursor === receipt.cursor, "background writer commits");
+        const stored = await f.second.flushNow("flush", { restoreRevision: "0", targetCursor: receipt.cursor });
+        expect(stored?.text).toBe("visible");
+        expect(stored?.cursor).toBe(receipt.cursor);
+        expect(f.maxInFlight.get("flush")).toBe(1);
+      } finally {
+        release.resolve();
+      }
+    });
+  },
+  30_000,
+);

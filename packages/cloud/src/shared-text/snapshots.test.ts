@@ -6,12 +6,14 @@ import {
   type JobProcessOptions,
   type JobSubmit,
   RetentionGapError,
+  type Sync,
   type Topic,
   type TopicEvent,
   type TopicPublish,
   type Worker,
 } from "@k2b/sync";
 import * as Y from "yjs";
+import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { createDoc } from "./documents";
 import { MalformedSharedTextEventError, SHARED_TEXT_NAME, toBase64 } from "./events";
 import {
@@ -26,7 +28,10 @@ import {
 
 const NOW = new Date("2026-10-19T12:00:00Z");
 beforeEach(() => setSystemTime(NOW));
-afterEach(() => setSystemTime());
+afterEach(() => {
+  setSystemTime();
+  unbindProcessSync();
+});
 const cursor = (seq: number) => `s6t.fixture.${seq}`;
 const sequence = (value: string) => {
   if (!/^s6t\.fixture\.\d+$/.test(value)) throw new Error("Foreign cursor");
@@ -185,6 +190,11 @@ const fixture = (repair?: SharedTextSnapshotRepair) => {
     error() {},
     debug() {},
   };
+  const writer: Pick<import("@k2b/sync").Mutex, "withLock"> = {
+    withLock: async (_input, run) => run({ resource: "doc", ownerToken: "test", fence: 1n, expiresAt: new Date(NOW.getTime() + 120_000) }),
+  };
+  unbindProcessSync();
+  bindProcessSync({ mutex: () => ({ ...writer, extend: async () => true }) } as unknown as Sync);
   const pipeline = sharedText.snapshots({ log, store, job: () => job, logger, repair });
   const context = (signal = new AbortController().signal): JobContext<SharedTextSnapshotRequest> => ({
     jobId: "j",
@@ -831,4 +841,26 @@ test("a repair accepted across a store-only restore cannot delete restored text 
       unrelated.destroy();
     }
   }
+});
+
+test("flush-now returns only committed state covering the latest accepted cursor", async () => {
+  const f = fixture();
+  f.store.save = async (id, input) => {
+    f.states.set(id, { ...input });
+  };
+  const stored = await f.pipeline.flushNow("doc", { restoreRevision: "revision", targetCursor: cursor(5) });
+  expect(stored?.text).toBe("text5");
+  expect(stored?.cursor).toBe(cursor(10));
+  expect(stored?.state).toBeInstanceOf(Uint8Array);
+  expect(f.submitted).toEqual([]);
+});
+
+test("flush-now refuses a skipped write, changed generation and uncovered requested cursor", async () => {
+  const f = fixture();
+  await expect(f.pipeline.flushNow("doc")).rejects.toThrow("did not persist");
+  await expect(f.pipeline.flushNow("doc", { restoreRevision: "replacement" })).rejects.toThrow("generation changed");
+  f.store.save = async (id, input) => {
+    f.states.set(id, { ...input });
+  };
+  await expect(f.pipeline.flushNow("doc", { targetCursor: cursor(11) })).rejects.toThrow("did not persist");
 });
