@@ -139,7 +139,7 @@ Use `SplitButton` when one immediate action has closely related alternatives. Th
 
 Both segments form one body with the same height and outer radius; only the outer corners round. On a filled variant a fine line in the label colour divides the segments, so it stays light on every fill in both themes. Bordered variants share their light border as the divider, and it never darkens. Hover tints only the segment under the pointer. Each segment draws its focus ring inside itself, so exactly one segment shows focus and its ring never covers the other one.
 
-A split button sizes to its content. When the host gives its root more width, such as `width: 100%` in a narrow pane, the main action takes the extra room and the menu segment keeps its width. Props such as `class` and `style` go to the main action, so set the width on the root from the host's own CSS.
+A split button sizes to its content. When the host gives its root more width, such as `width: 100%` in a narrow pane, the main action takes the extra room and the menu segment keeps its width. `class` goes to the whole control: a width class sizes the root, and tone tokens such as `--k2b-action-solid` reach both segments, so the control always shows one colour. `style` and the other button props go to the main action.
 
 Links use normal document navigation by default. When the link renders in browser code, opt into the shared navigation contract explicitly:
 
