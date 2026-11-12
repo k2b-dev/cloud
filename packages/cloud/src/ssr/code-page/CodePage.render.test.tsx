@@ -124,8 +124,9 @@ describe("Code page states", () => {
     expect(page).toContain("https://status.example:8443");
     // Who switched a version on came from target grants; the page reads none.
     expect(page).not.toContain("eingeschaltet von");
-    expect(page).toContain("alle 15 Minuten");
-    expect(page).toContain("montags 07:00");
+    // An untitled schedule is named by when it runs.
+    expect(page).toContain("Alle 15 Minuten");
+    expect(page).toContain("Montags 07:00");
     expect(page).toContain("nächster Lauf");
     // Operations read by their title and app; the technical ID stays in the tooltip.
     expect(page).toContain("Aufgabe anlegen · Spaces");
@@ -616,7 +617,7 @@ test("one-time automation rows display the same explicit instant and zone in Ger
   }
 });
 
-test("automation rows and the last run use reviewed titles with identifier fallback", () => {
+test("automation rows and the last run use reviewed titles, an untitled schedule reads by when it runs", () => {
   for (const state of ["overview", "refused", "waiting"] as const) {
     const data = codePageFixture(state, "de");
     if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
@@ -634,10 +635,11 @@ test("automation rows and the last run use reviewed titles with identifier fallb
     expect(text).not.toContain("anfragenSortieren");
     if (state === "refused") expect(text).toContain("Letzter Lauf");
   }
-  expect(html("overview")).toContain("anfragenSortieren");
+  expect(renderedText(html("overview"), " ")).toContain("Alle 15 Minuten");
+  expect(html("overview")).not.toContain("anfragenSortieren");
 });
 
-test("run lists and details use the run's title with identifier fallback", () => {
+test("run lists and details use the run's title, else its automation's name, else the identifier", () => {
   const data = codePageFixture("runs", "de");
   if (data.state.kind !== "ready" || !data.state.run || !data.state.runs) throw new Error("Expected run fixture");
   data.state.run.run.title = "Lieferungen eintragen";
@@ -651,7 +653,10 @@ test("run lists and details use the run's title with identifier fallback", () =>
     }),
   );
   expect(rendered.match(/Lieferungen eintragen/g)?.length).toBeGreaterThanOrEqual(2);
-  expect(rendered).toContain("anfragenSortieren");
+  // An untitled run reads as its automation does; one whose automation is no longer listed keeps its identifier.
+  expect(rendered).toContain("Alle 15 Minuten");
+  expect(rendered).not.toContain("anfragenSortieren");
+  expect(rendered).toContain("lieferungenEintragen");
 });
 
 describe("Code page loader", () => {
@@ -1070,4 +1075,34 @@ test.each(["de", "en"])("Code page shows database use and storage in %s", (local
   );
   expect(page).toContain(locale === "de" ? "Nutzt Datenbank" : "Uses database");
   expect(page).toContain(locale === "de" ? "Datenbank: 1,00 MB von 100,00 MB" : "Database: 1.00 MB of 100.00 MB");
+});
+
+test.each(["de", "en"])("Code page shows owner reservation and export in %s", (locale) => {
+  const data = codePageFixture("overview", locale);
+  if (data.state.kind !== "ready") throw new Error("Missing fixture");
+  data.state.code.database = {
+    bytes: 1048576,
+    limit: 104857600,
+    state: "ready",
+    canExport: true,
+    owner: { reserved: 209715200, limit: 1048576000 },
+  };
+  const page = () =>
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    );
+  const markup = page();
+  expect(renderedText(markup, " ")).toContain(
+    locale === "de"
+      ? "Reservierte Kapazität des Besitzers: 200,00 MB von 1.000,00 MB"
+      : "Owner reserved capacity: 200.00 MB of 1,000.00 MB",
+  );
+  expect(markup).toContain(`/api/code/authoring/database/${data.state.code.id}/export`);
+  data.state.code.database.canExport = false;
+  expect(page()).not.toContain(`/api/code/authoring/database/${data.state.code.id}/export`);
 });

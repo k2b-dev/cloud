@@ -163,6 +163,8 @@ export const codePageMessages = i18n.define({
       secretSetUnknown: "Cloud did not answer, so the secret may or may not be saved. Reload the page and check before you try again.",
       secretSetRefused: "You may not change this secret. Use a browser session and editor access.",
       databaseUsage: ({ used, limit }: { used: string; limit: string }) => `Database: ${used} MB of ${limit} MB`,
+      databaseOwner: ({ used, limit }: { used: string; limit: string }) => `Owner reserved capacity: ${used} MB of ${limit} MB`,
+      databaseExport: "Export SQLite database",
       databaseUnavailable: "Database unavailable. Ask an administrator to check the RSQL connection.",
       usesDatabase: "Uses database",
       tabsLabel: "Code views",
@@ -470,6 +472,9 @@ export const codePageMessages = i18n.define({
         "Cloud hat nicht geantwortet, das Secret ist vielleicht gespeichert. Lade die Seite neu und prüfe das, bevor du es erneut versuchst.",
       secretSetRefused: "Du darfst dieses Secret nicht ändern. Nutze eine Browser-Sitzung und Bearbeitungsrechte.",
       databaseUsage: ({ used, limit }: { used: string; limit: string }) => `Datenbank: ${used} MB von ${limit} MB`,
+      databaseOwner: ({ used, limit }: { used: string; limit: string }) =>
+        `Reservierte Kapazität des Besitzers: ${used} MB von ${limit} MB`,
+      databaseExport: "SQLite-Datenbank exportieren",
       databaseUnavailable: "Datenbank nicht verfügbar. Ein Administrator muss die RSQL-Verbindung prüfen.",
       usesDatabase: "Nutzt Datenbank",
       tabsLabel: "Ansichten des Codes",

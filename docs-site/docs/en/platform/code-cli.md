@@ -329,3 +329,16 @@ return a generic message without private input. The shared contract adds
 `policyEffective`, `policyPreview`, `policyUpdate`, `secretSet`, `secretList`
 and `secretDelete`; `CodeLocalStatusSchema` and `CodeWorkspaceStatusSchema`
 define the local comparison. Existing C18a keys and version 1 stay unchanged.
+
+## Export database data
+
+Read usage with `cld code show <code>`. To save a consistent SQLite snapshot,
+run `cld code db export <code> --out ./database.sqlite`. Code editors and
+Cloud administrators can export; readers cannot. The output path must be a
+new file. A failed or cancelled download leaves that path untouched.
+
+The export streams separately from JSON command results. It has a two-minute
+deadline and the Code database's storage ceiling; successful JSON or JSONL
+output contains `codeId`, `path`, `bytes` and `format: "sqlite"`. Exporting
+does not create a database. See
+[Code storage](/en/docs/operations/code-storage) for limits and cleanup.

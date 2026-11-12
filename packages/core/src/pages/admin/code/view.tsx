@@ -1,5 +1,7 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { formatDateTime, formatRelative } from "@k2b/cloud/shared";
+import { CodeDatabaseStatus } from "@k2b/cloud/ssr/code-page";
+import { codeRunName } from "@k2b/cloud/ssr/code-page/targets";
 import type { DateContext } from "@k2b/stdlib";
 import {
   AppWorkspace,
@@ -155,6 +157,7 @@ export function approvalReviewProps(
   detail: CodeAdminApprovalDetail,
   list: readonly CodeAdminApproval[],
   when: (iso: string) => string,
+  appNames: Record<string, string>,
 ): CodeApprovalReviewProps {
   const who = detail.code.owner.kind === "person" ? (detail.ownerName ?? t.unknownAuthor) : (detail.version.author.name ?? t.unknownAuthor);
   const others = list.filter((item) => item.versionId !== detail.version.id);
@@ -186,8 +189,17 @@ export function approvalReviewProps(
       }),
     ),
     automations: detail.automations,
+    // Code of an app runs as its service account, named after the app as its Code page here names it.
     routeOwner:
-      detail.code.owner.kind === "person" ? { kind: "person", name: detail.ownerName ?? t.unknownAuthor } : { kind: "account", name: null },
+      detail.code.owner.kind === "person"
+        ? { kind: "person", name: detail.ownerName ?? t.unknownAuthor }
+        : {
+            kind: "account",
+            name:
+              detail.code.owner.kind === "app"
+                ? t.accountName({ app: appNames[detail.code.owner.appId] ?? detail.code.owner.appId })
+                : null,
+          },
     rights: detail.permissions.map((permission) => {
       const typeTitle = permission.target ? (detail.titles.types[permission.target.type] ?? permission.target.type) : "";
       return {
@@ -443,7 +455,7 @@ export function CodeAreaView(props: Props) {
     if (detail === "missing") return missing(t.closedTitle, { sec: "approvals" });
     if (detail === "failed") return failure;
     const list = ok(data.approvals) ? data.approvals.items : [];
-    return <CodeApprovalReview {...approvalReviewProps(t, detail, list, when)} />;
+    return <CodeApprovalReview {...approvalReviewProps(t, detail, list, when, props.appNames)} />;
   };
   const approvalPosition = (): JSX.Element => {
     const list = ok(data.approvals) ? data.approvals.items : [];
@@ -570,6 +582,8 @@ export function CodeAreaView(props: Props) {
     const source = data.source;
     // Code of an app runs as its service account; this detail is its Code page (concept 14 W13).
     const account = code.owner.kind === "app" ? t.accountName({ app: props.appNames[code.owner.appId] ?? code.owner.appId }) : null;
+    // Runs read as their automations do on the Code page; the own place by the name this admin may read, else type and ID.
+    const ownerTitle = code.owner.kind === "resource" ? (code.ownerName ?? "") : "";
     const lastRun = detail.refusal ? detail.runs.find((run) => run.id === detail.refusal!.refusal.runId) : undefined;
     return (
       <div class="grid content-start gap-6 px-2 pt-1 pb-6">
@@ -664,6 +678,13 @@ export function CodeAreaView(props: Props) {
           <dt class="text-(--k2b-text-muted)">ID</dt>
           <dd class="font-mono text-xs">{code.id}</dd>
         </dl>
+        <Show when={detail.database}>
+          {(database) => (
+            <div class="text-sm">
+              <CodeDatabaseStatus codeId={code.id} database={{ ...database(), canExport: true }} />
+            </div>
+          )}
+        </Show>
         <div class="flex flex-wrap items-center gap-2">
           <Show when={source === null && newest}>
             {(versionId) => (
@@ -714,7 +735,8 @@ export function CodeAreaView(props: Props) {
                 {(run) => (
                   <li class="flex flex-wrap items-baseline justify-between gap-x-3">
                     <span>
-                      {t.runState({ s: run.state })} · {t.trigger({ t: run.trigger })} <span>{run.title ?? run.entrypoint}</span>
+                      {t.runState({ s: run.state })} · {t.trigger({ t: run.trigger })}{" "}
+                      <span>{codeRunName(run, run.automation ? [run.automation] : null, ownerTitle, props.locale)}</span>
                     </span>
                     <span class="text-(--k2b-text-muted)">{when(run.createdAt)}</span>
                   </li>

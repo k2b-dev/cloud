@@ -96,6 +96,8 @@ export const CodeSchema = z
         bytes: z.number().nonnegative().nullable(),
         limit: z.number().positive(),
         state: z.enum(["unused", "ready", "unavailable"]),
+        owner: z.object({ reserved: z.number().nonnegative(), limit: z.number().positive() }).strict().optional(),
+        canExport: z.boolean().optional(),
       })
       .strict()
       .optional(),

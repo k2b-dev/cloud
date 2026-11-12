@@ -64,7 +64,7 @@ a new UUID. Status reads require access to the Code; mutation routes retain the
 credential's write scope.
 
 The chat version card and `cld code activate` use the preview. It contains the
-version's `number`, `running`, `latest`, optional reviewed `automations`, and
+version's `number`, `running`, `latest`, optional `automations`, and
 `readiness`: `ready`, `approval_pending`, or `refused` with a stable code and
 message. `allowed` explains phone or credential restrictions. A running version
 also returns `activated`. For the version that would switch on next, optional
@@ -72,7 +72,12 @@ also returns `activated`. For the version that would switch on next, optional
 `isNew` against the running version, named from registry manifests as on the
 Code page; a `null` target collects calls with a target picked at run time.
 `operationLabels` names those operations by title and app from registry
-manifests. These rows are review evidence, not grants. For resource Code, `page` is the
+manifests. These rows are review evidence, not grants. Each automation carries
+its `entrypoint`, an optional reviewed `title`, and what starts it: a `route`
+with `method`, `path` and `public`, an `event` named like a target, a `cron`
+expression, or a one-time `at` with the `timeZone` it is read in. Code of an
+app also returns `appName`, which names its service account, or `null` when
+the registry does not know the app. For resource Code, `page` is the
 Code page its owner's app declares in `code.pages`, or `null`. Preview asks no target or owner
 application to plan, inspect or grant access. The Code page's dialog starts the
 same durable activation directly.

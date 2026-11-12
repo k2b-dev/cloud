@@ -67,9 +67,13 @@ Only people who manage the owner and editors or readers of the Code see the
 page. Readers see runs without their calls and no actions. Every part that
 cannot load shows an error with a way to try again.
 
-Automation names use the optional reviewed `entrypoints[].title` and fall back
-to the entrypoint identifier. This also applies to switch-on dialogs. Run
-history uses the title from the run's own version.
+Automation names use the optional reviewed `entrypoints[].title`. Without a
+title, an event reads by its title and place, a page by its method and path,
+and a schedule by when it runs ("Mondays 08:00", or a one-time date and time
+with its zone). Anything else shows its entrypoint identifier. Switch-on
+dialogs, the chat version card and Administration › Code use the same names.
+A run reads by the title from its own version, else as the listed automation
+with the same entrypoint, else by its identifier.
 
 ## Refused calls
 
@@ -248,3 +252,18 @@ an opaque secret marker and declared origin, then act. Never put a secret in
 the source or use a URL token as protection. Let `/hooks/` through a global
 access middleware, or apply the access check only to a private prefix.
 See the [complete example and secret binding](code-sdk.md#webhooks-r1-ohne-secret).
+
+## Database storage and export
+
+The Code page shows its database size and limit together with the owner's
+reserved capacity. Editors and Cloud administrators get an **Export SQLite
+database** control for an existing database. The download uses the same
+permission-aware service as `cld code db export`; ordinary readers cannot
+export. See [Code storage](/en/docs/operations/code-storage) for limits and
+database lifecycle.
+
+`CodeDatabaseStatus`, exported from `@k2b/cloud/ssr/code-page`, renders this
+status for Code and administrator details. Pass `codeId`, the authorized
+`database` usage object.
+It inherits the UI locale. `canExport` controls presentation only; the export
+service checks permission again.

@@ -3,6 +3,7 @@ import { arg, command, confirmFlag, flag, localizeCloudCliText, printStructured 
 import { CODE_AUTHORING_REQUEST_BYTES, type CodeAuthoringData, CodeWorkspaceStatusSchema } from "../code/authoring-contracts";
 import { codePolicyPreset } from "../code/policy-contracts";
 import { codeRunMessages } from "../code/run-messages";
+import { codeDatabaseCommands } from "./code-database";
 import { listCodeProjects, loadCodeProject, readCodeFiles } from "./code-files";
 import { request } from "./code-request";
 
@@ -68,6 +69,7 @@ export function codeOperationCommands(locale?: string) {
     return flags.preset ? codePolicyPreset(flags.preset) : JSON.parse(await readCodeInput(flags.from!));
   }
   return [
+    ...codeDatabaseCommands(locale),
     command("show", {
       summary: t("Show Code and its database storage", "Code und Datenbankspeicher anzeigen"),
       args: { code: arg.required({ description: t("Code ID", "Code-ID") }) },
@@ -82,6 +84,10 @@ export function codeOperationCommands(locale?: string) {
           ctx.print(
             `${t("Database", "Datenbank")}: ${db.bytes === null ? t("unavailable", "nicht verfügbar") : mb(db.bytes) + " MB"} ${t("of", "von")} ${mb(db.limit)} MB`,
           );
+          if (db.owner)
+            ctx.print(
+              `${t("Owner reserved capacity", "Reservierte Kapazität des Besitzers")}: ${mb(db.owner.reserved)} MB ${t("of", "von")} ${mb(db.owner.limit)} MB`,
+            );
         }
       },
     }),
