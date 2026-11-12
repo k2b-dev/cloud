@@ -119,6 +119,7 @@ export type KnownCodeErrorCode =
   | "code_db_full"
   | "code_db_invalid"
   | "code_db_limit"
+  | "code_db_owner_full"
   | "code_db_sql"
   | "code_db_temporary"
   | "code_db_timeout"

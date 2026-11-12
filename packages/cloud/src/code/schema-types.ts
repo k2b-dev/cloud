@@ -90,7 +90,7 @@ export function schemaTypes(
                   : typeof schema.description === "string"
                     ? (schema.description.split(/(?<=[.!?])\s/)[0] ?? "")
                     : "";
-              const summary = description.length > 80 ? `${description.slice(0, 77).replace(/\s+\S*$/, "")}…` : description;
+              const summary = description.length > 40 ? `${description.slice(0, 37).replace(/\s+\S*$/, "")}…` : description;
               const comment = description ? `/** ${summary.replaceAll("*/", "* /").replace(/[\r\n]+/g, " ")} */ ` : "";
               return `${comment}${property(key)}${required.has(key) ? "" : "?"}: ${render(item)}`;
             });
@@ -119,14 +119,19 @@ export function schemaTypes(
   };
   // One pool per generated module lets operations, events and page schemas reuse shapes.
   // Numbered legacy refs depend on the selected catalog, so keep their shapes local.
+  // Documentation must not duplicate an identical type. Keep JSON string literals intact:
+  // a literal can itself contain text that looks like a JSDoc comment.
+  const structuralKey = (type: string) =>
+    type.replace(/("(?:\\.|[^"\\])*")|\/\*\*[\s\S]*?\*\/\s*/g, (_match, literal: string | undefined) => literal ?? "");
   const share = (type: string): string => {
     if (!shapes || (!type.startsWith("{") && !type.startsWith("[")) || /\b(?:Input|Data|Event)\d+Ref\d+\b/.test(type)) return type;
-    let alias = shapes.types.get(type);
+    const key = structuralKey(type);
+    let alias = shapes.types.get(key);
     if (!alias) {
-      const hash = createHash("sha256").update(type).digest("hex");
+      const hash = createHash("sha256").update(key).digest("hex");
       alias = `S${hash.slice(0, 12)}`;
       if (shapes.names.has(alias)) alias = `S${hash}`;
-      shapes.types.set(type, alias);
+      shapes.types.set(key, alias);
       shapes.names.add(alias);
       declarations.push(`type ${alias} = ${type};`);
     }

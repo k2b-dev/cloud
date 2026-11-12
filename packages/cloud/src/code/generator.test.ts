@@ -865,3 +865,51 @@ test("shared nested shapes keep the same diagnostic names across selected app ca
   expect(name(single.declarations)).toBeDefined();
   expect(name(single.declarations)).toBe(name(combined.declarations));
 });
+
+test("shape pooling ignores documentation but preserves comment-like string literals", () => {
+  const shapes = { types: new Map<string, string>(), names: new Set<string>() };
+  const schema = (description: string, marker: string) => ({
+    type: "object",
+    properties: {
+      nested: {
+        type: "object",
+        properties: { marker: { const: marker, description } },
+        required: ["marker"],
+        additionalProperties: false,
+      },
+    },
+    required: ["nested"],
+    additionalProperties: false,
+  });
+  const first = schemaTypes(schema("First description.", '/** "literal" */'), "First", [], shapes);
+  const second = schemaTypes(schema("Different description.", '/** "literal" */'), "Second", [], shapes);
+  const different = schemaTypes(schema("First description.", ""), "Different", [], shapes);
+  expect(second.type).toBe(first.type);
+  expect(second.declarations).toEqual([]);
+  expect(different.type).not.toBe(first.type);
+  expect(first.declarations.join("\n")).toContain(JSON.stringify('/** "literal" */'));
+});
+
+test("named operation roots retain their own field documentation", () => {
+  const first = fixture.queries.find((query) => query.localId === "catalog.list")!;
+  const inputSchema = (description: string) => ({
+    type: "object",
+    properties: { id: { type: "string", description } },
+    required: ["id"],
+    additionalProperties: false,
+  });
+  const sdk = generateCodeSdk(
+    [
+      {
+        ...fixture,
+        queries: [
+          { ...first, inputSchema: inputSchema("Workshop ID.") },
+          { ...first, localId: "catalog.other", inputSchema: inputSchema("Item ID.") },
+        ],
+      },
+    ],
+    { mode: "personal" },
+  );
+  expect(sdk.declarations).toContain("export type Work$hshop_Catalog_ListInput = { /** Workshop ID. */ id: string };");
+  expect(sdk.declarations).toContain("export type Work$hshop_Catalog_OtherInput = { /** Item ID. */ id: string };");
+});

@@ -547,7 +547,10 @@ Required fields, refs and `idempotencyKey` still require an input object.
 Each operation exports types named after its application and local path, such
 as `Mail_Message_ReadInput` and `Mail_Message_ReadData`. Import them from `@sdk`
 for helper parameters. Their concise JSDoc describes the operation and its fields.
-Repeated structural schemas are declared once and referenced across operations.
+Repeated schemas are declared once and referenced across operations. Nested
+structures can share a declaration even when their field descriptions differ;
+shared shapes keep the first concise set of field descriptions. Operation root
+types retain their own field documentation.
 Names retain the app and path boundaries, independently of catalog order.
 Hyphens and underscores in IDs are encoded as `$h` and `$u`.
 The numbered `InputN` and `DataN` declarations remain compatibility aliases;
@@ -1021,7 +1024,7 @@ reads its variables. `app` and the returned `routes` register on the same
 app; the return carries the variable types for subsequent handlers.
 
 Middleware runs on matching public routes too; `c.user` remains `null`.
-[Access checks](#zugriff-prüfen) shows how to keep public paths reachable.
+[Access checks](#check-access) shows how to keep public paths reachable.
 SDK calls in middleware use the same Code account, approval and declared-set
 checks as calls in handlers. Register `use` at module scope, as a statement
 or as the initializer of a `const` binding. Schedules and events do not run
