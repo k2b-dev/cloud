@@ -30,6 +30,10 @@ export const decodeAccountCategoryEnabled = async (encrypted: unknown): Promise<
   return value;
 };
 
+/**
+ * Whether the account category is enabled. It does not see a single account's state, such as a FreeIPA lock; for a
+ * concrete account that signs in or acts, use `isAccountAllowed`.
+ */
 export const isAccountCategoryAllowed = async (
   user: { provider: "local" | "ipa"; profile: "guest" | "user" },
   db: typeof sql = sql,
