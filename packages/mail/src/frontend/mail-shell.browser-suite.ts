@@ -1192,7 +1192,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               Reflect.get(document.querySelector(".mail-sidebar")!, "mailboxSwitchMarker"),
               Reflect.get(document.querySelector(".k2b-app-workspace__main")!, "mailboxSwitchMarker"),
               Reflect.get(document.querySelector("[data-mail-conversation-list]")!, "mailboxSwitchMarker"),
-              Reflect.get(document.querySelector(".mail-reader")!, "mailboxSwitchMarker"),
+              Reflect.get(document.querySelector(".mail-split")!, "mailboxSwitchMarker"),
             ]),
           ).toEqual(["kept", "kept", "kept", "kept", "kept"]);
         const frame = async () =>
@@ -1205,7 +1205,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             Reflect.set(document.querySelector(".mail-sidebar")!, "mailboxSwitchMarker", "kept");
             Reflect.set(document.querySelector(".k2b-app-workspace__main")!, "mailboxSwitchMarker", "kept");
             Reflect.set(document.querySelector("[data-mail-conversation-list]")!, "mailboxSwitchMarker", "kept");
-            Reflect.set(document.querySelector(".mail-reader")!, "mailboxSwitchMarker", "kept");
+            // Without an open conversation there is no reader; the split around the list stays.
+            Reflect.set(document.querySelector(".mail-split")!, "mailboxSwitchMarker", "kept");
           });
           const before = await frame();
           await sidebar(page).locator(`a[href="${destination}"]`).first().click();
@@ -1279,7 +1280,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         // distinct scroll keys on the retained list element; restoration waits for the destination content.
         const source = `${boxPath}?history=1`;
         const destination = "/app/mail/Box002";
-        const page = await open(source, 1440, 600);
+        // One-line rows at full width: a short window keeps the list scrollable.
+        const page = await open(source, 1440, 420);
         const releaseBack = Promise.withResolvers<void>();
         const list = (id: string) => page.locator(`[data-scroll-preserve="mail-list-${id}"]`);
         const position = (id: string) => list(id).evaluate((element) => element.scrollTop);
@@ -1291,23 +1293,23 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(await position(id), `${id} fixture must really scroll`).toBe(y);
         };
         try {
-          await setPosition("Box001", 240);
+          await setPosition("Box001", 120);
           await sidebar(page).locator(`a[href="${destination}"]`).first().click();
           await page.waitForURL(new URL(destination, server.url).href);
           await list("Box002").waitFor();
           await ready(page);
           expect(await position("Box002"), "a newly opened mailbox starts at its list's top").toBe(0);
-          await setPosition("Box002", 400);
+          await setPosition("Box002", 160);
           await page.goBack();
           await page.waitForURL(new URL(source, server.url).href);
           await list("Box001").waitFor();
           await ready(page);
-          expect(await position("Box001"), "Back restores A after the asynchronous list replacement").toBe(240);
+          expect(await position("Box001"), "Back restores A after the asynchronous list replacement").toBe(120);
           await page.goForward();
           await page.waitForURL(new URL(destination, server.url).href);
           await list("Box002").waitFor();
           await ready(page);
-          expect(await position("Box002"), "Forward restores B's own list position").toBe(400);
+          expect(await position("Box002"), "Forward restores B's own list position").toBe(160);
 
           // Reverse a traversal while B is still shown. Its DOM must not become A's saved scroll snapshot.
           const backRequested = Promise.withResolvers<void>();
@@ -1329,7 +1331,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.goBack();
           await backRequested.promise;
           expect(new URL(page.url()).pathname).toBe(boxPath);
-          expect(await position("Box002"), "pending Back still shows the scrolled B list").toBe(400);
+          expect(await position("Box002"), "pending Back still shows the scrolled B list").toBe(160);
           await page.goForward();
           await page.waitForURL(new URL(destination, server.url).href);
           await ready(page);
@@ -1337,21 +1339,21 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await backReleased.promise;
           await page.unroute(backRoute);
           await ready(page);
-          expect(await position("Box002"), "Forward supersedes the pending A response").toBe(400);
+          expect(await position("Box002"), "Forward supersedes the pending A response").toBe(160);
           await page.goBack();
           await page.waitForURL(new URL(source, server.url).href);
           await list("Box001").waitFor();
           await ready(page);
-          expect(await position("Box001"), "the pending reversal preserved A's own snapshot").toBe(240);
+          expect(await position("Box001"), "the pending reversal preserved A's own snapshot").toBe(120);
           await page.goForward();
           await page.waitForURL(new URL(destination, server.url).href);
           await list("Box002").waitFor();
           await ready(page);
-          expect(await position("Box002"), "B keeps its own snapshot after the reversal").toBe(400);
+          expect(await position("Box002"), "B keeps its own snapshot after the reversal").toBe(160);
           const beforeReload = await geometry(page);
           await page.reload();
           await ready(page);
-          expect(await position("Box002"), "reload keeps the shown entry's list position").toBe(400);
+          expect(await position("Box002"), "reload keeps the shown entry's list position").toBe(160);
           const serverFrame = await recordedFrame(page, "server");
           assertFrame(beforeReload, serverFrame, "scrolled B reload server");
           assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "scrolled B reload hydrated");
@@ -1475,7 +1477,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
             const scheduled = await open(`${boxPath}?scheduled=1&theme=${theme}`, width);
             try {
-              expect(await scheduled.locator(".k2b-app-workspace__head [data-mail-queue-count]").count()).toBe(1);
+              expect(await scheduled.locator(".mail-list-bar [data-mail-queue-count]").count()).toBe(1);
               expect(await scheduled.locator(".k2b-app-workspace__main h1.sr-only").textContent()).toBe("Outbox");
             } finally {
               await close(scheduled);
@@ -3221,11 +3223,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               // While the response is held, the still-shown list must keep its head.
               const main = page.locator(".mail-workspace .k2b-app-workspace__main");
               expect(await main.getAttribute("aria-busy")).toBe("true");
-              expect(await main.getAttribute("data-mobile-pane")).toBe("conversations");
+              expect(await main.getAttribute("data-mobile-pane")).toBe("list");
               expect(await head.isVisible()).toBe(true);
               releaseBack.resolve();
               await ready(page);
-              expect(await main.getAttribute("data-mobile-pane")).toBe("main");
+              expect(await main.getAttribute("data-mobile-pane")).toBe("reader");
               expect(await head.isVisible()).toBe(false);
               expect(await reader.isVisible()).toBe(true);
               await page.setViewportSize({ width: 834, height: 1194 });
@@ -3569,7 +3571,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("opening the waiting Detail moves nothing; closing a column gives only the reader its room", async () => {
+        test("opening the waiting Detail moves nothing; closing a column gives list and reader their shares of the room", async () => {
           const waiting = await open(widePath(), 1440, 900);
           try {
             const before = await wide(waiting);
@@ -3598,10 +3600,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await settled(column);
             const after = await wide(column);
             expect(after.detail).toBe("closed");
-            for (const part of ["pane", "sidebar"] as const) sameBox(after[part], before[part], `1920 ${part}`);
+            sameBox(after.sidebar, before.sidebar, "1920 sidebar");
+            // The list keeps its share of Main: it starts where it did and stays 40 % of the wider Main.
+            sameBox({ ...after.pane!, width: 0 }, { ...before.pane!, width: 0 }, "1920 list start");
+            expect(Math.abs(after.pane!.width / (after.pane!.width + after.reader!.width) - 0.4)).toBeLessThanOrEqual(0.005);
             // The head row shares its track with Main, so only its end follows the column away.
             sameBox({ ...after.head!, width: 0 }, { ...before.head!, width: 0 }, "1920 head start");
-            sameBox({ ...after.reader!, width: 0 }, { ...before.reader!, width: 0 }, "1920 reader start");
             expect(after.reader!.width).toBeGreaterThan(before.reader!.width);
           } finally {
             await close(column);
@@ -4575,7 +4579,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(await draft.textContent()).not.toContain("Gustav");
           const row = page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]');
           expect(await row.getAttribute("data-suggestion")).toBe("");
-          expect(await row.textContent()).toContain("Suggestion from Rechnungseingang");
+          // The row says "✦ Suggestion" and names the account in its label.
+          expect(await row.textContent()).toContain("Suggestion");
+          expect(await row.getAttribute("aria-label")).toBe("Suggestion from Rechnungseingang");
         } finally {
           await close(page);
         }
@@ -4679,8 +4685,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         const page = await open(`${boxPath}?drafts=1`, 1440);
         try {
           const chip = page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]');
-          expect(await chip.textContent()).toContain("Draft");
-          expect(await chip.textContent()).toContain("JE");
+          // "Draft" beside the sender; who writes it stands in its label.
+          expect((await chip.textContent())?.trim()).toBe("Draft");
           expect(await chip.getAttribute("aria-label")).toBe("Draft: Jonas Example");
           expect(await chip.getAttribute("data-suggestion")).toBeNull();
         } finally {

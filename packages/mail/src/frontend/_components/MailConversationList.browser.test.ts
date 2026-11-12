@@ -600,8 +600,13 @@ describe("Mail quick look", () => {
       }, listScroller);
       await page.clock.runFor(500);
       // The row under the resting mouse, from the layout rather than from `:hover`, which WebKit updates late.
+      // The mouse may rest in the 2 px gap between two rows; then the row just below names what passed under it.
       const under = await page.evaluate(
-        ([x, y]) => document.elementFromPoint(x!, y!)?.closest(".mail-list-entry")?.getAttribute("data-conversation-id"),
+        ([x, y]) =>
+          (
+            document.elementFromPoint(x!, y!)?.closest(".mail-list-entry") ??
+            document.elementFromPoint(x!, y! + 3)?.closest(".mail-list-entry")
+          )?.getAttribute("data-conversation-id"),
         [from.left + 120, to.top + 10],
       );
       // The list really moved rows under the mouse.
@@ -654,14 +659,13 @@ describe("Mail quick look", () => {
   test("tag chips that shorten long names keep every full name in their tooltip", async () => {
     const page = await load();
     try {
-      // The quick look's clock is paused, so wait for the row itself rather than for settled animations.
-      await page.locator(`${row("Cv0000")} .mail-row-tags`).waitFor();
-      await pointAt(page, `${row("Cv0000")} .mail-row-tags`);
-      await page.clock.runFor(1000);
-      // The hovered group's tooltip shows; the "+1" tooltip with the same names stays hidden.
-      const tip = page.locator('[role="tooltip"]:visible').filter({ hasText: "Event, Offer, Accounting, Members" });
-      await tip.waitFor({ state: "visible" });
-      expect(await tip.count()).toBe(1);
+      // The row shows its first tag; the chip names every tag of the conversation, and a long name shortens.
+      const chip = page.locator(`${row("Cv0000")} .mail-row-tag`);
+      await chip.waitFor();
+      expect(await chip.count()).toBe(1);
+      expect(await chip.getAttribute("title")).toBe("Tags: Event, Offer, Accounting, Members");
+      // settled: a style, not geometry; the chip's stylesheet decides it from the first frame.
+      expect(await chip.evaluate((element) => getComputedStyle(element).textOverflow)).toBe("ellipsis");
     } finally {
       await close(page);
     }
@@ -1358,6 +1362,7 @@ describe("Mail row actions", () => {
 describe("Mail rows by the list's own width (F2)", () => {
   /** Every visible row's height and how many lines its parts stand on, in list order. */
   const rows = (page: Page) =>
+    // settled: the harness pauses the page clock after mounting, so the rows render once and hold still.
     page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>(".mail-list-entry")].map((entry) => {
         const tops = new Set(
@@ -1389,7 +1394,6 @@ describe("Mail rows by the list's own width (F2)", () => {
   ] as const)
     test(`a ${listSize} px list draws every conversation on ${lines} line${lines === 1 ? "" : "s"} of one height, with the date in each`, async () => {
       const page = await load({ listSize, items: marked, shared: true });
-      await settled(page);
       const shown = await rows(page);
       expect(shown.every((entry) => entry.height === height && entry.lines === lines)).toBe(true);
       // The checkbox always shows, so the first check starts a selection.
@@ -1400,7 +1404,6 @@ describe("Mail rows by the list's own width (F2)", () => {
 
   test("marks: Draft in orange, ✦ Suggestion in plum, the count, Waiting, until Sat, lock, paperclip and who is responsible", async () => {
     const page = await load({ listSize: 700, items: marked, shared: true });
-    await settled(page);
     const draft = page.locator(`${row("Cv0001")} [data-mail-row-draft]`);
     expect((await draft.textContent())?.trim()).toBe("Draft");
     expect(await draft.getAttribute("aria-label")).toBe("Draft: Tom Behrens");
@@ -1431,7 +1434,9 @@ describe("Mail rows by the list's own width (F2)", () => {
     expect((await page.locator(`${row("Cv0004")} .mail-row-snooze`).textContent())?.trim()).toBe("until Sat");
     expect(await page.locator(`${row("Cv0004")} [data-mail-kept-indicator]`).count()).toBe(1);
     // The unread dot sits before the date.
+    // settled: the harness pauses the page clock after mounting, so the rows render once and hold still.
     const dot = (await page.locator(`${row("Cv0001")} .mail-row-dot`).boundingBox())!;
+    // settled: as above.
     const time = (await page.locator(`${row("Cv0001")} .mail-row-time`).boundingBox())!;
     expect(dot.x + dot.width).toBeLessThanOrEqual(time.x);
     expect(page.errors).toEqual([]);
@@ -1606,8 +1611,8 @@ describe("Mail search returns to the view it started from", () => {
         const origin = "/app/mail/Box001?view=needs_action";
         const page = await load({ context, requestUrl: origin });
         try {
-          // The field's frame: the input inside it makes room for the clear button, the frame must not move.
-          await page.getByRole("button", { name: "Search (/)", exact: true }).click();
+          // The field's frame: the input inside it makes room for the clear button, the frame must not move. The field
+          // always stands in the head.
           const selector = 'form[role="search"] .k2b-input-shell';
           const field = page.locator('input[name="q"]');
           await field.waitFor({ state: "visible" });
@@ -1631,15 +1636,8 @@ describe("Mail search returns to the view it started from", () => {
           } else await page.keyboard.press("Escape");
           await page.clock.runFor(350);
           expect(await page.evaluate(() => location.pathname + location.search)).toBe(origin);
-          if (method === "Escape") {
-            expect(await field.count()).toBe(0);
-            expect(
-              await page.getByRole("button", { name: "Search (/)", exact: true }).evaluate((element) => element === document.activeElement),
-            ).toBe(true);
-          } else {
-            expect(await field.inputValue()).toBe("");
-            expect(await box(page, selector)).toEqual(before);
-          }
+          expect(await field.inputValue()).toBe("");
+          expect(await box(page, selector)).toEqual(before);
           expect(page.errors).toEqual([]);
         } finally {
           await close(page);
@@ -1912,13 +1910,8 @@ describe("scoped flag search builder", () => {
             await route.fulfill({ json: { ...route.request().postDataJSON(), id: "View01", revision: 1 } });
           });
           const openBuilder = async (currentPage: Awaited<ReturnType<typeof load>>) => {
-            const trigger = currentPage.getByRole("button", { name: "Search (/)", exact: true });
-            if (await trigger.count()) {
-              await trigger.focus();
-              await trigger.press("Enter");
-              await currentPage.locator('input[name="q"]').waitFor({ state: "visible" });
-            }
-            await currentPage.getByRole("button", { name: "More filters", exact: true }).click();
+            await currentPage.locator("[data-mail-filter-button]").click();
+            await currentPage.getByRole("menuitem", { name: /More filters/ }).click();
             await currentPage.getByRole("dialog").waitFor({ state: "visible" });
           };
           await openBuilder(currentPage);
@@ -1987,9 +1980,8 @@ test("scoped flag folder lookup recovers without losing the filter", async () =>
         ? route.fulfill({ status: 503, json: { error: "Folder lookup temporarily unavailable" } })
         : route.fulfill({ json: [{ id: "Fold01", name: "Inbox", parentId: null, selectable: true, role: "inbox" }] }),
     );
-    if (await page.getByRole("button", { name: "Search (/)", exact: true }).count())
-      await page.getByRole("button", { name: "Search (/)", exact: true }).click();
-    await page.getByRole("button", { name: "More filters", exact: true }).click();
+    await page.locator("[data-mail-filter-button]").click();
+    await page.getByRole("menuitem", { name: /More filters/ }).click();
     await page.getByRole("alert").waitFor({ state: "visible" });
     expect(await page.getByRole("combobox", { name: "Folder", exact: true }).isDisabled()).toBe(true);
     fail = false;

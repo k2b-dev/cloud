@@ -2321,10 +2321,8 @@
   .k2b-ui
     .mail-workspace:has(> .k2b-app-workspace__content > .k2b-app-workspace__main[data-mobile-pane="reader"])
     > .k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head[data-row],
-  .k2b-ui
-    .mail-workspace:has(> .k2b-app-workspace__content > .k2b-app-workspace__main[data-mobile-pane="reader"])
-    > .k2b-app-workspace__content
-    > .k2b-app-workspace__detail-toggle.k2b-app-workspace__detail-toggle.k2b-app-workspace__detail-toggle {
+  /* The reader holds its own Details on a phone; the list's head carries none. */
+  .k2b-ui .mail-workspace > .k2b-app-workspace__content > .k2b-app-workspace__detail-toggle.k2b-app-workspace__detail-toggle.k2b-app-workspace__detail-toggle {
     display: none;
   }
 }

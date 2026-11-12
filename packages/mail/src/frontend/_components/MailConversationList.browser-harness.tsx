@@ -9,6 +9,7 @@ import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationReader from "./MailConversationReader";
+import { MailSearchFilter } from "./MailWorkspaceHead";
 import { MailSearchInput } from "./MailWorkspaceSearch";
 import type { MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import type { MailListItem } from "./mail-navigation";
@@ -80,7 +81,25 @@ function HarnessHead(props: { requestUrl: string; onOpenHref: (href: string, rep
     canWrite: true,
     onOpenHref: (href, replace) => props.onOpenHref(href, replace),
   });
-  return <AppWorkspace.Head views={<MailSearchInput search={search} mailboxName="Example Club" />} />;
+  return (
+    <AppWorkspace.Head
+      views={
+        <MailSearchInput search={search} mailboxName="Example Club">
+          <MailSearchFilter
+            requestUrl={props.requestUrl}
+            search={resolveMailSearchRoute(new URL(props.requestUrl, location.origin))}
+            folders={[]}
+            folderId={null}
+            localTags={[]}
+            quickSearch={search}
+            onOpenHref={(href) => props.onOpenHref(href)}
+            onEditSearch={(state, source) => search.edit(state, source)}
+            hint={{ open: false, onDismiss: () => {} }}
+          />
+        </MailSearchInput>
+      }
+    />
+  );
 }
 
 window.mailNavigations = [];
