@@ -159,36 +159,66 @@ beforeEach(() => {
   spies.push(pendingApprovals);
 });
 
+/** A draft that is no longer a draft keeps its page; every open draft goes to Mail. */
+const keepDraftPage = () => spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok({ ...draft, state: "scheduled" })));
+
 test("a draft page asks for the approvals whose review links to this draft", async () => {
   spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "assigned", permission: "write", userId: user.id })));
 
-  expect((await request("Drf001?window=1")).status).toBe(200);
+  expect((await request("Drf001?window=1")).status).toBe(302);
   expect(pendingApprovals).toHaveBeenCalledWith(expect.anything(), { app: "mail", link: `/app/mail/${mailboxShortId}/compose/Drf001` });
 });
 
-test("an old link to a reply opens its conversation with the draft open; its own window and an open approval keep the page", async () => {
+const location = (response: Response) => new URL(response.headers.get("location")!, "https://cloud.example.test");
+
+test("an old link to a reply opens its conversation with the draft open; an open approval keeps the page", async () => {
   spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "assigned", permission: "write", userId: user.id })));
 
   const redirected = await request("Drf001");
   expect(redirected.status).toBe(302);
-  const target = new URL(redirected.headers.get("location")!, "https://cloud.example.test");
+  const target = location(redirected);
   expect(target.pathname).toBe(`/app/mail/${mailboxShortId}`);
   expect(target.searchParams.get("conversation")).toBe(mailboxShortId);
   expect(target.searchParams.get("draft")).toBe(mailboxShortId);
 
-  expect((await request("Drf001?window=1")).status).toBe(200);
   pendingApprovals.mockResolvedValue({ items: [], nextCursor: null, count: 1, elsewhere: 0 });
   expect((await request("Drf001")).status).toBe(200);
 });
 
+test("an old link to a new message and an old own-window link open the draft's window in Mail", async () => {
+  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "write", userId: user.id })));
+
+  // `?window=1` of a reply: the reply opens in a window over its mailbox.
+  const popout = location(await request("Drf001?window=1"));
+  expect(popout.pathname).toBe(`/app/mail/${mailboxShortId}`);
+  expect(popout.searchParams.get("draft")).toBe(mailboxShortId);
+  expect(popout.searchParams.has("conversation")).toBe(false);
+
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok({ ...draft, conversationId: null, intent: "new" })));
+  for (const path of ["Drf001", "Drf001?window=1"]) {
+    const response = await request(path);
+    expect(response.status).toBe(302);
+    expect(location(response).search).toBe(`?draft=${mailboxShortId}`);
+  }
+});
+
+test("a draft that is no longer a draft keeps its page, which explains what happened to it", async () => {
+  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "write", userId: user.id })));
+  keepDraftPage();
+  const response = await request("Drf001?window=1");
+  expect(response.status).toBe(200);
+  expect(await response.text()).toContain("MailComposerPage");
+});
+
 const pages = [
   { path: "local/seed-1", island: "MailDraftSeedComposerPage" },
-  // A reply's page stays in its own window; without it, the link opens the conversation (tested above).
-  { path: "Drf001?window=1", island: "MailComposerPage" },
+  // Only a draft that is no longer a draft keeps this page; an open one goes to Mail (tested above).
+  { path: "Drf001", island: "MailComposerPage" },
 ];
 
 for (const page of pages) {
   test(`a writer of assigned conversations opens ${page.island}`, async () => {
+    keepDraftPage();
     const required = spyOn(access, "requireMailboxAccess").mockResolvedValue(
       ok({ scope: "assigned", permission: "write", userId: user.id }),
     );
@@ -206,6 +236,7 @@ for (const page of pages) {
   });
 
   test(`${page.island} loads only signature names and personal defaults, with empty lists on failure`, async () => {
+    keepDraftPage();
     spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "write", userId: user.id })));
     const signatureId = "77777777-7777-4777-8777-777777777777";
     const template: ComposeTemplate = {
@@ -248,6 +279,7 @@ for (const page of pages) {
   });
 
   test(`a reader without write access gets the shared 403 page instead of ${page.island}`, async () => {
+    keepDraftPage();
     spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
 
     const response = await request(page.path);
@@ -259,6 +291,7 @@ for (const page of pages) {
 
 for (const page of pages) {
   test(`${page.island} answers 404 for a mailbox the caller may not read, as for an unknown address`, async () => {
+    keepDraftPage();
     spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
     spies.push(spyOn(mailboxes, "getMailbox").mockResolvedValue(fail(err.forbidden("Access denied"))));
     const response = await request(page.path);
@@ -275,8 +308,9 @@ test("a draft hidden from a member of the mailbox answers 404 on its compose pag
   expect(await response.text()).not.toContain("MailComposerPage");
 });
 
-for (const path of ["Drf001?window=1", "local/seed-1"]) {
+for (const path of ["Drf001", "local/seed-1"]) {
   test(`compose ${path} keeps resolved credential limits for calendar discovery`, async () => {
+    keepDraftPage();
     spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ permission: "write", scope: "assigned", userId: user.id })));
     expect((await request(path)).status).toBe(200);
     expect(integrations.getSpacesMailIntegrationAvailability).toHaveBeenCalledWith({

@@ -72,8 +72,6 @@ export default function MailConversationList(props: {
   listMode: MailListMode;
   loading: boolean;
   liveDegraded: boolean;
-  /** A new message in the flow: its draft stands at the top of the list while it is open in the reader. */
-  newMessage?: { subject: string; to: string[] } | null;
   onOpenHealth: () => void;
   onOpenDeliverySettings: () => void;
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
@@ -202,7 +200,7 @@ export default function MailConversationList(props: {
   const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has("search") || props.activeSavedViewId);
   /** An empty list after a day with completed work: "All done." takes the placeholder's place. */
   /** A new message is a row of its own: an empty list with one open still shows the list, not the empty state. */
-  const empty = () => props.items.length === 0 && !props.newMessage;
+  const empty = () => props.items.length === 0;
   const allDone = () => empty() && !searchActive() && (props.doneToday?.done ?? 0) > 0;
   /** Where each of Assigned to me's groups starts; the service lists every row that needs action first. */
   const assignedStarts = createMemo(() => {
@@ -493,29 +491,6 @@ export default function MailConversationList(props: {
                     : messages().messageListLabel({ title: props.title })
                 }
               >
-                <Show when={props.newMessage}>
-                  {(next) => (
-                    <div role="listitem" class="mail-list-entry mail-list-entry-active" data-mail-new-message-row>
-                      <span class="mail-row-check" aria-hidden="true" />
-                      <div class="mail-list-row mail-list-new-row" aria-current="true">
-                        <span class="mail-row-from">
-                          <span class="mail-row-sender">{messages().newMessage}</span>
-                          <span class="mail-row-draft">{messages().newMessageDraft}</span>
-                        </span>
-                        <span class="mail-row-subject-line">
-                          <span class="mail-row-subject">{next().subject || messages().newMessageNoSubject}</span>
-                        </span>
-                        <span class="mail-list-preview">
-                          {next().to.length > 0 ? messages().newMessageTo({ names: next().to.join(", ") }) : "\u00a0"}
-                        </span>
-                        <span class="mail-row-time-cell">
-                          <span class="mail-row-dot" aria-hidden="true" />
-                          <span class="mail-list-time mail-row-time">{messages().newMessageNow}</span>
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </Show>
                 <For each={props.items}>
                   {(item, index) => (
                     <>

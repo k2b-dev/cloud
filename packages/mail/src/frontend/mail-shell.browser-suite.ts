@@ -1398,8 +1398,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(await rows.nth(1).locator('[aria-label="1 attachment"]').count()).toBe(1);
               expect(Math.abs(markBox!.y + markBox!.height / 2 - (recipients!.y + recipients!.height / 2))).toBeLessThanOrEqual(1);
               expect(markBox!.x).toBeGreaterThanOrEqual(recipients!.x + recipients!.width);
-              expect(await draft.getAttribute("href")).toContain("/compose/Draft1?return=");
-              expect(await draft.getAttribute("href")).toContain("folder%3DDrafts1");
+              // A new message opens as a window over this folder.
+              expect(await draft.getAttribute("href")).toBe(`${boxPath}?folder=Drafts1&drafts-fixture=1&theme=${theme}&draft=Draft1`);
               const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
               expect(overflow).toBe(false);
               if (screenshots) {
@@ -3949,7 +3949,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
           return route.fallback();
         });
-        return { calls, drafts };
+        return { calls, drafts, makeDraft };
       };
       const draftBox = (page: Page) => page.locator("[data-mail-inline-draft]:not([data-mail-inline-draft-pending])");
       const readyDraft = async (page: Page) => {
@@ -4135,50 +4135,120 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
-      test("in the columns layout, Compose opens the new message in the reader too", async () => {
-        const page = await open(`${boxPath}?identity=1`, 1440, undefined, "reduce", async (next) => {
+      /** The new message's window, portaled over the workspace. */
+      const composeWindow = (page: Page, draftId = "DrfNew") =>
+        page.locator(".mail-compose-window", { has: page.locator(`[data-mail-compose-window="${draftId}"]`) });
+      const readyWindow = async (page: Page, draftId = "DrfNew") => {
+        await composeWindow(page, draftId).locator("[data-mail-inline-draft] .cm-content").waitFor();
+      };
+
+      test("Compose opens a window over the open conversation; the list and the reader behind stay usable", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
           await draftApi(next);
         });
         try {
           await page.getByRole("link", { name: "Compose" }).first().click();
-          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
+          await readyWindow(page);
+          // The window docks at the bottom end of the app and leaves the conversation where it was.
+          expect(new URL(page.url()).searchParams.get("conversation")).toBe("Conv01");
+          expect(new URL(page.url()).searchParams.has("draft")).toBe(false);
+          expect(await composeWindow(page).getAttribute("aria-modal")).toBe("false");
+          const box = (await composeWindow(page).boundingBox())!;
+          const area = (await page.locator(".mail-workspace").boundingBox())!;
+          expect(box.x + box.width).toBeLessThanOrEqual(area.x + area.width);
+          expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height);
+          // The new message starts with its recipients; its title follows the subject.
+          await page.waitForFunction(() => document.activeElement?.closest(".mail-compose-window .mail-inline-draft-recipients") !== null);
+          await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+          await composeWindow(page).locator(".k2b-floating-window__title", { hasText: "Pickup on Saturday" }).waitFor();
+          // Another conversation opens behind the window, which stays.
+          await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
+          expect(await composeWindow(page).count()).toBe(1);
         } finally {
           await close(page);
         }
       });
 
-      test("Compose starts a new message in the flow: a row at the top, an empty conversation, kept over reload", async () => {
+      test("a new message window docks, survives a reload, closes into Drafts, and Open brings it back", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?identity=1`, 1440, undefined, "reduce", async (next) => {
           api = await draftApi(next);
         });
         try {
           await page.getByRole("link", { name: "Compose" }).first().click();
-          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
-          expect(await page.locator("[data-mail-new-message-row]").count()).toBe(1);
-          const url = new URL(page.url());
-          expect(url.searchParams.get("draft")).toBe("DrfNew");
-          expect(url.searchParams.has("conversation")).toBe(false);
+          await readyWindow(page);
           expect(api.calls).toContain("POST /draft-seeds/materialize");
-          // The new message starts with its recipients; the subject shows in its row while someone types it.
-          await page.waitForFunction(() => document.activeElement?.closest(".mail-inline-draft-recipients") !== null);
-          await page.locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
-          await page.waitForFunction(() =>
-            document.querySelector("[data-mail-new-message-row]")?.textContent?.includes("Pickup on Saturday"),
-          );
-          expect(await page.locator("[data-mail-new-message]").textContent()).toContain("No messages yet");
+          await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
           await eventually(() => api.drafts.get("DrfNew")?.subject, "Pickup on Saturday", "subject saved");
+          await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved on server" }).waitFor();
+          // Minimized, it is a bar at the bottom; the list keeps its last row above it.
+          await composeWindow(page).getByRole("button", { name: "Minimize" }).click();
+          await page.waitForFunction(() => document.querySelector(".mail-compose-window")?.getAttribute("data-state") === "minimized");
+          await page.locator(".mail-windows-docked").waitFor();
+          // F5: the tab remembers the window and its state.
           await page.reload();
           await ready(page);
-          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
-          expect(await page.locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
-          // Another conversation takes the reader; Back brings the new message back.
-          await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
-          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
-          expect(await page.locator("[data-mail-new-message]").count()).toBe(0);
-          await page.goBack();
-          await page.waitForFunction(() => new URL(location.href).searchParams.get("draft") === "DrfNew");
-          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
+          await page.waitForFunction(() => document.querySelector(".mail-compose-window")?.getAttribute("data-state") === "minimized");
+          await page.getByRole("button", { name: "Restore Pickup on Saturday" }).click();
+          await readyWindow(page);
+          expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
+          // Close keeps the draft and says where it is; Open brings the window back.
+          await composeWindow(page).getByRole("button", { name: "Close window" }).click();
+          await composeWindow(page).waitFor({ state: "detached" });
+          expect(api.calls).not.toContain("POST /drafts/DrfNew/discard");
+          expect(api.drafts.get("DrfNew")?.state).toBe("draft");
+          const notice = page.locator("[data-k2b-toast-container]", { hasText: "Draft is in “Drafts”" });
+          await notice.waitFor();
+          await notice.getByRole("button", { name: "Open" }).click();
+          await readyWindow(page);
+          // An old link to the draft opens its window too and leaves the list's URL clean.
+          await page.goto(new URL(`${boxPath}?identity=1&draft=DrfNew`, page.url()).href);
+          await ready(page);
+          await readyWindow(page);
+          await page.waitForFunction(() => !new URL(location.href).searchParams.has("draft"));
+          expect(await page.locator(".mail-compose-window").count()).toBe(1);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("390: a new message is a full-screen sheet with Send in its head; Close keeps the draft", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?identity=1`, 390, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await page.locator("[data-workspace-primary]").first().click();
+          await readyWindow(page);
+          const sheet = composeWindow(page);
+          expect(await sheet.boundingBox()).toEqual({ x: 0, y: 0, width: 390, height: 844 });
+          expect(await sheet.getAttribute("aria-modal")).toBe("true");
+          expect(await sheet.locator(".k2b-floating-window__actions .mail-compose-action").isVisible()).toBe(true);
+          expect(await sheet.locator(".mail-compose-window-foot .mail-compose-action").count()).toBe(0);
+          await sheet.locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+          await eventually(() => api.drafts.get("DrfNew")?.subject, "Pickup on Saturday", "subject saved");
+          await sheet.getByRole("button", { name: "Close window" }).click();
+          await sheet.waitFor({ state: "detached" });
+          expect(api.drafts.get("DrfNew")?.state).toBe("draft");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("a new message in Drafts opens as a window over the folder", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+          api.drafts.set("Draft1", api.makeDraft("Draft1", { subject: "Quarterly figures" }, { conversationId: null, intent: "new" }));
+        });
+        try {
+          await page.locator('[data-draft-id="Draft1"] a.mail-list-row').click();
+          await readyWindow(page, "Draft1");
+          await composeWindow(page, "Draft1").locator(".k2b-floating-window__title", { hasText: "Quarterly figures" }).waitFor();
+          // The folder stays; the URL drops the draft, and the window is the tab's to remember.
+          expect(await page.locator("[data-mail-drafts-list]").isVisible()).toBe(true);
+          await page.waitForFunction(() => !new URL(location.href).searchParams.has("draft"));
         } finally {
           await close(page);
         }
@@ -4359,12 +4429,32 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await shoot("06-gustav-suggestion", "dark", 1440, `${thread}&suggestion=1`, async (page) => {
             await readyDraft(page);
           });
-          for (const width of [1440, 390])
-            await shoot("08-new-message", "light", width, `${boxPath}?identity=1`, async (page) => {
-              await page.getByRole("link", { name: "Compose" }).first().click();
-              await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
-              await page.locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
-            });
+          const compose = async (page: Page) => {
+            await page.locator("[data-workspace-primary]").first().click();
+            await readyWindow(page);
+            await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+            await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved on server" }).waitFor();
+          };
+          // A phone shows Compose with the list, not beside an open conversation.
+          for (const [theme, width] of [
+            ["light", 1440],
+            ["light", 390],
+            ["dark", 1440],
+          ] as const)
+            await shoot("08-new-message", theme, width, `${boxPath}?${width < 640 ? "" : "conversation=Conv01&"}identity=1`, compose);
+          await shoot("09-new-minimized", "light", 1440, `${boxPath}?conversation=Conv01&identity=1`, async (page) => {
+            await compose(page);
+            await composeWindow(page).getByRole("button", { name: "Minimize" }).click();
+          });
+          await shoot("10-new-maximized", "light", 1440, `${boxPath}?conversation=Conv01&identity=1`, async (page) => {
+            await compose(page);
+            await composeWindow(page).getByRole("button", { name: "Maximize" }).click();
+          });
+          await shoot("11-new-closed", "light", 1440, `${boxPath}?identity=1`, async (page) => {
+            await compose(page);
+            await composeWindow(page).getByRole("button", { name: "Close window" }).click();
+            await page.locator("[data-k2b-toast-container]", { hasText: "Draft is in “Drafts”" }).waitFor();
+          });
           await shoot("07-quote-attached", "light", 1440, thread, async (page) => {
             await reply(page);
             await page.locator("[data-mail-draft-quote]").getByRole("button").click();

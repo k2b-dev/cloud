@@ -263,7 +263,7 @@ const waitFor = async (condition: () => boolean) => {
   }
 };
 
-describe.skipIf(isServer)("mailbox compose opens one new message", () => {
+describe.skipIf(isServer)("mailbox compose opens one new message window", () => {
   const m = modules!;
   const path = "/app/mail/Box001";
   const intentHref = "/app/mail/compose?mailbox=Box001&autostart=1";
@@ -392,13 +392,19 @@ describe.skipIf(isServer)("mailbox compose opens one new message", () => {
     body: mailComposeDraftSeedInput(sender),
   });
   const materializePath = "/api/mail/mailboxes/Box001/draft-seeds/materialize";
-  /** v4: Compose creates the draft (seed, then materialize) and opens it as "New message" in the flow, on this page. */
+  /** The draft's window, portaled over the workspace. */
+  const composeWindows = () => dom.document.querySelectorAll("[data-mail-compose-window]");
+  const composeWindow = (draftId = "Drf0New1") => dom.document.querySelector(`[data-mail-compose-window="${draftId}"]`);
+  /** v5: Compose creates the draft (seed, then materialize) and opens it as a floating window over this page. */
   const expectNewMessage = async (sender = "Send01") => {
-    await waitFor(() => new URL(window.location.href).searchParams.get("draft") === "Drf0New1");
+    await waitFor(() => composeWindow() !== null);
     expect(posts().map(({ path }) => path)).toEqual([seedPost(sender).path, materializePath]);
     expect(posts()[0]).toEqual(seedPost(sender));
     expect((posts()[1]!.body as { idempotencyKey: string }).idempotencyKey).toBe(seed.id);
-    await waitFor(() => dom.root.querySelector("[data-mail-new-message-row]") !== null);
+    // The window is no place in the history: the URL keeps the list, the tab remembers the window.
+    expect(new URL(window.location.href).searchParams.has("draft")).toBe(false);
+    // A phone shows the window as a modal full-screen sheet.
+    expect(composeWindow()!.closest("[role=dialog]")?.getAttribute("aria-modal")).toBe(window.innerWidth < 640 ? "true" : "false");
     expect(navigation.document).not.toHaveBeenCalled();
     expect(navigation.navigateTo).not.toHaveBeenCalled();
     expect(navigation.assign).not.toHaveBeenCalled();
@@ -415,7 +421,7 @@ describe.skipIf(isServer)("mailbox compose opens one new message", () => {
     expect(composeLink().hasAttribute("aria-busy")).toBe(false);
   };
 
-  test("a1 desktop head Compose creates one draft and opens it as a new message in the flow", async () => {
+  test("a1 desktop head Compose creates one draft and opens it as a floating window", async () => {
     mount();
     expect(composeLink().getAttribute("href")).toBe(intentHref);
     composeLink().click();
@@ -435,24 +441,26 @@ describe.skipIf(isServer)("mailbox compose opens one new message", () => {
     expect(navigation.document).not.toHaveBeenCalled();
     responseGate.resolve(Response.json(seed));
     await expectNewMessage();
+    // The sheet holds Send in its head, within reach above the keyboard; the bottom bar has none.
+    const sheet = composeWindow()!.closest<HTMLElement>("[role=dialog]")!;
+    await waitFor(() => sheet.querySelector(".k2b-floating-window__actions .mail-compose-action") !== null);
+    expect(sheet.querySelector(".mail-compose-window-foot .mail-compose-action")).toBeNull();
   });
 
-  test("a4 the live refresh that follows the new draft keeps the new message open", async () => {
+  test("a4 the live refresh that follows the new draft keeps the window open", async () => {
     mount();
     const socket = FakeWebSocket.instances.at(-1)!;
     socket.open();
     socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
     composeLink().click();
     await expectNewMessage();
-    await waitFor(() => dom.root.querySelector("[data-mail-new-message]") !== null);
     // Creating the draft is a change of the mailbox: its live event reloads page 1 of the list.
     socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: null } });
     await waitFor(() => requests.some((request) => request.path.endsWith("/workspace-route")));
     await dom.window.happyDOM.waitUntilComplete();
     await Bun.sleep(20);
-    expect(dom.root.querySelector("[data-mail-new-message]")).not.toBeNull();
-    expect(dom.root.querySelector("[data-mail-new-message-row]")).not.toBeNull();
-    expect(new URL(window.location.href).searchParams.get("draft")).toBe("Drf0New1");
+    expect(composeWindows()).toHaveLength(1);
+    expect(new URL(window.location.href).searchParams.has("draft")).toBe(false);
   });
 
   test("a3 mail.compose retains its shortcut and opens one new message", async () => {
@@ -526,7 +534,7 @@ describe.skipIf(isServer)("mailbox compose opens one new message", () => {
     m.ui.dialogCore.close();
     failure = null;
     composeLink().click();
-    await waitFor(() => new URL(window.location.href).searchParams.get("draft") === "Drf0New1");
+    await waitFor(() => composeWindow() !== null);
     expect(posts()).toEqual([seedPost("Send01"), seedPost("Send01"), expect.objectContaining({ path: materializePath })]);
     expect(navigation.document).not.toHaveBeenCalled();
   });
@@ -539,7 +547,7 @@ describe.skipIf(isServer)("mailbox compose opens one new message", () => {
     m.ui.dialogCore.close();
     materializeFailure = null;
     composeLink().click();
-    await waitFor(() => new URL(window.location.href).searchParams.get("draft") === "Drf0New1");
+    await waitFor(() => composeWindow() !== null);
     expect(posts().map(({ path }) => path)).toEqual([seedPost("Send01").path, materializePath, materializePath]);
     expect(
       posts()
@@ -560,7 +568,7 @@ describe.skipIf(isServer)("mailbox compose opens one new message", () => {
       expect(navigation.document).not.toHaveBeenCalled();
       responseGate.resolve(Response.json(seed));
       await expectNewMessage();
-      expect(dom.root.querySelectorAll("[data-mail-new-message-row]")).toHaveLength(1);
+      expect(composeWindows()).toHaveLength(1);
     });
   }
 

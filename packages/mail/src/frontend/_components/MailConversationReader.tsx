@@ -19,7 +19,6 @@ import {
   prompts,
   ScrollArea,
   Select,
-  StatusBadge,
   Toolbar,
   Tooltip,
   toast,
@@ -210,12 +209,6 @@ export default function MailConversationReader(props: {
   onToggleDraftFullscreen?: () => void;
   /** The draft open in this conversation, or null; the workspace keeps it in the URL. */
   onDraftChange?: (draftId: string | null, options?: { history?: boolean }) => void;
-  /** A new message without a conversation yet, open here while no conversation is selected. */
-  newMessage?: { draftId: string; initialDraft?: MailDraft; fresh: boolean } | null;
-  onNewMessageSummary?: (value: { subject: string; to: string[] }) => void;
-  onNewMessageClose?: () => void;
-  /** Another draft takes the new message's place, such as the saved rest of a shared draft. */
-  onNewMessageOpenDraft?: (draftId: string) => void;
 }) {
   const locale = useLocale();
   let seedStorage: Storage | undefined;
@@ -942,7 +935,6 @@ export default function MailConversationReader(props: {
     ),
   );
 
-  const [newMessageSubject, setNewMessageSubject] = createSignal("");
   /** The conversation's other drafts, newest first, as quiet rows under the open draft. */
   const otherDrafts = createMemo(() => props.conversationDrafts.filter((draft) => draft.id !== visibleInlineDraft()?.draftId));
   const draftIntentIcon = (intent: DraftIntent) =>
@@ -1707,68 +1699,9 @@ export default function MailConversationReader(props: {
       <Show
         when={props.messages.length > 0}
         fallback={
-          <Show
-            when={!props.selectedConversationId && props.newMessage}
-            keyed
-            fallback={
-              <div class="flex min-h-0 flex-1 items-center justify-center p-[var(--ui-space-shell)]">
-                <Placeholder icon="ti ti-mail-opened" title={t().chooseConversationTitle} description={t().chooseConversationDescription} />
-              </div>
-            }
-          >
-            {(next) => (
-              // A new message in the flow: an empty conversation with its draft open; after sending it becomes one.
-              <div class="relative min-h-0 flex-1 overflow-hidden" data-mail-new-message>
-                <ScrollArea class="mail-reader-scroll absolute inset-0 px-3 py-2 sm:px-5">
-                  <div class="mail-reading-column" data-mail-reading-column data-draft-fullscreen={props.draftFullscreen ? "" : undefined}>
-                    <header class="mail-reader-new-head">
-                      <h1 class="mail-reader-title" data-mail-reader-heading tabIndex={-1}>
-                        {newMessageSubject() || t().newMessageTitle}
-                      </h1>
-                      <StatusBadge tone="neutral" icon={null} label={t().draftOne} />
-                    </header>
-                    <div class="mail-inline-draft-frame" data-mail-inline-draft-frame>
-                      <MailInlineDraft
-                        mailboxId={props.mailboxId}
-                        draftId={next.draftId}
-                        initialDraft={next.initialDraft}
-                        currentUserId={props.currentUserId ?? ""}
-                        currentUserEmail={props.currentUserEmail ?? null}
-                        identities={props.identities}
-                        dateConfig={props.dateConfig}
-                        canAdmin={props.canAdmin}
-                        mailboxRecipientSuggestions={props.mailboxWide}
-                        calendarIntegrationAvailable={props.calendarIntegrationAvailable}
-                        liveDictation={props.liveDictation ?? false}
-                        returnHref={props.requestUrl}
-                        host={{
-                          fresh: next.fresh,
-                          fullscreen: () => props.draftFullscreen ?? false,
-                          toggleFullscreen: () => props.onToggleDraftFullscreen?.(),
-                          register: () => undefined,
-                          messageLabel: () => null,
-                          summary: (value) => {
-                            setNewMessageSubject(value.subject);
-                            props.onNewMessageSummary?.(value);
-                          },
-                          leave: (outcome) => {
-                            props.onNewMessageClose?.();
-                            // The sent message arrives as a conversation; a discarded draft leaves Drafts.
-                            if (outcome !== "closed") void props.onReconcileAfterWrite().catch(() => undefined);
-                          },
-                          openDraft: (draftId) => props.onNewMessageOpenDraft?.(draftId),
-                        }}
-                      />
-                    </div>
-                    <p class="mail-reader-new-empty">
-                      <i class="ti ti-message-2" aria-hidden="true" />
-                      {t().noMessagesYet}
-                    </p>
-                  </div>
-                </ScrollArea>
-              </div>
-            )}
-          </Show>
+          <div class="flex min-h-0 flex-1 items-center justify-center p-[var(--ui-space-shell)]">
+            <Placeholder icon="ti ti-mail-opened" title={t().chooseConversationTitle} description={t().chooseConversationDescription} />
+          </div>
         }
       >
         {/* A right-click anywhere in the conversation opens its "…" menu; a message opens its own. Links, fields, the

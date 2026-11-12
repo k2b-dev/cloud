@@ -29,6 +29,7 @@ import {
 } from "@k2b/ui";
 import type { TextEditorController } from "@k2b/ui/text-editor";
 import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { Portal } from "solid-js/web";
 import { apiClient } from "../../api/client";
 import { MailDraftCalendarInputSchema, mailCommandMessages } from "../../commands";
 import {
@@ -64,6 +65,7 @@ import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
 import type { MailTextEditorActions } from "./MailTextEditor";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
+import { mailComposeWindowMessages } from "./mail-compose-window-messages";
 import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
 import { mailComposerMessages } from "./mail-composer-messages";
@@ -121,6 +123,17 @@ export type MailComposerHost = {
   messageLabel: (messageId: string) => string | null;
   /** A new message tells the list its subject and recipients while someone types them. */
   summary?: (value: { subject: string; to: string[] }) => void;
+  /**
+   * The draft stands in a floating window. The window's head shows the save status; on a phone sheet it also holds Send,
+   * since the bottom bar can sit under the keyboard. A failed send keeps the window open with the reason in its bar.
+   */
+  window?: {
+    status: Accessor<HTMLElement | undefined>;
+    actions: Accessor<HTMLElement | undefined>;
+    sheet: Accessor<boolean>;
+  };
+  /** Announces a queued or scheduled send in place of the composer's own notice, such as with Undo. */
+  delivered?: (delivery: { submissionId: string | null; scheduledAt: string | null; undoSeconds: number }) => void;
 };
 
 export default function MailComposer(props: {
@@ -966,6 +979,8 @@ export default function MailComposer(props: {
     };
   };
   let attachAfterDeliveryReview = false;
+  /** The reason the last send failed, shown in a window's bar until the next attempt. */
+  const [sendFailure, setSendFailure] = createSignal<string | null>(null);
   let lastDeliveryAttempt: PreparedDelivery | null = null;
   let deliveryPreparationController: AbortController | null = null;
   const deliveryFingerprint = (delivery: { scheduledAt?: string }) =>
@@ -996,13 +1011,21 @@ export default function MailComposer(props: {
       draftSession.forgetJournal(attempt.draftId, { closed: true });
       const returnHref = props.returnHref;
       const scheduled = Boolean(attempt.scheduledAt);
-      toast.success(
-        scheduled
-          ? t().deliveryScheduled({ value: dates.formatDateTime(attempt.scheduledAt!, props.dateConfig) })
-          : preferences.undoSeconds > 0
-            ? t().messageQueuedUndo
-            : t().messageQueued,
-      );
+      const submissionId = command.result.outboxSubmissionId;
+      if (props.host?.delivered)
+        props.host.delivered({
+          submissionId: typeof submissionId === "string" ? submissionId : null,
+          scheduledAt: attempt.scheduledAt ?? null,
+          undoSeconds: attempt.request.undoSeconds,
+        });
+      else
+        toast.success(
+          scheduled
+            ? t().deliveryScheduled({ value: dates.formatDateTime(attempt.scheduledAt!, props.dateConfig) })
+            : preferences.undoSeconds > 0
+              ? t().messageQueuedUndo
+              : t().messageQueued,
+        );
       if (isShared() && sharedState()?.dirty) {
         shared()?.freeze();
         return;
@@ -1021,6 +1044,8 @@ export default function MailComposer(props: {
         return;
       }
       if (error instanceof ComposeSafetyCancelled) return;
+      // A window keeps the draft open and says it in its bar, with Send again in Send's place.
+      if (props.host?.window) return void setSendFailure(error.message);
       return prompts.error(error.message);
     },
   });
@@ -1088,6 +1113,7 @@ export default function MailComposer(props: {
 
   const sendDraft = async (delivery: { scheduledAt?: string }) => {
     if (!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0) return;
+    setSendFailure(null);
     const reservation = composerTransition.reserve("send");
     if (!reservation) return;
     const preparation = new AbortController();
@@ -1605,6 +1631,26 @@ export default function MailComposer(props: {
 
   if (props.host) {
     const host = props.host;
+    const windowSlots = host.window;
+    const windowT = () => mailComposeWindowMessages.resolve([locale()]).t;
+    // A window writes on offline and keeps the text here; Send waits until the connection is back.
+    const [online, setOnline] = createSignal(typeof navigator === "undefined" || navigator.onLine !== false);
+    onMount(() => {
+      if (!windowSlots) return;
+      const update = () => setOnline(navigator.onLine !== false);
+      window.addEventListener("online", update);
+      window.addEventListener("offline", update);
+      onCleanup(() => {
+        window.removeEventListener("online", update);
+        window.removeEventListener("offline", update);
+      });
+    });
+    const sendBlocked = () =>
+      !editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || (Boolean(windowSlots) && !online());
+    const uploadPercent = () => {
+      const running = uploads().filter((upload) => !upload.error);
+      return running.length === 0 ? null : Math.round(running.reduce((sum, upload) => sum + upload.progress, 0) / running.length);
+    };
     const inlineIntentLabel = () => {
       const intent = composerIntent();
       return intent === "reply"
@@ -1652,24 +1698,49 @@ export default function MailComposer(props: {
             disabled: !editable(),
             action: () => void editMessageOptions(),
           },
-          { label: t().inOwnWindow, icon: "ti ti-app-window", disabled: !editable(), action: openWindow },
+          ...(windowSlots ? [] : [{ label: t().inOwnWindow, icon: "ti ti-app-window", disabled: !editable(), action: openWindow }]),
           ...(editable() && ((draft()?.recoveryCopyCount ?? 0) > 0 || draftSession.localRecoveryCopies().length > 0)
             ? [{ label: t().recoverChanges, icon: "ti ti-history", action: () => void restoreRecoveryCopy() }]
             : []),
         ],
       },
-      {
-        items: [
-          {
-            label: t().discardDraft,
-            icon: "ti ti-trash",
-            variant: "danger",
-            disabled: !editable() || discard.loading(),
-            action: () => void discardDraft(),
-          },
-        ],
-      },
+      // A window keeps Discard as the trash at the end of its bar.
+      ...(windowSlots
+        ? []
+        : [
+            {
+              items: [
+                {
+                  label: t().discardDraft,
+                  icon: "ti ti-trash",
+                  variant: "danger" as const,
+                  disabled: !editable() || discard.loading(),
+                  action: () => void discardDraft(),
+                },
+              ],
+            },
+          ]),
     ];
+    const sendButton = () => (
+      <SplitButton
+        class="mail-compose-action"
+        size="sm"
+        type="button"
+        loading={send.loading()}
+        disabled={sendBlocked()}
+        menuLabel={t().moreSendOptions}
+        tooltip={`${t().send} (${sendShortcutLabel()})`}
+        items={[
+          { label: t().saveAsDraft, icon: "ti ti-device-floppy", action: () => void leaveComposer() },
+          { label: t().sendLater, icon: "ti ti-clock", action: () => void schedule() },
+        ]}
+        data-mail-send-again={sendFailure() ? "" : undefined}
+        onClick={() => void sendDraft({})}
+      >
+        <i class={`ti ${sendFailure() ? "ti-refresh" : "ti-send"}`} aria-hidden="true" />
+        {sendFailure() ? windowT().sendAgain : t().send}
+      </SplitButton>
+    );
     // Esc leaves full screen first, then collapses the draft. A menu, a completion list, or a dialog takes Esc first.
     const onKeyDown = (event: KeyboardEvent) => {
       // Safari ends an IME composition with Escape and reports that key as keyCode 229, not as composing.
@@ -1702,10 +1773,13 @@ export default function MailComposer(props: {
           <Show
             when={suggestionUntouched()}
             fallback={
-              <span class="mail-inline-draft-intent">
-                <i class={`ti ${composerIntent() === "new" ? "ti-pencil" : intentIcon(composerIntent())}`} aria-hidden="true" />
-                {inlineIntentLabel()}
-              </span>
+              // A new message in a window has its name in the window's title.
+              <Show when={!windowSlots || composerIntent() !== "new"}>
+                <span class="mail-inline-draft-intent">
+                  <i class={`ti ${composerIntent() === "new" ? "ti-pencil" : intentIcon(composerIntent())}`} aria-hidden="true" />
+                  {inlineIntentLabel()}
+                </span>
+              </Show>
             }
           >
             <span class="mail-inline-draft-intent">
@@ -1753,37 +1827,40 @@ export default function MailComposer(props: {
               })}
             </span>
           </Show>
-          <span class="mail-inline-draft-head-tools">
-            <Dropdown.Root position="bottom-right" width="16rem" items={draftMenu()}>
-              <Dropdown.Trigger iconOnly type="button" variant="ghost" size="sm" label={t().draftActions}>
-                <i class="ti ti-dots" aria-hidden="true" />
-              </Dropdown.Trigger>
-            </Dropdown.Root>
-            <Tooltip.Anchor content={host.fullscreen() ? t().exitFullscreen : t().enterFullscreen}>
-              <IconButton
-                type="button"
-                size="sm"
-                label={host.fullscreen() ? t().exitFullscreen : t().enterFullscreen}
-                aria-pressed={host.fullscreen()}
-                data-mail-draft-fullscreen
-                onClick={host.toggleFullscreen}
-              >
-                <i class={`ti ${host.fullscreen() ? "ti-arrows-minimize" : "ti-arrows-maximize"}`} aria-hidden="true" />
-              </IconButton>
-            </Tooltip.Anchor>
-            <Tooltip.Anchor content={t().collapseDraft}>
-              <IconButton
-                type="button"
-                size="sm"
-                label={t().collapseDraft}
-                data-mail-draft-collapse
-                disabled={composerTransition.active() !== null}
-                onClick={() => void collapse()}
-              >
-                <i class="ti ti-chevron-up" aria-hidden="true" />
-              </IconButton>
-            </Tooltip.Anchor>
-          </span>
+          {/* A window has its own Minimize, Maximize, and Close; the draft's actions sit in its bottom bar. */}
+          <Show when={!windowSlots}>
+            <span class="mail-inline-draft-head-tools">
+              <Dropdown.Root position="bottom-right" width="16rem" items={draftMenu()}>
+                <Dropdown.Trigger iconOnly type="button" variant="ghost" size="sm" label={t().draftActions}>
+                  <i class="ti ti-dots" aria-hidden="true" />
+                </Dropdown.Trigger>
+              </Dropdown.Root>
+              <Tooltip.Anchor content={host.fullscreen() ? t().exitFullscreen : t().enterFullscreen}>
+                <IconButton
+                  type="button"
+                  size="sm"
+                  label={host.fullscreen() ? t().exitFullscreen : t().enterFullscreen}
+                  aria-pressed={host.fullscreen()}
+                  data-mail-draft-fullscreen
+                  onClick={host.toggleFullscreen}
+                >
+                  <i class={`ti ${host.fullscreen() ? "ti-arrows-minimize" : "ti-arrows-maximize"}`} aria-hidden="true" />
+                </IconButton>
+              </Tooltip.Anchor>
+              <Tooltip.Anchor content={t().collapseDraft}>
+                <IconButton
+                  type="button"
+                  size="sm"
+                  label={t().collapseDraft}
+                  data-mail-draft-collapse
+                  disabled={composerTransition.active() !== null}
+                  onClick={() => void collapse()}
+                >
+                  <i class="ti ti-chevron-up" aria-hidden="true" />
+                </IconButton>
+              </Tooltip.Anchor>
+            </span>
+          </Show>
         </header>
         <div class="mail-inline-draft-meta">
           <IdentitySwitcher />
@@ -2011,99 +2088,253 @@ export default function MailComposer(props: {
           )}
         </Show>
 
-        <footer class="mail-inline-draft-foot">
-          <span class="mail-inline-draft-tools">
-            <Show when={format() === "markdown"}>
-              <Tooltip.Anchor content={t().formatting}>
-                <IconButton
-                  type="button"
-                  size="sm"
-                  label={t().formatting}
-                  aria-pressed={inlineFormatting()}
-                  disabled={!editable() || inlinePreview()}
-                  onClick={() => setInlineFormatting((value) => !value)}
+        <Show
+          when={windowSlots}
+          fallback={
+            <footer class="mail-inline-draft-foot">
+              <span class="mail-inline-draft-tools">
+                <Show when={format() === "markdown"}>
+                  <Tooltip.Anchor content={t().formatting}>
+                    <IconButton
+                      type="button"
+                      size="sm"
+                      label={t().formatting}
+                      aria-pressed={inlineFormatting()}
+                      disabled={!editable() || inlinePreview()}
+                      onClick={() => setInlineFormatting((value) => !value)}
+                    >
+                      <i class="ti ti-typography" aria-hidden="true" />
+                    </IconButton>
+                  </Tooltip.Anchor>
+                </Show>
+                <Tooltip.Anchor content={t().attachFiles}>
+                  <IconButton
+                    type="button"
+                    size="sm"
+                    label={t().attachFiles}
+                    disabled={!editable()}
+                    onClick={() => void chooseAttachments()}
+                  >
+                    <i class="ti ti-paperclip" aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+                <Show when={signatureChoiceVisible()}>
+                  <MailComposerSignature
+                    quiet
+                    signatures={props.signatures}
+                    value={signatureTemplateId()}
+                    senderDefaultId={senderDefaultSignatureId()}
+                    disabled={!editable()}
+                    onChange={setSignatureTemplateId}
+                  />
+                </Show>
+                <Tooltip.Anchor content={t().writeWithAi}>
+                  <IconButton
+                    type="button"
+                    size="sm"
+                    class="mail-inline-draft-ai"
+                    label={t().writeWithAi}
+                    disabled={!editable() || uploads().length > 0 || composeWithAi.loading()}
+                    onClick={() =>
+                      void composeWithAi
+                        .mutate()
+                        .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : t().assistantFailed))
+                    }
+                  >
+                    <i class="ti ti-sparkles" aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+                <Show when={format() === "markdown"}>
+                  {/* A visible switch, not a menu entry: the person checks exactly how the mail arrives. */}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    class="mail-inline-draft-preview-toggle"
+                    aria-pressed={inlinePreview()}
+                    title={inlinePreview() ? t().hidePreview : t().showPreview}
+                    data-mail-draft-preview
+                    onClick={() => setInlinePreview((value) => !value)}
+                  >
+                    <i class={`ti ${inlinePreview() ? "ti-pencil" : "ti-eye"}`} aria-hidden="true" />
+                    <span class="mail-inline-draft-preview-label">{inlinePreview() ? t().write : t().preview}</span>
+                  </Button>
+                </Show>
+              </span>
+              <span
+                class="mail-inline-draft-status"
+                data-mail-save-status={saveStatus()}
+                role="status"
+                aria-live="polite"
+                title={saveState()}
+              >
+                <Show when={!suggestionUntouched()} fallback={<span class="mail-inline-draft-suggestion-hint">{t().suggestionHint}</span>}>
+                  <Show when={saveState()}>
+                    <i
+                      class={`ti ${saveStatus() === "saved" ? "ti-cloud-check" : saveStatus() === "local" ? "ti-device-laptop" : "ti-clock"}`}
+                      aria-hidden="true"
+                    />
+                    {saveState()}
+                  </Show>
+                </Show>
+              </span>
+              {sendButton()}
+            </footer>
+          }
+        >
+          {(slots) => (
+            <>
+              <footer class="mail-inline-draft-foot mail-compose-window-foot" data-tone={sendFailure() ? "danger" : undefined}>
+                {/* On a phone sheet Send stands in the window's head, within reach above the keyboard. */}
+                <Show when={!slots().sheet()}>{sendButton()}</Show>
+                <Show
+                  when={sendFailure()}
+                  fallback={
+                    <>
+                      <span class="mail-inline-draft-tools">
+                        <Show when={format() === "markdown"}>
+                          <Tooltip.Anchor content={t().formatting}>
+                            <IconButton
+                              type="button"
+                              size="sm"
+                              label={t().formatting}
+                              aria-pressed={inlineFormatting()}
+                              disabled={!editable() || inlinePreview()}
+                              onClick={() => setInlineFormatting((value) => !value)}
+                            >
+                              <i class="ti ti-typography" aria-hidden="true" />
+                            </IconButton>
+                          </Tooltip.Anchor>
+                        </Show>
+                        <Tooltip.Anchor content={t().attachFiles}>
+                          <IconButton
+                            type="button"
+                            size="sm"
+                            label={t().attachFiles}
+                            disabled={!editable()}
+                            onClick={() => void chooseAttachments()}
+                          >
+                            <i class="ti ti-paperclip" aria-hidden="true" />
+                          </IconButton>
+                        </Tooltip.Anchor>
+                        <Show when={signatureChoiceVisible()}>
+                          <MailComposerSignature
+                            quiet
+                            signatures={props.signatures}
+                            value={signatureTemplateId()}
+                            senderDefaultId={senderDefaultSignatureId()}
+                            disabled={!editable()}
+                            onChange={setSignatureTemplateId}
+                          />
+                        </Show>
+                        <Tooltip.Anchor content={t().writeWithAi}>
+                          <IconButton
+                            type="button"
+                            size="sm"
+                            class="mail-inline-draft-ai"
+                            label={t().writeWithAi}
+                            disabled={!editable() || uploads().length > 0 || composeWithAi.loading()}
+                            onClick={() =>
+                              void composeWithAi
+                                .mutate()
+                                .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : t().assistantFailed))
+                            }
+                          >
+                            <i class="ti ti-sparkles" aria-hidden="true" />
+                          </IconButton>
+                        </Tooltip.Anchor>
+                        <Show when={format() === "markdown"}>
+                          {/* A visible switch, not a menu entry: the person checks exactly how the mail arrives. */}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            class="mail-inline-draft-preview-toggle"
+                            aria-pressed={inlinePreview()}
+                            title={inlinePreview() ? t().hidePreview : t().showPreview}
+                            data-mail-draft-preview
+                            onClick={() => setInlinePreview((value) => !value)}
+                          >
+                            <i class={`ti ${inlinePreview() ? "ti-pencil" : "ti-eye"}`} aria-hidden="true" />
+                            <span class="mail-inline-draft-preview-label">{inlinePreview() ? t().write : t().preview}</span>
+                          </Button>
+                        </Show>
+                      </span>
+                      <Dropdown.Root position="top-left" width="16rem" items={draftMenu()}>
+                        <Dropdown.Trigger iconOnly type="button" variant="ghost" size="sm" label={t().draftActions}>
+                          <i class="ti ti-dots" aria-hidden="true" />
+                        </Dropdown.Trigger>
+                      </Dropdown.Root>
+                    </>
+                  }
                 >
-                  <i class="ti ti-typography" aria-hidden="true" />
-                </IconButton>
-              </Tooltip.Anchor>
-            </Show>
-            <Tooltip.Anchor content={t().attachFiles}>
-              <IconButton type="button" size="sm" label={t().attachFiles} disabled={!editable()} onClick={() => void chooseAttachments()}>
-                <i class="ti ti-paperclip" aria-hidden="true" />
-              </IconButton>
-            </Tooltip.Anchor>
-            <Show when={signatureChoiceVisible()}>
-              <MailComposerSignature
-                quiet
-                signatures={props.signatures}
-                value={signatureTemplateId()}
-                senderDefaultId={senderDefaultSignatureId()}
-                disabled={!editable()}
-                onChange={setSignatureTemplateId}
-              />
-            </Show>
-            <Tooltip.Anchor content={t().writeWithAi}>
-              <IconButton
-                type="button"
-                size="sm"
-                class="mail-inline-draft-ai"
-                label={t().writeWithAi}
-                disabled={!editable() || uploads().length > 0 || composeWithAi.loading()}
-                onClick={() =>
-                  void composeWithAi
-                    .mutate()
-                    .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : t().assistantFailed))
-                }
-              >
-                <i class="ti ti-sparkles" aria-hidden="true" />
-              </IconButton>
-            </Tooltip.Anchor>
-            <Show when={format() === "markdown"}>
-              {/* A visible switch, not a menu entry: the person checks exactly how the mail arrives. */}
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                class="mail-inline-draft-preview-toggle"
-                aria-pressed={inlinePreview()}
-                title={inlinePreview() ? t().hidePreview : t().showPreview}
-                data-mail-draft-preview
-                onClick={() => setInlinePreview((value) => !value)}
-              >
-                <i class={`ti ${inlinePreview() ? "ti-pencil" : "ti-eye"}`} aria-hidden="true" />
-                <span class="mail-inline-draft-preview-label">{inlinePreview() ? t().write : t().preview}</span>
-              </Button>
-            </Show>
-          </span>
-          <span class="mail-inline-draft-status" data-mail-save-status={saveStatus()} role="status" aria-live="polite" title={saveState()}>
-            <Show when={!suggestionUntouched()} fallback={<span class="mail-inline-draft-suggestion-hint">{t().suggestionHint}</span>}>
-              <Show when={saveState()}>
-                <i
-                  class={`ti ${saveStatus() === "saved" ? "ti-cloud-check" : saveStatus() === "local" ? "ti-device-laptop" : "ti-clock"}`}
-                  aria-hidden="true"
-                />
-                {saveState()}
+                  {(reason) => (
+                    <p class="mail-compose-window-failure" role="alert" data-mail-send-failure>
+                      {windowT().sendFailed({ reason: reason() })}
+                    </p>
+                  )}
+                </Show>
+                <Tooltip.Anchor content={t().discardDraft}>
+                  <IconButton
+                    type="button"
+                    size="sm"
+                    label={t().discardDraft}
+                    disabled={!editable() || discard.loading()}
+                    onClick={() => void discardDraft()}
+                  >
+                    <i class="ti ti-trash" aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+              </footer>
+              <Show when={slots().status()}>
+                {(mount) => (
+                  <Portal mount={mount()}>
+                    <span
+                      class="mail-compose-window-status"
+                      data-mail-save-status={!online() ? "offline" : uploadPercent() !== null ? "uploading" : saveStatus()}
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <Show
+                        when={online()}
+                        fallback={
+                          <>
+                            <i class="ti ti-cloud-off" aria-hidden="true" />
+                            {windowT().offlineSaved}
+                          </>
+                        }
+                      >
+                        <Show
+                          when={uploadPercent()}
+                          keyed
+                          fallback={
+                            <Show when={saveState()}>
+                              <i
+                                class={`ti ${saveStatus() === "saved" ? "ti-cloud-check" : saveStatus() === "local" ? "ti-device-laptop" : "ti-clock"}`}
+                                aria-hidden="true"
+                              />
+                              {saveState()}
+                            </Show>
+                          }
+                        >
+                          {(percent) => (
+                            <>
+                              <i class="ti ti-upload" aria-hidden="true" />
+                              {windowT().uploading({ percent })}
+                            </>
+                          )}
+                        </Show>
+                      </Show>
+                    </span>
+                  </Portal>
+                )}
               </Show>
-            </Show>
-          </span>
-          <SplitButton
-            class="mail-compose-action"
-            size="sm"
-            type="button"
-            loading={send.loading()}
-            disabled={!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0}
-            menuLabel={t().moreSendOptions}
-            tooltip={`${t().send} (${sendShortcutLabel()})`}
-            items={[
-              { label: t().saveAsDraft, icon: "ti ti-device-floppy", action: () => void leaveComposer() },
-              { label: t().sendLater, icon: "ti ti-clock", action: () => void schedule() },
-            ]}
-            onClick={() => void sendDraft({})}
-          >
-            <i class="ti ti-send" aria-hidden="true" />
-            {t().send}
-          </SplitButton>
-        </footer>
+              <Show when={slots().sheet() ? slots().actions() : undefined}>
+                {(mount) => <Portal mount={mount()}>{sendButton()}</Portal>}
+              </Show>
+            </>
+          )}
+        </Show>
       </section>
     );
   }
