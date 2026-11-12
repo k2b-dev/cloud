@@ -5,7 +5,7 @@ section: Operations
 order: 1155
 description: Configure, scale, and stop the stateless workerd runner for Code.
 tags: [code, runner, scaling, shutdown]
-updated: 2026-11-06
+updated: 2026-11-11
 ---
 
 # Scaling runners
@@ -221,7 +221,11 @@ Restart runner replicas after changing their configuration. Acquisition requests
 may take the long-poll duration plus the transport timeout.
 After Core claims a run, its owner check has a five-second budget, so acquisition
 can continue beyond the queue wait. Request cancellation and the transport timeout
-still apply; an expiring queue wait does not discard the claim.
+still apply; an expiring queue wait does not discard the claim. Broker pulls
+finish through their normal expiry so an already delivered wakeup survives
+event-loop contention. The broker has a one-second minimum pull expiry; a final
+pull can finish within that interval after the poll budget. Caller cancellation
+still stops acquisition.
 
 | Setting | Default | Controls |
 | --- | --- | --- |

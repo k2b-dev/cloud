@@ -790,6 +790,13 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.version.origin",
     "code.version.read",
     "entities.search",
+    // The six versioned file generators are published read Queries; storage stays in destination Actions.
+    "file.chart.render.v1",
+    "file.finance.datev.v1",
+    "file.finance.sepa.v1",
+    "file.pdf.render.v1",
+    "file.sheet.to-csv.v1",
+    "file.sheet.to-ods.v1",
     "geo.availability",
     "map.style",
     "place.search",

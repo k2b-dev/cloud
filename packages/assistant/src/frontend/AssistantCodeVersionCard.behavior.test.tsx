@@ -29,14 +29,15 @@ afterEach(() => {
 });
 
 /** Mounts the card with Core's routes answered by `routes`; a missing route is an outage. */
-const mount = async (routes: Record<string, (body: unknown) => { status?: number; json?: unknown }>) => {
+type Answer = { status?: number; json?: unknown };
+const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<Answer>>) => {
   const dom = createDomTestHarness();
   const calls: Array<{ route: string; body: unknown }> = [];
   const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (url: string, init?: RequestInit) => {
     const route = String(url).replace("/api/code/", "");
     const body = JSON.parse(String(init?.body ?? "null"));
     calls.push({ route, body });
-    const answer = routes[route]?.(body);
+    const answer = await routes[route]?.(body);
     if (!answer) return new Response("{}", { status: 503 });
     return new Response(JSON.stringify(answer.json ?? {}), { status: answer.status ?? 200 });
   }) as unknown as typeof fetch);
@@ -310,7 +311,7 @@ test("the card shows everything a version may do: pages and who opens them, even
   expect(dom.root.textContent).not.toContain("event:spaces.item.due");
   expect(dom.root.textContent).not.toContain("Calls no app.");
 
-  // Each kind alone is enough to say the version does something; a place's page runs with its service account.
+  // Each kind alone is enough to say the version does something; a place's page runs with its service account, named after it.
   for (const patch of [
     { automations: [automations[0]!] },
     { automations: [automations[2]!] },
@@ -322,6 +323,127 @@ test("the card shows everything a version may do: pages and who opens them, even
     expect(one.dom.root.textContent).not.toContain("Calls no app.");
     expect(one.dom.root.querySelectorAll(".assistant-code-version__target")).toHaveLength(1);
     if (patch.automations?.[0]?.route)
-      expect(one.dom.root.textContent).toContain("All signed-in people (no guests) · runs with its service account’s rights");
+      expect(one.dom.root.textContent).toContain(
+        "All signed-in people (no guests) · runs with the rights of the service account “Code of info@example.test”",
+      );
   }
+});
+
+test("a step keeps the card as it is while it reloads: no skeleton, the switch stays busy until the new state", async () => {
+  let on = false;
+  let answerReload: (() => void) | null = null;
+  const { dom } = await mount({
+    "activation/preview": () =>
+      on
+        ? new Promise<Answer>((resolve) => {
+            answerReload = () =>
+              resolve({
+                json: { data: preview({ running: 5, activated: { at: "2026-10-31T14:20:00.000Z", byYou: true, byName: null } }) },
+              });
+          })
+        : { json: { data: preview() } },
+    activate: () => {
+      on = true;
+      return { json: { data: { state: "active", failure: null } } };
+    },
+  });
+  button(dom.root, "Switch on")!.click();
+  await tick();
+  // Core said yes and the card reads again: it shows what it showed, never the skeleton, and offers no second switch.
+  expect(dom.root.querySelector('[data-state="loading"]')).toBeNull();
+  expect(dom.root.querySelector('[data-state="ready"]')).not.toBeNull();
+  expect(button(dom.root, "Switch on")?.hasAttribute("disabled")).toBe(true);
+  answerReload!();
+  await tick();
+  expect(dom.root.querySelector('[data-state="on"]')).not.toBeNull();
+});
+
+test("progress and refusal appear in one fixed slot after the actions, so the switch never moves", async () => {
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview() } }),
+    activate: () => ({ json: { data: { state: "failed", failure: { reason: "Owner authority changed." } } } }),
+  });
+  const actions = dom.root.querySelector(".assistant-code-version__actions")!;
+  const children = () => [...actions.children].map((child) => child.className.split(" ")[0] || child.tagName);
+  const before = children();
+  // The slot is there before anything happens: a live region that already exists is announced reliably.
+  expect(actions.querySelector('.assistant-code-version__status[role="status"]')?.textContent).toBe("");
+  button(dom.root, "Switch on")!.click();
+  await tick();
+  expect(children()).toEqual(before);
+  expect(actions.firstElementChild?.textContent).toContain("Try again");
+  expect(actions.querySelector('.assistant-code-version__status [role="alert"]')?.textContent).toContain("Owner authority changed.");
+});
+
+test("focus follows the switch to its result: the switched-on line, or the switch again after a refusal", async () => {
+  let on = false;
+  const switched = await mount({
+    "activation/preview": () => ({
+      json: {
+        data: on ? preview({ running: 5, activated: { at: "2026-10-31T14:20:00.000Z", byYou: true, byName: null } }) : preview(),
+      },
+    }),
+    activate: () => {
+      on = true;
+      return { json: { data: { state: "active", failure: null } } };
+    },
+  });
+  const press = (root: Element, name: string) => {
+    const control = button(root, name)!;
+    control.focus();
+    control.click();
+  };
+  press(switched.dom.root, "Switch on");
+  await tick();
+  await tick();
+  const line = switched.dom.root.querySelector('[data-state="on"]');
+  expect(line).not.toBeNull();
+  expect(switched.dom.document.activeElement).toBe(line);
+
+  restore.splice(0).forEach((undo) => undo());
+  const refused = await mount({
+    "activation/preview": () => ({ json: { data: preview() } }),
+    activate: () => ({ json: { data: { state: "failed", failure: { reason: "Owner authority changed." } } } }),
+  });
+  press(refused.dom.root, "Switch on");
+  await tick();
+  expect(refused.dom.document.activeElement).toBe(button(refused.dom.root, "Try again")!);
+});
+
+test("a schedule says when it runs, and an app's Code names the service account its pages run with", async () => {
+  const automations = [
+    { entrypoint: "weekly", cron: "0 8 * * 1" },
+    { entrypoint: "morning", title: "Every morning", cron: "0 7 * * *" },
+    { entrypoint: "route:GET:/", route: { method: "GET", path: "/", public: false } },
+  ];
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview({ ownerKind: "app", appName: "Mail", place: null, targets: [], automations }) } }),
+  });
+  expect(dom.root.textContent).toContain("Mondays 08:00 · Every morning (daily 07:00) · GET /");
+  expect(dom.root.textContent).not.toContain("weekly");
+  expect(dom.root.textContent).toContain("runs with the rights of the service account “Code of Mail”");
+});
+
+test("a person who moved on while the switch waited keeps their place when the result arrives", async () => {
+  let answer = () => {};
+  const answered = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview() } }),
+    activate: async () => {
+      await answered;
+      return { json: { data: { state: "failed", failure: { reason: "Owner authority changed." } } } };
+    },
+  });
+  const switchOn = button(dom.root, "Switch on")!;
+  switchOn.focus();
+  switchOn.click();
+  const composer = dom.document.createElement("textarea");
+  dom.document.body.append(composer);
+  composer.focus();
+  answer();
+  await tick();
+  expect(button(dom.root, "Try again")).toBeDefined();
+  expect(dom.document.activeElement).toBe(composer);
 });

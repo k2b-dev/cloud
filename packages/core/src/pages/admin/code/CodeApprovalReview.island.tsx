@@ -1,8 +1,11 @@
 import type { CodeSecretVersionBinding } from "@k2b/cloud/contracts";
 import type { CodeRouteOwner } from "@k2b/cloud/ssr/code-page/messages";
+import { codeAutomationName } from "@k2b/cloud/ssr/code-page/targets";
+import { describeCodeTiming } from "@k2b/cloud/ssr/code-schedule";
 import { Button, ButtonLink, CodeDiff, type CodeDiffLocation, NoticeCard, prompts, Skeleton, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
+import type { CodeAutomationView } from "../../../code/automation-view";
 import { type CodeVersionBinding, type CodeVersionDiffFile, codeVersionContracts } from "../../../code/version-contracts";
 import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
 import { codeAdminMessages } from "./messages";
@@ -44,7 +47,8 @@ export type CodeApprovalReviewProps = {
   newer: { number: number; author: string; href: string } | null;
   why: string[];
   rights: CodeApprovalRight[];
-  automations?: Array<{ entrypoint: string; title?: string; route?: { public: boolean } }>;
+  /** Named as the Code page names them; the stable identifier shows beside a reviewed title. */
+  automations?: CodeAutomationView[];
   /** Whose rights the version's pages that are not public run with. */
   routeOwner: CodeRouteOwner;
   internet: string[];
@@ -212,7 +216,9 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
               <For each={props.automations}>
                 {(entry) => (
                   <li>
-                    <bdi>{entry.title ?? entry.entrypoint}</bdi>
+                    <bdi>{codeAutomationName(entry, "", locale())}</bdi>
+                    {/* A reviewed title says what it does; when it runs follows, as on the Code page. */}
+                    <Show when={entry.title !== undefined && describeCodeTiming(entry, locale())}>{(timing) => <> · {timing()}</>}</Show>
                     <Show when={entry.route}>
                       {(route) => <> · {route().public ? t().routePublic : t().routePrivate({ owner: props.routeOwner })}</>}
                     </Show>

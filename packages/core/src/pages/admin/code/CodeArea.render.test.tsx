@@ -13,7 +13,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const [
   { LocaleProvider },
-  { approvalCheck, CodeAreaView, ownerLabel },
+  { approvalCheck, approvalReviewProps, CodeAreaView, ownerLabel },
   { codeAdminMessages },
   { parseCodeAreaQuery },
   { codeFixtureData },
@@ -289,11 +289,28 @@ test("people without the Cloud-admin role see only the no-permission state", () 
   expect(html).not.toContain("Freigaben");
 });
 
-test("reviewed automation titles appear in approvals and old declarations keep their identifier", () => {
+test("approvals name automations as the Code page does: title and schedule, event and place; a manual one keeps its identifier", () => {
   const html = render(review);
-  expect(html).toContain("Lieferungen eintragen");
-  expect(html).toContain("legacyJob");
+  const text = renderedText(html, " ").replaceAll(/\s+/g, " ");
+  expect(text).toContain("Lieferungen eintragen · Mo–Fr 08:00");
   expect(html).toContain(">lieferungenEintragen</code>");
+  expect(text).toContain("Montags 08:00");
+  expect(text).toContain("Aufgabe fällig · Space k7qm2x9a");
+  expect(text).not.toContain("event:spaces.item.due");
+  expect(text).not.toContain("wochenbericht");
+  expect(html).toContain("legacyJob");
+});
+
+test("pages of an app's Code run with its service account, named after the app", () => {
+  const t = codeAdminMessages.resolve(["de"]).t;
+  const detail = data.fixtureApprovalDetail();
+  const app = { ...detail, code: { ...detail.code, owner: { kind: "app" as const, appId: "werkstatt" } } };
+  expect(approvalReviewProps(t, app, [], (iso) => iso, { werkstatt: "Werkstattbuch" }).routeOwner).toEqual({
+    kind: "account",
+    name: "Code von Werkstattbuch",
+  });
+  // A place's own name is not the admin's to see here; its service account stays unnamed.
+  expect(approvalReviewProps(t, detail, [], (iso) => iso, {}).routeOwner).toEqual({ kind: "account", name: null });
 });
 
 test("Code of an app has its Code page here: its service account and a refused call like any Code page", () => {
@@ -307,6 +324,9 @@ test("Code of an app has its Code page here: its service account and a refused c
     /<button aria-label="Kennung kopieren"[^>]*>(?:(?!<\/button>).)*>Kopieren<\/span><\/button>/,
   );
   expect(detail).toContain("Letzter Lauf");
+  // A run reads as its automation does on the Code page: the event by its title and place, never its stable key.
+  expect(detail).toContain("Aufgabe fällig · Space k7qm2x9a");
+  expect(detail).not.toContain("event:spaces.item.due");
   expect(detail).toContain(
     "Kein Zugriff auf Space k7qm2x9a. Der Code wollte dort „Aufgabe erstellen“. Entweder fehlt dem Dienstkonto „Code von Werkstattbuch“ das Recht dafür, oder das Ziel existiert nicht.",
   );
@@ -324,4 +344,11 @@ test("approval describes calls rather than suggesting a grant change", () => {
   const html = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 });
   expect(html).toContain("Was der Code aufruft");
   expect(html).not.toContain("Was sich an den Rechten ändert");
+});
+
+test("administrator detail shows database size, owner capacity and the shared export link", () => {
+  const html = render({ sec: "code", id: "c_rechn" }, "normal", "en");
+  expect(renderedText(html, " ")).toContain("Database: 1.00 MB of 100.00 MB");
+  expect(renderedText(html, " ")).toContain("Owner reserved capacity: 200.00 MB of 1,000.00 MB");
+  expect(html).toContain("/api/code/authoring/database/c_rechn/export");
 });

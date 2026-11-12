@@ -22,6 +22,7 @@ import { openPanel } from "../../browser/panel";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { FeatCodeMark } from "../../code/FeatCodeMark";
 import { CodeAccountHandle } from "./CodeAccountHandle";
+import { CodeDatabaseStatus } from "./CodeDatabaseStatus";
 import { CodeRefusalNotice } from "./CodeRefusalNotice";
 import { CodeSecretsTab } from "./CodeSecrets";
 import { loadCodeRunCalls } from "./calls";
@@ -46,9 +47,10 @@ import {
   wrapped,
 } from "./data";
 import { type CodePageMessages, codePageMessages } from "./messages";
-import { describeCodeSchedule } from "./schedule";
-import { type CodeOperationLabels, codeAutomationName, codeOperationText, codeTargetLabel, codeTargetName } from "./targets";
+import { describeCodeTiming } from "./schedule";
+import { type CodeOperationLabels, codeAutomationName, codeOperationText, codeRunName, codeTargetLabel, codeTargetName } from "./targets";
 
+export { CodeDatabaseStatus } from "./CodeDatabaseStatus";
 export { CodeNavStatus, codeNavAttentionLabel } from "./CodeNavStatus";
 export type { CodeAttention, CodePageData, CodePageTab } from "./data";
 
@@ -498,23 +500,7 @@ function VersionLine(props: { data: CodePageData; state: CodePageReady; text: Pa
           <i class="ti ti-database" aria-hidden="true" /> {t().usesDatabase}
         </span>
       </Show>
-      <Show when={props.state.code.database}>
-        {(db) => (
-          <span>
-            <i class="ti ti-database" aria-hidden="true" />{" "}
-            {db().bytes === null
-              ? t().databaseUnavailable
-              : t().databaseUsage({
-                  used: new Intl.NumberFormat(props.text.locale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
-                    (db().bytes ?? 0) / 1048576,
-                  ),
-                  limit: new Intl.NumberFormat(props.text.locale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
-                    db().limit / 1048576,
-                  ),
-                })}
-          </span>
-        )}
-      </Show>
+      <Show when={props.state.code.database}>{(db) => <CodeDatabaseStatus codeId={props.state.code.id} database={db()} />}</Show>
       <span>
         <i class="ti ti-history" aria-hidden="true" /> {t().versionsCount({ count: props.state.versions.length })}
       </span>
@@ -772,23 +758,21 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
     toast.success(t().runStarted);
     documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.runId }));
   };
+  const timing = () => describeCodeTiming(props.automation, props.text.locale());
   const schedule = () =>
-    props.automation.at
-      ? new Intl.DateTimeFormat(props.text.locale(), {
-          timeZone: props.automation.timeZone,
-          dateStyle: "medium",
-          timeStyle: "short",
-        }).format(new Date(props.automation.at)) + ` (${props.automation.timeZone})`
-      : props.automation.kind === "schedule" && props.automation.cron
-        ? describeCodeSchedule(props.automation.cron, props.text.locale())
-        : props.automation.kind === "event"
-          ? t().triggerEvent
-          : props.automation.kind === "route"
-            ? // An untitled page is already named by its method and path.
-              props.automation.title
-              ? props.automation.entrypoint.replace(/^route:/, "")
-              : ""
-            : t().manualStart;
+    timing() !== null
+      ? // An untitled schedule is already named by when it runs.
+        props.automation.title === undefined
+        ? ""
+        : timing()
+      : props.automation.kind === "event"
+        ? t().triggerEvent
+        : props.automation.kind === "route"
+          ? // An untitled page is already named by its method and path.
+            props.automation.title
+            ? props.automation.entrypoint.replace(/^route:/, "")
+            : ""
+          : t().manualStart;
   return (
     <div class="cloud-code__row cloud-code__row--automation" role="row">
       <span class="cloud-code__kind" aria-hidden="true">
@@ -806,7 +790,7 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
       </span>
       <span class="cloud-code__cell" role="cell">
         <span class="cloud-code__title">
-          {codeAutomationName(props.automation, props.data.owner.title)}
+          {codeAutomationName(props.automation, props.data.owner.title, props.text.locale())}
           <Show when={props.automation.isNew}>
             <Tag>{t().newTag}</Tag>
           </Show>
@@ -821,7 +805,14 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
               </>
             )}
           </Show>
-          <Show when={props.automation.nextRunAt}>{(at) => <> · {t().nextRun({ when: props.text.when(at()) })}</>}</Show>
+          <Show when={props.automation.nextRunAt}>
+            {(at) => (
+              <>
+                {schedule() || props.automation.route ? " · " : ""}
+                {t().nextRun({ when: props.text.when(at()) })}
+              </>
+            )}
+          </Show>
         </span>
         <span class="cloud-code__sub cloud-code__narrow">{status().label}</span>
       </span>
@@ -923,7 +914,8 @@ function LastRunRefusal(props: { data: CodePageData; state: CodePageReady; refus
           <Show when={run()}>
             {(current) => (
               <a class="cloud-code__count" href={withQuery(props.data.href, { tab: "runs", run: current().id })}>
-                {props.text.when(current().createdAt)} · {current().title ?? current().entrypoint}
+                {props.text.when(current().createdAt)} ·{" "}
+                {codeRunName(current(), props.state.automations, props.data.owner.title, props.text.locale())}
               </a>
             )}
           </Show>
@@ -1051,7 +1043,7 @@ function Runs(props: { data: CodePageData; state: CodePageReady; text: PageText 
                     >
                       <span class="cloud-code__cell">
                         <span class="cloud-code__title">
-                          {shortId(run.id)} · {run.title ?? run.entrypoint}
+                          {shortId(run.id)} · {codeRunName(run, props.state.automations, props.data.owner.title, props.text.locale())}
                         </span>
                         <span class="cloud-code__sub">
                           {[
@@ -1194,7 +1186,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
       <div class="cloud-code__run-head">
         <div class="min-w-0">
           <h2 id="cloud-code-run-title" class="cloud-code__h2">
-            {shortId(run().id)} · {run().title ?? run().entrypoint}
+            {shortId(run().id)} · {codeRunName(run(), props.state.automations, props.data.owner.title, props.text.locale())}
           </h2>
           <p class="cloud-code__sub">
             {[
@@ -1472,7 +1464,7 @@ function ActivationDialog(props: {
       .filter((automation) => automation.isNew)
       .map(
         (automation) =>
-          `„${codeAutomationName(automation, props.data.owner.title)}“${automation.route ? ` · ${props.text.routeAudience(automation.route)}` : ""}`,
+          `„${codeAutomationName(automation, props.data.owner.title, props.text.locale())}“${automation.route ? ` · ${props.text.routeAudience(automation.route)}` : ""}`,
       );
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
   // Only a confirmed terminal result or a refusal starts a new identity.
