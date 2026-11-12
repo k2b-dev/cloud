@@ -191,7 +191,12 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.goto(origin);
     await page.waitForURL(/\/n\/[A-Za-z0-9]{22}$/);
     await page.getByRole("textbox", { name: "Willkommen", exact: true }).waitFor();
+    // CodeMirror renders a viewport, so visit the final paragraph before reading it.
+    await editor().press("Control+End");
+    await settled(page);
     expect(await editor().innerText()).toContain("Tippe / für mehr.");
+    await editor().press("Control+Home");
+    await settled(page);
     // A real note, rendered like any other: notice, chart from its table, checklist boxes and a tag pill.
     await page.locator(".cm-notice-card-widget").first().waitFor();
     await page.locator(".cm-query-block-preview svg").first().waitFor();
@@ -445,16 +450,18 @@ describe("k2b notes · Produktions-SPA", () => {
           innerBorder: inner.borderTopWidth,
           innerOutline: inner.outlineStyle,
           innerRadius: inner.borderTopLeftRadius,
-          shellBorder: shell.borderTopColor,
+          shellBorder: shell.borderTopWidth,
           shellRing: shell.boxShadow,
+          shellOutline: shell.outlineStyle,
         };
       });
       expect(look.innerBorder).toBe("0px");
       expect(look.innerOutline).toBe("none");
       expect(look.innerRadius).toBe("0px");
-      // The shell draws the 2 px focus edge as a border plus an inset of the same colour: one shape.
-      expect(look.shellRing).toContain("inset");
-      expect(look.shellRing).toContain(look.shellBorder);
+      // The shell draws the 2 px focus edge as one border and nothing beside it: one shape.
+      expect(look.shellBorder).toBe("2px");
+      expect(look.shellRing).toBe("none");
+      expect(look.shellOutline).toBe("none");
     };
 
     await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();

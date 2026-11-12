@@ -5,7 +5,7 @@ section: Work
 order: 150
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-11-07
+updated: 2026-11-11
 ---
 
 # Files
@@ -1167,6 +1167,65 @@ not a way around the stream budget. `cld filesv2 get <file>` obtains
 a lease and saves the file without printing the private URL; the explicit
 `cld capabilities query filesv2 content.download` command returns the lease.
 See [App capabilities](/en/docs/platform/capabilities) for discovery and consent.
+
+## Create PDFs through the API
+
+`POST /api/filesv2/bases/:baseId/pdf` creates a new PDF in the first source's
+folder. Sources remain unchanged. The result uses `onConflict: "rename"`.
+The caller needs the same read access as download for every source and create
+access in the destination folder. OAuth callers need write scope.
+
+Send one of these JSON bodies:
+
+```json
+{"operation":"merge","paths":["folder/first.pdf","second.pdf"],"name":"combined.pdf"}
+```
+
+```json
+{"operation":"extract","paths":["folder/first.pdf","second.pdf"],"revisions":["r1","r2"],"pages":[2,4],"name":"selected.pdf"}
+```
+
+Merge requires at least two sources; extract requires at least one. Paths
+define result order. Extract page numbers start at one over the concatenation
+of all sources and must be ascending and unique. Extract also names the
+`revision` of each source the pages were chosen from, in `paths` order; a source
+that changed since fails with `pdf_changed` and its `path` instead of yielding
+other pages. Merge may send `revisions` too. The name must be a plain Files
+filename ending in `.pdf`. Every source must be a regular PDF by name and
+signature. The configured [PDF limits](/en/docs/platform/pdf-and-templates#budget-a-whole-operation)
+apply to file count, bytes, pages and the complete operation.
+
+The response is `application/x-ndjson`, with one JSON object per line:
+
+```json
+{"type":"progress","done":0,"total":4}
+{"type":"progress","done":1,"total":4}
+{"type":"progress","done":2,"total":4}
+{"type":"progress","done":3,"total":4}
+{"type":"progress","done":4,"total":4}
+{"type":"done","result":{"base":{},"entry":{"path":"folder/combined.pdf","revision":"..."}}}
+```
+
+The last line above abbreviates `base` and `entry`; the real result is the
+same `EntryResult` as other create routes, including the entry revision.
+Each source read, PDF transformation and save counts as one step.
+Multi-source extraction counts merge and extraction separately. Its total is
+`paths.length + 3`; other requests use `paths.length + 2`.
+
+The final line is either `done` or an error such as
+`{"type":"error","code":"pdf_encrypted","message":"…","path":"folder/first.pdf"}`.
+Codes include `pdf_encrypted`, `pdf_unreadable`, `pdf_changed`, `pdf_too_large`,
+`pdf_not_configured`, `pdf_busy` and `pdf_failed`, plus ordinary Files errors.
+`pdf_busy` means another PDF action of the same person, or two in this Files
+process, still runs: sources are read whole into memory, so Files admits at most
+two at once and one per person; try again a moment later. `path` is
+included when the source is known. Messages are final English or German text
+in the request locale. Validation and access failures can return the ordinary
+non-200 Files JSON error before streaming begins.
+
+Cancel the HTTP request to stop reads, rendering and the final write. A file
+already committed is retained. Undo uses the existing
+`POST /api/filesv2/bases/:baseId/delete` with the returned entry path.
 
 ## Understand changes without a Cloud entry
 

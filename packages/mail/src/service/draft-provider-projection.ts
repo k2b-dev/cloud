@@ -911,7 +911,6 @@ const parseRemoteDraft = async (openSource: () => Readable): Promise<ParsedRemot
     skipHtmlToText: false,
     skipTextToHtml: true,
     skipImageLinks: true,
-    keepCidLinks: true,
     maxHtmlLengthToParse: MAX_BODY_BYTES,
     checksumAlgo: "sha256",
   });
@@ -934,7 +933,7 @@ const parseRemoteDraft = async (openSource: () => Readable): Promise<ParsedRemot
           contentHash: blob.contentHash,
         });
       } finally {
-        value.release();
+        value.release?.();
       }
       continue;
     }

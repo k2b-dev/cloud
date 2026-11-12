@@ -212,6 +212,10 @@ describe("PDF tools API", () => {
       (f: FormData) => f.set("files", new Blob(["not a PDF"], { type: "image/png" }), "photo.pdf"),
       (f: FormData) => f.set("operation", '{"kind":"rotate","angle":45}'),
       (f: FormData) => f.set("operation", '{"kind":"extract","pages":[2,1]}'),
+      (f: FormData) => {
+        f.set("operation", '{"kind":"extract","pages":[1]}');
+        f.append("files", new Blob(["%PDF-another"], { type: "application/pdf" }), "another.pdf");
+      },
       (f: FormData) => f.set("operation", '{"kind":"reorder","pages":[1,1]}'),
     ]) {
       const data = form();
@@ -431,6 +435,7 @@ describe("PDF tools API", () => {
     ["timeout", undefined, 504, "renderer_timeout"],
     ["bad_response", 400, 422, "renderer_rejected"],
     ["unreadable_pdf", undefined, 422, "unreadable_pdf"],
+    ["encrypted_pdf", undefined, 422, "unreadable_pdf"],
     ["bad_response", 500, 502, "renderer_failed"],
     ["request_failed", undefined, 502, "renderer_failed"],
   ] as const)("maps %s/%s to stable HTTP %s/%s without renderer detail", async (code, upstreamStatus, status, expected) => {

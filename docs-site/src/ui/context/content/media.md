@@ -18,6 +18,8 @@ import {
   type LightboxAction,
   type LightboxItem,
   type LightboxProps,
+  PdfThumbnails,
+  type PdfThumbnailsProps,
   PdfViewer,
   type PdfViewerProps,
   type PdfViewerRequest,
@@ -65,6 +67,17 @@ The host decides where the strip sits, also on a phone, and its surface: over a 
   onSelectItem={setCurrent}
   onAddItems={pickPhotos}
 />
+```
+
+## PDF thumbnails
+
+`PdfThumbnails` shows small pictures of a PDF's pages, drawn by pdf.js in the browser from its bytes. `size="sm"` (default) is a strip of 36 px pages beside a name, such as a file in a merge order; `size="md"` is a grid of pages with their numbers, such as pages to pick. `limit` shows at most that many pages and a quiet "+n" for the rest. With `selected` (zero-based indexes) and `onToggle`, every page is a toggle button that keeps the 2 px edge of every choice and shows a check once chosen. `onPages` reports the page count once the document opened; `onError` reports a document that cannot be opened, and the tiles say so in place.
+
+Pass `data={null}` while the host still loads the bytes: placeholders hold the place. Every tile keeps its page's proportions as soon as the document opens, and pages draw one after another only when they come near the view, so nothing moves and a long document stays light. pdf.js loads with the first document.
+
+```tsx
+<PdfThumbnails data={blob()} title={file.name} limit={6} onPages={setPages} />
+<PdfThumbnails data={blob()} title={file.name} size="md" selected={chosen()} onToggle={toggle} />
 ```
 
 ## Video
@@ -173,6 +186,12 @@ type PdfViewerProps = {
   disabled?: boolean; emptyText?: string; loadLabel?: string; open?: boolean | string;
   zoom?: boolean; fit?: "width" | "page"; page?: number;
   onReady?: () => void; onError?: (error: unknown) => void; class?: string;
+};
+
+type PdfThumbnailsProps = {
+  data: Blob | ArrayBuffer | null; title: string; limit?: number; size?: "sm" | "md";
+  selected?: ReadonlySet<number>; onToggle?: (index: number) => void;
+  onPages?: (count: number) => void; onError?: (error: unknown) => void; class?: string;
 };
 ```
 

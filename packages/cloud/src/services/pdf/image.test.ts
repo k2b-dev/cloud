@@ -229,12 +229,15 @@ runtime("preparePdfImage", () => {
     ],
   ] as const)("handles worker %s without returning partial variants", async (_name, output, code) => {
     spawn.mockImplementationOnce((_worker, _name, input) =>
-      Bun.spawn([process.execPath, "--no-env-file", "-e", `process.stdout.write(${JSON.stringify(output)})`], {
-        stdin: new Blob([input]),
-        stdout: "pipe",
-        stderr: "ignore",
-        env: { PATH: process.env.PATH },
-      }),
+      Object.assign(
+        Bun.spawn([process.execPath, "--no-env-file", "-e", `process.stdout.write(${JSON.stringify(output)})`], {
+          stdin: new Blob([input]),
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { PATH: process.env.PATH },
+        }),
+        { diagnostics: Promise.resolve("") },
+      ),
     );
     expect(await preparePdfImage({ data: webp, boxes: [box], maxBytes: cap })).toEqual({ ok: false, code });
   });

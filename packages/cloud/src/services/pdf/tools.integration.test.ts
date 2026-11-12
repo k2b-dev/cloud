@@ -2,7 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { extractZip } from "@k2b/stdlib/browser";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { requireInfraUrl, suiteFor } from "../../../../../scripts/fixtures/test-infra";
-import { type GotenbergConfig, renderHtmlToPdfWithConfig } from "./gotenberg";
+import { type GotenbergConfig, renderHtmlToPdfWithConfig, requestGotenberg } from "./gotenberg";
 import { runPdfToolWithConfig } from "./tools";
 
 async function inspect(data: Uint8Array) {
@@ -55,6 +55,20 @@ suiteFor("gotenberg", "valkey")("PDF tools with the operator renderer", () => {
     const pages = await inspect(rotated.data);
     expect(pages.map((page) => page.rotate)).toEqual([0, 90, 0]);
     expect(pages.map((page) => page.text)).toEqual(["PAGE-ONE", "PAGE-TWO", "PAGE-THREE"]);
+  }, 60_000);
+  test("multi-source extraction uses concatenated pages in source order", async () => {
+    const result = await runPdfToolWithConfig({ files: [file, file], operation: { kind: "extract", pages: [2, 4, 6] } }, config);
+    expect((await inspect(result.data)).map((page) => page.text)).toEqual(["PAGE-TWO", "PAGE-ONE", "PAGE-THREE"]);
+  }, 60_000);
+  test("encrypted source metadata is attributed before transformations", async () => {
+    const form = new FormData();
+    form.append("files", file, "source.pdf");
+    form.set("userPassword", "fixture-password");
+    form.set("ownerPassword", "fixture-owner-password");
+    const encrypted = await requestGotenberg("/forms/pdfengines/encrypt", form, config, {});
+    await expect(
+      runPdfToolWithConfig({ files: [file, new Blob([new Uint8Array(encrypted.pdf)])], operation: { kind: "merge" } }, config),
+    ).rejects.toMatchObject({ code: "encrypted_pdf", fileIndex: 1 });
   }, 60_000);
   test("split ZIP contains every requested group in its declared order", async () => {
     const split = await runPdfToolWithConfig({ files: [file], operation: { kind: "split", groups: [[3], [1, 2]] } }, config);

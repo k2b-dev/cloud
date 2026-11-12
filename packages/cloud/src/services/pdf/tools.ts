@@ -69,7 +69,8 @@ const isPdf = (bytes: Uint8Array) =>
 export function validatePdfToolInput(input: PdfToolInput, config: GotenbergConfig): void {
   const limits = pdfToolLimits(config);
   if (!input.files.length || input.files.length > limits.maxFiles) invalid("Invalid PDF file count.");
-  if (input.operation.kind !== "merge" && input.files.length !== 1) invalid("This operation requires exactly one PDF.");
+  if (input.operation.kind !== "merge" && input.operation.kind !== "extract" && input.files.length !== 1)
+    invalid("This operation requires exactly one PDF.");
   let total = 0;
   for (const file of input.files) {
     if (!(file instanceof Blob) || file.size < 5 || (file.type && file.type !== "application/pdf")) invalid("Upload PDF files only.");
@@ -177,7 +178,7 @@ function zipParts(parts: Uint8Array[], maxBytes: number, signal: AbortSignal): U
 export async function runPdfToolWithConfig(
   input: PdfToolInput,
   config: GotenbergConfig,
-  options: RenderHtmlToPdfOptions = {},
+  options: RenderHtmlToPdfOptions & { onOperation?: () => void | Promise<void> } = {},
 ): Promise<PdfToolResult> {
   validatePdfToolInput(input, config);
   const limits = pdfToolLimits(config);
@@ -204,6 +205,7 @@ export async function runPdfToolWithConfig(
     if (!metadata) {
       downloaded += result.pdf.length;
       if (!isPdf(result.pdf)) throw new GotenbergRenderError("bad_response", "Renderer returned an invalid PDF.");
+      await options.onOperation?.();
     }
     return result.pdf;
   };
@@ -220,13 +222,24 @@ export async function runPdfToolWithConfig(
       if (!metadata || typeof metadata !== "object") throw new Error();
       counts = input.files.map((_, i) => {
         const entry: unknown = Reflect.get(metadata, `${String(i + 1).padStart(6, "0")}.pdf`);
+        const encryption: unknown = entry && typeof entry === "object" ? Reflect.get(entry, "Encryption") : undefined;
+        const failure: unknown = entry && typeof entry === "object" ? Reflect.get(entry, "Error") : undefined;
+        // ExifTool reads the encryption dictionary, including PDFs that allow an
+        // empty user password. Do not guess from arbitrary PDF text or HTTP status.
+        if (
+          (typeof encryption === "string" && encryption.trim() !== "" && !/^(none|no|unencrypted)$/i.test(encryption.trim())) ||
+          (typeof failure === "string" && /password|encrypted/i.test(failure))
+        )
+          throw new GotenbergRenderError("encrypted_pdf", "PDF source is encrypted.", undefined, i);
         const count: unknown = entry && typeof entry === "object" ? Reflect.get(entry, "PageCount") : undefined;
         // Match ExifTool's documented number/string PageCount contract.
         const value = typeof count === "string" && /^\d+$/.test(count) ? Number(count) : count;
-        if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) throw new Error();
+        if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+          throw new GotenbergRenderError("unreadable_pdf", "Renderer did not provide a valid PDF page count.", undefined, i);
         return value;
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof GotenbergRenderError) throw error;
       throw new GotenbergRenderError("unreadable_pdf", "Renderer did not provide valid PDF page counts.");
     }
     const totalPages = counts.reduce((sum, count) => sum + count, 0);
@@ -234,27 +247,24 @@ export async function runPdfToolWithConfig(
     const operation = input.operation;
     if (operation.kind !== "merge") {
       const selected = operation.kind === "split" ? operation.groups.flat() : operation.pages;
-      if (selected?.some((page) => page > counts[0]!)) invalid("A selected page does not exist.");
+      if (selected?.some((page) => page > totalPages)) invalid("A selected page does not exist.");
       if (operation.kind === "reorder" && operation.pages.length !== counts[0]) invalid("Reorder must include every page exactly once.");
     }
     let data: Uint8Array;
     if (operation.kind === "merge") {
-      reserve(input.files);
-      const result = await mergePdfsWithConfig(
-        { files: await Promise.all(input.files.map(async (file) => ({ pdf: new Uint8Array(await file.arrayBuffer()) }))) },
-        config,
-        transport,
-      );
-      data = result.pdf;
-      if (!isPdf(data)) throw new GotenbergRenderError("bad_response", "Renderer returned an invalid PDF.");
+      data = await send("/forms/pdfengines/merge", input.files);
     } else if (operation.kind === "rotate") {
       data = await send("/forms/pdfengines/rotate", input.files, {
         rotateAngle: String(operation.angle),
         ...(operation.pages ? { rotatePages: operation.pages.join(",") } : {}),
       });
     } else {
+      let sources = input.files;
+      if (operation.kind === "extract" && input.files.length > 1) {
+        sources = [new Blob([new Uint8Array(await send("/forms/pdfengines/merge", input.files))], { type: "application/pdf" })];
+      }
       const extract = (pages: number[]) =>
-        send("/forms/pdfengines/split", input.files, { splitMode: "pages", splitSpan: pages.join(","), splitUnify: "true" });
+        send("/forms/pdfengines/split", sources, { splitMode: "pages", splitSpan: pages.join(","), splitUnify: "true" });
       if (operation.kind === "extract") data = await extract(operation.pages);
       else {
         const groups: number[][] = [];
@@ -291,6 +301,7 @@ export async function runPdfToolWithConfig(
           );
           data = merged.pdf;
           if (!isPdf(data)) throw new GotenbergRenderError("bad_response", "Renderer returned an invalid PDF.");
+          await options.onOperation?.();
         }
       }
     }

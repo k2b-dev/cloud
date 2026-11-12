@@ -291,6 +291,7 @@ export const createPdfToolsRoutes = (dependencies: Dependencies = {}) => {
           }
           const files = form.getAll("files");
           if (!files.every((file): file is File => file instanceof File)) return failure("bad_input", 400);
+          if (operation.kind !== "merge" && files.length !== 1) return failure("bad_input", 400);
           for (const file of files) {
             signal.throwIfAborted();
             if ((await file.slice(0, 5).text()) !== "%PDF-") return failure("bad_input", 400);
@@ -316,6 +317,7 @@ export const createPdfToolsRoutes = (dependencies: Dependencies = {}) => {
           if (error instanceof GotenbergRenderError) {
             switch (error.code) {
               case "unreadable_pdf":
+              case "encrypted_pdf":
                 return failure("unreadable_pdf", 422);
               case "bad_input":
                 return failure("bad_input", 400);

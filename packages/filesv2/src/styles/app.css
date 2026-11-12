@@ -355,6 +355,71 @@
 .filesv2-list[data-search] .filesv2-list__detail {
   flex-shrink: 8;
 }
+/* A new file in the making: its name, and below it the progress or the
+   reason it failed, in the row's usual height; its commands at the end. */
+.filesv2-list__row--operation {
+  cursor: default;
+}
+.filesv2-list__row--operation .filesv2-list__cell--name {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+}
+.filesv2-list__row--operation .filesv2-list__name {
+  max-width: 100%;
+  line-height: 1.25rem;
+}
+.filesv2-list__operation-text {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filesv2-list__row--operation[data-state="failed"] .filesv2-list__operation-text,
+.filesv2-list__row--operation[data-state="failed"] .filesv2-thumbnail {
+  color: var(--k2b-danger-text);
+}
+.filesv2-list__cell--operation {
+  flex: 0 0 auto;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+/* The same in a tile: the progress or the reason below the name, its commands below that. */
+.filesv2-grid-operation {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+}
+.filesv2-grid-operation__text {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.filesv2-grid-operation[data-state="failed"] .filesv2-grid-operation__text,
+.filesv2-thumbnail--virtual[data-state="failed"] {
+  color: var(--k2b-danger-text);
+}
+.filesv2-grid-operation__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+/* A file made a moment ago says so in place of its date, with the success check. */
+.filesv2-list__fresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--k2b-success-text);
+}
 .filesv2-list__disclosure {
   display: inline-flex;
   align-items: center;
@@ -867,6 +932,84 @@
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+/* PDF actions: merge orders whole files with a strip of their first pages;
+   taking out pages picks pages from a grid. The footer counts the result. */
+.filesv2-pdf-dialog {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+.filesv2-pdf-dialog__hint {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+.filesv2-pdf-order__row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto 1.25rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.375rem 0;
+}
+.filesv2-pdf-order__number {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.filesv2-pdf-order__main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.filesv2-pdf-order__name {
+  overflow: hidden;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filesv2-pdf-order__pages {
+  min-width: 4.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  text-align: right;
+  white-space: nowrap;
+}
+.filesv2-pdf-order__failed {
+  margin: 0;
+  color: var(--k2b-danger-text);
+  font-size: 0.75rem;
+}
+.filesv2-pdf-pick {
+  display: flex;
+  max-height: min(28rem, 55vh);
+  flex-direction: column;
+  gap: 1.25rem;
+  overflow: auto;
+}
+.filesv2-pdf-pick__name {
+  margin: 0 0 0.5rem;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filesv2-pdf-dialog__footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.filesv2-pdf-dialog__count {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
 }
 .filesv2-new-folder__label {
   display: inline-grid;

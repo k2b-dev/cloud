@@ -13,7 +13,7 @@ import { SEARCH_REQUEST_SECONDS } from "../service/search";
 import { browserMessages } from "./browser-messages";
 import { browseOptions, parsePreferences, viewFor } from "./browser-preferences";
 import { directoryPageCount, directoryPages } from "./directory-pages";
-import { RECENT_MOVED_HINT } from "./hints";
+import { RECENT_MOVED_HINT, SELECTION_PILL_HINT } from "./hints";
 import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
 import { filesMessages } from "./messages";
 import { FAVORITES_PREVIEW } from "./StorageOverview";
@@ -180,8 +180,11 @@ export default ssr<AuthContext>(async (c) => {
     } else throw error;
   }
   // Opening "Me" is using the new place, which counts as having seen the hint.
-  if (activityFilters?.actor === "me") markHintSeen(c, RECENT_MOVED_HINT);
-  else initial.hints = { recentMoved: hintOpen(c, RECENT_MOVED_HINT, { allowed: true }) };
+  const selectionPill = hintOpen(c, SELECTION_PILL_HINT, { allowed: true });
+  if (activityFilters?.actor === "me") {
+    markHintSeen(c, RECENT_MOVED_HINT);
+    initial.hints = { selectionPill };
+  } else initial.hints = { recentMoved: hintOpen(c, RECENT_MOVED_HINT, { allowed: true }), selectionPill };
   const locale = getLocale(c);
   const title = snapshotTitle(initial, t.files, browserMessages.resolve([locale]).t, locale);
   return () => (

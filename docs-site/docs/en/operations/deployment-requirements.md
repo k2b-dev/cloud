@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-11-09
+updated: 2026-11-11
 ---
 
 # Deployment requirements
@@ -909,6 +909,17 @@ and results are not persisted by Tools. Each access subject can hold one of
 two local upload places; a second concurrent request from that subject returns
 HTTP 503. Unreadable or password-protected PDFs return HTTP 422. Keep Gotenberg
 private and offline as below.
+
+Files also uses this renderer for `POST /api/filesv2/bases/:baseId/pdf`.
+It creates a new PDF beside the first source, with conflict renaming, and
+leaves originals unchanged. Multi-source extraction merges first; both steps
+share the existing deadline and work allowance. Enable ExifTool metadata
+support so Files can identify encrypted sources. Check one merge, one
+cross-file page extraction and a password-protected source before enabling
+these actions. Cancellation stops pending reads, rendering and publication;
+a file already committed remains available and can be moved to trash.
+The API streams progress and a final result or localized error as NDJSON;
+proxies must forward those lines without buffering.
 
 ### Keep Gotenberg offline
 

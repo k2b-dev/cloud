@@ -116,7 +116,10 @@ The controller exposes:
 - file URLs and file counts;
 - one error state for the active chat.
 
-`createConversation()` returns `null` on failure. `creationErrorStatus()` exposes
+`createConversation(input, beforeOpen?)` returns `null` on failure. When the
+new chat becomes active, `beforeOpen(conversation)` runs in the same update.
+Use it to move local state, such as a draft, to the new chat ID, so that views
+keyed by that ID never show the chat without that state. `creationErrorStatus()` exposes
 the HTTP status when the controller reports a creation failure, or `null` when
 that status is unavailable. Applications can distinguish a definitive refusal (such as an unavailable
 creation replay) from an uncertain write; retain local drafts in either case.

@@ -15,8 +15,8 @@ import {
  * a primary click or a key shows everything again, and the page underneath is never rebuilt, so focus, caret, scroll
  * and unsaved input stay where they were.
  *
- * - Covered: every part of the page outside the islands gets `inert` and `data-cloud-privacy-covered`, which blurs it.
- *   The app bar stays recognizable but unusable; only its counts and the avatar blur.
+ * - Covered: the whole screen, app bar, navigation, content, dialogs and toasts included. Every part outside the
+ *   islands gets `inert` and `data-cloud-privacy-covered`, which blurs it.
  * - Islands stay sharp and usable: elements with `data-cloud-privacy="keep"` (such as upload progress) or `"live"`
  *   (such as a running dictation, which also pauses the timer). Inside an island, `data-cloud-privacy="blur"` blurs a
  *   part, such as file names.
@@ -166,7 +166,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   // ── Covering ─────────────────────────────────────────────────────────
   const isIsland = (element: Element) => element === hint || element === live || element.matches(ISLAND) || isSessionWarning(element);
   const holdsIsland = (element: Element) =>
-    element.contains(hint) || Boolean(element.querySelector(`${ISLAND}, ${SESSION_WARNING_ACTION}, .layout-rail`));
+    element.contains(hint) || Boolean(element.querySelector(`${ISLAND}, ${SESSION_WARNING_ACTION}`));
   const mark = (element: Element, kind: string) => {
     element.setAttribute(COVERED, kind);
     covered.add(element);
@@ -183,8 +183,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   const cover = (container: Element) => {
     for (const child of Array.from(container.children)) {
       if (SKIPPED.has(child.tagName) || isIsland(child)) continue;
-      if (child.classList.contains("layout-rail")) mark(child, "rail");
-      else if (holdsIsland(child) && !hasOwnText(child)) cover(child);
+      if (holdsIsland(child) && !hasOwnText(child)) cover(child);
       else mark(child, "");
     }
   };

@@ -22,6 +22,9 @@ const pdfMessages = i18n.define({
       pdfZoomPercent: ({ value }: { value: number }) => `${value}%`,
       pdfFitWidthLabel: "Fit to width",
       pdfFitPageLabel: "Show the whole page",
+      pdfThumbnailPage: ({ number }: { number: number }) => `Page ${number}`,
+      pdfThumbnailMore: ({ count }: { count: number }) => `${count} more ${count === 1 ? "page" : "pages"}`,
+      pdfThumbnailsFailed: "The pages could not be shown.",
     },
     de: {
       pdfOpenInTab: "In neuem Tab öffnen",
@@ -41,6 +44,9 @@ const pdfMessages = i18n.define({
       pdfZoomPercent: ({ value }) => `${value} %`,
       pdfFitWidthLabel: "An die Breite anpassen",
       pdfFitPageLabel: "Ganze Seite zeigen",
+      pdfThumbnailPage: ({ number }) => `Seite ${number}`,
+      pdfThumbnailMore: ({ count }) => `${count} weitere ${count === 1 ? "Seite" : "Seiten"}`,
+      pdfThumbnailsFailed: "Die Seiten können nicht gezeigt werden.",
     },
   },
 });

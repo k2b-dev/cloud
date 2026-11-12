@@ -116,6 +116,8 @@ Use `Toolbar.Action` for ghost icon buttons. `label` names the button, its toolt
 
 In a floating toolbar, `priority` lets an action move into More when the column is too narrow. **1 is most important.** Larger numbers move first; equal priorities move the later action first. Omit `priority` to keep an action fixed. More is the last control and lists the moved actions in their original order. Widening the column brings them back. Inline toolbars keep every action in place; use `wrap` there.
 
+Pass rarer commands that belong in More at every width, such as Copy to or Move to trash for a selection, as the floating toolbar's `moreItems` (`DropdownItem`s). More then always shows and its room is always counted; actions that move there on a narrow row come first in a group of their own, the `moreItems` follow. Do not add a second "…" menu of your own beside More.
+
 `keys` uses the `Kbd` format, such as `"e"`, `"mod+j"`, or `"shift+arrowdown"`. It adds a hint under the icon (not in `SelectionToolbar`), the platform shortcut to the tooltip, and `aria-keyshortcuts`. Hints appear with the [keyboard input flag](/en/ui/input-mode) and never move icons or resize buttons. The application still owns shortcut handlers.
 
 `pressed` makes an action a toggle and exposes its state as `aria-pressed`, such as Bold over bold text. Leave it out for a plain command.

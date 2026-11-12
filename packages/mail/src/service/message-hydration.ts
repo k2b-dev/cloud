@@ -891,7 +891,6 @@ export const hydrateMessageFromSource = async (params: {
           skipHtmlToText: false,
           skipTextToHtml: true,
           skipImageLinks: true,
-          keepCidLinks: true,
           maxHtmlLengthToParse: 10 * 1024 * 1024,
           checksumAlgo: "sha256",
         });
@@ -943,7 +942,7 @@ export const hydrateMessageFromSource = async (params: {
                   attachment: true,
                 });
               } finally {
-                attachment.release();
+                attachment.release?.();
               }
             } else {
               plainText = storableText(value.text ?? "");

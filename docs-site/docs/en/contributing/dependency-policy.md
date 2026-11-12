@@ -5,7 +5,7 @@ section: Contributing
 order: 1306
 description: Where dependencies are declared, which root overrides and patches exist, why, and when each one can go.
 tags: [contributing, dependencies, security]
-updated: 2026-11-07
+updated: 2026-11-11
 ---
 
 # Dependency policy
@@ -37,6 +37,22 @@ update for a catalog entry that no concrete pin mirrors. When
 `bun run check dependencies` fails on a Dependabot pull request, set each
 reported catalog entry to the bumped version in the root `package.json`, run
 `bun install`, and push the result to the pull request branch.
+
+## Deferred grouped updates
+
+The November 2026 group keeps these exact pins. Update each with its focused
+regression checks before including it in another group.
+
+| Dependency | Retained version | Reason and verification |
+| --- | --- | --- |
+| `@types/bun` | `1.4.2` | New SQL result metadata and reserved-connection types require a separate migration of query fixtures and mocks; run workspace typechecks with the new types. The Bun runtime stays at `1.4.4`. |
+| `@biomejs/biome` | `2.5.14` | The new Markdown formatter requires a repository-wide formatting migration; handle that separately from dependency fixes. |
+| `imapflow` | `2.0.7` | The update breaks connection-failure and throttled-fetch behavior; the connector's protocol tests must pass before adoption. |
+| `hucre` | `1.1.0` | The update bypasses the existing ODS row-container patch and loses spreadsheet values; `packages/assistant/src/artifacts/runtime/sheet.test.ts` checks the read and round trip. |
+| `hono-openapi` | `1.3.3` | The update drops UUID metadata for transformed principal IDs and changes response schemas; Chat OpenAPI and Grids document-route tests check those contracts. |
+| `seroval` | `1.6.7` | The update makes unused SSR code change the measured island bundle size through minifier naming and chunk hashes; `scripts/fixtures/island-bundle-size.test.ts` checks both dead-code independence and real compressed growth. |
+| `@tabler/icons-webfont` | `3.48.0` | Version `3.50.0` splits one font face into 48 and reproduces WebKit Dashboard click/state timeouts. A package bisect and a font-only reversal isolate the update; the three affected tests in `packages/dashboard/src/frontend/dashboard-home.browser.test.ts` pass with this pin and all other updates retained. Revisit split-font delivery and rendering under #3165 and #3166 before adoption. |
+| `@babel/core`, `@babel/preset-typescript` in `@k2b/ssr` | `7.29.7` | The group upgrades these from major 7 to 8; the JSX builder, unused client imports, type-only island imports, and example compiler need a coordinated migration. Other packages retain their Babel 8 updates. |
 
 ## Root overrides
 

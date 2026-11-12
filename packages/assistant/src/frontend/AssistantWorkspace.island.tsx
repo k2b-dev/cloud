@@ -737,10 +737,17 @@ export default function AssistantWorkspace(props: Props) {
       setPanelStorageFailed(true);
     }
   };
+  // The draft the composer shows. When the new chat's own save creates it, the draft stays the same one there, so an
+  // open command list and its caret stay; a send or an app command moves on with the composer's own `follow()` path.
+  const [composerIdentities, setComposerIdentities] = createSignal<Record<string, string>>({ __new__: "__new__:0" });
+  let newComposerIdentities = 0;
+  const composerIdentity = (key: string) => composerIdentities()[key] ?? key;
   const migrateNewComposer = (conversation: AiConversation) => {
     const from = "__new__";
     const local = sessions.get(from);
     if (!local?.dirty) return;
+    if (draftCreation() && !pendingCommandSaves() && !composerSubmitting())
+      setComposerIdentities((all) => ({ ...all, [conversation.id]: all[from] ?? from, [from]: `${from}:${++newComposerIdentities}` }));
     // The replay may contain another tab's newer draft. Keep the revision this local text was based on.
     sessions.set(conversation.id, local);
     setComposerDraft(conversation.id, composerDraft(from));
@@ -764,15 +771,29 @@ export default function AssistantWorkspace(props: Props) {
         setCreationVersion((version) => version + 1);
       }
       setRejectedCreations((keys) => new Set([...keys].filter((item) => item !== key)));
-      const conversation = await chat.createConversation(request);
+      // A replay can find a conversation already edited in this workspace. Never replace that session.
+      const collides = (conversation: AiConversation) => {
+        const existing = sessions.get(conversation.id);
+        return Boolean(existing && (existing.dirty || existing.conflict || existing.saving));
+      };
+      // The new draft moves into the chat in the same update that opens it, so the field never shows the chat without it.
+      let moved = false;
+      const conversation = await chat.createConversation(
+        request,
+        projectId
+          ? undefined
+          : (created) => {
+              if (collides(created)) return;
+              migrateNewComposer(created);
+              moved = true;
+            },
+      );
       if (!conversation && [400, 401, 403, 404, 409, 413, 422].includes(chat.creationErrorStatus() ?? 0)) {
         creationRequests.delete(key);
         setRejectedCreations((keys) => new Set([...keys, key]));
         setCreationVersion((version) => version + 1);
       }
-      const existing = conversation && !projectId ? sessions.get(conversation.id) : undefined;
-      if (existing && (existing.dirty || existing.conflict || existing.saving)) {
-        // A replay can find a conversation already edited in this workspace. Never replace that session.
+      if (conversation && !projectId && !moved && collides(conversation)) {
         chat.setError(t().panelCreateDraftCollision);
         return null;
       }
@@ -2207,7 +2228,7 @@ export default function AssistantWorkspace(props: Props) {
               </Show>
             </>
           }
-          draftKey={sessionKey()}
+          draftKey={composerIdentity(sessionKey())}
           mentions={mentionsFor(sessionKey())}
           onMentionsChange={(mentions) => setMentionsFor(sessionKey(), mentions)}
           commandSections={assistantCommandSections(commandCopy(), appCommands().pending)}
