@@ -26,6 +26,10 @@ import {
  *   A mouse movement, a scroll, a right or middle click only light up the hint.
  * - With the timer on, a countdown shows during the last ten seconds; any input cancels it.
  * - All Cloud tabs of this browser share the state and the idle time.
+ * - Opening or loading a page is input too: every tab shows again and the idle time starts over. A page the person
+ *   cannot see yet, such as a background tab or a prerender, counts once it shows; until then it covers with the
+ *   other tabs. A return from the back-forward cache counts. A covered page that reloads stays covered: the reload
+ *   may be automatic, such as after an update, and nobody may be at the screen.
  */
 
 export const PRIVACY_LEAD_MS = 10_000;
@@ -37,6 +41,8 @@ const ISLAND = '[data-cloud-privacy="keep"], [data-cloud-privacy="live"]';
 const LIVE = '[data-cloud-privacy="live"]';
 /** The shared workstation's sign-out warning is the open dialog whose "Continue working" button carries this attribute. */
 const SESSION_WARNING_ACTION = "[data-cloud-idle-continue]";
+/** Set in this tab's session storage when a page leaves while covered, so its reload stays covered. */
+const LEFT_COVERED = "cloud.privacy.left-covered";
 const isSessionWarning = (element: Element) =>
   element.tagName === "DIALOG" && element.hasAttribute("open") && Boolean(element.querySelector(SESSION_WARNING_ACTION));
 const isModal = (dialog: Element) => {
@@ -88,6 +94,13 @@ const isShortcut = (event: KeyboardEvent) =>
   event.key === "." &&
   !event.altKey &&
   (keyboardPlatform() === "apple" ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey);
+
+const navigationType = () => {
+  const activation = window.navigation?.activation?.navigationType;
+  if (activation) return activation;
+  const entry = performance.getEntriesByType("navigation")[0];
+  return entry instanceof PerformanceNavigationTiming ? entry.type : null;
+};
 
 export const privacyScreenActive = () => document.documentElement.dataset.cloudPrivacy === "on";
 export const sessionWarningOpen = () =>
@@ -506,7 +519,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   };
   const message = (event: MessageEvent<PrivacyChannelMessage>) => {
     const data = event.data;
-    // A tab that opens asks the others for the state, so it never shows content while they are covered.
+    // A tab that opens unseen or reloads covered asks the others for the state, so it covers while they are covered.
     if (data?.type === "hello") channel?.postMessage({ type: active ? "on" : "activity" } satisfies PrivacyChannelMessage);
     else if (data?.type === "activity") activity(false);
     else if (data?.type === "timer") publishPrivacyTimer(data.seconds);
@@ -514,6 +527,46 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     else if (data?.type === "off") lift(true);
   };
   const resize = () => active && placeHint();
+
+  // ── Arrival ──────────────────────────────────────────────────────────
+  /** Opening, loading or returning to a page is the person's input: like a click, it shows every tab again. */
+  const arrive = () => {
+    activity(false);
+    lastShared = lastActivity;
+    channel?.postMessage({ type: "activity" } satisfies PrivacyChannelMessage);
+    if (sessionWarningOpen()) return;
+    if (active) lift();
+    else channel?.postMessage({ type: "off" } satisfies PrivacyChannelMessage);
+  };
+  const seen = () => document.visibilityState === "visible" && !("prerendering" in document && document.prerendering === true);
+  let unseen = false;
+  /** A background tab or a prerender arrives when the person first sees it. */
+  const shown = () => {
+    if (!unseen || !seen()) return;
+    unseen = false;
+    arrive();
+  };
+  const pageshow = (event: PageTransitionEvent) => {
+    if (event.persisted) arrive();
+  };
+  const pagehide = () => {
+    try {
+      if (active) sessionStorage.setItem(LEFT_COVERED, "");
+      else sessionStorage.removeItem(LEFT_COVERED);
+    } catch {
+      /* Without session storage a reload of a covered page counts as input. */
+    }
+  };
+  const reloadedCovered = () => {
+    try {
+      const left = sessionStorage.getItem(LEFT_COVERED) !== null;
+      sessionStorage.removeItem(LEFT_COVERED);
+      // Only a reload of that page: a later sign-in after the shared workstation's sign-out is the person's input.
+      return left && navigationType() === "reload";
+    } catch {
+      return false;
+    }
+  };
 
   const stopTimer = onPrivacyTimer((seconds) => {
     timerSeconds = seconds;
@@ -533,9 +586,20 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   window.addEventListener("blur", blur);
   window.addEventListener("resize", resize);
   document.addEventListener("toggle", toggled, true);
+  document.addEventListener("visibilitychange", shown);
+  document.addEventListener("prerenderingchange", shown);
+  window.addEventListener("pageshow", pageshow);
+  window.addEventListener("pagehide", pagehide);
   window.addEventListener(PRIVACY_REQUEST_EVENT, request);
   channel?.addEventListener("message", message);
-  channel?.postMessage({ type: "hello" } satisfies PrivacyChannelMessage);
+  // A page the person sees has just been opened by them. Lifting is instant (only covering fades in), so a page that
+  // covered while unseen shows sharp in its first visible frame.
+  const following = reloadedCovered();
+  if (following) activate("channel");
+  else if (seen()) arrive();
+  else unseen = true;
+  // A page that does not arrive asks the other tabs for the state, so it covers while they are covered.
+  if (following || unseen) channel?.postMessage({ type: "hello" } satisfies PrivacyChannelMessage);
   schedule();
 
   return () => {
@@ -557,6 +621,10 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     window.removeEventListener("blur", blur);
     window.removeEventListener("resize", resize);
     document.removeEventListener("toggle", toggled, true);
+    document.removeEventListener("visibilitychange", shown);
+    document.removeEventListener("prerenderingchange", shown);
+    window.removeEventListener("pageshow", pageshow);
+    window.removeEventListener("pagehide", pagehide);
     window.removeEventListener(PRIVACY_REQUEST_EVENT, request);
     channel?.close();
     disposeHint();
