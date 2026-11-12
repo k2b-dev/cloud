@@ -33,6 +33,12 @@ export type LastRejectedStart = {
   reason: "revoked" | "expired" | "disabled" | "connections_not_permitted";
   keyId: string | null;
 };
+type StoredAppKey = AppKeyMetadata & {
+  connectionsAllowed: boolean;
+  oauthIssueAllowed: boolean;
+  installationId: string;
+  activityDue: boolean;
+};
 type Row = {
   id: string;
   app_id: string;
@@ -312,10 +318,7 @@ export const revokeAppKey = async (params: { actor: AdminActor; appId: string; k
 };
 
 /** Core bootstrap diagnostics need the stored public key even after revocation; this does not authenticate it. */
-export const getStoredAppKey = async (
-  params: { appId: string; keyId: string },
-  db: SQL = sql,
-): Promise<(AppKeyMetadata & { connectionsAllowed: boolean; oauthIssueAllowed: boolean }) | null> => {
+export const getStoredAppKey = async (params: { appId: string; keyId: string }, db: SQL = sql): Promise<StoredAppKey | null> => {
   try {
     validateAppKeyAppId(params.appId);
   } catch {
@@ -323,14 +326,25 @@ export const getStoredAppKey = async (
   }
   if (params.keyId.length !== 36 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(params.keyId))
     return null;
-  const [row] = await db<(Row & { connections_allowed: boolean })[]>`
-    SELECT ${db.unsafe(columns)} FROM auth.service_account_credentials c
+  const [row] = await db<(Row & { connections_allowed: boolean; installation_id: string; activity_due: boolean })[]>`
+    SELECT ${db.unsafe(columns)}, i.id AS installation_id,
+      (c.last_used_at IS NULL OR c.last_used_at < now() - interval '1 minute') AS activity_due
+    FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
+    JOIN auth.installation i ON i.singleton = true
     WHERE c.kind = 'app_key' AND c.id = ${params.keyId}::uuid
       AND sa.kind = 'resource_bound' AND sa.app_id = ${params.appId} AND sa.resource_type = 'cloud.app' AND sa.resource_id = ${params.appId}
   `;
   if (row && env.NODE_ENV !== "development" && isDevelopmentPublicKey(row.public_key)) return null;
-  return row ? { ...map(row), connectionsAllowed: row.connections_allowed, oauthIssueAllowed: row.oauth_issue_allowed } : null;
+  return row
+    ? {
+        ...map(row),
+        connectionsAllowed: row.connections_allowed,
+        oauthIssueAllowed: row.oauth_issue_allowed,
+        installationId: row.installation_id,
+        activityDue: row.activity_due,
+      }
+    : null;
 };
 
 /** Bootstrap and signed workload requests must query this directly; no cache. */
@@ -339,12 +353,36 @@ export const getActiveAppKey = async (params: { appId: string; keyId: string }, 
   return key?.status === "active" && key.accountStatus === "active" ? key : null;
 };
 
-/** Call only after successful authentication; a late touch cannot revive a key. */
-export const touchAppKey = async (params: { appId: string; keyId: string }, db: SQL = sql): Promise<void> => {
-  const key = await getActiveAppKey(params, db);
-  if (!key) return;
-  await db`UPDATE auth.service_account_credentials SET last_used_at = now() WHERE id = ${key.keyId}::uuid AND status = 'active'
-    AND (expires_at IS NULL OR expires_at > now())`;
+const ACTIVITY_INTERVAL_MS = 60_000;
+// Only keys touched within the last minute remain, at most one entry per key.
+const activityWrites = new Map<string, number>();
+
+/** Reuse the authenticated row; activity telemetry never caches authentication or revives a key. */
+export const touchAppKey = async (key: StoredAppKey, db: SQL = sql): Promise<void> => {
+  const now = performance.now();
+  for (const [keyId, writtenAt] of activityWrites) {
+    if (now - writtenAt < ACTIVITY_INTERVAL_MS) break;
+    activityWrites.delete(keyId);
+  }
+  if (!key.activityDue || key.status !== "active" || key.accountStatus !== "active" || activityWrites.has(key.keyId)) return;
+  // Claim before awaiting SQL so concurrent requests in this process also skip the statement.
+  activityWrites.set(key.keyId, now);
+  try {
+    await db`
+      WITH claimed AS (
+        SELECT id FROM auth.service_account_credentials
+        WHERE id = ${key.keyId}::uuid AND status = 'active'
+          AND (expires_at IS NULL OR expires_at > now())
+          AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE auth.service_account_credentials SET last_used_at = now()
+      FROM claimed WHERE auth.service_account_credentials.id = claimed.id
+    `;
+  } catch (error) {
+    if (activityWrites.get(key.keyId) === now) activityWrites.delete(key.keyId);
+    throw error;
+  }
 };
 
 export const appKeys = { register: registerAppKey, list: listAppKeys, listApps: listAppsWithKeys, revoke: revokeAppKey };

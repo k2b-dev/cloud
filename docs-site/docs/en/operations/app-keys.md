@@ -5,7 +5,7 @@ section: Operations
 order: 1144
 description: Enroll, export, rotate and revoke an application's Ed25519 key without sending its private seed to Core.
 tags: [operations, identity, credentials, cli]
-updated: 2026-11-05
+updated: 2026-11-12
 ---
 
 # App keys
@@ -137,9 +137,32 @@ for replica consistency and startup probes.
 Invalid, unknown, revoked or mismatched keys stop startup. If Core is
 unreachable or answers HTTP 429 or 503, startup retries for at most five minutes
 without opening an HTTP listener. A retry signs a new proof even if the first
-response was lost. Successful bootstrap updates `lastUsedAt`. Revocation blocks
+response was lost. Successful bootstrap updates `lastUsedAt` at most once per
+minute per key. Revocation blocks
 new bootstrap requests on every Core replica immediately; it does not close
 already established database or NATS connections or recall delivered secrets.
+
+### Upgrade all Core replicas together
+
+Upgrade every Core replica to this version together before resuming signed app
+traffic. The migration drops `auth.app_proof_replays` and its indexes. An older
+Core replica then returns HTTP 503 for signed calls until it is replaced; do
+not leave old replicas serving bootstrap or signed requests during the upgrade.
+
+Core now stores proof replay claims in the installation's shared Valkey. Every
+verified request claims its proof once with `SET NX`; the claim expires five
+minutes after the proof's expiry. All Core replicas must use the same Valkey
+and preserve these claims through their expiry. If rate admission or a replay
+claim is unavailable, Core returns HTTP 503 with `app_proof_unavailable` and
+`Retry-After: 1`. Restore Valkey availability and retry with a fresh proof.
+Core also skips refused-start diagnostics when it cannot check the replay
+claim. No replay-table cleanup job remains.
+
+Each signed call reads the key and installation identity together from
+Postgres, keeping revocation immediate across replicas. Activity tracking
+updates `last_used_at` at most once per minute per key across Core replicas;
+other successful calls perform no Postgres writes in authentication. Domain
+operations keep their own reads and writes.
 
 ## Background and OAuth authority
 
@@ -232,8 +255,10 @@ cld --profile operator admin apps keys revoke inventory <keyId> --yes
 The list includes the public key, fingerprint, name, creation and creator,
 optional expiry, last use, grants, and revocation metadata. Status is `active`,
 `expired`, or `revoked`; `accountStatus` is `active` or `disabled`. A disabled
-account prevents authentication with all its keys. Successful bootstrap updates
-`lastUsedAt`; a key that has never authenticated has a null value. Lists accept `--page` and `--per-page`
+account prevents authentication with all its keys. Successful bootstrap and
+signed requests update `lastUsedAt` at most once per minute per key; allow that
+delay when checking a rotation. A key that has never authenticated has a null
+value. Lists accept `--page` and `--per-page`
 (default 100, maximum 500).
 
 The per-app key list also reports `lastRejectedStart`: the time, key ID and
@@ -389,7 +414,11 @@ Keep the locally generated pair until registration succeeds. Retrying with the
 same public key is what makes lost responses safe. Core-owned consumers read
 `getInstallationId`, `getActiveAppKey`, and `touchAppKey` from
 `@k2b/cloud/services/app-keys`; the active-key read goes directly to Postgres
-and checks account status, revocation, and expiry without a cache.
+and checks account status, revocation, and expiry without a cache. Its result
+includes `installationId` and `activityDue`; pass that authenticated result to
+`touchAppKey(key, db)`. The touch never rereads the key. Its process throttle
+skips SQL for a minute after an activity statement, and its SQL guard prevents
+other replicas from updating a recent timestamp.
 
 Key metadata keeps its stored lifecycle `status` and reports `usable` separately.
 A key is usable only while it and its account are active and the runtime accepts
