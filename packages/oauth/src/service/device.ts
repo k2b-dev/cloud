@@ -1,4 +1,4 @@
-import { redis, sql } from "@k2b/cloud";
+import { connections, redis, sql } from "@k2b/cloud";
 import { audit, requireConfirmedBrowserSignIn, toPgTextArray } from "@k2b/cloud/services";
 import type { OAuthClient, OAuthScope } from "@/contracts";
 import { rejectBrowserSignIn } from "./sign-in";
@@ -221,7 +221,7 @@ export const poll = async (params: {
       user_id=l.user_id,auth_epoch=l.auth_epoch,decided_at=now(),login_lifetime_seconds=l.lifetime_seconds
     FROM auth.app_logins l WHERE d.device_code_hash=${sha256(params.deviceCode)} AND d.client_id=${params.clientId}
       AND d.app_approval AND d.status='pending' AND d.expires_at > now()
-      AND l.device_authorization_id=d.id AND l.kind='terminal' AND l.oauth_issuer_app_id='oauth'
+      AND l.device_authorization_id=d.id AND l.kind='terminal' AND l.oauth_issuer_app_id=${connections().appId}
       AND l.client_id=d.client_id AND l.state IN ('approved','denied') AND l.user_id IS NOT NULL
       AND l.oauth_grant_expires_at=date_trunc('milliseconds',d.expires_at)
       AND d.scopes @> l.scopes AND d.scopes <@ l.scopes

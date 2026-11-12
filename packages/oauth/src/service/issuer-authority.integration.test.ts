@@ -32,6 +32,7 @@ databaseSuite()("OAuth issuer owns policy, reservations and notices", () => {
   });
   afterEach(async () => {
     setSystemTime();
+    connections().appId = "oauth";
     for (const f of fixtures.splice(0)) {
       await sql`DELETE FROM auth.oauth_clients WHERE client_id=${f.clientId}`;
       await sql`DELETE FROM oauth.clients WHERE client_id=${f.clientId}`;
@@ -148,9 +149,10 @@ databaseSuite()("OAuth issuer owns policy, reservations and notices", () => {
       (await sql`SELECT authority_issued_at FROM oauth.device_authorizations WHERE id=${f.id}::uuid`)[0].authority_issued_at,
     ).toBeNull();
   });
-  test.each(["current", "missing", "issuer", "client", "scopes", "lifetime", "deadline", "epoch", "denied"] as const)(
+  test.each(["current", "copied-issuer", "missing", "issuer", "client", "scopes", "lifetime", "deadline", "epoch", "denied"] as const)(
     "terminal evidence must match the issuer's exact private device grant: %s",
     async (scenario) => {
+      if (scenario === "copied-issuer") connections().appId = "copied-oauth";
       const f = await device(),
         loginId = crypto.randomUUID();
       await sql`UPDATE oauth.device_authorizations SET app_approval=true WHERE id=${f.id}::uuid`;
@@ -159,7 +161,7 @@ databaseSuite()("OAuth issuer owns policy, reservations and notices", () => {
       comparison,state,expires_at,kind,device_authorization_id,client_id,scopes,lifetime_seconds,oauth_issuer_app_id,
       oauth_client_name,oauth_grant_expires_at)
       VALUES (${loginId}::uuid,${issuer},${f.userId}::uuid,7,'login','hash','challenge','012345','approved',now()+interval '5 minutes',
-        'terminal',${f.id}::uuid,${f.clientId},ARRAY['openid'],3600,'oauth','CLI',${f.deadline})`;
+        'terminal',${f.id}::uuid,${f.clientId},ARRAY['openid'],3600,${connections().appId},'CLI',${f.deadline})`;
       if (scenario === "issuer") await sql`UPDATE auth.app_logins SET oauth_issuer_app_id='another-issuer' WHERE id=${loginId}::uuid`;
       if (scenario === "client") await sql`UPDATE auth.app_logins SET client_id='another-client' WHERE id=${loginId}::uuid`;
       if (scenario === "scopes") await sql`UPDATE auth.app_logins SET scopes=ARRAY['openid','write'] WHERE id=${loginId}::uuid`;
@@ -168,7 +170,7 @@ databaseSuite()("OAuth issuer owns policy, reservations and notices", () => {
         await sql`UPDATE auth.app_logins SET oauth_grant_expires_at=oauth_grant_expires_at+interval '1 second' WHERE id=${loginId}::uuid`;
       if (scenario === "epoch") await sql`UPDATE auth.app_logins SET auth_epoch=6 WHERE id=${loginId}::uuid`;
       if (scenario === "denied") await sql`UPDATE auth.app_logins SET state='denied' WHERE id=${loginId}::uuid`;
-      if (scenario === "current") {
+      if (scenario === "current" || scenario === "copied-issuer") {
         const staged = await stage(f.deviceGrant);
         expect(staged.statement.terminalLoginId).toBe(loginId);
         expect(staged.terminalConfirmed).toBe(true);

@@ -1,4 +1,4 @@
-import { sql } from "@k2b/cloud";
+import { connections, sql } from "@k2b/cloud";
 import type { OAuthAuthorityStatement } from "@k2b/cloud/contracts";
 import { isAccountCategoryAllowed, toPgTextArray } from "@k2b/cloud/services";
 import type { OAuthUserGrantReference } from "./token-authority";
@@ -151,7 +151,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
               AND oauth_grant_expires_at=date_trunc('milliseconds',${grant.grant_expires_at ?? null}::timestamptz)
               AND oauth_grant_expires_at > now()) AS bound
           FROM auth.app_logins
-          WHERE device_authorization_id=${params.request.grant.deviceAuthorizationId}::uuid AND kind='terminal' AND oauth_issuer_app_id='oauth' `;
+          WHERE device_authorization_id=${params.request.grant.deviceAuthorizationId}::uuid AND kind='terminal' AND oauth_issuer_app_id=${connections().appId} `;
         if (login) {
           if (!login.bound || login.user_id !== grant.user_id || Number(login.auth_epoch) !== authEpoch) return null;
           terminalConfirmed = true;
