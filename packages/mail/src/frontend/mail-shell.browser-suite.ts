@@ -3672,7 +3672,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             // Every other parameter stays, so the feed stays as it is beside the reader.
             await page.waitForURL(new URL(`${events}&conversation=Conv01`, server.url).href);
             await settled(page);
-            expect(await page.locator(".mail-reader-subject").first().textContent()).toContain("Example request 1");
+            expect(await page.locator(".mail-reader-title").first().textContent()).toContain("Example request 1");
             if (width === 1440) {
               // The feed moves beside the reader and keeps its rows; the open conversation's event is marked.
               expect(await rows(page).count()).toBe(11);

@@ -249,7 +249,8 @@ describe("MailComposer in a floating window", () => {
     await waitFor(() => Boolean(dom.root.querySelector(".cm-content")));
     if (options.ready !== false) await waitFor(() => Boolean(sendButton() && !sendButton()!.disabled));
   };
-  const sendButton = () => dom.document.querySelector<HTMLButtonElement>("button.mail-compose-action");
+  // The Send split button carries the composer's class on the whole control; Send is its main segment.
+  const sendButton = () => dom.document.querySelector<HTMLButtonElement>(".mail-compose-action .k2b-split-button__primary");
   const status = () => statusSlot.textContent?.trim() ?? "";
   const foot = () => dom.root.querySelector<HTMLElement>(".mail-compose-window-foot")!;
 
@@ -263,9 +264,7 @@ describe("MailComposer in a floating window", () => {
     expect(dom.root.querySelector("[data-mail-draft-collapse]")).toBeNull();
     expect(dom.root.querySelector(".mail-inline-draft-foot .mail-inline-draft-status")).toBeNull();
     const controls = [...foot().querySelectorAll("button")].filter((button) => !button.closest(".k2b-split-button__menu"));
-    expect(foot().firstElementChild?.querySelector(".mail-compose-action") ?? foot().querySelector(".mail-compose-action")).toBe(
-      sendButton(),
-    );
+    expect(controls[0]).toBe(sendButton()!);
     expect(controls.at(-1)?.getAttribute("aria-label")).toBe("Discard draft");
     expect(foot().querySelector('[aria-label="Draft actions"]')).not.toBeNull();
   });
