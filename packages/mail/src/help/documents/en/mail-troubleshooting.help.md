@@ -37,7 +37,7 @@ If Mail restarts while it downloads a body, the reader can show **The message bo
 
 Sometimes the mail provider cannot be reached or refuses sign-ins for a while, for example during maintenance or because too many connections are open. Mail keeps trying and continues on its own when the provider answers again. You need a new password or credential only when the provider rejects the current one.
 
-Mail cannot store a sender or recipient entry as an address when it has fewer than 3 or more than 320 characters. An example is a text fragment in a damaged message. Mail still imports the message and leaves out only that entry. The original header stays under **Headers** in the conversation details.
+Mail cannot store a sender or recipient entry as an address when it has fewer than 3 or more than 320 characters. An example is a text fragment in a damaged message. Mail still imports the message and leaves out only that entry. The original header stays under **…** on the message → **Technical details** → **Headers**.
 
 For folders that the provider shares, first check that the connected IMAP account still has the required subscription and access at the provider. Mail can find only folders that the provider shows to that account.
 

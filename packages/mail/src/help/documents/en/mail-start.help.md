@@ -85,7 +85,7 @@ The center list shows one row per conversation: the sender and the time, the sub
 
 The head of the reader has the same actions for everyone: **Done**, **Archive**, **Delete**, **Later**, **Assign**, and **…** with every other action. **Later** shows the conversation again at a time you choose, and sets a reminder that only you get. When the reader gets narrow, the actions that no longer fit are only in **…**. If you had arranged your own toolbar before, Mail shows once where your actions are now.
 
-Choose **Details** in the mailbox head to open team context, local tags, ownership, comments, reminders, and the longer list of recent activity. On a phone, use the details icon beside **…** in the reader instead. The details stand next to the reader while it keeps enough room. With less room, they open over the reader's end. To get more reading space, hide the conversation list.
+Below the subject, chips show the state of the conversation, its tags, and its linked items; choose one to change it. The summary of a conversation is one line above the messages; choose it to read all of it. Choose the sender of a message to see the contact and earlier conversations.
 
 Next to a composer, the conversation history contains only messages. Operational activity does not distract you while you write.
 

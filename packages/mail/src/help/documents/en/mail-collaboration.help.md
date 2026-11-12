@@ -88,11 +88,11 @@ Only active accounts with a current eligible mailbox access appear as assignees.
 
 Choose the sender of a message to see the matching contact, the earlier conversations with this sender, and what Mail can do about the sender. The contact must have exactly the sender's email address. When no contact matches, the card shows the address, and **Add to contacts** where the contact directory allows it.
 
-The **Related Mail** action on a Contact card opens an exact search with its own URL for that participant in a new tab. The separate **Related mail** section of the conversation uses shared participants and normalized subjects and explains every match.
+**All messages from this sender** on the card opens an exact search for that address.
 
-If an external participant has no matching Contact, choose **New contact** and choose a writable contact book. Mail creates the Contact there with the shown name and email. Mail shows no button for an address that already matches a Contact that you can read. This also applies to matches that are not on the first result page.
+If the sender has no matching Contact, choose **Add to contacts** and choose a writable contact book. Mail creates the Contact there with the shown name and email. Mail shows no such entry for an address that already matches a Contact that you can read.
 
-Mail stores no Contact ownership, notes, bank details, access entries, or other private fields. Each time you open the card of a sender, Mail asks Contacts for a limited set of data about that sender. Cloud administrators can switch this section to another contact directory app; see **Choose the contact directory**. Mail shows **New contact** only when that app supports creating contacts.
+Mail stores no Contact ownership, notes, bank details, access entries, or other private fields. Each time you open the card of a sender, Mail asks Contacts for a limited set of data about that sender. Cloud administrators can switch this section to another contact directory app; see **Choose the contact directory**. Mail shows **Add to contacts** only when that app supports creating contacts.
 
 The CLI shows matches for the conversation through `cld mail conversation related`, and Contacts context through `cld mail conversation context`. It shows the Contact-aware history through `cld mail conversation contact-history`.
 

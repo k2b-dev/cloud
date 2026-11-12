@@ -229,7 +229,7 @@ The CLI offers the same recovery tools:
 
 ## Choose the contact directory {icon="address-book"}
 
-Mail uses the built-in Contacts app for recipient suggestions, contacts in **Conversation details**, **New contact**, and contacts attached to **Write with AI**. You do not need to set anything up for this.
+Mail uses the built-in Contacts app for recipient suggestions, the card of a message sender, **New contact**, and contacts attached to **Write with AI**. You do not need to set anything up for this.
 
 To use another app, such as a customer management app, you need to be a Cloud administrator:
 
