@@ -8,11 +8,15 @@ type Trace = {
   peerId?: string;
   role?: string;
   durationMs?: number;
+  outcome?: "ok" | "error";
+  errorName?: string;
+  events?: number;
   originPeerId?: string | null;
 };
 /** Fixed histograms plus at most 8192 correlated edits (eight peers each), independent of run duration. */
 export async function report(out: string) {
   let incompleteLines = 0;
+  const operations: Record<string, { ok: number; failed: number; unknown: number; events: number; errors: Record<string, number> }> = {};
   const histograms = new Map<string, Uint32Array>();
   const add = (name: string, ms: number) => {
     if (ms < 0 || !Number.isFinite(ms)) return;
@@ -25,6 +29,7 @@ export async function report(out: string) {
   };
   const ids = new Set<string>();
   const contexts = new Map<string, Map<string, number>>();
+  const heads = new Map<string, number>();
   const publications = new Map<string, number>();
   const received = new Map<string, number>();
   const each = async (file: string, read: (e: Trace) => void) => {
@@ -42,11 +47,28 @@ export async function report(out: string) {
   };
   for (const serverPath of [out, `${out}/node-2`])
     await each(`${serverPath}/server-trace.ndjson`, (e) => {
-      if (e.role === "ingress" && e.durationMs !== undefined) add(e.stage, e.durationMs);
+      if (e.role === "ingress" && e.durationMs !== undefined) {
+        add(e.stage, e.durationMs);
+        operations[e.stage] ??= { ok: 0, failed: 0, unknown: 0, events: 0, errors: {} };
+        const operation = operations[e.stage]!;
+        operation.events += e.events ?? 0;
+        if (e.outcome === "ok") operation.ok++;
+        else if (e.outcome === "error") {
+          operation.failed++;
+          const name = e.errorName ?? "UnknownError";
+          operation.errors[name] = (operation.errors[name] ?? 0) + 1;
+        } else operation.unknown++;
+      }
       if (!e.updateId || !e.peerId) return;
       if (e.stage === "socket_receive" && ids.size < 8192) ids.add(e.updateId);
       if (!ids.has(e.updateId)) return;
       const key = `${e.updateId}|${e.peerId}|${e.role}`;
+      if (e.stage === "broker_lookup:end") heads.set(key, e.at);
+      if (e.stage === "jetstream_publish_ack:start") {
+        const head = heads.get(key);
+        if (head !== undefined) add("head_to_publish", e.at - head);
+        heads.delete(key);
+      }
       let g = contexts.get(key);
       if (!g) {
         g = new Map();
@@ -54,7 +76,7 @@ export async function report(out: string) {
       }
       // First reservation belongs to admission; a second one fences the durable notification.
       if (!g.has(e.stage)) g.set(e.stage, e.at);
-      if (e.stage === "jetstream_publish_ack:end") publications.set(e.updateId, e.at);
+      if (e.stage === "jetstream_publish_ack:end" && e.outcome === "ok") publications.set(e.updateId, e.at);
       if (e.stage === "socket_receive") received.set(`${e.updateId}|${e.peerId}`, e.at);
     });
   for (const [key, g] of contexts) {
@@ -142,7 +164,7 @@ export async function report(out: string) {
       return [name, { samples, p50Ms: percentile(0.5), p95Ms: percentile(0.95) }];
     }),
   );
-  const result = { incompleteLines, correlatedEdits: ids.size, correlationLimit: 8192, bucketMs: 10, stages };
+  const result = { incompleteLines, correlatedEdits: ids.size, correlationLimit: 8192, bucketMs: 10, operations, stages };
   await Bun.write(`${out}/stages.json`, JSON.stringify(result, null, 2));
   return result;
 }

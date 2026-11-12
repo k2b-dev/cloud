@@ -13,7 +13,29 @@ test("stage report correlates separate process clocks and reports incomplete tra
       lines([
         { at: 110, stage: "socket_receive", updateId: "one", peerId: "author", role: "ingress" },
         { at: 120, stage: "handler_start", updateId: "one", peerId: "author", role: "ingress" },
-        { at: 200, stage: "jetstream_publish_ack:end", updateId: "one", peerId: "author", role: "ingress", durationMs: 4 },
+        { at: 130, stage: "broker_lookup:end", updateId: "one", peerId: "author", role: "ingress", durationMs: 5, outcome: "ok" },
+        { at: 150, stage: "jetstream_publish_ack:start", updateId: "one", peerId: "author", role: "ingress" },
+        { at: 200, stage: "jetstream_publish_ack:end", updateId: "one", peerId: "author", role: "ingress", durationMs: 4, outcome: "ok" },
+        {
+          at: 204,
+          stage: "jetstream_publish_ack:end",
+          updateId: "one",
+          peerId: "author",
+          role: "ingress",
+          durationMs: 4,
+          outcome: "error",
+          errorName: "ConflictError",
+        },
+        {
+          at: 195,
+          stage: "broker_replay:end",
+          updateId: "one",
+          peerId: "author",
+          role: "ingress",
+          durationMs: 10,
+          outcome: "ok",
+          events: 2,
+        },
         { at: 205, stage: "fanout_received", updateId: "one", peerId: "peer", role: "delivery" },
         { at: 207, stage: "peer_send", updateId: "one", peerId: "peer", role: "delivery" },
       ]) + "{partial",
@@ -39,6 +61,9 @@ test("stage report correlates separate process clocks and reports incomplete tra
     });
     expect(result.incompleteLines).toBe(1);
     expect(result.correlatedEdits).toBe(1);
+    expect(result.operations["jetstream_publish_ack:end"]).toMatchObject({ ok: 1, failed: 1, errors: { ConflictError: 1 } });
+    expect(result.operations["broker_replay:end"]).toMatchObject({ ok: 1, events: 2 });
+    expect(result.stages.head_to_publish).toMatchObject({ samples: 1, p50Ms: 30 });
     expect(result.stages.send_to_peer_apply).toMatchObject({ samples: 1, p50Ms: 120 });
     expect(result.stages.durable_ack).toMatchObject({ samples: 1, p50Ms: 130 });
     expect(result.stages.client_to_receive).toMatchObject({ samples: 1, p50Ms: 20 });

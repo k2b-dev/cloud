@@ -18,10 +18,16 @@ export const draftTraceSpan = async <T>(stage: string, operation: () => Promise<
   if (!draftDocumentDiagnostics.hasSubscribers) return operation();
   const start = performance.now();
   draftTrace(`${stage}:start`);
+  let outcome: "ok" | "error" = "ok";
+  let errorName: string | undefined;
   try {
     return await operation();
+  } catch (error) {
+    outcome = "error";
+    errorName = error instanceof Error ? error.name : "UnknownError";
+    throw error;
   } finally {
-    draftTrace(`${stage}:end`, { durationMs: performance.now() - start });
+    draftTrace(`${stage}:end`, { durationMs: performance.now() - start, outcome, errorName });
   }
 };
 export const draftTraceError = (error: unknown, source: string) =>

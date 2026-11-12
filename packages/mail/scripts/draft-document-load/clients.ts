@@ -10,7 +10,7 @@ import { z } from "zod";
 import { mailDraftDocumentMessageSchema } from "../../src/lib/draft-document-protocol";
 import { draftUpdateId } from "../../src/service/draft-document-diagnostics";
 import type { Options } from "../draft-document-load";
-import { upgradeComplete } from "./common";
+import { checkHost, upgradeComplete } from "./common";
 
 const MiB = 1024 ** 2;
 // Match the browser provider: one standard awareness expiry window without acknowledgement.
@@ -84,7 +84,7 @@ const check = () => {
   if (unexpectedErrors.BACKPRESSURE) throw new Error("Server admission or buffer budget reached (BACKPRESSURE)");
   const unexpected = Object.keys(unexpectedErrors)[0];
   if (unexpected) throw new Error(`Unexpected client error: ${unexpected}`);
-  if ((loadavg()[0] ?? 0) > 24) throw new Error("Host one-minute load exceeds 24");
+  checkHost();
   if (process.memoryUsage().rss > 512 * MiB) throw new Error("Client RSS budget exceeded");
 };
 

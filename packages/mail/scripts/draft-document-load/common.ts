@@ -17,7 +17,7 @@ const within = async <T>(work: Promise<T>, milliseconds: number, label: string):
 
 export { within };
 export const checkHost = () => {
-  if ((loadavg()[0] ?? 0) > 24) throw new Error("Host one-minute load exceeds 24");
+  if ((loadavg()[0] ?? 0) > 32) throw new Error("Host one-minute load exceeds 32");
 };
 export const writeSample = (path: string, row: unknown) => appendFileSync(path, `${JSON.stringify(row)}\n`);
 

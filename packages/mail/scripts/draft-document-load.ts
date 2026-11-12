@@ -24,7 +24,7 @@ and Sync namespace. Never starts containers or enables shared mailbox editing.
 Includes awareness, reconnect, abrupt transport termination, request abort and
 one TCP consumer that stops reading. Samples every second, records latency in
 fixed 10 ms histogram buckets, checks final convergence and drains all sockets.
-Aborts when the one-minute host load exceeds 24. Run with nice -n 19 and
+Aborts when the one-minute host load exceeds 32. Run with nice -n 19 and
 --bounded for hard process budgets; --smol is a GC hint, not a heap cap.
 Client RSS is reported separately. No production throughput claim.
 `;
