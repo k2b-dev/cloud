@@ -26,6 +26,7 @@ import {
   sharedTextSnapshotJobConfig,
 } from "./index";
 import type { SharedTextLifecycleEntry, SharedTextLifecycleStore } from "./lifecycle-store";
+import { SharedTextSnapshotSaveError } from "./snapshots";
 
 const NOW = new Date("2026-10-19T12:00:00Z");
 beforeEach(() => setSystemTime(NOW));
@@ -851,6 +852,41 @@ test("a repair accepted across a store-only restore cannot delete restored text 
       unrelated.destroy();
     }
   }
+});
+
+test("a rejected app save identifies the definite failure and preserves its cause", async () => {
+  const f = fixture();
+  const error = new Error("save refused");
+  f.store.save = async () => {
+    throw error;
+  };
+  const failure = await f.pipeline.flushNow("doc").catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(SharedTextSnapshotSaveError);
+  expect(failure).toHaveProperty("cause", error);
+});
+
+for (const error of [
+  new DOMException("save timed out", "TimeoutError"),
+  new DOMException("save aborted", "AbortError"),
+  Object.assign(new Error("connection reset"), { code: "ECONNRESET" }),
+])
+  test(`an uncertain app save is not classified as a definite rejection: ${error.name} ${error.message}`, async () => {
+    const f = fixture();
+    f.store.save = async () => {
+      throw error;
+    };
+    await expect(f.pipeline.flushNow("doc")).rejects.toBe(error);
+  });
+
+test("an aborted flush does not classify a late save rejection as definite", async () => {
+  const f = fixture();
+  const abort = new AbortController();
+  const error = new Error("save refused after cancellation");
+  f.store.save = async () => {
+    abort.abort();
+    throw error;
+  };
+  await expect(f.pipeline.flushNow("doc", { signal: abort.signal })).rejects.toBe(error);
 });
 
 test("flush-now returns only committed state covering the latest accepted cursor", async () => {

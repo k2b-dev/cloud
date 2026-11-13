@@ -1,4 +1,4 @@
-import { type Job, type JobConfig, type Mutex, RetentionGapError, type Topic, type Worker } from "@k2b/sync";
+import { isRetryableTransportError, type Job, type JobConfig, type Mutex, RetentionGapError, type Topic, type Worker } from "@k2b/sync";
 import * as Y from "yjs";
 import { logger } from "../services/logging";
 import type { SharedTextAdmission } from "./admission";
@@ -15,6 +15,14 @@ const RECONCILE_LIMIT = 5_000;
 // Each lookup is a short-lived tenant replay stopped after its first event; 16 is far below 5,000 latestCursor lookups per scan page.
 // In steady state, only documents edited within the last snapshot delay or stalled documents remain behind.
 const BACKLOG_LOOKUPS = 16;
+
+/** Internal stage evidence: the app save rejected, rather than a broker operation. */
+export class SharedTextSnapshotSaveError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : "Shared text snapshot save failed", { cause });
+    this.name = "SharedTextSnapshotSaveError";
+  }
+}
 
 export const sharedTextSnapshotJobConfig = (
   config: Pick<JobConfig, "id" | "deadLetterRetention" | "terminalRetentionMs" | "dedupeWindowMs"> & {
@@ -264,15 +272,27 @@ const createSnapshots = <Input>(
           if (!repaired && covered) return;
         } else if (covered) return;
         signal.throwIfAborted();
-        await store.save(docId, {
-          state: Y.encodeStateAsUpdate(doc),
-          text: doc.getText(SHARED_TEXT_NAME).toString(),
-          cursor,
-          restoreRevision: initial.restoreRevision,
-          requestedAt,
-          actor: null,
-          contributors: [...contributors.values()],
-        });
+        try {
+          await store.save(docId, {
+            state: Y.encodeStateAsUpdate(doc),
+            text: doc.getText(SHARED_TEXT_NAME).toString(),
+            cursor,
+            restoreRevision: initial.restoreRevision,
+            requestedAt,
+            actor: null,
+            contributors: [...contributors.values()],
+          });
+        } catch (error) {
+          // Only a completed app rejection is evidence for freeze cleanup.
+          // Cancellation and transport failures can leave an uncertain save.
+          if (
+            signal.aborted ||
+            (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) ||
+            isRetryableTransportError(error)
+          )
+            throw error;
+          throw new SharedTextSnapshotSaveError(error);
+        }
       } finally {
         doc.destroy();
       }

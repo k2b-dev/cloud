@@ -5,6 +5,7 @@ import { createDoc } from "./documents";
 import { SHARED_TEXT_NAME, sharedTextNodeId } from "./events";
 import { checkLifecycleAdmission } from "./lifecycle-store";
 import type { sharedText } from "./log";
+import { SharedTextSnapshotSaveError } from "./snapshots";
 import type { SharedTextStoredState, SharedTextSyncEvent } from "./types";
 
 export type SharedTextRoomFreeze = { state: Uint8Array; text: string; cursor: string; restoreRevision: string; expiresAt: number };
@@ -211,7 +212,21 @@ export const createRoomLifecycle = (config: {
       });
       if (!drained) return null;
       const { version, text, marker, expiresAt, stored } = drained;
-      const persisted = await config.flushNow(docId, { signal, restoreRevision: stored.restoreRevision, targetCursor: marker.cursor });
+      const persisted = await config
+        .flushNow(docId, { signal, restoreRevision: stored.restoreRevision, targetCursor: marker.cursor })
+        .catch(async (error: unknown) => {
+          if (error instanceof SharedTextSnapshotSaveError && !signal.aborted) {
+            try {
+              // Release only this token, under admission and CAS. The open marker
+              // also supersedes the retained freeze marker for the next editor.
+              await publish(docId, "open", { signal, freezeCursor: marker.cursor });
+            } catch (releaseError) {
+              if (!(releaseError instanceof ConflictError) && !(releaseError instanceof SharedTextBoundaryError))
+                throw new AggregateError([error, releaseError], "Freeze failed and its drain fence could not be released");
+            }
+          }
+          throw error;
+        });
       signal.throwIfAborted();
       if (!persisted?.state || persisted.text !== text) throw new Error("Shared text flush differs from the drained freeze state");
       const saved = createDoc(persisted);
