@@ -34,6 +34,14 @@ admitting each runner call. The sandbox receives neither that continuation
 nor the job proof. Only the existing Assistant services execute capabilities
 and HTTP, with the turn's current approvals or background mandate.
 
+The platform-owned `@k2b/cloud/code/chat-run-wake` helper uses the existing
+process NATS connection to wake the Assistant mailbox and runner reply waits
+after Core commits a message, reply or terminal status. Hints carry no call
+payload. Each wait subscribes before its initial durable read or admission;
+ordinary idle ticks execute no SQL. A lost hint is recovered by a read every
+2 seconds. A reply read checks its result and current lease in one SQL
+snapshot. Mailbox delivery retains its durable claim transaction.
+
 Bridge requests are claimed once before the Assistant handles them. A lost
 response or host never replays an uncertain effect. Chat jobs expire without
 automatic retry. Script errors, logs and return values travel back to the

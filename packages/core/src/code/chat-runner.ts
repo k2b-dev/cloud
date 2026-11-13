@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import { authorizeCodeExecution } from "@k2b/cloud/ai";
 import { CODE_CHECK_LIMITS } from "@k2b/cloud/code";
 import { ChatRunInputSchema, ChatRunReplySchema } from "@k2b/cloud/code/chat-run";
+import { notifyChatRun, openChatRunWake } from "@k2b/cloud/code/chat-run-wake";
 import { type RunnerJobCallSchema, RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import { CAPABILITY_MAX_REQUEST_BYTES } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
@@ -12,48 +13,46 @@ import { codeAdmissionLock } from "./admission";
 import { fenceCodeJob } from "./runner-jobs";
 import { codeSettings } from "./settings";
 
-const pause = (signal: AbortSignal) =>
-  new Promise<void>((resolve) => {
-    const done = () => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", done);
-      resolve();
-    };
-    const timer = setTimeout(done, 100);
-    signal.addEventListener("abort", done, { once: true });
-    if (signal.aborted) done();
-  });
-
 /** Runner proof fences the mailbox; every actual effect remains authorized by the Assistant turn host. */
 export async function callChatJob(request: z.infer<typeof RunnerJobCallSchema>, signal: AbortSignal) {
   const job = await fenceCodeJob(request, sql, false);
   if (job.kind !== "chat") throw new RunnerLeaseLostError();
   await authorizeCodeExecution(job.conversation_id, job.turn_id, job.owner_id);
-  const admitted = await sql.begin(async (db) => {
-    await fenceCodeJob(request, db);
-    if (Buffer.byteLength(JSON.stringify(request.input)) > job.call_bytes) throw new Error("code_chat_call_limit");
-    const [count] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM code.job_calls WHERE job_id=${request.jobId}::uuid`;
-    if (count!.count >= job.calls_limit) {
-      await db`UPDATE code.jobs SET state='failed',input=NULL,lease_key_hash=NULL,result='{"kind":"error","code":"code_job_call_limit"}'::jsonb WHERE id=${request.jobId}::uuid`;
-      return false;
-    }
-    await db`INSERT INTO code.job_calls(id,job_id,generation,operation,input) VALUES(${request.id}::uuid,${request.jobId}::uuid,
+  const wake = openChatRunWake(request.jobId, request.id, signal);
+  try {
+    const admitted = await sql.begin(async (db) => {
+      await fenceCodeJob(request, db);
+      if (Buffer.byteLength(JSON.stringify(request.input)) > job.call_bytes) throw new Error("code_chat_call_limit");
+      const [count] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM code.job_calls WHERE job_id=${request.jobId}::uuid`;
+      if (count!.count >= job.calls_limit) {
+        await db`UPDATE code.jobs SET state='failed',input=NULL,lease_key_hash=NULL,result='{"kind":"error","code":"code_job_call_limit"}'::jsonb WHERE id=${request.jobId}::uuid`;
+        return false;
+      }
+      await db`INSERT INTO code.job_calls(id,job_id,generation,operation,input) VALUES(${request.id}::uuid,${request.jobId}::uuid,
       ${request.generation},${request.operation},${JSON.stringify(request.input)})`;
-    return true;
-  });
-  if (!admitted) throw new RunnerLeaseLostError();
-  while (!signal.aborted) {
-    const result = await sql.begin(async (db) => {
-      await fenceCodeJob(request, db, false);
-      const [row] = await db<
-        { result: string | null }[]
-      >`SELECT result FROM code.job_calls WHERE id=${request.id}::uuid AND job_id=${request.jobId}::uuid`;
-      return row?.result;
+      return true;
     });
-    if (result) return ChatRunReplySchema.parse(JSON.parse(result));
-    await pause(signal);
+    if (!admitted) {
+      notifyChatRun(request.jobId, "status");
+      throw new RunnerLeaseLostError();
+    }
+    notifyChatRun(request.jobId, "mailbox");
+    while (!signal.aborted) {
+      await wake.wait();
+      if (signal.aborted) throw new RunnerLeaseLostError();
+      // A single snapshot checks the current lease and reply together. No SQL while waiting.
+      const [row] = await sql<{ result: string | null }[]>`SELECT c.result FROM code.jobs j
+      JOIN code.job_calls c ON c.job_id=j.id AND c.generation=j.generation AND c.id=${request.id}::uuid
+      WHERE j.id=${request.jobId}::uuid AND j.generation=${request.generation}
+        AND j.lease_key_hash=${new Bun.CryptoHasher("sha256").update(request.leaseKey).digest("hex")}
+        AND j.state='running' AND j.lease_expires_at>clock_timestamp() AND j.deadline_at>clock_timestamp()`;
+      if (!row) throw new RunnerLeaseLostError();
+      if (row.result) return ChatRunReplySchema.parse(JSON.parse(row.result));
+    }
+    throw new RunnerLeaseLostError();
+  } finally {
+    wake.close();
   }
-  throw new RunnerLeaseLostError();
 }
 
 /** Mounted only behind createCodeCapabilityRoutes' verified, current Assistant-turn continuation. */
@@ -96,7 +95,8 @@ export function createChatRunnerRoutes() {
       const id = z.uuid().parse(c.req.param("id"));
       const actor = c.get("actor");
       if (actor.kind !== "user") return c.json({ code: "ACCESS_DENIED" }, 403);
-      return sql.begin(async (db) => {
+      let changed: string | undefined;
+      const response = await sql.begin(async (db) => {
         const [job] = await db<
           { state: string; result: unknown; generation: number; call_bytes: number }[]
         >`SELECT state,result,generation,call_bytes FROM code.jobs WHERE id=${id}::uuid
@@ -108,12 +108,14 @@ export function createChatRunnerRoutes() {
             result='{"kind":"error","code":"code_job_time_limit"}'::jsonb WHERE id=${id}::uuid
             AND (deadline_at<=clock_timestamp() OR (state='running' AND lease_expires_at<=clock_timestamp())) RETURNING id`;
           if (expired.length) {
+            changed = "status";
             job.state = "failed";
             job.result = { kind: "error", code: "code_job_time_limit" };
           }
         }
         const operation = c.req.param("operation");
         if (operation === "cancel") {
+          changed = "status";
           await db`UPDATE code.jobs SET state='cancelled',input=NULL,lease_key_hash=NULL WHERE id=${id}::uuid AND state IN('queued','running')`;
           return c.json({ cancelled: true });
         }
@@ -132,6 +134,7 @@ export function createChatRunnerRoutes() {
             .strict()
             .parse(await c.req.json());
           if (Buffer.byteLength(JSON.stringify(input.result)) > job.call_bytes) return c.json({ code: "code_chat_call_limit" }, 413);
+          changed ??= input.id;
           await db`UPDATE code.job_calls SET state='done',result=${JSON.stringify(input.result)},input=NULL
             WHERE id=${input.id}::uuid AND job_id=${id}::uuid AND generation=${job.generation} AND state='delivering' AND ${job.state}='running'`;
           return c.json({ resolved: true });
@@ -148,5 +151,7 @@ export function createChatRunnerRoutes() {
           calls: calls.map((call) => ({ ...call, input: JSON.parse(call.input) })),
         });
       });
+      if (changed) notifyChatRun(id, changed);
+      return response;
     });
 }

@@ -1,6 +1,7 @@
 import { authorizeCodeExecution, type createCodeCapabilityTransport, parseCodeToolInput } from "@k2b/cloud/ai";
 import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
 import { type ChatRunInput, ChatRunPollSchema, type ChatRunReplySchema, decodeChatValue, encodeChatValue } from "@k2b/cloud/code/chat-run";
+import { openChatRunWake } from "@k2b/cloud/code/chat-run-wake";
 import { CapabilityStreamSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { runtimeCapabilities } from "./capability-runtime";
@@ -101,6 +102,7 @@ export function createRunnerCodeHost(options: Options) {
     const { id, deadlineAt } = z.object({ id: z.uuid(), deadlineAt: z.number() }).parse(await (await core("start", input, signal)).json());
     signal = AbortSignal.any([signal, AbortSignal.timeout(Math.max(1, deadlineAt - Date.now()))]);
     hooks.pending?.(1);
+    const wake = openChatRunWake(id, "mailbox", signal);
     try {
       while (!signal.aborted) {
         const poll = ChatRunPollSchema.parse(await (await core(`${id}/poll`, {}, signal)).json());
@@ -129,10 +131,11 @@ export function createRunnerCodeHost(options: Options) {
             );
           return;
         }
-        await pause(100);
+        await wake.wait();
       }
       signal.throwIfAborted();
     } finally {
+      wake.close();
       await core(`${id}/cancel`, {}, AbortSignal.timeout(10_000)).catch(() => {});
     }
   }
