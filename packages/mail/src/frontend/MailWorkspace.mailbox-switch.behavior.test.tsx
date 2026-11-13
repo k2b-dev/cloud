@@ -42,6 +42,7 @@ const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
   // Retained-pane cases use the explicit split view; auto may replace the reader with columns.
+  workspacePreference: { listShare: null, seenHints: [] },
   viewPreference: { large: "split", phone: "compact" },
   doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
@@ -387,7 +388,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     const main = dom.root.querySelector(".k2b-app-workspace__main");
     const list = dom.root.querySelector("[data-mail-conversation-list]");
     const scroller = dom.root.querySelector("[data-scroll-preserve^=mail-list-]");
-    const searchTrigger = dom.root.querySelector("[data-mail-search-trigger]");
+    const search = dom.root.querySelector("[data-mail-head-search]");
     const b = link("Box002");
     b.focus();
     expect(scope()).toEqual([{ type: "mail.mailbox", id: MAILBOX_ID }]);
@@ -403,7 +404,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     expect(dom.root.querySelector(".k2b-app-workspace__main") === main).toBe(true);
     expect(dom.root.querySelector("[data-mail-conversation-list]") === list).toBe(true);
     expect(dom.root.querySelector("[data-scroll-preserve^=mail-list-]") === scroller).toBe(true);
-    expect(dom.root.querySelector("[data-mail-search-trigger]") === searchTrigger).toBe(true);
+    expect(dom.root.querySelector("[data-mail-head-search]") === search).toBe(true);
     expect(link("Box002") === b).toBe(true);
     expect(dom.document.activeElement).toBe(b);
     shown("Box002");
@@ -419,7 +420,6 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
   test("the retained list clears A's bulk selection before B can act", async () => {
     mount();
     const list = dom.root.querySelector("[data-mail-conversation-list]");
-    dom.root.querySelector<HTMLButtonElement>("[data-mail-selection-trigger]")!.click();
     const checkbox = dom.root.querySelector<HTMLInputElement>('.mail-list-entry input[type="checkbox"]')!;
     checkbox.click();
     expect(checkbox.checked).toBe(true);
@@ -429,7 +429,9 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     shown("Box002");
     expect(dom.root.querySelector("[data-mail-conversation-list]") === list).toBe(true);
     expect(dom.root.querySelector("[data-mail-head-selection]")).toBeNull();
-    expect(dom.root.querySelector('.mail-list-entry input[type="checkbox"]')).toBeNull();
+    expect([...dom.root.querySelectorAll<HTMLInputElement>('.mail-list-entry input[type="checkbox"]')].some((box) => box.checked)).toBe(
+      false,
+    );
     noDocument();
   });
 
@@ -443,7 +445,8 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     snapshot.detailMessages = [{ ...readerMessage, plainText: "Only mailbox A can show this body" }];
     mount(source, snapshot);
     expect(dom.root.querySelector("[data-mail-reader-heading]")).not.toBeNull();
-    expect(dom.root.querySelector("[data-mail-head-search-options]")?.textContent).toContain("Filed");
+    // The search's place counts on the filter button.
+    expect(dom.root.querySelector("[data-mail-filter-button]")?.getAttribute("aria-label")).toBe("Filters, 1 active");
     const list = dom.root.querySelector("[data-mail-conversation-list]");
     const main = dom.root.querySelector(".k2b-app-workspace__main");
     const scroller = dom.root.querySelector<HTMLElement>("[data-scroll-preserve^=mail-list-]")!;
@@ -461,11 +464,9 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     expect(dom.root.querySelector('[data-conversation-id="Box001-row"]')).toBeNull();
     expect(dom.root.querySelector("[data-mail-reader-heading]")).toBeNull();
     expect(dom.root.querySelector("[data-mail-filter-folder]")).toBeNull();
-    expect(dom.root.querySelector<HTMLInputElement>('input[name="q"]')).toBeNull();
-    dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
     expect(dom.root.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("");
     expect(dom.root.querySelector(".k2b-app-workspace__head")?.textContent).not.toContain("Filed");
-    expect(dom.root.querySelector("[data-mail-head-search-options]")?.textContent).not.toContain("Filed");
+    expect(dom.root.querySelector("[data-mail-filter-button]")?.getAttribute("aria-label")).toBe("Filters");
     noDocument();
   });
 
@@ -618,7 +619,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     const release = hold("Box002");
     link("Box002").click();
     await settle();
-    const currentTab = dom.root.querySelector<HTMLAnchorElement>(`.k2b-app-workspace__head-views a[href="${path}"]`)!;
+    const currentTab = dom.root.querySelector<HTMLAnchorElement>(`.mail-list-bar a[href="${path}"]`)!;
     expect(currentTab).not.toBeNull();
     currentTab.click();
     await settle();
@@ -628,21 +629,6 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     shown(MAILBOX_ID);
     expect(window.location.pathname + window.location.search).toBe(path);
     noDocument();
-  });
-
-  test("a pending collapse preference flushes on disposal and becomes the new session's preference", async () => {
-    mount(`${path}?conversation=Box001-row`);
-    dom.root.querySelector<HTMLButtonElement>('.k2b-app-workspace__head button[aria-label="Options for Support"]')!.click();
-    await Bun.sleep(0);
-    const item = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-      (item) => item.textContent?.trim() === "Hide conversation list",
-    )!;
-    expect(item).not.toBeUndefined();
-    item.click();
-    link("Box002").click();
-    await settle();
-    expect(m.readMailWorkspacePreferences(document.cookie).listCollapsed).toBe(true);
-    shown("Box002");
   });
 
   test("session disposal flushes queued writes even while an earlier write is still running", async () => {

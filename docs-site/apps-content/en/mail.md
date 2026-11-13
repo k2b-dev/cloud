@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-11-06
+updated: 2026-11-12
 ---
 
 # Mail
@@ -60,20 +60,35 @@ Saved automation assignments use the same label when the person is no longer
 available in the choices.
 
 On wide screens the conversation list grows with the window from 320 to
-440 px. The fixed reader toolbar combines the subject, message-count chip,
-list toggle, and conversation actions above the centered 760 px reading
-column. The subject stays visible when messages scroll; its full text is
-available on hover. On a phone, the workspace head appears over the list and
-leaves the screen while reading. Back, subject, overflow, and Details remain
-at the top; the message count is hidden. Reply actions stay in the bottom bar. **Conversation details** stand beside the reader while the reader
-keeps 440 px next to them; otherwise they wait behind **Details** and open with
-one click from the shared head button. On a phone, use **Details** in the reader
-while the list head is hidden. Hiding the list gives
-the reader that room. In Focus, a conversation opens its details beside the
-queue, or over its end when there is no room; on a phone it opens in its
-mailbox. List rows have three lines (sender and time, subject with its marks,
-preview) and a fourth only for tags or **Waiting**. When the reader is narrow,
-Reply all and Forward show only their icons, then move into **…**.
+440 px. List rows have three lines (sender and time, subject with its marks,
+preview) and a fourth only for tags or **Waiting**.
+
+The reader has no detail panel. Its fixed head shows **×**, the subject on
+one line (the full text on hover), and the same five actions for everyone:
+**Done**, **Archive**, **Delete**, **Later** (show later, and a reminder only
+for you), and **Assign**, then **…** with every other conversation action,
+including **Link**, **Show activity**, **Copy reference**, and the newest
+message's `.eml`. A narrow head keeps the actions that do not fit only in
+**…**. Below the subject, one row of chips names the sender and the number of
+messages, then the state (**Waiting for reply**, **Later until …**, your
+**Reminder …**, **Kept**, **Read only**), the tags, and the linked items; a
+click on a chip changes its value, and chips that do not fit wait behind
+**+n**. Who else reads the conversation stands at the end of that row.
+
+The timeline reads oldest first; the newest message is open at the bottom and
+the reply bar follows it. Older messages are one line each, and a long
+conversation folds all but the newest three behind **n older messages**.
+Internal notes stand at their time between the messages as centered yellow
+tiles marked **internal**; notes that automations write look the same. The
+summary is one collapsible row above the timeline. An open message shows its
+attachments as tiles after its body; the Lightbox steps through every
+attachment of the conversation, and from two attachments on **Download all**
+packs them into one ZIP. A click on a sender opens a card with the contact
+from the contact directory, up to five earlier conversations with that
+sender, and the sender actions. Each message's **…** keeps **Technical
+details** (headers and source). A person who had arranged their own toolbar
+before sees once where their actions went, and everyone sees once that notes
+moved into the timeline; Mail stores both hints per person and mailbox.
 
 Signed-in users can choose **New mailbox**; after creation, its delivery
 settings open before you enter the mailbox. If settings cannot load, the
@@ -171,7 +186,7 @@ Moving, archiving, filing, and marking read change no work status. Follow-up and
 
 ### Finish work and keep the provider Inbox in step
 
-Mark **Done** in **Conversation details**, with `cld mail done <conversation-id> --mailbox <mailbox>`, `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`, or an automation's `set_status: done`.
+Mark **Done** in the head of the conversation, with `cld mail done <conversation-id> --mailbox <mailbox>`, `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`, or an automation's `set_status: done`.
 Done updates only Cloud collaboration state and activity, clears **Show later**, and sends no provider command. It does not archive, move, or mark read. Other mail clients still show the email in the provider Inbox.
 
 To also clear that Inbox, choose **Archive**, run `cld mail archive <conversation-id> --mailbox <mailbox>`, or add `move_to_folder` to the same automation.
@@ -333,7 +348,7 @@ there as `mail.conversation.keep` by the person who moved the messages, with
 
 | Surface | Keep | Lift |
 | --- | --- | --- |
-| Web app | **More conversation actions > Keep**, or the toolbar | **Stop keeping** |
+| Web app | **More conversation actions > Keep** | **Stop keeping**, or the **Kept** chip |
 | API | `PUT /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/keep` | `DELETE` on the same path |
 | `cld` | `cld mail keep <conversation-id>...` | `cld mail unkeep <conversation-id>` |
 | Capabilities | `conversation.keep` | `conversation.keep.release` |
@@ -527,21 +542,21 @@ and restores unsaved changes kept in this browser.
 
 ## Write in the conversation
 
-Replies, forwards, and new messages are written in the conversation, not on a
-separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
+Replies and forwards are written in the conversation, not on a separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
 above the newest message grow into the draft at that place; on a phone the bar
 waits at the bottom and the draft opens at the top over the full width. Mail
 creates the shared draft (`draft-seeds` and `materialize`) before anyone types.
-An existing draft with the same purpose opens instead of a second one, and the
-conversation lists its other drafts as rows. **Compose** puts **New message**
-at the top of the list with an empty conversation beside it.
+A conversation has one reply draft. Reply, Reply all and Forward use the same
+draft; content-free creation returns its current content. Supplying new content
+when it already exists returns a conflict instead of dropping that content.
 
-- The URL carries the open draft as `?draft=`, so reload and Back open it
-  again. Old `/compose/:draftId` links open the conversation with the draft;
-  `?window=1` and drafts with an open approval keep the compose page.
+- The URL carries the open reply draft as `?conversation=…&draft=`, so reload
+  and Back open it again. Old `/compose/:draftId` links open the conversation
+  with the draft; drafts with an open approval and drafts that are no longer
+  open keep the compose page.
 - Opening another conversation saves typing the autosave has not sent yet
   before Mail releases the editing lease.
-- **Full screen** moves the list and details aside and is remembered per
+- **Full screen** moves the list aside and is remembered per
   browser; from 1500 px of reader width, the history stands beside the draft.
 - **Preview** shows the mail as it arrives, with the mailbox's design; the
   editor keeps Cloud's calm style.
@@ -549,6 +564,37 @@ at the top of the list with an empty conversation beside it.
   `quoteSource: { locale, timeZone }`, and the quote goes out after the
   signature with that person's date format.
 - A Gustav suggestion (`suggestion: true`) opens in plum until someone edits it.
+
+## New messages in floating windows
+
+**Compose** (and `mod+alt+n`) creates the draft first and opens it as a
+`FloatingWindow` from `@k2b/ui`, docked at the bottom end of the Mail area. The
+list and the open conversation behind it stay usable; several windows can be
+open, and minimized ones line up as bars at the bottom. The window's head shows
+the subject (else "New message") and the save status; on a phone it is a
+full-screen sheet with **Send** in its head.
+
+- **Close** saves and releases the draft; a notice says it waits in **Drafts**
+  and **Open** brings the window back. A new message in **Drafts** opens as a
+  window. **Send** and **Send later** close the window; the notice offers
+  **Undo** or **Change**, which cancel the queued send (`scheduled-sends/:id/cancel`
+  with `disposition: "draft"`) and reopen the window. A failed send keeps the
+  window open with the reason in its bottom bar and **Send again**.
+- Open windows are a state of the tab: `sessionStorage` remembers draft IDs,
+  state, and place per mailbox, so a reload or a return from another app opens
+  them again. Drafts that are gone by then are dropped quietly. Nothing is stored
+  on the server.
+- `?draft=<id>` without a conversation opens that draft's window and leaves the
+  URL. `/app/mail/compose` (with `mailto=` and `autostart=1`) creates the draft
+  and opens Mail with its window; `/compose/:draftId` of a new message and every
+  `?window=1` link open the draft's window.
+
+When a conversation already has a reply draft, Reply, Reply all and Forward
+open that draft and switch its mode. Replying to selected text opens it without
+inserting the selection, so existing text stays intact. If another draft appears
+while a new seed is being saved, Mail keeps the local text as a recovery copy and
+offers the existing draft. Retrying your own seed after a lost response resumes
+the same draft and saves later edits normally.
 
 ## Write signatures and snippets
 
@@ -701,16 +747,16 @@ accept `replaceUnreadable` as an array of the supplied setting names.
 | `mail.contact_directory.resolve` | `contact.resolve` | Yes |
 | `mail.contact_directory.read` | `contact.read` | No; empty disables **Compose email** from a contact reference |
 | `mail.contact_directory.list_writable_books` | `book.list` | No; together with `create` |
-| `mail.contact_directory.create` | `contact.create` | No; empty hides **New contact** |
+| `mail.contact_directory.create` | `contact.create` | No; empty hides **Add to contacts** |
 
 Mail calls the selected app as the requesting person, so that app's
 permissions decide which contacts appear. When the selected app is not installed
 (not registered), Mail hides contact features without an error. Recipient
-suggestions still come from the mailbox. The details panel has no contacts
-block. **Administration → Mail** still reports the missing app.
+suggestions still come from the mailbox. The sender card shows the address and
+Mail's own actions. **Administration → Mail** still reports the missing app.
 
 When a registered app stops briefly or returns data that no longer matches the
-contract, the details panel shows **Contacts unavailable** with **Retry**.
+contract, the sender card shows that the contact could not be loaded, with **Retry**.
 Recipient fields still offer mailbox addresses.
 
 ### Mailbox recipient suggestions
@@ -835,7 +881,8 @@ visible messages, newest first, then MIME attachment order, counting repeated
 checksums once. Message rows cover only that message. Qualifying files are JPEG,
 PNG, GIF, or WebP from 4 KiB through 25 MiB; inline parts with a content ID are
 excluded. A failed image lookup leaves the list available without image metadata. The
-columns view shows the thumbnails only where the list itself is at least 52 rem wide.
+Mail workspace no longer draws these thumbnails in its rows; the fields remain for
+API clients.
 
 `GET /api/mail/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/thumbnail`
 uses the same access check as opening the attachment. It validates the declared
@@ -940,19 +987,51 @@ A changed copy saved in another mail client's Drafts folder also adopts the
 suggestion when Mail applies the edit. Reconciling an identical copy and
 retrying an export do not adopt it.
 
-Each conversation has at most one untouched suggestion per author, the service
-account that created it. Gustav and another automated account can each keep
-their own suggestion in the same conversation; each shows its account's name,
-for example "Suggestion from Gustav". Another `draft.create` by the same
-account returns that account's existing suggestion without changing its
-content or adding the new request's inline attachments; it never returns
-another account's suggestion. This also applies while its send is pending, so
-Undo can restore it. Update it explicitly with its current revision to
-revise it. Every creation key keeps returning its original draft after adoption,
-so retrying an earlier request cannot create another suggestion. Merging two
-conversations that both hold an untouched suggestion from the same account
-returns `DRAFT_SUGGESTION_CONFLICT` (409) and preserves both conversations.
-Edit or discard one of those suggestions before merging them.
+Each conversation has one open reply draft with `origin = 'user'`, including
+untouched and adopted suggestions and workflow review drafts. Private automatic
+replies use `origin = 'workflow'` and do not occupy that box. An untouched
+suggestion is the one draft. Content-free creation returns the existing draft;
+an autonomous request against another author's or an adopted draft reports
+`creationOutcome: suggestion_skipped`.
+
+API, CLI and capability creation with a new body, subject, recipients or
+attachments returns `DRAFT_REPLY_BOX_OCCUPIED` (409) when the box is occupied.
+The message includes the existing draft ID. Open that draft and update it
+explicitly with its current revision; the rejected content was not saved.
+Creation keys already mapped to a draft retain their original retry contract.
+Explicit API subjects are preserved, and `includeSourceAttachments` can copy
+source files into Reply, Reply all or Forward.
+
+Use `mail.draft.intent` with `intent` (`reply`, `reply_all`, `forward`) and the
+current `expectedRevision` to change modes. The equivalent HTTP operation is
+`POST /api/mail/mailboxes/:mailboxId/drafts/:draftId/intent`. It re-derives
+To/Cc and forwarded source attachments, preserving body text, personal
+attachments and manually added Bcc while adding the sender's default Bcc.
+It changes Re:/Fwd: only while the subject still matches the derived source
+subject; a user-edited subject stays unchanged. Switching away from Forward
+removes the source attachments added for that mode. Files explicitly copied into
+Reply or Reply all remain as personal attachments through later mode changes.
+A stale revision returns 409. Shared documents advance their generation, so older editors must synchronize before writing again.
+
+Scheduled and sending drafts retain the reply place until sent or discarded.
+Automatic replies keep their separate lifecycle. A workflow review reply that
+finds the box occupied returns `DRAFT_REPLY_BOX_OCCUPIED`; it never schedules
+the person's existing text.
+Merging conversations that both have an open reply draft returns a recoverable
+409; send or discard one before merging. External-provider edits and offline
+recovery use recovery copies when a reply already exists, preserving both texts.
+
+The one-time upgrade preserves a committed send; two committed sends in one
+conversation require resolution before startup. Otherwise human or adopted
+drafts rank ahead of untouched suggestions, then by content edit evidence.
+It erases the other drafts and writes a conversation activity for each removal;
+terminal submission and command history stays intact.
+The draft read model returns `consolidatedCount`; show the notice before clearing
+it through `mail.draft.consolidation.acknowledge` or
+`POST /api/mail/mailboxes/:mailboxId/drafts/:draftId/consolidation/acknowledge`.
+Only people with write access can acknowledge an open draft's notice.
+See [F6 operator guidance](/en/docs/operations/mail-reply-draft-consolidation)
+for the irreversible migration and its logged counts.
 
 ## Check failed synchronization
 
@@ -1084,6 +1163,62 @@ Cmd/Ctrl+Shift+K searches conversations across accessible mailboxes. Cmd/Ctrl+Al
 When the Assistant asks to send or change a draft, choose **Read the complete proposal** to inspect the full proposed text, recipients and attachment list. The proposal can include unsaved changes. The draft link opens the current draft, which may have changed since the question was asked.
 
 If the sending content changes after your check, Mail stops and queues no message. Open the draft, check it again and approve a new attempt. A signature that changes with the current time may need editing first. Mail does not retry or approve the new content automatically.
+
+## Reader notes, sender history, and workspace preferences
+
+The initial workspace data and `GET /api/mail/mailboxes/{mailboxId}/workspace-detail/{conversationId}`
+include `comments` and `commentsCursor`. These are the existing internal notes:
+plain text, author name and avatar, creation and edit times, deletion markers,
+and `canEdit`/`canDelete`. Only the author can edit or delete within ten minutes.
+Deleted notes have `body: null`. Saving a note never creates a draft or sends mail.
+The newest 100 notes arrive in creation order. Fetch older notes through
+`GET /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/comments`
+with `order=newest`, `limit`, and `cursor=commentsCursor`. Each page is in creation
+order; prepend it to the timeline. Note changes invalidate the open reader through
+Mail's existing live channel, including for assigned-only readers.
+
+For earlier conversations from one sender, use
+`GET /api/mail/mailboxes/{mailboxId}/sender-conversations?email=ada%40example.test`.
+The response is `{ items, total }`; each item has `id`, `subject`,
+`participantSummary`, `latestMessageAt`, and nullable `preview`. It returns at most
+five conversations, newest first, where the exact address appears in From on an
+active message. Recipients and matching subjects do not count. `limit` accepts
+1–5; `excludeConversationId` leaves out the open conversation from both the
+preview and total. Both results respect the caller's conversation access,
+including assigned-only access. The matching capability is `conversation.by_sender`
+with `{ mailboxId, email, excludeConversationId?, limit? }`; its items carry
+conversation refs and open links. From the terminal:
+
+```bash
+cld --json mail conversation by-sender ada@example.test --mailbox Support --limit 5 --exclude CvB234
+```
+
+For all matching messages, build a search URL using
+`mailExactAddressSearch("from", address)` from Mail's `search-url.ts`, and put its
+successful `value` in the `search` query parameter. This keeps the exact From
+condition and newest-first order.
+
+Workspace data includes `workspacePreference: { listShare, seenHints }` in the
+first server snapshot and workspace reloads. Read it separately with
+`GET /api/mail/mailboxes/{mailboxId}/workspace-preference`. Set the list's share
+with `PATCH` on that route and `{ "listShare": 0.4 }`; values must be 0–1.
+`null` restores the default 40%. Preferences belong to the current person and
+mailbox and require read access, including assigned-only access.
+
+Mark a hint seen with
+`PUT /api/mail/mailboxes/{mailboxId}/workspace-preference/seen-hints` and
+`{ "hintId": "filters-moved" }`. Known IDs are `reader-head-moved`,
+`filters-moved`, `toolbar-moved`, `density-by-width`, and `drafts-consolidated`.
+Unknown IDs are rejected. Marking a hint twice changes nothing; concurrent
+updates keep every hint and the saved width. The existing `/view` preference
+continues to support its current callers; the Mail workspace no longer reads
+it, because the list's own width decides between one line and three lines
+per conversation.
+
+The workspace saves the share when a person ends a move of the handle between
+list and reader, one request for a series of key presses, and clears it with a
+reset. It shows `density-by-width` once when the person presses V, the old view
+key, and `filters-moved` once at the filter button beside the search field.
 
 ## Compose signature fragments
 

@@ -33,6 +33,16 @@ const sentence = (row: { actorLabel: string; before: string; subject: string | n
   `${row.actorLabel} ${row.before}${row.subject ?? ""}${row.after}`;
 
 describe("mailbox event presentation", () => {
+  test("explains a system draft removal during F6 consolidation in both locales", () => {
+    const removed = event({
+      id: "F6",
+      action: "draft.discarded",
+      actor: { kind: "system", id: null, displayName: "System", avatarHash: null },
+      metadata: { reason: "reply_draft_consolidation", count: 1, survivingDraftId: "Draft1" },
+    });
+    expect(present([removed])[0]?.detail).toBe("Antwortentwurf bei der Zusammenführung entfernt.");
+    expect(present([removed], "en")[0]?.detail).toBe("Reply draft removed during consolidation.");
+  });
   test("names assignments, completions, drafts, comments, sends and automations in German", () => {
     const rows = present([
       event({

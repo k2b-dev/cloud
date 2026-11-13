@@ -7,8 +7,8 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, pageErrors as collectPageErrors, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
-import type { MailSearchExpression } from "../contracts";
+import { browserName, pageErrors as collectPageErrors, launchBrowser, settled } from "../../../ui/test/browser";
+import type { MailSearchExpression, MailWorkspacePreference } from "../contracts";
 import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
 import { mailTagSearch } from "../search-url";
 import { readMailHeadFilters } from "./_components/mail-head-filters";
@@ -52,6 +52,16 @@ const { chooseLandingMailbox, readMailLandingLink } = await import("./mail-landi
 const { readMailWorkspacePreferences } = await import("./_components/mail-workspace-preferences");
 /** The fixture server keeps the person's click on "Got it" in this cookie, as Mail keeps it for the person. */
 const NOTICE_COOKIE = "mail_fixture_focus_notice";
+/** The list share and seen hints the fixture server stored for this browser, as Mail stores them for the person. */
+const WORKSPACE_COOKIE = "mail_fixture_workspace";
+const storedWorkspace = (cookieHeader: string | null): Partial<MailWorkspacePreference> | undefined => {
+  const value = cookieHeader
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${WORKSPACE_COOKIE}=`))
+    ?.slice(WORKSPACE_COOKIE.length + 1);
+  return value ? JSON.parse(decodeURIComponent(value)) : undefined;
+};
 const ui = resolve(import.meta.dir, "../../../ui/dist");
 // Like Cloud's page head (`FONT_PRELOAD_LINKS`): the Latin Plex faces of the first frame load next to the stylesheets,
 // so the server frame shows Plex, not the fallback font. WebKit keeps text in `content-visibility: auto` rows, such as
@@ -67,7 +77,7 @@ const fontPreloads = ["400", "500", "600"]
   .join("");
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
 const boxPath = "/app/mail/Box001";
-const tabsSelector = ".k2b-app-workspace__head-views";
+const tabsSelector = ".mail-list-bar";
 const sidebarSelector = ".mail-sidebar .k2b-app-workspace__sidebar-desktop";
 const measurements = [
   ".mail-sidebar",
@@ -84,10 +94,12 @@ const measurements = [
   ".mail-list-entry",
   ".mail-row-draft-tag",
   "[data-mail-queue-count]",
-  ".k2b-app-workspace__main-pane",
-  ".k2b-app-workspace__main-primary",
-  ".mail-reader-toolbar",
-  "[data-mail-details-trigger]",
+  ".mail-list-bar",
+  ".mail-split-list",
+  ".mail-split-reader",
+  ".mail-list-handle",
+  ".mail-reader-head",
+  ".mail-reader-chips",
   "[data-app-workspace-detail-toggle]",
   ".mail-reading-column",
   ".k2b-app-workspace__detail",
@@ -140,7 +152,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
       theme,
       // This opt-in exercises the same request-cookie reader as Mail's SSR page
       // without putting an artificial preference into its navigation URL.
-      workspaceCookieHeader: url.searchParams.has("persist-details") ? cookieHeader : undefined,
+      storedWorkspace: storedWorkspace(cookieHeader),
       focusNoticeOpen: url.searchParams.get("notice") === "1" && !cookieHeader?.includes(`${NOTICE_COOKIE}=closed`),
     }),
   );
@@ -242,7 +254,20 @@ beforeAll(async () => {
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))), { headers: cached });
       if (url.pathname.endsWith("/workspace-route") || url.pathname.endsWith("/workspace-list")) {
         const target = new URL(url.searchParams.get("href") ?? boxPath, server.url);
-        return Response.json(url.pathname.endsWith("/workspace-list") ? mailboxList(target) : mailboxData(target));
+        const stored = storedWorkspace(request.headers.get("cookie"));
+        return Response.json(url.pathname.endsWith("/workspace-list") ? mailboxList(target) : mailboxData(target, stored));
+      }
+      // The person's list share and seen hints, kept per browser like Mail keeps them per person and mailbox.
+      if (url.pathname.endsWith("/workspace-preference") || url.pathname.endsWith("/workspace-preference/seen-hints")) {
+        const target = new URL(request.headers.get("referer") ?? boxPath, server.url);
+        const current = mailboxData(target, storedWorkspace(request.headers.get("cookie"))).workspacePreference;
+        const body: { listShare?: number | null; hintId?: MailWorkspacePreference["seenHints"][number] } = await request.json();
+        const next = url.pathname.endsWith("/seen-hints")
+          ? { ...current, seenHints: [...new Set([...current.seenHints, body.hintId!])] }
+          : { ...current, listShare: body.listShare ?? null };
+        return Response.json(next, {
+          headers: { "set-cookie": `${WORKSPACE_COOKIE}=${encodeURIComponent(JSON.stringify(next))}; Path=/` },
+        });
       }
       // Mail's landing as its page decides it: an old Focus link first, then the mailbox to open.
       if (url.pathname === "/app/mail") {
@@ -260,6 +285,18 @@ beforeAll(async () => {
         return Response.json({ dismissed: true }, { headers: { "set-cookie": `${NOTICE_COOKIE}=closed; Path=/` } });
       }
       if (url.pathname.endsWith("/actions") && request.method === "POST") return Response.json({ commands: [] });
+      if (url.pathname.endsWith("/conversations/completion") && request.method === "POST") {
+        const body: { conversationIds: string[]; completion: "done" | "open" } = await request.json();
+        return Response.json({
+          completion: body.completion,
+          results: body.conversationIds.map((conversationId) => ({
+            conversationId,
+            status: "ok",
+            workStatus: body.completion === "done" ? "done" : "needs_action",
+            revision: 2,
+          })),
+        });
+      }
       if (url.pathname.endsWith("/preference") && request.method === "PATCH") return Response.json(await request.json());
       // The Events tab's older page; a conversation's own activity stays empty.
       if (url.pathname.endsWith("/activity"))
@@ -389,7 +426,6 @@ const open = async (
 const close = async (page: Page) => {
   try {
     expect(pageErrors.get(page), "No page errors, including live connections").toEqual([]);
-    expect(await page.locator(".k2b-moved-hint").count(), "Mail never renders a MovedHint").toBe(0);
   } finally {
     await page.context().close();
   }
@@ -445,17 +481,6 @@ const clickTab = async (page: Page, href: string) => {
   await settled(page);
 };
 
-/**
- * Presses Escape for the workspace. A hint that the resting pointer opened takes the first Escape, as it should: after
- * a resize, the pointer that clicked the Details toggle can rest on the column's "Close details" button. So the pointer
- * first moves to the empty shell rail at the window's corner, and no hint stays open.
- */
-const pressEscapeForWorkspace = async (page: Page) => {
-  await page.mouse.move(0, 0);
-  await page.waitForFunction(() => !document.querySelector("[role='tooltip']:popover-open"));
-  await page.keyboard.press("Escape");
-};
-
 /** One test file per part, so the runner spreads the cases over shards and each file stays inside its budget (#1966). */
 export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts";
 
@@ -470,464 +495,194 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     // review screenshots (#1966).
     const reviewThemes = screenshots ? (["light", "dark"] as const) : (["light"] as const);
     section("head", () => {
-      for (const locale of ["en", "de"] as const)
-        for (const width of [1440, 834])
-          test(`compact tag action ${locale} ${width}: icon order, selection, reload and clear`, async () => {
-            const page = await open(`${boxPath}?locale=${locale}`, width);
-            const actions = page.locator(".k2b-app-workspace__head-actions");
-            const tag = actions.locator(".mail-head-tag");
-            const query = () => {
-              const url = new URL(page.url());
-              return readMailHeadFilters(url, resolveMailSearchRoute(url), mailboxData(url).folderId);
-            };
-            try {
-              expect(await tag.getAttribute("aria-label")).toBe("Tag");
-              expect(await tag.getAttribute("data-icon-only")).toBe("true");
-              expect((await tag.textContent())?.trim()).toBe("");
-              const search = (await actions.locator("[data-mail-search-trigger]").boundingBox())!;
-              const box = (await tag.boundingBox())!;
-              const select = (await actions.locator("[data-mail-selection-trigger]").boundingBox())!;
-              expect(box.x).toBeGreaterThanOrEqual(search.x + search.width);
-              expect(box.x + box.width).toBeLessThanOrEqual(select.x);
-              expect(Math.abs(box.y - search.y)).toBeLessThanOrEqual(1);
-              expect(await page.locator(".k2b-app-workspace__head-filters").isVisible()).toBe(false);
-              await tag.focus();
-              await page.keyboard.press("Enter");
-              await page.getByRole("menu").waitFor({ state: "visible" });
-              const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
-              await page.getByRole("menuitemradio", { name: "Priority", exact: true }).click();
-              await response;
-              await ready(page);
-              expect(query()?.tagId).toBe("Tag001");
-              expect(await tag.getAttribute("aria-label")).toBe("Tag: Priority");
-              await page.keyboard.press("Escape");
-              await page.getByRole("menu").waitFor({ state: "hidden" });
-              expect(await tag.evaluate((element) => document.activeElement === element)).toBe(true);
-              await page.reload();
-              await ready(page);
-              expect(await tag.getAttribute("data-active")).toBe("true");
-              await tag.click();
-              await page.getByRole("menuitemradio", { name: "Priority", exact: true }).waitFor({ state: "visible" });
-              expect(await page.getByRole("menuitemradio", { name: "Priority", exact: true }).getAttribute("aria-checked")).toBe("true");
-              const cleared = page.waitForResponse((response) => response.url().includes("/workspace-list"));
-              await page.getByRole("menuitem", { name: locale === "de" ? "Leeren" : "Clear", exact: true }).click();
-              await cleared;
-              await ready(page);
-              expect(query()?.tagId).toBeNull();
-              expect(await tag.getAttribute("data-active")).toBeNull();
-            } finally {
-              await close(page);
-            }
-          });
-
       // One case per summary state, each on its own page; a last case compares the heights they measured (#1966).
       const summaryHeights = new Map<number, Record<string, number>>();
       for (const width of [1440, 390]) {
         for (const state of ["ai", "stale", "writing", "failed", "limited", "person"] as const)
-          test(`automation: AI summary ${state} at ${width}: one place, plum only for AI`, async () => {
+          test(`automation: AI summary ${state} at ${width}: one row, plum only for AI`, async () => {
             const heights = summaryHeights.get(width) ?? {};
             summaryHeights.set(width, heights);
             const page = await open(`${boxPath}?conversation=Conv01&locale=de&summary=${state}`, width, width === 390 ? 844 : 900);
             try {
-              const card = page.locator("[data-mail-conversation-summary]");
-              await card.waitFor();
-              const box = (await card.boundingBox())!;
-              heights[state] = box.height;
-              const ai = (await card.getAttribute("data-mail-summary-ai")) !== null;
-              expect(ai, `${state}: AI surface only for AI`).toBe(state !== "person");
-              // A topic of the reader: a Section island with the AI tone (plum frame, title, ✦) only for AI, never a plum fill.
-              expect(await card.getAttribute("data-tone"), `${state}: AI tone only for AI`).toBe(state === "person" ? null : "ai");
-              const look = await card.evaluate((element) => {
-                const probe = element.parentElement!.appendChild(document.createElement("i"));
-                probe.style.borderTop = "1px solid color-mix(in srgb, var(--k2b-ai-accent) 45%, var(--k2b-surface))";
-                const plum = getComputedStyle(probe).borderTopColor;
+              const row = page.locator("[data-mail-conversation-summary]");
+              await row.waitFor();
+              await settled(page);
+              heights[state] = (await row.boundingBox())!.height;
+              const ai = (await row.getAttribute("data-mail-summary-ai")) !== null;
+              expect(ai, `${state}: AI only for AI`).toBe(state !== "person");
+              // Plum is the label's ink for AI work, never a fill.
+              const look = await row.evaluate((element) => {
+                const probe = element.appendChild(document.createElement("i"));
+                probe.style.color = "var(--k2b-ai-accent)";
+                const plum = getComputedStyle(probe).color;
                 probe.remove();
-                const style = getComputedStyle(element);
-                return { fill: style.backgroundColor, plumFrame: style.borderTopColor === plum };
+                return {
+                  fill: getComputedStyle(element).backgroundColor,
+                  plumLabel: getComputedStyle(element.querySelector(".mail-summary-row__label")!).color === plum,
+                };
               });
               expect(look.fill).not.toBe("rgb(252, 243, 248)");
-              expect(look.plumFrame, `${state}: plum frame only for AI`).toBe(state !== "person");
-              if (state === "writing") expect(await card.getAttribute("aria-busy")).toBe("true");
-              if (state === "stale") await page.getByText("1 neue Nachricht seit dieser Fassung").waitFor();
-              if (state === "failed") await card.getByRole("button", { name: "Erneut versuchen" }).waitFor();
-              if (state === "limited") await card.getByRole("button", { name: "Diese eine jetzt zusammenfassen" }).waitFor();
-              if (screenshots) {
-                await card.scrollIntoViewIfNeeded();
-                await page.screenshot({ path: join(screenshots, `summary-${state}-light-${width}.png`) });
-              }
+              expect(look.plumLabel, `${state}: plum label only for AI`).toBe(state !== "person");
+              if (state === "writing") expect(await row.locator(".mail-summary-row__line").textContent()).toBe("wird geschrieben …");
+              // Opening the row shows the rest in place.
+              const toggle = row.locator(".mail-summary-row__toggle");
+              await toggle.click();
+              expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+              if (state === "stale") await row.getByText("1 neue Nachricht seit dieser Fassung").waitFor();
+              if (state === "failed") await row.getByRole("button", { name: "Erneut versuchen" }).waitFor();
+              if (state === "limited") await row.getByRole("button", { name: "Diese eine jetzt zusammenfassen" }).waitFor();
+              if (screenshots) await page.screenshot({ path: join(screenshots, `summary-${state}-light-${width}.png`) });
             } finally {
               await close(page);
             }
           });
         // Reads the heights that the six state cases above measured, so it runs after them in the same file.
-        test(`automation: AI summary at ${width}: writing, failure and limit keep one height`, () => {
+        test(`automation: AI summary at ${width}: every state keeps one row's height`, () => {
           const heights = summaryHeights.get(width) ?? {};
           expect(Object.keys(heights).length, "the six state cases above ran first").toBe(6);
-          // Writing, failure and limit share the reserved height, so the messages below stay where they are.
-          expect(heights.writing).toBeGreaterThanOrEqual(196);
-          expect(Math.abs(heights.failed! - heights.writing!)).toBeLessThanOrEqual(width === 390 ? 60 : 0.5);
-          expect(Math.abs(heights.limited! - heights.writing!)).toBeLessThanOrEqual(width === 390 ? 80 : 0.5);
+          // Every state is the same one row, so the messages below stay where they are.
+          expect(new Set(Object.values(heights).map((height) => Math.round(height))).size).toBe(1);
+          expect(Math.round(heights.writing!)).toBe(36);
         });
       }
 
       for (const theme of reviewThemes)
         for (const width of [1440, 390])
-          test(`compact reader short subject ${theme} ${width}: count beside the title, hidden on phones`, async () => {
-            const page = await open(`${boxPath}?conversation=Conv01&theme=${theme}`, width, 900);
-            try {
-              const title = page.locator(".mail-reader-title");
-              const count = page.locator(".mail-reader-count");
-              await title.waitFor({ state: "visible" });
-              const titleBox = (await title.boundingBox())!;
-              const marksBox = (await page.locator(".mail-reader-marks").boundingBox())!;
-              if (width >= 768) {
-                const countBox = (await count.boundingBox())!;
-                expect(countBox.x - (marksBox.x + marksBox.width)).toBeGreaterThanOrEqual(0);
-                expect(countBox.x - (marksBox.x + marksBox.width)).toBeLessThanOrEqual(8.5);
-              } else {
-                expect(await count.isVisible()).toBe(false);
-                const back = (await page.locator(".mail-reader-back").boundingBox())!;
-                const details = (await page.locator("[data-mail-details-trigger]").boundingBox())!;
-                const middle = (box: { y: number; height: number }) => box.y + box.height / 2;
-                expect(Math.abs(middle(titleBox) - middle(back))).toBeLessThanOrEqual(1);
-                expect(Math.abs(middle(marksBox) - middle(details))).toBeLessThanOrEqual(1);
-              }
-              if (screenshots) {
-                mkdirSync(join(screenshots, browserName), { recursive: true });
-                await page.screenshot({ path: join(screenshots, browserName, `reader-short-${theme}-${width}.png`) });
-              }
-            } finally {
-              await close(page);
-            }
-          });
-
-      for (const theme of reviewThemes)
-        for (const width of [1440, 390])
-          test(`compact reader ${theme} ${width}: fixed subject, count and the way back to the list`, async () => {
+          test(`reader head ${theme} ${width}: ×, the subject on one line, sender and count below, fixed while the timeline scrolls`, async () => {
             const page = await open(`${boxPath}?conversation=Conv02&long-subject=1&theme=${theme}`, width, 900);
             try {
               const toolbar = page.locator("[data-mail-reader-toolbar]");
               const heading = toolbar.locator("[data-mail-reader-heading]");
               await heading.waitFor({ state: "visible" });
-              expect(await toolbar.locator(".mail-reader-count").isVisible()).toBe(width >= 768);
               expect(await page.locator(".mail-reader-scroll [data-mail-reader-heading]").count()).toBe(0);
               const metrics = await heading.evaluate((element) => {
                 const css = getComputedStyle(element);
                 return {
                   font: css.fontSize,
-                  lines: css.webkitLineClamp,
                   height: element.getBoundingClientRect().height,
                   line: parseFloat(css.lineHeight),
+                  ellipsis: css.textOverflow,
+                  clipped: element.scrollWidth > element.clientWidth,
                 };
               });
               expect(metrics.font).toBe("17px");
-              expect(metrics.lines).toBe(width < 768 ? "3" : "2");
-              expect(metrics.height).toBeLessThanOrEqual(metrics.line * (width < 768 ? 3 : 2) + 0.5);
-              if (width < 768) {
-                const titleBox = await heading.boundingBox();
-                const back = (await toolbar.locator(".mail-reader-back").boundingBox())!;
-                expect(Math.abs(titleBox!.y + metrics.line / 2 - (back.y + back.height / 2))).toBeLessThanOrEqual(1);
-              }
+              expect(metrics.height).toBeLessThanOrEqual(metrics.line + 0.5);
+              expect(metrics).toMatchObject({ ellipsis: "ellipsis", clipped: true });
+              expect(await toolbar.locator(".mail-reader-meta").textContent()).toContain("· 6 messages");
+              const closeLink = toolbar.locator("[data-mail-reader-close]");
+              const [titleBox, closeBox] = [await heading.boundingBox(), await closeLink.boundingBox()];
+              expect(Math.abs(titleBox!.y + titleBox!.height / 2 - (closeBox!.y + closeBox!.height / 2))).toBeLessThanOrEqual(1);
               const before = await toolbar.boundingBox();
               await page.locator(".mail-reader-scroll").evaluate((element) => {
-                element.scrollTop = 300;
+                element.scrollTop = 0;
               });
               await settled(page);
-              expect(await page.locator(".mail-reader-scroll").evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
               expect(await toolbar.boundingBox()).toEqual(before);
-              expect(await page.locator(".mail-workspace > .k2b-app-workspace__head").isVisible()).toBe(width >= 768);
-              expect(await toolbar.locator("[data-mail-details-trigger]").isVisible()).toBe(width < 768);
-              expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(width >= 768);
+              expect(await page.locator("[data-mail-details-trigger], [data-app-workspace-detail-toggle]").count()).toBe(0);
               if (screenshots) {
                 mkdirSync(join(screenshots, browserName), { recursive: true });
                 await page.screenshot({ path: join(screenshots, browserName, `compact-reader-${theme}-${width}.png`) });
               }
-              if (width >= 768) {
-                // Beside the list the reader has no list control of its own; with the list hidden it ends with ×.
-                expect(await toolbar.locator("[data-mail-reader-close]").count()).toBe(0);
-                await page.locator("[data-mail-view-menu]").click();
-                await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).click();
-                const close = toolbar.getByRole("link", { name: "Close conversation", exact: true });
-                await close.waitFor({ state: "visible" });
-                expect(await page.locator("[data-mail-conversation-list]").isVisible()).toBe(false);
-                await close.click();
-                await page.locator("[data-mail-conversation-list]").waitFor({ state: "visible" });
-                expect(new URL(page.url()).searchParams.has("conversation")).toBe(false);
-              }
+              // × closes the conversation and returns to the list.
+              await closeLink.click();
+              await page.locator("[data-mail-conversation-list]").waitFor({ state: "visible" });
+              expect(new URL(page.url()).searchParams.has("conversation")).toBe(false);
             } finally {
               await close(page);
             }
           });
 
+      /** The filter button at the search field and the menu it opens, as a sheet on phones. */
+      const filterButton = (page: Page) => page.locator("[data-mail-filter-button]");
+      const openFilters = async (page: Page) => {
+        await filterButton(page).click();
+        await page.getByRole("menuitem", { name: /More filters/ }).waitFor({ state: "visible" });
+      };
+      /** Chooses a filter entry and waits for the list it opens. */
+      const chooseFilter = async (page: Page, entry: Locator) => {
+        const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+        await entry.click();
+        await response;
+        await ready(page);
+      };
+      const headFilters = (page: Page) => {
+        const url = new URL(page.url());
+        return readMailHeadFilters(url, resolveMailSearchRoute(url), mailboxData(url).folderId);
+      };
+
+      // F9: the head's chips now wait behind one filter button at the search field; the URL keeps their state.
       for (const theme of reviewThemes)
         for (const width of [1440, 390])
-          test(`compact folder filters ${theme} ${width}: scoped toggles, dates and tags`, async () => {
-            const captureStarted = performance.now();
-            const captureStep = (step: string) => {
-              if (screenshots)
-                console.info(`Mail chips ${browserName} ${theme} ${width} ${step}: ${Math.round(performance.now() - captureStarted)}ms`);
-            };
+          test(`F9 filter button ${theme} ${width}: Unread, Flagged, With attachment, date and tag, counted on the button, Reset`, async () => {
             const page = await open(`${boxPath}?folder=Filed1&theme=${theme}&history=1`, width);
-            captureStep("ready");
-            const head = page.locator(".k2b-app-workspace__head-filters");
-            const filters = () => {
-              const url = new URL(page.url());
-              return readMailHeadFilters(url, resolveMailSearchRoute(url), mailboxData(url).folderId);
-            };
-            const activate = async (control: Locator) => {
-              const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
-              await control.click();
-              await response;
-              await ready(page);
-            };
             try {
-              // The same public controls exist in the SSR frame and after hydration.
-              expect(await head.getByRole("button", { name: /Unread/ }).getAttribute("aria-pressed")).toBe("false");
+              // The same button stands in the server frame and after hydration.
+              expect(await filterButton(page).getAttribute("aria-label")).toBe("Filters");
+              await openFilters(page);
+              expect(await page.getByRole("menuitemcheckbox", { name: /Unread/ }).getAttribute("aria-checked")).toBe("false");
               if (screenshots) {
                 mkdirSync(join(screenshots, browserName), { recursive: true });
-                captureStep("before initial screenshot");
-                await page.screenshot({ path: join(screenshots, browserName, `folder-filters-${theme}-${width}.png`) });
-                captureStep("after initial screenshot");
+                await page.screenshot({ path: join(screenshots, browserName, `filter-menu-${theme}-${width}.png`) });
               }
-              await head.getByRole("button", { name: /Unread/ }).focus();
-              const unreadResponse = page.waitForResponse((response) => response.url().includes("/workspace-list"));
-              await page.keyboard.press("Enter");
-              await unreadResponse;
-              await ready(page);
-              expect(filters()?.folderId).toBe("Filed1");
-              expect(filters()?.unread).toBe(true);
-              await activate(head.getByRole("button", { name: "Flagged", exact: true }));
-              await activate(head.getByRole("button", { name: "With attachment", exact: true }));
-              expect(filters()?.flagged).toBe(true);
-              expect(filters()?.attachment).toBe(true);
-              await head.getByRole("button", { name: "Date range", exact: true }).click();
-              await activate(page.getByRole("menuitemradio", { name: "Last 7 days", exact: true }));
-              expect(filters()?.dates.length).toBe(2);
-              await page.locator(".k2b-app-workspace__head-actions").getByRole("button", { name: "Tag", exact: true }).click();
-              await activate(page.getByRole("menuitemradio", { name: "Priority", exact: true }));
-              // FilterChip intentionally stays open; close it before testing the next route.
-              await page.keyboard.press("Escape");
-              const taggedUrl = page.url();
-              expect(filters()?.tagId).toBe("Tag001");
-              expect(filters()?.folderId).toBe("Filed1");
-              expect(filters()?.unread).toBe(true);
-              expect(new URL(taggedUrl).searchParams.has("folder")).toBe(false);
+              await chooseFilter(page, page.getByRole("menuitemcheckbox", { name: /Unread/ }));
+              expect(headFilters(page)?.folderId).toBe("Filed1");
+              expect(headFilters(page)?.unread).toBe(true);
+              for (const name of ["Flagged", "With attachment"]) {
+                if (!(await page.getByRole("menuitemcheckbox", { name }).isVisible())) await openFilters(page);
+                await chooseFilter(page, page.getByRole("menuitemcheckbox", { name, exact: true }));
+              }
+              expect(headFilters(page)?.flagged).toBe(true);
+              expect(headFilters(page)?.attachment).toBe(true);
+              if (!(await page.getByRole("menuitemradio", { name: "Last 7 days" }).isVisible())) await openFilters(page);
+              await chooseFilter(page, page.getByRole("menuitemradio", { name: "Last 7 days", exact: true }));
+              expect(headFilters(page)?.dates.length).toBe(2);
+              if (!(await page.getByRole("menuitemradio", { name: "Priority" }).isVisible())) await openFilters(page);
+              await chooseFilter(page, page.getByRole("menuitemradio", { name: "Priority", exact: true }));
+              if (await page.getByRole("menuitem", { name: /More filters/ }).isVisible()) await page.keyboard.press("Escape");
+              expect(headFilters(page)?.tagId).toBe("Tag001");
+              expect(headFilters(page)?.folderId).toBe("Filed1");
+              expect(new URL(page.url()).searchParams.has("folder")).toBe(false);
               expect(await currentHref(page)).toBe(boxPath);
-              expect(await head.locator("[data-mail-filter-folder]").textContent()).toBe("Only in Filed");
-              if (screenshots) {
-                captureStep("before tag screenshot");
-                await page.screenshot({ path: join(screenshots, browserName, `folder-tag-${theme}-${width}.png`) });
-                captureStep("after tag screenshot");
-              }
-              await activate(head.locator(".k2b-app-workspace__head-reset"));
+              // Five filters narrow the list; the button says so, and the menu names the folder they filter in.
+              expect(await filterButton(page).getAttribute("aria-label")).toBe("Filters, 5 active");
+              expect(await filterButton(page).getAttribute("data-active")).toBe("true");
+              await openFilters(page);
+              expect(await page.getByRole("group", { name: "Only in Filed" }).isVisible()).toBe(true);
+              if (screenshots) await page.screenshot({ path: join(screenshots, browserName, `filter-active-${theme}-${width}.png`) });
+              await chooseFilter(page, page.getByRole("menuitem", { name: "Reset filters", exact: true }));
               expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
               expect(new URL(page.url()).searchParams.has("search")).toBe(false);
-              captureStep("assertions complete");
-            } finally {
-              captureStep("before close");
-              await page.context().close();
-              captureStep("after close");
-            }
-          });
-
-      for (const theme of reviewThemes)
-        for (const width of [1440, 390] as const)
-          test(`compact search head ${theme} ${width}: replaces the lead and returns focus without moving the list`, async () => {
-            const page = await open(`${boxPath}?folder=Filed1&theme=${theme}`, width);
-            try {
-              const head = page.locator(".k2b-app-workspace__head");
-              await settled(page);
-              const before = await head.boundingBox();
-              await page.locator("[data-mail-search-trigger]").click();
-              await settled(page);
-              const input = page.locator('input[name="q"]');
-              expect(await input.count()).toBe(1);
-              expect(await page.locator("[data-mail-conversation-list] input").count()).toBe(0);
-              expect(await input.evaluate((element) => document.activeElement === element)).toBe(true);
-              const during = await head.boundingBox();
-              expect(during?.height).toBe(before?.height);
-              expect(await page.getByRole("button", { name: "Options for Example support", exact: true }).isVisible()).toBe(width !== 390);
-              expect(await page.getByRole("button", { name: "Cancel", exact: true }).isVisible()).toBe(true);
-              if (screenshots) {
-                const directory = join(screenshots, browserName);
-                mkdirSync(directory, { recursive: true });
-                await page.screenshot({ path: join(directory, `search-head-${theme}-${width}.png`) });
-              }
-              // A phone combines Search in, Place and More filters in one menu.
-              const fields =
-                width === 390
-                  ? page.getByRole("button", { name: "Search options: Everything · Whole mailbox", exact: true })
-                  : page.getByRole("button", { name: "Search in: Everything", exact: true });
-              await fields.focus();
-              await fields.press("/");
-              expect(await input.evaluate((element) => document.activeElement === element)).toBe(true);
-              await fields.click();
-              await page.getByRole("menu").waitFor({ state: "visible" });
-              await page.keyboard.press("Escape");
-              await page.getByRole("menu").waitFor({ state: "hidden" });
-              expect(await input.count()).toBe(1);
-              await fields.focus();
-              await fields.press("Escape");
-              await settled(page);
-              expect(await input.count()).toBe(0);
-              expect((await head.boundingBox())?.height).toBe(before?.height);
-              expect(await page.locator("[data-mail-search-trigger]").evaluate((element) => document.activeElement === element)).toBe(true);
-              expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+              expect(await filterButton(page).getAttribute("aria-label")).toBe("Filters");
             } finally {
               await close(page);
             }
           });
 
-      // S3: wide, the search names its three options as equal chips; a phone combines them in one menu.
-      test("S3 search at 1680: Search in, Place and More filters stand as labelled chips in one row", async () => {
-        const page = await open(`${boxPath}?layout=auto`, 1680, 1050);
-        try {
-          await page.locator("[data-mail-search-trigger]").click();
-          await page.locator('input[name="q"]').waitFor({ state: "visible" });
-          await settled(page);
-          const chips = await page.evaluate(() =>
-            Array.from(document.querySelectorAll<HTMLElement>("[data-mail-head-search-options] .k2b-filter-chip"))
-              .filter((element) => element.getClientRects().length > 0)
-              .map((element) => ({
-                text: element.textContent?.trim(),
-                y: element.getBoundingClientRect().y,
-                height: element.getBoundingClientRect().height,
-              })),
-          );
-          expect(chips.map((chip) => chip.text)).toEqual(["Search in: Everything", "Place: Whole mailbox", "More filters"]);
-          expect(new Set(chips.map((chip) => chip.y)).size).toBe(1);
-          expect(new Set(chips.map((chip) => chip.height)).size).toBe(1);
-          expect(await page.locator("[data-mail-search-phone-options]").isVisible()).toBe(false);
-          await page.getByRole("button", { name: "More filters", exact: true }).click();
-          await page.getByRole("dialog").waitFor({ state: "visible" });
-        } finally {
-          await close(page);
-        }
-      });
+      for (const width of [1440, 390])
+        test(`F9 at ${width}: the moved filters show once at the button, move nothing, and Show filters opens them`, async () => {
+          const page = await open(`${boxPath}?folder=Filed1&hints=filters-moved`, width, width === 390 ? 844 : 900);
+          try {
+            const hint = page.locator(".k2b-moved-hint");
+            await hint.waitFor({ state: "visible" });
+            expect(await hint.textContent()).toContain("The filters are here now. The views stay as tabs.");
+            // The hint floats: the server frame, with the hint's room nowhere, equals the page with the hint.
+            const recorded = JSON.parse((await page.locator("html").getAttribute("data-server-geometry"))!) as Frame;
+            expect(await geometry(page)).toEqual(recorded);
+            const seen = page.waitForRequest((request) => request.url().endsWith("/workspace-preference/seen-hints"));
+            await hint.getByRole("button", { name: "Show filters" }).click();
+            expect((await seen).postDataJSON()).toEqual({ hintId: "filters-moved" });
+            await page.getByRole("menuitem", { name: /More filters/ }).waitFor({ state: "visible" });
+            await page.keyboard.press("Escape");
+            await page.reload();
+            await ready(page);
+            await settled(page);
+            expect(await hint.count()).toBe(0);
+          } finally {
+            await close(page);
+          }
+        });
 
-      test("S3 search at 390: one menu holds Search in, Place and More filters, and its button names the choice", async () => {
-        const page = await open(`${boxPath}?folder=Filed1`, 390, 844);
-        try {
-          await page.locator("[data-mail-search-trigger]").click();
-          await page.locator('input[name="q"]').waitFor({ state: "visible" });
-          await settled(page);
-          const trigger = page.locator("[data-mail-search-phone-options]");
-          expect((await trigger.textContent())?.trim()).toBe("Everything · Whole mailbox");
-          expect(await page.locator("[data-mail-head-search-options] .mail-search-wide-option:visible").count()).toBe(0);
-          const before = await page.locator('input[name="q"]').boundingBox();
-          await trigger.click();
-          // A phone opens the menu as a sheet.
-          await page.getByRole("group", { name: "Search in" }).waitFor({ state: "visible" });
-          await page.getByRole("group", { name: "Place" }).waitFor({ state: "visible" });
-          await page.getByRole("menuitemcheckbox", { name: "Subject" }).click();
-          // A choice keeps the menu open and the button names it at once.
-          await page.getByRole("menuitemradio", { name: /Only Filed/ }).click();
-          await page.keyboard.press("Escape");
-          await settled(page);
-          expect((await trigger.textContent())?.trim()).toBe("Everything, Subject · Only Filed");
-          expect(await page.locator('input[name="q"]').boundingBox()).toEqual(before);
-          await trigger.click();
-          await page.getByRole("menuitem", { name: "More filters …" }).click();
-          await page
-            .getByRole("dialog")
-            .filter({ hasText: /filter/i })
-            .first()
-            .waitFor({ state: "visible" });
-        } finally {
-          await close(page);
-        }
-      });
-
-      test("compact search head: Escape from a result returns to the source folder and magnifier", async () => {
-        const page = await open(`${boxPath}?folder=Filed1`);
-        try {
-          await page.locator("[data-mail-search-trigger]").click();
-          await page.locator('input[name="q"]').fill("invoice");
-          await page.waitForURL((url) => url.searchParams.get("q") === "invoice");
-          const row = page.locator("[data-mail-conversation-list] [data-conversation-id] a.mail-list-row").first();
-          await row.focus();
-          await row.press("Escape");
-          await page.waitForURL((url) => !url.searchParams.has("q") && url.searchParams.get("folder") === "Filed1");
-          expect(await page.locator('input[name="q"]').count()).toBe(0);
-          expect(await page.locator("[data-mail-search-trigger]").evaluate((element) => document.activeElement === element)).toBe(true);
-        } finally {
-          await close(page);
-        }
-      });
-
-      test("compact search head: a narrow desktop app area keeps desktop controls and a reachable input", async () => {
-        const page = await open(`${boxPath}?folder=Filed1&shell=1&panel=560`, 1280);
-        try {
-          await page.locator("[data-mail-search-trigger]").click();
-          const input = page.locator('input[name="q"]');
-          await settled(page);
-          expect(await page.locator(".mail-head-search-close-phone").isVisible()).toBe(false);
-          expect(await page.locator(".mail-head-search-close-desktop").isVisible()).toBe(true);
-          expect(
-            await input.evaluate((element) => {
-              const rect = element.getBoundingClientRect();
-              return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === element;
-            }),
-          ).toBe(true);
-          await input.press("Escape");
-          expect(await input.count()).toBe(0);
-        } finally {
-          await close(page);
-        }
-      });
-
-      for (const theme of reviewThemes)
-        for (const width of [1440, 390] as const)
-          test(`compact selection head ${theme} ${width}: count, exit and labeled actions keep their order`, async () => {
-            const page = await open(`${boxPath}?folder=Filed1&theme=${theme}`, width);
-            try {
-              const head = page.locator(".k2b-app-workspace__head");
-              await settled(page);
-              const beforeHeight = (await head.boundingBox())!.height;
-              const entry = page.getByRole("button", { name: "Select conversations", exact: true });
-              await entry.focus();
-              await entry.press("Enter");
-              expect(await page.locator("[data-mail-selection-exit]").evaluate((element) => document.activeElement === element)).toBe(true);
-              await page.getByRole("checkbox", { name: "Select Example request 1", exact: true }).check();
-              const toolbar = page.getByRole("toolbar", { name: "Selected conversation actions", exact: true });
-              await toolbar.waitFor({ state: "visible" });
-              await settled(page);
-              expect(await toolbar.locator("button").allTextContents()).toContain("Archive");
-              expect((await head.boundingBox())!.height).toBe(beforeHeight);
-              const summary = await page.locator(".mail-bulk-summary").boundingBox();
-              const actions = await page.locator(".mail-bulk-actions").boundingBox();
-              expect(
-                Boolean(
-                  summary && actions && (width === 390 ? actions.y >= summary.y + summary.height : actions.y < summary.y + summary.height),
-                ),
-              ).toBe(true);
-              expect(await page.getByRole("button", { name: "Options for Example support", exact: true }).isVisible()).toBe(width !== 390);
-              if (screenshots) {
-                const directory = join(screenshots, browserName);
-                mkdirSync(directory, { recursive: true });
-                await page.screenshot({ path: join(directory, `selection-head-${theme}-${width}.png`) });
-              }
-              await page.getByRole("button", { name: "More selected conversation actions", exact: true }).click();
-              await page.getByRole("menu").waitFor({ state: "visible" });
-              expect(await page.getByRole("menuitem", { name: "Move to Trash", exact: true }).isVisible()).toBe(true);
-              await page.keyboard.press("Escape");
-              await page.getByRole("button", { name: "Exit selection", exact: true }).click();
-              expect(await page.getByRole("checkbox").count()).toBe(0);
-              expect(await page.locator("[data-mail-search-trigger]").isVisible()).toBe(true);
-              const selectionTrigger = page.locator("[data-mail-selection-trigger]");
-              expect(await selectionTrigger.evaluate((element) => document.activeElement === element)).toBe(true);
-              await selectionTrigger.click();
-              const checkbox = page.getByRole("checkbox", { name: "Select Example request 1", exact: true });
-              await checkbox.focus();
-              await checkbox.press("Escape");
-              expect(await page.getByRole("checkbox").count()).toBe(0);
-              expect(await selectionTrigger.evaluate((element) => document.activeElement === element)).toBe(true);
-            } finally {
-              await close(page);
-            }
-          });
-
-      test("compact folder filters: reload and traversal preserve the same scoped search", async () => {
+      test("F9: reload and traversal keep the same scoped search on the filter button", async () => {
         const expression: MailSearchExpression = {
           type: "and",
           expressions: [
@@ -944,7 +699,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           const url = new URL(page.url());
           expect(resolveMailSearchRoute(url).expression).toEqual(expression);
           expect(await currentHref(page)).toBe(boxPath);
-          expect(await page.locator("[data-mail-filter-folder]").textContent()).toBe("Only in Filed");
+          expect(await filterButton(page).getAttribute("aria-label")).toBe("Filters, 3 active");
         };
         try {
           await assertSearch();
@@ -952,10 +707,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.reload();
           await ready(page);
           await assertSearch();
-          const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
-          await page.locator(".k2b-app-workspace__head-reset").click();
-          await response;
-          await ready(page);
+          await openFilters(page);
+          await chooseFilter(page, page.getByRole("menuitem", { name: "Reset filters", exact: true }));
           expect(new URL(page.url()).searchParams.has("search")).toBe(false);
           await page.goBack();
           await ready(page);
@@ -966,18 +719,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
           expect(new URL(page.url()).searchParams.has("search")).toBe(false);
         } finally {
-          await page.context().close();
+          await close(page);
         }
       });
 
-      test("compact folder filters: custom range uses the existing editor and Sent keeps its subset", async () => {
+      test("F9: a custom range uses the existing editor, and Sent keeps its subset", async () => {
         const page = await open(`${boxPath}?folder=Filed1`);
-        const head = page.locator(".k2b-app-workspace__head-filters");
         try {
           await page.route("**/api/mail/mailboxes/Box001/folders", (route) =>
             route.fulfill({ json: { folders: mailboxData(new URL(page.url())).folders } }),
           );
-          await head.getByRole("button", { name: "Date range", exact: true }).click();
+          await openFilters(page);
           await page.getByRole("menuitem", { name: "Custom date range…", exact: true }).click();
           const dialog = page.getByRole("dialog");
           await dialog.waitFor({ state: "visible" });
@@ -985,61 +737,18 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
           await dialog.waitFor({ state: "hidden" });
           expect(new URL(page.url()).searchParams.has("search")).toBe(false);
-          // Sent retains the approved attachment/date/tag subset, without unread or flagged buttons.
+          // Sent keeps With attachment, the dates and tags, without Unread or Flagged.
           await page.goto(new URL(`${boxPath}?folder=Sent1`, server.url).href);
           await ready(page);
-          expect(await head.getByRole("button", { name: /Unread|Flagged/ }).count()).toBe(0);
-          expect(await head.getByRole("button", { name: "With attachment", exact: true }).isVisible()).toBe(true);
+          await openFilters(page);
+          expect(await page.getByRole("menuitemcheckbox", { name: /Unread|Flagged/ }).count()).toBe(0);
+          expect(await page.getByRole("menuitemcheckbox", { name: "With attachment", exact: true }).isVisible()).toBe(true);
         } finally {
-          await page.context().close();
+          await close(page);
         }
       });
 
-      test("compact folder filters: custom Apply on a direct link keeps a clean return target", async () => {
-        const expression = {
-          type: "and",
-          expressions: [
-            { type: "folder_id", folderId: "Filed1" },
-            { type: "unread", folderId: "Filed1" },
-          ],
-        };
-        const direct = `${boxPath}?${new URLSearchParams({ folder: "Filed1", search: JSON.stringify({ expression, sort: "newest" }) })}`;
-        const page = await open(direct);
-        const head = page.locator(".k2b-app-workspace__head-filters");
-        try {
-          await page.route("**/api/mail/mailboxes/Box001/folders", (route) =>
-            route.fulfill({ json: { folders: mailboxData(new URL(page.url())).folders } }),
-          );
-          await head.getByRole("button", { name: "Date range", exact: true }).click();
-          await page.getByRole("menuitem", { name: "Custom date range…", exact: true }).click();
-          const dialog = page.getByRole("dialog");
-          await dialog.waitFor({ state: "visible" });
-          const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
-          await dialog.getByRole("button", { name: "Search", exact: true }).click();
-          await response;
-          await ready(page);
-          const url = new URL(page.url());
-          const starting = new URLSearchParams(url.searchParams.get("searchFrom") ?? "");
-          expect(starting.has("search")).toBe(false);
-          expect(starting.get("folder")).toBe("Filed1");
-          expect(await head.locator("[data-mail-filter-folder]").textContent()).toBe("Only in Filed");
-          await head.getByRole("button", { name: "Last 7 days", exact: true }).click();
-          const clearDate = page.waitForResponse((response) => response.url().includes("/workspace-list"));
-          await page.getByRole("menuitem", { name: "Clear date range", exact: true }).click();
-          await clearDate;
-          await ready(page);
-          const clearUnread = page.waitForResponse((response) => response.url().includes("/workspace-list"));
-          await head.getByRole("button", { name: /Unread/ }).click();
-          await clearUnread;
-          await ready(page);
-          expect(new URL(page.url()).searchParams.has("search")).toBe(false);
-          expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
-        } finally {
-          await page.context().close();
-        }
-      });
-
-      test("compact folder filters: direct links clear sequentially and mixed routes keep the service precedence", async () => {
+      test("F9: an old chip link clears one filter at a time, and a view keeps the service's precedence", async () => {
         const expression = {
           type: "and",
           expressions: [
@@ -1050,27 +759,130 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         };
         const direct = `${boxPath}?${new URLSearchParams({ folder: "Filed1", search: JSON.stringify({ expression, sort: "newest" }) })}`;
         const page = await open(direct);
-        const head = page.locator(".k2b-app-workspace__head-filters");
         try {
+          expect(await filterButton(page).getAttribute("aria-label")).toBe("Filters, 2 active");
           for (const name of ["Flagged", /Unread/]) {
-            const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
-            await head.getByRole("button", { name }).click();
-            await response;
-            await ready(page);
+            await openFilters(page);
+            await chooseFilter(page, page.getByRole("menuitemcheckbox", { name }));
+            await page.keyboard.press("Escape");
           }
           expect(new URL(page.url()).searchParams.has("search")).toBe(false);
           expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
           await page.goto(new URL(`${boxPath}?view=mine&folder=Filed1`, server.url).href);
           await ready(page);
           expect(await currentHref(page)).toBe(`${boxPath}?view=mine`);
-          expect(await head.getByRole("button", { name: /Unread/ }).count()).toBe(0);
+          await openFilters(page);
+          expect(await page.getByRole("menuitemcheckbox", { name: /Unread/ }).count()).toBe(0);
+          await page.keyboard.press("Escape");
           await page.goto(new URL(`${boxPath}?view=unknown&folder=Filed1`, server.url).href);
           await ready(page);
-          expect(await head.getByRole("button", { name: /Unread/ }).isVisible()).toBe(true);
+          await openFilters(page);
+          expect(await page.getByRole("menuitemcheckbox", { name: /Unread/ }).isVisible()).toBe(true);
         } finally {
-          await page.context().close();
+          await close(page);
         }
       });
+
+      // The large search field stands in the head from the server on; / focuses it, Escape clears it.
+      for (const theme of reviewThemes)
+        for (const width of [1440, 390] as const)
+          test(`search field ${theme} ${width}: always in the head, / focuses it, Escape clears it without moving the list`, async () => {
+            const page = await open(`${boxPath}?folder=Filed1&theme=${theme}`, width);
+            try {
+              const head = page.locator(".mail-workspace > .k2b-app-workspace__head");
+              const input = page.locator('input[name="q"]');
+              const recorded = (JSON.parse((await page.locator("html").getAttribute("data-server-geometry"))!) as Frame).find(
+                (part) => part.part.includes("k2b-app-workspace__head") && !part.part.includes("__head-"),
+              );
+              expect(recorded?.height).toBe((await head.boundingBox())!.height);
+              expect(await input.isVisible()).toBe(true);
+              expect(await input.getAttribute("placeholder")).toBe("Search Example support");
+              const bar = (await page.locator(".mail-list-bar").boundingBox())!;
+              await page.locator("[data-mail-conversation-list] a.mail-list-row").first().focus();
+              await page.keyboard.press("/");
+              expect(await input.evaluate((element) => document.activeElement === element)).toBe(true);
+              const searched = page.waitForURL((url) => url.searchParams.get("q") === "invoice");
+              await input.fill("invoice");
+              await searched;
+              await ready(page);
+              // While searching, Search in and the place join the filter menu; the search spans the mailbox at first.
+              expect(await filterButton(page).getAttribute("aria-label")).toBe("Filters");
+              await openFilters(page);
+              await page.getByRole("menuitemcheckbox", { name: "Subject" }).waitFor({ state: "visible" });
+              await page.getByRole("menuitemradio", { name: /Only Filed/ }).waitFor({ state: "visible" });
+              if (screenshots) {
+                mkdirSync(join(screenshots, browserName), { recursive: true });
+                await page.screenshot({ path: join(screenshots, browserName, `search-menu-${theme}-${width}.png`) });
+              }
+              await page.keyboard.press("Escape");
+              await input.focus();
+              const cleared = page.waitForURL((url) => !url.searchParams.has("q"));
+              await input.press("Escape");
+              await cleared;
+              await ready(page);
+              expect(await input.inputValue()).toBe("");
+              expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+              expect((await page.locator(".mail-list-bar").boundingBox())!.y).toBe(bar.y);
+            } finally {
+              await close(page);
+            }
+          });
+
+      test("search: More filters opens the search builder from the filter menu", async () => {
+        const page = await open(boxPath, 1680, 1050);
+        try {
+          await openFilters(page);
+          await page.getByRole("menuitem", { name: /More filters/ }).click();
+          await page
+            .getByRole("dialog")
+            .filter({ hasText: /filter/i })
+            .first()
+            .waitFor({ state: "visible" });
+        } finally {
+          await close(page);
+        }
+      });
+
+      // F3: the first selection turns the tab row into the bulk bar, at the same place and height.
+      for (const theme of reviewThemes)
+        for (const width of [1440, 390] as const)
+          test(`bulk bar ${theme} ${width}: the first check turns the tab row into the bulk bar at the same height`, async () => {
+            const page = await open(`${boxPath}?theme=${theme}`, width);
+            try {
+              const bar = page.locator(".mail-list-bar");
+              const firstRow = page.locator(".mail-list-entry").first();
+              const before = { bar: (await bar.boundingBox())!, row: (await firstRow.boundingBox())! };
+              await page.getByRole("checkbox", { name: "Select Example request 2", exact: true }).check();
+              const toolbar = page.getByRole("toolbar", { name: "Selected conversation actions", exact: true });
+              await toolbar.waitFor({ state: "visible" });
+              await settled(page);
+              expect((await bar.boundingBox())!).toEqual(before.bar);
+              expect((await firstRow.boundingBox())!).toEqual(before.row);
+              expect(
+                await toolbar.locator("button[aria-label]").evaluateAll((buttons) => buttons.map((button) => button.textContent?.trim())),
+              ).toEqual(["", "Done", "Archive", "Delete", "Unread", "Later", "Assign", "Move", "Add tags", ""]);
+              if (screenshots) {
+                mkdirSync(join(screenshots, browserName), { recursive: true });
+                await page.screenshot({ path: join(screenshots, browserName, `bulk-bar-${theme}-${width}.png`) });
+              }
+              // Done for the selection goes through the existing batch completion route.
+              const completed = page.waitForRequest((request) => request.url().endsWith("/conversations/completion"));
+              await toolbar.getByRole("button", { name: /^Done/ }).click();
+              expect((await completed).postDataJSON()).toMatchObject({ conversationIds: ["Conv02"], completion: "done" });
+              await toolbar.waitFor({ state: "hidden" });
+              // The tab row's checkbox selects the shown conversations; Escape ends the selection and the tabs return.
+              // It never stays checked itself: the bulk bar takes its place at once.
+              await bar.getByRole("checkbox", { name: "Select all shown conversations" }).click();
+              await toolbar.waitFor({ state: "visible" });
+              expect(await toolbar.textContent()).toContain("12 selected");
+              await page.keyboard.press("Escape");
+              await toolbar.waitFor({ state: "hidden" });
+              expect(await tabs(page).getByRole("link", { name: /^All/ }).isVisible()).toBe(true);
+              expect(await page.locator(".mail-list-entry .mail-list-checkbox:checked").count()).toBe(0);
+            } finally {
+              await close(page);
+            }
+          });
 
       for (const theme of ["light", "dark"] as const)
         for (const width of [1440, 390])
@@ -1330,7 +1142,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               Reflect.get(document.querySelector(".mail-sidebar")!, "mailboxSwitchMarker"),
               Reflect.get(document.querySelector(".k2b-app-workspace__main")!, "mailboxSwitchMarker"),
               Reflect.get(document.querySelector("[data-mail-conversation-list]")!, "mailboxSwitchMarker"),
-              Reflect.get(document.querySelector(".mail-reader")!, "mailboxSwitchMarker"),
+              Reflect.get(document.querySelector(".mail-split")!, "mailboxSwitchMarker"),
             ]),
           ).toEqual(["kept", "kept", "kept", "kept", "kept"]);
         const frame = async () =>
@@ -1343,7 +1155,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             Reflect.set(document.querySelector(".mail-sidebar")!, "mailboxSwitchMarker", "kept");
             Reflect.set(document.querySelector(".k2b-app-workspace__main")!, "mailboxSwitchMarker", "kept");
             Reflect.set(document.querySelector("[data-mail-conversation-list]")!, "mailboxSwitchMarker", "kept");
-            Reflect.set(document.querySelector(".mail-reader")!, "mailboxSwitchMarker", "kept");
+            // Without an open conversation there is no reader; the split around the list stays.
+            Reflect.set(document.querySelector(".mail-split")!, "mailboxSwitchMarker", "kept");
           });
           const before = await frame();
           await sidebar(page).locator(`a[href="${destination}"]`).first().click();
@@ -1386,7 +1199,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         try {
           expect(await page.locator('input[name="q"]').inputValue()).toBe("invoice");
           expect(await page.locator("[data-mail-reader-heading]").count()).toBe(1);
-          expect(await page.locator("[data-mail-head-search-options]").textContent()).toContain("Filed");
+          // The search's place counts on the filter button.
+          expect(await page.locator("[data-mail-filter-button]").getAttribute("aria-label")).toBe("Filters, 1 active");
           await page.locator('[data-scroll-preserve="mail-list-Box001"]').evaluate((element) => {
             element.scrollTop = 120;
             Reflect.set(element, "mailboxListMarker", "kept");
@@ -1400,16 +1214,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(await scroller.evaluate((element) => [Reflect.get(element, "mailboxListMarker"), element.scrollTop])).toEqual(["kept", 0]);
           expect(new URL(page.url()).search).toBe("");
           expect(await page.locator("[data-mail-reader-heading]").count()).toBe(0);
-          expect(await page.locator("[data-mail-filter-folder]").count()).toBe(0);
-          expect(await page.locator('input[name="q"]').count()).toBe(0);
-          await page.locator("[data-mail-search-trigger]").focus();
+          expect(await page.locator("[data-mail-filter-button]").getAttribute("aria-label")).toBe("Filters");
+          expect(await page.locator('input[name="q"]').inputValue()).toBe("");
+          await page.locator("[data-mail-conversation-list] a.mail-list-row").first().focus();
           await page.keyboard.press("/");
-          await page.locator('input[name="q"]').waitFor({ state: "visible" });
           await page.waitForFunction(() => document.activeElement?.matches('input[name="q"]'));
           expect(await page.locator('input[name="q"]').inputValue()).toBe("");
-          await page.keyboard.press("Escape");
-          await page.locator('input[name="q"]').waitFor({ state: "hidden" });
-          await page.waitForFunction(() => document.activeElement?.matches("[data-mail-search-trigger]"));
         } finally {
           await close(page);
         }
@@ -1420,7 +1230,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         // distinct scroll keys on the retained list element; restoration waits for the destination content.
         const source = `${boxPath}?history=1`;
         const destination = "/app/mail/Box002";
-        const page = await open(source, 1440, 600);
+        // One-line rows at full width: a short window keeps the list scrollable.
+        const page = await open(source, 1440, 420);
         const releaseBack = Promise.withResolvers<void>();
         const list = (id: string) => page.locator(`[data-scroll-preserve="mail-list-${id}"]`);
         const position = (id: string) => list(id).evaluate((element) => element.scrollTop);
@@ -1432,23 +1243,23 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(await position(id), `${id} fixture must really scroll`).toBe(y);
         };
         try {
-          await setPosition("Box001", 240);
+          await setPosition("Box001", 120);
           await sidebar(page).locator(`a[href="${destination}"]`).first().click();
           await page.waitForURL(new URL(destination, server.url).href);
           await list("Box002").waitFor();
           await ready(page);
           expect(await position("Box002"), "a newly opened mailbox starts at its list's top").toBe(0);
-          await setPosition("Box002", 400);
+          await setPosition("Box002", 160);
           await page.goBack();
           await page.waitForURL(new URL(source, server.url).href);
           await list("Box001").waitFor();
           await ready(page);
-          expect(await position("Box001"), "Back restores A after the asynchronous list replacement").toBe(240);
+          expect(await position("Box001"), "Back restores A after the asynchronous list replacement").toBe(120);
           await page.goForward();
           await page.waitForURL(new URL(destination, server.url).href);
           await list("Box002").waitFor();
           await ready(page);
-          expect(await position("Box002"), "Forward restores B's own list position").toBe(400);
+          expect(await position("Box002"), "Forward restores B's own list position").toBe(160);
 
           // Reverse a traversal while B is still shown. Its DOM must not become A's saved scroll snapshot.
           const backRequested = Promise.withResolvers<void>();
@@ -1470,7 +1281,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.goBack();
           await backRequested.promise;
           expect(new URL(page.url()).pathname).toBe(boxPath);
-          expect(await position("Box002"), "pending Back still shows the scrolled B list").toBe(400);
+          expect(await position("Box002"), "pending Back still shows the scrolled B list").toBe(160);
           await page.goForward();
           await page.waitForURL(new URL(destination, server.url).href);
           await ready(page);
@@ -1478,21 +1289,21 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await backReleased.promise;
           await page.unroute(backRoute);
           await ready(page);
-          expect(await position("Box002"), "Forward supersedes the pending A response").toBe(400);
+          expect(await position("Box002"), "Forward supersedes the pending A response").toBe(160);
           await page.goBack();
           await page.waitForURL(new URL(source, server.url).href);
           await list("Box001").waitFor();
           await ready(page);
-          expect(await position("Box001"), "the pending reversal preserved A's own snapshot").toBe(240);
+          expect(await position("Box001"), "the pending reversal preserved A's own snapshot").toBe(120);
           await page.goForward();
           await page.waitForURL(new URL(destination, server.url).href);
           await list("Box002").waitFor();
           await ready(page);
-          expect(await position("Box002"), "B keeps its own snapshot after the reversal").toBe(400);
+          expect(await position("Box002"), "B keeps its own snapshot after the reversal").toBe(160);
           const beforeReload = await geometry(page);
           await page.reload();
           await ready(page);
-          expect(await position("Box002"), "reload keeps the shown entry's list position").toBe(400);
+          expect(await position("Box002"), "reload keeps the shown entry's list position").toBe(160);
           const serverFrame = await recordedFrame(page, "server");
           assertFrame(beforeReload, serverFrame, "scrolled B reload server");
           assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "scrolled B reload hydrated");
@@ -1562,36 +1373,33 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
 
       for (const theme of reviewThemes)
         for (const width of [1440, 390])
-          test(`compact draft queue ${theme} ${width}: count stays in the head and draft links retain context`, async () => {
+          test(`compact draft queue ${theme} ${width}: count stays in the tab row and draft links retain context`, async () => {
             const page = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&theme=${theme}`, width);
             try {
               const serverFrame = await recordedFrame(page, "server");
               assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "draft queue hydrated");
               assertFrame(serverFrame, await geometry(page), "draft queue settled");
-              expect(await page.locator(".k2b-app-workspace__head [data-mail-queue-count]").textContent()).toBe("2 drafts");
+              expect(await page.locator(".mail-list-bar [data-mail-queue-count]").textContent()).toBe("2 drafts");
               expect(await page.locator("[data-mail-drafts-list] header").count()).toBe(0);
               const rows = page.locator("[data-mail-drafts-list] > [data-draft-id]");
               expect(await rows.count()).toBe(2);
-              // A draft is a conversation row of the person's view: three lines with the reader beside the list, at the
-              // conversations' fixed height (4.8125rem), so nothing moves between the lists.
-              expect(await rows.first().getAttribute("data-lines")).toBe("3");
+              // A draft is a conversation row: the list's width decides its lines, at the conversations' heights, so
+              // nothing moves between the lists. The full-width folder is one line wide; a phone shows three.
               for (const box of [await rows.first().boundingBox(), await rows.nth(1).boundingBox()])
-                expect(Math.abs(box!.height - 77)).toBeLessThanOrEqual(1);
+                expect(Math.abs(box!.height - (width < 768 ? 78 : 44))).toBeLessThanOrEqual(1);
               const draft = rows.first().locator("a.mail-list-row");
-              const tag = draft.locator(".mail-row-draft-tag");
-              const subject = await draft.locator(".mail-row-subject").boundingBox();
+              const mark = draft.locator(".mail-row-draft");
               const recipients = await draft.locator(".mail-row-sender").boundingBox();
-              const tagBox = await tag.boundingBox();
-              expect(await tag.textContent()).toBe("Draft");
-              // Recipients stand where the sender does; the tag leads the subject on the line below.
+              const markBox = await mark.boundingBox();
+              expect(await mark.textContent()).toBe("Draft");
+              // Recipients stand where the sender does, and Draft follows them on the same line.
               expect(await draft.locator(".mail-row-sender").textContent()).toBe("Ada Example");
               expect(await rows.nth(1).locator(".mail-row-from .mail-row-more").textContent()).toBe("+1");
               expect(await rows.nth(1).locator('[aria-label="1 attachment"]').count()).toBe(1);
-              expect(Math.abs(tagBox!.y + tagBox!.height / 2 - (subject!.y + subject!.height / 2))).toBeLessThanOrEqual(1);
-              expect(tagBox!.x + tagBox!.width).toBeLessThanOrEqual(subject!.x);
-              expect(subject!.y).toBeGreaterThanOrEqual(recipients!.y + recipients!.height - 1);
-              expect(await draft.getAttribute("href")).toContain("/compose/Draft1?return=");
-              expect(await draft.getAttribute("href")).toContain("folder%3DDrafts1");
+              expect(Math.abs(markBox!.y + markBox!.height / 2 - (recipients!.y + recipients!.height / 2))).toBeLessThanOrEqual(1);
+              expect(markBox!.x).toBeGreaterThanOrEqual(recipients!.x + recipients!.width);
+              // A new message opens as a window over this folder.
+              expect(await draft.getAttribute("href")).toBe(`${boxPath}?folder=Drafts1&drafts-fixture=1&theme=${theme}&draft=Draft1`);
               const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
               expect(overflow).toBe(false);
               if (screenshots) {
@@ -1609,21 +1417,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             } finally {
               await close(page);
             }
-            // The columns view draws one line per draft on a wide screen and two on a phone, as for conversations.
-            const columns = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&layout=auto&theme=${theme}`, width);
-            try {
-              assertFrame(await recordedFrame(columns, "server"), await geometry(columns), "draft columns settled");
-              const rows = columns.locator("[data-mail-drafts-list] > [data-draft-id]");
-              expect(await rows.first().getAttribute("data-lines")).toBe("1");
-              for (const box of [await rows.first().boundingBox(), await rows.nth(1).boundingBox()])
-                expect(Math.abs(box!.height - (width < 768 ? 65 : 44))).toBeLessThanOrEqual(1);
-              expect(await rows.first().locator(".mail-row-subject-cell > .mail-row-draft-tag").textContent()).toBe("Draft");
-              expect(await rows.nth(1).locator(".mail-row-sender-cell").textContent()).toBe("Ada Example+1");
-              expect(await columns.locator(".mail-columns-head").isVisible()).toBe(width >= 768);
-              if (screenshots) await columns.screenshot({ path: join(screenshots, `compact-drafts-columns-${theme}-${width}.png`) });
-            } finally {
-              await close(columns);
-            }
             const readOnly = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&permission=read&theme=${theme}`, width);
             try {
               expect(await readOnly.locator("[data-draft-id]").count()).toBe(2);
@@ -1634,7 +1427,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
             const scheduled = await open(`${boxPath}?scheduled=1&theme=${theme}`, width);
             try {
-              expect(await scheduled.locator(".k2b-app-workspace__head [data-mail-queue-count]").count()).toBe(1);
+              expect(await scheduled.locator(".mail-list-bar [data-mail-queue-count]").count()).toBe(1);
               expect(await scheduled.locator(".k2b-app-workspace__main h1.sr-only").textContent()).toBe("Outbox");
             } finally {
               await close(scheduled);
@@ -1738,9 +1531,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             if (route.query.startsWith("folder="))
               expect(await sidebar(page).locator('a[href$="folder=Filed1"]').getAttribute("aria-current")).toBe("page");
             if (route.query.startsWith("search=")) {
-              const tag = page.locator(".k2b-app-workspace__head-actions .mail-head-tag");
-              expect(await tag.getAttribute("aria-label")).toBe("Tag: Priority");
-              expect(await tag.getAttribute("data-active")).toBe("true");
+              // The tag of an old chip link counts on the filter button.
+              const filter = page.locator("[data-mail-filter-button]");
+              expect(await filter.getAttribute("aria-label")).toBe("Filters, 1 active");
+              expect(await filter.getAttribute("data-active")).toBe("true");
             }
             if (route.query === "view=snoozed") {
               expect(await tabs(page).getByRole("button", { name: /More/ }).isVisible()).toBe(true);
@@ -1786,208 +1580,268 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     });
 
     section("layout", () => {
-      // #2507: on a phone the list always has its head, in every layout; the reader hides it and Back brings it back.
-      for (const layout of ["auto", "columns", "split"] as const)
-        for (const selected of [false, true])
-          test(`390 ${layout}${selected ? " with a conversation" : ""}: the list shows its head with tabs and Compose`, async () => {
-            const page = await open(`${boxPath}?layout=${layout}${selected ? "&conversation=Conv01" : ""}`, 390, 844);
-            try {
-              const head = page.locator(".mail-workspace > .k2b-app-workspace__head");
-              const headShown = async () => {
-                expect(await head.isVisible()).toBe(true);
-                expect(await tabs(page).getByRole("link", { name: /^All/ }).isVisible()).toBe(true);
-                expect(await page.locator("[data-workspace-primary]").isVisible()).toBe(true);
-              };
-              const recordedHead = async (name: "server" | "hydrated") =>
-                (JSON.parse((await page.locator("html").getAttribute(`data-${name}-geometry`))!) as Frame).find(
-                  (part) => part.part === "k2b-app-workspace__head",
-                );
-              const serverHead = await recordedHead("server");
-              if (!selected) {
-                // The server's first frame and the first hydrated one already have the head, so it never appears late.
-                expect(serverHead?.height).toBeGreaterThan(0);
-                expect((await recordedHead("hydrated"))?.height).toBe(serverHead?.height);
-                await headShown();
-                return;
-              }
-              expect(serverHead?.height).toBe(0);
-              expect(await head.isVisible()).toBe(false);
-              await page.locator(".mail-reader-back").click();
-              await page.waitForFunction(() => !new URL(location.href).searchParams.has("conversation"));
-              await settled(page);
-              await headShown();
-            } finally {
-              await close(page);
-            }
-          });
-
-      // F2: "Automatisch" shows columns until a conversation opens; one case per page (#1966).
-      for (const width of [1440, 390])
-        test(`views: automatic shows columns without a selection at ${width}, from the server on`, async () => {
-          const page = await open(`${boxPath}?layout=auto`, width, width === 390 ? 844 : 900);
+      // #2507: on a phone the list always has its head; the reader hides it and Back brings it back.
+      for (const selected of [false, true])
+        test(`390${selected ? " with a conversation" : ""}: the list shows its head with tabs and Compose`, async () => {
+          const page = await open(`${boxPath}${selected ? "?conversation=Conv01" : ""}`, 390, 844);
           try {
-            const firstRow = page.locator('.mail-list-entry[data-lines="1"]').first();
-            await firstRow.waitFor({ state: "visible" });
-            // The server already drew the columns: the first row does not move once the page is interactive.
-            const before = (await firstRow.boundingBox())!;
-            await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-            expect((await firstRow.boundingBox())!.y).toBe(before.y);
-            expect(await page.locator(".mail-reader-title").count()).toBe(0);
-            expect(await page.locator("[data-mail-day-group]").count()).toBeGreaterThan(0);
-            if (width >= 768) {
-              await page.locator(".mail-columns-head").waitFor({ state: "visible" });
-              expect(before.height).toBeCloseTo(44, 0);
-              await page.locator("[data-mail-view-menu]").waitFor({ state: "visible" });
-            } else {
-              // Phones: compact two-line rows without the column header.
-              expect(await page.locator(".mail-columns-head").isVisible()).toBe(false);
-              expect(before.height).toBeCloseTo(65, 0);
+            const head = page.locator(".mail-workspace > .k2b-app-workspace__head");
+            const headShown = async () => {
+              expect(await head.isVisible()).toBe(true);
+              expect(await tabs(page).getByRole("link", { name: /^All/ }).isVisible()).toBe(true);
+              expect(await page.locator("[data-workspace-primary]").isVisible()).toBe(true);
+            };
+            const recordedHead = async (name: "server" | "hydrated") =>
+              (JSON.parse((await page.locator("html").getAttribute(`data-${name}-geometry`))!) as Frame).find(
+                (part) => part.part === "k2b-app-workspace__head",
+              );
+            const serverHead = await recordedHead("server");
+            if (!selected) {
+              // The server's first frame and the first hydrated one already have the head, so it never appears late.
+              expect(serverHead?.height).toBeGreaterThan(0);
+              expect((await recordedHead("hydrated"))?.height).toBe(serverHead?.height);
+              await headShown();
+              return;
             }
-            if (screenshots) await page.screenshot({ path: join(screenshots, `views-columns-light-${width}.png`) });
+            expect(serverHead?.height).toBe(0);
+            expect(await head.isVisible()).toBe(false);
+            await page.locator("[data-mail-reader-close]").click();
+            await page.waitForFunction(() => !new URL(location.href).searchParams.has("conversation"));
+            await settled(page);
+            await headShown();
           } finally {
             await close(page);
           }
         });
-      // S2: hiding the list is a View menu switch with [; × and Escape lead back to the unchanged list.
-      test("views: the View menu hides the list beside the reader, and [ shows it again", async () => {
-        const page = await open(`${boxPath}?conversation=Conv02`, 1440, 900);
+
+      /** List, handle and reader boxes, and every list row's height, as the page shows them now. */
+      const split = (page: Page) =>
+        page.evaluate(() => {
+          const box = (selector: string) => {
+            const element = document.querySelector(selector);
+            if (!element || element.getClientRects().length === 0) return null;
+            const { x, y, width, height } = element.getBoundingClientRect();
+            return { x, y, width, height };
+          };
+          return {
+            panes: box(".mail-split-panes"),
+            list: box(".mail-split-list"),
+            handle: box(".mail-list-handle"),
+            reader: box(".mail-split-reader"),
+            column: box(".mail-reading-column"),
+            toolbar: box("[data-mail-reader-toolbar]"),
+            bar: box(".mail-list-bar"),
+            rows: Array.from(document.querySelectorAll<HTMLElement>(".mail-list-entry"))
+              .filter((row) => row.getClientRects().length > 0)
+              .slice(0, 6)
+              .map((row) => Math.round(row.getBoundingClientRect().height)),
+            open: box(".mail-list-entry-active"),
+          };
+        });
+      const oneLine = 44;
+      const threeLines = 78;
+
+      // F8: list 40 % at least 320 px, reader the rest at least 480 px, no centered column, the density follows.
+      for (const [width, height] of [
+        [1440, 900],
+        [1920, 1080],
+        [2560, 1300],
+      ] as const)
+        test(`F8 at ${width}: list and reader share the full width, the list's width picks its density, server = hydrated`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv02`, width, height);
+          try {
+            const shown = await split(page);
+            const panes = shown.panes!.width;
+            const expected = Math.min(Math.max(320, panes * 0.4), panes - 492);
+            expect(Math.abs(shown.list!.width - expected)).toBeLessThanOrEqual(1);
+            expect(shown.handle!.width).toBe(12);
+            expect(Math.abs(shown.reader!.x + shown.reader!.width - (shown.panes!.x + panes))).toBeLessThanOrEqual(1);
+            // The reader's head and text use its whole width: nothing narrower stands centered in it.
+            const text = await page.locator(".mail-reader-scroll").evaluate((element) => {
+              const style = getComputedStyle(element);
+              return element.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
+            });
+            expect(Math.abs(shown.column!.width - text)).toBeLessThanOrEqual(1);
+            expect(shown.toolbar!.width).toBeGreaterThanOrEqual(shown.reader!.width - shown.handle!.width - 1);
+            expect(new Set(shown.rows)).toEqual(new Set([shown.list!.width >= 640 ? oneLine : threeLines]));
+            // The server's first frame already had this split and these rows.
+            const recorded = (name: "server" | "hydrated") =>
+              page
+                .locator("html")
+                .getAttribute(`data-${name}-geometry`)
+                .then((value) =>
+                  (JSON.parse(value!) as Frame).filter((part) => /mail-split-list|mail-list-handle|mail-list-entry/.test(part.part)),
+                );
+            expect(await recorded("hydrated")).toEqual(await recorded("server"));
+            if (screenshots) await page.screenshot({ path: join(screenshots, `split-light-${width}.png`) });
+          } finally {
+            await close(page);
+          }
+        });
+
+      test("F8: without an open conversation the list takes the full width in one line per row, with no empty reader", async () => {
+        const page = await open(boxPath, 1440, 900);
         try {
-          const list = page.locator("[data-mail-conversation-list]");
-          const toolbar = page.locator("[data-mail-reader-toolbar]");
-          const toggle = page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ });
-          await list.waitFor({ state: "visible" });
-          await page.locator("[data-mail-view-menu]").click();
-          expect(await toggle.getAttribute("aria-checked")).toBe("false");
-          expect(await toggle.isDisabled()).toBe(false);
-          expect(await toggle.textContent()).toContain("The reader uses the full width.");
-          expect(await toggle.locator(".k2b-kbd").isVisible()).toBe(true);
-          await toggle.click();
-          await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
-          expect(await list.isVisible()).toBe(false);
-          // The menu shows the switch on, and [ brings the list back without closing the conversation.
-          await page.locator("[data-mail-view-menu]").click();
-          expect(await toggle.getAttribute("aria-checked")).toBe("true");
-          await page.keyboard.press("Escape");
-          await page.locator("[data-mail-reader-heading]").focus();
-          await page.keyboard.press("[");
-          await list.waitFor({ state: "visible" });
-          expect(await toolbar.locator("[data-mail-reader-close]").count()).toBe(0);
-          expect(new URL(page.url()).searchParams.get("conversation")).toBe("Conv02");
-          await page.keyboard.press("[");
-          await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
-          expect(await list.isVisible()).toBe(false);
+          const shown = await split(page);
+          expect(shown.reader).toBeNull();
+          expect(shown.handle).toBeNull();
+          expect(Math.abs(shown.list!.width - shown.panes!.width)).toBeLessThanOrEqual(1);
+          expect(new Set(shown.rows)).toEqual(new Set([oneLine]));
+          // Date in every row, no column heads, no day groups.
+          expect(await page.locator(".mail-list-entry .mail-row-time").count()).toBe(await page.locator(".mail-list-entry").count());
+          expect(await page.getByText(/^(Today|Yesterday|This week|Earlier)$/).count()).toBe(0);
+          if (screenshots) await page.screenshot({ path: join(screenshots, "list-full-light-1440.png") });
         } finally {
           await close(page);
         }
       });
 
-      test("views: without a reader beside the list, the switch is off and names the reason", async () => {
-        for (const path of [boxPath, `${boxPath}?layout=auto&list=hidden`, `${boxPath}?layout=columns&conversation=Conv02`]) {
-          const page = await open(path, 1440, 900);
-          try {
-            await page.locator("[data-mail-view-menu]").click();
-            const toggle = page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ });
-            await toggle.waitFor({ state: "visible" });
-            expect(await toggle.isDisabled(), path).toBe(true);
-            expect(await toggle.getAttribute("aria-checked"), path).toBe("false");
-            expect(await toggle.textContent()).toContain("Only while reading beside the list.");
-            await page.keyboard.press("Escape");
-            await page.keyboard.press("[");
-            await settled(page);
-            expect(await page.locator("[data-mail-reader-close]").isVisible()).toBe(path.includes("conversation="));
-          } finally {
-            await close(page);
-          }
+      test("F8: the handle moves by pointer and keys, saves the share once a move ends, resets to 40 %, and a reload keeps it", async () => {
+        const page = await open(`${boxPath}?conversation=Conv02`, 1440, 900);
+        try {
+          const handle = page.locator(".mail-list-handle");
+          let saves = 0;
+          page.on("request", (request) => {
+            if (request.method() === "PATCH" && request.url().endsWith("/workspace-preference")) saves++;
+          });
+          /** The saved share the page sends when a move ends or resets, the first one that `matches`. */
+          const nextSave = (matches: (share: number | null) => boolean = () => true) =>
+            page
+              .waitForResponse(
+                (response) =>
+                  response.request().method() === "PATCH" &&
+                  response.url().endsWith("/workspace-preference") &&
+                  matches((response.request().postDataJSON() as { listShare: number | null }).listShare),
+              )
+              .then((response) => (response.request().postDataJSON() as { listShare: number | null }).listShare);
+          await settled(page);
+          const before = await split(page);
+          const box = (await handle.boundingBox())!;
+          await page.mouse.move(box.x + box.width / 2, box.y + 200);
+          await page.mouse.down();
+          await page.mouse.move(box.x + box.width / 2 + 120, box.y + 200, { steps: 6 });
+          expect(saves).toBe(0);
+          const dropped = nextSave();
+          await page.mouse.up();
+          const share = await dropped;
+          expect(saves).toBe(1);
+          await settled(page);
+          const dragged = await split(page);
+          expect(Math.abs(dragged.list!.width - (before.list!.width + 120))).toBeLessThanOrEqual(2);
+          expect(share!).toBeCloseTo(dragged.list!.width / dragged.panes!.width, 2);
+          // Arrow keys, Shift for larger steps, End and Home keep list and reader at their minimums.
+          await handle.focus();
+          await page.keyboard.press("ArrowLeft");
+          await settled(page);
+          expect((await split(page)).list!.width).toBeLessThan(dragged.list!.width);
+          await page.keyboard.press("End");
+          await settled(page);
+          const widest = await split(page);
+          expect(Math.abs(widest.reader!.width - widest.handle!.width - 480)).toBeLessThanOrEqual(1);
+          await page.keyboard.press("Home");
+          await settled(page);
+          expect(Math.abs((await split(page)).list!.width - 320)).toBeLessThanOrEqual(1);
+          const stepSaved = nextSave((share) => share !== null && share > 320 / dragged.panes!.width + 0.03);
+          await page.keyboard.press("Shift+ArrowRight");
+          await stepSaved;
+          await settled(page);
+          const stepped = await split(page);
+          expect(stepped.list!.width - 320).toBeGreaterThan(stepped.panes!.width * 0.04);
+          // A reload renders the saved share in its first frame.
+          await page.reload();
+          await ready(page);
+          await settled(page);
+          expect(Math.abs((await split(page)).list!.width - stepped.list!.width)).toBeLessThanOrEqual(1);
+          // A double click goes back to 40 % and clears the saved share.
+          const cleared = nextSave((share) => share === null);
+          await handle.dblclick();
+          expect(await cleared).toBeNull();
+          await settled(page);
+          const reset = await split(page);
+          expect(Math.abs(reset.list!.width - before.list!.width)).toBeLessThanOrEqual(1);
+          await handle.focus();
+          await page.keyboard.press("ArrowRight");
+          const entered = nextSave((share) => share === null);
+          await page.keyboard.press("Enter");
+          expect(await entered).toBeNull();
+          await settled(page);
+          expect(Math.abs((await split(page)).list!.width - before.list!.width)).toBeLessThanOrEqual(1);
+          expect(await handle.getAttribute("role")).toBe("separator");
+          expect(await handle.getAttribute("aria-label")).toBe("Resize conversation list");
+        } finally {
+          await close(page);
         }
       });
 
-      for (const [layout, leave, motion] of [
-        ["columns", "close", "reduce"],
-        ["columns", "Escape", "reduce"],
-        ["hidden", "close", "reduce"],
-        ["hidden", "Escape", "reduce"],
-        // With motion, a view transition must not commit the list's first position over the restored one.
-        ["hidden", "close", "no-preference"],
-        ["columns", "Escape", "no-preference"],
-      ] as const)
-        test(`views: ${leave === "close" ? "×" : "Escape"} returns from a reader without the list (${layout}, ${motion} motion) to the same list`, async () => {
-          const page = await open(
-            layout === "columns" ? `${boxPath}?layout=columns` : `${boxPath}?layout=auto&list=hidden`,
-            1440,
-            560,
-            motion,
-          );
+      for (const via of ["handle", "window"] as const)
+        test(`F2 by ${via}: the switch between three lines and one keeps the selection, the open row's place, and the reader`, async () => {
+          // A short window, so the list scrolls and can keep the open row in place.
+          const page = await open(`${boxPath}?conversation=Conv09`, 1440, 480);
           try {
+            const row = page.locator('[data-conversation-id="Conv02"] .mail-list-checkbox');
+            await row.check();
             const scroller = page.locator('[data-scroll-preserve="mail-list-Box001"]');
-            const row = page.locator('[data-conversation-id="Conv09"] .mail-list-row').first();
-            await row.waitFor({ state: "visible" });
             await scroller.evaluate((element) => {
-              element.scrollTop = 160;
+              element.scrollTop = 420;
             });
             await settled(page);
-            const scrolled = await scroller.evaluate((element) => element.scrollTop);
-            expect(scrolled).toBeGreaterThan(0);
-            await row.click();
-            await page.waitForURL(/conversation=Conv09/);
-            const toolbar = page.locator("[data-mail-reader-toolbar]");
-            await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
-            expect(await page.locator("[data-mail-conversation-list]").isVisible()).toBe(false);
-            if (leave === "close") await toolbar.locator("[data-mail-reader-close]").click();
-            else await pressEscapeForWorkspace(page);
-            await page.waitForURL((url) => !url.searchParams.has("conversation"));
-            await page.locator("[data-mail-conversation-list]").waitFor({ state: "visible" });
             await settled(page);
-            // The same list, at the same place, with the row that was open in focus.
-            expect(Math.abs((await scroller.evaluate((element) => element.scrollTop)) - scrolled)).toBeLessThanOrEqual(1);
-            expect(
-              await page.evaluate(() => document.activeElement?.closest("[data-conversation-id]")?.getAttribute("data-conversation-id")),
-            ).toBe("Conv09");
-            // Escape in a list without a reader changes nothing.
-            await pressEscapeForWorkspace(page);
+            const before = await split(page);
+            expect(before.open!.y).toBeGreaterThan(before.list!.y);
+            expect(before.list!.width).toBeLessThan(640);
+            expect(new Set(before.rows)).toEqual(new Set([threeLines]));
+            const reader = before.reader!.x + before.reader!.width;
+            if (via === "handle") {
+              await page.locator(".mail-list-handle").focus();
+              for (let step = 0; step < 4; step++) await page.keyboard.press("Shift+ArrowRight");
+            } else await page.setViewportSize({ width: 2200, height: 480 });
             await settled(page);
-            expect(new URL(page.url()).searchParams.has("conversation")).toBe(false);
+            const after = await split(page);
+            expect(after.list!.width).toBeGreaterThanOrEqual(640);
+            expect(new Set(after.rows)).toEqual(new Set([oneLine]));
+            expect(await row.isChecked()).toBe(true);
+            expect(new URL(page.url()).searchParams.get("conversation")).toBe("Conv09");
+            // The open row keeps its place in the viewport; the reader's far edge does not move with the handle.
+            expect(Math.abs(after.open!.y - before.open!.y)).toBeLessThanOrEqual(1);
+            if (via === "handle") expect(Math.abs(after.reader!.x + after.reader!.width - reader)).toBeLessThanOrEqual(1);
+            expect(Math.abs(after.bar!.height - before.bar!.height)).toBeLessThanOrEqual(0.5);
           } finally {
             await close(page);
           }
         });
 
-      if (screenshots)
-        test("optional View menu review screenshots", async () => {
-          const directory = join(resolve(screenshots), "view-menu");
-          mkdirSync(directory, { recursive: true });
-          for (const [width, height] of [
-            [1440, 900],
-            [1024, 768],
-            [390, 844],
-          ] as const) {
-            const page = await open(`${boxPath}?layout=auto&conversation=Conv02&theme=light`, width, height);
-            try {
-              await settled(page);
-              await page.screenshot({ path: join(directory, `${width}-reader.png`) });
-              if (width === 390) continue;
-              await page.locator("[data-mail-view-menu]").click();
-              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).waitFor({ state: "visible" });
-              await page.waitForTimeout(150);
-              await page.screenshot({ path: join(directory, `${width}-view-menu.png`) });
-              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).click();
-              await page.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
-              await page.mouse.move(0, 0);
-              await page.waitForTimeout(150);
-              await page.screenshot({ path: join(directory, `${width}-list-hidden.png`) });
-              await pressEscapeForWorkspace(page);
-              await page.waitForURL((url) => !url.searchParams.has("conversation"));
-              await page.locator("[data-mail-view-menu]").click();
-              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).waitFor({ state: "visible" });
-              await page.waitForTimeout(150);
-              await page.screenshot({ path: join(directory, `${width}-view-menu-unavailable.png`) });
-            } finally {
-              await close(page);
-            }
-          }
-        });
+      test("F2: V, which switched the view, shows once at the handle that the list's width decides", async () => {
+        const page = await open(`${boxPath}?conversation=Conv02&hints=density-by-width`, 1440, 900);
+        try {
+          const hint = page.locator(".k2b-moved-hint");
+          await page.locator("[data-mail-reader-heading]").focus();
+          await settled(page);
+          const before = await split(page);
+          const seen = page.waitForRequest((request) => request.url().endsWith("/workspace-preference/seen-hints"));
+          await page.keyboard.press("v");
+          await hint.waitFor({ state: "visible" });
+          expect(await hint.textContent()).toContain("The list's width decides how it shows. Drag here.");
+          // The hint stands beside the handle and moves nothing.
+          const handle = (await page.locator(".mail-list-handle").boundingBox())!;
+          const shown = (await hint.boundingBox())!;
+          expect(shown.x).toBeGreaterThanOrEqual(handle.x + handle.width - 1);
+          expect(await split(page)).toEqual(before);
+          await hint.getByRole("button", { name: "Got it" }).click();
+          expect((await seen).postDataJSON()).toEqual({ hintId: "density-by-width" });
+          await hint.waitFor({ state: "hidden" });
+          await page.reload();
+          await ready(page);
+          await page.locator("[data-mail-reader-heading]").focus();
+          await page.keyboard.press("v");
+          await settled(page);
+          expect(await hint.count()).toBe(0);
+        } finally {
+          await close(page);
+        }
+      });
 
       test("views: the day's done line above the list", async () => {
-        const page = await open(`${boxPath}?layout=auto&done=19,14`, 1440, 900);
+        const page = await open(`${boxPath}?done=19,14`, 1440, 900);
         try {
           const line = page.locator("[data-mail-done-line]");
           await line.getByText("Heute 19 erledigt").or(line.getByText("19 done today")).waitFor();
@@ -1999,7 +1853,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
       test("views: All done with the way to the log", async () => {
-        const page = await open(`${boxPath}?layout=auto&done=26,17&inbox=empty`, 1440, 900);
+        const page = await open(`${boxPath}?done=26,17&inbox=empty`, 1440, 900);
         try {
           const done = page.locator("[data-mail-all-done]");
           await done.waitFor({ state: "visible" });
@@ -2054,8 +1908,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       test("views: an empty work list and All done still offer the done conversations", async () => {
         for (const [path, name] of [
           [`${boxPath}?folder=Inbox1&inbox=empty&hidden=3&locale=de`, "empty"],
-          [`${boxPath}?layout=auto&done=26,17&inbox=empty&hidden=1207&locale=de`, "all-done"],
-          [`${boxPath}?layout=auto&hidden=unknown&locale=de`, "uncounted"],
+          [`${boxPath}?done=26,17&inbox=empty&hidden=1207&locale=de`, "all-done"],
+          [`${boxPath}?hidden=unknown&locale=de`, "uncounted"],
         ] as const) {
           const page = await open(path, 1440);
           try {
@@ -2094,8 +1948,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                     ...(permission === "admin" ? ["Sync mailbox", "Mailbox health", "Shared links"] : []),
                   ];
             expect(await head.count()).toBe(1);
-            if (permission === "assigned-only") expect(await page.getByRole("link", { name: "Compose", exact: true }).count()).toBe(0);
-            expect(await page.getByRole("button", { name: "Select conversations", exact: true }).count()).toBe(
+            if (permission === "assigned-only") expect(await page.getByRole("link", { name: "New message", exact: true }).count()).toBe(0);
+            // Only people who may write select: the tab row's checkbox and every row's checkbox.
+            expect(await page.getByRole("checkbox", { name: "Select all shown conversations", exact: true }).count()).toBe(
               permission === "read" ? 0 : 1,
             );
             expect(await row.count()).toBe(1);
@@ -2203,27 +2058,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await close(page);
           }
         });
-        test(`${path}: phone tabs are the card's first row`, async () => {
+        test(`${path}: on a phone the search is the card's first row and the tabs follow right below it`, async () => {
           const page = await open(path, 390);
           try {
-            const views = await tabs(page).boundingBox();
-            const workspace = await page.locator(".k2b-app-workspace").boundingBox();
-            expect(views).not.toBeNull();
-            expect(workspace).not.toBeNull();
-            if (!views || !workspace) throw new Error("Missing phone frame");
-            const filters =
-              (await page.locator(".k2b-app-workspace__head-filters").count()) > 0
-                ? await page.locator(".k2b-app-workspace__head-filters").boundingBox()
-                : null;
-            if (filters) expect(views.y + views.height).toBeLessThanOrEqual(filters.y + 0.5);
-            const rows = await page.locator(".mail-list-entry").first().boundingBox();
-            expect(views.y + views.height).toBeLessThanOrEqual(rows!.y);
-            const firstRowY = await page.locator(".k2b-app-workspace__head").evaluate((head) => {
-              const style = getComputedStyle(head);
-              return head.getBoundingClientRect().y + Number.parseFloat(style.paddingTop) + Number.parseFloat(style.borderTopWidth);
-            });
-            // The tabs share the head's first row with the actions, which may be taller and center the row.
-            expect(views.y - firstRowY, "Tabs occupy the head's first content row").toBeLessThan(8);
+            const views = (await tabs(page).boundingBox())!;
+            const head = (await page.locator(".mail-workspace > .k2b-app-workspace__head").boundingBox())!;
+            const search = (await page.locator("[data-mail-head-search]").boundingBox())!;
+            const rows = (await page.locator(".mail-list-entry").first().boundingBox())!;
+            // One head row: the search, its filter button and "…" share it.
+            expect(search.y + search.height).toBeLessThanOrEqual(head.y + head.height + 0.5);
+            expect(Math.abs(views.y - (head.y + head.height))).toBeLessThanOrEqual(1);
+            expect(views.y + views.height).toBeLessThanOrEqual(rows.y);
           } finally {
             await close(page);
           }
@@ -2442,9 +2287,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     });
 
     describe("Mail wide windows", () => {
-      /** Cloud's card with the mockup's 240 px sidebar, a conversation open and its details on. */
+      /** Cloud's card with the mockup's 240 px sidebar and a conversation open. */
       const widePath = (options: { panel?: number; path?: string; extra?: string } = {}) =>
-        `${options.path ?? `${boxPath}?conversation=Conv01&details=1`}${(options.path ?? "?").includes("?") ? "&" : "?"}shell=1&sidebar=240${options.panel ? `&panel=${options.panel}` : ""}${options.extra ?? ""}`;
+        `${options.path ?? `${boxPath}?conversation=Conv01`}${(options.path ?? "?").includes("?") ? "&" : "?"}shell=1&sidebar=240${options.panel ? `&panel=${options.panel}` : ""}${options.extra ?? ""}`;
       type Box = { x: number; y: number; width: number; height: number };
       type Wide = {
         list: number;
@@ -2468,14 +2313,14 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           };
           const aside = document.querySelector<HTMLElement>(".mail-workspace .k2b-app-workspace__detail");
           const toggle = document.querySelector<HTMLElement>(".mail-workspace .k2b-app-workspace__detail-toggle");
-          const pane = box(".mail-workspace .k2b-app-workspace__main-pane");
+          const pane = box(".mail-workspace .mail-split-list");
           return {
-            // The list pane holds the list and the shared 12 px gap to the reader.
-            list: pane ? pane.width - 12 : 0,
+            list: pane ? pane.width : 0,
             pane,
-            reader: box(".mail-workspace .k2b-app-workspace__main-primary"),
+            // The reader's side holds the 12 px handle and the reader.
+            reader: box(".mail-workspace .mail-split-reader"),
             column: box(".mail-reading-column"),
-            toolbar: box(".mail-reader-toolbar"),
+            toolbar: box("[data-mail-reader-toolbar]"),
             sidebar: box(".mail-workspace .k2b-app-workspace__sidebar"),
             head: box(".mail-workspace .k2b-app-workspace__head"),
             detail:
@@ -2490,24 +2335,15 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             headDetails: Boolean(toggle && getComputedStyle(toggle).display !== "none"),
           };
         });
-      const sameBox = (actual: Box | null, expected: Box | null, label: string) => {
-        expect(Boolean(actual), label).toBe(Boolean(expected));
-        if (!actual || !expected) return;
-        for (const key of ["x", "y", "width", "height"] as const)
-          expect(Math.abs(actual[key] - expected[key]), `${label}.${key}: ${expected[key]} → ${actual[key]}`).toBeLessThanOrEqual(0.5);
-      };
-      // Where the shared frame differs from the mockup's: a Detail column keeps an 8 px inset and the card a 1 px edge,
-      // while the list's gap to the reader is 12 px instead of 16 px, so a reader beside a column is 6 px narrower.
-      const COLUMN_EDGES = 6;
+      // F8: list 40 % (at least 320 px) and reader the rest (at least 480 px) of Main, in Cloud's card, with and without
+      // the panel. Details stay the shared column or wait, as Main's minimum of both and the handle decides.
       const table = [
-        { width: 1440, height: 900, panel: 0, list: 320, reader: 800, detail: "waiting" },
-        // The mockup drew the sidebar as a column in a 952 px card. Below a 64 rem host the shared sidebar is the
-        // overlay (#1380), so the reader also gets the 240 px: 952 - 2 - 332.
-        { width: 1440, height: 900, panel: 416, list: 320, reader: 618, detail: "waiting" },
-        { width: 1920, height: 1080, panel: 0, list: 440, reader: 680 - COLUMN_EDGES, detail: "column" },
-        { width: 1920, height: 1080, panel: 416, list: 334, reader: 842, detail: "waiting" },
-        { width: 2560, height: 1080, panel: 0, list: 440, reader: 1320 - COLUMN_EDGES, detail: "column" },
-        { width: 2560, height: 1080, panel: 416, list: 440, reader: 896 - COLUMN_EDGES, detail: "column" },
+        { width: 1440, height: 900, panel: 0 },
+        { width: 1440, height: 900, panel: 416 },
+        { width: 1920, height: 1080, panel: 0 },
+        { width: 1920, height: 1080, panel: 416 },
+        { width: 2560, height: 1080, panel: 0 },
+        { width: 2560, height: 1080, panel: 416 },
       ] as const;
 
       section("wide", () => {
@@ -2541,11 +2377,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           [1680, 1050, false, 8, 99],
           [1680, 1050, true, 6, 99],
           [1280, 800, false, 4, 99],
-          [1280, 800, true, 2, 5],
-          [1024, 768, true, 1, 3],
+          // The tab row spans list and reader, so an open conversation leaves the tabs their room.
+          [1280, 800, true, 4, 99],
+          [1024, 768, true, 2, 99],
         ] as const)
           test(`S3 head at ${width}${reading ? " while reading" : ""}: the tabs fill the head's room, More counts the rest, Events stays whole`, async () => {
-            const page = await open(`${boxPath}?layout=auto${reading ? "&conversation=Conv01" : ""}`, width, height);
+            const page = await open(`${boxPath}${reading ? "?conversation=Conv01" : ""}`, width, height);
             try {
               await settled(page);
               const tabs = await headTabs(page);
@@ -2556,7 +2393,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(tabs.shown.length).toBeGreaterThanOrEqual(least);
               expect(tabs.shown.length).toBeLessThanOrEqual(most);
               // An open view beyond the room keeps its place in the strip.
-              await page.goto(new URL(`${boxPath}?layout=auto&view=kept${reading ? "&conversation=Conv01" : ""}`, server.url).href);
+              await page.goto(new URL(`${boxPath}?view=kept${reading ? "&conversation=Conv01" : ""}`, server.url).href);
               await ready(page);
               await settled(page);
               const kept = await headTabs(page);
@@ -2573,7 +2410,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         // ResizeObserver loop as a page error, which close() checks; the window listener covers Chromium.
         for (const reading of [false, true])
           test(`S3 head${reading ? " while reading" : ""}: the tab fit settles in a bounded number of passes and then stays still`, async () => {
-            const page = await open(`${boxPath}?layout=auto${reading ? "&conversation=Conv01" : ""}`, 834, 1194);
+            const page = await open(`${boxPath}${reading ? "?conversation=Conv01" : ""}`, 834, 1194);
             try {
               await page.addInitScript(() => {
                 const state = { passes: 0, loops: [] as string[] };
@@ -2631,7 +2468,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           [834, 1194],
         ] as const)
           test(`S3 head at ${width}: web fonts that load late fit the server frame like the client render`, async () => {
-            const page = await open(`${boxPath}?layout=auto`, width, height, "reduce", async (page) => {
+            const page = await open(`${boxPath}`, width, height, "reduce", async (page) => {
               await page.route(/\.woff2(\?|$)/, async (route) => {
                 // The text font late, the icon font later: the Events tab's icon then widens after the head settled.
                 await new Promise((done) => setTimeout(done, route.request().url().includes("ibm-plex") ? 300 : 700));
@@ -2658,19 +2495,23 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
-        test("S3 head on a phone: the view strip keeps scrolling with its first views and More", async () => {
-          const page = await open(`${boxPath}?layout=auto`, 390, 844);
+        test("on a phone the tab row fits its first views in one line and More holds the rest", async () => {
+          const page = await open(`${boxPath}`, 390, 844);
           try {
             await settled(page);
-            expect(await page.locator(".mail-workspace .k2b-view-tabs__item[data-fit-hidden]").count()).toBe(0);
-            expect((await headTabs(page)).shown).toEqual(["all", "needs_action", "mine"]);
+            const tabs = await headTabs(page);
+            expect(tabs.shown[0]).toBe("all");
+            expect(tabs.more).toBeGreaterThan(0);
+            expect(tabs.shown.length + tabs.more).toBe(tabs.flowing);
+            expect(tabs.overflow).toBeLessThanOrEqual(1);
+            expect(tabs.eventsWhole).toBe(true);
           } finally {
             await close(page);
           }
         });
 
         test("S3 head: widening and narrowing the window brings tabs back and lets them go, without overflow", async () => {
-          const page = await open(`${boxPath}?layout=auto`, 1280, 800);
+          const page = await open(`${boxPath}`, 1280, 800);
           try {
             await settled(page);
             const narrow = await headTabs(page);
@@ -2687,107 +2528,22 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        // S3: the reader's actions take their own row above the subject; a wide bar names them, a laptop shows icons.
-        for (const [width, height, labels] of [
-          [1680, 1050, true],
-          [1440, 900, true],
-          [1280, 800, false],
+        // Opening and closing the reader moves nothing in the head or the tab row (layout-shift entries with a source
+        // there): the tab row spans list and reader, and the list keeps its rows.
+        for (const [width, height] of [
+          [1680, 1050],
+          [1280, 800],
         ] as const)
-          test(`S3 reader bar at ${width}: actions above the subject, ${labels ? "with their names" : "as icons"}`, async () => {
-            const page = await open(`${boxPath}?layout=auto&conversation=Conv01`, width, height);
-            try {
-              const toolbar = page.locator("[data-mail-reader-toolbar]");
-              await toolbar.locator("[data-mail-reader-heading]").waitFor({ state: "visible" });
-              await settled(page);
-              const geometry = await toolbar.evaluate((element) => {
-                const box = (selector: string) => element.querySelector(selector)!.getBoundingClientRect();
-                const label = (id: string) => element.querySelector(`[data-mail-toolbar-action="${id}"] .mail-reader-action-label`);
-                return {
-                  controlsBottom: box(".mail-reader-controls").bottom,
-                  titleTop: box("[data-mail-reader-heading]").top,
-                  titleLeft: box("[data-mail-reader-heading]").left,
-                  controlsLeft: box(".mail-reader-controls").left,
-                  named: ["spam", "trash"].map((id) => label(id)?.getClientRects().length ?? 0),
-                  // The pill's actions live above the newest message, never in the head too (F12).
-                  pillActionsInHead: ["reply", "reply_all", "forward", "done"].filter((id) =>
-                    element.querySelector(`[data-mail-toolbar-action="${id}"]`),
-                  ),
-                };
-              });
-              expect(geometry.controlsBottom).toBeLessThanOrEqual(geometry.titleTop + 0.5);
-              expect(Math.abs(geometry.controlsLeft - geometry.titleLeft)).toBeLessThanOrEqual(8);
-              expect(geometry.named.map((count) => count > 0)).toEqual(geometry.named.map(() => labels));
-              expect(geometry.pillActionsInHead).toEqual([]);
-              if (labels) {
-                // The short name is part of the accessible name, which still names the whole action.
-                expect(await toolbar.locator('[data-mail-toolbar-action="trash"]').getAttribute("aria-label")).toBe("Move to Trash");
-              }
-              // The named bar still fits the reader.
-              expect(await toolbar.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-            } finally {
-              await close(page);
-            }
-          });
-
-        // The longest German names of three other actions still fit the widest bar beside the named replies.
-        for (const toolbar of ["reply,reply_all,forward,move,read,print", "reply,reply_all,forward,flag,tags,merge"])
-          test(`S3 reader bar at 1440 in German with ${toolbar}: every name fits`, async () => {
-            const page = await open(`${boxPath}?layout=auto&conversation=Conv01&locale=de&toolbar=${toolbar}`, 1440, 900);
-            try {
-              const toolbarElement = page.locator("[data-mail-reader-toolbar]");
-              await toolbarElement.locator("[data-mail-reader-heading]").waitFor({ state: "visible" });
-              await settled(page);
-              const result = await toolbarElement.evaluate((element) => ({
-                overflow: element.scrollWidth - element.clientWidth,
-                controls:
-                  element.querySelector(".mail-reader-controls")!.scrollWidth - element.querySelector(".mail-reader-controls")!.clientWidth,
-                names: Array.from(element.querySelectorAll(".mail-reader-action-label")).filter(
-                  (label) => label.getClientRects().length > 0,
-                ).length,
-              }));
-              expect(result.names).toBe(3);
-              expect(result.overflow).toBeLessThanOrEqual(1);
-              expect(result.controls).toBeLessThanOrEqual(1);
-            } finally {
-              await close(page);
-            }
-          });
-
-        test("S3 reader bar on a phone: the subject stays between the way back and the controls", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
-          try {
-            const toolbar = page.locator("[data-mail-reader-toolbar]");
-            await toolbar.locator("[data-mail-reader-heading]").waitFor({ state: "visible" });
-            await settled(page);
-            const boxes = await toolbar.evaluate((element) =>
-              [".mail-reader-back", "[data-mail-reader-heading]", ".mail-reader-controls"].map((selector) => {
-                const { left, top } = element.querySelector(selector)!.getBoundingClientRect();
-                return { left, top };
-              }),
-            );
-            expect(boxes[0]!.left).toBeLessThan(boxes[1]!.left);
-            expect(boxes[1]!.left).toBeLessThan(boxes[2]!.left);
-            expect(Math.abs(boxes[0]!.top - boxes[2]!.top)).toBeLessThanOrEqual(2);
-          } finally {
-            await close(page);
-          }
-        });
-
-        // S3: opening and closing the reader moves nothing in the head (layout-shift entries with a source there).
-        for (const [layout, width, height] of [
-          ["columns", 1680, 1050],
-          ["columns", 1280, 800],
-          ["split", 1680, 1050],
-          ["auto", 1280, 800],
-        ] as const)
-          test(`S3: opening ${layout === "columns" ? "and closing " : ""}the reader (${layout}) at ${width} moves nothing in the head`, async () => {
-            const page = await open(`${boxPath}?layout=${layout}`, width, height);
+          test(`F8: opening and closing the reader at ${width} moves nothing in the head or the tab row`, async () => {
+            const page = await open(boxPath, width, height);
             try {
               await settled(page);
-              const head = () =>
+              const strip = () =>
                 page.evaluate(() =>
                   Array.from(
-                    document.querySelectorAll(".mail-workspace .k2b-app-workspace__head :is(.k2b-view-tabs__item, .k2b-view-tabs__more)"),
+                    document.querySelectorAll(
+                      ".mail-workspace :is(.k2b-app-workspace__head [data-mail-head-search], .mail-list-bar :is(.k2b-view-tabs__item, .k2b-view-tabs__more))",
+                    ),
                   )
                     .filter((element) => element.getClientRects().length > 0)
                     .map((element) => {
@@ -2801,22 +2557,20 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 new PerformanceObserver((list) => {
                   for (const entry of list.getEntries())
                     for (const source of (entry as PerformanceEntry & { sources?: { node?: Node }[] }).sources ?? [])
-                      if (source.node instanceof Element && source.node.closest(".k2b-app-workspace__head"))
+                      if (source.node instanceof Element && source.node.closest(".k2b-app-workspace__head, .mail-list-bar"))
                         shifts.push(source.node.className || source.node.tagName);
                 }).observe({ type: "layout-shift", buffered: false });
               });
-              const before = await head();
+              const before = await strip();
               await page.locator('[data-conversation-id="Conv03"] .mail-list-row').first().click();
               await page.waitForURL(/conversation=Conv03/);
               await page.locator("[data-mail-reader-heading]").waitFor({ state: "visible" });
               await settled(page);
-              if (layout !== "auto") expect(await head()).toEqual(before);
-              if (layout === "columns") {
-                await page.locator("[data-mail-reader-close]").click();
-                await page.waitForURL((url) => !url.searchParams.has("conversation"));
-                await settled(page);
-                expect(await head()).toEqual(before);
-              }
+              expect(await strip()).toEqual(before);
+              await page.locator("[data-mail-reader-close]").click();
+              await page.waitForURL((url) => !url.searchParams.has("conversation"));
+              await settled(page);
+              expect(await strip()).toEqual(before);
               await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
               expect(await page.evaluate(() => Reflect.get(window, "headShifts"))).toEqual([]);
             } finally {
@@ -2836,123 +2590,69 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               [390, 844],
             ] as const)
               for (const [name, path] of [
-                ["list", `${boxPath}?layout=auto&theme=light`],
-                ["reader", `${boxPath}?layout=auto&conversation=Conv01&theme=light`],
+                ["list", `${boxPath}?theme=light`],
+                ["reader", `${boxPath}?conversation=Conv01&theme=light`],
+                ["reader-dark", `${boxPath}?conversation=Conv01&theme=dark`],
               ] as const) {
                 const page = await open(path, width, height);
                 try {
                   await settled(page);
                   await page.screenshot({ path: join(directory, `${width}-${name}.png`) });
-                  if (name === "list") {
-                    await page.locator("[data-mail-search-trigger]").first().click();
-                    await page.locator("[data-mail-head-search] input").waitFor({ state: "visible" });
-                    await settled(page);
-                    await page.screenshot({ path: join(directory, `${width}-search.png`) });
-                    if (width === 390) {
-                      await page.locator("[data-mail-search-phone-options]").click();
-                      await page.getByRole("group", { name: "Place" }).waitFor({ state: "visible" });
-                      await page.waitForTimeout(300);
-                      await page.screenshot({ path: join(directory, `${width}-search-menu.png`) });
-                    }
-                  }
                 } finally {
                   await close(page);
                 }
               }
-          });
+          }, 180_000);
         for (const row of table) {
           const label = `${row.width}${row.panel ? ` with a ${row.panel} px panel` : ""}`;
-          test(`F2 at ${label}: list, reader, reading column and Detail follow the 1920/2560 table, server = hydrated = settled`, async () => {
+          test(`F8 at ${label}: list and reader share Main, server = hydrated = settled`, async () => {
             const page = await open(widePath({ panel: row.panel }), row.width, row.height as 900);
             try {
               const frame = await wide(page);
-              expect(Math.abs(frame.list - row.list), `${label}: list ${frame.list}`).toBeLessThanOrEqual(4);
-              expect(Math.abs(frame.reader!.width - row.reader), `${label}: reader ${frame.reader!.width}`).toBeLessThanOrEqual(4);
-              expect(frame.detail, `${label}: Detail`).toBe(row.detail);
-              expect(frame.headDetails, `${label}: head Details`).toBe(true);
-              if (row.detail === "column") expect(Math.abs(frame.detailWidth - 480), `${label}: Detail width`).toBeLessThanOrEqual(0.5);
-              // At most 760 px, centred in the reader; the toolbar is centred at at most 800 px.
-              expect(frame.column!.width, `${label}: reading column`).toBeLessThanOrEqual(760.5);
-              const readerCentre = frame.reader!.x + frame.reader!.width / 2;
-              expect(Math.abs(frame.column!.x + frame.column!.width / 2 - readerCentre), `${label}: column centre`).toBeLessThanOrEqual(1);
-              expect(frame.toolbar!.width, `${label}: toolbar width`).toBeLessThanOrEqual(800.5);
-              expect(Math.abs(frame.toolbar!.x + frame.toolbar!.width / 2 - readerCentre), `${label}: toolbar centre`).toBeLessThanOrEqual(
-                0.5,
-              );
+              const main = frame.pane!.width + frame.reader!.width;
+              const list = Math.min(Math.max(320, main * 0.4), main - 492);
+              expect(Math.abs(frame.list - list), `${label}: list ${frame.list}`).toBeLessThanOrEqual(1);
+              // Mail v5 has no Detail column; the reader keeps at least 480 px.
+              expect(frame.reader!.width - 12, `${label}: reader`).toBeGreaterThanOrEqual(479.5);
+              // The reader's head and text take its whole width; nothing stands centred in it.
+              expect(frame.toolbar!.width, `${label}: toolbar`).toBeGreaterThanOrEqual(frame.reader!.width - 12 - 1);
+              expect(frame.column!.width, `${label}: text`).toBeGreaterThan(frame.reader!.width - 12 - 80);
               // Opening the conversation marks it read after hydration; that changes no geometry.
               const read = (parts: Frame) => parts.map((part) => ({ ...part, part: part.part.replace(" mail-list-entry-unread", "") }));
               const server = read(await recordedFrame(page, "server"));
               assertFrame(server, read(await recordedFrame(page, "hydrated")), `${label} hydrated`);
               assertFrame(server, read(await geometry(page)), `${label} settled`);
+              if (screenshots) {
+                mkdirSync(join(screenshots, "wide"), { recursive: true });
+                await page.screenshot({ path: join(screenshots, "wide", `split-details-${row.width}-${row.panel}.png`) });
+              }
             } finally {
               await close(page);
             }
           });
         }
 
-        test("F2: inside the band where the list grows, a 1520 px card keeps the Detail waiting", async () => {
-          // A fixed 776 px minimum (320 + 16 + 440) would make a column here, with a reader below 440 px.
-          const page = await open(widePath(), 1584, 900);
-          try {
-            const frame = await wide(page);
-            expect(Math.abs(frame.list - (1520 * 0.25 - 24))).toBeLessThanOrEqual(0.5);
-            expect(frame.detail).toBe("waiting");
-            expect(frame.headDetails).toBe(true);
-          } finally {
-            await close(page);
-          }
-        });
-
-        for (const [width, height, detail] of [
-          [1440, 900, "column"],
-          [1194, 834, "waiting"],
-        ] as const)
-          test(`F2: at ${width}, Hide list makes the Detail a ${detail === "column" ? "column" : "Detail that still waits"}`, async () => {
-            const page = await open(widePath(), width, height);
-            try {
-              expect((await wide(page)).detail).toBe("waiting");
-              await page
-                .locator(".k2b-app-workspace__head")
-                .getByRole("button", { name: "Options for Example support", exact: true })
-                .click();
-              await page.getByRole("menuitem", { name: "Hide conversation list" }).click();
-              await settled(page);
-              const frame = await wide(page);
-              expect(frame.pane).toBeNull();
-              expect(frame.detail).toBe(detail);
-              if (detail === "column") expect(frame.reader!.width).toBeGreaterThanOrEqual(440);
-            } finally {
-              await close(page);
-            }
-          });
-
         for (const item of [
           { path: widePath(), width: 2560, height: 1080 },
           { path: widePath(), width: 1920, height: 1080 },
           { path: `${boxPath}?conversation=Conv01`, width: 834, height: 1194 },
         ] as const)
-          test(`reader at ${item.width}: Reply all and Forward live in the pill, not the head, and stay in …`, async () => {
+          test(`reader at ${item.width}: Reply all and Forward live in the reply box, not the head, and stay in …`, async () => {
             const page = await open(item.path, item.width, item.height);
             try {
               const label = `${item.width}`;
-              await page.waitForFunction(
-                () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
-              );
-              for (const name of ["Reply all", "Forward"]) {
+              await page.locator("[data-mail-reply-box-frame]").waitFor();
+              for (const name of ["Reply all", "Forward"])
                 expect(
-                  await page.locator(".mail-reader-toolbar").getByRole("button", { name, exact: true }).count(),
+                  await page.locator("[data-mail-reader-toolbar]").getByRole("button", { name, exact: true }).count(),
                   `${label}: ${name} in head`,
                 ).toBe(0);
-                const inPill = await page.locator("[data-mail-reply-pill]").getByRole("button", { name, exact: true }).isVisible();
-                const inPillMore = await page.locator("[data-mail-reply-pill]").getByRole("button", { name: "More actions" }).isVisible();
-                expect(inPill || inPillMore, `${label}: ${name} reachable in the pill`).toBe(true);
-              }
-              expect(await page.locator(".mail-reader-toolbar [data-mail-details-trigger]").isVisible(), `${label}: reader Details`).toBe(
-                false,
-              );
-              expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible(), `${label}: shared Details`).toBe(true);
-              // Nothing in the bar spills out of the reader.
-              const bar = await page.locator(".mail-reader-toolbar").evaluate((element) => element.scrollWidth - element.clientWidth);
+              expect(
+                await page.locator("[data-mail-details-trigger], [data-app-workspace-detail-toggle]").count(),
+                `${label}: no Details`,
+              ).toBe(0);
+              // Nothing in the head spills out of the reader.
+              const bar = await page.locator("[data-mail-reader-toolbar]").evaluate((element) => element.scrollWidth - element.clientWidth);
               expect(bar, `${label}: toolbar overflow`).toBeLessThanOrEqual(0);
               // The head's "…" still lists every reply, so the keyboard path stays.
               const more = page.getByRole("button", { name: "More conversation actions" });
@@ -2966,137 +2666,74 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
-        // Each toolbar, locale, and layout is its own case; together they sweep every reader tier (#1966).
-        const sweptReaders = new Map<string, number[]>();
-        for (const toolbar of ["reply,reply_all,forward,archive,spam,trash,move,read", "reply,archive,spam,trash,move,read,flag,tags"])
-          for (const locale of ["en", "de"] as const) {
-            for (const [extra, widths] of [
-              ["", [768, 800, 834, 900, 980, 1024, 1100, 1194, 1280, 1366, 1440]],
-              ["&list=hidden", [834, 900]],
-              ["&shell=1&sidebar=240&panel=416", [1024, 1100, 1194, 1280, 1366]],
-              ["&list=hidden&shell=1&sidebar=240&panel=416", [900, 924, 960, 1024, 1100, 1194]],
-            ] as const)
-              test(`reader toolbar: largest own toolbar ${toolbar} ${locale}${extra} fits every reader width`, async () => {
-                const misfits: string[] = [];
-                const readers = sweptReaders.get(`${toolbar} ${locale}`) ?? [];
-                sweptReaders.set(`${toolbar} ${locale}`, readers);
-                // One page, resized through its widths.
-                const page = await open(`${boxPath}?conversation=Conv01&toolbar=${toolbar}&locale=${locale}${extra}`, widths[0], 900);
-                try {
-                  for (const width of widths) {
-                    await page.setViewportSize({ width, height: 900 });
-                    await settled(page);
-                    const result = await page.evaluate(() => {
-                      const reader = document.querySelector(".mail-reader")!.getBoundingClientRect();
-                      const bar = document.querySelector(".mail-reader-toolbar")!;
-                      const outside = [...bar.querySelectorAll<HTMLElement>("button, a")]
-                        .filter((element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden")
-                        .filter((element) => {
-                          const box = element.getBoundingClientRect();
-                          return box.left < reader.left - 0.5 || box.right > reader.right + 0.5;
-                        })
-                        .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "?");
-                      const details = [
-                        ...document.querySelectorAll<HTMLElement>("[data-mail-details-trigger], [data-app-workspace-detail-toggle]"),
-                      ].filter((element) => element.getClientRects().length > 0);
-                      const soleSharedDetails = details.length === 1 && details[0]!.hasAttribute("data-app-workspace-detail-toggle");
-                      return { reader: Math.round(reader.width), outside, details: soleSharedDetails };
-                    });
-                    readers.push(result.reader);
-                    if (result.outside.length || !result.details)
-                      misfits.push(
-                        `${toolbar} ${locale} ${width}${extra} (reader ${result.reader}): ${result.outside.join(", ") || "no Details"}`,
-                      );
-                  }
-                } finally {
-                  await close(page);
-                }
-                expect(misfits).toEqual([]);
-              });
-            // Reads the reader widths that the four layout cases above measured, so it runs after them in the same file.
-            test(`reader toolbar: the sweep of ${toolbar} ${locale} covers every reader tier`, () => {
-              const readers = sweptReaders.get(`${toolbar} ${locale}`) ?? [];
-              expect(readers.length, "the four layout cases above ran first and measured 24 reader widths").toBe(24);
-              // Under 380, 380–440, 440–480, 480–520, 520–720 and from 720 px of reader.
-              for (const [from, to] of [
-                [0, 380],
-                [380, 440],
-                [440, 480],
-                [480, 520],
-                [520, 720],
-                [720, 2000],
-              ] as const)
-                expect(
-                  readers.some((width) => width >= from && width < to),
-                  `a reader width in ${from}–${to} (${[...new Set(readers)].join(", ")})`,
-                ).toBe(true);
-            });
-          }
-
-        test("reader toolbar: a person's own actions stay, and those that do not fit are in …", async () => {
-          const toolbar = "reply,forward,archive,trash,move,read,flag,tags";
-          const page = await open(`${boxPath}?conversation=Conv01&toolbar=${toolbar}`, 834, 1194);
-          try {
-            expect(await page.locator('.mail-reader-toolbar [data-mail-toolbar-action="reply_all"]').count()).toBe(0);
-            const visible = await page
-              .locator(".mail-reader-toolbar [data-mail-toolbar-action]")
-              .evaluateAll((elements) =>
-                elements
-                  .filter((element) => element.getClientRects().length > 0)
-                  .map((element) => element.getAttribute("data-mail-toolbar-action")),
-              );
-            // Reply and Forward are the pill's; the head keeps the person's other actions (F12).
-            expect(visible).not.toContain("reply");
-            expect(visible).not.toContain("forward");
-            expect(visible.every((id) => toolbar.split(",").includes(id!))).toBe(true);
-            expect(
-              await page.locator(".mail-reader-toolbar").evaluate((element) => element.scrollWidth - element.clientWidth),
-            ).toBeLessThanOrEqual(0);
-            await page.getByRole("button", { name: "More conversation actions" }).click();
-            for (const name of ["Forward", "Move to folder", "Manage tags"])
-              expect(await page.getByRole("menuitem", { name, exact: true }).count(), `${name} in …`).toBeGreaterThan(0);
-          } finally {
-            await close(page);
-          }
-        });
+        // Mail v5: the head has the same actions for everyone; at every reader width they stay inside the reader.
+        for (const locale of ["en", "de"] as const)
+          test(`reader head ${locale}: every control stays inside the reader from 320 to 2560 px`, async () => {
+            const misfits: string[] = [];
+            const page = await open(`${boxPath}?conversation=Conv01&team=1&locale=${locale}&long-subject=1`, 320, 900);
+            try {
+              for (const width of [320, 390, 768, 834, 900, 1024, 1194, 1280, 1440, 1920, 2560]) {
+                await page.setViewportSize({ width, height: 900 });
+                await settled(page);
+                const result = await page.evaluate(() => {
+                  const reader = document.querySelector(".mail-reader")!.getBoundingClientRect();
+                  const head = document.querySelector("[data-mail-reader-toolbar]")!;
+                  const outside = [...head.querySelectorAll<HTMLElement>("button, a")]
+                    .filter((element) => element.getClientRects().length > 0 && !element.closest("[popover]"))
+                    .filter((element) => {
+                      const box = element.getBoundingClientRect();
+                      return box.left < reader.left - 0.5 || box.right > reader.right + 0.5;
+                    })
+                    .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "?");
+                  return { reader: Math.round(reader.width), outside, overflow: head.scrollWidth - head.clientWidth };
+                });
+                if (result.outside.length || result.overflow > 0.5)
+                  misfits.push(
+                    `${locale} ${width} (reader ${result.reader}): ${result.outside.join(", ") || `overflow ${result.overflow}`}`,
+                  );
+              }
+            } finally {
+              await close(page);
+            }
+            expect(misfits).toEqual([]);
+          });
       });
 
       section("reader", () => {
-        // A message with a PDF and 59 photos shows them before its text: the count, the first three, and "Show all".
+        // A message with a PDF and 59 photos shows them as tiles after its text; the Lightbox steps through all of them.
         for (const width of [1440, 390])
-          test(`attachments at ${width}: listed above the body, previews hold still, show all opens image tiles`, async () => {
+          test(`attachments at ${width}: tiles after the body hold still, one size, and open the conversation's Lightbox`, async () => {
             const page = await open(`${boxPath}?conversation=Conv01&photos=59`, width, width === 390 ? 844 : 900);
             try {
               const list = page.locator("[data-mail-message-attachments]");
               await list.waitFor();
-              expect(await list.locator(".mail-message-attachments__count").textContent()).toBe("60 attachments");
+              expect(await list.getAttribute("aria-label")).toBe("60 attachments");
               const box = (await list.boundingBox())!;
               const body = (await page.locator(".mail-message-body").first().boundingBox())!;
-              expect(box.y + box.height).toBeLessThanOrEqual(body.y);
-              expect(box.y + box.height, "the list shows without scrolling").toBeLessThanOrEqual(width === 390 ? 844 : 900);
-              const items = list.locator(".k2b-file-grid__item");
-              expect(await items.count()).toBe(3);
+              expect(box.y).toBeGreaterThanOrEqual(body.y + body.height - 0.5);
+              const tiles = list.locator(".mail-attachment-tile");
+              expect(await tiles.count()).toBe(60);
               expect(await list.getByText("application/pdf").count()).toBe(0);
-              const before = await items.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()));
-              await page.waitForFunction(() =>
-                [...document.querySelectorAll<HTMLImageElement>("[data-mail-message-attachments] img")].every(
-                  (image) => image.complete && image.naturalWidth > 0,
+              expect(await list.getByText("Download all 60").count()).toBe(1);
+              await settled(page);
+              const sizes = await tiles.evaluateAll((nodes) => [
+                ...new Set(
+                  nodes.map(
+                    (node) => `${Math.round(node.getBoundingClientRect().width)}x${Math.round(node.getBoundingClientRect().height)}`,
+                  ),
                 ),
-              );
-              await settled(page);
-              expect(await items.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()))).toEqual(before);
+              ]);
+              expect(sizes).toHaveLength(1);
               expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-              await list.getByRole("button", { name: "Show all 60" }).click();
-              await list.locator('.k2b-file-grid[data-layout="tiles"]').waitFor();
-              expect(await list.locator('.k2b-file-grid[data-layout="tiles"] .k2b-file-grid__item').count()).toBe(59);
-              await list.getByRole("button", { name: "Show less" }).click();
-              await settled(page);
+              await tiles.nth(1).locator(".mail-attachment-tile__open").click();
+              const lightbox = page.locator("dialog.k2b-lightbox[open]");
+              await lightbox.waitFor();
+              expect(await lightbox.locator(".k2b-thumbnail-strip__thumb").count()).toBe(60);
               if (screenshots) {
                 mkdirSync(join(screenshots, browserName), { recursive: true });
-                await page.screenshot({ path: join(screenshots, browserName, `attachments-light-${width}.png`) });
-                await list.getByRole("button", { name: "Show all 60" }).click();
+                await page.keyboard.press("Escape");
                 await settled(page);
-                await page.screenshot({ path: join(screenshots, browserName, `attachments-all-light-${width}.png`) });
+                await page.screenshot({ path: join(screenshots, browserName, `attachments-light-${width}.png`) });
               }
             } finally {
               await close(page);
@@ -3130,492 +2767,190 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               }
             });
 
-        test("Details access transfers focus across the phone breakpoint", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01`, 767, 900);
-          try {
-            const reader = page.locator("[data-mail-details-trigger]");
-            const shared = page.locator("[data-app-workspace-detail-toggle]");
-            await reader.focus();
-            await page.setViewportSize({ width: 768, height: 900 });
-            await settled(page);
-            expect(await shared.evaluate((element) => document.activeElement === element)).toBe(true);
-            await page.setViewportSize({ width: 767, height: 900 });
-            await settled(page);
-            expect(await reader.evaluate((element) => document.activeElement === element)).toBe(true);
-          } finally {
-            await close(page);
-          }
-        });
-
-        for (const width of [767, 768]) {
-          test(`one Details access: SSR, hydration and keyboard at ${width}`, async () => {
-            const page = await open(`${boxPath}?conversation=Conv01`, width, 900);
+        // Mail v5: one head with the same five actions for everyone, the state as one row of chips, no details panel.
+        for (const [width, height] of [
+          [1920, 1080],
+          [1440, 900],
+          [390, 844],
+        ] as const)
+          test(`head at ${width}: five actions and "…", the subject on one line, one row of chips, no details`, async () => {
+            const page = await open(`${boxPath}?conversation=Conv01&team=1&work=waiting&long-subject=1`, width, height);
             try {
-              const reader = page.locator("[data-mail-details-trigger]");
-              const shared = page.locator("[data-app-workspace-detail-toggle]");
-              for (const phase of ["server", "hydrated"]) {
-                const frame: Frame = JSON.parse((await page.locator("html").getAttribute(`data-${phase}-geometry`))!);
-                expect(frame.find((part) => part.part.includes("mail-reader-details"))!.height > 0).toBe(width < 768);
-                expect(frame.find((part) => part.part.includes("k2b-app-workspace__detail-toggle"))!.height > 0).toBe(width >= 768);
-              }
-              expect(await reader.isVisible()).toBe(width < 768);
-              expect(await shared.isVisible()).toBe(width >= 768);
-              const button = width < 768 ? reader : shared;
-              await button.focus();
-              await page.keyboard.press("Enter");
+              const head = page.locator("[data-mail-reader-toolbar]");
+              await head.waitFor();
               await settled(page);
-              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-              await page.keyboard.press("Escape");
-              await settled(page);
-              expect(await button.evaluate((element) => document.activeElement === element)).toBe(true);
-              expect(await button.getAttribute("aria-expanded")).toBe("false");
-              await page.getByRole("button", { name: "More conversation actions", exact: true }).focus();
-              await page.keyboard.press("Tab");
-              expect(await reader.evaluate((element) => document.activeElement === element)).toBe(width < 768);
-            } finally {
-              await close(page);
-            }
-          });
-        }
-
-        const persistentDetails = `${boxPath}?conversation=Conv01&shell=1&persist-details=1`;
-        const storedDetails = (page: Page, open: boolean) =>
-          page.waitForFunction((open) => {
-            const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
-            return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === open;
-          }, open);
-        // One phase per case, each on its own page, so every case stays far inside its budget (#1966).
-        for (const width of [1920, 1440, 834]) {
-          test(`persistent Details at ${width}: default, close and resize keep the toggle and the Detail in step`, async () => {
-            const page = await open(persistentDetails, width, 900);
-            try {
-              const button = page.locator("[data-app-workspace-detail-toggle]");
-              const aside = page.locator(".k2b-app-workspace__detail");
-              expect(await button.isVisible()).toBe(true);
-              expect(await aside.getAttribute("hidden")).not.toBeNull();
-              await button.focus();
-              await page.keyboard.press("Enter");
-              await settled(page);
-              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-              expect(await button.getAttribute("aria-expanded")).toBe("true");
-              if (width === 1920) {
-                // Pointer focus stays on a persistent control even when a resize
-                // leaves the Detail in its column instead of hiding that control.
-                await button.click();
-                await button.click();
-                await page.setViewportSize({ width: 1900, height: 900 });
-                await settled(page);
-                expect(await button.getAttribute("aria-expanded")).toBe("true");
-                expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
-              }
-              // Escape closes the wide column; the shared head control remains the way back.
-              if (width >= 1024) await pressEscapeForWorkspace(page);
-              else await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
-              await settled(page);
-              expect(await button.isVisible()).toBe(true);
-              expect(await button.getAttribute("aria-expanded")).toBe("false");
-              expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
-              await page.setViewportSize({ width: width === 1920 ? 834 : 1920, height: 900 });
-              await settled(page);
-              expect(await button.isVisible()).toBe(true);
-              // Parking retained the available app detail; widening restores its column.
-              if (width === 1440) {
-                expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-                await button.click();
-                await settled(page);
-                expect(await aside.getAttribute("hidden")).not.toBeNull();
-              }
-              await button.click();
-              await settled(page);
-              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-              expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
-            } finally {
-              await close(page);
-            }
-          });
-        }
-
-        // A window that the Detail cannot take as a column closes it with its own button, a wide one with Escape.
-        for (const width of [834, 1920]) {
-          test(`persistent Details at ${width}: a closed preference survives reload`, async () => {
-            const page = await open(persistentDetails, width, 900);
-            try {
-              const button = page.locator("[data-app-workspace-detail-toggle]");
-              const aside = page.locator(".k2b-app-workspace__detail");
-              await button.click();
-              await settled(page);
-              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-              if (width < 1024) await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
-              else await pressEscapeForWorkspace(page);
-              await storedDetails(page, false);
-              await page.reload();
-              await page.locator("html[data-mail-shell-ready=true]").waitFor();
-              expect(await button.isVisible()).toBe(true);
-              expect(await button.isEnabled()).toBe(true);
-              expect(await aside.getAttribute("hidden")).not.toBeNull();
-              await button.click();
-              await settled(page);
-              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-            } finally {
-              await close(page);
-            }
-          });
-
-          test(`persistent Details at ${width}: an open preference survives reload`, async () => {
-            const page = await open(persistentDetails, width, 900);
-            try {
-              const button = page.locator("[data-app-workspace-detail-toggle]");
-              const aside = page.locator(".k2b-app-workspace__detail");
-              await button.click();
-              await settled(page);
-              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-              await storedDetails(page, true);
-              await page.reload();
-              await ready(page);
-              // An initially open waiting drawer parks; the app preference still
-              // restores true, while responsive presentation remains separate.
-              expect(await aside.getAttribute("hidden")).toBeNull();
-              if (width < 1024) {
-                expect(await button.getAttribute("aria-expanded")).toBe("false");
-                await button.click();
-                await settled(page);
-              }
-              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-            } finally {
-              await close(page);
-            }
-          });
-        }
-        for (const theme of reviewThemes) {
-          test(`phone pane head: reader Details, persistence and Back in ${theme}`, async () => {
-            const page = await open(`${boxPath}?conversation=Conv01&persist-details=1&theme=${theme}`, 390, 844);
-            const releaseBack = Promise.withResolvers<void>();
-            try {
-              const head = page.locator(".mail-workspace > .k2b-app-workspace__head");
-              const shared = page.locator(".mail-workspace [data-app-workspace-detail-toggle]");
-              const reader = page.locator(".mail-reader-toolbar [data-mail-details-trigger]");
-              const aside = page.locator(".k2b-app-workspace__detail");
-              expect(await head.isVisible()).toBe(false);
-              expect(await shared.isVisible()).toBe(false);
-              const serverFrame: Frame = JSON.parse((await page.locator("html").getAttribute("data-server-geometry"))!);
-              const hydratedFrame: Frame = JSON.parse((await page.locator("html").getAttribute("data-hydrated-geometry"))!);
-              for (const frame of [serverFrame, hydratedFrame])
-                expect(frame.find((part) => part.part === "k2b-app-workspace__head")?.height).toBe(0);
+              const shown = await head
+                .locator("[data-mail-toolbar-action]")
+                .evaluateAll((elements) =>
+                  elements
+                    .filter((element) => element.getClientRects().length > 0)
+                    .map((element) => element.getAttribute("data-mail-toolbar-action")),
+                );
+              if (width >= 1440) expect(shown).toEqual(["done", "archive", "trash", "later", "assign"]);
+              else expect(shown[0]).toBe("done");
+              expect(await head.locator("[data-mail-reader-more]").isVisible()).toBe(true);
+              // The subject never wraps; the chip row stays one line.
+              const title = await page.locator("[data-mail-reader-heading]").evaluate((element) => ({
+                lines: Math.round(element.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(element).lineHeight)),
+                clipped: element.scrollWidth > element.clientWidth,
+              }));
+              expect(title).toEqual({ lines: 1, clipped: true });
+              const chips = page.locator("[data-mail-reader-chips]");
+              expect(Math.round((await chips.boundingBox())!.height)).toBe(28);
+              expect(await chips.getByText("Waiting for reply").isVisible()).toBe(true);
               expect(
-                await page.locator(".mail-workspace").evaluate((root) => {
-                  const content = root.querySelector(":scope > .k2b-app-workspace__content")!;
-                  return content.getBoundingClientRect().top - root.getBoundingClientRect().top - root.clientTop;
-                }),
+                await page.locator("[data-mail-details-trigger], [data-app-workspace-detail-toggle], .k2b-app-workspace__detail").count(),
               ).toBe(0);
-              expect(await reader.isVisible()).toBe(true);
-              expect(await aside.getAttribute("hidden")).not.toBeNull();
-              const shots = screenshots;
-              if (shots) {
-                mkdirSync(resolve(shots, browserName), { recursive: true });
-                await page.screenshot({ path: resolve(shots, browserName, `f6-reader-${theme}-390.png`) });
-              }
-              await reader.focus();
-              await page.keyboard.press("Enter");
-              await settled(page);
-              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-              expect(await reader.getAttribute("aria-expanded")).toBe("true");
-              await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
-              await settled(page);
-              expect(await reader.evaluate((element) => element === document.activeElement)).toBe(true);
-              expect(await reader.getAttribute("aria-expanded")).toBe("false");
-              expect(await shared.isVisible()).toBe(false);
-              await page.waitForFunction((expected) => {
-                const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
-                return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === expected;
-              }, false);
-              const closedCookie = await storedCookie(page, "cloud_mail_workspace");
-              expect(JSON.parse(decodeURIComponent(closedCookie!.value)).detailsOpen).toBe(false);
-              await page.reload();
-              await ready(page);
-              expect(await aside.getAttribute("hidden")).not.toBeNull();
-              await reader.click();
-              await settled(page);
-              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-              await page.waitForFunction((expected) => {
-                const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
-                return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === expected;
-              }, true);
-              const openCookie = await storedCookie(page, "cloud_mail_workspace");
-              expect(JSON.parse(decodeURIComponent(openCookie!.value)).detailsOpen).toBe(true);
-              await page.reload();
-              await ready(page);
-              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+              expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+              // Everything the head hides stays in "…".
+              await head.locator("[data-mail-reader-more]").click();
+              const rows = (await page.getByRole("menuitem").allTextContents()).map((row) => row.trim());
+              for (const name of ["Archive", "Move to Trash", "Show later…", "Assign", "Show activity", "Print conversation"])
+                expect(rows, name).toContain(name);
               await page.keyboard.press("Escape");
-              await settled(page);
-              expect(await reader.evaluate((element) => element === document.activeElement)).toBe(true);
-              expect(await aside.getAttribute("hidden")).not.toBeNull();
-              await page.locator(".mail-reader-back").click();
-              await page.waitForFunction(() => !new URL(location.href).searchParams.has("conversation"));
-              await settled(page);
-              expect(await head.isVisible()).toBe(true);
-              // The phone list head carries no Details; the reader owns that control.
-              expect(await shared.isVisible()).toBe(false);
-              if (shots) await page.screenshot({ path: resolve(shots, browserName, `f6-list-${theme}-390.png`) });
-              const backRoute = "**/api/mail/mailboxes/Box001/workspace-route?*";
-              await page.route(
-                backRoute,
-                async (route) => {
-                  await releaseBack.promise;
-                  await route.continue();
-                },
-                { times: 1 },
-              );
-              await Promise.all([page.waitForRequest(backRoute), page.goBack()]);
-              await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
-              await settled(page);
-              // History moves the URL before Mail commits its asynchronous selection.
-              // While the response is held, the still-shown list must keep its head.
-              const main = page.locator(".mail-workspace .k2b-app-workspace__main");
-              expect(await main.getAttribute("aria-busy")).toBe("true");
-              expect(await main.getAttribute("data-mobile-pane")).toBe("conversations");
-              expect(await head.isVisible()).toBe(true);
-              releaseBack.resolve();
-              await ready(page);
-              expect(await main.getAttribute("data-mobile-pane")).toBe("main");
-              expect(await head.isVisible()).toBe(false);
-              expect(await reader.isVisible()).toBe(true);
-              await page.setViewportSize({ width: 834, height: 1194 });
-              await settled(page);
-              expect(await head.isVisible()).toBe(true);
-              expect(await shared.isVisible()).toBe(true);
-              expect(await reader.isVisible()).toBe(false);
-              await page.setViewportSize({ width: 390, height: 844 });
-              await settled(page);
-              expect(await shared.isVisible()).toBe(false);
-              expect(await reader.isVisible()).toBe(true);
-            } finally {
-              releaseBack.resolve();
-              try {
-                await page.unrouteAll({ behavior: "wait" });
-              } finally {
-                await close(page);
+              if (screenshots) {
+                mkdirSync(join(screenshots, browserName), { recursive: true });
+                await page.screenshot({ path: join(screenshots, browserName, `reader-head-light-${width}.png`) });
               }
+            } finally {
+              await close(page);
             }
           });
-        }
 
-        test("persistent Details: conversation Back keeps the same closed preference", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01&shell=1&persist-details=1`, 834, 900);
+        test("notes: an internal note stands centered at its time, a deleted one leaves a quiet line, never a message head", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&notes=1`, 1440, 900);
           try {
-            const button = page.locator("[data-app-workspace-detail-toggle]");
-            const aside = page.locator(".k2b-app-workspace__detail");
-            await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
-            await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
-            await settled(page);
-            expect(await button.isVisible()).toBe(true);
-            expect(await aside.getAttribute("hidden")).not.toBeNull();
-            await page.goBack();
-            await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
-            await settled(page);
-            expect(await button.isVisible()).toBe(true);
-            expect(await button.isEnabled()).toBe(true);
-            expect(await aside.getAttribute("hidden")).not.toBeNull();
-            await button.click();
-            await settled(page);
-            expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-          } finally {
-            await close(page);
-          }
-        });
-
-        test("persistent Details: no selection keeps the head control disabled", async () => {
-          const page = await open(`${boxPath}?shell=1`, 834, 900);
-          try {
-            const button = page.locator("[data-app-workspace-detail-toggle]");
-            expect(await button.isVisible()).toBe(true);
-            expect(await button.isDisabled()).toBe(true);
-            expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
-          } finally {
-            await close(page);
-          }
-        });
-
-        test("#1467: while the details wait, the sole shared Details button opens and parks the drawer", async () => {
-          const page = await open(widePath(), 1440, 900);
-          try {
-            const button = page.locator("[data-app-workspace-detail-toggle]");
-            expect(await page.locator("[data-mail-details-trigger]").isVisible()).toBe(false);
-            expect((await wide(page)).detail).toBe("waiting");
-            await button.click();
-            await settled(page);
-            expect((await wide(page)).detail).toBe("drawer");
-            expect(await button.getAttribute("aria-expanded")).toBe("true");
-            // The open drawer covers the reader's end; Escape parks it again.
+            const note = page.locator('[data-mail-note="Note01"]');
+            await note.waitFor();
+            expect(await note.getByText("Internal note from Nora Example").isVisible()).toBe(true);
+            expect(await note.getByText("internal", { exact: true }).isVisible()).toBe(true);
+            expect(await note.locator(".k2b-avatar, [data-mail-message-header]").count()).toBe(0);
+            const order = await page
+              .locator("[data-mail-conversation-messages] > *")
+              .evaluateAll((elements) =>
+                elements.map((element) => element.getAttribute("data-mail-note") ?? element.getAttribute("data-mail-message-id")),
+              );
+            expect(order).toEqual(["Note01", "Note02", "Msg001"]);
+            expect(await page.getByText("Note from Nora Example deleted").isVisible()).toBe(true);
+            const [tile, column] = await Promise.all([note.boundingBox(), page.locator("[data-mail-conversation-messages]").boundingBox()]);
+            expect(Math.abs(tile!.x - column!.x - (column!.x + column!.width - tile!.x - tile!.width))).toBeLessThanOrEqual(1);
+            // The note's "…" edits it in place.
+            await note.getByRole("button", { name: "Note actions" }).click();
+            await page.getByRole("menuitem", { name: "Edit" }).click();
+            await note.locator("textarea").waitFor();
+            expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
             await page.keyboard.press("Escape");
-            await settled(page);
-            expect((await wide(page)).detail).toBe("waiting");
-            expect(await button.getAttribute("aria-expanded")).toBe("false");
-            // Keyboard: Enter opens it again and moves into the details.
-            await button.focus();
-            await page.keyboard.press("Enter");
-            await settled(page);
-            expect((await wide(page)).detail).toBe("drawer");
-            expect(await page.evaluate(() => Boolean(document.activeElement?.closest(".k2b-app-workspace__detail")))).toBe(true);
+            await note.locator("textarea").waitFor({ state: "detached" });
+            if (screenshots) await page.screenshot({ path: join(screenshots, `notes-light-1440.png`) });
           } finally {
             await close(page);
           }
         });
 
-        test("the reply pill never reaches past itself or the reader: labels give way to icons, then actions move into More", async () => {
-          for (const [width, height] of [
-            [1920, 1080],
-            [1440, 900],
-            [1194, 834],
-            [900, 900],
-            [834, 1194],
-            [390, 844],
-            [320, 640],
-          ] as const) {
+        test("hint: once at the chip row, where notes and the details went; Got it stores it as seen", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&hints=reader-head-moved`, 1440, 900);
+          try {
+            const hint = page.locator(".k2b-moved-hint:popover-open");
+            await hint.waitFor();
+            expect(await hint.textContent()).toContain("Notes are now in the timeline, everything else is here in the head.");
+            const seen = page.waitForRequest(
+              (request) => request.method() === "PUT" && request.url().endsWith("/workspace-preference/seen-hints"),
+            );
+            await page.route("**/workspace-preference/seen-hints", (route) =>
+              route.fulfill({ json: { listShare: null, seenHints: ["reader-head-moved"] } }),
+            );
+            await hint.getByRole("button", { name: "Got it" }).click();
+            expect((await seen).postDataJSON()).toEqual({ hintId: "reader-head-moved" });
+            await hint.waitFor({ state: "detached" });
+          } finally {
+            await close(page);
+          }
+        });
+
+        test("sender: a click opens the card with the address, earlier conversations, and the sender's actions", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01`, 1440, 900);
+          try {
+            await page.route("**/api/mail/mailboxes/Box001/sender-conversations?*", (route) =>
+              route.fulfill({
+                json: {
+                  items: [
+                    {
+                      id: "Conv05",
+                      subject: "Invented earlier request",
+                      participantSummary: "Example sender",
+                      latestMessageAt: "2026-09-01T10:00:00.000Z",
+                      preview: null,
+                    },
+                  ],
+                  total: 1,
+                },
+              }),
+            );
+            const trigger = page.locator("[data-mail-sender-trigger]").first();
+            await trigger.click();
+            const card = page.getByRole("dialog", { name: "About Example sender" });
+            await card.waitFor();
+            await card.getByText("Invented earlier request").waitFor();
+            // The fixture has no contact app behind the directory: the card says so, keeps the address, and offers Retry.
+            expect(await card.getByText("sender@example.test").isVisible()).toBe(true);
+            expect(await card.getByText("The contact could not be loaded").isVisible()).toBe(true);
+            expect(await card.getByRole("button", { name: "Retry" }).isVisible()).toBe(true);
+            expect(await card.getByText("All messages from this sender").isVisible()).toBe(true);
+            expect(await trigger.getAttribute("aria-expanded")).toBe("true");
+            await page.keyboard.press("Escape");
+            await card.waitFor({ state: "hidden" });
+            expect(await trigger.evaluate((element) => element === document.activeElement)).toBe(true);
+          } finally {
+            await close(page);
+          }
+        });
+
+        // One case per width, each on its own page (#1966).
+        for (const [width, height] of [
+          [1920, 1080],
+          [1440, 900],
+          [1194, 834],
+          [900, 900],
+          [834, 1194],
+          [390, 844],
+          [320, 640],
+        ] as const)
+          test(`the reply box at ${width} stays inside the reader, below the newest message`, async () => {
             const page = await open(`${boxPath}?conversation=Conv01&theme=dark`, width, height);
             try {
-              await page.waitForFunction(
-                () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
-              );
+              const frame = page.locator("[data-mail-reply-box-frame]");
+              await frame.waitFor();
               const fit = await page.evaluate(() => {
-                const pill = document.querySelector<HTMLElement>("[data-mail-reply-pill] .k2b-toolbar")!;
+                const box = document.querySelector<HTMLElement>("[data-mail-reply-box-frame]")!.getBoundingClientRect();
                 const reader = document.querySelector<HTMLElement>(".mail-reader-scroll")!.getBoundingClientRect();
-                const box = pill.getBoundingClientRect();
-                const controls = Array.from(pill.querySelectorAll<HTMLElement>("button")).filter(
-                  (button) => button.getClientRects().length > 0 && !button.closest("[data-overflow]"),
-                );
-                const outside = controls
-                  .map((button) => ({
-                    name: button.getAttribute("aria-label") ?? button.textContent?.trim(),
-                    box: button.getBoundingClientRect(),
-                  }))
-                  .filter(({ box: control }) => control.left < box.left - 0.5 || control.right > box.right + 0.5)
-                  .map(({ name }) => name);
-                const labels = Array.from(pill.querySelectorAll<HTMLElement>(".k2b-toolbar__text")).filter(
-                  (label) => label.getClientRects().length > 0,
-                ).length;
+                const messages = document.querySelector<HTMLElement>("[data-mail-conversation-messages]")!.getBoundingClientRect();
                 return {
                   inReader: box.left >= reader.left - 0.5 && box.right <= reader.right + 0.5,
-                  outside,
-                  reply: controls.find((button) => button.classList.contains("mail-reader-pill-reply"))?.textContent?.trim(),
-                  labels,
-                  labelled: pill.querySelectorAll(".k2b-toolbar__action[data-text]:not([data-overflow])").length,
-                  compact: pill.hasAttribute("data-compact"),
-                  more: controls.some((button) => button.closest(".k2b-toolbar__more")),
+                  below: box.top >= messages.bottom - 0.5,
                 };
               });
-              expect(fit.inReader, `${width} pill inside the reader`).toBe(true);
-              expect(fit.outside, `${width} controls inside the pill`).toEqual([]);
-              // Reply always keeps its word.
-              expect(fit.reply, `${width} Reply`).toBe("Reply");
-              // Labels show only while there is room; a compact pill shows none, and More comes only after labels went.
-              if (fit.compact) expect(fit.labels, `${width} labels`).toBe(0);
-              else expect(fit.labels, `${width} labels`).toBe(fit.labelled);
-              if (fit.more) expect(fit.compact, `${width} More after labels`).toBe(true);
-              // The widest reader has room for every label; the narrowest phone has not.
-              if (width === 1920) expect(fit.compact, "1920 shows the labels").toBe(false);
-              if (width === 320) expect(fit.compact, "320 is compact").toBe(true);
+              expect(fit.inReader, `${width} box inside the reader`).toBe(true);
+              expect(fit.below, `${width} box below the newest message`).toBe(true);
+              expect(await page.locator("[data-mail-reply-pill]").count()).toBe(0);
             } finally {
               await close(page);
             }
-          }
-        });
+          });
 
-        test("a team mailbox's pill row from 760 to 240 px: never clipped, Reply stays, More fills by priority", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01&team=1`, 1440, 900);
-          try {
-            const pending = () =>
-              page.waitForFunction(
-                () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
-              );
-            await pending();
-            const order = ["Assign", "Forward", "Reply all", "Mark as done"];
-            for (let width = 760; width >= 240; width -= 10) {
-              await page.evaluate((width) => {
-                document.querySelector<HTMLElement>("[data-mail-reading-column]")!.style.width = `${width}px`;
-              }, width);
-              await pending();
-              await page.evaluate(
-                () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
-              );
-              const state = await page.evaluate(() => {
-                const strip = document.querySelector<HTMLElement>("[data-mail-reply-pill] .k2b-toolbar-float")!;
-                const pill = strip.querySelector<HTMLElement>(".k2b-toolbar")!;
-                const row = strip.getBoundingClientRect();
-                const box = pill.getBoundingClientRect();
-                const present = Array.from(pill.querySelectorAll<HTMLElement>(".k2b-toolbar__action")).map((action) => ({
-                  name: action.getAttribute("aria-label")!,
-                  moved: action.hasAttribute("data-overflow"),
-                }));
-                return {
-                  inside: box.left >= row.left - 0.5 && box.right <= row.right + 0.5,
-                  fits: pill.scrollWidth <= Math.ceil(row.width) + 0.5,
-                  reply: pill.querySelector(".mail-reader-pill-reply")?.getClientRects().length ?? 0,
-                  present: present.map((action) => action.name),
-                  moved: present.filter((action) => action.moved).map((action) => action.name),
-                };
-              });
-              expect(state.inside, `${width} inside`).toBe(true);
-              expect(state.fits, `${width} fits`).toBe(true);
-              expect(state.reply, `${width} Reply`).toBe(1);
-              // What moved into More is always the first actions of the priority order that this pill has.
-              const expected = order.filter((name) => state.present.includes(name)).slice(0, state.moved.length);
-              expect(new Set(state.moved), `${width} More order`).toEqual(new Set(expected));
-            }
-          } finally {
-            await close(page);
-          }
-        });
-
-        test("phone: the reply pill at the bottom, in thumb reach, offers Reply, Reply all, Forward and Done by touch and keyboard", async () => {
+        test("phone: the reply box waits at the bottom of the conversation, in thumb reach; Done is in the head", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
           try {
-            const bar = page.locator("[data-mail-reply-pill] .k2b-toolbar");
-            await page.waitForFunction(
-              () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
-            );
-            expect(await bar.isVisible()).toBe(true);
-            const names = await bar
-              .locator("button")
-              .evaluateAll((elements) =>
-                elements
-                  .filter((element) => element.getClientRects().length > 0 && !element.closest("[data-overflow]"))
-                  .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
-              );
-            // Reply leads and keeps its word; every action is reachable in the pill or, when the phone is too narrow
-            // for its engine's metrics, under More, which then is the last control.
-            expect(names[0]).toBe("Reply");
-            const inMore = names.includes("More actions")
-              ? await (async () => {
-                  await bar.getByRole("button", { name: "More actions" }).click();
-                  const rows = await page.getByRole("menuitem").allTextContents();
-                  await page.keyboard.press("Escape");
-                  return rows.map((row) => row.trim());
-                })()
-              : [];
-            // F10 c: Reply, Reply all, Forward | Done, and Assign only where people can be assigned; Archive is in the head's ….
-            const reachable = new Set([...names.filter((name) => name !== "More actions"), ...inMore]);
-            for (const name of ["Reply", "Reply all", "Forward", "Mark as done"]) expect(reachable.has(name), name).toBe(true);
-            expect([...reachable].every((name) => ["Reply", "Reply all", "Forward", "Mark as done", "Assign"].includes(name))).toBe(true);
-            // F1: on a phone the pill waits at the bottom of the reader, below the newest message, never below the screen.
+            const box = page.locator("[data-mail-reply-box-frame]");
+            await box.waitFor();
             const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
-            const strip = (await bar.boundingBox())!;
-            const newest = (await page.locator("[data-mail-conversation-messages] [data-mail-message-id]").first().boundingBox())!;
-            expect(strip.y).toBeGreaterThanOrEqual(newest.y + newest.height - 0.5);
-            expect(strip.y + strip.height).toBeLessThanOrEqual(scroller.y + scroller.height + 0.5);
-            expect(strip.y + strip.height).toBeGreaterThan(scroller.y + scroller.height * 0.8);
-            // A floating pill on layer 3 carries the toolbar shadow.
-            expect(await bar.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
-            // The top row keeps the way back, … and the details; the actions live below.
-            expect(
-              await page
-                .locator(".mail-reader-toolbar [data-mail-toolbar-action]")
-                .evaluateAll((elements) => elements.filter((element) => element.getClientRects().length > 0).length),
-            ).toBe(0);
-            expect(await page.locator(".mail-reader-toolbar [data-mail-details-trigger]").isVisible()).toBe(true);
-            // Keyboard: the pill is one tab stop with arrow keys inside.
-            await bar.getByRole("button", { name: "Reply", exact: true }).focus();
-            await page.keyboard.press("ArrowRight");
-            expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(names[1]!);
+            const newest = (await page.locator("[data-mail-conversation-messages] [data-mail-message-id]").last().boundingBox())!;
+            const frame = (await box.boundingBox())!;
+            expect(frame.y).toBeGreaterThanOrEqual(newest.y + newest.height - 0.5);
+            expect(frame.x).toBeGreaterThanOrEqual(scroller.x - 0.5);
+            expect(frame.x + frame.width).toBeLessThanOrEqual(scroller.x + scroller.width + 0.5);
+            // The head keeps ×, the subject, Done and "…" on a phone; there is no details control any more.
+            expect(await page.locator('[data-mail-reader-toolbar] [data-mail-toolbar-action="done"]').isVisible()).toBe(true);
+            expect(await page.locator("[data-mail-details-trigger]").count()).toBe(0);
             // Touch: Done marks the conversation done.
             await page.route("**/api/mail/mailboxes/Box001/conversations/completion", (route) =>
               route.fulfill({
@@ -3623,11 +2958,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               }),
             );
             const completed = page.waitForRequest((request) => request.url().endsWith("/conversations/completion"));
-            if (names.includes("Mark as done")) await bar.getByRole("button", { name: "Mark as done" }).tap();
-            else {
-              await bar.getByRole("button", { name: "More actions" }).tap();
-              await page.getByRole("menuitem", { name: "Mark as done" }).tap();
-            }
+            await page.locator('[data-mail-reader-toolbar] [data-mail-toolbar-action="done"]').tap();
             expect((await completed).postDataJSON()).toEqual({ conversationIds: ["Conv01"], completion: "done" });
           } finally {
             await close(page);
@@ -3688,81 +3019,50 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("reader: a conversation taller than the reader opens at its start, with the subject in view", async () => {
+        test("reader: a conversation taller than the reader opens at the start of its newest message, with the head in view", async () => {
           const page = await open(widePath({ path: `${boxPath}?conversation=Conv02` }), 1440, 480 as 900);
           try {
             const scroller = page.locator(".mail-reader-scroll");
             expect(await scroller.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
-            expect(await scroller.evaluate((element) => element.scrollTop)).toBe(0);
+            await settled(page);
+            const [view, newest] = await Promise.all([
+              scroller.boundingBox(),
+              page.locator("[data-mail-conversation-messages] [data-mail-message-id]").last().boundingBox(),
+            ]);
+            // Its start is in view; at the end of the content it may stand lower than the top.
+            expect(newest!.y).toBeGreaterThanOrEqual(view!.y - 0.5);
+            expect(newest!.y).toBeLessThan(view!.y + view!.height - 40);
             expect(await page.locator("[data-mail-reader-heading]").isVisible()).toBe(true);
+            // The head and the list hold still from the server frame on; only the timeline scrolls to the newest message.
             const server = await recordedFrame(page, "server");
-            const read = (parts: Frame) => parts.map((part) => ({ ...part, part: part.part.replace(" mail-list-entry-unread", "") }));
+            const read = (parts: Frame) =>
+              parts
+                .filter((part) => !part.part.includes("mail-reading-column"))
+                .map((part) => ({ ...part, part: part.part.replace(" mail-list-entry-unread", "") }));
             assertFrame(read(server), read(await geometry(page)), "tall conversation settled");
           } finally {
             await close(page);
           }
         });
 
-        test("rows: three-line rows share one height, a fourth line only for tags, Waiting, or others who wrote", async () => {
+        test("rows: beside the reader at 1440 every row has three lines of one height, tags and all", async () => {
           const page = await open(widePath(), 1440, 900);
           try {
-            const rows = await page.locator(".mail-workspace .mail-list-entry").evaluateAll((elements) =>
-              elements
-                .filter((element) => element.getBoundingClientRect().bottom < innerHeight)
-                .map((element) => ({
-                  lines: element.getAttribute("data-lines"),
-                  height: element.getBoundingClientRect().height,
-                })),
-            );
+            const rows = await page
+              .locator(".mail-workspace .mail-list-entry")
+              .evaluateAll((elements) =>
+                elements
+                  .filter((element) => element.getBoundingClientRect().bottom < innerHeight)
+                  .map((element) => element.getBoundingClientRect().height),
+              );
             expect(rows.length).toBeGreaterThan(4);
-            for (const row of rows)
-              expect(Math.abs(row.height - (row.lines === "4" ? 102 : 77)), JSON.stringify(row)).toBeLessThanOrEqual(0.5);
-            expect(rows.filter((row) => row.lines === "3").length).toBeGreaterThan(3);
+            for (const height of rows) expect(Math.abs(height - 78)).toBeLessThanOrEqual(0.5);
           } finally {
             await close(page);
           }
         });
 
-        test("opening the waiting Detail moves nothing; closing a column gives only the reader its room", async () => {
-          const waiting = await open(widePath(), 1440, 900);
-          try {
-            const before = await wide(waiting);
-            await waiting.locator(".mail-workspace .k2b-app-workspace__detail-toggle").click();
-            await settled(waiting);
-            const after = await wide(waiting);
-            expect(after.detail).toBe("drawer");
-            for (const part of ["pane", "reader", "toolbar", "sidebar", "head"] as const)
-              sameBox(after[part], before[part], `1440 ${part}`);
-            // Reduced motion: the drawer opened without a transition.
-            expect(
-              await waiting.locator(".mail-workspace .k2b-app-workspace__detail").evaluate((element) =>
-                getComputedStyle(element)
-                  .transitionDuration.split(",")
-                  .every((value) => Number.parseFloat(value) === 0),
-              ),
-            ).toBe(true);
-          } finally {
-            await close(waiting);
-          }
-          const column = await open(widePath(), 1920, 1080);
-          try {
-            const before = await wide(column);
-            expect(before.detail).toBe("column");
-            await column.locator("[data-app-workspace-detail-toggle]").click();
-            await settled(column);
-            const after = await wide(column);
-            expect(after.detail).toBe("closed");
-            for (const part of ["pane", "sidebar"] as const) sameBox(after[part], before[part], `1920 ${part}`);
-            // The head row shares its track with Main, so only its end follows the column away.
-            sameBox({ ...after.head!, width: 0 }, { ...before.head!, width: 0 }, "1920 head start");
-            sameBox({ ...after.reader!, width: 0 }, { ...before.reader!, width: 0 }, "1920 reader start");
-            expect(after.reader!.width).toBeGreaterThan(before.reader!.width);
-          } finally {
-            await close(column);
-          }
-        });
-
-        test("dark at 1920: the Detail column shares the reader's surface, with no seam", async () => {
+        test("dark at 1920: the reader shares the list's surface, with no seam", async () => {
           const page = await open(`${widePath()}&theme=dark`, 1920, 1080);
           try {
             const seam = await page.evaluate(() => {
@@ -3773,20 +3073,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 }
                 return "none";
               };
-              const aside = document.querySelector(".mail-workspace .k2b-app-workspace__detail")!;
-              const style = getComputedStyle(aside);
+              const reader = document.querySelector(".mail-reader")!;
+              const style = getComputedStyle(reader);
               return {
-                detail: surface(aside),
                 reader: surface(document.querySelector(".mail-reader")),
-                list: surface(document.querySelector(".mail-workspace .k2b-app-workspace__main-pane")),
-                borders: [style.borderLeftWidth, style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth],
+                list: surface(document.querySelector(".mail-workspace .mail-split-list")),
                 shadow: style.boxShadow,
               };
             });
-            // One surface: the list, the reader and the Detail column (the reader drew a raised dark fill before).
-            expect(seam.detail).toBe(seam.list);
-            expect(seam.reader).toBe(seam.detail);
-            expect(seam.borders).toEqual(["0px", "0px", "0px", "0px"]);
+            // One surface: the list and the reader (the reader drew a raised dark fill before).
+            expect(seam.reader).toBe(seam.list);
             expect(seam.shadow).toBe("none");
             if (screenshots) await page.screenshot({ path: join(resolve(screenshots), "wide-dark-1920.png") });
           } finally {
@@ -3908,9 +3204,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             };
             expect(await settledMenuState({ open: true, title: false })).toEqual({ open: true, title: false });
             // Answers lead; taking the conversation follows, high and visible, then Done.
-            expect(rowItems.slice(0, 3)).toEqual(["Reply", "Reply in new window", "Forward"]);
-            expect(rowItems[3]).toBe("Assign to meNora Example stays responsible");
-            expect(rowItems[4]).toBe("Mark as done");
+            expect(rowItems.slice(0, 2)).toEqual(["Reply", "Forward"]);
+            expect(rowItems[2]).toBe("Assign to meNora Example stays responsible");
+            expect(rowItems[3]).toBe("Mark as done");
             expect(rowItems).toContain("Archive");
             expect(rowItems.at(-1)).toBe("Copy conversation Cloud ID");
             await dismiss(page, dropdown);
@@ -3961,16 +3257,20 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("only the pill shows Reply; a message's right-click and … still reply to that message", async () => {
+        test("the reply box stands open and each open message has one reply arrow; a message's right-click and … reply into the box", async () => {
           const page = await open(`${boxPath}?conversation=Conv01&identity=1`);
           try {
-            await page.waitForFunction(
-              () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
-            );
-            // Never two Replies side by side: the reader shows Reply, Reply all, and Forward only in the pill.
+            await page.locator("[data-mail-reply-box-frame]").waitFor();
+            // Mail v5: besides the box, each open message has one reply arrow beside its date; nothing else replies.
+            expect(await page.locator('[data-mail-message-id="Msg001"] [data-mail-message-reply]').count()).toBe(1);
             const visible = await page.locator(".mail-reader").evaluate((reader) =>
               Array.from(reader.querySelectorAll<HTMLElement>("button, a"))
-                .filter((element) => element.getClientRects().length > 0 && !element.closest("[data-mail-reply-pill]"))
+                .filter(
+                  (element) =>
+                    element.getClientRects().length > 0 &&
+                    !element.closest("[data-mail-reply-box-frame]") &&
+                    !element.hasAttribute("data-mail-message-reply"),
+                )
                 .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "")
                 .filter((name) => /^(Reply|Reply all|Forward)(,|$)/.test(name)),
             );
@@ -3980,26 +3280,24 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             for (const name of ["Reply", "Forward"])
               expect(await page.locator(dropdown).getByRole("menuitem", { name, exact: true }).count(), `${name} in …`).toBe(1);
             await dismiss(page, dropdown);
-            // Right-click on the message: Reply starts the draft in the conversation from this message's own menu.
-            const seed = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/draft-seeds"));
+            // Right-click on the message: Reply lands in the box; no second draft, no "Continue draft?" dialog.
             await message.locator("[data-mail-message-header]").click({ button: "right" });
             await page.locator(contextMenu).getByRole("menuitem", { name: "Reply", exact: true }).click();
-            expect((await seed).postDataJSON()).toMatchObject({
-              origin: { kind: "compose", input: { intent: "reply", sourceMessageId: "Msg001" } },
-            });
+            expect(await page.locator("[data-mail-reply-box-frame]").count()).toBe(1);
+            expect(await page.getByRole("dialog").count()).toBe(0);
           } finally {
             await close(page);
           }
         });
 
-        test("the pill marks done; Archive stays in the head's …", async () => {
+        test("the head marks done and archives; the … menu keeps the row's order", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`);
           try {
-            const toolbar = page.locator(".mail-reader-toolbar");
-            expect(await toolbar.locator('[data-mail-toolbar-action="archive"]').count()).toBe(0);
-            expect(await toolbar.locator('[data-mail-toolbar-action="done"]').count()).toBe(0);
-            const done = page.locator("[data-mail-reply-pill]").getByRole("button", { name: "Mark as done", exact: true });
+            const toolbar = page.locator("[data-mail-reader-toolbar]");
+            expect(await toolbar.locator('[data-mail-toolbar-action="archive"]').isVisible()).toBe(true);
+            const done = toolbar.getByRole("button", { name: "Done", exact: true });
             expect(await done.isVisible()).toBe(true);
+            expect(await page.locator("[data-mail-reply-box-frame]").getByRole("button", { name: "Mark as done" }).count()).toBe(0);
             await page.route("**/api/mail/mailboxes/Box001/conversations/completion", (route) =>
               route.fulfill({
                 json: { completion: "done", results: [{ conversationId: "Conv01", status: "ok", workStatus: "done", revision: 2 }] },
@@ -4012,7 +3310,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             // The reader's … menu has the row's order, and Archive keeps its path there.
             await page.getByRole("button", { name: "More conversation actions" }).click();
             const items = await menuEntries(page, dropdown);
-            expect(items.slice(0, 4)).toEqual(["Reply", "Reply in new window", "Reply all", "Forward"]);
+            expect(items.slice(0, 3)).toEqual(["Reply", "Reply all", "Forward"]);
             const archived = page.waitForRequest((request) => request.url().endsWith("/actions") && request.method() === "POST");
             await page.locator(dropdown).getByRole("menuitem", { name: "Archive", exact: true }).click();
             expect(JSON.stringify((await archived).postDataJSON())).toContain("archive");
@@ -4021,11 +3319,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("a done conversation offers Reopen in the pill and in its menus", async () => {
+        test("a done conversation offers Reopen in the head and in its menus", async () => {
           const page = await open(`${boxPath}?conversation=Conv01&work=done&locale=de`);
           try {
             expect(
-              await page.locator("[data-mail-reply-pill]").getByRole("button", { name: "Wieder öffnen", exact: true }).isVisible(),
+              await page.locator("[data-mail-reader-toolbar]").getByRole("button", { name: "Wieder öffnen", exact: true }).isVisible(),
             ).toBe(true);
             await page.locator("[data-mail-reader-heading]").click({ button: "right" });
             const items = await menuEntries(page, contextMenu);
@@ -4107,80 +3405,25 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
-        for (const [locale, summary] of [
-          [
-            "en",
-            "17 participants · External: Sender 5 · Team: Lea Brandt, Tom Keller, Anna Roth, Ben Fischer, Clara Hoff, David Lang, Eva Pohl, Finn Braun, Greta Vogel and 7 more",
-          ],
-          [
-            "de",
-            "17 Beteiligte · Extern: Sender 5 · Team: Lea Brandt, Tom Keller, Anna Roth, Ben Fischer, Clara Hoff, David Lang, Eva Pohl, Finn Braun, Greta Vogel und 7 weitere",
-          ],
+        for (const [locale, both] of [
+          ["en", "Responsible: You, Nora Example"],
+          ["de", "Zuständig: Du, Nora Example"],
         ] as const)
-          test(`the wide list shows who wrote, three faces and +n, and names them in a tooltip (${locale})`, async () => {
-            const page = await open(`${boxPath}?layout=columns&team=1&locale=${locale}`);
+          test(`a shared mailbox's rows show who is responsible: one face, you first, then +n (${locale})`, async () => {
+            const page = await open(`${boxPath}?team=1&locale=${locale}`);
             try {
-              const stack = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"] [data-mail-participants]`);
-              expect(await stack("Conv05").getAttribute("aria-label")).toBe(summary);
-              expect(await stack("Conv05").locator(".k2b-avatar").count()).toBe(3);
-              expect(await stack("Conv05").locator(".k2b-avatar-stack__more").textContent()).toBe("+14");
-              // A row where only its sender wrote shows that sender alone.
-              expect(await stack("Conv01").locator(".k2b-avatar").count()).toBe(1);
-              expect(await stack("Conv01").locator(".k2b-avatar-stack__more").count()).toBe(0);
-              // Every stack starts at the same place and has the same width, so no row moves its columns.
-              const boxes = await page.locator(".mail-workspace .mail-row-participants-cell").evaluateAll((cells) =>
-                cells.map((cell) => {
-                  const { left, width } = cell.getBoundingClientRect();
-                  return { left, width };
-                }),
-              );
-              expect(boxes.length).toBe(12);
-              for (const box of boxes) expect(box).toEqual(boxes[0]!);
-              await stack("Conv05").hover();
-              await page.getByRole("tooltip").filter({ hasText: summary }).waitFor();
-              if (screenshots && locale === "de") {
-                mkdirSync(join(screenshots, browserName), { recursive: true });
-                await page.screenshot({ path: join(screenshots, browserName, "participants-light-1440.png") });
-                // Phones keep their two-line rows; who wrote waits in the reader.
-                const phone = await open(`${boxPath}?layout=columns&team=1&locale=${locale}`, 390);
-                try {
-                  expect(await phone.locator(".mail-workspace .mail-row-participants-cell:visible").count()).toBe(0);
-                  await phone.screenshot({ path: join(screenshots, browserName, "participants-light-390.png") });
-                } finally {
-                  await close(phone);
-                }
-              }
-            } finally {
-              await close(page);
-            }
-          });
-
-        for (const [locale, you, nobody, both] of [
-          ["en", "You", "Nobody", "Responsible: You, Nora Example"],
-          ["de", "Du", "Niemand", "Zuständig: Du, Nora Example"],
-        ] as const)
-          test(`the Responsible column shows the first face and name, you first, then +n (${locale})`, async () => {
-            const page = await open(`${boxPath}?layout=columns&team=1&locale=${locale}`);
-            try {
-              const cell = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"] .mail-row-assignee-cell`);
-              const faces = (id: string) => cell(id).locator("[data-mail-assignees]");
+              const faces = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"] [data-mail-assignees]`);
               expect(await faces("Conv01").locator(".k2b-avatar").count()).toBe(1);
-              expect(await faces("Conv01").locator(".mail-row-assignee-name").textContent()).toBe("Nora Example");
-              expect(await faces("Conv01").locator(".mail-row-count").count()).toBe(0);
+              expect(await faces("Conv01").locator(".k2b-avatar-stack__more").count()).toBe(0);
               expect(await faces("Conv02").locator(".k2b-avatar").count()).toBe(1);
-              expect(await faces("Conv02").locator(".mail-row-assignee-name").textContent()).toBe(you);
-              expect(await faces("Conv02").locator(".mail-row-count").textContent()).toBe("+1");
+              expect(await faces("Conv02").locator(".k2b-avatar-stack__more").textContent()).toBe("+1");
               expect(await faces("Conv02").getAttribute("aria-label")).toBe(both);
-              expect(await cell("Conv03").textContent()).toBe(nobody);
-              // Every cell starts at the same place and has the same width, so no row moves its columns.
-              const boxes = await page.locator(".mail-workspace .mail-row-assignee-cell").evaluateAll((cells) =>
-                cells.map((cell) => {
-                  const { left, width } = cell.getBoundingClientRect();
-                  return { left, width };
-                }),
-              );
-              expect(boxes.length).toBe(12);
-              for (const box of boxes) expect(box).toEqual(boxes[0]!);
+              expect(await faces("Conv03").count()).toBe(0);
+              // The date ends every row at the same edge, whatever marks stand before it.
+              const ends = await page
+                .locator(".mail-workspace .mail-row-time")
+                .evaluateAll((times) => times.map((time) => Math.round(time.getBoundingClientRect().right)));
+              expect(new Set(ends).size).toBe(1);
               await faces("Conv02").hover();
               await page.getByRole("tooltip").filter({ hasText: both }).waitFor();
               if (screenshots && locale === "de") {
@@ -4192,58 +3435,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
-        test("a narrow Responsible column shortens the name and keeps +n inside the column", async () => {
-          const page = await open(`${boxPath}?layout=columns&team=1`, 1024);
-          try {
-            const cell = page.locator('.mail-workspace [data-conversation-id="Conv01"] .mail-row-assignee-cell');
-            await cell.locator("[data-mail-assignees]").waitFor();
-            const fit = await page.locator(".mail-workspace .mail-row-assignee-cell:has(.mail-row-count)").evaluateAll((cells) =>
-              cells.map((element) => {
-                const right = element.getBoundingClientRect().right;
-                return element.querySelector(".mail-row-count")!.getBoundingClientRect().right <= right + 0.5;
-              }),
-            );
-            expect(fit).toEqual([true]);
-            expect(await cell.locator(".mail-row-assignee-name").evaluate((element) => getComputedStyle(element).textOverflow)).toBe(
-              "ellipsis",
-            );
-          } finally {
-            await close(page);
-          }
-        });
-
-        test("the three-line list ends a row's fourth line with who wrote, three faces and +n", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01&team=1`);
-          try {
-            const row = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"]`);
-            expect(await row("Conv05").getAttribute("data-lines")).toBe("4");
-            const stack = row("Conv05").locator(".mail-row-extra [data-mail-participants]");
-            expect(await stack.locator(".k2b-avatar").count()).toBe(3);
-            expect(await stack.locator(".k2b-avatar-stack__more").textContent()).toBe("+14");
-            // The faces sit at the line's end.
-            const ends = await row("Conv05").evaluate((element) => {
-              const line = element.querySelector(".mail-row-extra")!.getBoundingClientRect();
-              const faces = element.querySelector(".mail-row-extra-participants")!.getBoundingClientRect();
-              return { line: Math.round(line.right), faces: Math.round(faces.right) };
-            });
-            expect(ends.faces).toBe(ends.line);
-            // Only the sender wrote: the row keeps its three lines and shows no faces.
-            expect(await row("Conv04").getAttribute("data-lines")).toBe("3");
-            expect(await row("Conv04").locator("[data-mail-participants]").count()).toBe(0);
-            await stack.hover();
-            await page.getByRole("tooltip").filter({ hasText: "17 participants · External: Sender 5" }).waitFor();
-            if (screenshots) {
-              mkdirSync(join(screenshots, browserName), { recursive: true });
-              await page.screenshot({ path: join(screenshots, browserName, "participants-three-line-light-1440.png") });
-            }
-          } finally {
-            await close(page);
-          }
-        });
-
-        test("Copy Cloud ID writes the permalink and the structured reference from every menu and the details", async () => {
+        test("Copy Cloud ID writes the permalink and the structured reference from every menu", async () => {
           const { parseCloudResourceClipboard, parseCloudResourceUrl } = await import("@k2b/cloud/contracts");
-          const page = await open(`${boxPath}?conversation=Conv01&details=1`);
+          const page = await open(`${boxPath}?conversation=Conv01`);
           try {
             await recordClipboard(page);
             const message = page.locator('[data-mail-message-id="Msg001"]');
@@ -4259,11 +3453,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await row.getByRole("button", { name: /^Actions for/ }).click();
             await page.locator(dropdown).getByRole("menuitem", { name: "Copy conversation Cloud ID" }).click();
 
-            // In the details panel the conversation's Cloud ID sits in its "…" menu, after its main action.
-            const detailsMenu = page.locator("[data-mail-details-heading]").getByRole("button", { name: "More actions", exact: true });
-            if (!(await detailsMenu.isVisible())) await page.locator("[data-app-workspace-detail-toggle]").first().click();
-            await detailsMenu.click();
-            await page.locator(dropdown).getByRole("menuitem", { name: "Copy conversation Cloud ID" }).click();
+            // A right-click on the conversation opens the same "…" menu.
+            await page.locator("[data-mail-reader-heading]").click({ button: "right" });
+            await page.locator(contextMenu).getByRole("menuitem", { name: "Copy conversation Cloud ID" }).click();
 
             await page.waitForFunction(() => (window as unknown as { copied: unknown[] }).copied.length === 4);
             const copied = await copiedEntries(page);
@@ -4298,13 +3490,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await page.waitForTimeout(100);
           };
           for (const width of [1920, 390] as const) {
-            const page = await open(`${boxPath}?conversation=Conv01&theme=light${width === 1920 ? "&details=1" : ""}`, width);
+            const page = await open(`${boxPath}?conversation=Conv01&theme=light`, width);
             try {
               if (width === 1920) {
-                const detailsHeading = page.locator("[data-mail-details-heading]");
-                if (!(await detailsHeading.isVisible())) await page.locator("[data-app-workspace-detail-toggle]").first().click();
-                await detailsHeading.waitFor({ state: "visible" });
-                await shot(page, `${width}-details`);
                 await page.getByRole("button", { name: "More conversation actions" }).click();
                 await shot(page, `${width}-conversation-menu`);
                 await escape(page);
@@ -4333,7 +3521,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     });
 
     section("events", () => {
-      const events = `${boxPath}?view=events&layout=auto&locale=de`;
+      const events = `${boxPath}?view=events&locale=de`;
       const rows = (page: Page) => page.locator("[data-mail-event]");
       for (const width of [1440, 390])
         test(`events tab ${width}: the feed renders without moving, groups days, and opens a conversation beside it`, async () => {
@@ -4358,7 +3546,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(await failed.textContent()).toContain("Details in der Unterhaltung.");
             expect(await page.locator('[data-mail-event="10"] .mail-event__robot').count()).toBe(1);
             // Search, selection and the view menu belong to conversation lists.
-            expect(await page.locator("[data-mail-selection-trigger], [data-mail-view-menu]").count()).toBe(0);
+            expect(await page.locator("[data-mail-selection-trigger]").count()).toBe(0);
             expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
             if (screenshots) {
               mkdirSync(screenshots, { recursive: true });
@@ -4370,7 +3558,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             // Every other parameter stays, so the feed stays as it is beside the reader.
             await page.waitForURL(new URL(`${events}&conversation=Conv01`, server.url).href);
             await settled(page);
-            expect(await page.locator(".mail-reader-subject").first().textContent()).toContain("Example request 1");
+            expect(await page.locator(".mail-reader-title").first().textContent()).toContain("Example request 1");
             if (width === 1440) {
               // The feed moves beside the reader and keeps its rows; the open conversation's event is marked.
               expect(await rows(page).count()).toBe(11);
@@ -4383,7 +3571,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         });
 
       test("events filters put the kind in the URL, survive a reload, reset, and show the empty and error states", async () => {
-        const english = `${boxPath}?view=events&layout=auto`;
+        const english = `${boxPath}?view=events`;
         const page = await open(english);
         try {
           await page.locator("[data-mail-events-filters] .k2b-filter-chip").first().click();
@@ -4501,8 +3689,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     section("drafts", () => {
       /** A small Mail draft API: what the reader and the composer call around one draft, with what they sent. */
       /** `suggestedBy` names the automated account behind the untouched suggestion `DrfSug`. */
-      const draftApi = async (page: Page, suggestedBy = "Gustav") => {
+      const draftApi = async (page: Page, suggestedBy = "Gustav", options: { consolidated?: number; sendFails?: boolean } = {}) => {
         const calls: string[] = [];
+        const notes: string[] = [];
         const drafts = new Map<string, Record<string, unknown>>();
         const stamp = MAIL_SHELL_NOW;
         const makeDraft = (id: string, content: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
@@ -4546,6 +3735,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             { subject: "Fwd: Example request 1", body: "Hello Tom, here are the pickup details for Saturday." },
             {
               intent: "forward",
+              consolidatedCount: options.consolidated ?? 0,
             },
           ),
         );
@@ -4616,8 +3806,33 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               conversationId: body.origin.input.conversationId,
             });
             drafts.set("DrfNew", created);
-            return route.fulfill({ json: created });
+            // Materialize answers how it got the draft; only a draft it created is fresh, so Escape discards it.
+            return route.fulfill({ json: { ...created, creationOutcome: "created" } });
           }
+          if (method === "POST" && path === "/conversations/Conv01/comments") {
+            const body = request.postDataJSON();
+            notes.push(body.body);
+            return route.fulfill({
+              json: {
+                id: `Note0${notes.length}`,
+                conversationId: "Conv01",
+                body: body.body,
+                author: { kind: "user", id: "Usr001", displayName: "Ada Example", avatarHash: null },
+                referencedMessageId: null,
+                revision: 1,
+                canEdit: true,
+                canDelete: true,
+                editedAt: null,
+                deletedAt: null,
+                createdAt: stamp,
+                updatedAt: stamp,
+              },
+            });
+          }
+          if (method === "POST" && path === "/commands")
+            return options.sendFails
+              ? route.fulfill({ status: 503, json: { code: "SMTP_UNAVAILABLE", message: "The mail server does not answer." } })
+              : route.fulfill({ json: { id: "00000000-0000-4000-8000-0000000000f1", result: { conversationId: "Conv01" } } });
           if (path === "/compose-templates") return route.fulfill({ json: [{ id: "Sig001", kind: "signature", name: "Support" }] });
           if (path === "/compose-signature-defaults") return route.fulfill({ json: [] });
           if (method === "POST" && path === "/compose-signature")
@@ -4643,17 +3858,46 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               return route.fulfill({ json: saved });
             }
             if (rest === "" && method === "GET") return route.fulfill({ json: draft });
+            if (rest === "/safety-review")
+              return route.fulfill({
+                json: { revision: draft.revision, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) },
+              });
+            if (rest === "/consolidation/acknowledge") {
+              drafts.set(id!, { ...draft, consolidatedCount: 0 });
+              return route.fulfill({ json: { ...draft, consolidatedCount: 0 } });
+            }
+            if (rest === "/intent") {
+              const body = request.postDataJSON();
+              const switched = {
+                ...draft,
+                intent: body.intent,
+                subject: body.intent === "forward" ? "Fwd: Example request 1" : "Re: Example request 1",
+                to: body.intent === "forward" ? [] : draft.to,
+                revision: Number(draft.revision) + 1,
+              };
+              drafts.set(id!, switched);
+              return route.fulfill({ json: switched });
+            }
           }
           return route.fallback();
         });
-        return { calls, drafts };
+        return { calls, drafts, notes, makeDraft };
       };
-      const draftBox = (page: Page) => page.locator("[data-mail-inline-draft]:not([data-mail-inline-draft-pending])");
+      const draftBox = (page: Page) => page.locator("[data-mail-reply-box='mail']");
       const readyDraft = async (page: Page) => {
         await draftBox(page).waitFor();
-        await page.locator("[data-mail-inline-draft] .cm-content").waitFor();
+        await page.locator("[data-mail-reply-box='mail'] .cm-content").waitFor();
       };
-      const readerReplies = (page: Page) => page.locator(".mail-reader").getByRole("button", { name: "Reply", exact: true });
+      const chooseMode = async (page: Page, name: string) => {
+        await page.locator("[data-mail-reply-box-frame] [data-mail-reply-mode]").first().click();
+        await page.getByRole("menuitemradio", { name }).click();
+      };
+      /** Reply buttons that start a reply to the conversation; each open message keeps its own reply arrow beside its date. */
+      const readerReplies = (page: Page) =>
+        page
+          .locator(".mail-reader")
+          .getByRole("button", { name: "Reply", exact: true })
+          .and(page.locator(":not([data-mail-message-reply])"));
       /** Polls a condition that settles after a request the page sends on its own, within a deadline. */
       const eventually = async <T>(read: () => Promise<T> | T, expected: Awaited<T>, label: string, deadline = 6000) => {
         const end = performance.now() + deadline;
@@ -4665,101 +3909,147 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       };
 
       for (const width of [1440, 390])
-        test(`${width}: Reply grows into the draft in place of the pill; Escape on an unchanged draft brings the pill back`, async () => {
+        test(`${width}: the reply box stands open under the newest message; opening creates no draft, the first typing does`, async () => {
           let api!: Awaited<ReturnType<typeof draftApi>>;
           const page = await open(`${boxPath}?conversation=Conv01&identity=1`, width, undefined, "reduce", async (next) => {
             api = await draftApi(next);
           });
           try {
-            await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
             await readyDraft(page);
-            // The pill became the draft: no second Reply anywhere in the reader, the caret is in the text.
+            // No pill, no Reply that opens a draft, and opening the conversation never moved the focus into the box.
             expect(await page.locator("[data-mail-reply-pill]").count()).toBe(0);
             expect(await readerReplies(page).count()).toBe(0);
-            await page.waitForFunction(() => document.activeElement?.closest(".cm-content") !== null);
-            expect(new URL(page.url()).searchParams.get("draft")).toBe("DrfNew");
-            expect(api.calls).toContain("POST /draft-seeds/materialize");
-            // Reduced motion: the state changes at once, nothing glides.
-            expect(await page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getAnimations().length)).toBe(0);
-            // The draft stands above the newest message.
+            expect(await page.evaluate(() => document.activeElement?.closest("[data-mail-reply-box]") ?? null)).toBeNull();
+            expect(await draftBox(page).textContent()).toContain("Example sender");
+            expect(api.calls).toContain("POST /draft-seeds");
+            expect(api.calls).not.toContain("POST /draft-seeds/materialize");
             const order = await page.evaluate(() => {
-              const draft = document.querySelector("[data-mail-inline-draft]")!.getBoundingClientRect();
-              const message = document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect();
-              return { draftBottom: draft.bottom, messageTop: message.top };
+              const box = document.querySelector("[data-mail-reply-box='mail']")!.getBoundingClientRect();
+              const messages = document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect();
+              const send = document.querySelector("[data-mail-reply-box='mail'] footer")!.getBoundingClientRect();
+              return { boxTop: box.top, messagesBottom: messages.bottom, footHeight: send.height };
             });
-            expect(order.draftBottom).toBeLessThanOrEqual(order.messageTop);
-            await page.keyboard.press("Escape");
-            await page.locator("[data-mail-reply-pill]").waitFor();
-            expect(await draftBox(page).count()).toBe(0);
-            await page.waitForFunction(() => !new URL(location.href).searchParams.has("draft"));
-            expect(api.calls).toContain("POST /drafts/DrfNew/discard");
+            expect(order.boxTop).toBeGreaterThanOrEqual(order.messagesBottom);
+            // The bar keeps one row, also on a phone.
+            expect(order.footHeight).toBeLessThan(56);
+            await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+            await page.keyboard.type("Saturday at 11 works.");
+            await eventually(() => api.drafts.get("DrfNew")?.body, "Saturday at 11 works.", "the first input creates the draft");
+            await page.waitForFunction(() =>
+              document.querySelector("[data-mail-reply-box='mail'] [data-mail-save-status]")?.textContent?.includes("Saved"),
+            );
           } finally {
             await close(page);
           }
         });
 
-      test("the pill grows into the draft: the messages glide monotonically to their layout place in 280 ms", async () => {
+      test("the box takes its place without moving the messages above it", async () => {
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
           await draftApi(next);
         });
         try {
           const messagesTop = () =>
             page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top);
+          const pendingHeight = await page.evaluate(
+            () => document.querySelector("[data-mail-reply-box-frame]")?.getBoundingClientRect().height ?? 0,
+          );
           const before = await messagesTop();
-          // Pause the glide the moment it starts, before a frame passes, then step through it.
-          await page.evaluate(() => {
-            const state = window as unknown as { mailGlide?: Promise<void> };
-            state.mailGlide = new Promise<void>((resolve) => {
-              const observer = new MutationObserver(() => {
-                const glide = document.querySelector("[data-mail-conversation-messages]")?.getAnimations()[0];
-                if (!glide) return;
-                glide.pause();
-                observer.disconnect();
-                resolve();
-              });
-              observer.observe(document.body, { subtree: true, childList: true });
-            });
-          });
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
-          // settled: the paused animation itself is the subject; each step sets its time before reading.
-          const samples = await page.evaluate(async () => {
-            await (window as unknown as { mailGlide: Promise<void> }).mailGlide;
-            const messages = document.querySelector("[data-mail-conversation-messages]")!;
-            const glide = messages.getAnimations()[0]!;
-            const total = Number(glide.effect!.getComputedTiming().duration);
-            const tops = [0, total / 2, total - 1].map((at) => {
-              glide.currentTime = at;
-              return messages.getBoundingClientRect().top;
-            });
-            glide.finish();
-            return { total, tops, final: messages.getBoundingClientRect().top };
-          });
-          expect(samples.total).toBe(280);
-          expect(Math.abs(samples.tops[0]! - before)).toBeLessThanOrEqual(0.5);
-          expect(samples.tops[1]!).toBeGreaterThanOrEqual(samples.tops[0]!);
-          expect(samples.tops[2]!).toBeGreaterThanOrEqual(samples.tops[1]!);
-          expect(Math.abs(samples.tops[2]! - samples.final)).toBeLessThanOrEqual(1);
-          expect(samples.final).toBeGreaterThan(before);
+          await readyDraft(page);
+          await settled(page);
+          expect(Math.abs((await messagesTop()) - before)).toBeLessThanOrEqual(0.5);
+          const readyHeight = await page.evaluate(
+            () => document.querySelector("[data-mail-reply-box-frame]")!.getBoundingClientRect().height,
+          );
+          expect(pendingHeight).toBeGreaterThan(0);
+          expect(readyHeight).toBeGreaterThanOrEqual(pendingHeight);
         } finally {
           await close(page);
         }
       });
 
-      test("typing saves the draft, and collapsing keeps it: no discard, the lease is released", async () => {
+      test("the mode menu switches Reply to Forward on the server and keeps the text", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
           api = await draftApi(next);
         });
         try {
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
           await readyDraft(page);
-          await page.keyboard.type("Saturday at 11 works.");
-          await eventually(() => api.drafts.get("DrfNew")?.body, "Saturday at 11 works.", "autosave");
-          await page.waitForFunction(() => document.querySelector(".mail-inline-draft-status")?.textContent?.includes("Saved"));
-          await page.locator("[data-mail-draft-collapse]").click();
-          await page.locator("[data-mail-reply-pill]").waitFor();
-          expect(api.calls).not.toContain("POST /drafts/DrfNew/discard");
-          expect(api.calls).toContain("DELETE /drafts/DrfNew/lease");
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("See the details below.");
+          await eventually(() => api.drafts.get("DrfNew")?.body, "See the details below.", "saved before the switch");
+          await chooseMode(page, "Forward");
+          await page.waitForFunction(
+            () => document.querySelector("[data-mail-reply-box='mail']")?.getAttribute("data-intent") === "forward",
+          );
+          expect(api.calls).toContain("POST /drafts/DrfNew/intent");
+          expect(await page.locator("[data-mail-reply-box='mail'] .cm-content").textContent()).toContain("See the details below.");
+          expect(api.calls.some((call) => call.endsWith("/discard"))).toBe(false);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("internal note: yellow, Mod+Enter saves the note and never sends; the reply comes back unchanged", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("Reply for the customer.");
+          await eventually(() => api.drafts.get("DrfNew")?.body, "Reply for the customer.", "reply saved");
+          await settled(page);
+          const heightBefore = await page.evaluate(
+            () => document.querySelector("[data-mail-reply-box-frame]")!.getBoundingClientRect().height,
+          );
+          await chooseMode(page, "Internal note");
+          const note = page.locator("[data-mail-reply-box='note']");
+          await note.waitFor();
+          expect(await draftBox(page).isHidden()).toBe(true);
+          expect(await note.textContent()).toContain("Only for the team.");
+          expect(await note.getByRole("button", { name: "Save note" }).isDisabled()).toBe(true);
+          // The note keeps the box's height: nothing moves.
+          const heightNote = await page.evaluate(
+            () => document.querySelector("[data-mail-reply-box-frame]")!.getBoundingClientRect().height,
+          );
+          expect(Math.abs(heightNote - heightBefore)).toBeLessThanOrEqual(1);
+          await note.locator("textarea").fill("Order the oak boards before Friday.");
+          await page.keyboard.press("Control+Enter");
+          await eventually(() => api.notes.length, 1, "note saved");
+          expect(api.notes).toEqual(["Order the oak boards before Friday."]);
+          expect(api.calls.some((call) => call.endsWith("/commands") || call.endsWith("/safety-review"))).toBe(false);
+          expect(JSON.stringify([...api.drafts.values()])).not.toContain("oak boards");
+          await page.locator("[data-mail-conversation-messages]").getByText("Order the oak boards before Friday.").waitFor();
+          await draftBox(page).waitFor();
+          expect(await page.locator("[data-mail-reply-box='mail'] .cm-content").textContent()).toContain("Reply for the customer.");
+          expect(await page.locator("[data-mail-reply-box='note']").count()).toBe(0);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("a failed send turns the bar light red in place; Send again retries", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next, "Gustav", { sendFails: true });
+        });
+        try {
+          await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("Ready to go.");
+          const footTop = () =>
+            page.evaluate(() => document.querySelector("[data-mail-reply-box='mail'] footer")!.getBoundingClientRect().top);
+          await eventually(() => api.drafts.get("DrfNew")?.body, "Ready to go.", "saved");
+          await settled(page);
+          const before = await footTop();
+          await page.keyboard.press("Control+Enter");
+          const bar = page.locator("[data-mail-send-failed]");
+          await bar.waitFor();
+          expect(await bar.textContent()).toContain("Not sent.");
+          expect(await bar.textContent()).toContain("Your text is saved.");
+          expect(Math.abs((await footTop()) - before)).toBeLessThanOrEqual(1);
+          expect(await bar.getByRole("button", { name: "Send again" }).isVisible()).toBe(true);
         } finally {
           await close(page);
         }
@@ -4771,9 +4061,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           api = await draftApi(next);
         });
         try {
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
           await readyDraft(page);
-          const signature = page.locator("[data-mail-draft-signature]");
+          const signature = page.locator("[data-mail-reply-box='mail'] [data-mail-draft-signature]");
           await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("Ada Example"));
           // Fixed: the block is not part of the editable text.
           expect(await signature.evaluate((element) => element.closest(".cm-content"))).toBeNull();
@@ -4786,36 +4075,33 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             "quote saved with locale and time zone",
           );
           expect(await quote.textContent()).toContain("Quote attached");
-          await quote.getByRole("button", { name: "Remove" }).click();
-          await eventually(() => api.drafts.get("DrfNew")?.quoteSource ?? null, null, "quote removed");
         } finally {
           await close(page);
         }
       });
 
-      test("Gustav's suggestion is already open in plum, its row says so, and the first typing takes it over", async () => {
+      test("Gustav's suggestion stands in the box in plum, its row says so, and the first typing takes it over", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?conversation=Conv01&identity=1&suggestion=1`, 1440, undefined, "reduce", async (next) => {
           api = await draftApi(next);
         });
         try {
           await readyDraft(page);
-          const draft = page.locator("[data-mail-inline-draft]");
+          const draft = draftBox(page);
           expect(await draft.getAttribute("data-suggestion")).toBe("");
           expect(await draft.textContent()).toContain("Suggestion from Gustav");
+          expect(await draft.textContent()).toContain("Type to take it over, or send it as it is.");
           expect(await page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]').getAttribute("data-suggestion")).toBe("");
-          // Never a second Reply while the suggestion stands in the pill's place.
-          expect(await readerReplies(page).count()).toBe(0);
           expect(api.calls).not.toContain("POST /drafts/DrfSug/lease");
-          await page.locator("[data-mail-inline-draft] .cm-content").click();
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
           await page.keyboard.type(" Thanks!");
-          await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-suggestion"));
+          await page.waitForFunction(() => !document.querySelector("[data-mail-reply-box='mail']")?.hasAttribute("data-suggestion"));
         } finally {
           await close(page);
         }
       });
 
-      test("another automated account's suggestion carries that account's name, in plum, in the draft and its row", async () => {
+      test("another automated account's suggestion carries that account's name, in plum, in the box and its row", async () => {
         const page = await open(
           `${boxPath}?conversation=Conv01&identity=1&suggestion=1&suggestionBy=Rechnungseingang`,
           1440,
@@ -4827,107 +4113,133 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         );
         try {
           await readyDraft(page);
-          const draft = page.locator("[data-mail-inline-draft]");
+          const draft = draftBox(page);
           expect(await draft.getAttribute("data-suggestion")).toBe("");
           expect(await draft.textContent()).toContain("Suggestion from Rechnungseingang");
           expect(await draft.textContent()).not.toContain("Gustav");
           const row = page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]');
           expect(await row.getAttribute("data-suggestion")).toBe("");
-          expect(await row.textContent()).toContain("Suggestion from Rechnungseingang");
+          expect(await row.textContent()).toContain("Suggestion");
+          expect(await row.getAttribute("aria-label")).toBe("Suggestion from Rechnungseingang");
         } finally {
           await close(page);
         }
       });
 
-      test("a collapsed suggestion waits as a row and does not open again by itself", async () => {
-        const page = await open(`${boxPath}?conversation=Conv01&identity=1&suggestion=1`, 1440, undefined, "reduce", async (next) => {
+      /** The new message's window, portaled over the workspace. */
+      const composeWindow = (page: Page, draftId = "DrfNew") =>
+        page.locator(".mail-compose-window", { has: page.locator(`[data-mail-compose-window="${draftId}"]`) });
+      const readyWindow = async (page: Page, draftId = "DrfNew") => {
+        await composeWindow(page, draftId).locator("[data-mail-inline-draft] .cm-content").waitFor();
+      };
+
+      test("Compose opens a window over the open conversation; the list and the reader behind stay usable", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
           await draftApi(next);
         });
         try {
-          await readyDraft(page);
-          await page.locator("[data-mail-draft-collapse]").click();
-          await page.locator('[data-mail-draft-row="DrfSug"]').waitFor();
-          // settled: nothing may reopen it after the collapse finished.
-          await settled(page);
-          expect(await page.locator("[data-mail-inline-draft]").count()).toBe(0);
+          await page.getByRole("link", { name: "New message" }).first().click();
+          await readyWindow(page);
+          // The window docks at the bottom end of the app and leaves the conversation where it was.
+          expect(new URL(page.url()).searchParams.get("conversation")).toBe("Conv01");
+          expect(new URL(page.url()).searchParams.has("draft")).toBe(false);
+          expect(await composeWindow(page).getAttribute("aria-modal")).toBe("false");
+          const box = (await composeWindow(page).boundingBox())!;
+          const area = (await page.locator(".mail-workspace").boundingBox())!;
+          expect(box.x + box.width).toBeLessThanOrEqual(area.x + area.width);
+          expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height);
+          // The new message starts with its recipients; its title follows the subject.
+          await page.waitForFunction(() => document.activeElement?.closest(".mail-compose-window .mail-inline-draft-recipients") !== null);
+          await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+          await composeWindow(page).locator(".k2b-floating-window__title", { hasText: "Pickup on Saturday" }).waitFor();
+          // Another conversation opens behind the window, which stays.
+          await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
+          expect(await composeWindow(page).count()).toBe(1);
         } finally {
           await close(page);
         }
       });
 
-      test("in the columns layout, Compose opens the new message in the reader too", async () => {
-        const page = await open(`${boxPath}?identity=1&layout=columns`, 1440, undefined, "reduce", async (next) => {
-          await draftApi(next);
-        });
-        try {
-          await page.getByRole("link", { name: "Compose" }).first().click();
-          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
-        } finally {
-          await close(page);
-        }
-      });
-
-      test("Compose starts a new message in the flow: a row at the top, an empty conversation, kept over reload", async () => {
+      test("a new message window docks, survives a reload, closes into Drafts, and Open brings it back", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?identity=1`, 1440, undefined, "reduce", async (next) => {
           api = await draftApi(next);
         });
         try {
-          await page.getByRole("link", { name: "Compose" }).first().click();
-          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
-          expect(await page.locator("[data-mail-new-message-row]").count()).toBe(1);
-          const url = new URL(page.url());
-          expect(url.searchParams.get("draft")).toBe("DrfNew");
-          expect(url.searchParams.has("conversation")).toBe(false);
+          await page.getByRole("link", { name: "New message" }).first().click();
+          await readyWindow(page);
           expect(api.calls).toContain("POST /draft-seeds/materialize");
-          // The new message starts with its recipients; the subject shows in its row while someone types it.
-          await page.waitForFunction(() => document.activeElement?.closest(".mail-inline-draft-recipients") !== null);
-          await page.locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
-          await page.waitForFunction(() =>
-            document.querySelector("[data-mail-new-message-row]")?.textContent?.includes("Pickup on Saturday"),
-          );
-          expect(await page.locator("[data-mail-new-message]").textContent()).toContain("No messages yet");
+          await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
           await eventually(() => api.drafts.get("DrfNew")?.subject, "Pickup on Saturday", "subject saved");
+          await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
+          // Minimized, it is a bar at the bottom; the list keeps its last row above it.
+          await composeWindow(page).getByRole("button", { name: "Minimize" }).click();
+          await page.waitForFunction(() => document.querySelector(".mail-compose-window")?.getAttribute("data-state") === "minimized");
+          await page.locator(".mail-windows-docked").waitFor();
+          // F5: the tab remembers the window and its state.
           await page.reload();
           await ready(page);
-          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
-          expect(await page.locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
-          // Another conversation takes the reader; Back brings the new message back.
-          await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
-          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
-          expect(await page.locator("[data-mail-new-message]").count()).toBe(0);
-          await page.goBack();
-          await page.waitForFunction(() => new URL(location.href).searchParams.get("draft") === "DrfNew");
-          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
+          await page.waitForFunction(() => document.querySelector(".mail-compose-window")?.getAttribute("data-state") === "minimized");
+          await page.getByRole("button", { name: "Restore Pickup on Saturday" }).click();
+          await readyWindow(page);
+          expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
+          // Close keeps the draft and says where it is; Open brings the window back.
+          await composeWindow(page).getByRole("button", { name: "Close window" }).click();
+          await composeWindow(page).waitFor({ state: "detached" });
+          expect(api.calls).not.toContain("POST /drafts/DrfNew/discard");
+          expect(api.drafts.get("DrfNew")?.state).toBe("draft");
+          const notice = page.locator("[data-k2b-toast-container]", { hasText: "Draft is in “Drafts”" });
+          await notice.waitFor();
+          await notice.getByRole("button", { name: "Open" }).click();
+          await readyWindow(page);
+          // An old link to the draft opens its window too and leaves the list's URL clean.
+          await page.goto(new URL(`${boxPath}?identity=1&draft=DrfNew`, page.url()).href);
+          await ready(page);
+          await readyWindow(page);
+          await page.waitForFunction(() => !new URL(location.href).searchParams.has("draft"));
+          expect(await page.locator(".mail-compose-window").count()).toBe(1);
         } finally {
           await close(page);
         }
       });
 
-      test("full screen, scrolled into the history: one fixed row keeps Send and leads back to the text", async () => {
-        // A laptop with little height: the history is longer than the reader, so the draft can scroll out of view.
-        const page = await open(`${boxPath}?conversation=Conv02&identity=1`, 1440, 560, "reduce", async (next) => {
-          await draftApi(next);
+      test("390: a new message is a full-screen sheet with Send in its head; Close keeps the draft", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?identity=1`, 390, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
         });
         try {
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
-          await readyDraft(page);
-          await page.locator("[data-mail-draft-fullscreen]").click();
-          expect(await page.locator("[data-mail-draft-bar]").count()).toBe(0);
-          // The whole history below the draft, then scroll until the draft has left the reader.
-          if (await page.locator("[data-mail-older-messages]").count()) await page.locator("[data-mail-older-messages]").click();
-          await page.evaluate(() => {
-            const frame = document.querySelector("[data-mail-inline-draft-frame]")!;
-            let scroller: Element | null = frame.parentElement;
-            while (scroller && scroller.scrollHeight <= scroller.clientHeight) scroller = scroller.parentElement;
-            scroller?.scrollTo({ top: scroller.scrollHeight });
-          });
-          const bar = page.locator("[data-mail-draft-bar]");
-          await bar.waitFor();
-          expect(await bar.getByRole("button", { name: "Send" }).isVisible()).toBe(true);
-          await bar.getByRole("button", { name: "Back to the text" }).click();
-          await page.waitForFunction(() => document.activeElement?.closest("[data-mail-inline-draft] .cm-content") !== null);
-          await page.locator("[data-mail-draft-bar]").waitFor({ state: "detached" });
+          await page.locator("[data-workspace-primary]").first().click();
+          await readyWindow(page);
+          const sheet = composeWindow(page);
+          expect(await sheet.boundingBox()).toEqual({ x: 0, y: 0, width: 390, height: 844 });
+          expect(await sheet.getAttribute("aria-modal")).toBe("true");
+          expect(await sheet.locator(".k2b-floating-window__actions .mail-compose-action").isVisible()).toBe(true);
+          expect(await sheet.locator(".mail-compose-window-foot .mail-compose-action").count()).toBe(0);
+          await sheet.locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+          await eventually(() => api.drafts.get("DrfNew")?.subject, "Pickup on Saturday", "subject saved");
+          await sheet.getByRole("button", { name: "Close window" }).click();
+          await sheet.waitFor({ state: "detached" });
+          expect(api.drafts.get("DrfNew")?.state).toBe("draft");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("a new message in Drafts opens as a window over the folder", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+          api.drafts.set("Draft1", api.makeDraft("Draft1", { subject: "Quarterly figures" }, { conversationId: null, intent: "new" }));
+        });
+        try {
+          await page.locator('[data-draft-id="Draft1"] a.mail-list-row').click();
+          await readyWindow(page, "Draft1");
+          await composeWindow(page, "Draft1").locator(".k2b-floating-window__title", { hasText: "Quarterly figures" }).waitFor();
+          // The folder stays; the URL drops the draft, and the window is the tab's to remember.
+          expect(await page.locator("[data-mail-drafts-list]").isVisible()).toBe(true);
+          await page.waitForFunction(() => !new URL(location.href).searchParams.has("draft"));
         } finally {
           await close(page);
         }
@@ -4937,8 +4249,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         const page = await open(`${boxPath}?drafts=1`, 1440);
         try {
           const chip = page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]');
-          expect(await chip.textContent()).toContain("Draft");
-          expect(await chip.textContent()).toContain("JE");
+          // "Draft" beside the sender; who writes it stands in its label.
+          expect((await chip.textContent())?.trim()).toBe("Draft");
           expect(await chip.getAttribute("aria-label")).toBe("Draft: Jonas Example");
           expect(await chip.getAttribute("data-suggestion")).toBeNull();
         } finally {
@@ -4952,78 +4264,49 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           api = await draftApi(next);
         });
         try {
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
           await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
           await page.keyboard.type("Not lost");
-          // Leave before the 700 ms autosave: save even if no writing lease was acquired yet.
+          // Leave before the 700 ms autosave: the draft is created and saved on the way out.
           await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
           await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
-          await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]"));
           await eventually(() => api.drafts.get("DrfNew")?.body, "Not lost", "saved on leave");
-          if (api.calls.includes("POST /drafts/DrfNew/lease")) {
-            await eventually(() => api.calls.includes("DELETE /drafts/DrfNew/lease"), true, "lease released after the save");
-            const saveIndex = api.calls.lastIndexOf("PUT /drafts/DrfNew");
-            expect(saveIndex, "the save comes before the release").toBeLessThan(api.calls.indexOf("DELETE /drafts/DrfNew/lease"));
-          } else {
-            expect(api.calls).not.toContain("DELETE /drafts/DrfNew/lease");
-          }
-          expect(new URL(page.url()).searchParams.has("draft")).toBe(false);
-          // Back returns to the first conversation with its draft open again, as the person left it.
-          await page.goBack();
-          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
-          expect(new URL(page.url()).searchParams.get("draft")).toBe("DrfNew");
-          await readyDraft(page);
-          expect(await page.locator("[data-mail-inline-draft] .cm-content").textContent()).toContain("Not lost");
         } finally {
           await close(page);
         }
       });
 
-      test("a colleague's draft is a row; it opens in place, and a reload keeps it open", async () => {
+      test("a colleague's reply draft stands in the box in its mode, and a reload keeps it there", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?conversation=Conv01&identity=1&drafts=1`, 1440, undefined, "reduce", async (next) => {
           api = await draftApi(next);
         });
         try {
-          const row = page.locator('[data-mail-draft-row="Drf001"]');
-          await row.waitFor();
-          expect(await row.textContent()).toContain("Jonas Example");
-          await row.click();
           await readyDraft(page);
           expect(api.calls).toContain("GET /drafts/Drf001");
-          expect(await page.locator('[data-mail-draft-row="Drf001"]').count()).toBe(0);
-          expect(new URL(page.url()).searchParams.get("draft")).toBe("Drf001");
+          expect(await draftBox(page).getAttribute("data-intent")).toBe("forward");
+          expect(await page.locator("[data-mail-draft-row]").count()).toBe(0);
           await page.reload();
           await ready(page);
           await readyDraft(page);
-          expect(await page.locator("[data-mail-inline-draft]").getAttribute("data-intent")).toBe("forward");
+          expect(await draftBox(page).getAttribute("data-intent")).toBe("forward");
         } finally {
           await close(page);
         }
       });
 
-      test("full screen moves the list aside, is remembered, and Escape leaves it before collapsing", async () => {
-        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
-          await draftApi(next);
+      test("F6: the one-time line names how many drafts were here; Got it removes it", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1&drafts=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next, "Gustav", { consolidated: 2 });
         });
         try {
-          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
-          await readyDraft(page);
-          const listVisible = () =>
-            page.evaluate(() => {
-              const pane = document.querySelector(".mail-workspace .k2b-app-workspace__main-pane");
-              return Boolean(pane && pane.getClientRects().length > 0 && pane.getBoundingClientRect().width > 0);
-            });
-          expect(await listVisible()).toBe(true);
-          await page.locator("[data-mail-draft-fullscreen]").click();
-          await page.waitForFunction(() => document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-fullscreen"));
-          await eventually(listVisible, false, "list aside in full screen");
-          expect(decodeURIComponent((await storedCookie(page, "cloud_mail_workspace"))?.value ?? "")).toContain('"draftFullscreen":true');
-          await page.locator("[data-mail-inline-draft] .cm-content").click();
-          await page.keyboard.press("Escape");
-          await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-fullscreen"));
-          expect(await draftBox(page).count()).toBe(1);
-          await eventually(listVisible, true, "list back after full screen");
+          const line = page.locator("[data-mail-reply-consolidated]");
+          await line.waitFor();
+          expect(await line.textContent()).toContain("There were 3 drafts here. The most recently edited one is in the box.");
+          await line.getByRole("button", { name: "Got it" }).click();
+          await line.waitFor({ state: "detached" });
+          expect(api.calls).toContain("POST /drafts/Drf001/consolidation/acknowledge");
         } finally {
           await close(page);
         }
@@ -5033,9 +4316,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         test("draft review screenshots", async () => {
           const directory = resolve(screenshots);
           mkdirSync(directory, { recursive: true });
-          const shoot = async (name: string, theme: "light" | "dark", width: number, path: string, act?: (page: Page) => Promise<void>) => {
+          const shoot = async (
+            name: string,
+            theme: "light" | "dark",
+            width: number,
+            path: string,
+            act?: (page: Page) => Promise<void>,
+            api: { consolidated?: number; sendFails?: boolean } = {},
+          ) => {
             const page = await open(`${path}&theme=${theme}`, width, undefined, "reduce", async (next) => {
-              await draftApi(next);
+              await draftApi(next, "Gustav", api);
             });
             try {
               await act?.(page);
@@ -5046,45 +4336,83 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           };
           const reply = async (page: Page) => {
-            await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
             await readyDraft(page);
+            await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
             await page.keyboard.type("Saturday at 11 works well. The chairs are ready in hall A.");
           };
           const thread = `${boxPath}?conversation=Conv01&identity=1`;
           for (const theme of ["light", "dark"] as const)
             for (const width of [1440, 390]) {
-              await shoot("01-thread-pill", theme, width, thread);
-              await shoot("02-draft-open", theme, width, thread, reply);
+              await shoot("01-box-empty", theme, width, thread, readyDraft);
+              await shoot("02-box-reply", theme, width, thread, reply);
+              await shoot("03-box-note", theme, width, thread, async (page) => {
+                await readyDraft(page);
+                await chooseMode(page, "Internal note");
+                await page
+                  .locator("[data-mail-reply-box='note'] textarea")
+                  .fill("Frau Lindqvist moves mid December. Deliver before the 12th.");
+              });
             }
-          for (const width of [1440, 1920])
-            await shoot("03-draft-fullscreen", "light", width, thread, async (page) => {
-              await reply(page);
-              await page.locator("[data-mail-draft-fullscreen]").click();
-            });
-          await shoot("04-draft-preview", "light", 1440, thread, async (page) => {
-            await reply(page);
-            await page.locator("[data-mail-draft-preview]").click();
-            await page.locator(".mail-inline-draft-preview iframe").waitFor();
-          });
-          await shoot("05-draft-rows", "light", 1440, `${thread}&drafts=1`);
-          await shoot("05-draft-rows", "light", 390, `${thread}&drafts=1`);
-          for (const width of [1440, 390])
-            await shoot("06-gustav-suggestion", "light", width, `${thread}&suggestion=1`, async (page) => {
-              await readyDraft(page);
-            });
-          await shoot("06-gustav-suggestion", "dark", 1440, `${thread}&suggestion=1`, async (page) => {
+          await shoot("04-box-mode-menu", "light", 1440, thread, async (page) => {
             await readyDraft(page);
+            await page.locator("[data-mail-reply-box-frame] [data-mail-reply-mode]").first().click();
+            await page.getByRole("menuitemradio", { name: "Internal note" }).waitFor();
           });
-          for (const width of [1440, 390])
-            await shoot("08-new-message", "light", width, `${boxPath}?identity=1`, async (page) => {
-              await page.getByRole("link", { name: "Compose" }).first().click();
-              await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
-              await page.locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
-            });
-          await shoot("07-quote-attached", "light", 1440, thread, async (page) => {
+          await shoot(
+            "05-box-send-failed",
+            "light",
+            1440,
+            thread,
+            async (page) => {
+              await reply(page);
+              await page.keyboard.press("Control+Enter");
+              await page.locator("[data-mail-send-failed]").waitFor();
+            },
+            { sendFails: true },
+          );
+          await shoot("06-box-suggestion", "light", 1440, `${thread}&suggestion=1`, readyDraft);
+          await shoot("06-box-suggestion", "dark", 1440, `${thread}&suggestion=1`, readyDraft);
+          await shoot(
+            "07-box-consolidated",
+            "light",
+            1440,
+            `${thread}&drafts=1`,
+            async (page) => {
+              await page.locator("[data-mail-reply-consolidated]").waitFor();
+            },
+            { consolidated: 2 },
+          );
+          const compose = async (page: Page) => {
+            await page.locator("[data-workspace-primary]").first().click();
+            await readyWindow(page);
+            await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+            await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
+          };
+          // A phone shows Compose with the list, not beside an open conversation.
+          for (const [theme, width] of [
+            ["light", 1440],
+            ["light", 390],
+            ["dark", 1440],
+          ] as const)
+            await shoot("08-new-message", theme, width, `${boxPath}?${width < 640 ? "" : "conversation=Conv01&"}identity=1`, compose);
+          await shoot("09-new-minimized", "light", 1440, `${boxPath}?conversation=Conv01&identity=1`, async (page) => {
+            await compose(page);
+            await composeWindow(page).getByRole("button", { name: "Minimize" }).click();
+          });
+          await shoot("10-new-maximized", "light", 1440, `${boxPath}?conversation=Conv01&identity=1`, async (page) => {
+            await compose(page);
+            await composeWindow(page).getByRole("button", { name: "Maximize" }).click();
+          });
+          await shoot("11-new-closed", "light", 1440, `${boxPath}?identity=1`, async (page) => {
+            await compose(page);
+            await composeWindow(page).getByRole("button", { name: "Close window" }).click();
+            await page.locator("[data-k2b-toast-container]", { hasText: "Draft is in “Drafts”" }).waitFor();
+          });
+          await shoot("08-box-preview", "light", 1440, thread, async (page) => {
             await reply(page);
-            await page.locator("[data-mail-draft-quote]").getByRole("button").click();
-            await page.waitForFunction(() => document.querySelector("[data-mail-draft-quote]")?.textContent?.includes("attached"));
+            await page.locator("[data-mail-reply-box='mail'] button[aria-label='More']").click();
+            await page.getByRole("menuitemcheckbox", { name: "Preview (how the mail arrives)" }).click();
+            await page.locator(".mail-inline-draft-preview iframe").waitFor();
           });
         }, 240_000);
     });
@@ -5103,7 +4431,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               ...(theme === "light"
                 ? [
                     ["mailbox", "folder", `${boxPath}?folder=Filed1`],
-                    ["mailbox", "details", `${boxPath}?conversation=Conv01&details=1`],
+                    ["mailbox", "notes", `${boxPath}?conversation=Conv01&notes=1`],
                   ]
                 : []),
             ]) {

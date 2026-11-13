@@ -449,3 +449,15 @@ For contact-directory changes, use `cld mail admin contact-directory set` to cha
 a provider and its capability IDs together. A single-key
 `cld admin settings set --app mail` write validates the complete resulting mapping and rejects incomplete
 combinations.
+
+## Earlier conversations from a sender
+
+```bash
+cld --json mail conversation by-sender ada@example.test --mailbox Support --limit 5 --exclude CvB234
+```
+
+Returns `{ items, total }`: up to five newest conversations with an active
+message from that exact From address, plus the total visible matches. `--exclude`
+leaves the open conversation out of both. Assigned-only access filters both the
+preview and total. Each JSON item includes its conversation permalink. Recipients
+and matching subjects do not establish a sender match.

@@ -45,7 +45,7 @@ import { listConversations, listFolders } from "./messages";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { outboundDraftSnapshotSchema } from "./outbound-mime";
 import { createProviderConnection } from "./provider-connections";
-import { getScheduledSend } from "./scheduled-sends";
+import { cancelScheduledSend, getScheduledSend } from "./scheduled-sends";
 import { enqueueFolderReconciliation, hydrateMessageBatch, ingestEnvelope, syncFolderBatch } from "./sync-runtime";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "./workspace";
 
@@ -1745,6 +1745,14 @@ suite("mail sent message projection", () => {
           if (history) expect(output.indexOf("Signed by")).toBeLessThan(output.indexOf("Original history"));
           expect(output.match(/Signed by/g)).toHaveLength(1);
         }
+        // The snapshot assertion is complete; release the reply box before testing the next mode.
+        const cancelled = await cancelScheduledSend({
+          context,
+          mailboxId: mailbox.mailboxId,
+          scheduledSendId: outbox.id,
+          input: { disposition: "discard" },
+        });
+        expect(cancelled.ok).toBe(true);
       }
     } finally {
       provider.restore();

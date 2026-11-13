@@ -178,11 +178,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Control: drop target under a dragged message.",
   },
   {
-    file: "packages/mail/src/styles/app.css",
-    subject: '.k2b-ui .mail-reader-toolbar .mail-reader-details[aria-expanded="true"] { background }',
-    reason: "Control: expanded disclosure.",
-  },
-  {
     file: "packages/grids/src/frontend/_components/fields/FormulaReferenceWindow.island.tsx",
     subject: 'class: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200",',
     reason: "Data: field type color.",

@@ -1,17 +1,15 @@
 import type { MailListMode } from "../../service/workspace";
-import { type MailConversationToolbarActionId, normalizeMailConversationToolbarActions } from "./mail-conversation-toolbar";
 
 export type MailWorkspacePreferences = {
-  listCollapsed: boolean;
-  /** Browser-level discovery of the mailbox head search, read on the server too. */
-  searchDiscovered?: boolean;
-  searchHintDismissed?: boolean;
   /** The person opened the mailbox's Events tab once; until then it is marked new. */
   eventsDiscovered?: boolean;
-  detailsOpen: boolean;
   /** A draft in a conversation opens in full screen: this browser's last choice, never switched on by itself (F7). */
   draftFullscreen: boolean;
-  toolbarActions: MailConversationToolbarActionId[];
+  /**
+   * The person had arranged their own conversation toolbar before Mail v5 replaced it with fixed actions; the reader
+   * tells them once where their actions are now.
+   */
+  toolbarCustomized: boolean;
   listMode: MailListMode;
   lastMailboxId: string | null;
   /**
@@ -29,18 +27,25 @@ const MAX_MAILBOX_IDS = 100;
 const normalizeMailboxIds = (value: unknown): string[] =>
   Array.isArray(value) ? [...new Set(value.filter(isMailResourceId))].slice(0, MAX_MAILBOX_IDS) : [];
 
+// The toolbar Mail stored for everyone before v5, in its two versions; any other stored choice was the person's own.
+const DEFAULT_TOOLBARS = [
+  ["reply", "reply_all", "forward", "done", "spam", "trash"],
+  ["reply", "reply_all", "forward", "archive", "spam", "trash"],
+];
+const customizedToolbar = (value: unknown): boolean => {
+  if (!value || typeof value !== "object") return false;
+  if ((value as { toolbarCustomized?: unknown }).toolbarCustomized === true) return true;
+  const actions = (value as { toolbarActions?: unknown }).toolbarActions;
+  return (
+    Array.isArray(actions) &&
+    !DEFAULT_TOOLBARS.some((preset) => preset.length === actions.length && preset.every((actionId, index) => actions[index] === actionId))
+  );
+};
+
 const normalizeMailWorkspacePreferences = (value: unknown): MailWorkspacePreferences => ({
-  searchDiscovered: Boolean(value && typeof value === "object" && (value as { searchDiscovered?: unknown }).searchDiscovered === true),
-  searchHintDismissed: Boolean(
-    value && typeof value === "object" && (value as { searchHintDismissed?: unknown }).searchHintDismissed === true,
-  ),
   eventsDiscovered: Boolean(value && typeof value === "object" && (value as { eventsDiscovered?: unknown }).eventsDiscovered === true),
-  listCollapsed: Boolean(value && typeof value === "object" && (value as { listCollapsed?: unknown }).listCollapsed === true),
-  detailsOpen: Boolean(value && typeof value === "object" && (value as { detailsOpen?: unknown }).detailsOpen === true),
   draftFullscreen: Boolean(value && typeof value === "object" && (value as { draftFullscreen?: unknown }).draftFullscreen === true),
-  toolbarActions: normalizeMailConversationToolbarActions(
-    value && typeof value === "object" ? (value as { toolbarActions?: unknown }).toolbarActions : undefined,
-  ),
+  toolbarCustomized: customizedToolbar(value),
   listMode: value && typeof value === "object" && (value as { listMode?: unknown }).listMode === "messages" ? "messages" : "conversations",
   lastMailboxId:
     value && typeof value === "object" && isMailResourceId((value as { lastMailboxId?: unknown }).lastMailboxId)

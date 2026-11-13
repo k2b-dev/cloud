@@ -254,7 +254,8 @@ export const rule: Rule = {
       "--mail-row-height", // MailConversationRow.tsx: measured height of a leaving row
       "--mail-tag", // MailConversationRow.tsx: the color of each tag chip
       "--mail-peer-color", // MailComposer.tsx: the caret colour of a person writing along in a shared draft
-      "--mail-time-samples", // MailConversationList.tsx: the longest localized times that size the columns view's time column
+      "--mail-list-share", // MailListHandle.tsx: the person's list share in percent, rendered as a style rule
+      "--mail-upload-progress", // MailComposerAttachments.tsx: how far an upload got, as the fill of its bar
       "--cloud-panel-width-set", // Layout.tsx and browser/panel-slot.ts: the panel width the reader saved
       "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks
       "--k2b-chart-height", // @k2b/ui Chart.tsx and ChartSnapshotView.tsx: the rendered chart height

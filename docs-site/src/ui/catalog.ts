@@ -253,13 +253,19 @@ const portableSections = [
       ),
       page("tab-bar", "TabBar", "ti ti-layout-navbar", "Bottom navigation between a phone app's top-level pages."),
       page("panel-dialog", "PanelDialog", "ti ti-app-window", "Contained or floating composition for complex editors."),
-      page("floating-window", "FloatingWindow", "ti ti-window", "Movable and resizable utility content with mobile fallback."),
+      page(
+        "floating-window",
+        "FloatingWindow",
+        "ti ti-window",
+        "Movable, resizable windows that minimize to a bar, maximize over a scrim, and are a sheet on a phone.",
+      ),
       page(
         "anchored-popover",
         "AnchoredPopover",
         "ti ti-message-2",
         "A card anchored to a control that keeps its side while open and is a bottom sheet on a phone.",
       ),
+      page("person-popover", "PersonPopover", "ti ti-id-badge-2", "A card about one person with contact rows, a list, and actions."),
     ],
   },
   {

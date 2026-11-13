@@ -1,0 +1,6 @@
+### A fitting tab row outside the head watched no room
+
+- **What happened:** Mail v5 moved its fitting view tabs from the workspace head into the row above the list. In WebKit, widening the window no longer brought hidden views back from **More**. Chromium passed only because an unrelated later restyle fitted the strip again.
+- **Root cause:** `ViewTabs` measured its room only as the `AppWorkspace.Head` lead. Outside the head, the room was missing, so a fit ran again only when the strip rendered or a shown view changed its width, never when the row widened. Suspected for a second failure in the same run: off-screen Mail rows took their stand-in size from a container query on the row itself, and WebKit did not evaluate that query again for rows that skip rendering.
+- **Error class:** A layout mechanism that is tied to one host or engine, while its contract or its test assumes that it works in every host.
+- **Guard:** The `@k2b/ui` browser test "a fitting strip outside a workspace head brings views back when its row widens" and the Mail shell tests "S3 head: widening and narrowing" and "F2 by handle/by window" in the WebKit gate. The Mail list now answers its width query on the always-rendered scroller and passes the size down as a custom property.
