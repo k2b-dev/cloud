@@ -12,7 +12,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: MailReaderHead } = await import("./MailReaderHead.tsx");
+const { default: MailReaderHead, fittingChipCount } = await import("./MailReaderHead.tsx");
 
 type LinkedState = "loading" | "error" | "ready";
 
@@ -71,5 +71,20 @@ describe("Mail reader head links chip", () => {
   test("links show one chip with their count once they loaded", () => {
     expect(renderHead("ready", [{ id: "T1", title: "Order planks", icon: "ti ti-checkbox", href: "/app/items/T1" }])).toContain("1 linked");
     expect(renderHead("loading")).not.toContain("linked");
+  });
+});
+
+describe("Mail reader head chip fit", () => {
+  test("a single chip that fills a list as wide as its content stays visible", () => {
+    expect(fittingChipCount({ widths: [72.4], available: 72.4, gap: 6 })).toBe(1);
+  });
+
+  test("chips that fill their content-sized list all stay visible; the gap counts only between chips", () => {
+    expect(fittingChipCount({ widths: [72, 90, 40], available: 72 + 6 + 90 + 6 + 40, gap: 6 })).toBe(3);
+  });
+
+  test("when the row is too narrow, chips after the first that does not fit wait behind +n, leaving its room", () => {
+    expect(fittingChipCount({ widths: [72, 90, 40], available: 150, gap: 6 })).toBe(1);
+    expect(fittingChipCount({ widths: [200], available: 150, gap: 6 })).toBe(0);
   });
 });

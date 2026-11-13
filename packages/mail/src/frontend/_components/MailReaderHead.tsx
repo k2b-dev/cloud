@@ -40,6 +40,21 @@ type HeadChip = {
   menu?: () => DropdownItem[];
 };
 
+/**
+ * How many chips of a row fit before "+n" takes the rest. The list may be exactly as wide as its chips, so the gap
+ * counts only between chips; every chip but the last leaves room for "+n" (`reserve`).
+ */
+export const fittingChipCount = (input: { widths: readonly number[]; available: number; gap: number; reserve?: number }): number => {
+  const reserve = input.reserve ?? 44;
+  let used = 0;
+  for (const [index, width] of input.widths.entries()) {
+    used += width + (index > 0 ? input.gap : 0);
+    const room = index === input.widths.length - 1 ? input.available : input.available - reserve;
+    if (used > room + 0.5) return index;
+  }
+  return input.widths.length;
+};
+
 export type MailReaderHint = "toolbar-moved" | "reader-head-moved";
 
 /**
@@ -179,19 +194,11 @@ export default function MailReaderHead(props: {
     if (!list) return;
     const items = [...list.querySelectorAll<HTMLElement>("[data-mail-head-chip-slot]")];
     for (const item of items) item.removeAttribute("data-overflow");
-    const available = list.clientWidth;
-    // The room "+n" takes when chips wait behind it.
-    const reserve = 44;
-    let used = 0;
-    let fit = items.length;
-    for (const [index, item] of items.entries()) {
-      used += item.offsetWidth + 6;
-      const room = index === items.length - 1 ? available : available - reserve;
-      if (used > room) {
-        fit = index;
-        break;
-      }
-    }
+    const fit = fittingChipCount({
+      widths: items.map((item) => item.getBoundingClientRect().width),
+      available: list.getBoundingClientRect().width,
+      gap: Number.parseFloat(getComputedStyle(list).columnGap) || 0,
+    });
     for (const item of items.slice(fit)) item.setAttribute("data-overflow", "hidden");
     setVisibleCount(fit);
   };
