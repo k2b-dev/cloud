@@ -16,6 +16,7 @@ import {
   mailDraftDocumentLog,
   withDraftDocumentCommit,
 } from "./draft-document-log";
+import { sameDraftDocumentState } from "./draft-document-state";
 import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { enqueueMailInvalidation, mailLive } from "./live";
 
@@ -54,7 +55,7 @@ export const draftDocumentSnapshotStore: SharedTextSnapshotStore = {
     const [row] = await sql<{ state: Uint8Array; text: string; cursor: string | null; restoreRevision: string }[]>`
       SELECT doc_state AS state, body_markdown AS text, doc_cursor AS cursor, doc_generation::text AS "restoreRevision"
       FROM mail.drafts WHERE id = ${docId}::uuid AND edit_mode = 'shared' AND doc_state IS NOT NULL
-        AND state = 'draft' AND doc_frozen_cursor IS NULL AND doc_history_complete`;
+        AND state IN ('draft', 'scheduled', 'sending', 'sent') AND doc_history_complete`;
     return row ?? null;
   },
   async save(docId, input: SharedTextSaveInput) {
@@ -70,14 +71,23 @@ export const draftDocumentSnapshotStore: SharedTextSnapshotStore = {
           state: string;
           doc_frozen_cursor: string | null;
           doc_history_complete: boolean;
+          doc_state: Uint8Array;
         }[]
       >`
-        SELECT mailbox_id, doc_generation::text, doc_seq::text, state, doc_frozen_cursor, doc_history_complete FROM mail.drafts
+        SELECT mailbox_id, doc_generation::text, doc_seq::text, state, doc_frozen_cursor, doc_history_complete, doc_state FROM mail.drafts
         WHERE id = ${docId}::uuid AND edit_mode = 'shared' FOR UPDATE`;
-      if (!row || row.state !== "draft" || row.doc_frozen_cursor || !row.doc_history_complete) return;
+      if (!row || !row.doc_history_complete) return;
       const sequence = mailDraftDocumentLog.topic().cursorSequence(input.cursor);
       if (Number(row.doc_seq ?? -1) >= sequence) return;
       if (row.doc_generation !== input.restoreRevision) throw new Error("Draft generation changed during snapshot");
+      // Lifecycle markers change coverage, never the reviewed content revision.
+      // Noneditable sends may flush markers, but may not alter committed content.
+      if (sameDraftDocumentState(row.doc_state, input.state)) {
+        await db`UPDATE mail.drafts SET doc_cursor = ${input.cursor}, doc_seq = ${sequence} WHERE id = ${docId}::uuid`;
+        draftDocumentSnapshotWritten(db);
+        return;
+      }
+      if (row.state !== "draft" || row.doc_frozen_cursor) throw new Error("Noneditable draft content changed before send");
       // Adoption inspects the old SQL base and retained human authorship before advancing its cursor.
       await refreshDraftAdoption({ db, draftId: docId });
       const [sender] = await db<{ id: string }[]>`SELECT id FROM mail.sender_identities
@@ -186,17 +196,20 @@ export const markDraftDocumentDirty = ({ docId, targetCursor }: { docId: string;
   );
   pending.set(docId, { cursor: targetCursor, first, timer });
 };
-export const flushDraftDocumentSnapshot = async (docId: string) => {
+export const flushDraftDocumentSnapshot = async (
+  docId: string,
+  options?: { signal: AbortSignal; restoreRevision: string; targetCursor: string },
+) => {
   const entry = pending.get(docId);
   if (entry) {
     clearTimeout(entry.timer);
     pending.delete(docId);
   }
-  const signal = AbortSignal.timeout(30_000);
+  const signal = options?.signal ?? AbortSignal.timeout(30_000);
   for (let delay = 25; ; delay = Math.min(delay * 2, 250)) {
     signal.throwIfAborted();
     try {
-      return await draftDocumentSnapshots.flushNow(docId, { signal });
+      return await draftDocumentSnapshots.flushNow(docId, { ...options, signal });
     } catch (error) {
       if (!(error instanceof Error) || error.message !== "Shared text snapshot writer is busy; retry the flush") throw error;
       await new Promise<void>((resolve) => setTimeout(resolve, delay));
