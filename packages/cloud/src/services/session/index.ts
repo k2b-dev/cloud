@@ -732,10 +732,6 @@ export const session = {
     // Handoff precedes the response so the person signing in cannot turn the notice off first.
     if (signIn.notify !== null && notice) await announceNewBrowser(signIn.notify, notice);
 
-    // Switching accounts ends only the web family this request replaces.
-    const previousToken = session.getWebToken(c);
-    const previous = previousToken ? await verifyCredential(previousToken) : null;
-    if (previousToken && previous && previous.sub !== userId) await revokeToken(previousToken, c.req.header("x-request-id"));
     session.setWebCookie(c, clientToken, expiresAt);
     setBrowserCookie(c, cookie);
     if (sharedWorkstation) {

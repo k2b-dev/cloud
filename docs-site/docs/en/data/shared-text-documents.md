@@ -906,10 +906,6 @@ transactional outbox for these sources:
   or expiry changes. Extending a signing key's verification window and writing
   an unchanged directory lock do not emit invalidations.
 - Session consent state and first-use acceptance changes.
-- Signing into another account in the same browser ends the previous web
-  session and its open connections. Other browsers and a mobile app session
-  keep their own sessions. Signing in again to the same account leaves the
-  earlier session valid.
 - Account and session expiry deadlines, and shared-workstation idle deadlines.
   Deadline rows are queued at the source and delivered when due; real input
   replaces the idle deadline; an idle-policy change reschedules existing

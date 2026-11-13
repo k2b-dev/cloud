@@ -13,7 +13,6 @@ import type { SharedTextRoomMessages } from "../../shared-text/room";
 import { verifySessionToken } from "../identity";
 import * as settings from "../settings";
 import { session } from "./index";
-import { createTestSession } from "./session.test-fixture";
 import { sharedWorkstationCookieName } from "./shared-workstation";
 
 const messages: SharedTextRoomMessages = {
@@ -151,7 +150,7 @@ suiteFor(
     setSystemTime();
   });
 
-  const create = async (shared = false, previousToken?: string) => {
+  const create = async (shared = false) => {
     const userId = crypto.randomUUID();
     users.add(userId);
     await sql`INSERT INTO auth.users(id, uid, provider, profile) VALUES (${userId}::uuid, ${userId}, 'local', 'user')`;
@@ -159,9 +158,7 @@ suiteFor(
     const response = await app.request("/login", {
       method: "POST",
       headers: {
-        Cookie: [shared ? `${sharedWorkstationCookieName()}=1` : "", previousToken ? `session_token=${previousToken}` : ""]
-          .filter(Boolean)
-          .join("; "),
+        Cookie: shared ? `${sharedWorkstationCookieName()}=1` : "",
       },
     });
     expect(response.status).toBe(200);
@@ -293,21 +290,6 @@ suiteFor(
     const current = await connect(next.token);
     await dispatch();
     await expectEnded(old);
-    expect(current.socket.readyState).toBe(WebSocket.OPEN);
-    current.socket.close();
-  });
-
-  test("sign-in to another account closes the previous browser family only", async () => {
-    const previous = await create();
-    const independent = await createTestSession(previous.userId);
-    const old = await connect(previous.token);
-    await dispatch();
-    const next = await create(false, previous.token);
-    const current = await connect(next.token);
-    await dispatch();
-    await expectEnded(old);
-    expect(await session.authenticate(previous.token)).toBeNull();
-    expect((await session.authenticate(independent))?.user.id).toBe(previous.userId);
     expect(current.socket.readyState).toBe(WebSocket.OPEN);
     current.socket.close();
   });
