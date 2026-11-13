@@ -95,12 +95,20 @@ afterAll(async () => {
   await browser?.close();
 });
 
-type Session = { tab: Page; errors: string[]; leases: string[]; media: { range: string | null }[]; failing: Set<string> };
+type Session = {
+  tab: Page;
+  errors: string[];
+  leases: string[];
+  failing: Set<string>;
+  /** Settles with the first `Range` header the video's lease answered with 206 and part of the clip. */
+  ranged: Promise<string>;
+};
 const start = async (options: BrowserContextOptions): Promise<Session> => {
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const tab = await context.newPage();
   tab.setDefaultTimeout(12_000);
-  const session: Session = { tab, errors: pageErrors(tab), leases: [], media: [], failing: new Set() };
+  const ranged = Promise.withResolvers<string>();
+  const session: Session = { tab, errors: pageErrors(tab), leases: [], failing: new Set(), ranged: ranged.promise };
   await tab.route("http://lightbox.test/**", async (route) => {
     const url = new URL(route.request().url());
     const path = decodeURIComponent(url.pathname);
@@ -130,16 +138,17 @@ const start = async (options: BrowserContextOptions): Promise<Session> => {
       const video = file[0].startsWith("video/");
       const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
       const headers = { "access-control-allow-origin": "*", "accept-ranges": "bytes" };
-      if (video) session.media.push({ range: range?.[0] ?? null });
       if (range) {
         const first = Number(range[1]);
         const last = Math.min(range[2] ? Number(range[2]) : body.length - 1, body.length - 1);
-        return route.fulfill({
+        await route.fulfill({
           status: 206,
           contentType: video ? "application/octet-stream" : file[0],
           body: body.subarray(first, last + 1),
           headers: { ...headers, "content-range": `bytes ${first}-${last}/${body.length}` },
         });
+        if (video) ranged.resolve(range[0]);
+        return;
       }
       return route.fulfill({ contentType: video ? "application/octet-stream" : file[0], body, headers });
     }
@@ -244,10 +253,15 @@ describe("Files in the Lightbox", () => {
     const session = await start(desktop);
     const { tab } = session;
     try {
+      // WebKit also reports a stand-in for the media request with status 0 and no headers; the lease's own answer follows.
+      const lease = tab.waitForResponse(
+        (response) => new URL(response.url()).pathname.startsWith("/v1/direct/") && response.status() !== 0,
+      );
       await show(tab, "Clip.webm");
+      // The lease offers byte ranges, so the player can seek without reading the whole file first.
+      expect((await lease).headers()["accept-ranges"]).toBe("bytes");
       await tab.locator(".k2b-lightbox__video video").waitFor();
       await tab.waitForFunction(() => (document.querySelector<HTMLVideoElement>(".k2b-lightbox__video video")?.readyState ?? 0) >= 1);
-      expect(session.media.some((request) => request.range !== null)).toBe(true);
       // → seeks in the video instead of stepping to the next file, in every engine and wherever the focus is. The player
       // starts at 0.001 s on purpose (`#t=0.001` in VideoPlayer), so Safari shows the first frame without a poster; the
       // three-second clip ends before five seconds, so → reaches its end.
@@ -270,6 +284,9 @@ describe("Files in the Lightbox", () => {
         start.time + 1,
       );
       expect(await nameShown(tab)).toBe("Clip.webm");
+      // When an engine asks for a range is its own choice: Chromium starts with one, WebKit may read the small clip with
+      // one plain GET first and asks for ranges to probe its end and to seek. Either way the lease answers part of it (#3249).
+      expect(await session.ranged).toMatch(/^bytes=\d+-\d*$/);
     } finally {
       await tab.context().close();
     }
