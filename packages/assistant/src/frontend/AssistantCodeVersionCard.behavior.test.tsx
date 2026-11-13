@@ -554,3 +554,29 @@ test("a decision whose read fails keeps the waiting card and is tried again by t
   await tick();
   expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
 });
+
+test.each([
+  { readiness: { state: "ready" } as const },
+  { readiness: { state: "ready" } as const, running: 5 },
+  { readiness: { state: "refused", code: "code_approval_revoked", message: "Changed" } as const },
+])("resync does not reload a settled card: %j", async (state) => {
+  const card = await mount({
+    "activation/preview": () => ({ json: { data: preview(state) } }),
+    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
+  });
+  const initial = card.calls.length;
+  await card.live.resync();
+  expect(card.calls).toHaveLength(initial);
+});
+
+test("a generic decision invalidation recovers a failed card through an authorized read", async () => {
+  let down = true;
+  const card = await mount({
+    "activation/preview": () => (down ? { status: 503 } : { json: { data: preview() } }),
+  });
+  await expect(card.live.apply([decided()])).rejects.toThrow();
+  down = false;
+  await card.live.apply([decided()]);
+  expect(card.calls).toHaveLength(3);
+  expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
+});

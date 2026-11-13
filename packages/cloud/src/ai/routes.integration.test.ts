@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { redis, sql } from "../runtime/clients";
 import { userResourceContext } from "./projects.test-fixture";
@@ -638,6 +639,85 @@ suiteFor(
       headers: { Accept: "text/event-stream", Authorization: `Bearer ${token}` },
       signal,
     });
+
+  test("SQL budget of authenticated chat stream admission and live deltas", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: chat.id,
+      modelId: "budget",
+      runConfig: { kind: "chat", input: "Code", toolSource: { kind: "none" } },
+      userMessage: { role: "user", content: [{ type: "text", text: "Code" }] },
+    });
+    const abort = new AbortController();
+    const meter = await meterSql();
+    try {
+      // Match #3242: fill process caches once, then pin every authenticated connection.
+      const warmAbort = new AbortController();
+      try {
+        const warm = await openStream(chat.shortId, token, warmAbort.signal);
+        expect(warm.status).toBe(200);
+        expect((await readFirstEvent(warm.body!.getReader())).type).toBe("state");
+      } finally {
+        warmAbort.abort();
+      }
+      const readers: ReadableStreamDefaultReader<Uint8Array>[] = [];
+      for (let connection = 0; connection < 3; connection++) {
+        const setup = await meter.during(async () => {
+          const response = await openStream(chat.shortId, token, abort.signal);
+          expect(response.status).toBe(200);
+          const reader = response.body!.getReader();
+          readers.push(reader);
+          expect((await readFirstEvent(reader)).type).toBe("state");
+        });
+        console.log("SQL BUDGET authenticated chat setup", setup.length, setup);
+        expect(setup).toHaveLength(13);
+      }
+      for (let event = 1; event <= 3; event++) {
+        const delivered = await meter.during(async () => {
+          const pending = readers.map(readFirstEvent);
+          await publishAiWireEvent({
+            v: 1,
+            type: "block_delta",
+            conversationId: chat.id,
+            turnId: turn.id,
+            attempt: 0,
+            seq: event,
+            blockId: "code-progress",
+            blockKind: "text",
+            delta: "step",
+          });
+          for (const result of await Promise.all(pending)) expect(result.type).toBe("block_delta");
+        });
+        expect(delivered).toEqual([]);
+      }
+      // Measure the route's periodic work too; a delta-only budget must not hide its heartbeat reads.
+      let revalidated = 0;
+      const loadConversation = aiConversations.getConversationByShortId.bind(aiConversations);
+      const reload = spyOn(aiConversations, "getConversationByShortId").mockImplementation(async (input) => {
+        const conversation = await loadConversation(input);
+        revalidated++;
+        return conversation;
+      });
+      try {
+        const heartbeat = await meter.during(async () => {
+          const deadline = performance.now() + 6_000;
+          while (revalidated < readers.length && performance.now() < deadline) await Bun.sleep(5);
+          expect(revalidated).toBe(readers.length);
+        });
+        console.log("SQL BUDGET chat revalidation per heartbeat", heartbeat.length / readers.length, heartbeat);
+        expect(heartbeat).toHaveLength(9);
+      } finally {
+        reload.mockRestore();
+      }
+    } finally {
+      abort.abort();
+      await meter.close();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 15_000);
 
   test("ends an open stream once its session is revoked", async () => {
     const userId = await insertUser();

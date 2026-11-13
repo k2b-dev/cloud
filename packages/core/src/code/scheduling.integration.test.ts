@@ -12,6 +12,7 @@ import { coreSettings } from "@k2b/cloud/services";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { createSync, type Queue, type Sync, type Worker } from "@k2b/sync";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { Runner } from "../../../runner/src/runner";
 import { aiCapabilities } from "../capabilities";
@@ -37,9 +38,11 @@ import { claimCodeWork } from "./dispatch";
 import * as ownerTransport from "./owner-transport";
 import { codeRequestVersion, requestCodeRoute } from "./requests";
 import {
+  claimCodeJob,
   completeCodeJob,
   createRunnerCodeCheckHost,
   createRunnerCodeTestingHost,
+  heartbeatCodeJob,
   readCodeJobInput,
   reconcileCodeJobs,
 } from "./runner-jobs";
@@ -259,6 +262,55 @@ suiteFor(
     await connection?.drain();
     await database?.drop();
     setSystemTime();
+  });
+
+  test("SQL budget of runner heartbeat and Code run snapshots", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    const meter = await meterSql();
+    try {
+      let lease: RunnerLease | undefined;
+      const setup = await meter.during(async () => {
+        lease = await take();
+      });
+      const proof = await claims(lease!);
+      console.log("SQL BUDGET runner admission", setup.length, setup);
+      expect(setup).toHaveLength(21);
+      for (let event = 0; event < 3; event++) {
+        const heartbeat = await meter.during(() => heartbeatCodeRun(proof));
+        console.log("SQL BUDGET runner heartbeat", heartbeat.length, heartbeat);
+        expect(heartbeat).toHaveLength(5);
+      }
+      const listed = await meter.during(() => listCodeRuns({ codeId: code.codeId, limit: 20 }, context()));
+      const read = await meter.during(() =>
+        readCodeRun({ codeId: code.codeId, runId: lease!.runId, cursor: 0, offset: 0, length: 1000 }, context()),
+      );
+      console.log("SQL BUDGET run list snapshot", listed.length, listed);
+      console.log("SQL BUDGET run detail snapshot", read.length, read);
+      expect(listed).toHaveLength(3);
+      expect(read).toHaveLength(5);
+    } finally {
+      await meter.close();
+    }
+  });
+
+  test("SQL budget of runner job setup and heartbeat", async () => {
+    await sql`INSERT INTO code.jobs(kind,owner_id,input,input_bytes,output_bytes,deadline_at)
+      VALUES('check',${owner}::uuid,'{}',2,1024,clock_timestamp()+interval '1 minute')`;
+    const proof = await sql.begin((db) => claimCodeJob("55555555-5555-4555-8555-555555555555", db));
+    if (!proof) throw new Error("Missing job lease");
+    const meter = await meterSql();
+    try {
+      const setup = await meter.during(() => readCodeJobInput(proof));
+      expect(setup).toHaveLength(3);
+      for (let event = 0; event < 3; event++) {
+        const heartbeat = await meter.during(() => heartbeatCodeJob(proof));
+        console.log("SQL BUDGET job heartbeat", heartbeat.length, heartbeat);
+        expect(heartbeat).toHaveLength(6);
+      }
+    } finally {
+      await meter.close();
+    }
   });
 
   // Personal Code serves routes with its owner's mandate, exactly as resource Code does with its Code account.

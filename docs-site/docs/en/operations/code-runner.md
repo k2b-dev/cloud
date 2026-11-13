@@ -214,6 +214,29 @@ lost leases. Work committed before a publisher or Core restart remains in the
 Postgres outbox. The repair pass republishes waiting work after lost or expired
 queue wakeups; brief transport outages do not discard queued runs.
 
+Code preview deltas travel over NATS with no SQL per delivered event. The chat
+worker checkpoints its live snapshot lazily, at most once per second. Opening
+the chat reads an authorized snapshot; SSE separately revalidates credentials
+and conversation access every five seconds.
+
+A version decision sends a generic `code-versions` invalidation in its decision
+transaction. Each waiting card reads its authorized preview again. Cards with
+a settled preview skip this invalidation and resync; a card whose initial read
+failed retries on the next invalidation. Approval never switches the Code on.
+
+Runner heartbeats renew the durable generation fence. Capability requests
+check current authority and record the call before effects. These operations
+execute SQL. The chat runner also polls its mailbox every 100 ms, including
+while idle: five statements per poll permits about 50 SQL statements per
+second per run, excluding request authentication and query latency. This idle
+polling remains an R1 DATA-13 gap.
+
+Run lists and details in the Code page and `cld code runs` are snapshots, with
+no run-event stream. Child console output is discarded rather than delivered
+as log events. The Runner transport smoke test uses a stubbed Core and checks
+reply chunk assembly; it provides no SQL budget for Core or providers. SQL
+budgets measure the Core bridge and database-backed paths separately.
+
 ## Configure runner budgets
 
 Change these settings in Administration › Code or through `cld admin settings apply`.
