@@ -609,13 +609,10 @@ const respondSenderIdentities = <T>(c: Context<MailApiContext>, result: Result<T
 const respondDrafts = async <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => {
   const resolved = await result;
   if (!resolved.ok && resolved.error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in resolved.error)
-    return c.json(
-      {
-        code: resolved.error.code,
-        message: localizeMailError(resolved.error, getLocale(c)).message,
-        draftId: String(resolved.error.draftId),
-      },
-      409,
+    return respond(
+      c,
+      { ok: false, error: localizeMailError(resolved.error, getLocale(c)).message, status: 409, code: resolved.error.code },
+      { errorDetails: { draftId: String(resolved.error.draftId) } },
     );
   return respondPublic(c, resolved, "drafts");
 };

@@ -2,7 +2,7 @@ import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { type ComponentProps, createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import { draftSchema, type MailDraftSeed, type SenderIdentity } from "../../contracts";
+import type { SenderIdentity } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import type MailConversationReaderComponent from "./MailConversationReader";
 import { summaryState } from "./mail-summary-fixtures";
@@ -127,10 +127,29 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   readingFormat: "automatic",
   theme: "light",
   calendarIntegrationAvailable: false,
-  detailsOpen: false,
-  toolbarActions: ["reply"],
-  onToggleDetails: () => undefined,
-  onToolbarActionsChange: () => undefined,
+  collaboration: null,
+  reminder: null,
+  assignableUsers: [],
+  onCollaborationChange: () => undefined,
+  tags: [],
+  comments: [],
+  commentsCursor: null,
+  detailErrors: {
+    collaboration: null,
+    tags: null,
+    comments: null,
+    assignableUsers: null,
+    activity: null,
+    reminder: null,
+    keep: null,
+    reference: null,
+    summary: null,
+    drafts: null,
+  },
+  presence: [],
+  hintSeen: (hint) => hint === "reader-head-moved",
+  toolbarCustomized: false,
+  onHintSeen: () => undefined,
   actionPending: false,
   structurePending: false,
   onAction: () => undefined,
@@ -178,6 +197,9 @@ test.skipIf(isServer)("jumping to newest reads the person's motion choice at cli
   try {
     expect(dom.window.matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false);
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    // The person reads far above the end of the conversation, where new messages arrive.
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, get: () => 2_000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, get: () => 600 });
     for (const [index, behavior] of ["auto", "smooth"].entries()) {
       scroller.scrollTop = 200;
       scroller.dispatchEvent(new Event("scroll"));
@@ -287,7 +309,7 @@ test.skipIf(isServer)(
       expect(card().querySelector(".mail-message-body")?.textContent).toContain("The numbers are attached.");
       expect(card().textContent).not.toContain("Refresh message");
       expect(dom.root.querySelector("[data-mail-print-root]")).toBe(reader);
-      expect(card().querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe("true");
+      expect(card().querySelector("[data-mail-message-header]")?.getAttribute("aria-expanded")).toBe("true");
       expect(bodyRequests.requests).toHaveLength(2);
     } finally {
       dispose();
@@ -542,7 +564,7 @@ test.skipIf(isServer)("a retained message card follows live delivery updates", a
   );
   try {
     const card = () => dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"]')!;
-    const header = () => card().querySelector("button[aria-expanded]")!.textContent ?? "";
+    const header = () => card().querySelector(".mail-message-head")!.textContent ?? "";
     await waitFor(() => card() !== null);
     const mounted = card();
     expect(header()).not.toContain("Sending");
@@ -609,6 +631,8 @@ test.skipIf(isServer)("a saved summary is announced to screen readers, with no t
     dom.root,
   );
   try {
+    // The summary is one row; its tools show once it is open.
+    dom.root.querySelector<HTMLButtonElement>(".mail-summary-row__toggle")!.click();
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit summary"]')!.click();
     await waitFor(() => saved);
     await Bun.sleep(150);
@@ -733,173 +757,6 @@ test.skipIf(isServer)("a reply without a verified sender names the reason and le
   }
 });
 
-test.skipIf(isServer).each(["created", "existing"] as const)(
-  "changing the conversation during materialization discards only a created draft (%s)",
-  async (creationOutcome) => {
-    setSystemTime(new Date(now));
-    const dom = createDomTestHarness();
-    const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
-    const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
-    const nav = await import("@k2b/ssr/nav");
-    const seedAnswer = Promise.withResolvers<void>();
-    const navigate = spyOn(nav, "documentNavigate").mockImplementation(() => {});
-    const identity: SenderIdentity = {
-      id: "Send01",
-      mailboxId: "Box001",
-      label: "Support",
-      displayName: "Support",
-      fromAddress: "support@example.com",
-      replyTo: null,
-      defaultCc: [],
-      defaultBcc: [],
-      defaultFormat: "markdown",
-      defaultPriority: "normal",
-      defaultDeliveryReceipt: false,
-      defaultReadReceipt: false,
-      vcard: null,
-      envelopeSender: null,
-      defaultSignatureTemplateId: null,
-      transport: {
-        mode: "mailbox",
-        host: null,
-        port: null,
-        tlsMode: null,
-        username: null,
-        secret: { kind: null, isSet: false },
-        revision: 0,
-        status: "active",
-        capabilities: { dsn: false, size: false, maxMessageBytes: null },
-        lastVerifiedAt: null,
-        lastError: null,
-      },
-      authenticationPolicy: { automation: "mailbox" },
-      sentFolderId: null,
-      draftsFolderId: null,
-      isDefault: true,
-      status: "verified",
-      statusReason: null,
-      pendingVerificationCommandId: null,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const seed: MailDraftSeed = {
-      id: "20000000-0000-4000-8000-000000000002",
-      mailboxId: "Box001",
-      conversationId: "Conv01",
-      intent: "reply",
-      sourceMessageId: "Msg001",
-      derivedFromMessageId: null,
-      derivationKind: null,
-      content: {
-        quoteSource: null,
-        senderIdentityId: "Send01",
-        to: [],
-        cc: [],
-        bcc: [],
-        subject: "Re: Quarterly review",
-        body: "",
-        format: "markdown",
-        priority: "normal",
-        requestDeliveryReceipt: false,
-        requestReadReceipt: false,
-      },
-      attachments: [],
-      origin: {
-        kind: "compose",
-        input: { quoteSource: null, senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "Re: Quarterly review", body: "" },
-      },
-      createdAt: now,
-    };
-    const created = {
-      ...seed.content,
-      id: "DrfNew",
-      mailboxId: "Box001",
-      conversationId: "Conv01",
-      intent: "reply",
-      sourceMessageId: "Msg001",
-      derivedFromMessageId: null,
-      derivationKind: null,
-      signatureTemplateId: null,
-      attachments: [],
-      createdBy: { kind: "user", userId: "Usr001" },
-      lastEditedBy: { kind: "user", userId: "Usr001" },
-      lastEditedByDisplayName: "Ada",
-      recoveryCopyCount: 0,
-      revision: 1,
-      state: "draft",
-      deliveryClass: "normal",
-      createdAt: now,
-      updatedAt: now,
-    };
-    const calls: string[] = [];
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = Object.assign(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = new URL(String(input instanceof Request ? input.url : input), "http://localhost").pathname;
-        const method = (input instanceof Request ? input.method : init?.method) ?? "GET";
-        calls.push(`${method} ${path}`);
-        if (path.endsWith("/draft-seeds")) {
-          await seedAnswer.promise;
-          return Response.json(seed);
-        }
-        if (path.endsWith("/draft-seeds/materialize")) return Response.json({ ...created, creationOutcome });
-        if (path.endsWith("/discard")) return Response.json({ ...created, state: "discarded" });
-        return Response.json([]);
-      },
-      { preconnect: originalFetch.preconnect },
-    );
-    const [conversationId, setConversationId] = createSignal("Conv01");
-    const { MailConversationReader } = modules!;
-    const dispose = render(
-      () =>
-        createComponent(MailConversationReader, {
-          ...readerProps,
-          identities: [identity],
-          get selectionKey() {
-            return conversationId();
-          },
-          get selectedConversationId() {
-            return conversationId();
-          },
-          get messages() {
-            return [
-              { ...envelopeOnly, id: conversationId() === "Conv01" ? "Msg001" : "Msg002", hydrationStatus: "complete", plainText: "Hello" },
-            ];
-          },
-        }),
-      dom.root,
-    );
-    try {
-      await waitFor(() => collectContextAwareCommands().some((command) => command.id.endsWith(".reply")));
-      const action = collectContextAwareCommands().find((command) => command.id.endsWith(".reply"))?.action;
-      if (typeof action !== "function") throw new Error("The reader registers no Reply command");
-      await action();
-      await waitFor(() => calls.some((call) => call.endsWith("/draft-seeds")));
-      setConversationId("Conv02");
-      seedAnswer.resolve();
-      await waitFor(() => calls.some((call) => call.endsWith("/draft-seeds/materialize")));
-      if (creationOutcome === "created")
-        await waitFor(() => calls.some((call) => call === "POST /api/mail/mailboxes/Box001/drafts/DrfNew/discard"));
-      else {
-        await waitFor(() => Boolean(dom.root.querySelector('[data-mail-toolbar-action="reply"]:not(:disabled)')));
-        expect(calls.some((call) => call.endsWith("/discard"))).toBe(false);
-      }
-      expect(dom.root.querySelector("[data-mail-inline-draft], [data-mail-inline-draft-frame]")).toBeNull();
-      expect(navigate).not.toHaveBeenCalled();
-    } finally {
-      seedAnswer.resolve();
-      dispose();
-      globalThis.fetch = originalFetch;
-      navigate.mockRestore();
-      if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
-      else Reflect.deleteProperty(globalThis, "localStorage");
-      dom.cleanup();
-      setSystemTime();
-    }
-  },
-);
-
 test.skipIf(isServer)("under Automatic the HTML frame stays mounted while the theme changes light to dark and back", async () => {
   const dom = createDomTestHarness();
   const { MailConversationReader } = modules!;
@@ -953,15 +810,13 @@ test.skipIf(isServer)("queued actions keep triage available while structure cont
         canWrite: true,
         actionPending: false,
         structurePending: true,
-        toolbarActions: ["trash", "keep", "tags"],
       }),
     dom.root,
   );
   try {
     const button = (label: string) => dom.root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
-    expect(button("Move to Trash")?.disabled).toBe(false);
-    expect(button("Keep")?.disabled).toBe(true);
-    expect(button("Tags")?.disabled).toBe(true);
+    expect(button("Delete")?.disabled).toBe(false);
+    expect(button("Archive")?.disabled).toBe(false);
     const menuItem = (label: string) =>
       [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === label);
     expect(menuItem("Move to Trash")?.disabled).toBe(false);
@@ -1181,12 +1036,12 @@ test.skipIf(isServer)("a conversation keeps the messages a live arrival showed w
     await waitFor(() => shown().length === 3);
     setSelected({ ...first, messages: [...first.messages, message(7)] });
     await waitFor(() => shown().includes("Msg007"));
-    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+    expect(shown()).toEqual(["Msg004", "Msg005", "Msg006", "Msg007"]);
     setSelected({ selectionKey: "Conv02", messages: [{ ...message(8), id: "Msg099" }] });
     await waitFor(() => shown().includes("Msg099"));
     setSelected({ ...first, messages: [...first.messages, message(7)] });
     await waitFor(() => shown().includes("Msg007"));
-    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+    expect(shown()).toEqual(["Msg004", "Msg005", "Msg006", "Msg007"]);
   } finally {
     dispose();
     dom.cleanup();
@@ -1220,40 +1075,6 @@ test.skipIf(isServer)("the fifth message folds none of the four shown messages a
     expect(header.isConnected).toBe(true);
     expect(dom.document.activeElement).toBe(header);
     expect(dom.root.querySelector("[data-mail-older-messages]")).toBeNull();
-  } finally {
-    dispose();
-    dom.cleanup();
-  }
-});
-
-test.skipIf(isServer)("the reply box names whom Reply writes to, also when this mailbox sent the newest message", async () => {
-  const dom = createDomTestHarness();
-  const { MailConversationReader } = modules!;
-  const later = new Date(Date.parse(now) + 60_000).toISOString();
-  const dispose = render(
-    () =>
-      createComponent(MailConversationReader, {
-        ...readerProps,
-        identities: [supportIdentity],
-        messages: [
-          envelopeOnly,
-          {
-            ...envelopeOnly,
-            id: "Msg002",
-            internalDate: later,
-            sentAt: later,
-            from: [{ name: "Support", address: "support@example.com" }],
-            to: [{ name: "Grace Hopper", address: "grace@example.com" }],
-          },
-        ],
-      }),
-    dom.root,
-  );
-  try {
-    // The reply pill's Reply names the recipients in its tooltip.
-    const reply = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-pill] .mail-reader-pill-reply");
-    await waitFor(() => reply() !== null);
-    expect(reply()!.title).toBe("Reply to Grace Hopper…");
   } finally {
     dispose();
     dom.cleanup();
@@ -1305,6 +1126,8 @@ test.skipIf(isServer)("an abandoned summary form cannot write into a new A sessi
     dom.root,
   );
   try {
+    // The summary is one row; its tools show once it is open.
+    dom.root.querySelector<HTMLButtonElement>(".mail-summary-row__toggle")!.click();
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit summary"]')!.click();
     expect(form).toHaveBeenCalledTimes(1);
     setMailboxId("Box002");
@@ -1355,7 +1178,11 @@ test.skipIf(isServer)("summary generation cancels the earlier A session after A 
       }),
     dom.root,
   );
-  const generate = () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Write again"]')!.click();
+  const generate = () => {
+    const toggle = dom.root.querySelector<HTMLButtonElement>(".mail-summary-row__toggle")!;
+    if (toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Write again"]')!.click();
+  };
   try {
     generate();
     await waitFor(() => pending.length === 1);
@@ -1380,179 +1207,93 @@ test.skipIf(isServer)("summary generation cancels the earlier A session after A 
   }
 });
 
-test.skipIf(isServer)("a new message's Open rest replaces the draft in place instead of only closing it", async () => {
+test.skipIf(isServer)("every reply path lands in the reply box: arrows, menus, quotes, commands, and a returned draft", async () => {
   const dom = createDomTestHarness();
-  const inlineDraft = await import("./MailInlineDraft");
-  let host: { openDraft: (draftId: string) => void } | undefined;
-  const mocked = spyOn(inlineDraft, "default").mockImplementation((props) => {
-    host = props.host;
+  const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
+  const card = await import("./MailMessageCard");
+  const box = await import("./MailReplyBox");
+  const { prompts } = await import("@k2b/ui");
+  const dialog = spyOn(prompts, "dialog");
+  let actions: ComponentProps<typeof card.default>["actions"] | undefined;
+  const message = { ...envelopeOnly, hydrationStatus: "complete" as const, plainText: "Selected source text" };
+  const cardMock = spyOn(card, "default").mockImplementation((props) => {
+    actions = props.actions;
     return null;
   });
-  const opened: string[] = [];
-  let closed = 0;
+  const calls: unknown[][] = [];
+  const boxMock = spyOn(box, "default").mockImplementation((props) => {
+    props.register({
+      open: (...args) => void calls.push(["open", ...args]),
+      openDraft: (draftId) => void calls.push(["openDraft", draftId]),
+    });
+    return null;
+  });
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      requests.push(String(input instanceof Request ? input.url : input));
+      return Response.json([]);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
   const { MailConversationReader } = modules!;
   const dispose = render(
     () =>
       createComponent(MailConversationReader, {
         ...readerProps,
-        requestUrl: "/app/mail/Box001?draft=Draft1",
-        selectionKey: null,
-        selectedConversationId: null,
-        messages: [],
-        newMessage: { draftId: "Draft1", fresh: false },
-        onNewMessageClose: () => closed++,
-        onNewMessageOpenDraft: (draftId) => opened.push(draftId),
+        messages: [message],
+        identities: [{ ...supportIdentity, status: "verified", statusReason: null }],
+        conversationDrafts: [
+          {
+            id: "Draft1",
+            intent: "reply",
+            subject: "Re: x",
+            updatedAt: now,
+            suggestion: false,
+            bodyPreview: "",
+            createdByDisplayName: "Ada",
+          },
+          {
+            id: "Draft2",
+            intent: "forward",
+            subject: "Fwd: x",
+            updatedAt: now,
+            suggestion: false,
+            bodyPreview: "",
+            createdByDisplayName: "Ada",
+          },
+        ],
       }),
     dom.root,
   );
   try {
-    await waitFor(() => host !== undefined);
-    host!.openDraft("Draft2");
-    expect(opened).toEqual(["Draft2"]);
-    expect(closed).toBe(0);
+    await waitFor(() => actions !== undefined && calls.length === 0);
+    actions!.compose("reply_all", message);
+    actions!.compose("reply", message, "> Selected source text");
+    actions!.compose("forward", message, "forwarded text");
+    actions!.openDraft?.("Draft9");
+    await waitFor(() => collectContextAwareCommands().some((command) => command.id.endsWith(".reply")));
+    const reply = collectContextAwareCommands().find((command) => command.id.endsWith(".reply"))?.action;
+    if (typeof reply !== "function") throw new Error("The reader registers no Reply command");
+    await reply();
+    expect(calls).toEqual([
+      ["open", "reply_all", { message, quote: undefined }],
+      ["open", "reply", { message, quote: "> Selected source text" }],
+      ["open", "forward", { message, quote: "forwarded text" }],
+      ["openDraft", "Draft9"],
+      ["open", "reply"],
+    ]);
+    // The pill, the "Continue draft?" dialog, the draft rows, and full screen are gone; nothing created a draft.
+    expect(dom.root.querySelector("[data-mail-reply-pill], [data-mail-draft-row], [data-mail-draft-bar]")).toBeNull();
+    expect(dialog).not.toHaveBeenCalled();
+    expect(requests.some((url) => url.includes("/draft-seeds") || url.includes("/drafts"))).toBe(false);
   } finally {
-    mocked.mockRestore();
     dispose();
+    globalThis.fetch = originalFetch;
+    dialog.mockRestore();
+    cardMock.mockRestore();
+    boxMock.mockRestore();
     dom.cleanup();
   }
 });
-
-test.skipIf(isServer).each(["forward", "reply_all", "quoted", "race", "active"] as const)(
-  "reader opens the occupied reply box and switches mode without replacing text (%s)",
-  async (scenario) => {
-    setSystemTime(new Date(now));
-    const dom = createDomTestHarness();
-    const card = await import("./MailMessageCard");
-    const inline = await import("./MailInlineDraft");
-    const { prompts } = await import("@k2b/ui");
-    let actions: ComponentProps<typeof card.default>["actions"] | undefined;
-    const message = { ...envelopeOnly, hydrationStatus: "complete" as const, plainText: "Selected source text" };
-    const cardMock = spyOn(card, "default").mockImplementation((props) => {
-      actions = props.actions;
-      return null;
-    });
-    const opened: Array<ComponentProps<typeof inline.default>> = [];
-    const collapseOptions: Array<{ preserveDraft?: boolean } | undefined> = [];
-    const inlineMock = spyOn(inline, "default").mockImplementation((props) => {
-      opened.push({ ...props });
-      props.host.register({
-        collapse: async (options) => {
-          collapseOptions.push(options);
-          props.host.leave("closed");
-        },
-        send: () => undefined,
-        focusText: () => undefined,
-      });
-      return null;
-    });
-    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
-    const existing = draftSchema.parse({
-      id: "Draft1",
-      mailboxId: "Box001",
-      conversationId: "Conv01",
-      intent: "reply",
-      sourceMessageId: "Msg001",
-      derivedFromMessageId: null,
-      derivationKind: null,
-      senderIdentityId: "Send01",
-      signatureTemplateId: null,
-      to: [{ name: null, address: "ada@example.com" }],
-      cc: [],
-      bcc: [],
-      subject: "Re: Quarterly review",
-      body: "Existing person's text",
-      format: "markdown",
-      priority: "normal",
-      requestDeliveryReceipt: false,
-      requestReadReceipt: false,
-      attachments: [],
-      suggestion: false,
-      suggestedBy: null,
-      createdBy: { kind: "user", userId: "10000000-0000-4000-8000-000000000001" },
-      lastEditedBy: { kind: "user", userId: "10000000-0000-4000-8000-000000000001" },
-      lastEditedByDisplayName: "Ada",
-      recoveryCopyCount: 0,
-      revision: 7,
-      state: "draft",
-      deliveryClass: "normal",
-      createdAt: now,
-      updatedAt: now,
-    });
-    const calls: Array<{ method: string; path: string; body: unknown }> = [];
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = Object.assign(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
-        const path = new URL(request.url).pathname;
-        const raw = await request.text();
-        const body: unknown = raw ? JSON.parse(raw) : null;
-        calls.push({ method: request.method, path, body });
-        if (path.endsWith("/drafts/Draft1")) return Response.json(existing);
-        if (path.endsWith("/drafts/Draft1/intent"))
-          return Response.json({ ...existing, intent: scenario === "reply_all" ? "reply_all" : "forward", revision: 8 });
-        if (path.endsWith("/draft-seeds"))
-          return Response.json({
-            id: "20000000-0000-4000-8000-000000000002",
-            origin: { kind: "compose", input: {} },
-            content: {},
-          });
-        if (path.endsWith("/draft-seeds/materialize"))
-          return Response.json({ code: "DRAFT_REPLY_BOX_OCCUPIED", draftId: existing.id, message: "Occupied" }, { status: 409 });
-        return Response.json([]);
-      },
-      { preconnect: originalFetch.preconnect },
-    );
-    const { MailConversationReader } = modules!;
-    const dispose = render(
-      () =>
-        createComponent(MailConversationReader, {
-          ...readerProps,
-          requestUrl: scenario === "active" ? "/app/mail/Box001?conversation=Conv01&draft=Draft1" : readerProps.requestUrl,
-          messages: [message],
-          identities: [{ ...supportIdentity, status: "verified", statusReason: null }],
-          conversationDrafts:
-            scenario === "race"
-              ? []
-              : [
-                  {
-                    ...existing,
-                    createdByDisplayName: "Ada",
-                    bodyPreview: existing.body,
-                  },
-                ],
-        }),
-      dom.root,
-    );
-    try {
-      await waitFor(() => actions !== undefined);
-      actions!.compose(
-        scenario === "reply_all" ? "reply_all" : scenario === "quoted" ? "reply" : "forward",
-        message,
-        scenario === "quoted" ? "> Selected source text" : undefined,
-      );
-      await waitFor(() => opened.length === (scenario === "active" ? 2 : 1));
-      expect(opened.at(-1)!.draftId).toBe(existing.id);
-      expect(opened.at(-1)!.host.fresh).toBe(false);
-      expect(opened.at(-1)!.initialDraft?.body).toBe(existing.body);
-      expect(collapseOptions).toEqual(scenario === "active" ? [{ preserveDraft: true }] : []);
-      expect(error).not.toHaveBeenCalled();
-      const switches = calls.filter((call) => call.path.endsWith("/intent"));
-      expect(switches).toHaveLength(scenario === "quoted" ? 0 : 1);
-      if (scenario !== "quoted")
-        expect(switches[0]!.body).toEqual({
-          intent: scenario === "reply_all" ? "reply_all" : "forward",
-          expectedRevision: existing.revision,
-        });
-      expect(calls.some((call) => call.method === "PUT" || call.path.endsWith("/discard"))).toBe(false);
-      if (scenario !== "race") expect(calls.some((call) => call.path.includes("/draft-seeds"))).toBe(false);
-    } finally {
-      dispose();
-      globalThis.fetch = originalFetch;
-      error.mockRestore();
-      cardMock.mockRestore();
-      inlineMock.mockRestore();
-      dom.cleanup();
-      setSystemTime();
-    }
-  },
-);

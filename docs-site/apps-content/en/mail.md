@@ -60,20 +60,35 @@ Saved automation assignments use the same label when the person is no longer
 available in the choices.
 
 On wide screens the conversation list grows with the window from 320 to
-440 px. The fixed reader toolbar combines the subject, message-count chip,
-list toggle, and conversation actions above the centered 760 px reading
-column. The subject stays visible when messages scroll; its full text is
-available on hover. On a phone, the workspace head appears over the list and
-leaves the screen while reading. Back, subject, overflow, and Details remain
-at the top; the message count is hidden. Reply actions stay in the bottom bar. **Conversation details** stand beside the reader while the reader
-keeps 440 px next to them; otherwise they wait behind **Details** and open with
-one click from the shared head button. On a phone, use **Details** in the reader
-while the list head is hidden. Hiding the list gives
-the reader that room. In Focus, a conversation opens its details beside the
-queue, or over its end when there is no room; on a phone it opens in its
-mailbox. List rows have three lines (sender and time, subject with its marks,
-preview) and a fourth only for tags or **Waiting**. When the reader is narrow,
-Reply all and Forward show only their icons, then move into **…**.
+440 px. List rows have three lines (sender and time, subject with its marks,
+preview) and a fourth only for tags or **Waiting**.
+
+The reader has no detail panel. Its fixed head shows **×**, the subject on
+one line (the full text on hover), and the same five actions for everyone:
+**Done**, **Archive**, **Delete**, **Later** (show later, and a reminder only
+for you), and **Assign**, then **…** with every other conversation action,
+including **Link**, **Show activity**, **Copy reference**, and the newest
+message's `.eml`. A narrow head keeps the actions that do not fit only in
+**…**. Below the subject, one row of chips names the sender and the number of
+messages, then the state (**Waiting for reply**, **Later until …**, your
+**Reminder …**, **Kept**, **Read only**), the tags, and the linked items; a
+click on a chip changes its value, and chips that do not fit wait behind
+**+n**. Who else reads the conversation stands at the end of that row.
+
+The timeline reads oldest first; the newest message is open at the bottom and
+the reply bar follows it. Older messages are one line each, and a long
+conversation folds all but the newest three behind **n older messages**.
+Internal notes stand at their time between the messages as centered yellow
+tiles marked **internal**; notes that automations write look the same. The
+summary is one collapsible row above the timeline. An open message shows its
+attachments as tiles after its body; the Lightbox steps through every
+attachment of the conversation, and from two attachments on **Download all**
+packs them into one ZIP. A click on a sender opens a card with the contact
+from the contact directory, up to five earlier conversations with that
+sender, and the sender actions. Each message's **…** keeps **Technical
+details** (headers and source). A person who had arranged their own toolbar
+before sees once where their actions went, and everyone sees once that notes
+moved into the timeline; Mail stores both hints per person and mailbox.
 
 Signed-in users can choose **New mailbox**; after creation, its delivery
 settings open before you enter the mailbox. If settings cannot load, the
@@ -171,7 +186,7 @@ Moving, archiving, filing, and marking read change no work status. Follow-up and
 
 ### Finish work and keep the provider Inbox in step
 
-Mark **Done** in **Conversation details**, with `cld mail done <conversation-id> --mailbox <mailbox>`, `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`, or an automation's `set_status: done`.
+Mark **Done** in the head of the conversation, with `cld mail done <conversation-id> --mailbox <mailbox>`, `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`, or an automation's `set_status: done`.
 Done updates only Cloud collaboration state and activity, clears **Show later**, and sends no provider command. It does not archive, move, or mark read. Other mail clients still show the email in the provider Inbox.
 
 To also clear that Inbox, choose **Archive**, run `cld mail archive <conversation-id> --mailbox <mailbox>`, or add `move_to_folder` to the same automation.
@@ -333,7 +348,7 @@ there as `mail.conversation.keep` by the person who moved the messages, with
 
 | Surface | Keep | Lift |
 | --- | --- | --- |
-| Web app | **More conversation actions > Keep**, or the toolbar | **Stop keeping** |
+| Web app | **More conversation actions > Keep** | **Stop keeping**, or the **Kept** chip |
 | API | `PUT /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/keep` | `DELETE` on the same path |
 | `cld` | `cld mail keep <conversation-id>...` | `cld mail unkeep <conversation-id>` |
 | Capabilities | `conversation.keep` | `conversation.keep.release` |
@@ -527,22 +542,21 @@ and restores unsaved changes kept in this browser.
 
 ## Write in the conversation
 
-Replies, forwards, and new messages are written in the conversation, not on a
-separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
+Replies and forwards are written in the conversation, not on a separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
 above the newest message grow into the draft at that place; on a phone the bar
 waits at the bottom and the draft opens at the top over the full width. Mail
 creates the shared draft (`draft-seeds` and `materialize`) before anyone types.
 A conversation has one reply draft. Reply, Reply all and Forward use the same
 draft; content-free creation returns its current content. Supplying new content
-when it already exists returns a conflict instead of dropping that content. **Compose** puts **New message**
-at the top of the list with an empty conversation beside it.
+when it already exists returns a conflict instead of dropping that content.
 
-- The URL carries the open draft as `?draft=`, so reload and Back open it
-  again. Old `/compose/:draftId` links open the conversation with the draft;
-  `?window=1` and drafts with an open approval keep the compose page.
+- The URL carries the open reply draft as `?conversation=…&draft=`, so reload
+  and Back open it again. Old `/compose/:draftId` links open the conversation
+  with the draft; drafts with an open approval and drafts that are no longer
+  open keep the compose page.
 - Opening another conversation saves typing the autosave has not sent yet
   before Mail releases the editing lease.
-- **Full screen** moves the list and details aside and is remembered per
+- **Full screen** moves the list aside and is remembered per
   browser; from 1500 px of reader width, the history stands beside the draft.
 - **Preview** shows the mail as it arrives, with the mailbox's design; the
   editor keeps Cloud's calm style.
@@ -550,6 +564,30 @@ at the top of the list with an empty conversation beside it.
   `quoteSource: { locale, timeZone }`, and the quote goes out after the
   signature with that person's date format.
 - A Gustav suggestion (`suggestion: true`) opens in plum until someone edits it.
+
+## New messages in floating windows
+
+**Compose** (and `mod+alt+n`) creates the draft first and opens it as a
+`FloatingWindow` from `@k2b/ui`, docked at the bottom end of the Mail area. The
+list and the open conversation behind it stay usable; several windows can be
+open, and minimized ones line up as bars at the bottom. The window's head shows
+the subject (else "New message") and the save status; on a phone it is a
+full-screen sheet with **Send** in its head.
+
+- **Close** saves and releases the draft; a notice says it waits in **Drafts**
+  and **Open** brings the window back. A new message in **Drafts** opens as a
+  window. **Send** and **Send later** close the window; the notice offers
+  **Undo** or **Change**, which cancel the queued send (`scheduled-sends/:id/cancel`
+  with `disposition: "draft"`) and reopen the window. A failed send keeps the
+  window open with the reason in its bottom bar and **Send again**.
+- Open windows are a state of the tab: `sessionStorage` remembers draft IDs,
+  state, and place per mailbox, so a reload or a return from another app opens
+  them again. Drafts that are gone by then are dropped quietly. Nothing is stored
+  on the server.
+- `?draft=<id>` without a conversation opens that draft's window and leaves the
+  URL. `/app/mail/compose` (with `mailto=` and `autostart=1`) creates the draft
+  and opens Mail with its window; `/compose/:draftId` of a new message and every
+  `?window=1` link open the draft's window.
 
 When a conversation already has a reply draft, Reply, Reply all and Forward
 open that draft and switch its mode. Replying to selected text opens it without
@@ -709,16 +747,16 @@ accept `replaceUnreadable` as an array of the supplied setting names.
 | `mail.contact_directory.resolve` | `contact.resolve` | Yes |
 | `mail.contact_directory.read` | `contact.read` | No; empty disables **Compose email** from a contact reference |
 | `mail.contact_directory.list_writable_books` | `book.list` | No; together with `create` |
-| `mail.contact_directory.create` | `contact.create` | No; empty hides **New contact** |
+| `mail.contact_directory.create` | `contact.create` | No; empty hides **Add to contacts** |
 
 Mail calls the selected app as the requesting person, so that app's
 permissions decide which contacts appear. When the selected app is not installed
 (not registered), Mail hides contact features without an error. Recipient
-suggestions still come from the mailbox. The details panel has no contacts
-block. **Administration → Mail** still reports the missing app.
+suggestions still come from the mailbox. The sender card shows the address and
+Mail's own actions. **Administration → Mail** still reports the missing app.
 
 When a registered app stops briefly or returns data that no longer matches the
-contract, the details panel shows **Contacts unavailable** with **Retry**.
+contract, the sender card shows that the contact could not be loaded, with **Retry**.
 Recipient fields still offer mailbox addresses.
 
 ### Mailbox recipient suggestions

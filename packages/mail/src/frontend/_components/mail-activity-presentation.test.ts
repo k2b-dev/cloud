@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MailActivityEvent } from "../../service/collaboration";
-import { mailActivityIcon, mailActivityLabel, presentMailActivity, showMailActivityInline } from "./mail-activity-presentation";
+import { mailActivityIcon, mailActivityLabel, presentMailActivity } from "./mail-activity-presentation";
 
 const event = (metadata: Record<string, unknown> = {}): MailActivityEvent => ({
   id: crypto.randomUUID(),
@@ -62,14 +62,11 @@ describe("mail activity presentation", () => {
 
     expect(mailActivityIcon(workflowEvent)).toBe("ti-tag");
     expect(presentMailActivity([workflowEvent])[0]?.actorLabel).toBe("Workflow Invoice triage");
-    expect(showMailActivityInline(workflowEvent)).toBe(true);
   });
 
-  test("shows who started and stopped keeping a conversation in the timeline", () => {
+  test("names who started and stopped keeping a conversation", () => {
     const kept = { ...event(), action: "conversation.kept" };
     const released = { ...event(), action: "conversation.keep_released" };
-    expect(showMailActivityInline(kept)).toBe(true);
-    expect(showMailActivityInline(released)).toBe(true);
     expect(mailActivityIcon(kept)).toBe("ti-lock");
     expect(mailActivityIcon(released)).toBe("ti-lock-open");
     expect(mailActivityLabel(kept)).toBe("started keeping the conversation");
@@ -81,12 +78,17 @@ describe("mail activity presentation", () => {
     );
     expect(mailActivityIcon(carried)).toBe("ti-lock");
   });
+});
 
-  test("keeps technical activity and human draft churn out of the inline timeline", () => {
-    expect(showMailActivityInline(event())).toBe(true);
-    expect(showMailActivityInline({ ...event(), action: "command.execute" })).toBe(false);
-    expect(showMailActivityInline({ ...event(), action: "draft.created" })).toBe(false);
-  });
+test("F6 removals appear in the activity with localized consolidation text", () => {
+  const removed: MailActivityEvent = {
+    ...event({ reason: "reply_draft_consolidation", count: 1 }),
+    action: "draft.discarded",
+    actor: { kind: "system", id: null, displayName: "Mail", avatarHash: null },
+  };
+  expect(mailActivityLabel(removed)).toBe("removed a reply draft during consolidation");
+  expect(mailActivityLabel(removed, "de")).toContain("Antwortentwurf");
+  expect(presentMailActivity([removed, { ...removed, id: "next" }])[0]?.count).toBe(2);
 });
 
 test("F6 removals appear in the conversation with localized consolidation text", () => {

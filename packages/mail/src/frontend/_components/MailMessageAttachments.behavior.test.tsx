@@ -57,14 +57,12 @@ describe("Mail attachment preview", () => {
       lightbox().querySelector<HTMLButtonElement>('button[aria-label="Next file"]')!.click();
       await settle();
     };
-    // A click on an item opens the Lightbox; the fourth item shows once the full list is open.
-    const preview = (index: number) => dom.root.querySelectorAll<HTMLButtonElement>(".k2b-file-grid__open")[index]!;
+    // Every attachment is a tile; a click on one opens the Lightbox.
+    const preview = (index: number) => dom.root.querySelectorAll<HTMLButtonElement>(".mail-attachment-tile__open")[index]!;
     try {
-      expect(dom.root.querySelector("[data-mail-message-attachments]")?.textContent).toContain("4 attachments");
-      expect(dom.root.querySelectorAll(".k2b-file-grid__open")).toHaveLength(3);
-      dom.root.querySelector<HTMLButtonElement>(".k2b-file-grid-stack__more")!.click();
-      await settle();
-      expect(dom.root.querySelectorAll(".k2b-file-grid__open")).toHaveLength(4);
+      expect(dom.root.querySelector("[data-mail-message-attachments]")?.getAttribute("aria-label")).toBe("4 attachments");
+      expect(dom.root.querySelectorAll(".mail-attachment-tile__open")).toHaveLength(4);
+      expect(dom.root.querySelector("[data-mail-download-all]")?.textContent).toContain("Download all 4");
       preview(0).click();
       await settle();
       // The leading heading becomes the name and leaves the document; the file name moves into the facts.
@@ -135,7 +133,10 @@ describe("Mail attachment preview", () => {
     try {
       const labels = [...dom.root.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"));
       expect(labels).toContain("Save all to…");
-      expect(labels).toContain("Save Summer_party.md to…");
+      // Each tile's "…" saves that one attachment.
+      expect(labels).toContain("Actions for Summer_party.md");
+      const tileMenu = dom.root.querySelector('[data-mail-attachment="Att001"]')!;
+      expect([...tileMenu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim())).toEqual(["Download", "Save to…"]);
       dom.root.querySelector<HTMLButtonElement>('button[aria-label="Save all to…"]')!.click();
       let dialog = dom.document.querySelector<HTMLElement>(".k2b-dialog[open]");
       for (let attempt = 0; attempt < 100 && !dialog; attempt += 1) {

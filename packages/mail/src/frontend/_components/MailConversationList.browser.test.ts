@@ -181,7 +181,6 @@ const load = async (
     reader?: boolean;
     requestUrl?: string;
     items?: MailListItem[];
-    toolbarActions?: MailListHarnessOptions["toolbarActions"];
     deletedOnServer?: boolean;
     plainText?: string;
     shared?: boolean;
@@ -220,7 +219,6 @@ const load = async (
     folderOnlyHints: options.folderOnlyHints,
     reader: options.reader,
     requestUrl: options.requestUrl,
-    toolbarActions: options.toolbarActions,
     deletedOnServer: options.deletedOnServer,
     plainText: options.plainText,
     shared: options.shared,
@@ -1103,13 +1101,13 @@ describe("Mail conversation switching", () => {
 
 describe("Mail kept conversations", () => {
   const keptItems = (id: string) => items.map((entry) => (entry.conversationId === id ? { ...entry, kept: true } : entry));
-  /** The reader's header and toolbar, and the open row: what keeping must not move. */
+  /** The reader's head, its actions and chips, and the open row: what keeping must not move. */
   const keepLayout = (page: Page, id: string) =>
     page.evaluate(
       (selector) =>
         [
           ...document.querySelectorAll(
-            `#reader header, #reader [data-mail-reader-heading], #reader [data-mail-toolbar-action], ${selector}`,
+            `#reader .mail-reader-head-line, #reader [data-mail-reader-heading], #reader [data-mail-toolbar-action], #reader .mail-reader-meta, ${selector}`,
           ),
         ].map((element) => {
           const { top, left, width, height } = element.getBoundingClientRect();
@@ -1118,24 +1116,20 @@ describe("Mail kept conversations", () => {
       row(id),
     );
 
-  test("keeping the open conversation shows the lock without moving the header, toolbar, or row", async () => {
-    const page = await load({
-      reader: true,
-      selectedConversationId: "Cv0001",
-      toolbarActions: ["reply", "archive", "spam", "trash", "keep"],
-    });
+  test("keeping the open conversation shows the Kept chip without moving the head, its actions, or the row", async () => {
+    const page = await load({ reader: true, selectedConversationId: "Cv0001" });
     try {
       await page.waitForSelector("#reader [data-mail-reader-heading]");
       const before = await keepLayout(page, "Cv0001");
       await page.evaluate((next) => window.setMailItems(next), keptItems("Cv0001"));
-      await page.waitForSelector("#reader [data-mail-kept-indicator]");
+      await page.waitForSelector('#reader [data-mail-head-chip="kept"]');
       expect(await keepLayout(page, "Cv0001")).toEqual(before);
       // The harness loads no icon font, so the lock has no size here; the row carries it.
       expect(await page.locator(`${row("Cv0001")} [data-mail-kept-indicator]`).count()).toBe(1);
-      // Cloud refuses Trash and Junk for a kept conversation, and only Cloud administrators lift the keep.
+      // Cloud refuses Delete for a kept conversation and says why; only Cloud administrators lift the keep.
       expect(await page.isDisabled('#reader [data-mail-toolbar-action="trash"]')).toBe(true);
-      expect(await page.isDisabled('#reader [data-mail-toolbar-action="spam"]')).toBe(true);
-      expect(await page.getAttribute('#reader [data-mail-toolbar-action="keep"]', "aria-label")).toBe("Kept");
+      expect(await page.getAttribute('#reader [data-mail-toolbar-action="trash"]', "aria-label")).toContain("Delete: ");
+      expect(await page.locator('#reader [data-mail-head-chip="kept"]').evaluate((chip) => chip.tagName)).toBe("SPAN");
       expect(page.errors).toEqual([]);
     } finally {
       await close(page);
@@ -1153,10 +1147,10 @@ describe("Mail kept conversations", () => {
         deletedOnServer: true,
       });
       try {
-        await page.waitForSelector("#reader [data-mail-kept-indicator]");
+        await page.waitForSelector('#reader [data-mail-head-chip="kept"]');
         expect(await page.isVisible("text=Deleted on the server, kept in Cloud")).toBe(true);
         const overflow = await page.evaluate(() => {
-          const header = document.querySelector("#reader header");
+          const header = document.querySelector("#reader .mail-reader-head");
           return {
             page: document.documentElement.scrollWidth - window.innerWidth,
             header: header ? header.scrollWidth - header.clientWidth : 0,
@@ -1174,63 +1168,6 @@ describe("Mail kept conversations", () => {
 // The reply pill is a floating pill like the Notebooks editor pills and the PdfViewer bar: the space between its edge
 // and the background of each control is the same above, below, and at the sides (@k2b/ui `--k2b-pill-control` and
 // `--k2b-pill-inset`), and touch screens keep a 44 px hit area.
-describe("Mail reply pill", () => {
-  for (const viewport of [
-    { name: "desktop", context: { viewport: { width: 1440, height: 900 } } },
-    { name: "phone", context: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
-  ] satisfies { name: string; context: BrowserContextOptions }[]) {
-    test(`${viewport.name}: keeps the same space around its controls on every side`, async () => {
-      const page = await load({
-        context: viewport.context,
-        reader: true,
-        selectedConversationId: "Cv0001",
-        toolbarActions: ["reply", "reply_all", "forward", "done", "spam", "trash"],
-      });
-      try {
-        // The pill measures which actions fit before it shows them.
-        const toolbar = page.locator("[data-mail-reply-pill] .k2b-toolbar:not([data-overflow-pending])");
-        await toolbar.waitFor();
-        const pill = await toolbar.evaluate((element) => {
-          const box = element.getBoundingClientRect();
-          const controls = [...element.querySelectorAll<HTMLElement>(".k2b-button")]
-            .filter((control) => control.getClientRects().length > 0 && !control.closest('[data-overflow="hidden"], [popover]'))
-            .map((control) => {
-              const rect = control.getBoundingClientRect();
-              // On a coarse pointer `::after` is the invisible hit area around the visible button.
-              const hit = getComputedStyle(control, "::after");
-              const px = (value: string) => Number.parseFloat(value) || 0;
-              return {
-                rect,
-                hitHeight: hit.content === "none" ? rect.height : rect.height - px(hit.top) - px(hit.bottom),
-              };
-            });
-          return {
-            height: box.height,
-            controlHeights: controls.map(({ rect }) => rect.height),
-            tops: controls.map(({ rect }) => rect.top - box.top),
-            bottoms: controls.map(({ rect }) => box.bottom - rect.bottom),
-            start: controls[0]!.rect.left - box.left,
-            end: box.right - controls.at(-1)!.rect.right,
-            hitHeights: controls.map((control) => control.hitHeight),
-          };
-        });
-        const screenshots = process.env.MAIL_PILL_SCREENSHOTS;
-        if (screenshots) await page.screenshot({ path: `${screenshots}/reader-${viewport.context.viewport.width}.png` });
-        expect(pill.height).toBe(38);
-        expect(pill.controlHeights.length).toBeGreaterThan(1);
-        for (const height of pill.controlHeights) expect(height).toBe(24);
-        const inset = pill.tops[0]!;
-        expect(inset).toBe(7);
-        for (const value of [...pill.tops, ...pill.bottoms, pill.start, pill.end]) expect(Math.abs(value - inset)).toBeLessThanOrEqual(0.5);
-        for (const height of pill.hitHeights) expect(height).toBeGreaterThanOrEqual(viewport.name === "phone" ? 44 : 24);
-        expect(page.errors).toEqual([]);
-      } finally {
-        await close(page);
-      }
-    }, 30_000);
-  }
-});
-
 describe("Mail row actions", () => {
   const environments = [
     { name: "desktop mouse", hover: "hover", "any-hover": "hover", pointer: "fine", "any-pointer": ["fine"] },
@@ -1654,7 +1591,7 @@ describe("Mail conversation printing", () => {
   /** What the reader prints: the subject, every message header, and every plain text body. */
   const printed = {
     subject: "[data-mail-print-root] h1",
-    sender: "[data-mail-print-root] [data-mail-message-header] .font-semibold",
+    sender: "[data-mail-print-root] .mail-message-sender",
     date: "[data-mail-print-root] [data-mail-message-header] time",
     body: "[data-mail-print-root] [data-mail-message-id] pre:not(details pre)",
     quote: "[data-mail-print-root] [data-mail-message-id] details pre",

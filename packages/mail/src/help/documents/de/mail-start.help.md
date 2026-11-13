@@ -65,13 +65,13 @@ Im Kopfbereich findest du:
 
 - Das Suchfeld des Postfachs. Mit `/` springst du hinein. Der Filter-Knopf daneben enthält **Ungelesen**, **Markiert**, **Mit Anhang**, den Zeitraum und einen Tag. Während du suchst, enthält er auch **Suchen in** und den Ort. Eine Zahl am Knopf zeigt, wie viele Filter aktiv sind. **Filter zurücksetzen** entfernt sie.
 - **…** mit **Automatisierungen**, **Postfach synchronisieren**, **Postfachstatus** und **Einstellungen** zuerst. Danach folgen Postfachdetails, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und die Wahl zwischen Unterhaltungen und einzelnen Nachrichten. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**.
-- **Verfassen** als Hauptaktion, wenn du senden kannst.
+- **Neue Nachricht** als Hauptaktion, wenn du senden kannst.
 
 Über Liste und Leser stehen die Ansichten als Tabs: **Alle**, **Handlungsbedarf**, **Mir zugewiesen**, **Wartet auf Antwort**, **Nicht zugewiesen**, **Später**, **Erledigt**, **Letzte Aktivität**, **Aufbewahrt** und gespeicherte Ansichten. Die Zeile zeigt so viele davon, wie in ihre Breite passen, die übrigen stehen unter **Mehr**. **Ereignisse** steht am Ende. Die geöffnete Ansicht bleibt immer sichtbar. Ordner, Geplant und Versandprobleme haben keine Ansichts-Tabs.
 
 Jede Zeile hat ein Kästchen. Hakst du eines an, wird die Tab-Zeile zu den Aktionen für die Auswahl: **Erledigt**, **Archivieren**, **Löschen**, **Ungelesen**, **Später**, **Zuweisen**, **Verschieben**, **Tags** und **…** mit Spam und Kennzeichnen. Das Kästchen am Anfang der Tab-Zeile wählt alle angezeigten Unterhaltungen. Escape oder **Auswahl beenden** bringt die Tabs zurück.
 
-Auf dem Smartphone öffnest du über den Postfachtitel andere Postfächer und die Ordner des geöffneten Postfachs. Suche, Filter, Verfassen und **…** findest du im Kopfbereich, die Ansichten in der Tab-Zeile.
+Auf dem Smartphone öffnest du über den Postfachtitel andere Postfächer und die Ordner des geöffneten Postfachs. Suche, Filter, Neue Nachricht und **…** findest du im Kopfbereich, die Ansichten in der Tab-Zeile.
 
 **Postfachdetails** zeigt allen, die das Postfach ansehen können, denselben Überblick. Personen mit Zugriff **Ansehen** sehen ihn als **Über dieses Postfach**. Der Überblick zeigt:
 
@@ -84,9 +84,9 @@ Bei Gruppen siehst du die Personen, die die Gruppe erreicht, soweit dein Konto s
 
 Die Liste zeigt eine Zeile pro Unterhaltung. Ist die Liste 640 Pixel breit oder breiter, steht jede Unterhaltung in einer Zeile: Kästchen, Stern, Absender, Betreff und Vorschau, Zeichen und Datum. Eine schmalere Liste zeigt drei Zeilen: Absender und Datum, Betreff, Vorschau mit Zeichen. Die Zeichen zeigen einen Entwurf als **Entwurf**, Gustavs Vorschlag als **✦ Vorschlag**, die Zahl der Nachrichten, **Wartet**, „Später“ als Uhr mit Tag, aufbewahrte Unterhaltungen, Anhänge und wer zuständig ist. Der Lesebereich nutzt die volle Breite neben der Liste. Der Lesebereich gruppiert die Nachrichten dieser Unterhaltung. Eine lange Unterhaltung zeigt ihre neuesten Nachrichten, **n ältere Nachrichten** zeigt den Rest. Er ordnet aussagekräftige Änderungen an Status, Zuweisung, Tags, Zusammenfassung und Workflow ruhig zu dem Zeitpunkt ein, an dem sie geschahen. Technische Verarbeitungsvorgänge bleiben aus dem Lesefluss heraus.
 
-**Antworten**, **Allen antworten** und **Weiterleiten** stehen am Anfang der Werkzeugleiste des Lesebereichs, danach die Aktionen, die du mit **… > Werkzeugleiste anpassen** gewählt hast. Ab Tablet-Breite stehen die Aktionen in einer eigenen Zeile über dem Betreff. Ist der Lesebereich breit genug, tragen sie ihren Namen. Wird er schmaler, zeigen sie nur ihr Symbol und wandern dann mit den Aktionen, die nicht mehr passen, unter **…**. **…** enthält immer jede Aktion.
+Der Kopf des Lesebereichs hat für alle dieselben Aktionen: **Erledigt**, **Archivieren**, **Löschen**, **Später**, **Zuweisen** und **…** mit allen weiteren Aktionen. **Später** zeigt die Unterhaltung zu einer gewählten Zeit wieder und setzt eine Erinnerung, die nur du bekommst. Wird der Lesebereich schmal, stehen die Aktionen, die nicht mehr passen, nur noch unter **…**. Hattest du vorher eine eigene Werkzeugleiste eingerichtet, zeigt Mail einmal, wo deine Aktionen jetzt sind.
 
-Wähle **Details** im Kopfbereich des Postfachs, um Teamkontext, lokale Tags, Zuständigkeit, Kommentare, Erinnerungen und die längere Liste der letzten Aktivitäten zu öffnen. Auf dem Smartphone nutzt du dafür das Details-Symbol neben **…** im Lesebereich. Die Details stehen neben dem Lesebereich, solange er genug Platz behält. Bei weniger Platz öffnen sie sich über dem Ende des Lesebereichs.
+Unter dem Betreff zeigen Chips den Zustand der Unterhaltung, ihre Tags und ihre verknüpften Einträge; wähle einen, um ihn zu ändern. Die Zusammenfassung einer Unterhaltung ist eine Zeile über den Nachrichten; wähle sie, um sie ganz zu lesen. Wähle den Absender einer Nachricht, um den Kontakt und frühere Unterhaltungen zu sehen.
 
 Neben einem Editor enthält der Unterhaltungsverlauf nur Nachrichten. Betriebliche Aktivitäten lenken dich beim Schreiben nicht ab.
 

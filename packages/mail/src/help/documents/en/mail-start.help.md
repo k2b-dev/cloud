@@ -66,13 +66,13 @@ The head contains:
 
 - The search field of the mailbox. Press `/` to go to it. The filter button next to it holds **Unread**, **Flagged**, **With attachment**, the date range, and a tag. While you search, it also holds **Search in** and the place. A number on the button shows how many filters are on. **Reset filters** removes them.
 - **…** with **Automations**, **Sync mailbox**, **Mailbox health**, and **Settings** first. Mailbox details, mailing lists, remote images, shared links, email-link handling, and the choice between conversations and individual messages follow. Your access determines the entries. Readers see **About this mailbox**.
-- **Compose** as the primary action when you can send.
+- **New message** as the primary action when you can send.
 
 The tabs stand above the list and the reader: **All**, **Needs action**, **Assigned to me**, **Waiting for reply**, **Unassigned**, **Later**, **Done**, **Recent activity**, **Kept**, and saved views. The row shows as many of them as its width allows, and **More** holds the rest. **Events** stays at the end. The open view always stays visible. Folders, Scheduled, and Send problems have no view tabs.
 
 Each row has a checkbox. Check one, and the tab row becomes the bulk actions: **Done**, **Archive**, **Delete**, **Unread**, **Later**, **Assign**, **Move**, **Tags**, and **…** with junk and flag. The checkbox at the start of the tab row selects every shown conversation. Escape or **Exit selection** brings the tabs back.
 
-On a phone, open the mailbox title to reach other mailboxes and the open mailbox's folders. Use the head for search, filters, Compose, and **…**, and the tab row for views.
+On a phone, open the mailbox title to reach other mailboxes and the open mailbox's folders. Use the head for search, filters, New message, and **…**, and the tab row for views.
 
 **Mailbox details** shows everyone who can view the mailbox the same overview. People with **View** access see it as **About this mailbox**. The overview shows:
 
@@ -85,9 +85,9 @@ Group rows list the people that the group reaches, as far as your account can se
 
 The list shows one row per conversation. When the list is 640 pixels wide or more, a row is one line: checkbox, star, sender, subject and preview, marks, and date. A narrower list shows three lines: sender and date, subject, and preview with marks. The marks show a draft as **Draft**, Gustav's suggestion as **✦ Suggestion**, the number of messages, **Waiting**, a snooze as a clock with its day, kept conversations, attachments, and who is responsible. The reader uses the full width beside the list. The reader groups the messages of that conversation. A long conversation shows its newest messages, and **n older messages** shows the rest. It quietly places meaningful status, assignment, tag, summary, and workflow activity at the time it happened. Technical processing events stay out of the reading flow.
 
-**Reply**, **Reply all**, and **Forward** start the reader's toolbar, followed by the actions you chose with **… > Customize toolbar**. From tablet width on, the actions have their own row above the subject. When the reader is wide enough, they show their names. When it gets narrower, they show only their icons, then move into **…** with the actions that no longer fit. **…** always lists every action.
+The head of the reader has the same actions for everyone: **Done**, **Archive**, **Delete**, **Later**, **Assign**, and **…** with every other action. **Later** shows the conversation again at a time you choose, and sets a reminder that only you get. When the reader gets narrow, the actions that no longer fit are only in **…**. If you had arranged your own toolbar before, Mail shows once where your actions are now.
 
-Choose **Details** in the mailbox head to open team context, local tags, ownership, comments, reminders, and the longer list of recent activity. On a phone, use the details icon beside **…** in the reader instead. The details stand next to the reader while it keeps enough room. With less room, they open over the reader's end.
+Below the subject, chips show the state of the conversation, its tags, and its linked items; choose one to change it. The summary of a conversation is one line above the messages; choose it to read all of it. Choose the sender of a message to see the contact and earlier conversations.
 
 Next to a composer, the conversation history contains only messages. Operational activity does not distract you while you write.
 

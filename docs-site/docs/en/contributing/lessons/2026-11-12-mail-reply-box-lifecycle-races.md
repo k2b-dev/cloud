@@ -1,0 +1,6 @@
+### The reply box dropped or doubled local text around mode switches, Undo, discard, and sign-out
+
+- **What happened:** In the Mail v5 reply box, a failed mode switch of an unsaved seed emptied the editor. A second Undo replaced the earlier text typed meanwhile. A mode switch or a discard while the first save was still on its way created a second draft or left the first one behind. Typing in a note after signing out recreated the cleared local storage.
+- **Root cause:** The box dropped the old state before the new state existed. It forgot the seed's text before its replacement seed arrived. It kept only one meanwhile text. It decided between seed and draft before the first save had answered. It also opened a new storage handle on every write, which accepted the new sign-in epoch.
+- **Error class:** Lifecycle steps that drop the old state before the new one exists, or decide before an operation already in flight has settled.
+- **Guard:** `MailReplyBox.composer.behavior.test.tsx` covers each case with the real composer and draft session: a failed seed switch, two meanwhile texts, a switch or discard during the first save, and a note after signing out. The draft session exposes `settleMaterialization()`, so callers wait for the first save before they act.

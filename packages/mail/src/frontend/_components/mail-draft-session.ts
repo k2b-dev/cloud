@@ -108,6 +108,11 @@ export const createMailDraftSession = (options: {
   isDisposed: () => boolean;
   onRecovered: () => void;
   onMaterialized: (draft: MailDraft) => void;
+  /**
+   * True while another send still holds the conversation's one reply place (its undo window): input stays in the
+   * local journal and the draft is created only once this turns false.
+   */
+  holdCreate?: Accessor<boolean>;
   /** A shared draft closed inside the page with text that neither the server nor this device holds. */
   onClosedUnsaved?: () => void;
   locale: Accessor<string>;
@@ -145,6 +150,10 @@ export const createMailDraftSession = (options: {
   // A retried acquire whose answer was lost gets this instance's lease back instead of reading it as another tab.
   const editorId = crypto.randomUUID();
   const seedBaseline = options.initialSeed ? serializeMailDraftContent(options.initialSeed.content) : null;
+  /** The seed was discarded or its text moved elsewhere: it must never become a draft, not even on the way out. */
+  let seedAbandoned = false;
+  /** A first save went out without a definite answer (connection lost, server error): the server may hold its draft. */
+  let materializationUnresolved = false;
   let lastSavedContent = seedBaseline ?? "";
   const [confirmedContent, setConfirmedContent] = createSignal(lastSavedContent);
   const [journalContent, setJournalContent] = createSignal<string | null>(null);
@@ -805,10 +814,12 @@ export const createMailDraftSession = (options: {
         }
       }
       let currentDraft = draft();
+      if (!currentDraft && options.initialSeed && (seedAbandoned || untrack(() => options.holdCreate?.()))) return null;
       if (!currentDraft && options.initialSeed) {
         const nextContent = options.content();
         setStatus("saving");
         setStatusMessage(t().savingDraft);
+        materializationUnresolved = true;
         const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].materialize
           .$post({
             param: { mailboxId: options.mailboxId },
@@ -822,6 +833,8 @@ export const createMailDraftSession = (options: {
             transportUnavailable = error instanceof TypeError;
             throw error;
           });
+        // Only a server error leaves open whether the draft was stored; every other answer is definite.
+        materializationUnresolved = response.status >= 500;
         if (!response.ok) {
           if (options.isDisposed()) return null;
           if (response.status === 401) {
@@ -1222,6 +1235,8 @@ export const createMailDraftSession = (options: {
       stopScheduledSave();
       return;
     }
+    // A held reply place keeps the input in the journal; this effect runs again when the hold ends.
+    if (!currentDraft && options.holdCreate?.()) return;
     if (leaseConflict() || revisionConflict() || replyBoxOccupied() || saveTimer) return;
     // Coalesce the latest input without postponing autosave forever during
     // continuous typing. The shared promise keeps at most one save in flight.
@@ -1351,8 +1366,19 @@ export const createMailDraftSession = (options: {
       const kept = await client.flushLocal().catch(() => false);
       if (!kept && (sharedState()?.dirty || sharedState()?.rejectedEdit)) options.onClosedUnsaved?.();
     };
+    // A seed (the reply box before its first save) that holds typing creates its draft on the way out, unless another
+    // send still holds the reply place; then the journal keeps the text on this device.
+    const seedUnsaved =
+      !seedAbandoned &&
+      !draft() &&
+      Boolean(options.initialSeed) &&
+      !options.holdCreate?.() &&
+      !replyBoxOccupied() &&
+      !authenticationRequired() &&
+      serializedContent() !== seedBaseline;
     stopScheduledSave();
     stopHeartbeat();
+    if (seedUnsaved) void persist();
     void saveSharedBeforeClose().finally(() => {
       sharedController.abort();
       client?.dispose();
@@ -1490,6 +1516,25 @@ export const createMailDraftSession = (options: {
     revisionConflict,
     localCopyFailed,
     localRecoveryCopies,
+    /**
+     * Waits for a first save that is already on its way to create the seed's draft, so a mode switch or a discard acts
+     * on the draft it creates instead of racing it. Resolves with the draft this session created, or null.
+     */
+    settleMaterialization: async (): Promise<MailDraft | null> => {
+      if (draft() || !options.initialSeed) return draft();
+      if (persistPromise) await persistPromise;
+      // A first save whose answer was lost may have stored the draft. The same idempotency key asks again and gets
+      // that draft back; until the answer is definite, the seed and its text stay.
+      if (!draft() && materializationUnresolved) await persist();
+      if (!draft() && materializationUnresolved) throw new Error(t().draftSaveFailed);
+      return draft();
+    },
+    /** The seed's text was discarded or carried elsewhere: no save, autosave, or save on the way out creates its draft. */
+    abandonSeed: () => {
+      if (draft()) return;
+      seedAbandoned = true;
+      stopScheduledSave();
+    },
     restoreCurrentInput: () => restoreRecoveryContent(options.content()),
     restoreLocalRecoveryCopy: (id: string) => {
       const selected = localRecoveryCopies().find((copy) => copy.id === id);
