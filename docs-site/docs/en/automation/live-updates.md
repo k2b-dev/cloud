@@ -224,10 +224,7 @@ decide access usually also publish updates, so the definition must not import
 them.
 
 A viewer carries `id`, `actor` and `accessSubject` as on an API request, and
-the credential's `scopes`. Its optional server-only `capabilityTransport`
-function supports Core capability queries and catalog reads when a fresh
-resource-owner decision is needed. Pass it as the `transport` of a capability
-caller. Keep the viewer on the server. Use
+the credential's `scopes`. Keep the viewer on the server. Use
 `accessSubject` for grants and `actor` for roles. `id` starts with `user:<id>` or `service_account:<id>` and adds
 everything of the credential that can change a decision: `:app` for a phone's
 app session, which never holds the `admin` role, and the scopes of an API key

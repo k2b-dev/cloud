@@ -1,6 +1,5 @@
 import { RetentionGapError, SyncLifecycleError, type Topic, type TopicEvent } from "@k2b/sync";
 import { z } from "zod";
-import type { CapabilityCaller } from "../capabilities/server";
 import { userFromActor } from "../server/actor";
 import type { RequestActor } from "../server/middleware/auth";
 import type { AccessSubject } from "../server/services/access";
@@ -46,8 +45,6 @@ export type LiveViewer = {
   accessSubject: AccessSubject;
   /** Credential scopes; empty for sessions. */
   scopes: readonly string[];
-  /** Credential-bound, nonserializable Core query/catalog transport for resource-owner checks. */
-  capabilityTransport?: CapabilityCaller["transport"];
 };
 
 export type LiveChannel<Scope extends z.ZodType = z.ZodType> = {

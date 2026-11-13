@@ -385,7 +385,7 @@ test("readers without open links remain readable and manifest icons are constrai
   expect(resource?.href).toBeUndefined();
 });
 
-test("identity invalidation is lazy, deduplicates viewer/resource reads, and cannot reuse old locales", async () => {
+test("identity invalidation is cache-only; HTTP renewal deduplicates and cannot reuse old locales", async () => {
   const c = context();
   const principal = contextPrincipal(c);
   await readResource({ ...c, locale: "de" }, ref, { invoke: async () => envelope() });
@@ -399,14 +399,18 @@ test("identity invalidation is lazy, deduplicates viewer/resource reads, and can
     await invalidateResource(principal, ref);
     expect(calls).toBe(0);
     expect(await cachedResource(principal, ref)).toBeNull();
-    const decisions = await Promise.all(Array.from({ length: 20 }, () => cachedResource(principal, ref, context())));
-    expect(decisions.every((value) => value?.permission === "read")).toBe(true);
+    const decisions = await Promise.all(Array.from({ length: 20 }, () => cachedResource(principal, ref)));
+    expect(decisions.every((value) => value === null)).toBe(true);
+    expect(calls).toBe(0);
+    const refresh = context();
+    const renewed = await Promise.all(Array.from({ length: 20 }, () => readResource(refresh, ref)));
+    expect(renewed.every((value) => value?.permission === "read")).toBe(true);
     expect(calls).toBe(1);
     expect(await readResource({ ...context(), locale: "de" }, ref)).toMatchObject({ permission: "read" });
     expect(calls).toBe(2);
     await invalidateResource(principal, ref);
     invoke.mockResolvedValue(null);
-    expect(await cachedResource(principal, ref, context())).toBeNull();
+    expect(await cachedResource(principal, ref)).toBeNull();
     // Neither the old localized view nor its missing authority can restore access.
     expect(await readResource({ ...context(), locale: "de" }, ref)).toBeNull();
     expect(await cachedResource(principal, ref)).toBeNull();
@@ -425,7 +429,7 @@ test("an owner response overtaken by invalidation cannot restore live authority"
     return envelope();
   });
   try {
-    const reading = cachedResource(principal, ref, context());
+    const reading = readResource(context(), ref);
     await started.promise;
     await invalidateResource(principal, ref);
     release.resolve();

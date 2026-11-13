@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { SignJWT } from "jose";
@@ -9,7 +9,6 @@ import { sql } from "../runtime/clients";
 import { sessionOriginGuard } from "../server/middleware/session-origin";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
-import { coreOrigin } from "../services/identity/core-origin";
 import { prepareIdentitySigner } from "../services/identity/key-ring";
 import { getIdentityRuntimeConfig } from "../services/identity/runtime-config";
 import { session } from "../services/session";
@@ -476,7 +475,7 @@ suite("live routes", () => {
     }
   });
   useRegisteredTestApp("livetest");
-  test("the public live viewer serializes no credential and restricts its transport to Core reads", async () => {
+  test("the public live viewer carries no caller credential or transport", async () => {
     const who = await person("Viewer contract");
     readers.set("viewer-contract", new Set([who.viewer]));
     const client = await open(0, who.headers);
@@ -484,46 +483,11 @@ suite("live routes", () => {
       client.sub("viewer", "item", { key: "viewer-contract" });
       await until(() => client.of("viewer").some((frame) => frame.t === "ready"));
       const viewer = capturedViewers.find((viewer) => viewer.id === who.viewer);
-      expect(viewer?.capabilityTransport).toBeFunction();
+      expect(viewer).toBeDefined();
       expect(JSON.stringify(viewer)).not.toContain(who.headers.cookie);
       expect(JSON.stringify(viewer)).not.toContain("session_token");
-      await expect(viewer!.capabilityTransport!(new Request("https://foreign.test/api/capabilities/v1/catalog"))).rejects.toThrow();
-      const origin = await coreOrigin();
-      const requests: Request[] = [];
-      const transport = spyOn(globalThis, "fetch").mockImplementation(
-        Object.assign(
-          async (request: Parameters<typeof fetch>[0]) => {
-            if (!(request instanceof Request)) throw new Error("Expected a capability Request");
-            requests.push(request);
-            return Response.json({ ok: true });
-          },
-          { preconnect: globalThis.fetch.preconnect },
-        ),
-      );
-      try {
-        await viewer!.capabilityTransport!(new Request(`${origin}/api/capabilities/v1/catalog`));
-        await viewer!.capabilityTransport!(
-          new Request(`${origin}/api/capabilities/v1/queries/example/resource.read`, {
-            method: "POST",
-            body: JSON.stringify({ input: { id: "example" } }),
-          }),
-        );
-        expect(requests).toHaveLength(2);
-        expect(requests.every((request) => request.headers.get("cookie") === who.headers.cookie && request.redirect === "error")).toBe(
-          true,
-        );
-        expect(await requests[1]!.json()).toEqual({ input: { id: "example" } });
-        await expect(
-          viewer!.capabilityTransport!(
-            new Request(`${origin}/api/capabilities/v1/actions/example/resource.write`, {
-              method: "POST",
-            }),
-          ),
-        ).rejects.toThrow();
-        expect(requests).toHaveLength(2);
-      } finally {
-        transport.mockRestore();
-      }
+      expect(viewer).not.toHaveProperty("caller");
+      expect(viewer).not.toHaveProperty("capabilityTransport");
     } finally {
       client.socket.close();
     }

@@ -185,7 +185,93 @@ suite("Chat batched live authorization", () => {
     expect(await chatLiveChannels.me.authorize(`p:service_account:${ownKey.id}`, [foreignBound])).toEqual(new Set());
   });
 
-  test("SQL budget: identity hints defer owning-reader work to active discussion keys", async () => {
+  test("an expired discussion authority never waits for its owner before other keys are delivered", async () => {
+    const owner = await f.person("Slow owner reader");
+    const chat = await f.fixture(owner);
+    const ref = { type: "inventory.collection", id: testShortId() };
+    await sql`UPDATE chat.conversations SET kind = 'system', resource_type = ${ref.type}, resource_id = ${ref.id}
+      WHERE id = ${chat.id}::uuid`;
+    const catalog = mockDiscussionCatalog([providerApp("inventory")]);
+    const release = Promise.withResolvers<void>();
+    let slow = false;
+    let ownerCalls = 0;
+    const invoke = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async () => {
+      if (slow) {
+        ownerCalls++;
+        await release.promise;
+      }
+      return { data: { view: { title: "Slow resource", permission: "read" } } };
+    });
+    const topic = createMemoryLiveTopic();
+    let changed: (subject?: { userId?: string }) => void = () => {};
+    let keyReads = 0;
+    const engine = createLiveEngine({
+      appId: "chat",
+      topic: () => topic,
+      channels: {
+        ...chatLiveChannels,
+        conversation: {
+          ...chatLiveChannels.conversation,
+          keys: async (scope: { conversation: string }) => {
+            const keys = await chatLiveChannels.conversation.keys(scope);
+            keyReads++;
+            return keys;
+          },
+        },
+      },
+      subscribeAccess: (callback) => {
+        changed = callback;
+        return () => {};
+      },
+    });
+    const frames: { t: string; id?: string; data?: unknown }[] = [];
+    const closes: number[] = [];
+    const until = async (check: () => boolean) => {
+      const deadline = Date.now() + 2_000;
+      while (!check()) {
+        if (Date.now() > deadline) throw new Error("Unrelated delivery waited for the owner");
+        await Bun.sleep(5);
+      }
+    };
+    try {
+      await readResource(owner.context, ref);
+      const who = viewer(owner);
+      const connection = engine.open(
+        {
+          send: (frame) => frames.push(JSON.parse(frame)),
+          close: (code) => {
+            if (code) closes.push(code);
+          },
+          getBufferedAmount: () => 0,
+        },
+        who,
+        async () => who,
+      );
+      connection.message(JSON.stringify({ t: "sub", id: "chat", channel: "conversation", scope: { conversation: chat.shortId } }));
+      connection.message(JSON.stringify({ t: "sub", id: "personal", channel: "me", scope: {} }));
+      await until(() => frames.filter((frame) => frame.t === "ready").length === 2);
+      slow = true;
+      const previous = keyReads;
+      changed({ userId: owner.id });
+      await until(() => keyReads === previous + 1);
+      topic.publish({ v: 1, k: `c:${chat.shortId}`, d: { expired: true } });
+      topic.publish({ v: 1, k: `p:${owner.id}`, d: { unrelated: true } });
+      await until(() => frames.some((frame) => frame.id === "personal" && frame.t === "event"));
+      expect(frames.some((frame) => frame.id === "chat" && frame.t === "resync")).toBe(true);
+      expect(frames.some((frame) => frame.id === "chat" && frame.t === "event")).toBe(false);
+      expect(ownerCalls).toBe(0);
+      expect(closes).toEqual([]);
+    } finally {
+      release.resolve();
+      engine.stop();
+      invoke.mockRestore();
+      catalog.mockRestore();
+      const key = authorizationKey(viewer(owner).id, ref);
+      await redis.del(key, `${key}:generation`, accessKey(viewer(owner).id, ref));
+    }
+  });
+
+  test("SQL budget: identity hints and expired delivery decisions never call resource owners", async () => {
     const owner = await f.person("Budget owner"),
       outside = await f.person("Budget outside");
     const chat = await f.fixture(owner);
@@ -250,7 +336,7 @@ suite("Chat batched live authorization", () => {
       const connect = async (person: Person) => {
         const output: (typeof frames)[number] = [];
         frames.push(output);
-        const who = { ...viewer(person), capabilityTransport: async () => Response.json({}) };
+        const who = viewer(person);
         const connection = engine.open(
           {
             send: (frame) => output.push(JSON.parse(frame)),
@@ -303,27 +389,27 @@ suite("Chat batched live authorization", () => {
       expect(unrelated).toHaveLength(0);
       const delivery = await meter.during(async () => {
         for (const item of items.slice(0, 2)) topic.publish({ v: 1, k: `t:${chat.shortId}:${item.thread}`, d: { active: true } });
-        await until(() => frames.every((output) => output.filter((frame) => frame.t === "event").length === 2));
+        await until(() => frames[2]!.filter((frame) => frame.t === "event").length === 2);
       });
       expect(delivery).toHaveLength(4);
-      expect(calls.filter((call) => call === `collection.read:${container.id}`)).toHaveLength(1);
-      expect(calls).toHaveLength(3); // Shared container, two active items; the inactive item costs nothing.
-      expect(calls.some((call) => call.endsWith(items[2]!.id))).toBe(false);
+      expect(frames.slice(0, 2).every((output) => output.some((frame) => frame.t === "resync"))).toBe(true);
+      expect(frames.slice(0, 2).every((output) => !output.some((frame) => frame.t === "event"))).toBe(true);
+      expect(calls).toEqual([]); // Cold keys expire; owner work belongs to HTTP renewal.
       const warm = await meter.during(async () => {
         topic.publish({ v: 1, k: `t:${chat.shortId}:${items[0]!.thread}`, d: { warm: true } });
-        await until(() => frames.every((output) => output.filter((frame) => frame.t === "event").length === 3));
+        await until(() => frames[2]!.filter((frame) => frame.t === "event").length === 3);
       });
       expect(warm).toHaveLength(0);
       calls.length = 0;
       denied = true;
       const beforeDenial = keyReads;
-      changed({ userId: owner.id });
-      await until(() => keyReads === beforeDenial + 2);
+      changed({ userId: outside.id });
+      await until(() => keyReads === beforeDenial + 1);
       expect(calls).toEqual([]);
       topic.publish({ v: 1, k: `t:${chat.shortId}:${items[0]!.thread}`, d: { denied: true } });
-      await until(() => frames[0]!.some((frame) => frame.t === "resync") && frames[1]!.some((frame) => frame.t === "resync"));
-      expect(frames.slice(0, 2).every((output) => output.filter((frame) => frame.t === "event").length === 3)).toBe(true);
-      expect(calls).toEqual([`collection.read:${container.id}`]);
+      await until(() => frames[2]!.some((frame) => frame.t === "resync"));
+      expect(frames.map((output) => output.filter((frame) => frame.t === "event").length)).toEqual([0, 0, 3]);
+      expect(calls).toEqual([]);
       expect(closes).toEqual([]);
       console.log(
         "SQL BUDGET Chat identity",

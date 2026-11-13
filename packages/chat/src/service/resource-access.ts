@@ -80,27 +80,15 @@ export const invalidateResource = async (principal: string, ref: ResourceRef) =>
   await redis.set(invalidationKey(principal, ref), crypto.randomUUID(), "EX", ACCESS_TTL_SECONDS);
   await redis.del(authorizationKey(principal, ref));
 };
-const liveReaders = new Map<string, Promise<ResourceDecision | null>>();
-/** Live authority is locale-independent. Missing authority is read lazily, once per viewer/resource. */
-export const cachedResource = async (principal: string, ref: ResourceRef, context?: ChatContext) => {
+/** Live delivery consumes authority warmed by HTTP reads; a miss expires the key immediately. */
+export const cachedResource = async (principal: string, ref: ResourceRef) => {
   try {
     const value = await redis.get(authorizationKey(principal, ref));
     if (value !== null) {
       const authority = AuthoritySchema.parse(JSON.parse(value));
       if (authority.generation === (await redis.get(invalidationKey(principal, ref)))) return authority.decision;
     }
-    if (!context) return null;
-    const key = authorizationKey(principal, ref);
-    let read = liveReaders.get(key);
-    if (!read) {
-      read = loadResource(context, ref, resourceReaderDependencies, undefined, true);
-      liveReaders.set(key, read);
-    }
-    try {
-      return await read;
-    } finally {
-      if (liveReaders.get(key) === read) liveReaders.delete(key);
-    }
+    return null;
   } catch {
     return null;
   }
@@ -128,14 +116,13 @@ const loadResource = async (
   ref: ResourceRef,
   dependencies = resourceReaderDependencies,
   onUnavailable?: () => void,
-  fresh = false,
 ): Promise<ResourceDecision | null> => {
   const principal = contextPrincipal(context);
   const key = accessKey(principal, ref, context.locale ?? context.caller?.locale ?? "en");
   try {
     context.caller?.signal?.throwIfAborted();
     const generation = context.capabilityQuery ? null : await redis.get(invalidationKey(principal, ref));
-    const cached = fresh || context.capabilityQuery ? null : await redis.get(key);
+    const cached = context.capabilityQuery ? null : await redis.get(key);
     // A localized view is reusable only while its authority still matches.
     if (cached !== null) {
       const decision = ResourceDecisionSchema.nullable().parse(JSON.parse(cached));

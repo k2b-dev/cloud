@@ -404,6 +404,11 @@ list channels and Contacts channels retain periodic checks. Domain bursts defer
 unfinished collection discovery to the next ten-second refresh attempt;
 unrelated domain keys do not restart subscription admission.
 
+Chat discussion channels consume cached resource authority during live checks.
+A missing or expired entry drops the key and requests a client reload. HTTP
+reads renew that authority; live delivery does not wait for the resource-owning
+application.
+
 Deploy the owning application's event sources with its opted-in channels.
 Keep Core's Identity-Access delivery running on NATS and verify event-driven
 revocation and known expiry deadlines as part of an upgrade. See

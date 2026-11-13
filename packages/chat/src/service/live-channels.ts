@@ -43,16 +43,10 @@ const chatReaders = async (
         // cache and checks the next actual frame (including replay) before sending.
         return hasPermission(conversationPermission(shortId, "read", viewer.actor), "read") ? viewer.id : null;
       }
-      const reader = {
-        actor: viewer.actor,
-        accessSubject: viewer.accessSubject,
-        caller: viewer.capabilityTransport ? { transport: viewer.capabilityTransport } : undefined,
-        credentialPrincipal: viewer.id,
-      };
-      const container = await cachedResource(viewer.id, containerRef, reader);
+      const container = await cachedResource(viewer.id, containerRef);
       if (!container || !hasPermission(conversationPermission(shortId, container.permission, viewer.actor), "read")) return null;
       if (thread) {
-        const item = await cachedResource(viewer.id, { type: thread.resource_type, id: thread.resource_id }, reader);
+        const item = await cachedResource(viewer.id, { type: thread.resource_type, id: thread.resource_id });
         if (item?.container?.ref.type !== conversation.resource_type || item.container.ref.id !== conversation.resource_id) return null;
       }
       return viewer.id;
