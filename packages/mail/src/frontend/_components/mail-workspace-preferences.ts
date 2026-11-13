@@ -1,10 +1,18 @@
 import type { MailListMode } from "../../service/workspace";
 
+/**
+ * Where the reply box stands in the reader: above the newest message, which then comes first (the default, as before
+ * Mail v5), or under the conversation, which then reads oldest first with the newest message at the bottom.
+ */
+export type MailReplyPosition = "top" | "bottom";
+
 export type MailWorkspacePreferences = {
   /** The person opened the mailbox's Events tab once; until then it is marked new. */
   eventsDiscovered?: boolean;
   /** A draft in a conversation opens in full screen: this browser's last choice, never switched on by itself (F7). */
   draftFullscreen: boolean;
+  /** This browser's choice for the reply box; the server renders it, so the first frame never moves. */
+  replyPosition: MailReplyPosition;
   /**
    * The person had arranged their own conversation toolbar before Mail v5 replaced it with fixed actions; the reader
    * tells them once where their actions are now.
@@ -45,6 +53,7 @@ const customizedToolbar = (value: unknown): boolean => {
 const normalizeMailWorkspacePreferences = (value: unknown): MailWorkspacePreferences => ({
   eventsDiscovered: Boolean(value && typeof value === "object" && (value as { eventsDiscovered?: unknown }).eventsDiscovered === true),
   draftFullscreen: Boolean(value && typeof value === "object" && (value as { draftFullscreen?: unknown }).draftFullscreen === true),
+  replyPosition: value && typeof value === "object" && (value as { replyPosition?: unknown }).replyPosition === "bottom" ? "bottom" : "top",
   toolbarCustomized: customizedToolbar(value),
   listMode: value && typeof value === "object" && (value as { listMode?: unknown }).listMode === "messages" ? "messages" : "conversations",
   lastMailboxId:

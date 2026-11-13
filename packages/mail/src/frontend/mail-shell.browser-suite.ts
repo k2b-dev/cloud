@@ -153,6 +153,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
       // This opt-in exercises the same request-cookie reader as Mail's SSR page
       // without putting an artificial preference into its navigation URL.
       storedWorkspace: storedWorkspace(cookieHeader),
+      cookieHeader,
       focusNoticeOpen: url.searchParams.get("notice") === "1" && !cookieHeader?.includes(`${NOTICE_COOKIE}=closed`),
     }),
   );
@@ -429,6 +430,57 @@ const close = async (page: Page) => {
   } finally {
     await page.context().close();
   }
+};
+/** This browser's place for the reply box, as Mail's cookie keeps it; set before the first navigation. */
+const replyAt = (position: "top" | "bottom") => async (page: Page) => {
+  await page.context().addCookies([
+    {
+      name: "cloud_mail_workspace",
+      value: encodeURIComponent(JSON.stringify({ replyPosition: position })),
+      url: new URL("/", server.url).href,
+    },
+  ]);
+};
+/** The reply box, the messages and the fold row of the open conversation, in the order the reader shows them. */
+const readerOrder = (page: Page) =>
+  page.evaluate(() =>
+    Array.from(
+      document.querySelectorAll(
+        "[data-mail-reading-column] [data-mail-reply-box-frame], [data-mail-conversation-messages] [data-mail-message-id], [data-mail-older-messages]",
+      ),
+      (element) => element.getAttribute("data-mail-message-id") ?? (element.hasAttribute("data-mail-older-messages") ? "older" : "box"),
+    ),
+  );
+/**
+ * Records where the reply box and the newest message stand in the server frame, measured from the top of the reading
+ * column so the reader's scroll does not count. The page's script sets `data-server-geometry` before it loads islands.
+ */
+const recordServerReply = async (page: Page) => {
+  await page.addInitScript(() => {
+    const observer = new MutationObserver(() => {
+      if (!document.documentElement?.dataset.serverGeometry) return;
+      observer.disconnect();
+      const column = document.querySelector("[data-mail-reading-column]")!.getBoundingClientRect().top;
+      const top = (selector: string) => (document.querySelector(selector)?.getBoundingClientRect().top ?? Number.NaN) - column;
+      Reflect.set(window, "serverReply", { box: top("[data-mail-reply-box-frame]"), newest: top('[data-mail-message-id="Long06"]') });
+    });
+    observer.observe(document, { attributes: true, subtree: true, attributeFilter: ["data-server-geometry"] });
+  });
+};
+const replyOffsets = (page: Page) =>
+  page.evaluate(() => {
+    const column = document.querySelector("[data-mail-reading-column]")!.getBoundingClientRect().top;
+    const top = (selector: string) => (document.querySelector(selector)?.getBoundingClientRect().top ?? Number.NaN) - column;
+    return {
+      server: Reflect.get(window, "serverReply") as { box: number; newest: number },
+      hydrated: { box: top("[data-mail-reply-box-frame]"), newest: top('[data-mail-message-id="Long06"]') },
+    };
+  });
+const expectNoReplyJump = async (page: Page, label: string) => {
+  const { server, hydrated } = await replyOffsets(page);
+  expect(server, `${label}: the server frame was recorded`).toBeDefined();
+  expect(Math.abs(hydrated.box - server.box), `${label}: box ${server.box} → ${hydrated.box}`).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(hydrated.newest - server.newest), `${label}: newest ${server.newest} → ${hydrated.newest}`).toBeLessThanOrEqual(0.5);
 };
 const tabs = (page: Page) => page.locator(tabsSelector);
 const sidebar = (page: Page) => page.locator(sidebarSelector);
@@ -2928,7 +2980,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           [390, 844],
           [320, 640],
         ] as const)
-          test(`the reply box at ${width} stays inside the reader, below the newest message`, async () => {
+          test(`the reply box at ${width} stays inside the reader, above the newest message`, async () => {
             const page = await open(`${boxPath}?conversation=Conv01&theme=dark`, width, height);
             try {
               const frame = page.locator("[data-mail-reply-box-frame]");
@@ -2939,19 +2991,19 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 const messages = document.querySelector<HTMLElement>("[data-mail-conversation-messages]")!.getBoundingClientRect();
                 return {
                   inReader: box.left >= reader.left - 0.5 && box.right <= reader.right + 0.5,
-                  below: box.top >= messages.bottom - 0.5,
+                  above: box.bottom <= messages.top + 0.5,
                 };
               });
               expect(fit.inReader, `${width} box inside the reader`).toBe(true);
-              expect(fit.below, `${width} box below the newest message`).toBe(true);
+              expect(fit.above, `${width} box above the newest message`).toBe(true);
               expect(await page.locator("[data-mail-reply-pill]").count()).toBe(0);
             } finally {
               await close(page);
             }
           });
 
-        test("phone: the reply box waits at the bottom of the conversation, in thumb reach; Done is in the head", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
+        test("phone: the reply box chosen at the bottom waits there, in thumb reach", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01`, 390, 844, "reduce", replyAt("bottom"));
           try {
             const box = page.locator("[data-mail-reply-box-frame]");
             await box.waitFor();
@@ -2959,6 +3011,21 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const newest = (await page.locator("[data-mail-conversation-messages] [data-mail-message-id]").last().boundingBox())!;
             const frame = (await box.boundingBox())!;
             expect(frame.y).toBeGreaterThanOrEqual(newest.y + newest.height - 0.5);
+            expect(frame.y + frame.height).toBeGreaterThan(scroller.y + scroller.height - 48);
+          } finally {
+            await close(page);
+          }
+        });
+
+        test("phone: the reply box stands on top, above the newest message; Done is in the head", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
+          try {
+            const box = page.locator("[data-mail-reply-box-frame]");
+            await box.waitFor();
+            const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
+            const newest = (await page.locator("[data-mail-conversation-messages] [data-mail-message-id]").first().boundingBox())!;
+            const frame = (await box.boundingBox())!;
+            expect(frame.y + frame.height).toBeLessThanOrEqual(newest.y + 0.5);
             expect(frame.x).toBeGreaterThanOrEqual(scroller.x - 0.5);
             expect(frame.x + frame.width).toBeLessThanOrEqual(scroller.x + scroller.width + 0.5);
             // The head keeps ×, the subject, Done and "…" on a phone; there is no details control any more.
@@ -3050,8 +3117,67 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("reader: a conversation taller than the reader opens at the start of its newest message, with the head in view", async () => {
+        test("reader: the box stands on top by default; “…” moves it under the conversation for this browser, and a reload keeps it without a jump", async () => {
+          const page = await open(widePath({ path: `${boxPath}?conversation=Conv02` }), 1440, 900, "reduce", recordServerReply);
+          try {
+            await settled(page);
+            expect(await readerOrder(page)).toEqual(["box", "Long06", "Long05", "Long04", "older"]);
+            await expectNoReplyJump(page, "top");
+            const choose = async (name: "Top" | "Bottom") => {
+              await page.getByRole("button", { name: "More conversation actions" }).click();
+              const choice = page.locator(".k2b-dropdown__menu:popover-open").getByRole("menuitemradio", { name, exact: true });
+              expect(await choice.getAttribute("aria-checked")).toBe("false");
+              await choice.click();
+              await settled(page);
+            };
+            await choose("Bottom");
+            expect(await readerOrder(page)).toEqual(["older", "Long04", "Long05", "Long06", "box"]);
+            const stored = (await page.context().cookies()).find((cookie) => cookie.name === "cloud_mail_workspace");
+            expect(JSON.parse(decodeURIComponent(stored!.value)).replyPosition).toBe("bottom");
+            // The box moved into view where the person chose it.
+            const [view, box] = await Promise.all([
+              page.locator(".mail-reader-scroll").boundingBox(),
+              page.locator("[data-mail-reply-box-frame]").boundingBox(),
+            ]);
+            expect(box!.y + box!.height).toBeLessThanOrEqual(view!.y + view!.height + 0.5);
+            // A reload renders the chosen place on the server; the first frame already shows it.
+            await page.reload();
+            await ready(page);
+            await settled(page);
+            expect(await readerOrder(page)).toEqual(["older", "Long04", "Long05", "Long06", "box"]);
+            await expectNoReplyJump(page, "bottom after reload");
+            await choose("Top");
+            expect(await readerOrder(page)).toEqual(["box", "Long06", "Long05", "Long04", "older"]);
+            await page.reload();
+            await ready(page);
+            await settled(page);
+            expect(await readerOrder(page)).toEqual(["box", "Long06", "Long05", "Long04", "older"]);
+            await expectNoReplyJump(page, "top after reload");
+          } finally {
+            await close(page);
+          }
+        });
+
+        test("reader: a conversation taller than the reader opens at its start: the box, then the newest message, the head in view", async () => {
           const page = await open(widePath({ path: `${boxPath}?conversation=Conv02` }), 1440, 480 as 900);
+          try {
+            const scroller = page.locator(".mail-reader-scroll");
+            expect(await scroller.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+            await settled(page);
+            expect(await scroller.evaluate((element) => element.scrollTop)).toBe(0);
+            expect(await readerOrder(page)).toEqual(["box", "Long06", "Long05", "Long04", "older"]);
+            const [view, box] = await Promise.all([scroller.boundingBox(), page.locator("[data-mail-reply-box-frame]").boundingBox()]);
+            expect(box!.y).toBeGreaterThanOrEqual(view!.y - 0.5);
+            expect(await page.locator("[data-mail-reader-heading]").isVisible()).toBe(true);
+            const server = await recordedFrame(page, "server");
+            assertFrame(server, await geometry(page), "tall conversation on top settled");
+          } finally {
+            await close(page);
+          }
+        });
+
+        test("reader: with the box at the bottom, a tall conversation opens at the start of its newest message", async () => {
+          const page = await open(widePath({ path: `${boxPath}?conversation=Conv02` }), 1440, 480 as 900, "reduce", replyAt("bottom"));
           try {
             const scroller = page.locator(".mail-reader-scroll");
             expect(await scroller.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
@@ -3940,7 +4066,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       };
 
       for (const width of [1440, 390])
-        test(`${width}: the reply box stands open under the newest message; opening creates no draft, the first typing does`, async () => {
+        test(`${width}: the reply box stands open above the newest message; opening creates no draft, the first typing does`, async () => {
           let api!: Awaited<ReturnType<typeof draftApi>>;
           const page = await open(`${boxPath}?conversation=Conv01&identity=1`, width, undefined, "reduce", async (next) => {
             api = await draftApi(next);
@@ -3958,9 +4084,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               const box = document.querySelector("[data-mail-reply-box='mail']")!.getBoundingClientRect();
               const messages = document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect();
               const send = document.querySelector("[data-mail-reply-box='mail'] footer")!.getBoundingClientRect();
-              return { boxTop: box.top, messagesBottom: messages.bottom, footHeight: send.height };
+              return { boxBottom: box.bottom, messagesTop: messages.top, footHeight: send.height };
             });
-            expect(order.boxTop).toBeGreaterThanOrEqual(order.messagesBottom);
+            expect(order.boxBottom).toBeLessThanOrEqual(order.messagesTop);
             // The bar keeps one row, also on a phone.
             expect(order.footHeight).toBeLessThan(56);
             await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
@@ -3974,7 +4100,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-      test("the box takes its place without moving the messages above it", async () => {
+      test("the box takes its place without moving the messages below it", async () => {
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
           await draftApi(next);
         });

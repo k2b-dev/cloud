@@ -10,12 +10,13 @@ kind: task
 
 ## Start a message {icon="square-plus"}
 
-You answer in the reply box. It stands open under the newest message of every conversation you can write in. Each conversation has exactly one reply draft. Opening a conversation creates no draft; Mail creates it when you type the first character.
+You answer in the reply box. It stands open in every conversation you can write in, at the top above the newest message. Each conversation has exactly one reply draft. Opening a conversation creates no draft; Mail creates it when you type the first character.
 
 - **Mode:** the arrow at the left of the box offers **Reply**, **Reply all**, **Forward**, and **Internal note**. A change between the three mail modes keeps your text; Mail sets the recipients and the subject again. **Reply** on a message, **Quote selection**, the **R** key, and the conversation's **…** menu all write into the same box.
 - **Bar:** **Send ▾** sends, or **Send later** at **Tomorrow morning**, **Monday morning**, or a time you choose. Next to it are formatting, attachments, link, emoji, image, signature, **Assistant**, and **…** with **Preview (how the mail arrives)**, **Attach quote**, **Calendar invitation**, **Delivery options**, **Plain text only**, **Edit subject**, **Open in a window**, and **Recover changes**. At the right, the box quietly shows "Saved", "Saving …", or "Offline · kept here". The trash discards the reply after a question.
 - **States:** while a file uploads, the box shows "Uploading · n %", and **Send** waits. Offline you keep writing, and **Send** waits. A failed send turns the bar light red with the reason; your text is saved, and **Send again** stands where **Send** was. A scheduled reply shows "Send scheduled" with **Change time** and **Cancel and edit**.
-- **Undo:** after **Send**, the message stands at once at the end of the conversation with "Sending in n s" and **Undo**, and the box is empty again. What you type then stays in this browser and becomes the next draft once the message has left. If you choose **Undo**, the reply comes back into the box, and the box offers what you typed meanwhile with **Restore changes**.
+- **Place:** to have the box under the conversation, with the oldest message first and the newest one at the bottom, choose **…** › **Reply box** › **Bottom** in the conversation's head. **Top** puts it back. Mail keeps the choice in this browser.
+- **Undo:** after **Send**, the message stands at once next to the box as the newest message, with "Sending in n s" and **Undo**, and the box is empty again. What you type then stays in this browser and becomes the next draft once the message has left. If you choose **Undo**, the reply comes back into the box, and the box offers what you typed meanwhile with **Restore changes**.
 - **Window:** **…** › **Open in a window** moves the reply to a floating window. The box then says "Opened in a window" with **Bring back**.
 - **One-time notice:** where a conversation had several drafts before Mail kept one reply draft, the box says once how many there were. The most recently edited one stands in the box; **Got it** removes the notice.
 

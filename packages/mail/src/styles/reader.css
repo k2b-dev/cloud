@@ -276,7 +276,7 @@
   gap: 0.125rem;
 }
 
-/* Timeline: oldest first, the newest message at the bottom. */
+/* Timeline: oldest first with the newest message at the bottom, or newest first under the reply box on top. */
 .k2b-ui .mail-timeline {
   display: flex;
   width: 100%;
@@ -606,13 +606,18 @@
   margin-inline-end: 0.25rem;
 }
 
-/* New messages below the place the person reads: one button at the bottom, above the reply pill. */
+/* New messages away from the place the person reads: one button at the edge where they arrive, at the bottom, or at
+   the top with the reply box on top. */
 .k2b-ui .mail-reader-new-below {
   position: absolute;
   bottom: 4.5rem;
   left: 50%;
   z-index: 10;
   transform: translateX(-50%);
+}
+.k2b-ui .mail-reader-new-below[data-reply-position="top"] {
+  top: 0.75rem;
+  bottom: auto;
 }
 
 /* The internal note: the same box in the note's yellow, with no recipients, signature, or attachments. Its button

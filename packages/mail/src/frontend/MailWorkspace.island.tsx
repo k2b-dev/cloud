@@ -125,7 +125,11 @@ import {
   runMailWorkspaceAction,
 } from "./_components/mail-workspace-action-runner";
 import { composeMailListSnapshot, pickMailWorkspaceFrame } from "./_components/mail-workspace-frame";
-import { type MailWorkspacePreferences, updateMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
+import {
+  type MailReplyPosition,
+  type MailWorkspacePreferences,
+  updateMailWorkspacePreferences,
+} from "./_components/mail-workspace-preferences";
 import {
   captureMailWorkspaceRefreshError,
   type MailWorkspaceRefreshResult,
@@ -223,6 +227,8 @@ function createMailboxController(props: MailboxControllerProps) {
   );
   // F7: full screen is this browser's last choice and never turns on by itself.
   const [draftFullscreen, setDraftFullscreen] = createSignal(props.initialPreferences.draftFullscreen);
+  // This browser's place for the reply box, from the cookie on the server too, so the first frame shows it there.
+  const [replyPosition, setReplyPosition] = createSignal(props.initialPreferences.replyPosition);
   const [theme, setTheme] = createSignal<CloudTheme | null>(props.initialTheme);
   const [presence, setPresence] = createSignal<ConversationPresenceSnapshot>({
     participants: [],
@@ -1330,6 +1336,10 @@ function createMailboxController(props: MailboxControllerProps) {
     const next = !draftFullscreen();
     setDraftFullscreen(next);
     updateMailWorkspacePreferences({ draftFullscreen: next });
+  };
+  const changeReplyPosition = (next: MailReplyPosition) => {
+    setReplyPosition(next);
+    updateMailWorkspacePreferences({ replyPosition: next });
   };
   /**
    * The open draft belongs in the URL, so reload, Back, and a shared link open it again. It replaces the entry: a
@@ -3039,6 +3049,7 @@ function createMailboxController(props: MailboxControllerProps) {
     preferences: () => ({
       ...props.initialPreferences,
       draftFullscreen: draftFullscreen(),
+      replyPosition: replyPosition(),
       listMode: data.listMode,
     }),
     handle: {
@@ -3110,6 +3121,8 @@ function createMailboxController(props: MailboxControllerProps) {
     draftFullscreen,
     draftFullscreenActive,
     toggleDraftFullscreen,
+    replyPosition,
+    changeReplyPosition,
     setDraftParam,
     exitHeadSelection,
     folderOnlyHint,
@@ -3637,6 +3650,8 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                         liveDictation={props.liveDictation}
                         draftFullscreen={controller().draftFullscreen()}
                         onToggleDraftFullscreen={controller().toggleDraftFullscreen}
+                        replyPosition={controller().replyPosition()}
+                        onReplyPositionChange={controller().changeReplyPosition}
                         onDraftChange={controller().setDraftParam}
                       />
                     </div>

@@ -56,7 +56,7 @@ import type { MailActionId } from "./mail-actions";
 import { useMailCloudId } from "./mail-cloud-id";
 import { deriveReplyRecipients, quoteReplyBody } from "./mail-compose-derivation";
 import { mailDraftSeedHref } from "./mail-compose-route";
-import { initialConversationMessageId, isNearConversationEnd } from "./mail-conversation-history";
+import { initialConversationMessageId, isNearConversationEnd, isNearConversationStart } from "./mail-conversation-history";
 import { createMailConversationLinks } from "./mail-conversation-links";
 import { type MailRespondIntent, type MailRespondRequest, mailConversationMenuItems } from "./mail-conversation-menu";
 import { createMailConversationNotes } from "./mail-conversation-notes";
@@ -71,6 +71,7 @@ import { mailReaderMessages } from "./mail-reader-messages";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
 import { mailSummaryMessages } from "./mail-summary-messages";
 import type { MailReadingFormat } from "./mail-user-preferences";
+import type { MailReplyPosition } from "./mail-workspace-preferences";
 import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 
 /** From this many messages on, the reader shows the newest few and folds the rest behind one button. */
@@ -166,6 +167,13 @@ export default function MailConversationReader(props: {
   onToggleDraftFullscreen?: () => void;
   /** The draft open in this conversation, or null; the workspace keeps it in the URL. */
   onDraftChange?: (draftId: string | null, options?: { history?: boolean }) => void;
+  /**
+   * This browser's place for the reply box. `top`: the box first, then the newest message and the older ones below it.
+   * `bottom`: oldest first, the newest message and the box at the end.
+   */
+  replyPosition: MailReplyPosition;
+  /** Offers the choice in the conversation's "…"; left out, the reader shows no choice. */
+  onReplyPositionChange?: (position: MailReplyPosition) => void;
 }) {
   const locale = useLocale();
   let seedStorage: Storage | undefined;
@@ -198,8 +206,10 @@ export default function MailConversationReader(props: {
     comments: () => props.comments,
     cursor: () => props.commentsCursor,
   });
-  // The conversation in reading order: oldest first, the newest message at the bottom, notes at their time.
+  // The conversation in time order: oldest first, notes at their time. The fold below counts in this order; with the
+  // reply box on top, the reader shows the same items newest first.
   const timeline = createMemo(() => buildMailConversationTimeline(props.messages, notes.notes()));
+  const newestFirst = () => props.replyPosition === "top";
   // Live updates rebuild every timeline item. Rows are keyed by their stable id
   // so an update re-renders values in place instead of remounting each message
   // body, which would reload its frame and close opened quoted text.
@@ -252,7 +262,8 @@ export default function MailConversationReader(props: {
   });
   const visibleTimelineIds = createMemo(() => {
     const older = olderMessages();
-    return older ? timelineIds().slice(older.start) : timelineIds();
+    const shown = older ? timelineIds().slice(older.start) : timelineIds();
+    return newestFirst() ? shown.toReversed() : shown;
   });
   const revealOlderMessages = (start: number) => {
     // A note may sit at the fold; focus goes to the newest message the row showed.
@@ -262,7 +273,8 @@ export default function MailConversationReader(props: {
     setShowOlder(true);
     // Earlier notes belong to the older messages that are now shown.
     if (notes.hasEarlier()) void notes.loadEarlier();
-    // The row leaves; focus goes to the last message it showed, right above where the person was reading.
+    // The row leaves; focus goes to the newest message it showed, next to where the person was reading: right above
+    // the shown messages, or right below them with the reply box on top.
     if (lastHidden?.kind === "message")
       queueMicrotask(() =>
         historyScroller
@@ -425,6 +437,9 @@ export default function MailConversationReader(props: {
       if (disposed || props.selectionKey !== options.selectionKey || !historyScroller) return;
       if (options.scrollTop !== undefined) {
         historyScroller.scrollTop = options.scrollTop;
+      } else if (options.messageId && newestFirst() && options.messageId === props.messages.at(-1)?.id) {
+        // With the reply box on top, the start of the reader shows the box and the newest message right below it.
+        historyScroller.scrollTo({ top: 0, behavior: options.behavior ?? "auto" });
       } else if (options.messageId) {
         // The message's start shows at the top, also for the newest one at the bottom of the conversation.
         const message = historyScroller.querySelector<HTMLElement>(`[data-mail-message-id="${CSS.escape(options.messageId)}"]`);
@@ -441,8 +456,17 @@ export default function MailConversationReader(props: {
     });
   };
 
-  /** The person reads at the end of the conversation, where the newest message is: new messages then show at once. */
-  const readingNewest = (): boolean => !historyScroller || isNearConversationEnd(historyScroller);
+  /**
+   * The person reads where the newest message is, at the start or the end: new messages then show at once. With the
+   * box on top, writing in a box taller than the reader counts too, so a sent reply shows at once below it.
+   */
+  const readingNewest = (): boolean => {
+    if (!historyScroller) return true;
+    if (!newestFirst()) return isNearConversationEnd(historyScroller);
+    if (isNearConversationStart(historyScroller)) return true;
+    const box = historyScroller.querySelector("[data-mail-reply-box-frame]")?.getBoundingClientRect();
+    return Boolean(box && box.bottom > historyScroller.getBoundingClientRect().top);
+  };
 
   const handleReaderScroll = () => {
     if (!historyScroller) return;
@@ -703,6 +727,12 @@ export default function MailConversationReader(props: {
     }
     setExpandedMessages((current) => new Set(current).add(targetMessageId));
     setPendingNewMessages(0);
+    // With the box on top, a new message takes its place right below the box, where the person reads or writes; the
+    // reader does not scroll, so a cursor in the box never jumps.
+    if (newestFirst() && previousMessageCount > 0) {
+      followingNewest = readingNewest();
+      return;
+    }
     scheduleReaderScroll({ selectionKey, messageId: targetMessageId });
   };
 
@@ -849,6 +879,12 @@ export default function MailConversationReader(props: {
     scrollToReplyBox();
   };
   const respond = (intent: MailRespondIntent) => respondToLatest(intent);
+  /** The box moves to the chosen place; the reader then shows it there, so the person sees where it went. */
+  const changeReplyPosition = (position: MailReplyPosition) => {
+    if (position === props.replyPosition) return;
+    props.onReplyPositionChange?.(position);
+    scrollToReplyBox();
+  };
 
   // A row's Reply waits until its conversation is open here; a request for another conversation lapses.
   createEffect(() => {
@@ -1126,6 +1162,9 @@ export default function MailConversationReader(props: {
         ...emlItem(),
         ...cloudId.actions({ conversationId: props.selectedConversationId }),
       ],
+      ...(canRespondToLatest() && props.onReplyPositionChange
+        ? { replyPosition: { value: props.replyPosition, run: changeReplyPosition } }
+        : {}),
     });
   const readerHint = (): MailReaderHint | null => {
     if (!props.selectedConversationId) return null;
@@ -1145,6 +1184,79 @@ export default function MailConversationReader(props: {
     const first = props.messages[0]?.from[0];
     return first?.name || first?.address || t().unknownSender;
   };
+
+  // The fold's row and the earlier notes stand where the older messages are: above the shown ones, or below them with
+  // the reply box on top.
+  const olderRow = () => (
+    <Show when={olderMessages()}>
+      {(older) => (
+        <button type="button" class="mail-reader-older" data-mail-older-messages onClick={() => revealOlderMessages(older().start)}>
+          <i class="ti ti-dots" aria-hidden="true" />
+          {t().olderMessages({ count: older().count })}
+        </button>
+      )}
+    </Show>
+  );
+  const earlierNotesRow = () => (
+    <Show when={!olderMessages() && (notes.hasEarlier() || notes.earlierError())}>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        class="mail-timeline-earlier"
+        data-mail-earlier-notes
+        loading={notes.loadingEarlier()}
+        onClick={() => void notes.loadEarlier()}
+      >
+        <i class={notes.earlierError() ? "ti ti-refresh" : "ti ti-note"} aria-hidden="true" />
+        {notes.earlierError() ? `${notes.earlierError()} · ${t().retry}` : readerText().earlierNotes}
+      </Button>
+    </Show>
+  );
+  /**
+   * The reply box (Mail v5): one reply draft per conversation, and the internal note, above the newest message or under
+   * the conversation (`replyPosition`). It belongs to its conversation; another conversation gets a box of its own.
+   */
+  const replyBoxSlot = () => (
+    <Show when={canRespondToLatest() ? props.selectedConversationId : null} keyed>
+      {(conversationId) => (
+        <MailReplyBox
+          mailboxId={props.mailboxId}
+          conversationId={conversationId}
+          subject={props.subject}
+          messages={props.messages}
+          conversationDrafts={props.conversationDrafts}
+          identities={props.identities}
+          canReplyAll={canReplyAllToLatest()}
+          customerName={customerName()}
+          currentUserId={props.currentUserId ?? ""}
+          currentUserEmail={props.currentUserEmail ?? null}
+          dateConfig={props.dateConfig}
+          canAdmin={props.canAdmin}
+          mailboxRecipientSuggestions={props.mailboxWide}
+          calendarIntegrationAvailable={props.calendarIntegrationAvailable}
+          liveDictation={props.liveDictation ?? false}
+          returnHref={props.requestUrl}
+          messageLabel={(messageId) => {
+            const message = props.messages.find((candidate) => candidate.id === messageId);
+            if (!message) return null;
+            const sender = message.from[0];
+            const name = sender?.name || sender?.address || "";
+            return `${name}, ${dates.formatDateTimeRelative(message.internalDate, props.dateConfig)}`;
+          }}
+          createNote={notes.create}
+          onReconcile={props.onReconcileAfterWrite}
+          onExplainSenderUnavailable={() => void explainSenderUnavailable()}
+          register={(api) => {
+            replyBox = api;
+            onCleanup(() => {
+              if (replyBox === api) replyBox = null;
+            });
+          }}
+        />
+      )}
+    </Show>
+  );
 
   return (
     <div
@@ -1236,7 +1348,7 @@ export default function MailConversationReader(props: {
               scrollPreserveKey={`mail-reader-${props.selectionKey}`}
               onScroll={handleReaderScroll}
             >
-              <div class="mail-reading-column" data-mail-reading-column>
+              <div class="mail-reading-column" data-mail-reading-column data-reply-position={props.replyPosition}>
                 <MailAutomationTrace
                   items={props.automationTrace}
                   where="top"
@@ -1273,33 +1385,11 @@ export default function MailConversationReader(props: {
                     />
                   )}
                 </Show>
+                <Show when={newestFirst()}>{replyBoxSlot()}</Show>
                 <div class="mail-timeline" data-mail-conversation-messages>
-                  <Show when={olderMessages()}>
-                    {(older) => (
-                      <button
-                        type="button"
-                        class="mail-reader-older"
-                        data-mail-older-messages
-                        onClick={() => revealOlderMessages(older().start)}
-                      >
-                        <i class="ti ti-dots" aria-hidden="true" />
-                        {t().olderMessages({ count: older().count })}
-                      </button>
-                    )}
-                  </Show>
-                  <Show when={!olderMessages() && (notes.hasEarlier() || notes.earlierError())}>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      class="mail-timeline-earlier"
-                      data-mail-earlier-notes
-                      loading={notes.loadingEarlier()}
-                      onClick={() => void notes.loadEarlier()}
-                    >
-                      <i class={notes.earlierError() ? "ti ti-refresh" : "ti ti-note"} aria-hidden="true" />
-                      {notes.earlierError() ? `${notes.earlierError()} · ${t().retry}` : readerText().earlierNotes}
-                    </Button>
+                  <Show when={!newestFirst()}>
+                    {olderRow()}
+                    {earlierNotesRow()}
                   </Show>
                   <Show when={Boolean(props.detailErrors.comments)}>
                     <p class="mail-timeline-unavailable" role="status">
@@ -1394,6 +1484,10 @@ export default function MailConversationReader(props: {
                       );
                     }}
                   </For>
+                  <Show when={newestFirst()}>
+                    {olderRow()}
+                    {earlierNotesRow()}
+                  </Show>
                 </div>
                 <Show when={props.automationTrace.length > 0}>
                   <MailAutomationTrace
@@ -1409,53 +1503,21 @@ export default function MailConversationReader(props: {
                     busy={props.automationPending}
                   />
                 </Show>
-                {/* The reply box stands open under the newest message (Mail v5): one reply draft per conversation, and the
-                    internal note. It belongs to its conversation; another conversation gets a box of its own. */}
-                <Show when={canRespondToLatest() ? props.selectedConversationId : null} keyed>
-                  {(conversationId) => (
-                    <MailReplyBox
-                      mailboxId={props.mailboxId}
-                      conversationId={conversationId}
-                      subject={props.subject}
-                      messages={props.messages}
-                      conversationDrafts={props.conversationDrafts}
-                      identities={props.identities}
-                      canReplyAll={canReplyAllToLatest()}
-                      customerName={customerName()}
-                      currentUserId={props.currentUserId ?? ""}
-                      currentUserEmail={props.currentUserEmail ?? null}
-                      dateConfig={props.dateConfig}
-                      canAdmin={props.canAdmin}
-                      mailboxRecipientSuggestions={props.mailboxWide}
-                      calendarIntegrationAvailable={props.calendarIntegrationAvailable}
-                      liveDictation={props.liveDictation ?? false}
-                      returnHref={props.requestUrl}
-                      messageLabel={(messageId) => {
-                        const message = props.messages.find((candidate) => candidate.id === messageId);
-                        if (!message) return null;
-                        const sender = message.from[0];
-                        const name = sender?.name || sender?.address || "";
-                        return `${name}, ${dates.formatDateTimeRelative(message.internalDate, props.dateConfig)}`;
-                      }}
-                      createNote={notes.create}
-                      onReconcile={props.onReconcileAfterWrite}
-                      onExplainSenderUnavailable={() => void explainSenderUnavailable()}
-                      register={(api) => {
-                        replyBox = api;
-                        onCleanup(() => {
-                          if (replyBox === api) replyBox = null;
-                        });
-                      }}
-                    />
-                  )}
-                </Show>
+                <Show when={!newestFirst()}>{replyBoxSlot()}</Show>
               </div>
             </ScrollArea>
             <Show when={pendingNewMessages()}>
               {(count) => (
-                <Button size="sm" type="button" class="mail-reader-new-below" aria-live="polite" onClick={jumpToNewest}>
+                <Button
+                  size="sm"
+                  type="button"
+                  class="mail-reader-new-below"
+                  data-reply-position={props.replyPosition}
+                  aria-live="polite"
+                  onClick={jumpToNewest}
+                >
                   {readerText().newBelow({ count: count() })}
-                  <i class="ti ti-arrow-down" aria-hidden="true" />
+                  <i class={newestFirst() ? "ti ti-arrow-up" : "ti ti-arrow-down"} aria-hidden="true" />
                 </Button>
               )}
             </Show>

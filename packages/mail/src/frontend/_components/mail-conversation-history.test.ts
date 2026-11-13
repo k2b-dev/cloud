@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   initialConversationMessageId,
   isNearConversationEnd,
+  isNearConversationStart,
   isOutgoingMessage,
   mergeLatestMessagePages,
 } from "./mail-conversation-history";
@@ -31,6 +32,12 @@ describe("mail conversation history", () => {
     expect(isNearConversationEnd({ scrollTop: 860, scrollHeight: 1500, clientHeight: 600 })).toBeTrue();
     expect(isNearConversationEnd({ scrollTop: 700, scrollHeight: 1500, clientHeight: 600 })).toBeFalse();
     expect(isNearConversationEnd({ scrollTop: 0, scrollHeight: 400, clientHeight: 600 })).toBeTrue();
+  });
+
+  test("with the reply box on top, follows live messages only while the reader is near the start", () => {
+    expect(isNearConversationStart({ scrollTop: 0 })).toBeTrue();
+    expect(isNearConversationStart({ scrollTop: 96 })).toBeTrue();
+    expect(isNearConversationStart({ scrollTop: 97 })).toBeFalse();
   });
 
   test("merges latest-first pages without duplicating cursor boundary messages", () => {

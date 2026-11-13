@@ -412,6 +412,7 @@ window.mountMailList = (options) => {
                     onReconcile={async () => {}}
                     onReconcileAfterWrite={async () => {}}
                     onClose={noop}
+                    replyPosition="bottom"
                   />
                 </Show>
               </div>

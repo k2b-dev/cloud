@@ -90,6 +90,7 @@ const renderReader = (
     theme?: "light" | "dark" | null;
     workStatus?: "needs_action" | "waiting" | "done" | null;
     assignment?: { assigned: boolean; others: string[] } | null;
+    replyPosition?: "top" | "bottom";
   } = {},
 ) => {
   const messages = options.messages ?? [message];
@@ -169,6 +170,8 @@ const renderReader = (
       onReconcile: async () => undefined,
       onReconcileAfterWrite: async () => undefined,
       onClose: () => undefined,
+      // Most tests here were written for the box under the conversation; "the reply box on top" covers the default.
+      replyPosition: options.replyPosition ?? "bottom",
     }),
   );
 };
@@ -520,6 +523,60 @@ describe("Mail conversation reader", () => {
     expect(tile).toContain("Oak is tight until week 48.");
     expect(tile).not.toContain("k2b-avatar");
     expect(html).toContain("Note from Tom Behrens deleted");
+  });
+});
+
+describe("Mail conversation reader with the reply box on top", () => {
+  const note = {
+    id: "Note01",
+    conversationId: "Conv01",
+    body: "Oak is tight until week 48.",
+    author: { kind: "user" as const, id: "Usr002", displayName: "Tom Behrens", avatarHash: null },
+    referencedMessageId: null,
+    revision: 1,
+    canEdit: true,
+    canDelete: true,
+    editedAt: null,
+    deletedAt: null,
+    createdAt: "2026-08-16T10:00:00.000Z",
+    updatedAt: "2026-08-16T10:00:00.000Z",
+  };
+  const at = (id: string, hour: string): MessageDetail => ({
+    ...message,
+    id,
+    internalDate: `2026-08-16T${hour}:00:00.000Z`,
+    sentAt: `2026-08-16T${hour}:00:00.000Z`,
+  });
+
+  test("the server renders the box first, then the newest message open, then older messages and notes newest first", () => {
+    const html = renderReader([draft], { messages: [at("MsgOld", "09"), message], comments: [note], replyPosition: "top" });
+    const order = [
+      'data-mail-reply-box="pending"',
+      'data-mail-message-id="Msg001"',
+      'data-mail-note="Note01"',
+      'data-mail-message-id="MsgOld"',
+    ];
+    const positions = order.map((marker) => html.indexOf(marker));
+    expect(positions.every((position) => position > 0)).toBe(true);
+    expect([...positions].sort((left, right) => left - right)).toEqual(positions);
+    expect(html).toContain('data-reply-position="top"');
+    const newestStart = html.lastIndexOf("<article", html.indexOf('data-mail-message-id="Msg001"'));
+    expect(html.slice(newestStart, html.indexOf("</article>", newestStart))).toContain('class="mail-message-head"');
+  });
+
+  test("a long conversation folds its older messages into one row below the newest three", () => {
+    const messages = ["00", "01", "02", "03", "04", "05"].map((hour, index) => at(`Msg00${index}`, hour));
+    const html = renderReader([], { messages, replyPosition: "top" });
+    expect(html).toContain("3 older messages");
+    expect(html.indexOf('data-mail-message-id="Msg005"')).toBeLessThan(html.indexOf('data-mail-message-id="Msg003"'));
+    expect(html.indexOf('data-mail-message-id="Msg003"')).toBeLessThan(html.indexOf("data-mail-older-messages"));
+    expect(html).not.toContain('data-mail-message-id="Msg002"');
+  });
+
+  test("a person who cannot write sees the conversation newest first and no box", () => {
+    const html = renderReader([], { messages: [at("MsgOld", "09"), message], canWrite: false, replyPosition: "top" });
+    expect(html).not.toContain("data-mail-reply-box");
+    expect(html.indexOf('data-mail-message-id="Msg001"')).toBeLessThan(html.indexOf('data-mail-message-id="MsgOld"'));
   });
 });
 
