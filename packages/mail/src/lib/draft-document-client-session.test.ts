@@ -1084,3 +1084,69 @@ test("an acknowledgement of older input cannot mark newer local input as saved",
     await f.cleanup();
   }
 });
+
+test("a same-generation offline journal stays unsaved through peer replay until its own acknowledgement", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  const peer = new Y.Doc();
+  peer.clientID = 995;
+  let journal: Uint8Array | undefined;
+  const offline = spyOn(sharedText, "openAuthorizedSharedTextOffline").mockImplementation(async (_identity, authorize) => {
+    const authorization = await authorize(controller.signal);
+    const restored = new Y.Doc();
+    try {
+      Y.applyUpdate(restored, encoding.fromBase64(authorization.fresh.state));
+      Y.applyUpdate(peer, Y.encodeStateAsUpdate(restored));
+      restored.getText("codemirror").insert(0, "Journal ");
+      journal = Y.encodeStateAsUpdate(restored);
+    } finally {
+      restored.destroy();
+    }
+    const bytes = journal;
+    return {
+      authorization,
+      state: bytes,
+      baseCursor: "s6t.fixture.1",
+      session: {
+        signal: controller.signal,
+        load: async () => bytes,
+        loadPending: async () => ({ state: bytes, baseCursor: "s6t.fixture.1" }),
+        save: async () => bytes,
+        acknowledgeSnapshot: async () => false,
+        forget: async () => {},
+        close: () => {
+          controller.abort();
+        },
+      },
+    };
+  });
+  try {
+    f.silence();
+    const client = await f.open("1", true);
+    expect(client.content().body).toBe("Journal Hello");
+    expect(client.state().dirty).toBe(true);
+    await until(() => f.sockets.length > 0 && f.sockets[0]!.sent.some((raw) => JSON.parse(raw).type === "replayRequest"));
+    const socket = f.sockets[0]!;
+    const vector = Y.encodeStateVector(peer);
+    peer.getText("codemirror").insert(peer.getText("codemirror").length, " from peer");
+    socket.receive("syncPush", {
+      docId: "Draft1",
+      generation: "1",
+      updates: [{ generation: "1", payload: encoding.toBase64(Y.encodeStateAsUpdate(peer, vector)), cursor: "s6t.fixture.2" }],
+    });
+    await Bun.sleep(0);
+    expect(client.state().dirty).toBe(true);
+    socket.receive("replayReady", { docId: "Draft1", generation: "1", cursor: "s6t.fixture.2", peerId: "peer1" });
+    await until(() => client.state().ready);
+    await Bun.sleep(0);
+    expect(client.state().dirty).toBe(true);
+    f.resume();
+    await until(() => !client.provider.hasUnsentChanges());
+    await Bun.sleep(0);
+    expect(client.state().dirty).toBe(false);
+  } finally {
+    offline.mockRestore();
+    peer.destroy();
+    await f.cleanup();
+  }
+});
