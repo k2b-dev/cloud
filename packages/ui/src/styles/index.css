@@ -2220,7 +2220,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: min(var(--k2b-focus-offset), calc(var(--k2b-focus-offset) * 2));
 }
 
-.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):active {
+/* A popup is placed from its trigger's viewport box. Scaling that anchor on press
+   leaves the popup at an intermediate position until the next scroll or resize. */
+.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"], [aria-haspopup]):active {
   scale: 0.98;
 }
 

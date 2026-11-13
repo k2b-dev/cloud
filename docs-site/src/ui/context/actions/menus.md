@@ -194,6 +194,8 @@ or sidebar: its entries render when the menu first opens, so the page carries
 each row's trigger but not each row's entries. Opening, focus, and keyboard use
 stay the same.
 `Dropdown.Trigger` owns the native button and its SSR-visible menu semantics.
+Buttons with `aria-haspopup` keep their size and position while pressed, so a
+popup stays anchored when its entries scroll. They retain their color feedback.
 Use its normal button appearance by default. Set `appearance="plain"` only
 when a specialized component class owns the complete visual treatment.
 An `iconOnly` trigger defaults to the quiet `ghost` variant and shows its
