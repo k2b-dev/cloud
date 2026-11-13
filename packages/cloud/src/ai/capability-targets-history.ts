@@ -5,30 +5,30 @@ import { legacyTargetOperation, migratedCapabilityToolArgs } from "../services/m
 import { parsePgJsonValue } from "../services/postgres";
 import type { AiStoredMessage } from "./types";
 
-/** History is display data. Add a recovery notice on reads without rewriting the stored messages. */
-export const projectCapabilityMigrationErrors = async (
-  db: SQL,
-  conversationId: string,
-  messages: AiStoredMessage[],
-): Promise<AiStoredMessage[]> => {
-  const turns = await db<{ id: string; last_assistant_id: string | null }[]>`SELECT turn.id,
+export type CapabilityMigrationHistoryRow = {
+  migrated_turn_id: string | null;
+  migrated_last_assistant_id: string | null;
+};
+
+/** Join recovery data into the existing history read, including when its last assistant is outside the page. */
+export const capabilityMigrationHistoryJoin = (db: SQL) => db`LEFT JOIN LATERAL (
+  SELECT turn.id AS migrated_turn_id,
     (SELECT message.id FROM ai.messages message WHERE message.conversation_id = turn.conversation_id
       AND message.loop_id = turn.id::text AND message.role = 'assistant' AND message.kind = 'message'
-      AND message.compacted_at IS NULL ORDER BY message.seq DESC LIMIT 1) AS last_assistant_id
-    FROM ai.turns turn WHERE turn.conversation_id = ${conversationId}::uuid
-      AND turn.status = 'aborted' AND turn.error = 'Bitte neu anfragen'`;
-  const ids = new Set(turns.map((turn) => turn.id));
-  const lastAssistant = new Set(turns.map((turn) => turn.last_assistant_id));
-  return messages.map((message) =>
-    message.loopId && ids.has(message.loopId)
-      ? {
-          ...message,
-          ...(lastAssistant.has(message.id) && !message.loopDoneReason ? { loopDoneReason: "aborted" as const } : {}),
-          meta: { ...message.meta, turnError: { code: "capability_changed" } },
-        }
-      : message,
-  );
-};
+      AND message.compacted_at IS NULL ORDER BY message.seq DESC LIMIT 1) AS migrated_last_assistant_id
+  FROM ai.turns turn WHERE turn.conversation_id = ai.messages.conversation_id AND turn.id::text = ai.messages.loop_id
+    AND turn.status = 'aborted' AND turn.error = 'Bitte neu anfragen'
+) migration ON true`;
+
+/** History is display data. Add a recovery notice on reads without rewriting the stored messages. */
+export const projectCapabilityMigrationError = (message: AiStoredMessage, row: CapabilityMigrationHistoryRow): AiStoredMessage =>
+  row.migrated_turn_id
+    ? {
+        ...message,
+        ...(row.migrated_last_assistant_id === message.id && !message.loopDoneReason ? { loopDoneReason: "aborted" as const } : {}),
+        meta: { ...message.meta, turnError: { code: "capability_changed" } },
+      }
+    : message;
 
 /** Only the active open call is adapted in memory. Completed history never sees today's input schema. */
 export const projectMigratedCapabilityCalls = async (
