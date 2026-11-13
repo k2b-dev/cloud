@@ -5668,6 +5668,33 @@
   opacity: 0;
 }
 
+/* A failed reload replaces the previous pages instead of leaving an outdated document beside its error. */
+.k2b-ui .k2b-pdf-viewer[data-state="error"] > .k2b-pdf-viewer__document {
+  visibility: hidden;
+}
+
+/* A new document is loading while the previous pages stay: a quiet line on the top edge, as the calendar shows a
+   pending period. It lies over the ground, so nothing moves. */
+.k2b-ui .k2b-pdf-viewer__progress {
+  position: absolute;
+  z-index: 1;
+  inset-inline: 0;
+  top: 0;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--k2b-action) 15%, transparent);
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-pdf-viewer__progress::after {
+  display: block;
+  width: 35%;
+  height: 100%;
+  background: var(--k2b-action-solid);
+  content: "";
+  animation: k2b-content-calendar-progress 900ms ease-in-out infinite;
+}
+
 /* A long error scrolls from its top instead of overflowing above the area. */
 .k2b-ui .k2b-pdf-viewer__placeholder {
   position: absolute;
@@ -6161,7 +6188,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .k2b-ui .k2b-calendar-header__progress::after {
+  .k2b-ui .k2b-calendar-header__progress::after,
+  .k2b-ui .k2b-pdf-viewer__progress::after {
     animation: none;
   }
 
