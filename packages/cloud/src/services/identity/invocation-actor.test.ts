@@ -137,7 +137,10 @@ test("the exact access subject is retained for users and Code accounts", async (
   };
   for (const access_subject_id of [base.sub, other]) {
     let queries = 0;
-    const query = (() => Promise.resolve(++queries === 1 ? [{ id: base.mandate_id }] : [accountRow])) as unknown as typeof sql;
+    const query = (() => {
+      queries++;
+      return Promise.resolve([accountRow]);
+    }) as unknown as typeof sql;
     const result = await resolveInvocationAuthority({ ...base, access_subject_id }, query, []);
     if (access_subject_id === other) expect(result).toBeNull();
     else {
@@ -146,7 +149,7 @@ test("the exact access subject is retained for users and Code accounts", async (
       expect(result?.actor.delegation?.workloadTrigger).toEqual(base.workload_trigger);
       expect(result?.actor.kind === "service_account" && result.actor.scopes).toEqual(["read", "write"]);
     }
-    expect(queries).toBe(2);
+    expect(queries).toBe(1);
   }
 });
 
@@ -215,9 +218,7 @@ test("a claimed Code event resolves its account without a run and retains event 
     let queries = 0;
     const query = (() => {
       queries++;
-      return Promise.resolve(
-        queries === 1 ? [{ id: eventClaims.jti }] : queries === 2 ? (currentEntry ? [{ id: eventClaims.mandate_id }] : []) : [accountRow],
-      );
+      return Promise.resolve(queries === 1 ? [{ id: eventClaims.jti }] : currentEntry ? [accountRow] : []);
     }) as unknown as typeof sql;
     const result = await resolveInvocationAuthority(eventClaims, query, []);
     if (!currentEntry) expect(result).toBeNull();
@@ -226,6 +227,6 @@ test("a claimed Code event resolves its account without a run and retains event 
       expect(result?.actor.delegation).toMatchObject({ workloadEvent: eventClaims.workload_event, workloadType: "code.version" });
       expect(result?.scopes).toEqual([]);
     }
-    expect(queries).toBe(currentEntry ? 3 : 2);
+    expect(queries).toBe(2);
   }
 });

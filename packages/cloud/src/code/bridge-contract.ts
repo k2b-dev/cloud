@@ -124,7 +124,7 @@ export type CodeBridgeAuthority = {
   withMandateIssueAuthority: NonNullable<CapabilityDispatchDependencies["withMandateIssueAuthority"]>;
 };
 /**
- * C4/C11/C13 host seam. Persist a bounded call reservation BEFORE execute; finish it for both
+ * C4/C11/C13 host seam. Persist a bounded call reservation before effects; finish it for both
  * refusals and results. Reject stale generations before reserving. No in-memory run state.
  * The host checks declared version operation/target/ref scope and admin budgets.
  * Every effect MUST use the returned mandate authority wrapper, which rechecks
@@ -132,7 +132,14 @@ export type CodeBridgeAuthority = {
  * Internet calls use kind="internet" for policy and retain Action observations to prevent automatic effect retries.
  */
 export interface CodeBridgeHost {
-  withCall(call: CodeBridgeCall, execute: (authority: CodeBridgeAuthority) => Promise<Response>): Promise<Response>;
+  withCall(
+    call: CodeBridgeCall,
+    execute: (authority: CodeBridgeAuthority) => Promise<Response>,
+    /** Core capability dispatcher only: execute prepares issuance, and all effects
+     * start after its withMandateIssueAuthority transaction has committed.
+     * Ordinary callbacks always receive a committed receipt before execute. */
+    options?: { receipt: "issuance" },
+  ): Promise<Response>;
 }
 
 /** Core-only accounting for server-created file viewers during an active run.

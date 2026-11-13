@@ -1617,7 +1617,7 @@ export async function dispatchCodeSdkCall({
       }
     : sdk.data.call;
   const continuation = codeFileBinding(claims);
-  return await dependencies.host.withCall({ claims, call, kind, policy }, async (authority) => {
+  const execute = async (authority: CodeBridgeAuthority) => {
     const refusePolicy = (code: string) => {
       authority.onRefusal?.(codeBridgeLocalRefusalKind(code));
       return codeBridgeError(code);
@@ -1759,5 +1759,6 @@ export async function dispatchCodeSdkCall({
     authority.onRefusal?.(failure.success ? codeBridgeDispatchRefusalKind(code, targetStatus) : "bridge");
     if (result.ok) authority.onFailure?.(result.data);
     return codeBridgeError(code, 200, response.status >= 400 && response.status <= 599 ? response.status : undefined);
-  });
+  };
+  return await dependencies.host.withCall({ claims, call, kind, policy }, execute, operation?.stream ? undefined : { receipt: "issuance" });
 }

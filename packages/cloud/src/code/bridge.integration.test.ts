@@ -237,12 +237,24 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let realRate = false;
   let realAdmission = false;
   let beforeIssue: (() => Promise<void>) | undefined;
+  let beforeProvider: (() => Promise<void>) | undefined;
+  let afterSigning: (() => Promise<void>) | undefined;
+  let afterSignerRollback: (() => Promise<void>) | undefined;
   let fileTransport: CapabilityDispatchDependencies["fetch"] | undefined;
   let fileEntries = new Map<string, CapabilityRegistryEntry>();
   let mailMigrated = false;
   const withSigner: NonNullable<CapabilityDispatchDependencies["withActiveSigner"]> = async (_, use) => {
     await beforeIssue?.();
-    return sql.begin((db) => use({ ...signer, issuer, groupsAdmin: [] }, db));
+    try {
+      return await sql.begin(async (db) => {
+        const result = await use({ ...signer, issuer, groupsAdmin: [] }, db);
+        await afterSigning?.();
+        return result;
+      });
+    } catch (error) {
+      await afterSignerRollback?.();
+      throw error;
+    }
   };
   const dependencies = () => ({
     host: realRate ? createCodeBridgeHost() : createCodeBridgeHost({ checkRate: async () => ({ limited: rateLimited }) }),
@@ -258,6 +270,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       withActiveSigner: withSigner,
       signInvocation: async (params, options) => issueInvocationToken(params, { ...options, groupsAdmin: [] }),
       fetch: async (_url, init) => {
+        await beforeProvider?.();
         fetched++;
         if (fileTransport) return fileTransport(_url, init);
         const headers = new Headers(init?.headers);
@@ -476,6 +489,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     realRate = false;
     realAdmission = false;
     beforeIssue = undefined;
+    beforeProvider = undefined;
+    afterSigning = undefined;
+    afterSignerRollback = undefined;
     beforeDatabaseCreate = undefined;
     beforeDatabaseExecute = undefined;
     await sql`UPDATE code.policy_rules SET value='automatic' WHERE group_id IS NULL`;
@@ -632,11 +648,95 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           expect(await (await send({ operation: "example.read" })).json()).toMatchObject({ ok: true });
         });
         console.log("SQL BUDGET capability request", statements.length, statements);
-        expect(statements).toHaveLength(50);
+        expect(statements.length).toBeLessThanOrEqual(18);
       }
     } finally {
       await meter.close();
     }
+  });
+
+  test("the receipt is committed and visible on another connection before the provider effect", async () => {
+    const witness = await sql.reserve();
+    try {
+      beforeProvider = async () => {
+        const calls = await witness`SELECT state FROM code.calls WHERE run_id=${claims.runId}::uuid`;
+        expect(calls).toEqual([{ state: "running" }]);
+      };
+      expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
+    } finally {
+      beforeProvider = undefined;
+      witness.release();
+    }
+  });
+
+  test("a receipt write failure prevents the provider effect", async () => {
+    await sql`CREATE FUNCTION code.reject_bridge_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'fixture receipt unavailable'; END $$`.simple();
+    await sql`CREATE TRIGGER reject_bridge_receipt BEFORE INSERT ON code.calls
+      FOR EACH ROW EXECUTE FUNCTION code.reject_bridge_receipt()`.simple();
+    const before = fetched;
+    try {
+      const response = await send();
+      expect((await response.json()).ok).toBe(false);
+      expect(fetched).toBe(before);
+      expect(await sql`SELECT ordinal FROM code.calls WHERE run_id=${claims.runId}::uuid`).toHaveLength(0);
+    } finally {
+      await sql`DROP TRIGGER reject_bridge_receipt ON code.calls`.simple();
+      await sql`DROP FUNCTION code.reject_bridge_receipt()`.simple();
+    }
+  });
+
+  test("a post-sign rollback cannot finish a concurrent call that reuses its receipt ordinal", async () => {
+    const signed = Promise.withResolvers<void>();
+    const rollback = Promise.withResolvers<void>();
+    const provider = Promise.withResolvers<void>();
+    const firstFinished = Promise.withResolvers<void>();
+    const before = fetched;
+    afterSigning = async () => {
+      afterSigning = undefined;
+      signed.resolve();
+      await rollback.promise;
+      throw new Error("fixture rollback after signing");
+    };
+    afterSignerRollback = async () => {
+      afterSignerRollback = undefined;
+      await provider.promise;
+    };
+    beforeProvider = async () => {
+      beforeProvider = undefined;
+      provider.resolve();
+      await firstFinished.promise;
+    };
+    const first = send().finally(() => firstFinished.resolve());
+    let second: ReturnType<typeof send> | undefined;
+    try {
+      await signed.promise;
+      second = send();
+      rollback.resolve();
+      const [failed, successful] = await Promise.all([first, second]);
+      expect((await failed.json()).ok).toBe(false);
+      expect((await successful.json()).ok).toBe(true);
+      expect(fetched - before).toBe(1);
+      expect(
+        await sql<
+          { ordinal: number; state: string }[]
+        >`SELECT ordinal,state FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal`,
+      ).toEqual([
+        { ordinal: 1, state: "succeeded" },
+        { ordinal: 2, state: "failed" },
+      ]);
+    } finally {
+      rollback.resolve();
+      provider.resolve();
+      firstFinished.resolve();
+      await Promise.allSettled([first, ...(second ? [second] : [])]);
+    }
+  });
+
+  test("an expired mandate refuses the next call with the same run token", async () => {
+    expect((await (await send()).json()).ok).toBe(true);
+    await sql`UPDATE auth.mandates SET created_at=clock_timestamp()-interval '2 seconds',expires_at=clock_timestamp()-interval '1 second' WHERE id=${claims.mandateId}::uuid`;
+    await error({}, "code_mandate_mismatch", 409);
   });
 
   test("database growth refuses an exhausted owner while reads remain available, and a raised limit recovers", async () => {
@@ -1878,7 +1978,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       await error({}, "code_mandate_mismatch", 409);
     }
   });
-  test("a revoked current Code target grant is refused at the provider", async () => {
+  test("a revoked current Code target grant refuses the very next call", async () => {
+    expect((await (await send()).json()).ok).toBe(true);
     await sql`DELETE FROM auth.access WHERE id=${targetAccess}::uuid`;
     const response = await send();
     expect(await response.json()).toEqual({ ok: false, error: { code: "forbidden", status: 403 } });
@@ -3028,6 +3129,19 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       { ordinal: number; state: string }[]
     >`SELECT ordinal,state FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal`;
     expect(calls).toEqual([
+      { ordinal: 1, state: "succeeded" },
+      { ordinal: 2, state: "succeeded" },
+    ]);
+  });
+
+  test("concurrent signed calls reserve distinct ordered receipts under the run fence", async () => {
+    const responses = await Promise.all([send(), send()]);
+    for (const response of responses) expect((await response.json()).ok).toBe(true);
+    expect(
+      await sql<
+        { ordinal: number; state: string }[]
+      >`SELECT ordinal,state FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal`,
+    ).toEqual([
       { ordinal: 1, state: "succeeded" },
       { ordinal: 2, state: "succeeded" },
     ]);
