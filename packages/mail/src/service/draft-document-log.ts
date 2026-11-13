@@ -9,7 +9,8 @@ export const MAX_LOG_ENVELOPE_BYTES = 8_100_000 + 4096;
 export const mailDraftDocumentLog = sharedText.define({
   id: "cloud:mail:draft-documents",
   whenFull: "reject",
-  lifecycle: { maxBytes: 16 * 1024 * 1024 },
+  // 377 measured bytes/close × 1,000 sends/day × 365 × 3 years, below 80% of 512 MiB.
+  lifecycle: { maxBytes: 512 * 1024 * 1024 },
   retention: { maxBytes: 1024 ** 3 },
   // Preserve the previous effective DLQ age when removing the event-log age.
   deadLetterRetention: { maxAgeMs: 7 * 24 * 60 * 60 * 1000, maxBytes: 16 * 1024 * 1024 },

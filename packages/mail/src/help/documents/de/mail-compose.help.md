@@ -9,7 +9,7 @@ order: 30
 
 ## Eine Nachricht beginnen {icon="square-plus"}
 
-Du antwortest in der Antwortbox. Sie steht offen in jeder Unterhaltung, in der du schreiben darfst, oben über der neuesten Nachricht. Jede Unterhaltung hat genau einen Antwortentwurf. Das Öffnen einer Unterhaltung legt keinen Entwurf an; Mail legt ihn an, wenn du das erste Zeichen tippst.
+Du antwortest in der Antwortbox. Sie steht offen in jeder Unterhaltung, in der du schreiben darfst, oben über der neuesten Nachricht. Dort öffnet sie mit fester Höhe, damit die Nachrichten darunter stehen bleiben; sobald du darin schreibst, wächst sie. Jede Unterhaltung hat genau einen Antwortentwurf. Das Öffnen einer Unterhaltung legt keinen Entwurf an; Mail legt ihn an, wenn du das erste Zeichen tippst.
 
 - **Art:** Der Pfeil links in der Box bietet **Antworten**, **Allen antworten**, **Weiterleiten** und **Interne Notiz**. Ein Wechsel zwischen den drei Mail-Arten behält deinen Text; Mail setzt Empfänger und Betreff neu. **Antworten** an einer Nachricht, **Auswahl zitieren**, die Taste **R** und das **…**-Menü der Unterhaltung schreiben alle in dieselbe Box.
 - **Leiste:** **Senden ▾** sendet, oder **Später senden** um **Morgen früh**, **Montag früh** oder zu einer gewählten Zeit. Daneben stehen Formatierung, Anhänge, Link, Emoji, Bild, Signatur, **Assistent** und **…** mit **Vorschau (so kommt die Mail an)**, **Zitat anhängen**, **Kalendereinladung**, **Zustelloptionen**, **Nur Text**, **Betreff bearbeiten**, **In ein Fenster lösen** und **Änderungen wiederherstellen**. Rechts zeigt die Box leise „Gespeichert“, „Speichert …“ oder „Offline · hier gesichert“. Der Papierkorb verwirft die Antwort nach einer Rückfrage.

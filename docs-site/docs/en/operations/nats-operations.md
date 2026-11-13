@@ -155,6 +155,13 @@ the page distinguishes that state from an unavailable broker.
 For development credentials and Compose setup, see
 [Monorepo development](/en/docs/operations/monorepo-development#configure-local-nats-accounts).
 
+When a shared-text document topic requires lifecycle storage that is absent or
+smaller than its declared budget, Health and health webhooks show `Shared text lifecycle
+<log-id> reservation is not ready`. Check the file-store and account reservation
+limits. Mail retries preparation with backoff capped at 30 seconds; a successful
+reservation clears the signal without restarting Mail. If the broker cannot be
+queried, the existing incomplete inventory signal remains visible.
+
 ## Inspect a failing deployment
 
 Start with the responding NATS nodes, then inspect the affected stream and its
@@ -247,8 +254,12 @@ Failures without an identified application owner affect infrastructure health.
 Missing stream leadership or an offline replica raises an error; lagging or
 not-current replicas raise a warning. An incomplete or unavailable inventory
 raises a warning instead of reporting zero failures. Broker infrastructure
-signals also apply to webhooks scoped to particular applications. Leaving the
-optional system-account connection unconfigured is not itself an alert.
+signals also apply to webhooks scoped to particular applications. Shared-text
+lifecycle streams raise a shared broker warning at 80% of their installed byte
+limit. They also appear in the NATS **Problems only** filter, even without Sync
+owner metadata. Increase their budget before lifecycle transitions fail; see
+[Operate the lifecycle stream](/en/docs/data/shared-text-documents#operate-the-lifecycle-stream).
+Leaving the optional system-account connection unconfigured is not itself an alert.
 
 The checks and webhook delivery use NATS. During a complete broker outage,
 Cloud cannot guarantee delivery until the broker recovers. Run an external

@@ -69,6 +69,9 @@ otherwise fail the readiness of the whole application.
 `log.id` identifies the resource. `log.topicConfig` exposes the exact readonly
 Sync declaration, passed through unchanged. `log.topic()` returns a fresh
 Sync handle per call. Use handles after Cloud has connected Sync at startup.
+`await log.ready()` prepares the topic and, when configured, lifecycle storage
+without reading or writing a document. Use it during application startup when
+lifecycle budget expansion must complete before the first edit or send.
 
 ## Bind the application's store
 
@@ -986,6 +989,15 @@ Stream shutdown, base release and context reset still run if enqueueing or an
 application leave hook fails. Rejoining stops the old stream before attaching
 the new base.
 
+A room adopts an accepted update only while it still owns the same document,
+live stream and writer base. If admission was cancelled or timed out while a
+publication was in flight, its eventual receipt cannot advance a room that
+has since opened another document, even when both use the same restore revision.
+An admission timeout alone still permits confirmation of a retained update
+while its caller and room owner remain active. Cancelling the caller prevents
+that confirmation. The broker may retain the update; replay and snapshot
+persistence still own its durable result.
+
 ### Scale and flush before a durable action
 
 Fan-out and acknowledgements travel through NATS, including back to the
@@ -1058,20 +1070,46 @@ Its metadata names the log in `cloud.shared-text.lifecycle` and the namespace
 in `sync.namespace`.
 
 Its storage budget is the declared `lifecycle.maxBytes`, reserved on every
-replica. Mail declares 16 MiB for `cloud:mail:draft-documents`; see
+replica. Mail declares 512 MiB for `cloud:mail:draft-documents`; see
 [Mail collaborative drafts](../operations/mail-collaborative-drafts.md#capacity-and-deployment).
 Closed entries are retained and nothing cleans them up yet; safe retirement
 is tracked in [#3254](https://github.com/k2b-dev/cloud/issues/3254).
 Back up this stream together with the document log and the SQL snapshots.
 
-The stream carries no Sync owner metadata, so
-`cld admin nats streams list` shows it only without `--app` or `--namespace`.
+Gateway Ops identifies lifecycle streams by their existing metadata. At 80%
+of their installed `max_bytes`, it raises a shared broker health warning with
+the log ID, usage and limit. Existing health webhooks include this warning;
+there is no SQL or capacity inspection per edit. The NATS administration page
+and CLI include these streams in the **Problems only** filter. A larger
+operator-set limit is used when calculating usage.
+
+The stream carries no Sync owner metadata, so leave `--app` empty. Its
+namespace and document-log ID are available as filters:
+
+```bash
+cld admin nats streams list --namespace <namespace> --resource draft-documents --problems --json
+```
+
 With the NATS CLI, list and inspect it directly:
 
 ```bash
 nats stream ls --names | grep cloud_text_lifecycle_
 nats stream info cloud_text_lifecycle_<hash>
 ```
+
+Size for cumulative closed documents plus active lifecycle entries and
+operating headroom. Sample the increase in `state.bytes` across representative
+transitions; multiply bytes per entry by expected closes per day and the
+planning horizon. Include retained headers and subject overhead, not just the
+JSON payload. Reserve the resulting `max_bytes` on every replica and enough
+JetStream account capacity for all streams.
+
+Before raising a limit, verify the stream's lifecycle and namespace metadata,
+its installed limit, the account reservation and free disk capacity. Raise the
+application's declared `lifecycle.maxBytes` and call `log.ready()` after startup,
+or have the operator raise that exact stream's `max_bytes` with the NATS CLI.
+Initialization preserves a larger installed limit. Never purge, expire or
+delete lifecycle entries to recover space; expand the budget instead.
 
 A room configured with this lifecycle store and `snapshots.flushNow` exposes:
 
@@ -1196,13 +1234,21 @@ Ordinary server edits retry at most three CAS conflicts, with 25/50 ms backoff,
 reusing the prepared update identities. Freeze releases admission after its
 marker and drains persistence outside that lease.
 
+Lifecycle preparation records its required byte budget on the document topic
+before reserving storage. Gateway Ops Health and health webhooks warn when that
+reservation is missing or too small. Applications must retry failed preparation;
+Mail does so automatically with bounded backoff. Broker outages also appear as
+incomplete Sync inventory. See [Mail collaborative drafts](/en/docs/operations/mail-collaborative-drafts)
+for capacity recovery.
+
 An uncontended edit adds four NATS KV operations for admission acquisition
 and release, plus the existing head lookup and CAS publication: **zero SQL
 per edit**. Opting into lifecycle adds two authoritative JetStream last-value
 reads per successful edit (before validation and after publication), without a
-replay consumer; decoded values are cached by broker revision within `lifecycle.maxBytes`.
-Each process can retain that much decoded payload plus JavaScript object
-overhead; raising the declared budget raises this per-node memory ceiling too. An expired freeze adds one CAS
+replay consumer. Each process caches at most 128 decoded entries per log,
+independently of `lifecycle.maxBytes`: a 2 MiB working allowance derived from
+the 4 KiB broker message limit with fourfold headroom for decoded objects and
+keys. This is an entry bound, not an exact JavaScript heap limit. An expired freeze adds one CAS
 write to invalidate its token. Notifications never substitute for those reads, so a delayed event or a pruned
 marker cannot bypass acknowledgement fencing. Awareness and fan-out add no
 lifecycle lookups. Logs without lifecycle storage, including

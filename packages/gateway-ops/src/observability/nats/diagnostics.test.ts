@@ -53,3 +53,18 @@ test("invalid paging and wildcard consumer subjects are rejected", () => {
   for (const value of [{ offset: -1 }, { limit: 101 }, { problems: "yes" }, { stream: "foo.*" }, { consumerOffset: 0.5 }])
     expect(NatsQuerySchema.safeParse(value).success).toBe(false);
 });
+
+test("lifecycle capacity appears in the existing problem filter and namespace search", () => {
+  const record: NatsStream = {
+    ...stream("cloud_text_lifecycle_test"),
+    sync: null,
+    sharedTextLifecycle: { namespace: "dev", id: "cloud:mail:draft-documents" },
+    bytes: 800,
+    maxBytes: 1_000,
+  };
+  const data = snapshot([record]);
+  const query = NatsQuerySchema.parse({ namespace: "dev", resource: "draft-documents", problems: "true" });
+  expect(selectNatsStreams(data, query)).toMatchObject({ total: 1, facets: { namespaces: ["dev"] }, summary: { problemStreams: 1 } });
+  expect(selectNatsStreams(snapshot([{ ...record, bytes: 799 }]), query).total).toBe(0);
+  expect(selectNatsStreams(data, { ...query, app: "mail" }).total).toBe(0); // No invented application owner.
+});

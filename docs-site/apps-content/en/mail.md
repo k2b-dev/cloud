@@ -82,7 +82,10 @@ folds all but the newest three behind **n older messages** at the end. **â€¦** â
 reads oldest first, with the fold row at the start, the newest message open at
 the bottom, and the reply box after it. Mail keeps the choice in the
 `cloud_mail_workspace` cookie (`replyPosition`, default `top`), and the server
-renders it, so the first frame already shows the box in its place.
+renders it, so the first frame already shows the box in its place. On top, the box
+opens at one fixed height from placeholder to loaded draft, so a late draft or
+signature never moves the messages; a long text or signature fades out at that
+height, and the box grows to its content once you click, focus or drop a file in it.
 Internal notes stand at their time between the messages as centered yellow
 tiles marked **internal**; notes that automations write look the same. The
 summary is one collapsible row above the timeline. An open message shows its

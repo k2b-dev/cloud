@@ -176,6 +176,16 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
         .map((row) => row.id)
         .sort();
     expect(await migrateDraftDocumentLogPolicy()).toBe(true);
+    const namespace = (await getProcessSync().resources()).find((resource) => resource.id === mailDraftDocumentLog.id)?.namespace;
+    const lifecycleStreams = [];
+    for await (const info of manager.streams.list())
+      if (
+        info.config.metadata?.["cloud.shared-text.lifecycle"] === mailDraftDocumentLog.id &&
+        info.config.metadata?.["sync.namespace"] === namespace
+      )
+        lifecycleStreams.push(info);
+    expect(lifecycleStreams).toHaveLength(1);
+    expect(lifecycleStreams[0]!.config.max_bytes).toBe(512 * 1024 * 1024);
     await drainDraftDocumentPruning();
     expect(await sharedDraftsSupported()).toBe(true);
     // The unopened draft has neither a snapshot nor retained events: nothing was acknowledged.
@@ -588,15 +598,64 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     }
   });
 
+  test("startup retries failed lifecycle preparation and recovers shared drafts without restart", async () => {
+    const original = mailDraftDocumentLog.ready;
+    const failed = Promise.withResolvers<void>();
+    const prepared = Promise.withResolvers<void>();
+    let attempts = 0;
+    const random = spyOn(Math, "random").mockReturnValue(0.5);
+    const readiness = spyOn(mailDraftDocumentLog, "ready").mockImplementation(async () => {
+      attempts++;
+      if (attempts === 1) {
+        failed.resolve();
+        throw new Error("Lifecycle reservation unavailable");
+      }
+      await original();
+    });
+    try {
+      startDraftDocumentLogPolicy(async () => {
+        prepared.resolve();
+      });
+      await failed.promise;
+      expect(await sharedDraftsSupported()).toBe(false);
+      await prepared.promise;
+      expect(attempts).toBe(2);
+      expect(await sharedDraftsSupported()).toBe(true);
+    } finally {
+      await stopDraftDocumentLogPolicy();
+      readiness.mockRestore();
+      random.mockRestore();
+    }
+  });
+
+  test("shutdown cancels preparation backoff without enabling shared drafts", async () => {
+    const failed = Promise.withResolvers<void>();
+    const readiness = spyOn(mailDraftDocumentLog, "ready").mockImplementation(async () => {
+      failed.resolve();
+      throw new Error("Lifecycle reservation unavailable");
+    });
+    let prepared = false;
+    try {
+      startDraftDocumentLogPolicy(async () => {
+        prepared = true;
+      });
+      await failed.promise;
+      await stopDraftDocumentLogPolicy();
+      expect(readiness).toHaveBeenCalledTimes(1);
+      expect(prepared).toBe(false);
+      expect(await sharedDraftsSupported()).toBe(false);
+    } finally {
+      await stopDraftDocumentLogPolicy();
+      readiness.mockRestore();
+    }
+  });
+
   test("a log the platform cannot prepare leaves shared drafts unsupported", async () => {
     await drainDraftDocumentPruning();
-    const original = mailDraftDocumentLog.topic;
     // A fresh process sees drift the platform does not change (sync-budget tests cover the broker side).
-    const drifted = spyOn(mailDraftDocumentLog, "topic").mockImplementation(() => ({
-      ...original(),
-      ready: () =>
-        Promise.reject(new ResourceDriftError(mailDraftDocumentLog.id, [{ field: "max_msgs", declared: -1, actual: 2_000_000_000 }])),
-    }));
+    const drifted = spyOn(mailDraftDocumentLog, "ready").mockRejectedValue(
+      new ResourceDriftError(mailDraftDocumentLog.id, [{ field: "max_msgs", declared: -1, actual: 2_000_000_000 }]),
+    );
     try {
       expect(await migrateDraftDocumentLogPolicy()).toBe(false);
       expect(await sharedDraftsSupported()).toBe(false);

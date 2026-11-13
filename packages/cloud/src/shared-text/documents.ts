@@ -386,6 +386,7 @@ export const bindDocuments = <Saved, Context>(
       { status: "accepted"; cursor: string } | { status: "recoveryRequired" | "notFound" | "frozen" | "closed"; reason?: "dependencies" }
     > {
       return admit(docId, options.signal, async (signal) => {
+        const caller = options.signal;
         options = { ...options, signal };
         if (options.maxLength !== undefined && (!Number.isSafeInteger(options.maxLength) || options.maxLength < 0))
           throw new RangeError("maxLength must be a nonnegative safe integer");
@@ -487,7 +488,7 @@ export const bindDocuments = <Saved, Context>(
             restoreRevision: stored.restoreRevision,
           };
           acceptedBase = { docId, snapshot };
-          options.applied?.(snapshot, target);
+          if (!caller?.aborted) options.applied?.(snapshot, target);
           return { status: "accepted", cursor: published.cursor };
         } catch (error) {
           if (error instanceof ConflictError) {
