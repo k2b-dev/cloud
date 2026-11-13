@@ -624,9 +624,11 @@ export default function MailComposer(props: {
     initialEditorFocusApplied = true;
     queueMicrotask(() => {
       if (disposed || !element.view.dom.isConnected) return;
-      // A place the person chose meanwhile keeps the focus.
+      // A place the person chose meanwhile keeps the focus. A container around the composer, such as the floating
+      // window's frame that takes the focus when the editor is slower than one frame, is not such a place.
       const active = document.activeElement;
-      if (active && active !== document.body && active !== focusAtOpen && active.isConnected) return;
+      const around = active?.contains(surface() ?? null) ?? false;
+      if (active && active !== document.body && active !== focusAtOpen && active.isConnected && !around) return;
       // A new message inside the flow starts where it begins: with its recipients.
       const recipients =
         props.host && composerIntent() === "new" && to().length === 0
