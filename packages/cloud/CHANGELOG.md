@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.68.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.67.0...npm-cloud-v0.68.0) (2026-11-13)
+
+
+### Features
+
+* **cloud:** the app bar matches the sidebar and shows each app in its colour ([#3211](https://github.com/k2b-dev/cloud/issues/3211)) ([254f50f](https://github.com/k2b-dev/cloud/commit/254f50f966f582b6eb053775c63fbf042c87883c))
+
+
+### Bug Fixes
+
+* **cloud:** opening or loading a Cloud page lifts the privacy screen ([#3222](https://github.com/k2b-dev/cloud/issues/3222)) ([7429ccd](https://github.com/k2b-dev/cloud/commit/7429ccda995510012be44910fa3c62accba5f2d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.56.0 to 0.57.0
+    * @k2b/editor bumped from 0.11.2 to 0.11.3
+
 ## [0.67.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.66.0...npm-cloud-v0.67.0) (2026-11-12)
 
 
