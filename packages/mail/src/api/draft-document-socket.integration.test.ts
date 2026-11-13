@@ -790,6 +790,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       cause = error;
     }
     expect(cause).toBeInstanceOf(RetentionGapError);
+    if (!(cause instanceof RetentionGapError)) throw new Error("Native replay did not report the uncovered gap", { cause });
     await draftDocumentSnapshotStore.recover(currentDraft.id, cause, {});
     const [row] = await sql<
       { doc_state: Uint8Array; doc_cursor: string; doc_history_complete: boolean; body_markdown: string; revision: number }[]

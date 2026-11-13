@@ -48,6 +48,12 @@ covering SQL snapshots. Mail then prunes the covered prefix. A full log
 rejects new edits; browsers keep unacknowledged input for retry. Incomplete
 history requires explicit recovery and cannot be sent.
 
+With Sync 7.1.1, a join whose missing prefix is covered by the SQL snapshot
+rebases in place. A gap in the live stream reconnects with backoff and resends
+pending input. For an uncovered gap, Mail saves the valid retained updates at
+the captured head, preserves the original revision and marks history incomplete.
+The next join requests recovery rather than reopening incomplete content for editing.
+
 ## Sending and Undo
 
 The browser waits for its visible input to be accepted before reviewing and
