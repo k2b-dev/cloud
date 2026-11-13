@@ -81,7 +81,7 @@ suiteFor(
     const lookupPlan = JSON.stringify(plan);
     console.info(label, lookupPlan);
     expect(lookupPlan).toContain("BitmapOr");
-    expect(lookupPlan).toMatch(/drafts_(?:shared_)?source_message_idx/);
+    expect(lookupPlan).toContain("Bitmap Index Scan on drafts_source_message_idx");
     expect(lookupPlan).toContain("drafts_shared_derived_message_idx");
     expect(lookupPlan).not.toContain("Seq Scan");
     const meter = await meterSql();

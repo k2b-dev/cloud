@@ -53,13 +53,13 @@ suite("mail baseline schema", () => {
     ).toEqual(first);
   });
 
-  test("installs shared-draft source indexes on upgrade and preserves valid builds on rerun", async () => {
+  test("installs the shared-draft derived index on upgrade and preserves valid builds on rerun", async () => {
     const indexes = () => sql<{ name: string; valid: boolean; column_name: string; predicate: string; oid: number }[]>`
       SELECT index_class.relname AS name, index_state.indisvalid AS valid, attribute.attname AS column_name,
         pg_get_expr(index_state.indpred, index_state.indrelid) AS predicate, index_class.oid::int AS oid
       FROM pg_index index_state JOIN pg_class index_class ON index_class.oid = index_state.indexrelid
       JOIN pg_attribute attribute ON attribute.attrelid = index_state.indrelid AND attribute.attnum = index_state.indkey[0]
-      WHERE index_class.oid IN (to_regclass('mail.drafts_shared_source_message_idx'),
+      WHERE index_class.oid IN (to_regclass('mail.drafts_source_message_idx'),
         to_regclass('mail.drafts_shared_derived_message_idx')) ORDER BY index_class.relname`;
     await migrate();
     const baseline = await indexes();
@@ -71,17 +71,22 @@ suite("mail baseline schema", () => {
         predicate: "((edit_mode = 'shared'::text) AND (state = 'draft'::text))",
       },
       {
-        name: "drafts_shared_source_message_idx",
+        name: "drafts_source_message_idx",
         valid: true,
         column_name: "source_message_id",
-        predicate: "((edit_mode = 'shared'::text) AND (state = 'draft'::text))",
+        predicate: "(source_message_id IS NOT NULL)",
       },
     ]);
-    await sql`DROP INDEX mail.drafts_shared_source_message_idx`.simple();
+    expect(
+      await sql<{ redundant_index: string | null }[]>`SELECT to_regclass('mail.drafts_shared_source_message_idx') AS redundant_index`,
+    ).toEqual([{ redundant_index: null }]);
     await sql`DROP INDEX mail.drafts_shared_derived_message_idx`.simple();
     // CREATE INDEX CONCURRENTLY would fail here if migrate ran it inside its transaction.
     await migrate();
     const upgraded = await indexes();
+    expect(upgraded.find(({ name }) => name === "drafts_source_message_idx")?.oid).toBe(
+      baseline.find(({ name }) => name === "drafts_source_message_idx")?.oid,
+    );
     expect(upgraded.map(({ oid: _oid, ...shape }) => shape)).toEqual(baseline.map(({ oid: _oid, ...shape }) => shape));
     await migrate();
     expect(await indexes()).toEqual(upgraded);

@@ -70,23 +70,16 @@ export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => 
     EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
 };
 
-/** Startup builds these outside the migration transaction, without blocking ordinary draft writes. */
+/** Startup builds this outside the migration transaction, without blocking ordinary draft writes. */
 export const migrateRoomAccessIndexes = async (): Promise<void> => {
-  for (const [name, column] of [
-    ["drafts_shared_source_message_idx", "source_message_id"],
-    ["drafts_shared_derived_message_idx", "derived_from_message_id"],
-  ] as const) {
-    const [index] = await sql<{ valid: boolean; building: boolean }[]>`SELECT
-      coalesce((SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass(${`mail.${name}`})), false) AS valid,
-      EXISTS (SELECT 1 FROM pg_stat_progress_create_index
-        WHERE datname = current_database() AND relid = 'mail.drafts'::regclass) AS building`;
-    if (index?.valid) continue;
-    if (index?.building) throw new Error("Mail draft index is being built by another startup; retry startup when it completes");
-    // Names and columns are internal constants. Retry an interrupted concurrent build on startup.
-    await sql.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS mail.${name}`).simple();
-    await sql
-      .unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${name} ON mail.drafts (${column})
-      WHERE edit_mode = 'shared' AND state = 'draft'`)
-      .simple();
-  }
+  const [index] = await sql<{ valid: boolean; building: boolean }[]>`SELECT
+    coalesce((SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('mail.drafts_shared_derived_message_idx')), false) AS valid,
+    EXISTS (SELECT 1 FROM pg_stat_progress_create_index
+      WHERE index_relid = to_regclass('mail.drafts_shared_derived_message_idx')) AS building`;
+  if (index?.valid) return;
+  if (index?.building) throw new Error("Mail draft index is being built by another startup; retry startup when it completes");
+  // Retry an interrupted concurrent build on startup.
+  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_shared_derived_message_idx`.simple();
+  await sql`CREATE INDEX CONCURRENTLY drafts_shared_derived_message_idx ON mail.drafts (derived_from_message_id)
+    WHERE edit_mode = 'shared' AND state = 'draft'`.simple();
 };

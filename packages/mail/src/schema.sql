@@ -1196,9 +1196,6 @@ CREATE UNIQUE INDEX drafts_short_id_idx ON mail.drafts USING btree (short_id);
 
 CREATE INDEX drafts_source_message_idx ON mail.drafts USING btree (source_message_id) WHERE (source_message_id IS NOT NULL);
 
-CREATE INDEX drafts_shared_source_message_idx ON mail.drafts (source_message_id)
-WHERE edit_mode = 'shared' AND state = 'draft';
-
 CREATE INDEX drafts_shared_derived_message_idx ON mail.drafts (derived_from_message_id)
 WHERE edit_mode = 'shared' AND state = 'draft';
 
