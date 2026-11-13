@@ -23,7 +23,7 @@ import {
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
-import { migrateRoomAccessEvents } from "./service/room-access-events";
+import { migrateRoomAccessEvents, migrateRoomAccessIndexes } from "./service/room-access-events";
 import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 import { migrateWorkspacePreferences } from "./service/workspace-preferences-migrate";
@@ -794,6 +794,7 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
         await migrateWorkspacePreferences(tx);
         await migrateWorkflowAi(tx);
       });
+      await migrateRoomAccessIndexes();
       return await migrateReplyDrafts();
     } catch (error) {
       if (!["55P03", "40P01"].includes(migrationErrorCode(error) ?? "") || attempt === 2) throw error;
