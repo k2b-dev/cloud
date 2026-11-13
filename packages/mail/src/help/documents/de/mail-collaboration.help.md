@@ -8,7 +8,7 @@ order: 40
 
 Die Zusammenarbeit in Cloud bleibt an einer Unterhaltung, während die E-Mail selbst normale E-Mail beim Anbieter bleibt. Der Kopf einer offenen Unterhaltung zeigt den gemeinsamen Status der Nachverfolgung: **Erledigt**, **Archivieren**, **Löschen**, **Später** und **Zuweisen**, und unter dem Betreff eine Zeile mit Chips, etwa **Wartet auf Antwort**, **Später bis …**, deine **Erinnerung …**, **Aufbewahrt**, die Tags und verknüpfte Einträge. Wähle einen Chip, um seinen Wert zu ändern. Alles andere steht unter **…**.
 
-Die Unterhaltung liest sich von der ältesten Nachricht bis zur neuesten unten. Interne Notizen stehen zwischen den Nachrichten, zu der Zeit, zu der sie geschrieben wurden. Was Personen und Workflows geändert haben, zeigt **… → Aktivität anzeigen**. Technische Verarbeitungsvorgänge stehen dort nicht.
+Die Unterhaltung zeigt die neueste Nachricht zuerst, unter der Antwortbox. Stellst du die Antwortbox nach unten, liest sich die Unterhaltung von der ältesten Nachricht bis zur neuesten. Interne Notizen stehen zwischen den Nachrichten, zu der Zeit, zu der sie geschrieben wurden. Was Personen und Workflows geändert haben, zeigt **… → Aktivität anzeigen**. Technische Verarbeitungsvorgänge stehen dort nicht.
 
 ## Zuständigkeit und Nachverfolgung einheitlich nutzen {icon="route"}
 

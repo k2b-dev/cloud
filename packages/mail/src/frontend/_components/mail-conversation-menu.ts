@@ -50,6 +50,8 @@ export type MailConversationMenu = {
   /** Link the conversation with an item of another app, or remove a link. */
   link?: readonly DropdownAction[];
   other?: readonly DropdownAction[];
+  /** Where this browser shows the reply box; only the open conversation, which has one, offers the choice. */
+  replyPosition?: { value: "top" | "bottom"; run: (position: "top" | "bottom") => void };
   /** A row of the Drafts folder: it continues in the composer or is deleted, and has no conversation parts. */
   draft?: { href: string; discard: { disabled?: boolean; run: () => void } };
 };
@@ -168,6 +170,20 @@ export const mailConversationMenuItems = (menu: MailConversationMenu): DropdownI
   if (menu.conversation?.length) sections.push({ sectionLabel: t.conversationSection, items: menu.conversation });
   if (menu.link?.length) sections.push({ sectionLabel: t.link, items: menu.link });
   if (menu.other?.length) sections.push({ sectionLabel: t.other, items: menu.other });
+  const replyPosition = menu.replyPosition;
+  if (replyPosition) {
+    sections.push({
+      sectionLabel: t.replyBoxPlace,
+      layout: "row",
+      items: (["top", "bottom"] as const).map((position) => ({
+        label: position === "top" ? t.replyBoxTop : t.replyBoxBottom,
+        icon: position === "top" ? "ti ti-layout-navbar" : "ti ti-layout-bottombar",
+        choice: "radio" as const,
+        checked: replyPosition.value === position,
+        action: () => replyPosition.run(position),
+      })),
+    });
+  }
   return sections;
 };
 

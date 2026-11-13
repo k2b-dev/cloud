@@ -142,11 +142,11 @@ Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und 
 
 Der Kopf des Lesebereichs bleibt beim Scrollen über den Nachrichten stehen: **×**, der Betreff in einer Zeile und die Aktionen **Erledigt**, **Archivieren**, **Löschen**, **Später**, **Zuweisen** und **…**. Auf einem schmalen Bildschirm stehen die Aktionen, die nicht passen, unter **…**. Unter dem Betreff stehen Absender und Anzahl der Nachrichten neben den Chips. **×** und Esc führen zurück zur Liste. Die Liste steht dann wieder an derselben Stelle, und die zuletzt geöffnete Unterhaltung hat den Fokus.
 
-Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Die älteste Nachricht steht oben, die neueste ist unten geöffnet. Ältere Nachrichten sind je eine Zeile mit Absender, Textanfang, Anzahl der Anhänge und Datum. Wähle eine, um sie zu öffnen. Eine offene Nachricht zeigt ihre Anhänge als Kacheln nach dem Text, jede mit Name, Art und Größe. Ab zwei Anhängen packt **Alle herunterladen** sie in eine ZIP-Datei. Bilder, die der Text schon zeigt, sind keine Kacheln.
+Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Oben steht die Antwortbox, direkt darunter ist die neueste Nachricht geöffnet. Ältere Nachrichten folgen, je eine Zeile mit Absender, Textanfang, Anzahl der Anhänge und Datum. Wähle eine, um sie zu öffnen. Eine offene Nachricht zeigt ihre Anhänge als Kacheln nach dem Text, jede mit Name, Art und Größe. Ab zwei Anhängen packt **Alle herunterladen** sie in eine ZIP-Datei. Bilder, die der Text schon zeigt, sind keine Kacheln.
 
 Über den Nachrichten kann eine optionale Zusammenfassung der Unterhaltung als eine Zeile stehen; wähle sie, um sie ganz zu lesen. Um sie mit Markdown-Formatierung aktuell zu halten, nutze **Weitere Unterhaltungsaktionen → Zusammenfassung bearbeiten** oder **Zusammenfassung erstellen**. Zusammenfassungen sind gemeinsamer Mail-Kontext, und auch eine Automatisierung kann sie aktualisieren.
 
-Enthält die Unterhaltung nicht abgeschlossene Entwürfe, stehen sie unter der neuesten Nachricht: der offene an der Stelle der Antwortleiste, die übrigen als Zeilen mit Person und Zeit. Wähle eine Zeile, um den Entwurf an Ort und Stelle fortzusetzen.
+Eine nicht abgeschlossene Antwort steht in der Antwortbox, dort schreibst du weiter. Jede Unterhaltung hat einen Antwortentwurf.
 
 In einem Postfach, das mehrere Personen nutzen, zeigt das Ende der Chip-Zeile, wer die Unterhaltung noch offen hat, etwa **Tom liest mit**. Wer Zugriff auf das Postfach hat, steht unter **… → Postfachdetails** im Kopf des Postfachs.
 

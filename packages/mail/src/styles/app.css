@@ -1513,11 +1513,11 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  /* On a phone the reply box waits at the bottom of the conversation, in thumb reach. */
-  .k2b-ui .mail-reading-column {
+  /* On a phone the reply box under the conversation waits at the bottom, in thumb reach. */
+  .k2b-ui .mail-reading-column[data-reply-position="bottom"] {
     min-height: calc(100cqh - 1rem);
   }
-  .k2b-ui .mail-reply-box-frame {
+  .k2b-ui .mail-reading-column[data-reply-position="bottom"] > .mail-reply-box-frame {
     margin-block-start: auto;
   }
 }
@@ -2079,7 +2079,7 @@
   height: 0.75rem;
 }
 
-/* The reply box (Mail v5): always open under the newest message, one reply draft, and the internal note. One flat
+/* The reply box (Mail v5): always open above the newest message or under the conversation, one reply draft, and the internal note. One flat
    surface with the 2 px field edge; every state keeps the same place and height, so nothing above or below moves. */
 .k2b-ui .mail-reply-box-frame {
   display: flex;

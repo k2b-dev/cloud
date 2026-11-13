@@ -8,6 +8,7 @@ describe("Mail workspace preferences", () => {
     );
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`)).toEqual({
       draftFullscreen: true,
+      replyPosition: "top",
       toolbarCustomized: true,
       listMode: "conversations",
       lastMailboxId: null,
@@ -31,6 +32,7 @@ describe("Mail workspace preferences", () => {
     const value = encodeURIComponent(JSON.stringify({ listCollapsed: true, searchDiscovered: true, shortcutOverrides: { archive: "e" } }));
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`)).toEqual({
       draftFullscreen: false,
+      replyPosition: "top",
       toolbarCustomized: false,
       listMode: "conversations",
       lastMailboxId: null,
@@ -40,6 +42,7 @@ describe("Mail workspace preferences", () => {
     });
     expect(readMailWorkspacePreferences("cloud_mail_workspace=%7Bbroken")).toEqual({
       draftFullscreen: false,
+      replyPosition: "top",
       toolbarCustomized: false,
       listMode: "conversations",
       lastMailboxId: null,
@@ -47,6 +50,16 @@ describe("Mail workspace preferences", () => {
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
+  });
+
+  test("puts the reply box above the conversation unless this browser chose the bottom", () => {
+    const read = (stored: unknown) => readMailWorkspacePreferences(`cloud_mail_workspace=${encodeURIComponent(JSON.stringify(stored))}`);
+    expect(read({}).replyPosition).toBe("top");
+    expect(read({ replyPosition: "bottom" }).replyPosition).toBe("bottom");
+    expect(read({ replyPosition: "middle" }).replyPosition).toBe("top");
+    // The choice survives every other write of the cookie.
+    const bottom = read({ replyPosition: "bottom" });
+    expect(readMailWorkspacePreferences(mailWorkspaceCookie({ ...bottom, draftFullscreen: true })).replyPosition).toBe("bottom");
   });
 
   test("keeps the Events visit independently of other preferences", () => {
