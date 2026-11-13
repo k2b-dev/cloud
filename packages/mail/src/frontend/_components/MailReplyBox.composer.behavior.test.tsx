@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { EditorView } from "@codemirror/view";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
@@ -131,6 +131,14 @@ describe("MailReplyBox with the real composer", () => {
   let dispose = () => {};
   let requests: Array<{ method: string; path: string; body: Record<string, unknown> | null }>;
   let intentConflict = false;
+  /** The next `/draft-seeds` requests that fail, after the first one. */
+  let seedFailures = 0;
+  /** Holds the materialize answer back until the test lets it go. */
+  let materializeGate: Promise<void> | null = null;
+  /** The reply draft a materialization created; a later one meets it as the occupied reply place. */
+  let createdDraftId: string | null = null;
+  /** What the server holds per draft after a materialization or a save. */
+  let saved: Record<string, Partial<MailDraft>> = {};
   let mailbox = 100;
 
   beforeEach(() => {
@@ -154,6 +162,10 @@ describe("MailReplyBox with the real composer", () => {
     delegateEvents(["click", "keydown", "input"]);
     requests = [];
     intentConflict = false;
+    seedFailures = 0;
+    materializeGate = null;
+    createdDraftId = null;
+    saved = {};
     mailbox += 1;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -162,6 +174,10 @@ describe("MailReplyBox with the real composer", () => {
         const raw = request.method === "GET" ? "" : await request.text();
         const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
         requests.push({ method: request.method, path, body });
+        if (path.endsWith("/draft-seeds") && seedFailures > 0 && requests.filter((entry) => entry.path === path).length > 1) {
+          seedFailures -= 1;
+          return Response.json({ code: "UNAVAILABLE", message: "The server is busy." }, { status: 503 });
+        }
         if (path.endsWith("/draft-seeds")) {
           const origin = body!.origin as { input: { intent: string; sourceMessageId: string; body: string } };
           return Response.json({
@@ -179,12 +195,13 @@ describe("MailReplyBox with the real composer", () => {
           });
         }
         if (path.endsWith("/draft-seeds/materialize")) {
+          if (materializeGate) await materializeGate;
           const origin = body!.origin as { input: { intent: MailDraft["intent"] } };
-          return Response.json({
-            ...draft({ id: "DraftN", intent: origin.input.intent, revision: 1 }),
-            ...(body!.draft as object),
-            creationOutcome: "created",
-          });
+          // The conversation has one reply place: a second materialization gets the draft that holds it.
+          if (createdDraftId) return Response.json({ ...draft({ id: createdDraftId }), creationOutcome: "existing" });
+          createdDraftId = "DraftN";
+          saved.DraftN = { intent: origin.input.intent, ...(body!.draft as Partial<MailDraft>), revision: 1 };
+          return Response.json({ ...draft({ id: "DraftN", ...saved.DraftN }), creationOutcome: "created" });
         }
         if (path.endsWith("/lease") && request.method === "GET") return Response.json(null);
         if (path.endsWith("/lease"))
@@ -194,13 +211,18 @@ describe("MailReplyBox with the real composer", () => {
             acquiredAt: now,
             expiresAt: now,
           });
+        const draftPath = /\/drafts\/(Draft\w+)(?:\/\w+)?$/.exec(path);
+        const id = draftPath?.[1] ?? "Draft1";
         if (path.endsWith("/intent"))
           return intentConflict
             ? Response.json({ code: "CONFLICT", message: "Someone else changed the draft." }, { status: 409 })
-            : Response.json(draft({ intent: (body as { intent: MailDraft["intent"] }).intent, revision: 4 }));
-        if (/\/drafts\/Draft\w+$/.test(path) && request.method === "PUT")
-          return Response.json({ ...draft(), ...(body!.draft as object), revision: 4 });
-        if (/\/drafts\/Draft\w+$/.test(path)) return Response.json(draft());
+            : Response.json(draft({ ...saved[id], id, intent: (body as { intent: MailDraft["intent"] }).intent, revision: 4 }));
+        if (path.endsWith("/discard")) return Response.json(draft({ id, state: "discarded" } as Partial<MailDraft>));
+        if (/\/drafts\/Draft\w+$/.test(path) && request.method === "PUT") {
+          saved[id] = { ...saved[id], ...(body!.draft as Partial<MailDraft>), revision: 4 };
+          return Response.json(draft({ ...saved[id], id }));
+        }
+        if (/\/drafts\/Draft\w+$/.test(path)) return Response.json(draft({ ...saved[id], id }));
         if (path.endsWith("/compose-signature")) return Response.json({ html: null, text: "" });
         if (path.endsWith("/compose-preview")) return Response.json({ html: "", text: "", formattingWarnings: [] });
         return Response.json([]);
@@ -285,6 +307,117 @@ describe("MailReplyBox with the real composer", () => {
       .click();
   };
   const materialized = () => requests.filter((request) => request.path.endsWith("/draft-seeds/materialize"));
+  const modeOnDisplay = () => dom.root.querySelector("[data-mail-reply-mode]")?.getAttribute("data-mail-reply-mode") ?? null;
+  const meanwhileLines = () => Array.from(dom.root.querySelectorAll("[data-mail-reply-meanwhile]"), (line) => line.textContent ?? "");
+  /** Holds every materialize answer until the returned function lets them go. */
+  const holdMaterialize = () => {
+    let release = () => {};
+    materializeGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      materializeGate = null;
+      release();
+    };
+  };
+
+  test("a failed mode switch of an unsaved seed keeps its text and its mode, and the next try carries the text", async () => {
+    await mount();
+    type("Keep me");
+    seedFailures = 1;
+    await chooseMode("Forward");
+    await waitFor(() => requests.filter((request) => request.path.endsWith("/draft-seeds")).length >= 2);
+    // fixed wait: a reload of the box after the failure would have shown by now.
+    await Bun.sleep(300);
+    expect(boxText()).toContain("Keep me");
+    expect(modeOnDisplay()).toBe("reply");
+    expect(dom.root.querySelector("[data-mail-reply-switch-failed]")?.textContent).toContain("The server is busy.");
+    await chooseMode("Forward");
+    await waitFor(() => modeOnDisplay() === "forward" && boxText().includes("Keep me") && materialized().length > 0);
+    const created = materialized()[0]!.body as { origin: { input: { intent: string } }; draft: { body: string } };
+    expect(created.origin.input.intent).toBe("forward");
+    expect(created.draft.body).toContain("Keep me");
+  }, 15_000);
+
+  test("a second Undo keeps the earlier text typed meanwhile as well, newest first, across reopening", async () => {
+    const first = await mount({ messages: [message, pendingSend] });
+    type("First meanwhile");
+    first.api().openDraft("Draft1");
+    await waitFor(() => meanwhileLines().length === 1);
+    const second = await remount({ messages: [message, pendingSend] });
+    type("Second meanwhile");
+    second.api().openDraft("Draft1");
+    await waitFor(() => meanwhileLines().some((line) => line.includes("Second meanwhile")));
+    await remount({ drafts: [summary] });
+    await waitFor(() => meanwhileLines().length > 0);
+    expect(meanwhileLines()).toHaveLength(2);
+    expect(meanwhileLines()[0]).toContain("Second meanwhile");
+    expect(meanwhileLines()[1]).toContain("First meanwhile");
+    Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[data-mail-reply-meanwhile] button"))
+      .find((button) => button.textContent === "Restore changes")!
+      .click();
+    await waitFor(() => boxText().includes("Second meanwhile"));
+    expect(meanwhileLines()).toHaveLength(1);
+    expect(meanwhileLines()[0]).toContain("First meanwhile");
+  });
+
+  test("a mode switch while the first save is on its way switches the draft it creates, with no second draft", async () => {
+    await mount();
+    const release = holdMaterialize();
+    type("Racing the first save");
+    await waitFor(() => materialized().length === 1);
+    await chooseMode("Forward");
+    // fixed wait: the switch waits for the first save instead of starting a seed of its own.
+    await Bun.sleep(100);
+    release();
+    // fixed wait: longer than another autosave round, so a second materialization would have shown.
+    await Bun.sleep(1_200);
+    expect(materialized()).toHaveLength(1);
+    const switched = requests.filter((request) => request.path.endsWith("/DraftN/intent"));
+    expect(switched).toHaveLength(1);
+    expect(switched[0]!.body).toMatchObject({ intent: "forward" });
+    await waitFor(() => boxText().includes("Racing the first save"));
+  }, 15_000);
+
+  test("discarding while the first save is on its way discards the draft that save created", async () => {
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    try {
+      await mount();
+      const release = holdMaterialize();
+      type("Gone soon");
+      await waitFor(() => materialized().length === 1);
+      dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-discard]")!.click();
+      await waitFor(() => confirm.mock.calls.length === 1);
+      release();
+      // fixed wait: the discard settles after the first save's answer.
+      await Bun.sleep(1_000);
+      expect(requests.filter((request) => request.path.endsWith("/DraftN/discard"))).toHaveLength(1);
+      expect(materialized()).toHaveLength(1);
+    } finally {
+      confirm.mockRestore();
+    }
+  }, 15_000);
+
+  test("discarding while a first save meets a colleague's reply draft drops only the local text", async () => {
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    try {
+      createdDraftId = "DraftC";
+      await mount();
+      const release = holdMaterialize();
+      type("Mine only");
+      await waitFor(() => materialized().length === 1);
+      dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-discard]")!.click();
+      await waitFor(() => confirm.mock.calls.length === 1);
+      release();
+      // fixed wait: the discard settles after the first save's answer.
+      await Bun.sleep(500);
+      expect(requests.some((request) => request.path.endsWith("/discard"))).toBe(false);
+    } finally {
+      confirm.mockRestore();
+    }
+  }, 15_000);
 
   test("a mode switch before the first save carries the text into one draft in the new mode", async () => {
     await mount();
@@ -350,5 +483,24 @@ describe("MailReplyBox with the real composer", () => {
     expect(stored).toHaveLength(1);
     expect(stored[0]!.startsWith("cloud:user:Usr001:")).toBe(true);
     expect(dom.window.sessionStorage.length).toBe(0);
+  });
+
+  test("after signing out, typing in a note still on screen recreates no local storage", async () => {
+    await mount();
+    await chooseMode("Internal note");
+    await waitFor(() => Boolean(dom.root.querySelector("[data-mail-reply-box='note'] textarea")));
+    const field = dom.root.querySelector<HTMLTextAreaElement>("[data-mail-reply-box='note'] textarea")!;
+    field.value = "Before signing out";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    // Signing out fences the person's storage with a new epoch and clears their namespace (see browser/session.ts).
+    const storage = dom.window.localStorage;
+    storage.setItem("cloud:user-epoch:Usr001", crypto.randomUUID());
+    for (const key of Array.from({ length: storage.length }, (_, index) => storage.key(index) ?? ""))
+      if (key.startsWith("cloud:user:Usr001:")) storage.removeItem(key);
+    field.value = "After signing out";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index) ?? "");
+    expect(keys.filter((key) => key.startsWith("cloud:user:Usr001:"))).toEqual([]);
+    expect(field.value).toBe("After signing out");
   });
 });

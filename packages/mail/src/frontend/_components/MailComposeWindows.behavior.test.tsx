@@ -63,6 +63,7 @@ describe.skipIf(isServer)("Mail draft windows", () => {
         appendText: () => undefined,
         release: async () => undefined,
         forgetLocal: () => undefined,
+        settleMaterialization: async () => undefined,
       });
       const text = document.createElement("textarea");
       text.setAttribute("data-fake-text", props.draftId);

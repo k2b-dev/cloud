@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { announce, Button, Dropdown, type DropdownItem, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ConversationDraftSummary, MailDraft, MailDraftSeed, SenderIdentity } from "../../contracts";
 import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
@@ -23,6 +23,7 @@ import {
   type MailReplyMode,
   mailReplyBoxKey,
   readMailReplyNote,
+  readMeanwhileCopies,
   replyBoxDelivery,
   writeMailReplyNote,
 } from "./mail-reply-box";
@@ -114,18 +115,20 @@ export default function MailReplyBox(props: {
   const locale = useLocale();
   const t = createMemo(() => mailReplyBoxMessages.resolve([locale()]).t);
   const replyDraft = () => props.conversationDrafts.find((draft) => draft.intent !== "new") ?? null;
-  // Local box text belongs to the signed-in person: it lives in their Mail storage, which signing out clears.
-  const boxStorage = (): Storage | null => {
+  // Local box text belongs to the signed-in person: it lives in their Mail storage, which signing out clears. The box
+  // keeps the handle it opened for its whole life: after signing out, that handle refuses every read and write, so
+  // typing in a box that is still on screen never recreates the cleared storage.
+  const boxStorage: Storage | null = (() => {
     try {
       return typeof window === "undefined" || !props.currentUserId ? null : openMailUserDraftStorage(localStorage, props.currentUserId);
     } catch {
       return null;
     }
-  };
+  })();
   const storedText = (part: MailReplyBoxPart) =>
-    readMailReplyNote(boxStorage(), mailReplyBoxKey(props.mailboxId, props.conversationId, part));
+    readMailReplyNote(boxStorage, mailReplyBoxKey(props.mailboxId, props.conversationId, part));
   const storeText = (part: MailReplyBoxPart, text: string) =>
-    writeMailReplyNote(boxStorage(), mailReplyBoxKey(props.mailboxId, props.conversationId, part), text);
+    writeMailReplyNote(boxStorage, mailReplyBoxKey(props.mailboxId, props.conversationId, part), text);
 
   // Unsaved note text from earlier brings the box back in note mode.
   const storedNote = storedText("note");
@@ -150,12 +153,15 @@ export default function MailReplyBox(props: {
     return id !== null && draftWindowOpen(id);
   };
   const [justSent, setJustSent] = createSignal(false);
-  // Text written while the last reply waited to send, after Undo brought that reply back: kept until restored or dropped.
-  const [meanwhile, setMeanwhileSignal] = createSignal<string | null>(storedText("meanwhile") || null);
-  const setMeanwhile = (text: string | null) => {
-    setMeanwhileSignal(text);
-    storeText("meanwhile", text ?? "");
+  // Texts written while an earlier reply waited to send, after Undo brought that reply back, newest first: each stays
+  // until it is restored or dropped.
+  const [meanwhile, setMeanwhileSignal] = createSignal<string[]>(readMeanwhileCopies(storedText("meanwhile")));
+  const setMeanwhile = (copies: string[]) => {
+    setMeanwhileSignal(copies);
+    storeText("meanwhile", copies.length > 0 ? JSON.stringify(copies) : "");
   };
+  const keepMeanwhile = (text: string) => setMeanwhile([text, ...meanwhile()]);
+  const dropMeanwhile = (index: number) => setMeanwhile(meanwhile().filter((_, at) => at !== index));
   const [switchError, setSwitchError] = createSignal<string | null>(null);
   const [consolidated, setConsolidated] = createSignal(0);
   const [pending, setPending] = createSignal<PendingAction | null>(null);
@@ -241,7 +247,7 @@ export default function MailReplyBox(props: {
   const load = async (
     target:
       | { kind: "draft"; id: string; known?: MailDraft }
-      | { kind: "seed"; intent: MailReplyMailMode; message: MailWorkspaceMessage; withText: boolean },
+      | { kind: "seed"; intent: MailReplyMailMode; message: MailWorkspaceMessage; withText: boolean; prepared?: MailDraftSeed },
     options: { autofocus?: boolean } = {},
   ): Promise<boolean> => {
     const generation = ++loadGeneration;
@@ -268,11 +274,11 @@ export default function MailReplyBox(props: {
         const buffered = storedText("pending");
         if (buffered.trim()) {
           storeText("pending", "");
-          setMeanwhile([meanwhile(), buffered.trim()].filter(Boolean).join("\n\n"));
+          keepMeanwhile(buffered.trim());
         }
         return true;
       }
-      const seed = await prepareSeed(target.intent, target.message, target.withText);
+      const seed = target.prepared ?? (await prepareSeed(target.intent, target.message, target.withText));
       if (disposed || generation !== loadGeneration) return false;
       // Read before the composer mounts: text typed while an earlier send held the place.
       const buffered = storedText("pending");
@@ -354,7 +360,7 @@ export default function MailReplyBox(props: {
     gone.delete(id);
     // Text typed while the last reply waited to send becomes a copy to restore, never mixed in by itself.
     const typed = takeTypedText();
-    if (typed) setMeanwhile(typed);
+    if (typed) keepMeanwhile(typed);
     batch(() => {
       setDetachedId(null);
       setJustSent(false);
@@ -373,14 +379,38 @@ export default function MailReplyBox(props: {
     setSwitching(true);
     setSwitchError(null);
     try {
+      // A first save on its way decides what the seed is: wait for it, so a draft it creates switches on the server.
+      if (current.kind === "seed") await controls()?.settleMaterialization();
+      if (disposed) return;
       // A seed whose first save created the draft is that draft now: it switches on the server like any draft.
       if (current.kind === "seed" && !draftId()) {
-        const typed = takeTypedText();
         const message = sourceMessage();
         if (!message) return;
-        const loaded = await load({ kind: "seed", intent: next, message, withText: Boolean(typed) }, { autofocus: focus });
-        if (loaded && typed) setPending({ kind: "append", text: typed });
-        return;
+        // The seed and its text stay until the new mode's seed exists; a failure leaves both as they were.
+        const typedNow = controls()?.changed() ? (controls()?.text().trim() ?? "") : "";
+        let seed: MailDraftSeed;
+        try {
+          seed = await prepareSeed(next, message, Boolean(typedNow));
+        } catch (error) {
+          if (disposed) return;
+          if (mode() !== "note") setMode(mailMode());
+          setSwitchError(error instanceof Error && !(error instanceof NoVerifiedSender) ? error.message : t().modeSwitchFailed);
+          return;
+        }
+        // Typing went on meanwhile; a save it started may have created the draft after all.
+        await controls()?.settleMaterialization();
+        if (disposed) return;
+        if (!draftId()) {
+          const typed = takeTypedText();
+          const loaded = await load(
+            { kind: "seed", intent: next, message, withText: Boolean(typed), prepared: seed },
+            { autofocus: focus },
+          );
+          // Without a mounted seed, the text waits in the box's buffer; the next seed brings it back.
+          if (typed && loaded) setPending({ kind: "append", text: typed });
+          else if (typed) storeText("pending", typed);
+          return;
+        }
       }
       // A mode is a structural edit: save and give back the lease first, then switch on the server and show the result.
       const id = draftId() ?? (current.kind === "draft" ? current.draft.id : null);
@@ -644,12 +674,12 @@ export default function MailReplyBox(props: {
           </div>
         )}
       </Show>
-      <Show when={meanwhile()}>
-        {(text) => (
+      <For each={meanwhile()}>
+        {(text, index) => (
           <div class="mail-reply-box-line" role="status" data-mail-reply-meanwhile>
             <i class="ti ti-history" aria-hidden="true" />
-            <span class="min-w-0 flex-1 truncate" title={text()}>
-              {t().meanwhile} „{text()}“
+            <span class="min-w-0 flex-1 truncate" title={text}>
+              {t().meanwhile} „{text}“
             </span>
             <Button
               variant="ghost"
@@ -657,18 +687,18 @@ export default function MailReplyBox(props: {
               type="button"
               disabled={!controls()?.ready()}
               onClick={() => {
-                setPending({ kind: "append", text: text() });
-                setMeanwhile(null);
+                setPending({ kind: "append", text });
+                dropMeanwhile(index());
               }}
             >
               {t().restoreChanges}
             </Button>
-            <Button variant="ghost" size="xs" type="button" onClick={() => setMeanwhile(null)}>
+            <Button variant="ghost" size="xs" type="button" onClick={() => dropMeanwhile(index())}>
               {t().discardChanges}
             </Button>
           </div>
         )}
-      </Show>
+      </For>
     </>
   );
 

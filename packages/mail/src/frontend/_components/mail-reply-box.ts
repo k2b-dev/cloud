@@ -40,7 +40,7 @@ export const replyBoxDelivery = (messages: readonly Pick<MailWorkspaceMessage, "
 /**
  * The box's local text per conversation, in the signed-in person's Mail storage (cleared when they sign out):
  * `note` is unsaved note text (never in the draft), `pending` what was typed while another send held the reply place,
- * and `meanwhile` that text after Undo brought the earlier reply back.
+ * and `meanwhile` those texts after Undo brought the earlier reply back (a JSON list, newest first).
  */
 export type MailReplyBoxPart = "note" | "pending" | "meanwhile";
 export const mailReplyBoxKey = (mailboxId: string, conversationId: string, part: MailReplyBoxPart): string =>
@@ -62,6 +62,18 @@ export const writeMailReplyNote = (storage: Pick<Storage, "setItem" | "removeIte
   } catch {
     /* The text stays in the box. */
   }
+};
+
+/** The stored `meanwhile` copies, newest first; a single plain text from before the list counts as one copy. */
+export const readMeanwhileCopies = (stored: string): string[] => {
+  if (!stored) return [];
+  try {
+    const parsed: unknown = JSON.parse(stored);
+    if (Array.isArray(parsed)) return parsed.filter((copy): copy is string => typeof copy === "string" && copy.length > 0);
+  } catch {
+    /* A plain text copy. */
+  }
+  return [stored];
 };
 
 const SEND_LATER_HOUR = "08:00";

@@ -132,6 +132,8 @@ export type MailInlineDraftControls = {
   release: () => Promise<void>;
   /** Forgets this device's copy of a draft that was never created on the server. */
   forgetLocal: () => void;
+  /** Waits until a first save already on its way has created the seed's draft (or failed). */
+  settleMaterialization: () => Promise<void>;
 };
 
 /**
@@ -1377,6 +1379,7 @@ export default function MailComposer(props: {
   const discard = mutations.create<boolean, { quiet: boolean }>({
     mutation: async ({ quiet }, { abortSignal }) => {
       if (uploadsInProgress()) throw new Error(t().cancelUploadsBeforeDiscard);
+      let seedDiscardConfirmed = false;
       if (!draft()) {
         // A new message that never reached the server lives only on this device: typed input goes for good.
         const changed =
@@ -1390,13 +1393,20 @@ export default function MailComposer(props: {
             variant: "danger",
           }));
         if (!confirmed || abortSignal.aborted) return false;
-        draftSession.abandonSeed();
-        clearInitialSeed();
-        if (props.initialSeed) draftSession.forgetJournal(props.initialSeed.id, { closed: true });
-        return true;
+        // A first save already on its way may create the draft: the discard then removes that draft on the server.
+        // Only a draft this session created comes back here; an occupied reply place leaves only local text to drop.
+        if (!(await draftSession.settleMaterialization())) {
+          draftSession.abandonSeed();
+          clearInitialSeed();
+          if (props.initialSeed) draftSession.forgetJournal(props.initialSeed.id, { closed: true });
+          return true;
+        }
+        if (abortSignal.aborted) return false;
+        seedDiscardConfirmed = true;
       }
       // Only a draft this click created and nobody changed goes without asking: it holds nothing to lose.
       const confirmed =
+        seedDiscardConfirmed ||
         quiet ||
         (await prompts.confirm(t().discardSharedDescription, {
           title: t().discardDraftQuestion,
@@ -1574,6 +1584,9 @@ export default function MailComposer(props: {
       if (!props.initialSeed || untrack(draft)) return;
       draftSession.abandonSeed();
       draftSession.forgetJournal(props.initialSeed.id, { closed: true });
+    },
+    settleMaterialization: async () => {
+      await draftSession.settleMaterialization();
     },
   });
 
