@@ -10,7 +10,7 @@ kind: task
 
 ## Start a message {icon="square-plus"}
 
-You answer in the reply box. It stands open in every conversation you can write in, at the top above the newest message. Each conversation has exactly one reply draft. Opening a conversation creates no draft; Mail creates it when you type the first character.
+You answer in the reply box. It stands open in every conversation you can write in, at the top above the newest message. There it opens at a fixed height, so the messages below stay in place; it grows as soon as you start writing in it. Each conversation has exactly one reply draft. Opening a conversation creates no draft; Mail creates it when you type the first character.
 
 - **Mode:** the arrow at the left of the box offers **Reply**, **Reply all**, **Forward**, and **Internal note**. A change between the three mail modes keeps your text; Mail sets the recipients and the subject again. **Reply** on a message, **Quote selection**, the **R** key, and the conversation's **…** menu all write into the same box.
 - **Bar:** **Send ▾** sends, or **Send later** at **Tomorrow morning**, **Monday morning**, or a time you choose. Next to it are formatting, attachments, link, emoji, image, signature, **Assistant**, and **…** with **Preview (how the mail arrives)**, **Attach quote**, **Calendar invitation**, **Delivery options**, **Plain text only**, **Edit subject**, **Open in a window**, and **Recover changes**. At the right, the box quietly shows "Saved", "Saving …", or "Offline · kept here". The trash discards the reply after a question.
