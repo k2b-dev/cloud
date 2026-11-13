@@ -106,6 +106,26 @@ suiteFor("database", "nats")("chat runner mailbox fencing", () => {
     await f.request("cancel");
     await expect(sql.begin((db) => fenceCodeJob(f.lease, db))).rejects.toBeInstanceOf(RunnerLeaseLostError);
   });
+  test("SQL budget of the chat runner mailbox poll and call status", async () => {
+    const f = await fixture();
+    const meter = await meterSql();
+    try {
+      for (let event = 0; event < 3; event++) {
+        const poll = await meter.during(async () => {
+          expect((await f.request("poll")).status).toBe(200);
+        });
+        console.log("SQL BUDGET chat runner poll", poll.length, poll);
+        expect(poll).toHaveLength(5);
+        const status = await meter.during(async () => {
+          expect(await (await f.request("status", { id: f.callId })).json()).toEqual({ active: true });
+        });
+        console.log("SQL BUDGET chat runner call status", status.length, status);
+        expect(status).toHaveLength(5);
+      }
+    } finally {
+      await meter.close();
+    }
+  });
   test("expired chat work is terminal, never delivered or automatically replayed", async () => {
     const f = await fixture();
     await sql`UPDATE code.jobs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${f.job.id}::uuid`;

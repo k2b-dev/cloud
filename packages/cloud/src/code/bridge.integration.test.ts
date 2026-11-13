@@ -6,6 +6,7 @@ import { err } from "@k2b/stdlib";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { decisionInputFixture, decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
@@ -621,6 +622,21 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     capabilitySpy?.mockRestore();
     await database?.drop();
     setSystemTime();
+  });
+
+  test("SQL budget of one runner capability request", async () => {
+    const meter = await meterSql();
+    try {
+      for (let event = 0; event < 3; event++) {
+        const statements = await meter.during(async () => {
+          expect(await (await send({ operation: "example.read" })).json()).toMatchObject({ ok: true });
+        });
+        console.log("SQL BUDGET capability request", statements.length, statements);
+        expect(statements).toHaveLength(50);
+      }
+    } finally {
+      await meter.close();
+    }
   });
 
   test("database growth refuses an exhausted owner while reads remain available, and a raised limit recovers", async () => {

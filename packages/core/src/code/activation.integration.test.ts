@@ -3,9 +3,11 @@ import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
+import { coreSettings } from "@k2b/cloud/services";
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
@@ -171,6 +173,29 @@ databaseSuite()("durable Code activation", () => {
     return activateCodeVersion({ codeId: code.id, versionId, activationId: crypto.randomUUID() }, ctx);
   }
   const status = (code: Code, id: string) => readCodeActivation({ codeId: code.id, activationId: id }, owner);
+  test("SQL budget of an open approval card's initial preview and invalidation reload", async () => {
+    const code = await newCode();
+    const [rule] = await sql<{ value: string }[]>`SELECT value FROM code.policy_rules WHERE row='silent_draft' AND group_id IS NULL`;
+    const meter = await meterSql();
+    try {
+      await sql`UPDATE code.policy_rules SET value='admin' WHERE row='silent_draft' AND group_id IS NULL`;
+      const submitted = await version(code);
+      await coreSettings.get("app.timezone");
+      for (let load = 0; load < 3; load++) {
+        const statements = await meter.during(async () => {
+          expect(await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps)).toMatchObject({
+            versionId: submitted.version.id,
+            readiness: { state: "approval_pending" },
+          });
+        });
+        console.log("SQL BUDGET card preview", statements.length, statements);
+        expect(statements).toHaveLength(10);
+      }
+    } finally {
+      await meter.close();
+      await sql`UPDATE code.policy_rules SET value=${rule!.value} WHERE row='silent_draft' AND group_id IS NULL`;
+    }
+  });
   beforeAll(async () => {
     // These checked fixtures exercise activation; scheduling integration covers the binding runner check.
     serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
