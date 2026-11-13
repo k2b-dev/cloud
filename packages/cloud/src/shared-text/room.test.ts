@@ -7,7 +7,7 @@ import { z } from "zod";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { toBase64 } from "./events";
 import { sharedText } from "./log";
-import { createSharedTextRoom, createSharedTextRoomContext, type SharedTextRoomMessages } from "./room";
+import { createSharedTextRoom, createSharedTextRoomContext, type SharedTextRoomMessages, type SharedTextRoomSnapshot } from "./room";
 import { RoomWriterBase } from "./room-base";
 import type { SharedTextEvent } from "./types";
 
@@ -66,6 +66,7 @@ const fixture = () => {
   let sql = 0,
     snapshots = 0;
   let failure: Error | undefined;
+  let stored: SharedTextRoomSnapshot = { state: new Uint8Array([0, 0]), text: "", cursor: "s6t.room.0", restoreRevision: "0" };
   let admissionBusy = false;
   let head: string | null = null;
   const entries: TopicEvent<SharedTextEvent>[] = [];
@@ -90,7 +91,13 @@ const fixture = () => {
       return { cursor: head, streamSequence: sequence, messageId: String(sequence), duplicate: false };
     },
     replay: async function* (options: { after?: string; until?: string }) {
-      if (failure) throw failure;
+      if (failure) {
+        if (
+          !(failure instanceof RetentionGapError) ||
+          Number(options.after?.split(".").at(-1) ?? 0) < Number(failure.firstAvailable.split(".").at(-1)) - 1
+        )
+          throw failure;
+      }
       const batch = entries.filter(
         (e) =>
           Number(e.cursor.split(".").at(-1)) > Number(options.after?.split(".").at(-1) ?? 0) &&
@@ -197,7 +204,7 @@ const fixture = () => {
       },
       load: async () => {
         sql++;
-        return { state: new Uint8Array([0, 0]), text: "", cursor: "s6t.room.0", restoreRevision: "0" };
+        return stored;
       },
       join: async () => {
         joinEntered.resolve();
@@ -288,6 +295,10 @@ const fixture = () => {
     revoke: () => {
       revoked = true;
       invalidations.push();
+    },
+    store: (snapshot: typeof stored) => {
+      stored = snapshot;
+      head = "s6t.room.4";
     },
     fail: (error: Error) => {
       failure = error;
@@ -908,3 +919,26 @@ test("validation, wire encoding and terminal close encoding receive the connecti
     await f.connection.close();
   }
 });
+
+for (const writer of [false, true])
+  test(`a ${writer ? "writer" : "reader"} reconnect rebases a pruned client cursor without closing`, async () => {
+    const f = fixture();
+    if (!writer) f.readOnly();
+    const doc = new Y.Doc();
+    doc.getText("codemirror").insert(0, "covered");
+    f.fail(new RetentionGapError("s6t.room.2", "s6t.room.4"));
+    f.store({ state: Y.encodeStateAsUpdate(doc), text: "covered", cursor: "s6t.room.3", restoreRevision: "0" });
+    try {
+      await f.request("replay", { restoreRevision: "0", fromCursor: "s6t.room.1" });
+      await f.ready;
+      expect(f.closed).toEqual([]);
+      expect(f.ctx.phase).toBe("joined");
+      expect(f.sent.find((packet) => "snapshot" in packet.payload && packet.payload.snapshot)).toMatchObject({
+        type: "push",
+        payload: { snapshot: true, updates: [{ cursor: "s6t.room.3", payload: toBase64(Y.encodeStateAsUpdate(doc)) }] },
+      });
+    } finally {
+      doc.destroy();
+      await f.connection.close();
+    }
+  });

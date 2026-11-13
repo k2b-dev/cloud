@@ -936,8 +936,14 @@ are limited to 256,000 characters; sync frames use the declared protocol
 limit plus 1,000 characters of framing. Applications supply their document
 length/validation budget and the retained log and awareness topic budgets.
 
-Backpressure closes with 1013; gaps and cursor mismatches request resync and
-close with 1012. Transient stream/storage failures also use 1012, internal
+Backpressure closes with 1013. A retention gap during join, replay or resume
+reloads the stored snapshot. When its cursor covers the missing prefix
+(at least the first retained sequence minus one) and its restore revision
+still matches, the room sends that snapshot and replays the remaining log
+without closing the socket. Readiness waits for this replay. An uncovered
+gap or cursor mismatch requests resync and closes with 1012; recovery never
+skips unavailable input. Snapshot reloads occur only on recovery, not edits.
+Transient stream/storage failures also use 1012, internal
 errors use 1011, and access failures use 1008. Error codes remain stable;
 applications supply localized messages, including `busy` for admission
 contention and `tooManyMessages` for the pending-message limit.
