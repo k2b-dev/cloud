@@ -12,8 +12,8 @@ import { compileReviewFixture, reviewFixture } from "../_internal/capability-rev
 import * as registry from "../_internal/registry";
 import * as capabilityDispatch from "../api/capabilities";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
-import { wakeAppAccessChanged } from "../events/app-access";
-import { startLiveDelivery } from "../events/live-delivery";
+import { subscribeIdentityAccessChanged, wakeAppAccessChanged } from "../events/app-access";
+import { liveTopic, startLiveDelivery } from "../events/live-delivery";
 import { accounts } from "../services/accounts";
 import { approvalScopeFromToolName, approvals } from "../services/approvals";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
@@ -26,6 +26,7 @@ import { AI_WEBSITE_APPROVAL_TOOL, findRememberedAiToolApproval, hasRememberedAi
 import * as assistantModels from "./assistant-models";
 import { aiChatTasks } from "./chat-tasks";
 import { aiFileStore } from "./files-store";
+import { aiLive } from "./live";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
@@ -717,7 +718,7 @@ suiteFor(
           expect((await readFirstEvent(reader)).type).toBe("state");
         });
         console.log("SQL BUDGET authenticated chat setup", setup.length);
-        expect(setup).toHaveLength(15);
+        expect(setup).toHaveLength(13);
       }
       for (let event = 1; event <= 3; event++) {
         const delivered = await meter.during(async () => {
@@ -754,6 +755,39 @@ suiteFor(
         console.log("SQL BUDGET chat heartbeat", beat + 1, heartbeat.length);
         expect(heartbeat).toEqual([]);
       }
+      const unrelatedUser = "11111111-1111-4111-8111-111111111111";
+      const observed = Promise.withResolvers<void>();
+      const stopObserver = subscribeIdentityAccessChanged(() => observed.resolve(), { userId: unrelatedUser });
+      try {
+        const unrelated = await meter.during(async () => {
+          await liveTopic("core").publish({
+            data: { v: 1, k: "identity.budget", d: { type: "identity.access.changed", userId: unrelatedUser } },
+          });
+          await observed.promise;
+        });
+        expect(unrelated).toHaveLength(0);
+      } finally {
+        stopObserver();
+      }
+      const checked = Promise.withResolvers<void>();
+      let checks = 0;
+      const original = aiConversations.getConversationByShortId;
+      const reload = spyOn(aiConversations, "getConversationByShortId").mockImplementation(async (input) => {
+        const result = await original(input);
+        if (++checks === readers.length + 1) checked.resolve();
+        return result;
+      });
+      try {
+        const invalidation = await meter.during(async () => {
+          await liveTopic("core").publish({ data: { v: 1, k: "identity.budget", d: { type: "identity.access.changed", userId } } });
+          await checked.promise;
+        });
+        console.log("SQL BUDGET chat identity event", invalidation.length);
+        expect(checks).toBe(4); // Three readers and the warm reader, all for this subject.
+        expect(invalidation).toHaveLength(12); // Credential + conversation + plan per affected connection.
+      } finally {
+        reload.mockRestore();
+      }
     } finally {
       intervals?.mockRestore();
       abort.abort();
@@ -763,6 +797,44 @@ suiteFor(
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   }, 15_000);
+
+  for (const revoke of ["session", "conversation"] as const) {
+    test(`admission observes a ${revoke} change between authentication and subscription`, async () => {
+      const userId = await insertUser();
+      const token = await createTestSession(userId);
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      const abort = new AbortController();
+      const stopDelivery = await startLiveDelivery("core");
+      const original = aiConversations.getConversationByShortId;
+      const snapshot = spyOn(aiConversations, "getConversationByShortId").mockImplementationOnce(async (input) => {
+        const authorized = await original(input);
+        if (revoke === "session") await session.revoke(token);
+        else {
+          const after = await aiLive.cursor();
+          const hints = aiLive.accessChanges({ after, signal: abort.signal });
+          await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: userId });
+          wakeAppAccessChanged();
+          // Commit and deliver before subscribing: only cursor replay can observe it.
+          for await (const hint of hints) {
+            if (hint.key === `ai.conversation:${chat.id}`) break;
+          }
+        }
+        return authorized;
+      });
+      try {
+        const response = await withoutHeartbeat(() => openStream(chat.shortId, token, abort.signal));
+        expect(response.status).toBe(200);
+        expect((await readUntilClosed(response.body!.getReader(), 2_000)).closed).toBe(true);
+        expect((await openStream(chat.shortId, token, abort.signal)).status).toBe(revoke === "session" ? 401 : 404);
+      } finally {
+        snapshot.mockRestore();
+        abort.abort();
+        await stopDelivery?.();
+        await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    });
+  }
 
   test("ends an open stream once its session is revoked", async () => {
     const userId = await insertUser();

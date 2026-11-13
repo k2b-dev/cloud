@@ -22,8 +22,8 @@ import {
   respond,
   v,
 } from "../server";
-import { isAppSessionActor, userFromActor } from "../server/actor";
-import { appAccessRevalidator } from "../server/middleware/app-access";
+import { isAppSessionActor } from "../server/actor";
+import { appAccessRevalidator, credentialExpiresAt } from "../server/middleware/app-access";
 import { noTransform } from "../server/middleware/no-transform";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import { appAccessAuthority } from "../services/app-access";
@@ -1476,20 +1476,14 @@ export const aiRoutes = (() => {
         const actor = c.get("actor");
         const proof = c.get("credentialProof");
         const credentialCurrent = appAccessRevalidator(c, { id: "core" });
-        const deadlines = [
-          proof?.kind === "session" ? proof.expiresAt : undefined,
-          actor.kind === "service_account" ? actor.credentialExpiresAt : undefined,
-          userFromActor(actor)?.accountExpires,
-        ]
-          .filter((value): value is string => typeof value === "string")
-          .map(Date.parse)
-          .concat(proof?.kind === "oauth" && typeof proof.payload.exp === "number" ? [proof.payload.exp * 1_000] : [])
-          .filter(Number.isFinite);
+        const expiresAt = credentialExpiresAt(c);
+        let initialCheck = true;
+        c.set("appAccessGuard", { eventOnly: true });
         return createAiConversationStreamResponse({
           viewerUserId: ctx.actor.kind === "user" ? ctx.actor.user.id : null,
           conversation,
           signal: c.req.raw.signal,
-          ...(deadlines.length ? { expiresAt: Math.min(...deadlines) } : {}),
+          ...(expiresAt !== undefined ? { expiresAt } : {}),
           subscribeAccess: (changed, failed) =>
             subscribeAiConversationAccess({
               conversationId: conversation.id,
@@ -1510,7 +1504,12 @@ export const aiRoutes = (() => {
           // credential first, so a revoked session or API key ends the stream,
           // then re-check ownership and resource scope of the conversation.
           revalidate: async () => {
+            const initial = initialCheck;
+            initialCheck = false;
             if (!(await credentialCurrent())) return false;
+            // The cursor predates the authorized snapshot: domain events replay
+            // any concurrent change. Admission only needs a fresh credential.
+            if (initial) return true;
             const current = await resolveContext(c);
             if (current instanceof Response) return false;
             return Boolean(await loadConversation(c, current));

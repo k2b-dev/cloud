@@ -100,13 +100,14 @@ suite("application enforcement and revocation", () => {
           }),
         ),
       )
-      .get("/events", (c) =>
-        streamSSE(c, async (stream) => {
+      .get("/events", (c) => {
+        if (c.req.query("eventOnly") === "true") c.set("appAccessGuard", { eventOnly: true });
+        return streamSSE(c, async (stream) => {
           await stream.writeSSE({ data: "ready" });
           await new Promise<void>((resolve) => stream.onAbort(resolve));
           sseStopped++;
-        }),
-      );
+        });
+      });
     server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch, websocket });
   });
 
@@ -249,6 +250,26 @@ suite("application enforcement and revocation", () => {
     expect(await sql`SELECT 1 FROM auth.app_access WHERE app_id = ${appId}`).toHaveLength(0);
   });
 
+  test("SSE guards poll by default and opt out only when declared", async () => {
+    await changeGrant(true);
+    for (const eventOnly of [false, true]) {
+      const controller = new AbortController();
+      const intervals = spyOn(globalThis, "setInterval");
+      try {
+        const response = await fetch(new URL(`/events?eventOnly=${eventOnly}`, server!.url), {
+          headers: headers(),
+          signal: controller.signal,
+        });
+        expect(response.status).toBe(200);
+        expect(intervals.mock.calls.filter(([, ms]) => ms === 50_000)).toHaveLength(eventOnly ? 0 : 1);
+        await response.body!.cancel();
+      } finally {
+        controller.abort();
+        intervals.mockRestore();
+      }
+    }
+  });
+
   test("removing a group ends a delegated SSE connection through identity events", async () => {
     const groupId = crypto.randomUUID();
     const controller = new AbortController();
@@ -269,7 +290,7 @@ suite("application enforcement and revocation", () => {
       const intervals = spyOn(globalThis, "setInterval");
       let response: Response;
       try {
-        response = await fetch(new URL("/events", server!.url), {
+        response = await fetch(new URL("/events?eventOnly=true", server!.url), {
           headers: { authorization: `Bearer ${credential.data.token}` },
           signal: controller.signal,
         });
@@ -312,7 +333,7 @@ suite("application enforcement and revocation", () => {
     await until(() => ready);
     const controller = new AbortController();
     requests.add(controller);
-    const response = await fetch(new URL("/events", server!.url), { headers: headers(), signal: controller.signal });
+    const response = await fetch(new URL("/events?eventOnly=true", server!.url), { headers: headers(), signal: controller.signal });
     const reader = response.body!.getReader();
     expect(new TextDecoder().decode((await reader.read()).value)).toContain("ready");
     await changeGrant(false);
