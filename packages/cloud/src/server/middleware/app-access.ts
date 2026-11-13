@@ -9,6 +9,7 @@ import type { AppMeta } from "../../contracts/app";
 import { AppAccessUnavailableError, appAccessAuthority, canUseApp } from "../../services/app-access";
 import { recordAppAccessDenied } from "../../services/app-access-metrics";
 import { createLoginRedirectUrl } from "../../shared/redirect";
+import { userFromActor } from "../actor";
 import { type AuthContext, auth, loadAuthenticatedActor, type RequestAuthority } from "./auth";
 
 type AccessApp = Pick<AppMeta, "id" | "access"> & { name?: string };
@@ -186,7 +187,7 @@ const identitySubject = (c: Context<AuthContext>) => {
   const proof = c.get("credentialProof");
   const actor = c.get("actor");
   return {
-    userId: actor?.kind === "user" ? actor.user.id : undefined,
+    userId: userFromActor(actor)?.id,
     serviceAccountId: actor?.kind === "service_account" ? actor.serviceAccount.id : undefined,
     sid: proof?.kind === "session" ? proof.sid : undefined,
   };
@@ -217,10 +218,12 @@ export const guardAppAccessSocket = async (
   const actor = c.get("actor");
   const deadlines = [
     proof?.kind === "session" ? proof.expiresAt : undefined,
-    actor?.kind === "user" ? actor.user.accountExpires : actor?.credentialExpiresAt,
+    actor?.kind === "service_account" ? actor.credentialExpiresAt : undefined,
+    userFromActor(actor)?.accountExpires,
   ]
     .filter((value): value is string => typeof value === "string")
     .map(Date.parse)
+    .concat(proof?.kind === "oauth" && typeof proof.payload.exp === "number" ? [proof.payload.exp * 1_000] : [])
     .filter(Number.isFinite);
   let denied = false;
   let shutdown = () => {};
@@ -281,6 +284,18 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
   const reader = response.body.getReader();
   let ended = false;
   let stop = () => {};
+  let stopExpiry = () => {};
+  const proof = c.get("credentialProof");
+  const actor = c.get("actor");
+  const deadlines = [
+    proof?.kind === "session" ? proof.expiresAt : undefined,
+    actor?.kind === "service_account" ? actor.credentialExpiresAt : undefined,
+    actor?.kind === "user" ? actor.user.accountExpires : actor?.delegatedUser?.accountExpires,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map(Date.parse)
+    .concat(proof?.kind === "oauth" && typeof proof.payload.exp === "number" ? [proof.payload.exp * 1_000] : [])
+    .filter(Number.isFinite);
   let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
   const abort = () => {
     if (!ended) streamController?.close();
@@ -290,6 +305,7 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
     if (ended) return;
     ended = true;
     stop();
+    stopExpiry();
     connections.delete(abort);
     c.req.raw.signal.removeEventListener("abort", abort);
     void reader.cancel().catch(() => {});
@@ -299,6 +315,7 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
       streamController = controller;
       connections.add(abort);
       stop = watchAppAccess({
+        intervalMs: false,
         check: appAccessRevalidator(c, app),
         subscribe,
         denied: () => {
@@ -308,6 +325,8 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
           finish();
         },
       });
+      if (deadlines.length) stopExpiry = watchCredentialExpiry(Math.min(...deadlines), abort);
+      if (ended) return;
       c.req.raw.signal.addEventListener("abort", abort, { once: true });
       if (c.req.raw.signal.aborted) {
         controller.close();

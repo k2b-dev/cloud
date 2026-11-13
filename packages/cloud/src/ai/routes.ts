@@ -22,8 +22,8 @@ import {
   respond,
   v,
 } from "../server";
-import { isAppSessionActor } from "../server/actor";
-import { isRequestCredentialCurrent } from "../server/middleware/auth";
+import { isAppSessionActor, userFromActor } from "../server/actor";
+import { appAccessRevalidator } from "../server/middleware/app-access";
 import { noTransform } from "../server/middleware/no-transform";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import { appAccessAuthority } from "../services/app-access";
@@ -65,6 +65,7 @@ import {
   toAiActionFailureResponse,
   toAiErrorResponse,
 } from "./http";
+import { aiLive, subscribeAiConversationAccess } from "./live";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema } from "./local-tool-contracts";
 import { aiMaintenanceJobs } from "./maintenance";
 import { aiMapRoutes } from "./map-routes";
@@ -1466,14 +1467,41 @@ export const aiRoutes = (() => {
         return respond(c, ok(presented));
       })
       .get("/conversations/:conversationId/stream", async (c) => {
+        // Capture before domain admission so a concurrent archive cannot be missed.
+        const accessCursor = await aiLive.cursor();
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
+        const actor = c.get("actor");
+        const proof = c.get("credentialProof");
+        const credentialCurrent = appAccessRevalidator(c, { id: "core" });
+        const deadlines = [
+          proof?.kind === "session" ? proof.expiresAt : undefined,
+          actor.kind === "service_account" ? actor.credentialExpiresAt : undefined,
+          userFromActor(actor)?.accountExpires,
+        ]
+          .filter((value): value is string => typeof value === "string")
+          .map(Date.parse)
+          .concat(proof?.kind === "oauth" && typeof proof.payload.exp === "number" ? [proof.payload.exp * 1_000] : [])
+          .filter(Number.isFinite);
         return createAiConversationStreamResponse({
           viewerUserId: ctx.actor.kind === "user" ? ctx.actor.user.id : null,
           conversation,
           signal: c.req.raw.signal,
+          ...(deadlines.length ? { expiresAt: Math.min(...deadlines) } : {}),
+          subscribeAccess: (changed, failed) =>
+            subscribeAiConversationAccess({
+              conversationId: conversation.id,
+              after: accessCursor,
+              subject: {
+                userId: ctx.ownerUserId,
+                sid: proof?.kind === "session" ? proof.sid : undefined,
+                serviceAccountId: actor.kind === "service_account" ? actor.serviceAccount.id : undefined,
+              },
+              changed,
+              failed,
+            }),
           // Only a signed-in tab shows approvals in the page; other readers, such as `cld`, leave notices and pushes as they are.
           ...(ctx.signedInSession
             ? { watch: await watchAiConversation(conversation.id, () => notifyAiConversationUnwatched(conversation.id)) }
@@ -1482,7 +1510,7 @@ export const aiRoutes = (() => {
           // credential first, so a revoked session or API key ends the stream,
           // then re-check ownership and resource scope of the conversation.
           revalidate: async () => {
-            if (!(await isRequestCredentialCurrent(c))) return false;
+            if (!(await credentialCurrent())) return false;
             const current = await resolveContext(c);
             if (current instanceof Response) return false;
             return Boolean(await loadConversation(c, current));

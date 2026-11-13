@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { streamSSE } from "hono/streaming";
@@ -9,11 +9,13 @@ import { appRegistry } from "../../_internal/registry";
 import type { AppRegistryEntry } from "../../contracts/registry";
 import { publishAppAccessChanged, wakeAppAccessChanged } from "../../events/app-access";
 import { startLiveOutbox } from "../../events/live";
+import { accounts } from "../../services/accounts";
 import { invocationAuthorityFromRequest } from "../../services/identity/invocation-authority";
 import { issueInvocationToken } from "../../services/identity/issue-invocation";
 import { mandates } from "../../services/mandates";
+import { serviceAccountCredentials } from "../../services/service-account-credentials";
 import { session } from "../../services/session";
-import { createTestSession } from "../../services/session/session.test-fixture";
+import { createTestBrowserSignIn, createTestSession } from "../../services/session/session.test-fixture";
 import { guardAppAccessSocket, requireAppAccess } from "./app-access";
 import { type AuthContext, auth } from "./auth";
 import { requireInvocation } from "./invocation";
@@ -245,6 +247,54 @@ suite("application enforcement and revocation", () => {
     expect(rows.length).toBeGreaterThan(0);
     expect(await sql`SELECT 1 FROM events.outbox WHERE id IN ${sql(rows)}`).toHaveLength(0);
     expect(await sql`SELECT 1 FROM auth.app_access WHERE app_id = ${appId}`).toHaveLength(0);
+  });
+
+  test("removing a group ends a delegated SSE connection through identity events", async () => {
+    const groupId = crypto.randomUUID();
+    const controller = new AbortController();
+    requests.add(controller);
+    const user = await accounts.users.get({ id: userId });
+    if (!user) throw new Error("Missing fixture user");
+    const credential = await serviceAccountCredentials.createUserApiToken({
+      browserSignIn: await createTestBrowserSignIn(userId),
+      user,
+      name: "SSE group reader",
+    });
+    if (!credential.ok) throw new Error(credential.error.message);
+    await sql`INSERT INTO auth.groups(id, cn, name, provider) VALUES(${groupId}::uuid, ${groupId}, ${groupId}, 'local')`;
+    try {
+      await sql`INSERT INTO auth.user_groups_v2(user_id, group_id) VALUES(${userId}::uuid, ${groupId}::uuid)`;
+      await sql`UPDATE auth.access SET user_id = NULL, group_id = ${groupId}::uuid WHERE id = ${accessId}::uuid`;
+      await changeGrant(true);
+      const intervals = spyOn(globalThis, "setInterval");
+      let response: Response;
+      try {
+        response = await fetch(new URL("/events", server!.url), {
+          headers: { authorization: `Bearer ${credential.data.token}` },
+          signal: controller.signal,
+        });
+        expect(intervals.mock.calls.filter(([, ms]) => ms === 50_000)).toHaveLength(0);
+      } finally {
+        intervals.mockRestore();
+      }
+      const reader = response.body!.getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toContain("ready");
+      await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${userId}::uuid AND group_id = ${groupId}::uuid`;
+      wakeAppAccessChanged();
+      let text = "";
+      for (;;) {
+        const result = await reader.read();
+        if (result.done) break;
+        text += new TextDecoder().decode(result.value);
+      }
+      expect(text).toContain("app_access_denied");
+    } finally {
+      controller.abort();
+      requests.delete(controller);
+      await sql`UPDATE auth.access SET user_id = ${userId}::uuid, group_id = NULL WHERE id = ${accessId}::uuid`;
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE delegated_user_id = ${userId}::uuid`;
+    }
   });
 
   test("transactional app.access.changed revokes an open custom socket and SSE, cancelling their resources", async () => {

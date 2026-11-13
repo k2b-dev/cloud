@@ -5,7 +5,7 @@ section: Identity and access
 order: 315
 description: Declare who may use an application and keep entry and discovery decisions consistent.
 tags: [identity, applications, authorization]
-updated: 2026-11-03
+updated: 2026-11-13
 ---
 
 # App access
@@ -174,7 +174,9 @@ must observe `signal` and cancel outstanding work when it aborts.
 Cloud reuses an identical decision only within the originating request.
 There is no cache between requests: removing the last right or group
 membership removes visibility and entry on the next request. Existing live
-connections close within the existing one-minute revalidation window.
+SSE connections recheck access on the existing Identity-Access and app-access
+events, with local timers for known expiry times. They do not poll access.
+Socket guards retain their configured revalidation interval.
 Public-route exemptions keep their own authentication as described below.
 
 ## Preserve public routes
