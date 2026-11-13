@@ -384,7 +384,7 @@ const cancelScheduledSendBy = async (params: {
         UPDATE mail.drafts
         SET
           state = ${draftState},
-          doc_generation = doc_generation + CASE WHEN edit_mode = 'shared' AND ${params.input.disposition === "draft"} THEN 1 ELSE 0 END,
+          -- Undo continues the same shared document; no content or Yjs lineage is replaced.
           doc_frozen_cursor = NULL, doc_frozen_state = NULL, doc_frozen_generation = NULL, doc_frozen_revision = NULL,
           revision = revision + ${params.input.disposition === "draft" ? 1 : 0}
         WHERE id = ${outbox.draft_id}::uuid

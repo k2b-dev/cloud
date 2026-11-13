@@ -22,6 +22,8 @@ import { type MailDraftDocumentMessage, mailDraftDocumentMessageSchema } from ".
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
+import { createActorCommand } from "../service/commands";
+import { reviewDraftComposeSafety } from "../service/compose-safety";
 import { mailDraftRoom } from "../service/draft-document-room";
 import {
   draftDocumentSnapshotStore,
@@ -33,6 +35,7 @@ import * as draftDocumentService from "../service/draft-documents";
 import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
 import { mailLive } from "../service/live";
 import { createMailbox } from "../service/mailboxes";
+import { cancelScheduledSend } from "../service/scheduled-sends";
 import { stopMailDraftConnections, upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import type { MailApiContext } from "./public-resource-boundary";
 
@@ -273,6 +276,65 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     client.send({ type: "syncPublish", payload: { docId: newShortId(), generation: "1", baseCursor: null, payload: "AAA=" } });
     await client.wait((packet) => packet.type === "error");
     expect((await read()).durable.content.body).toBe("Original");
+  });
+
+  test("undo continues the same generation and admits an edit while the thaw marker is retained", async () => {
+    const created = await draft();
+    const base = await read();
+    const schedule = async () => {
+      const current = await read();
+      const checked = value(
+        await reviewDraftComposeSafety({ context, mailboxId, draftId: created.id, expectedRevision: current.revision }),
+      );
+      return value(
+        await createActorCommand({
+          context,
+          mailboxId,
+          enqueue: false,
+          input: {
+            kind: "send",
+            draftId: created.id,
+            senderIdentityId: identity.id,
+            expectedDraftRevision: checked.revision,
+            expectedContentHash: checked.contentHash,
+            undoSeconds: 60,
+            idempotencyKey: crypto.randomUUID(),
+            safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
+          },
+        }),
+      );
+    };
+    const command = await schedule();
+    const [outbox] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+    if (!outbox) throw new Error("Missing send submission");
+    value(await cancelScheduledSend({ context, mailboxId, scheduledSendId: outbox.id, input: { disposition: "draft" } }));
+    const restored = await read();
+    expect(restored.generation).toBe(base.generation);
+    const topic = mailDraftDocumentLog.topic();
+    const head = await topic.latestCursor({ tenantId: created.id });
+    expect(head).not.toBeNull();
+    const client = await connect();
+    await client.ready();
+    const update = await createDraftRevisionUpdate(
+      restored.fresh.state,
+      { ...restored.fresh.content, body: "Editing after undo" },
+      {
+        deadline: Date.now() + 10000,
+      },
+    );
+    publish(client, restored, update);
+    await client.wait((packet) => packet.type === "syncPush" && packet.payload.updates.some((u) => u.payload === toBase64(update)));
+    expect(client.messages.filter((packet) => packet.type === "error")).toEqual([]);
+    await flushDraftDocumentSnapshot(created.id);
+    const next = await schedule();
+    const [receipt] = await sql<{ state: Uint8Array; sent_state: Uint8Array }[]>`
+      SELECT receipt.state, sent.state AS sent_state FROM mail.draft_document_freezes receipt
+      JOIN mail.draft_document_sends sent ON sent.draft_id = receipt.draft_id AND sent.generation = receipt.generation
+      WHERE sent.command_id = ${next.id}::uuid`;
+    expect(receipt).toBeDefined();
+    expect(receipt?.state).toEqual(receipt?.sent_state);
+    if (!receipt) throw new Error("Missing second send receipt");
+    expect(decode(receipt.state).body).toBe("Editing after undo");
   });
 
   test("SQL budget: real room edits, delivery to another socket and cursor updates each cost zero", async () => {

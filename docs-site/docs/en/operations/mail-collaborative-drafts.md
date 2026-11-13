@@ -69,8 +69,9 @@ snapshot, then releases the freeze before contacting SMTP. A mismatch refuses
 the dispatch. Slow SMTP therefore does not depend on a sixty-second lease.
 
 A definite failure restores the same draft and room for editing. Undo and
-cancel do the same through the existing revision and reconnect flow. Accepted
-or uncertain outcomes keep the draft noneditable, preserving Mail's existing
+cancel do the same through the existing revision and reconnect flow. They
+continue the same document generation because the content was not replaced.
+Accepted or uncertain outcomes keep the draft noneditable, preserving Mail's existing
 send semantics. Their outcome transaction stores a durable close intent.
 Mail obtains a fresh verified freeze and closes the room, with an idempotent
 receipt so startup can finish a close interrupted by a crash.

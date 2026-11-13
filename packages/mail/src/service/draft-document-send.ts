@@ -61,10 +61,11 @@ export const saveDraftSendBoundary = async (db: typeof sql, commandId: string, d
   if (!row || row.doc_generation !== frozen.restoreRevision || !sameDraftDocumentState(row.doc_state, frozen.state)) throw changed();
   await db`INSERT INTO mail.draft_document_sends (command_id, draft_id, generation, state)
     VALUES (${commandId}::uuid, ${draftId}::uuid, ${frozen.restoreRevision}::bigint, ${Buffer.from(frozen.state)})`;
-  // Recovery of unsent local input still uses the exact historical send receipt.
+  // Undo continues this lineage. Recovery must compare with its latest send,
+  // while each command retains its own immutable snapshot above.
   await db`INSERT INTO mail.draft_document_freezes (draft_id, generation, revision, cursor, state)
     VALUES (${draftId}::uuid, ${frozen.restoreRevision}::bigint, ${row.revision}, ${frozen.cursor}, ${Buffer.from(frozen.state)})
-    ON CONFLICT (draft_id, generation) DO NOTHING`;
+    ON CONFLICT (draft_id, generation) DO UPDATE SET revision = EXCLUDED.revision, cursor = EXCLUDED.cursor, state = EXCLUDED.state`;
 };
 
 type SendBoundary = { draft_id: string; generation: string; state: Uint8Array; close_pending: boolean; close_freeze_cursor: string | null };

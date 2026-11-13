@@ -414,7 +414,7 @@ suite("Mail document lifecycle boundaries", () => {
     }
   });
 
-  test("B can undo A's mailbox-wide send after rollback; old-generation input recovers without entering the send snapshot", async () => {
+  test("B can undo A's mailbox-wide send after rollback and continue the same document without changing the command snapshot", async () => {
     const target = await draft("Reviewed");
     const base = value(await readDraftDocument(target));
     const checked = await review(target);
@@ -433,22 +433,16 @@ suite("Mail document lifecycle boundaries", () => {
       );
       expect(cancelled.draftId).toBe(target.draftId);
       const reopened = value(await readDraftDocument({ ...target, context: otherWriter }));
-      expect(BigInt(reopened.generation)).toBe(BigInt(base.generation) + 1n);
+      expect(reopened.generation).toBe(base.generation);
       expect(reopened.durable.content.body).toBe("Reviewed");
       expect(value(await getDraft(context, mailboxId, target.draftId)).editMode).toBe("shared");
       const oldInput = { ...target, generation: base.generation, baseCursor: base.durable.cursor, update: Y.encodeStateAsUpdate(local) };
-      expect((await acceptDraftDocumentUpdate(oldInput)).ok).toBe(false);
-      const request = { ...target, generation: base.generation, clientId: crypto.randomUUID(), state: oldInput.update };
-      const recovered = value(await recoverDraftDocumentRest(request));
-      expect(recovered.status).toBe("recovered");
-      if (recovered.status !== "recovered") throw new Error("Missing offline recovery draft");
-      expect(recovered.draft).toMatchObject({ body: "Reviewed offline", editMode: "lock", state: "draft" });
-      expect(value(await recoverDraftDocumentRest(request))).toEqual(recovered);
+      expect((await acceptDraftDocumentUpdate(oldInput)).ok).toBe(true);
+      expect(value(await readDraftDocument(target)).fresh.content.body).toBe("Reviewed offline");
       const [outbox] = await sql<{ state: string; draft_snapshot: { body: string } }[]>`
         SELECT state, draft_snapshot FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
       expect(outbox?.state).toBe("cancelled");
       expect(outbox?.draft_snapshot.body).toBe("Reviewed");
-      expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id=${recovered.draft.id}::uuid`).toHaveLength(0);
       expect(
         await sql`SELECT 1 FROM mail.draft_document_freezes WHERE draft_id=${target.draftId}::uuid AND generation=${base.generation}::bigint`,
       ).toHaveLength(1);
