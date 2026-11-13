@@ -2105,6 +2105,45 @@
   background: var(--k2b-surface);
   box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
 }
+/* #3297: above the conversation, the placeholder and the loaded box share one reserved height, so a late draft,
+   signature, or suggestion never moves the messages below. Text and signature fade out at that height (the signature
+   first); the box grows to its content once the person clicks, focuses, or drags a file into it. Under the
+   conversation nothing sits below the box, so it keeps its natural height there. */
+.k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame {
+  --mail-reply-box-reserved: 19rem;
+}
+.k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-reply-box-pending {
+  min-height: var(--mail-reply-box-reserved);
+}
+.k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame:not([data-reply-box-expanded]) > .mail-inline-draft.mail-reply-box {
+  height: var(--mail-reply-box-reserved);
+  min-height: var(--mail-reply-box-reserved);
+  overflow: hidden;
+}
+.k2b-ui
+  .mail-reading-column[data-reply-position="top"]
+  > .mail-reply-box-frame:not([data-reply-box-expanded])
+  > .mail-inline-draft.mail-reply-box
+  > :is(.mail-inline-draft-text, .mail-inline-draft-signature) {
+  min-height: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+}
+.k2b-ui
+  .mail-reading-column[data-reply-position="top"]
+  > .mail-reply-box-frame:not([data-reply-box-expanded])
+  > .mail-inline-draft.mail-reply-box
+  > [data-reply-box-clipped] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.25rem), transparent);
+}
+.k2b-ui
+  .mail-reading-column[data-reply-position="top"]
+  > .mail-reply-box-frame:not([data-reply-box-expanded])
+  > .mail-inline-draft.mail-reply-box
+  > .mail-inline-draft-signature {
+  flex-shrink: 1000;
+}
+
 /* Scheduled and detached: one quiet row in the box's place, with its ways back. */
 .k2b-ui .mail-reply-box-state {
   min-height: 3.25rem;

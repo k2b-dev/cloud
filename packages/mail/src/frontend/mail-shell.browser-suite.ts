@@ -4101,6 +4101,79 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
+      // #3297: on a slow runner the first measurement met the placeholder, and the ready box grew 63 px taller. With
+      // the box on top that moved the messages. A late draft answer makes every runner meet the placeholder.
+      test("a late draft answer: the box keeps the placeholder's height, so the messages below never move", async () => {
+        const releaseSeed = Promise.withResolvers<void>();
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
+          await draftApi(next);
+          await next.route("**/draft-seeds", async (route) => {
+            await releaseSeed.promise;
+            await route.fallback();
+          });
+        });
+        try {
+          await page.locator('[data-mail-reply-box="pending"]').waitFor();
+          const measure = () =>
+            page.evaluate(() => ({
+              messages: document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top,
+              box: document.querySelector("[data-mail-reply-box-frame]")!.getBoundingClientRect().height,
+              scroll: document.querySelector(".mail-reader-scroll")!.scrollTop,
+            }));
+          const pending = await measure();
+          releaseSeed.resolve();
+          await readyDraft(page);
+          await settled(page);
+          const ready = await measure();
+          expect(Math.abs(ready.box - pending.box), `box ${pending.box} → ${ready.box}`).toBeLessThanOrEqual(0.5);
+          expect(Math.abs(ready.messages - pending.messages), `messages ${pending.messages} → ${ready.messages}`).toBeLessThanOrEqual(0.5);
+          expect(ready.scroll).toBe(pending.scroll);
+          // Only work in the box makes it grow to its content; then nothing is cut off and nothing fades.
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.locator("[data-mail-reply-box-frame][data-reply-box-expanded]").waitFor();
+          expect(await page.locator("[data-reply-box-clipped]").count()).toBe(0);
+        } finally {
+          releaseSeed.resolve();
+          await close(page);
+        }
+      });
+
+      test("a long signature that arrives last fades at the reserved height and moves nothing until the person writes", async () => {
+        const releaseSignature = Promise.withResolvers<void>();
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
+          await draftApi(next);
+          await next.route("**/compose-signature", async (route) => {
+            await releaseSignature.promise;
+            await route.fulfill({
+              json: { html: null, text: Array.from({ length: 12 }, (_, line) => `Example support line ${line + 1}`).join("\n") },
+            });
+          });
+        });
+        try {
+          await readyDraft(page);
+          await settled(page);
+          const messagesTop = () =>
+            page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top);
+          const before = await messagesTop();
+          releaseSignature.resolve();
+          await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("line 12"));
+          await page.locator(".mail-inline-draft-signature[data-reply-box-clipped]").waitFor();
+          await settled(page);
+          expect(Math.abs((await messagesTop()) - before)).toBeLessThanOrEqual(0.5);
+          // Send stays in view at the reserved height.
+          expect(await page.locator("[data-mail-reply-box='mail'] footer").isVisible()).toBe(true);
+          // Writing in the box lets it grow to the whole signature, without a fade.
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.locator("[data-reply-box-clipped]").waitFor({ state: "detached" });
+          expect(
+            await page.locator("[data-mail-draft-signature]").evaluate((element) => element.getBoundingClientRect().height),
+          ).toBeGreaterThan(150);
+        } finally {
+          releaseSignature.resolve();
+          await close(page);
+        }
+      });
+
       test("the box takes its place without moving the messages below it", async () => {
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
           await draftApi(next);

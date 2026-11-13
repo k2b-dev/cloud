@@ -140,6 +140,49 @@ export default function MailReplyBox(props: {
   const [mailMode, setMailMode] = createSignal<MailReplyMailMode>(initialMailMode());
   const [noteText, setNoteText] = createSignal(storedNote);
   const [noteSaving, setNoteSaving] = createSignal(false);
+  // Above the conversation the box opens at one reserved height, from placeholder to loaded draft, so a late draft,
+  // signature, or suggestion never moves the messages below it (#3297). It grows to its content once the person
+  // works in it: a click, focus, or a dragged file.
+  const [expanded, setExpanded] = createSignal(false);
+  const expand = () => {
+    if (!expanded()) setExpanded(true);
+  };
+  // At the reserved height, only a text or signature that is cut off fades out; one that fits stays fully readable.
+  // Content arrives late (draft, signature, a signature's logo), so the marks follow every change inside the box.
+  onMount(() => {
+    const root = frame;
+    if (!root) return;
+    for (const type of ["focusin", "pointerdown", "dragenter"] as const) root.addEventListener(type, expand);
+    onCleanup(() => {
+      for (const type of ["focusin", "pointerdown", "dragenter"] as const) root.removeEventListener(type, expand);
+    });
+  });
+  createEffect(() => {
+    const root = frame;
+    if (expanded() || !root) return;
+    const parts = () =>
+      root.querySelectorAll<HTMLElement>(
+        "[data-mail-reply-box='mail'] > .mail-inline-draft-text, [data-mail-reply-box='mail'] > .mail-inline-draft-signature",
+      );
+    let scheduled = 0;
+    const mark = () => {
+      scheduled = 0;
+      for (const part of parts()) part.toggleAttribute("data-reply-box-clipped", part.scrollHeight > part.clientHeight + 1);
+    };
+    const schedule = () => {
+      if (!scheduled) scheduled = requestAnimationFrame(mark);
+    };
+    const observer = new MutationObserver(schedule);
+    observer.observe(root, { childList: true, subtree: true, characterData: true });
+    root.addEventListener("load", schedule, true);
+    schedule();
+    onCleanup(() => {
+      observer.disconnect();
+      root.removeEventListener("load", schedule, true);
+      if (scheduled) cancelAnimationFrame(scheduled);
+      for (const part of parts()) part.removeAttribute("data-reply-box-clipped");
+    });
+  });
   const [noteError, setNoteError] = createSignal<string | null>(null);
   const [noteMinHeight, setNoteMinHeight] = createSignal<number | null>(null);
   const [mount, setMount] = createSignal<Mount | null>(null);
@@ -799,7 +842,13 @@ export default function MailReplyBox(props: {
   };
 
   return (
-    <div ref={frame} class="mail-reply-box-frame" data-mail-reply-box-frame data-mode={mode()}>
+    <div
+      ref={frame}
+      class="mail-reply-box-frame"
+      data-mail-reply-box-frame
+      data-mode={mode()}
+      data-reply-box-expanded={expanded() ? "" : undefined}
+    >
       <Show when={scheduled() && detachedId() === null}>
         <section class="mail-reply-box mail-reply-box-state" data-mail-reply-box="scheduled" aria-label={t().boxLabel}>
           <i class="ti ti-clock" aria-hidden="true" />
