@@ -45,6 +45,8 @@ if (testInfra.database && testInfra.nats) {
       await runtime.stop();
       await deleteTestNamespace(namespace);
     } finally {
+      const { stopDraftDocumentCancellation } = await import("../src/service/draft-document-socket-sql");
+      await stopDraftDocumentCancellation();
       await closePlatformClients();
       await database.drop();
     }

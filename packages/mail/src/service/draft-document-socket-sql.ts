@@ -1,9 +1,28 @@
-import { sql } from "@k2b/cloud";
+import { createSql, sql } from "@k2b/cloud";
 import type { SQL } from "bun";
 import { afterDraftDocumentCommit } from "./draft-document-log";
 
 // Each SQL statement uses the socket's existing access-refresh budget.
 export const DRAFT_DOCUMENT_ACCESS_REFRESH_MS = 10_000;
+
+// Mail draft cancellation control pool: at most one extra Postgres connection
+// per process, created on the first abort and closed after Mail's runtimes drain.
+// ReservedSQL exposes no cancel-current-statement API. Query.cancel() needs the
+// specific Query, which downstream transaction services do not expose here.
+let draftCancellationSql: typeof sql | undefined;
+const cancelDraftBackend = async (pid: number): Promise<void> => {
+  draftCancellationSql ??= createSql({
+    max: 1,
+    connectionTimeout: DRAFT_DOCUMENT_ACCESS_REFRESH_MS / 1000,
+    connection: { statement_timeout: DRAFT_DOCUMENT_ACCESS_REFRESH_MS },
+  });
+  await draftCancellationSql`SELECT pg_cancel_backend(${pid})`;
+};
+export const stopDraftDocumentCancellation = async (): Promise<void> => {
+  const control = draftCancellationSql;
+  draftCancellationSql = undefined;
+  await control?.close();
+};
 
 /** Start a lazy query before cancellation, then await settlement so its transaction can roll back. */
 export const awaitDraftDocumentQuery = async <T>(
@@ -50,18 +69,15 @@ export const withDraftDocumentTransaction = async <T>(
   const reserved = await sql.reserve({ signal });
   // A closed client socket does not wake a backend waiting on a row lock: it
   // notices only when it next writes. Cancel that backend's statement through
-  // the pool. The cancelled statement fails the transaction, and an explicit
-  // ROLLBACK ends it before the reservation goes back to the pool. Never close
+  // a separate control connection. An explicit ROLLBACK ends the cancelled
+  // transaction before the reservation goes back to the pool. Never close
   // the reservation while the transaction runs: a close racing the driver's
   // rollback left the backend open in an aborted transaction (#3039).
   let pid: number | undefined;
   let cancelling: Promise<void> | undefined;
   const abort = () => {
     if (pid === undefined) return;
-    cancelling ??= sql`SELECT pg_cancel_backend(${pid})`.then(
-      () => undefined,
-      () => undefined,
-    );
+    cancelling ??= cancelDraftBackend(pid).catch(() => undefined);
   };
   signal.addEventListener("abort", abort, { once: true });
   try {
