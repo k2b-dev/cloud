@@ -14,7 +14,7 @@ import {
 } from "./access";
 
 import { ShortIdSchema } from "./contracts";
-import { cachedResource, readerBatch } from "./resource-access";
+import { cachedResource, invalidateResource, readerBatch } from "./resource-access";
 
 // The platform's per-subscription key limit.
 const LIST_KEY_LIMIT = 1_000;
@@ -35,18 +35,24 @@ const chatReaders = async (
       : [];
     if (threadId && !thread) return new Set();
     const decisions = await readerBatch(viewers, async (viewer) => {
-      const fresh = context?.identityChanged
-        ? {
-            actor: viewer.actor,
-            accessSubject: viewer.accessSubject,
-            caller: viewer.caller,
-            credentialPrincipal: viewer.id,
-          }
-        : undefined;
-      const container = await cachedResource(viewer.id, { type: conversation.resource_type, id: conversation.resource_id }, fresh);
+      const containerRef = { type: conversation.resource_type, id: conversation.resource_id };
+      if (context?.identityChanged) {
+        await invalidateResource(viewer.id, containerRef);
+        if (thread) await invalidateResource(viewer.id, { type: thread.resource_type, id: thread.resource_id });
+        // Retain the subscription, never a delivery decision. The engine clears its
+        // cache and checks the next actual frame (including replay) before sending.
+        return hasPermission(conversationPermission(shortId, "read", viewer.actor), "read") ? viewer.id : null;
+      }
+      const reader = {
+        actor: viewer.actor,
+        accessSubject: viewer.accessSubject,
+        caller: viewer.capabilityTransport ? { transport: viewer.capabilityTransport } : undefined,
+        credentialPrincipal: viewer.id,
+      };
+      const container = await cachedResource(viewer.id, containerRef, reader);
       if (!container || !hasPermission(conversationPermission(shortId, container.permission, viewer.actor), "read")) return null;
       if (thread) {
-        const item = await cachedResource(viewer.id, { type: thread.resource_type, id: thread.resource_id }, fresh);
+        const item = await cachedResource(viewer.id, { type: thread.resource_type, id: thread.resource_id }, reader);
         if (item?.container?.ref.type !== conversation.resource_type || item.container.ref.id !== conversation.resource_id) return null;
       }
       return viewer.id;

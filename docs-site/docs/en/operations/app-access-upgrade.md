@@ -400,7 +400,9 @@ AI's user channel, Chat's personal channel, Mail's mailbox channel, Spaces'
 space channel, and Grids' record, metadata and run channels opt in. Mail maps
 assigned-reader delivery keys to their mailbox access key. Grids publishes
 access hints when a table or workflow is soft-deleted. Chat conversation and
-list channels and Contacts channels retain periodic checks.
+list channels and Contacts channels retain periodic checks. Domain bursts defer
+unfinished collection discovery to the next ten-second refresh attempt;
+unrelated domain keys do not restart subscription admission.
 
 Deploy the owning application's event sources with its opted-in channels.
 Keep Core's Identity-Access delivery running on NATS and verify event-driven

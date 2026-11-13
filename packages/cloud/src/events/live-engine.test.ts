@@ -902,10 +902,12 @@ test("subscription admission cannot livelock when its authorizer keeps changing 
   expect(ada.socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
 });
 
-test("collection refresh reconnects after one catch-up under continuous domain changes", async () => {
+test("collection refresh defers sustained domain bursts without closing sockets", async () => {
   engine.stop();
+  LIVE_LIMITS.sweepMs = 50;
   let changing = false;
-  let refreshes = 0;
+  let refreshes = 0,
+    listings = 0;
   engine = createLiveEngine({
     appId: "app",
     topic: () => topic,
@@ -915,6 +917,7 @@ test("collection refresh reconnects after one catch-up under continuous domain c
         collection: true,
         scope: z.object({}),
         keys: async () => {
+          listings++;
           if (changing) {
             refreshes++;
             topic.publish({ v: 1, k: "a", a: true });
@@ -931,9 +934,14 @@ test("collection refresh reconnects after one catch-up under continuous domain c
   await until(() => ada.framesOf("s").length === 1);
   changing = true;
   topic.publish({ v: 1, k: "a", a: true });
-  await until(() => ada.socket.closes.length === 1);
-  expect(refreshes).toBe(2);
-  expect(ada.socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
+  await until(() => refreshes >= 2 || ada.socket.closes.length > 0);
+  await Bun.sleep(20);
+  expect(ada.socket.closes).toEqual([]);
+  expect(refreshes).toBeLessThanOrEqual(4);
+  changing = false;
+  await until(() => listings > refreshes + 1);
+  topic.publish(event("a", 1));
+  await until(() => ada.framesOf("s").some((frame) => frame.t === "event"));
 });
 
 test("periodic collection refresh discards decisions from before an access event", async () => {
@@ -1156,4 +1164,165 @@ test("periodic delivery prefetches eight decisions in parallel and sends the bat
     releaseBatch();
     setSystemTime();
   }
+});
+
+test("late viewers joining during periodic prefetch receive a fresh decision", async () => {
+  engine.stop();
+  const blocked = Promise.withResolvers<void>();
+  let prefetch = false;
+  let started = false;
+  let lateChecks = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      item: {
+        ...channels.item!,
+        eventOnly: undefined,
+        authorize: async (_key, viewers) => {
+          if (prefetch && viewers.some((who) => who.id === "user:ada")) {
+            started = true;
+            await blocked.promise;
+          }
+          if (prefetch && viewers.some((who) => who.id === "user:bob")) lateChecks++;
+          return new Set(viewers.map((who) => who.id));
+        },
+      },
+    },
+  });
+  const fixed = Date.parse("2026-11-13T12:00:00Z");
+  setSystemTime(fixed);
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+  await until(() => ada.framesOf("s").length === 1);
+  const bob = connect("bob");
+  try {
+    setSystemTime(fixed + LIVE_LIMITS.cacheMs + 1);
+    prefetch = true;
+    topic.publish(event("a", 1));
+    await until(() => started);
+    bob.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => bob.framesOf("s").length === 1);
+    blocked.resolve();
+    await until(() => bob.framesOf("s").length === 2);
+    expect(bob.framesOf("s")[1]).toMatchObject({ t: "event", data: { n: 1 } });
+    expect(lateChecks).toBeGreaterThan(0);
+    expect(bob.socket.closes).toEqual([]);
+  } finally {
+    blocked.resolve();
+    setSystemTime();
+  }
+});
+
+test("unrelated domain events do not restart admission, including canonical access keys", async () => {
+  engine.stop();
+  let checks = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      item: {
+        ...channels.item!,
+        accessKey: (key) => key.split(":")[0]!,
+        keys: async () => ["mailbox:assigned"],
+        authorize: async (_key, viewers) => {
+          checks++;
+          topic.publish({ v: 1, k: "foreign-draft", a: true });
+          topic.publish({ v: 1, k: "foreign-message", a: true });
+          await Bun.sleep(0);
+          return new Set(viewers.map((who) => who.id));
+        },
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "mailbox:assigned" } });
+  await until(() => ada.framesOf("s").length > 0 || ada.socket.closes.length > 0);
+  expect(ada.socket.closes).toEqual([]);
+  expect(ada.framesOf("s")[0]?.t).toBe("ready");
+  expect(checks).toBe(1);
+});
+
+test("an identity hint invalidates a prefetched periodic decision before the next frame", async () => {
+  engine.stop();
+  const blocked = Promise.withResolvers<void>();
+  let prefetch = false,
+    started = false,
+    readable = true,
+    invalidations = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    subscribeAccess,
+    channels: {
+      item: {
+        ...channels.item!,
+        eventOnly: undefined,
+        authorize: async (_key, viewers, context) => {
+          if (context?.identityChanged) {
+            invalidations++;
+            return new Set(viewers.map((who) => who.id));
+          }
+          const allowed = readable;
+          if (prefetch && !started) {
+            started = true;
+            await blocked.promise;
+          }
+          return new Set(allowed ? viewers.map((who) => who.id) : []);
+        },
+      },
+    },
+  });
+  const fixed = Date.parse("2026-11-13T12:00:00Z");
+  setSystemTime(fixed);
+  try {
+    const ada = connect();
+    ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => ada.framesOf("s").length === 1);
+    setSystemTime(fixed + LIVE_LIMITS.cacheMs + 1);
+    prefetch = true;
+    topic.publish(event("a", 1));
+    await until(() => started);
+    readable = false;
+    accessChanged({ userId: "ada" });
+    await until(() => invalidations === 1);
+    blocked.resolve();
+    await until(() => ada.framesOf("s").length === 2);
+    expect(ada.framesOf("s")[1]).toMatchObject({ t: "revoked", code: "access_denied" });
+    expect(ada.framesOf("s").some((frame) => frame.t === "event")).toBe(false);
+    expect(ada.socket.closes).toEqual([]);
+  } finally {
+    blocked.resolve();
+    setSystemTime();
+  }
+});
+
+test("admission retries a canonical root change during authorization", async () => {
+  engine.stop();
+  let checks = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      item: {
+        ...channels.item!,
+        accessKey: (key) => key.split(":")[0]!,
+        keys: async () => ["mailbox:assigned"],
+        authorize: async (_key, viewers) => {
+          if (++checks === 1) {
+            topic.publish({ v: 1, k: "mailbox", a: true });
+            await Bun.sleep(0);
+            return new Set(viewers.map((who) => who.id));
+          }
+          return new Set();
+        },
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "mailbox:assigned" } });
+  await until(() => ada.framesOf("s").length > 0);
+  expect(checks).toBe(2);
+  expect(ada.framesOf("s")).toEqual([{ t: "revoked", id: "s", code: "not_found" }]);
+  expect(ada.socket.closes).toEqual([]);
 });

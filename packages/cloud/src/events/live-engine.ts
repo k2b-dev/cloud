@@ -46,8 +46,8 @@ export type LiveViewer = {
   accessSubject: AccessSubject;
   /** Credential scopes; empty for sessions. */
   scopes: readonly string[];
-  /** Server-only caller for fresh decisions by a resource-owning application. Never publish it. */
-  caller?: CapabilityCaller;
+  /** Credential-bound, nonserializable Core query/catalog transport for resource-owner checks. */
+  capabilityTransport?: CapabilityCaller["transport"];
 };
 
 export type LiveChannel<Scope extends z.ZodType = z.ZodType> = {
@@ -178,6 +178,7 @@ export const createLiveEngine = (input: {
   const connections = new Set<Connection>();
   const index = new Map<string, Set<Subscription>>();
   const accessIndex = new Map<string, Map<string, number>>();
+  const keyVersions = new Map<string, number>();
   const cache = new Map<string, { at: number; ok: boolean }>();
   const periodic = Object.values(channels).some((channel) => !channel.eventOnly);
   let stopAccess: (() => void) | undefined;
@@ -193,6 +194,18 @@ export const createLiveEngine = (input: {
   let room: (() => void) | null = null;
   /** Sequence of the latest access update the follower read, already while it waits in the inbox or is checked. */
   let lastAccess = 0;
+  // Admission watches only its returned keys (and their canonical access roots).
+  // While keys() is pending, retain a bounded history so earlier changes are not lost.
+  const admitting = new Set<(key: string) => void>();
+  let deferredRefresh: ReturnType<typeof setTimeout> | undefined;
+  const deferRefresh = () => {
+    if (deferredRefresh || stopping.signal.aborted) return;
+    deferredRefresh = setTimeout(() => {
+      deferredRefresh = undefined;
+      void refresh();
+    }, LIVE_LIMITS.sweepMs);
+    deferredRefresh.unref?.();
+  };
 
   const cursorAt = (seq: number) => input.topic().cursorAt(seq);
   const frame = {
@@ -282,7 +295,10 @@ export const createLiveEngine = (input: {
   const indexKey = (sub: Subscription, key: string) => {
     const subs = index.get(key);
     if (subs) subs.add(sub);
-    else index.set(key, new Set([sub]));
+    else {
+      index.set(key, new Set([sub]));
+      keyVersions.set(key, 0);
+    }
     const accessKey = channels[sub.channel]?.accessKey?.(key);
     if (accessKey && accessKey !== key) {
       const related = accessIndex.get(accessKey) ?? new Map<string, number>();
@@ -294,7 +310,10 @@ export const createLiveEngine = (input: {
   const unindexKey = (sub: Subscription, key: string) => {
     const subs = index.get(key);
     subs?.delete(sub);
-    if (subs?.size === 0) index.delete(key);
+    if (subs?.size === 0) {
+      index.delete(key);
+      keyVersions.delete(key);
+    }
     const accessKey = channels[sub.channel]?.accessKey?.(key);
     const related = accessKey && accessIndex.get(accessKey);
     if (related) {
@@ -379,7 +398,7 @@ export const createLiveEngine = (input: {
       for (const viewer of part) {
         const ok = allowed.has(viewer.id);
         decided.set(viewer.id, ok);
-        if (eventOnly || version !== cacheVersion) continue;
+        if (eventOnly || identityChanged || version !== cacheVersion) continue;
         const id = cacheKey(channel, key, viewer.id);
         cache.delete(id);
         cache.set(id, { at, ok });
@@ -454,7 +473,11 @@ export const createLiveEngine = (input: {
             // A domain change can add a previously unknown collection key.
             const domainVersion = lastAccess;
             const keys = await bounded("keys()", (channels[sub.channel] as LiveChannel).keys(sub.scope, sub.conn.viewer));
-            if (version !== sub.conn.accessVersion || domainVersion !== lastAccess) continue;
+            if (version !== sub.conn.accessVersion) {
+              deferRefresh();
+              return;
+            }
+            if (domainVersion !== lastAccess) continue;
             const listed = keys === null ? null : followed(sub.channel, keys);
             const added =
               listed === null
@@ -465,7 +488,11 @@ export const createLiveEngine = (input: {
                     sub.conn.viewer,
                   );
             if (sub.conn.subs.get(sub.id) !== sub) return;
-            if (version !== sub.conn.accessVersion || domainVersion !== lastAccess) continue;
+            if (version !== sub.conn.accessVersion) {
+              deferRefresh();
+              return;
+            }
+            if (domainVersion !== lastAccess) continue;
             sub.refreshedAt = { identity: version, domain: domainVersion };
             if (listed === null) {
               send(sub, frame.revoked(sub.id, "not_found"));
@@ -480,7 +507,7 @@ export const createLiveEngine = (input: {
             send(sub, frame.resync(sub.id, cursorAt(head)));
             return;
           }
-          if (!sub.conn.closed) close(sub.conn, 1013, "access_changing");
+          if (!sub.conn.closed) deferRefresh();
         } catch (error) {
           unchecked.push(sub.conn);
           failure = error;
@@ -493,10 +520,11 @@ export const createLiveEngine = (input: {
     fail(unchecked, failure, "collection keys");
   };
 
-  /** Coalesce domain bursts; only subscriptions still stale after catch-up reconnect. */
+  /** Coalesce domain bursts; unstable collection discovery resumes at the normal sweep cadence. */
   let refreshing: Promise<void> | null = null;
   let refreshAgain = false;
   const refresh = (): Promise<void> => {
+    if (deferredRefresh) return Promise.resolve();
     if (refreshing) {
       refreshAgain = true;
       return refreshing;
@@ -508,14 +536,7 @@ export const createLiveEngine = (input: {
           await refreshCollections(connections, false, true);
           if (!refreshAgain) return;
         }
-        for (const conn of [...connections]) {
-          if (
-            [...conn.subs.values()].some(
-              (sub) => sub.collection && (sub.refreshedAt?.identity !== conn.accessVersion || sub.refreshedAt?.domain !== lastAccess),
-            )
-          )
-            close(conn, 1013, "access_changing");
-        }
+        deferRefresh();
       } finally {
         refreshing = null;
       }
@@ -535,8 +556,10 @@ export const createLiveEngine = (input: {
     const { k, d, r, a } = parsed.data;
     if (a === true) {
       lastAccess = event.sequence;
+      for (const changed of admitting) changed(k);
       cacheVersion++;
       const keys = [k, ...(accessIndex.get(k)?.keys() ?? [])];
+      for (const key of keys) if (index.has(key)) keyVersions.set(key, event.sequence);
       for (const id of cache.keys()) if (keys.some((key) => id.includes(`\u0000${key}\u0000`))) cache.delete(id);
     }
     const data = d === undefined ? undefined : JSON.stringify(d);
@@ -550,7 +573,9 @@ export const createLiveEngine = (input: {
   };
 
   const deliveryDecisions = async (key: string) => {
+    const domain = keyVersions.get(key) ?? 0;
     const candidates = [...(index.get(key) ?? [])];
+    const identities = new Map(candidates.map((sub) => [sub.conn, sub.conn.accessVersion]));
     // Periodic channels retain their delivery-time cache; eventOnly channels use admitted keys.
     const decisions = new Map<string, Map<string, boolean>>();
     await Promise.all(
@@ -567,7 +592,7 @@ export const createLiveEngine = (input: {
         }
       }),
     );
-    return decisions;
+    return { channels: decisions, domain, identities };
   };
 
   const deliver = async (entry: Entry, prepared?: Awaited<ReturnType<typeof deliveryDecisions>>) => {
@@ -578,10 +603,25 @@ export const createLiveEngine = (input: {
       const decisions = prepared ?? (await deliveryDecisions(key));
       await Promise.all(
         candidates.map(async (sub) => {
-          if (!(await accessSettled(sub.conn)) || sub.conn.subs.get(sub.id) !== sub || !sub.keys.has(key) || entry.seq <= sub.from) return;
-          if (channels[sub.channel]?.eventOnly || decisions.get(sub.channel)?.get(sub.conn.viewer.id))
-            send(sub, frame.event(sub.id, entry));
-          else loseKey(sub, key);
+          for (let pass = 0; pass < 2; pass++) {
+            if (!(await accessSettled(sub.conn)) || sub.conn.subs.get(sub.id) !== sub || !sub.keys.has(key) || entry.seq <= sub.from)
+              return;
+            if (channels[sub.channel]?.eventOnly) return send(sub, frame.event(sub.id, entry));
+            const identity = sub.conn.accessVersion;
+            const domain = keyVersions.get(key) ?? 0;
+            let allowed =
+              decisions.domain === domain && decisions.identities.get(sub.conn) === identity
+                ? decisions.channels.get(sub.channel)?.get(sub.conn.viewer.id)
+                : undefined;
+            // A subscription can join while another key/viewer is being prefetched.
+            if (allowed === undefined) allowed = (await decide(sub.channel, key, [sub.conn.viewer])).get(sub.conn.viewer.id);
+            if (identity !== sub.conn.accessVersion || domain !== (keyVersions.get(key) ?? 0)) continue;
+            if (sub.conn.subs.get(sub.id) !== sub || !sub.keys.has(key)) return;
+            if (allowed) send(sub, frame.event(sub.id, entry));
+            else loseKey(sub, key);
+            return;
+          }
+          if (!sub.conn.closed) send(sub, frame.resync(sub.id, entry.cursor));
         }),
       );
     }
@@ -745,7 +785,21 @@ export const createLiveEngine = (input: {
     for (const entry of entries) {
       if (!(await accessSettled(sub.conn))) return;
       if (sub.conn.subs.get(sub.id) !== sub) break;
-      if (!sub.keys.has(entry.key as string)) continue;
+      const key = entry.key as string;
+      if (!sub.keys.has(key)) continue;
+      if (!channels[sub.channel]?.eventOnly) {
+        const identity = sub.conn.accessVersion;
+        const domain = keyVersions.get(key) ?? 0;
+        const allowed = await decide(sub.channel, key, [sub.conn.viewer]);
+        if (identity !== sub.conn.accessVersion || domain !== (keyVersions.get(key) ?? 0)) {
+          send(sub, frame.resync(sub.id, cursorAt(head)));
+          break;
+        }
+        if (allowed.get(sub.conn.viewer.id) !== true) {
+          loseKey(sub, key);
+          continue;
+        }
+      }
       if (!(await writeWaiting(sub.conn, frame.event(sub.id, entry), deadline))) return;
     }
     if (sub.conn.subs.get(sub.id) === sub && !(await writeWaiting(sub.conn, frame.ready(sub.id, sub.from), deadline))) return;
@@ -767,66 +821,82 @@ export const createLiveEngine = (input: {
     if (!scope.success) return violation(conn, "invalid_scope");
     await whenStarted();
     const accessBefore = lastAccess;
-    let keys: readonly string[] | null;
-    let readable: string[];
-    let version: number;
-    do {
-      if (!(await accessSettled(conn))) return;
-      version = conn.accessVersion;
-      const domainVersion = lastAccess;
-      keys = await bounded("keys()", channel.keys(scope.data, conn.viewer));
-      readable = keys === null ? [] : await readableKeys(request.channel, followed(request.channel, keys), conn.viewer);
-      if (domainVersion !== lastAccess) version = -1;
-      if (version !== conn.accessVersion && retries++ >= 1) return close(conn, 1013, "access_changing");
-    } while (version !== conn.accessVersion && !conn.closed);
-    const domainVersion = lastAccess;
-    // Not found and not readable look the same.
-    if (keys === null || (readable.length === 0 && !channel.collection)) return write(conn, frame.revoked(request.id, "not_found"));
-    const after = request.after === undefined ? null : sequenceOf(request.after);
-    // A cursor ahead of the follower is fine unless it is also ahead of the topic, which was then recreated.
-    const recreated = after !== null && after > head && after > input.topic().cursorSequence(await input.topic().head());
-    if (conn.closed) return;
-    // A cursor/head read can overlap an invalidation too. Start admission again.
-    if (version !== conn.accessVersion || domainVersion !== lastAccess) {
-      if (retries >= 1) return close(conn, 1013, "access_changing");
-      return subscribe(conn, request, retries + 1);
-    }
-
-    // Synchronous from here. The position includes an event that is being delivered right now:
-    // the replay covers everything up to it, live delivery everything after it.
-    const position = Math.max(head, ring.at(-1)?.seq ?? 0);
-    const oldest = ring[0]?.seq ?? position + 1;
-    // A collection cannot tell which keys it had at its cursor: any access update it missed may have
-    // added one of its keys now or removed one it had then, and only `resync` drops a removed one.
-    const missedAccess = channel.collection === true && after !== null && lastAccess > after;
-    // An access update read while `keys()` and `authorize` answered may postdate their answers,
-    // which must not release a replay of what followed it.
-    const accessMeanwhile = lastAccess !== accessBefore;
-    const resync = request.after !== undefined && (after === null || after < oldest - 1 || recreated || missedAccess || accessMeanwhile);
-    const sub: Subscription = {
-      id: request.id,
-      conn,
-      channel: request.channel,
-      collection: channel.collection === true,
-      scope: scope.data,
-      keys: new Set(readable),
-      from: after !== null && !resync && after > position ? after : position,
-      backlog: null,
-      backlogBytes: 0,
-      refresh: null,
+    const changedKeys = new Set<string>();
+    let watchedKeys: Set<string> | undefined;
+    let overflow = false;
+    const changed = (key: string) => {
+      if (watchedKeys && !watchedKeys.has(key)) return;
+      if (changedKeys.size >= LIVE_LIMITS.ringEvents) overflow = true;
+      else changedKeys.add(key);
     };
-    conn.subs.set(sub.id, sub);
-    for (const key of sub.keys) indexKey(sub, key);
-    if (resync) return send(sub, frame.resync(sub.id, cursorAt(position)));
-    const replay =
-      after === null || after >= position
-        ? []
-        : ring.filter(
-            (entry) => entry.seq > after && entry.key !== null && sub.keys.has(entry.key) && (entry.data !== undefined || entry.resync),
-          );
-    if (replay.length === 0) return send(sub, frame.ready(sub.id, sub.from));
-    sub.backlog = [];
-    await replayTo(sub, replay);
+    const domainChanged = () => overflow || [...changedKeys].some((key) => watchedKeys?.has(key));
+    admitting.add(changed);
+    try {
+      let keys: readonly string[] | null;
+      let readable: string[];
+      let version: number;
+      do {
+        if (!(await accessSettled(conn))) return;
+        version = conn.accessVersion;
+        watchedKeys = undefined;
+        changedKeys.clear();
+        overflow = false;
+        keys = await bounded("keys()", channel.keys(scope.data, conn.viewer));
+        watchedKeys = new Set((keys ?? []).flatMap((key) => [key, channel.accessKey?.(key) ?? key]));
+        readable = keys === null ? [] : await readableKeys(request.channel, followed(request.channel, keys), conn.viewer);
+        if (domainChanged()) version = -1;
+        if (version !== conn.accessVersion && retries++ >= 1) return close(conn, 1013, "access_changing");
+      } while (version !== conn.accessVersion && !conn.closed);
+      // Not found and not readable look the same.
+      if (keys === null || (readable.length === 0 && !channel.collection)) return write(conn, frame.revoked(request.id, "not_found"));
+      const after = request.after === undefined ? null : sequenceOf(request.after);
+      // A cursor ahead of the follower is fine unless it is also ahead of the topic, which was then recreated.
+      const recreated = after !== null && after > head && after > input.topic().cursorSequence(await input.topic().head());
+      if (conn.closed) return;
+      // A cursor/head read can overlap an invalidation too. Start admission again.
+      if (version !== conn.accessVersion || domainChanged()) {
+        if (retries >= 1) return close(conn, 1013, "access_changing");
+        return subscribe(conn, request, retries + 1);
+      }
+
+      // Synchronous from here. The position includes an event that is being delivered right now:
+      // the replay covers everything up to it, live delivery everything after it.
+      const position = Math.max(head, ring.at(-1)?.seq ?? 0);
+      const oldest = ring[0]?.seq ?? position + 1;
+      // A collection cannot tell which keys it had at its cursor: any access update it missed may have
+      // added one of its keys now or removed one it had then, and only `resync` drops a removed one.
+      const missedAccess = channel.collection === true && after !== null && lastAccess > after;
+      // An access update read while `keys()` and `authorize` answered may postdate their answers,
+      // which must not release a replay of what followed it.
+      const accessMeanwhile = lastAccess !== accessBefore;
+      const resync = request.after !== undefined && (after === null || after < oldest - 1 || recreated || missedAccess || accessMeanwhile);
+      const sub: Subscription = {
+        id: request.id,
+        conn,
+        channel: request.channel,
+        collection: channel.collection === true,
+        scope: scope.data,
+        keys: new Set(readable),
+        from: after !== null && !resync && after > position ? after : position,
+        backlog: null,
+        backlogBytes: 0,
+        refresh: null,
+      };
+      conn.subs.set(sub.id, sub);
+      for (const key of sub.keys) indexKey(sub, key);
+      if (resync) return send(sub, frame.resync(sub.id, cursorAt(position)));
+      const replay =
+        after === null || after >= position
+          ? []
+          : ring.filter(
+              (entry) => entry.seq > after && entry.key !== null && sub.keys.has(entry.key) && (entry.data !== undefined || entry.resync),
+            );
+      if (replay.length === 0) return send(sub, frame.ready(sub.id, sub.from));
+      sub.backlog = [];
+      await replayTo(sub, replay);
+    } finally {
+      admitting.delete(changed);
+    }
   };
 
   const handle = async (conn: Connection, raw: string) => {
@@ -996,6 +1066,7 @@ export const createLiveEngine = (input: {
       stopAccess?.();
       stopAccess = undefined;
       for (const timer of timers) clearInterval(timer);
+      clearTimeout(deferredRefresh);
       for (const conn of [...connections]) close(conn, 1012, "restart");
     },
   };

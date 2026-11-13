@@ -2,11 +2,13 @@ import type { ServerWebSocket } from "bun";
 import { type Context, Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import type { z } from "zod";
+import { callerRequest } from "../capabilities/server-invoke";
 import { userFromActor } from "../server/actor";
 import { credentialExpiresAt, guardAppAccessSocket, watchCredentialExpiry } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { rateLimit } from "../server/middleware/rate-limit";
 import { hasRefusedSessionOrigin } from "../server/middleware/session-origin";
+import { coreOrigin } from "../services/identity/core-origin";
 import * as settings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
 import { subscribeIdentityAccessChanged } from "./app-access";
@@ -65,12 +67,20 @@ const viewerOf = <Env extends AuthContext>(c: Context<Env>): LiveViewer => {
         ? ":app"
         : ""
       : `:scopes=${[...new Set(scopes)].sort().join(",")}`;
+  const caller = { cookie: c.req.header("cookie"), authorization: c.req.header("authorization") };
   return {
     id: `${principal}${credential}`,
     actor: c.get("actor"),
     accessSubject,
     scopes,
-    caller: { cookie: c.req.header("cookie"), authorization: c.req.header("authorization") },
+    capabilityTransport: async (request) => {
+      const url = new URL(request.url);
+      const query = request.method === "POST" && /^\/api\/capabilities\/v1\/queries\/[^/]+\/[^/]+$/.test(url.pathname);
+      const catalog = request.method === "GET" && url.pathname === "/api/capabilities/v1/catalog";
+      if (url.origin !== (await coreOrigin()) || (!query && !catalog)) throw new Error("Live viewers may only query Core capabilities");
+      const authenticated = await callerRequest(caller, `${url.pathname}${url.search}`, undefined, request.signal);
+      return fetch(new Request(request, { headers: authenticated.headers, redirect: "error" }));
+    },
   };
 };
 

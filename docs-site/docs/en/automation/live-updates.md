@@ -202,7 +202,9 @@ const api = new Hono<AuthContext>().route("/live", inventoryLive.routes(inventor
   decides every viewer's `accessSubject` with one query, by the same rules as
   `getEffectivePermission()`. Apply the same role and credential rules as the
   API. `context.identityChanged` is true during an Identity-Access recheck;
-  discard any cached authority from before that change. Pass an array of access IDs or a Bun `SQLQuery` selecting one uuid
+  discard any cached authority from before that change. These recheck results
+  do not populate the delivery cache; periodic channels check the next frame,
+  including replay, against current authority. Pass an array of access IDs or a Bun `SQLQuery` selecting one uuid
   column to keep large grant sets in the database.
 - `collection: true` marks a channel whose key set can change, such as
   "every book I can read". Cloud runs `keys()` again after domain and identity
@@ -222,9 +224,10 @@ decide access usually also publish updates, so the definition must not import
 them.
 
 A viewer carries `id`, `actor` and `accessSubject` as on an API request, and
-the credential's `scopes`. Its optional server-only `caller` invokes the owning
-application through Core when a fresh cross-app resource decision is needed.
-Never include this caller in a live event or browser payload. Use
+the credential's `scopes`. Its optional server-only `capabilityTransport`
+function supports Core capability queries and catalog reads when a fresh
+resource-owner decision is needed. Pass it as the `transport` of a capability
+caller. Keep the viewer on the server. Use
 `accessSubject` for grants and `actor` for roles. `id` starts with `user:<id>` or `service_account:<id>` and adds
 everything of the credential that can change a decision: `:app` for a phone's
 app session, which never holds the `admin` role, and the scopes of an API key
@@ -316,13 +319,19 @@ how long the subscription has been open:
 
 Every mutable input of an event-only decision needs an access event from its
 owner. A time-to-live cache cannot supply that guarantee. Keep a channel
-periodic until that coverage exists. Admission and refresh allow one catch-up
-when their inputs change during a check. Identity events invalidate only
-affected connections; events for other subjects do not restart their checks.
-A collection refresh retries independently for each subscription. If its inputs
-keep changing across both attempts, only its connection closes with `1013`
-(`access_changing`) so the client can reconnect. Domain events can add unknown
-collection keys, so they also invalidate collection reads in progress.
+periodic until that coverage exists. Admission allows one catch-up when an
+Identity-Access event affects the connection or a domain event affects one of
+its returned keys or canonical `accessKey` roots. Unrelated events do not
+restart admission. Repeated changes to those inputs close that connection
+with `1013` (`access_changing`).
+
+Collection discovery retries once per subscription. Domain events can add
+unknown collection keys, so they also invalidate collection reads in progress.
+If a burst outlasts the bounded catch-up, Cloud schedules another collection
+refresh at the ten-second sweep cadence and keeps the connection open.
+Per-key reauthorization still processes the access events before later updates.
+Periodic delivery prefetches decisions with up to eight checks in flight;
+a viewer subscribing during prefetch receives its own decision before delivery.
 
 Updates that were already sent can still arrive after a revocation: what
 waits in the application's send buffer (256 KiB) and in the gateway, which
