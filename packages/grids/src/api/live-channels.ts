@@ -46,16 +46,19 @@ const keysOf = async (resource: PublicResourceType, publicId: string, key: (id: 
 /** `records` follows one table, `metadata` one Base's structure and access, `runs` one workflow's runs. */
 export const gridsLiveChannels = {
   records: {
+    eventOnly: true as const,
     scope: z.object({ table: ShortIdSchema }).strict(),
     keys: ({ table }: { table: string }) => keysOf("table", table, gridsLiveKey.table),
     authorize,
   },
   metadata: {
+    eventOnly: true as const,
     scope: z.object({ base: ShortIdSchema }).strict(),
     keys: ({ base }: { base: string }) => keysOf("base", base, gridsLiveKey.base),
     authorize,
   },
   runs: {
+    eventOnly: true as const,
     scope: z.object({ workflow: ShortIdSchema }).strict(),
     keys: ({ workflow }: { workflow: string }) => keysOf("workflow", workflow, gridsLiveKey.workflow),
     authorize,

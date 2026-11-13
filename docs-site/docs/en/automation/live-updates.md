@@ -5,7 +5,7 @@ section: Automation
 order: 645
 description: Write an application's live updates in the transaction that makes the change and serve them to its open tabs over one socket.
 tags: [live, realtime, outbox, transactions, websocket]
-updated: 2026-11-12
+updated: 2026-11-13
 ---
 
 # Live updates
@@ -96,8 +96,7 @@ warehouse, publish it with `access: true`:
 await inventoryLive.publish(tx, { key: warehouseId, access: true });
 ```
 
-Every replica forgets its cached decisions for the key and checks the key's
-subscribers again before it delivers anything after the update, so a viewer
+Every replica checks the key's subscribers again before it delivers anything after the update, so a viewer
 who lost the key loses it at once. Right after, without holding up delivery,
 it runs `keys()` for its collections; a collection that gained a key loads its
 state again. Access updates that arrive while that runs share one more run.
@@ -197,24 +196,36 @@ const api = new Hono<AuthContext>().route("/live", inventoryLive.routes(inventor
 - `keys(scope, viewer)` returns the keys that the subscription follows, or
   `null` when the resource does not exist or the viewer may not read it. Cloud
   follows the first 1,000 keys and logs a warning about the rest.
-- `authorize(key, viewers)` returns the IDs of the viewers who may read `key`.
+- `authorize(key, viewers, context)` returns the IDs of the viewers who may read `key`.
   Cloud calls it with up to 500 viewers at once, so check them together
   instead of one by one: `getEffectivePermissions()` from `@k2b/cloud/server`
   decides every viewer's `accessSubject` with one query, by the same rules as
   `getEffectivePermission()`. Apply the same role and credential rules as the
-  API. Pass an array of access IDs or a Bun `SQLQuery` selecting one uuid
+  API. `context.identityChanged` is true during an Identity-Access recheck;
+  discard any cached authority from before that change. These recheck results
+  do not populate the delivery cache; periodic channels check the next frame,
+  including replay, against current authority. Pass an array of access IDs or a Bun `SQLQuery` selecting one uuid
   column to keep large grant sets in the database.
-- `collection: true` marks a channel whose key set can change without an
-  update, such as "every book I can read". Cloud runs `keys()` again every
-  minute and after an access update. A collection may start with no keys.
+- `collection: true` marks a channel whose key set can change, such as
+  "every book I can read". Cloud runs `keys()` again after domain and identity
+  access events and, by default, every 60 seconds. Publish `access: true` when a domain change adds or removes
+  keys. A collection may start with no keys.
+- `eventOnly: true` opts this channel out of the delivery cache and periodic
+  checks. Declare it only when every input to `keys()` and `authorize()` has
+  an access event from its owner. Credential and account expiry use local
+  timers. Subscription admission still checks credentials and access.
+- `accessKey(key)` maps a delivery key to its canonical domain access key.
+  For example, Mail maps both `mailbox:principal` and `mailbox:assigned` to
+  `mailbox`. An access update of that root rechecks every mapped delivery key.
+  Without this option, access updates name the delivery key itself.
 
 The channels are passed to `routes()`, not to `defineLive()`: the services that
 decide access usually also publish updates, so the definition must not import
 them.
 
 A viewer carries `id`, `actor` and `accessSubject` as on an API request, and
-the credential's `scopes`. Use `accessSubject` for grants and `actor` for
-roles. `id` starts with `user:<id>` or `service_account:<id>` and adds
+the credential's `scopes`. Keep the viewer on the server. Use
+`accessSubject` for grants and `actor` for roles. `id` starts with `user:<id>` or `service_account:<id>` and adds
 everything of the credential that can change a decision: `:app` for a phone's
 app session, which never holds the `admin` role, and the scopes of an API key
 or OAuth token. Viewers with the same `id` share decisions, so a person's web
@@ -280,16 +291,44 @@ beyond the topic's head receives `resync`.
 `resync` is a normal path: an oversized update, a collection whose keys
 changed, and a cursor outside the window all end there.
 
-### Access at delivery
+### Access changes
 
-| Change | Reaches the tab within |
-| --- | --- |
-| Update published with `access: true` | at once |
-| Access lost, while updates arrive | 2 seconds (the decision cache, counted from the check) |
-| Access lost on a quiet subscription | 10 seconds (a sweep checks every key) |
-| Role or account change, such as a removed administrator | 10 seconds (the sweep loads the viewer again) |
-| Session or token ended | 10 seconds; the socket closes with `1008` |
-| Key gained through a group, without an update | 60 seconds (collections) |
+Cloud checks access when a subscription starts. By default, delivery decisions
+have a two-second cache, credentials and channel access are checked every ten
+seconds, and collection keys refresh every sixty seconds. These bounds remain
+available for channels whose decision inputs do not all publish events.
+
+A channel declaring `eventOnly: true` retains its admitted keys until an access
+event. Its ordinary deliveries and progress frames run no SQL, regardless of
+how long the subscription has been open:
+
+- Domain changes publish `access: true` in the transaction that changes access.
+  Every replica rechecks the affected key and its `accessKey` mappings before
+  delivering later updates.
+- Identity-Access events recheck credentials, viewer roles, and subscriptions
+  of affected connections on every replica. Events without a subject recheck
+  every connection. Group changes, ended sessions, and account changes use
+  Core's existing outbox and NATS follower.
+- Known account and credential expiry times close sockets with local timers.
+  Polling is disabled only for explicitly opted-in channels. The socket's app
+  entry guard opts out only when all its channels do, and resource-derived
+  app entry rules retain periodic checks.
+
+Every mutable input of an event-only decision needs an access event from its
+owner. A time-to-live cache cannot supply that guarantee. Keep a channel
+periodic until that coverage exists. Admission allows one catch-up when an
+Identity-Access event affects the connection or a domain event affects one of
+its returned keys or canonical `accessKey` roots. Unrelated events do not
+restart admission. Repeated changes to those inputs close that connection
+with `1013` (`access_changing`).
+
+Collection discovery retries once per subscription. Domain events can add
+unknown collection keys, so they also invalidate collection reads in progress.
+If a burst outlasts the bounded catch-up, Cloud schedules another collection
+refresh at the ten-second sweep cadence and keeps the connection open.
+Per-key reauthorization still processes the access events before later updates.
+Periodic delivery prefetches decisions with up to eight checks in flight;
+a viewer subscribing during prefetch receives its own decision before delivery.
 
 Updates that were already sent can still arrive after a revocation: what
 waits in the application's send buffer (256 KiB) and in the gateway, which
@@ -305,12 +344,10 @@ A collection that comes back from its cursor receives `resync` when its
 replica has already read an access update published after that cursor, even
 one of a key it does not follow now: Cloud does not know which keys the tab
 had, and only loading the state again removes a key it lost. An access update
-the replica reads only after the tab subscribed, usually one made within the
-second before, shows at the next reload, as does a key gained or lost through
-a group without an update.
+the replica reads after the tab subscribed refreshes its collections. Group
+changes refresh them through the Identity-Access follower.
 
-A replay uses the same access decisions as live delivery, so the table above
-applies to it too. A subscription that comes back from its cursor while its
+A replay uses the same subscription decisions as live delivery. A subscription that comes back from its cursor while its
 replica reads an access update receives `resync` instead of a replay, so an
 answer from before that update releases nothing published after it.
 
@@ -366,8 +403,11 @@ message multiplies with the typing speed and with every reader of the same
 document, so do it in memory and on NATS:
 
 - Check access and load state when the socket opens. After that, react to
-  access-change updates and a bounded refresh. `defineLive()` works this way,
-  with its 2-second decision cache and 10-second sweep.
+  access events and known expiry deadlines. With complete event coverage,
+  declare `eventOnly: true` on the channel to retain subscription decisions
+  until those events and run delivery and progress with no SQL. Pin setup,
+  delivery, progress, and targeted Identity-Access costs with `meterSql()`
+  from `scripts/fixtures/sql-meter.ts` (DATA-13).
 - Fan out over NATS: `defineLive()` for updates,
   [`@k2b/cloud/shared-text`](/en/docs/data/shared-text-documents) for
   collaborative text, and a Sync `ephemeral` registry for presence.
