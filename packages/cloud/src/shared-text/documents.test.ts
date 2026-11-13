@@ -1029,3 +1029,33 @@ test("two documents interleaved after their head yield retain independent admiss
     await a.catch(() => {});
   }
 });
+
+test("cancellation after publication skips the transport applied callback", async () => {
+  const abort = new AbortController();
+  const f = fixture(async () => async () => {
+    abort.abort(new Error("cancelled"));
+  });
+  const source = new Y.Doc();
+  let applied = false;
+  try {
+    source.clientID = 41;
+    source.getText(SHARED_TEXT_NAME).insert(0, "late input");
+    await f.documents.accept("doc", {
+      snapshot: f.stored(),
+      actor: { kind: "user", id: "author" },
+      signal: abort.signal,
+      update: Y.encodeStateAsUpdate(source),
+      baseCursor: null,
+      restoreRevision: "revision",
+      originNodeId: "node",
+      originPeerId: "peer",
+      applied: () => {
+        applied = true;
+      },
+    });
+    expect(f.events).toHaveLength(1);
+    expect(applied).toBe(false);
+  } finally {
+    source.destroy();
+  }
+});

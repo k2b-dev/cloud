@@ -8,12 +8,14 @@ import type { SharedTextStoredState, SharedTextSyncEvent } from "./types";
  * from this cursor or earlier; cursor numbers may contain other tenants' gaps. */
 export class RoomWriterBase {
   readonly doc: Y.Doc;
+  readonly docId: string;
   cursor: string | null;
   readonly restoreRevision: string;
   writers = 0;
   private encoded: SharedTextStoredState | undefined;
 
-  constructor(snapshot: SharedTextStoredState) {
+  constructor(docId: string, snapshot: SharedTextStoredState) {
+    this.docId = docId;
     this.doc = createDoc(snapshot);
     this.cursor = snapshot.cursor;
     this.restoreRevision = snapshot.restoreRevision;
@@ -21,6 +23,7 @@ export class RoomWriterBase {
   }
 
   apply(docId: string, event: { cursor: string; data: SharedTextSyncEvent }): void {
+    if (docId !== this.docId) return;
     if (this.cursor && compareStreamCursor(event.cursor, this.cursor) <= 0) return;
     if (event.data.restoreRevision !== undefined && event.data.restoreRevision !== this.restoreRevision) return;
     applySharedTextEvent(this.doc, event, docId, this.restoreRevision);
@@ -28,8 +31,8 @@ export class RoomWriterBase {
     this.encoded = undefined;
   }
 
-  merge(snapshot: SharedTextStoredState): void {
-    if (snapshot.restoreRevision !== this.restoreRevision) return;
+  merge(docId: string, snapshot: SharedTextStoredState): void {
+    if (docId !== this.docId || snapshot.restoreRevision !== this.restoreRevision) return;
     if (this.cursor && (!snapshot.cursor || compareStreamCursor(snapshot.cursor, this.cursor) <= 0)) return;
     if (snapshot.state) Y.applyUpdate(this.doc, snapshot.state);
     this.cursor = snapshot.cursor;
@@ -38,11 +41,11 @@ export class RoomWriterBase {
 
   /** A current base needs only the accepted delta; missed remote input requires
    * the fully replayed admission result before its cursor may advance. */
-  commit(snapshot: SharedTextStoredState, previousCursor: string | null, update: Uint8Array): void {
-    if (snapshot.restoreRevision !== this.restoreRevision) return;
+  commit(docId: string, snapshot: SharedTextStoredState, previousCursor: string | null, update: Uint8Array): void {
+    if (docId !== this.docId || snapshot.restoreRevision !== this.restoreRevision) return;
     if (this.cursor && (!snapshot.cursor || compareStreamCursor(snapshot.cursor, this.cursor) <= 0)) return;
     if (previousCursor && (!this.cursor || compareStreamCursor(this.cursor, previousCursor) < 0)) {
-      this.merge(snapshot);
+      this.merge(docId, snapshot);
       return;
     }
     Y.applyUpdate(this.doc, update);

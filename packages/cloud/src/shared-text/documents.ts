@@ -487,7 +487,7 @@ export const bindDocuments = <Saved, Context>(
             restoreRevision: stored.restoreRevision,
           };
           acceptedBase = { docId, snapshot };
-          options.applied?.(snapshot, target);
+          if (!signal.aborted) options.applied?.(snapshot, target);
           return { status: "accepted", cursor: published.cursor };
         } catch (error) {
           if (error instanceof ConflictError) {
