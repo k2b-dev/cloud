@@ -510,7 +510,7 @@ export function createSharedTextRoom<
               // snapshot. Never skip missing input or loop on an uncovered base.
               await flush();
               if (!active()) return;
-              state(ctx).base?.merge(snapshot);
+              state(ctx).base?.merge(docId, snapshot);
               state(ctx).snapshotCursor = snapshot.cursor;
               send(ctx, WS_TYPE.syncPush, {
                 docId: publicDocId,
@@ -664,9 +664,9 @@ export function createSharedTextRoom<
     if (ctx.canWrite) {
       const key = baseKey(dbDocId, snapshot.restoreRevision);
       let base = bases.get(key);
-      if (base) base.merge(snapshot);
+      if (base) base.merge(dbDocId, snapshot);
       else {
-        base = new RoomWriterBase(snapshot);
+        base = new RoomWriterBase(dbDocId, snapshot);
         bases.set(key, base);
       }
       base.writers++;
@@ -743,21 +743,25 @@ export function createSharedTextRoom<
     const update = fromBase64(payload.payload);
     // Decode alone cannot validate the target of a delayed edit. Admission and
     // its CAS happen before the echo that acknowledges the person's bytes.
+    const { streamAbort, base } = session;
     const publication = documents.accept(docId, {
-      snapshot: () => state(ctx).base?.snapshot() ?? null,
+      snapshot: () => base?.snapshot() ?? null,
       update,
       baseCursor: payload.baseCursor ?? null,
       restoreRevision: payload.restoreRevision,
       originNodeId: NODE_ID,
       originPeerId: ctx.peerId,
       actor: adapter.actor(ctx.user!),
-      signal: state(ctx).streamAbort?.signal,
+      signal: streamAbort?.signal,
       maxLength: config.maxLength,
       validateState: config.validateState ? (state) => config.validateState!(state, ctx) : undefined,
-      observedHead: state(ctx).head,
+      observedHead: session.head,
       applied: (snapshot, previousCursor) => {
+        // A publication may outlive admission and this connection's document.
+        // Its result belongs only to the exact stream and base that submitted it.
+        if (streamAbort?.signal.aborted || session.streamAbort !== streamAbort || session.base !== base || ctx.docId !== docId) return;
         state(ctx).confirmedCursor = maxStreamCursor(state(ctx).confirmedCursor, snapshot.cursor);
-        state(ctx).base?.commit(snapshot, previousCursor, update);
+        base?.commit(docId, snapshot, previousCursor, update);
         const head = state(ctx).head;
         if (snapshot.cursor && (!head || compareStreamCursor(snapshot.cursor, head.cursor) > 0))
           state(ctx).head = {

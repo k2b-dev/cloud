@@ -1,4 +1,4 @@
-import { expect, setSystemTime } from "bun:test";
+import { expect, setSystemTime, spyOn } from "bun:test";
 import { ConflictError, createSync, type Lock, type MutexConfig, type Sync, type TopicConfig } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import * as encoding from "lib0/encoding";
@@ -18,6 +18,7 @@ import {
   toBase64,
 } from "./index";
 import type { SharedTextRoomMessages, SharedTextRoomSnapshot } from "./room";
+import { RoomWriterBase } from "./room-base";
 import { createRoomLifecycle } from "./room-lifecycle";
 
 const NOW = new Date("2026-11-12T12:00:00Z");
@@ -745,3 +746,219 @@ for (const abandoned of [false, true])
     },
     30_000,
   );
+
+testFor("database", "nats").each([
+  ["a publish finishing after admission timeout confirms its unchanged room owner", false],
+  ["a publish finishing after admission timeout cannot replace another document's base with the same generation", true],
+] as const)(
+  "%s",
+  async (_name, switchDocument) => {
+    setSystemTime(NOW);
+    const connection = await connectTestNats();
+    const namespace = testSyncNamespace("text-late-publish-owner");
+    const sync = createSync({ connection, namespace, application: "test", defaults: { replicas: 1 } });
+    const publishing = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<void>();
+    const deadline = Promise.withResolvers<void>();
+    let operationA: Promise<unknown> | undefined;
+    let stalled = false;
+    const measured: Sync = {
+      ...sync,
+      mutex(config) {
+        const mutex = sync.mutex(config);
+        return {
+          ...mutex,
+          async withLock(input, run) {
+            const operation = mutex.withLock(input, run);
+            if (!config.id.endsWith(":admission") || input.resource !== "A") return operation;
+            // Keep the unchanged owner on the real mutex. The switch case
+            // models an abandoned waiting caller while its lock/publication continues.
+            operationA = operation;
+            const signal = input.signal!;
+            const abandoned = Promise.withResolvers<never>();
+            const abort = () => {
+              deadline.resolve();
+              if (switchDocument) abandoned.reject(signal.reason);
+            };
+            signal.addEventListener("abort", abort, { once: true });
+            void operation.finally(() => finished.resolve()).catch(() => {});
+            try {
+              return switchDocument ? await Promise.race([operation, abandoned.promise]) : await operation;
+            } finally {
+              signal.removeEventListener("abort", abort);
+            }
+          },
+        };
+      },
+      topic<T>(config: TopicConfig) {
+        const topic = sync.topic<T>(config);
+        return {
+          ...topic,
+          async publish(input: Parameters<typeof topic.publish>[0]) {
+            if (
+              !stalled &&
+              input.tenantId === "A" &&
+              input.data &&
+              typeof input.data === "object" &&
+              "kind" in input.data &&
+              input.data.kind === "sync"
+            ) {
+              stalled = true;
+              publishing.resolve();
+              await resume.promise;
+            }
+            return topic.publish(input);
+          },
+        };
+      },
+    };
+    bindProcessSync(measured, connection);
+    const log = sharedText.define({
+      id: "text",
+      lifecycle: { maxBytes: 65536 },
+      whenFull: "reject",
+      retention: { maxBytes: 1_048_576 },
+      maxPayloadBytes: 8192,
+    });
+    const empty: SharedTextRoomSnapshot = {
+      state: new Uint8Array([0, 0]),
+      text: "",
+      cursor: log.topic().cursorAt(0),
+      restoreRevision: "0",
+    };
+    const room = createSharedTextRoom({
+      logger: quiet,
+      log,
+      snapshots: { queue: async () => {}, flushNow: async () => empty },
+      awarenessTopic: () => sync.topic({ id: "awareness", retention: { maxAgeMs: 60_000, maxBytes: 65536 }, dedupeWindowMs: 60_000 }),
+      protocol: {
+        wsType: {
+          replayRequest: "replay",
+          replayReady: "ready",
+          syncPublish: "edit",
+          syncPush: "push",
+          awarenessPublish: "cursor",
+          awarenessPush: "awareness",
+          error: "error",
+        },
+        documentId: z.string(),
+        maxSyncPayloadLength: 8192,
+        streamCursorPattern: /^s6t\./,
+        decode: (x) => x,
+        encode: (type, payload) => ({ type, payload }),
+      },
+      adapter: {
+        authenticate: async () => ({ id: "user" }),
+        authorize: async (docId) => ({ ok: true, resolvedDocId: docId, canWrite: true }),
+        load: async () => empty,
+        actor: (user) => ({ kind: "user", id: user.id }),
+        awarenessUser: (user) => ({ userId: user.id, name: "User", color: "#fff" }),
+        revalidate: async () => ({ ok: true, canWrite: true }),
+        recover: async () => {
+          throw new Error("Unexpected gap");
+        },
+      },
+    });
+    let ready = Promise.withResolvers<void>();
+    let pushed = Promise.withResolvers<void>();
+    const trackedDoc = switchDocument ? "B" : "A";
+    const packets: Array<{ type: string; payload?: { code?: string; docId?: string } }> = [];
+    const ctx = createSharedTextRoomContext<{ id: string }, SharedTextRoomMessages>(
+      {
+        send(raw) {
+          const packet = JSON.parse(raw);
+          packets.push(packet);
+          if (packet.type === "ready") ready.resolve();
+          if (packet.type === "push" && packet.payload?.docId === trackedDoc) pushed.resolve();
+        },
+        close() {},
+      },
+      "credential",
+      messages,
+    );
+    const peer = room.connect(ctx);
+    let writerBase: RoomWriterBase | undefined;
+    const commits = spyOn(RoomWriterBase.prototype, "commit");
+    const snapshot = RoomWriterBase.prototype.snapshot;
+    const snapshots = spyOn(RoomWriterBase.prototype, "snapshot").mockImplementation(function (this: RoomWriterBase) {
+      if (ctx.docId === trackedDoc) writerBase = this;
+      return snapshot.call(this);
+    });
+    const a = new Y.Doc(),
+      b = new Y.Doc();
+    a.clientID = 41;
+    b.clientID = 42;
+    const meter = await meterSql();
+    let pending: Promise<unknown> | undefined;
+    const edit = (docId: string, source: Y.Doc, text: string, baseCursor: string | null) => {
+      const vector = Y.encodeStateVector(source);
+      source.getText(SHARED_TEXT_NAME).insert(source.getText(SHARED_TEXT_NAME).length, text);
+      return room.handle(ctx, {
+        type: "edit",
+        payload: { docId, restoreRevision: "0", baseCursor, payload: toBase64(Y.encodeStateAsUpdate(source, vector)) },
+      });
+    };
+    try {
+      await room.handle(ctx, { type: "replay", payload: { docId: "A", restoreRevision: "0" } });
+      await ready.promise;
+      pending = edit("A", a, "late A", empty.cursor);
+      await publishing.promise;
+      await deadline.promise; // The real five-second deadline aborts admission while publication remains in flight.
+      if (!switchDocument) {
+        expect(writerBase).toBeDefined();
+        pushed = Promise.withResolvers<void>();
+        resume.resolve();
+        await pending;
+        await finished.promise;
+        // The admission deadline ended, but the original caller and room are
+        // still active: the durable receipt must advance its base and echo.
+        expect(commits).toHaveBeenCalledTimes(1);
+        expect(writerBase!.snapshot().text).toBe("late A");
+        expect(writerBase!.snapshot().cursor).toBe(await log.topic().latestCursor({ tenantId: "A" }));
+        await pushed.promise;
+        expect(packets.filter((packet) => packet.type === "push" && packet.payload?.docId === "A")).toHaveLength(2);
+        return;
+      }
+      await pending;
+      expect(packets.some((packet) => packet.payload?.code === "BUSY")).toBe(true);
+      ready = Promise.withResolvers<void>();
+      await room.handle(ctx, { type: "replay", payload: { docId: "B", restoreRevision: "0" } });
+      await ready.promise;
+      pushed = Promise.withResolvers<void>();
+      expect(await meter.during(() => edit("B", b, "B", empty.cursor))).toHaveLength(0);
+      await pushed.promise;
+      expect(writerBase).toBeDefined();
+      const before = writerBase!.snapshot();
+      expect(before.text).toBe("B");
+      resume.resolve();
+      await finished.promise;
+      expect(await log.topic().latestCursor({ tenantId: "A" })).not.toBeNull();
+      expect(writerBase!.snapshot()).toEqual(before);
+      // B can continue using its own cursor and state after the late A receipt.
+      pushed = Promise.withResolvers<void>();
+      expect(await meter.during(() => edit("B", b, " continues", before.cursor))).toHaveLength(0);
+      await pushed.promise;
+      expect(writerBase!.snapshot().text).toBe("B continues");
+    } finally {
+      resume.resolve();
+      await pending?.catch(() => {});
+      await operationA?.catch(() => {});
+      snapshots.mockRestore();
+      commits.mockRestore();
+      await peer.close();
+      await room.drain();
+      a.destroy();
+      b.destroy();
+      await meter.close();
+      unbindProcessSync();
+      await sync.drain();
+      const manager = await jetstreamManager(connection);
+      for await (const stream of manager.streams.list())
+        if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);
+      await connection.drain();
+      setSystemTime();
+    }
+  },
+  30_000,
+);
