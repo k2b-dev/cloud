@@ -17,6 +17,7 @@ import type { MailRequestContext } from "./auth";
 import { readDraftDocument } from "./draft-documents";
 import { acquireDraftLease, heartbeatDraftLease } from "./draft-leases";
 import { finishReplyDraftRetirements } from "./draft-retirement";
+import { loadDraftSourceQuote } from "./draft-source-quote";
 import { uploadDraftAttachmentStream } from "./draft-uploads";
 import * as drafts from "./drafts";
 import { createMailbox } from "./mailboxes";
@@ -786,6 +787,127 @@ suite("one reply draft per conversation", () => {
     await sql`UPDATE mail.drafts SET state = 'draft' WHERE id = ${loser!.id}::uuid`;
     expect(await migrate()).toEqual({ deletedDrafts: 1, affectedConversations: 1, completed: true });
   });
+  for (const pendingState of ["scheduled", "undo_window"]) {
+    test(`F6 keeps a draft-state ${pendingState} submission before a newer human duplicate`, async () => {
+      const committed = await create();
+      const sendId = await submission(committed.id, pendingState);
+      await beginLegacyMigration();
+      const newer = await legacySuggestion(committed);
+      await sql`UPDATE mail.drafts SET author_kind = 'user', author_id = ${userId}::uuid WHERE id = ${newer.id}::uuid`;
+      const before = await sql`SELECT * FROM mail.outbox_submissions WHERE id = ${sendId}::uuid`;
+      expect(await migrate()).toEqual({ deletedDrafts: 1, affectedConversations: 1, completed: true });
+      expect((await sql`SELECT state FROM mail.drafts WHERE id = ${committed.id}::uuid`)[0]?.state).toBe("draft");
+      expect((await sql`SELECT state FROM mail.drafts WHERE id = ${newer.id}::uuid`)[0]?.state).toBe("discarded");
+      expect(await sql`SELECT * FROM mail.outbox_submissions WHERE id = ${sendId}::uuid`).toEqual(before);
+    });
+    test(`F6 refuses two draft-state ${pendingState} submissions before its downgrade fence`, async () => {
+      const first = await create();
+      await beginLegacyMigration();
+      const second = await legacySuggestion(first);
+      await submission(first.id, pendingState);
+      await submission(second.id, pendingState);
+      const before = await sql`SELECT id, state, body_markdown FROM mail.drafts
+        WHERE conversation_id = ${first.conversationId}::uuid ORDER BY id`;
+      await expect(migrate()).rejects.toThrow("2 committed sends. Let them send or cancel them with the previous Mail image");
+      expect(await sql`SELECT version FROM mail.schema_migrations WHERE version = 4`).toHaveLength(0);
+      // Frozen 0.74 compatibility allowlist, verified against its assertSupportedSchema implementation.
+      const history = await sql<{ version: number; name: string }[]>`SELECT version, name FROM mail.schema_migrations ORDER BY version`;
+      expect(history).toEqual([
+        { version: 1, name: "baseline" },
+        { version: 2, name: "principal_assignees" },
+        { version: 3, name: "suggestions_per_author" },
+      ]);
+      expect(
+        await sql`SELECT id, state, body_markdown FROM mail.drafts
+        WHERE conversation_id = ${first.conversationId}::uuid ORDER BY id`,
+      ).toEqual(before);
+      await sql`UPDATE mail.outbox_submissions SET state = 'cancelled' WHERE draft_id = ${second.id}::uuid`;
+      expect(await migrate()).toMatchObject({ deletedDrafts: 1, completed: true });
+    });
+  }
+  for (const unsafeState of ["sending", "unknown", "needs_attention"]) {
+    test(`F6 still refuses a draft-state ${unsafeState} delivery before its marker`, async () => {
+      const draft = await create();
+      await beginLegacyMigration();
+      await legacySuggestion(draft);
+      const sendId = await submission(draft.id, unsafeState);
+      await expect(migrate()).rejects.toThrow("reconcile in-flight or uncertain deliveries");
+      expect(await sql`SELECT version FROM mail.schema_migrations WHERE version = 4`).toHaveLength(0);
+      expect(await sql`SELECT id FROM mail.drafts WHERE conversation_id = ${draft.conversationId}::uuid AND state = 'draft'`).toHaveLength(
+        2,
+      );
+      await sql`UPDATE mail.outbox_submissions SET state = 'reconciled_unsent' WHERE id = ${sendId}::uuid`;
+      await migrate();
+    });
+  }
+  test("F6 validates legacy nonnegative counts before its marker", async () => {
+    const draft = await create();
+    await beginLegacyMigration();
+    await sql`ALTER TABLE mail.drafts DROP CONSTRAINT drafts_consolidated_count_check`.simple();
+    await sql`UPDATE mail.drafts SET consolidated_count = -1 WHERE id = ${draft.id}::uuid`;
+    await expect(migrate()).rejects.toThrow("drafts_consolidated_count_check");
+    expect(await sql`SELECT version FROM mail.schema_migrations WHERE version = 4`).toHaveLength(0);
+    await sql`ALTER TABLE mail.drafts DROP CONSTRAINT drafts_consolidated_count_check`.simple();
+    await sql`UPDATE mail.drafts SET consolidated_count = 0 WHERE id = ${draft.id}::uuid`;
+    await migrate();
+  });
+  for (const counter of ["consolidated_count", "revision", "doc_generation"] as const) {
+    test(`F6 refuses ${counter} overflow before its marker`, async () => {
+      const draft = await create();
+      await beginLegacyMigration();
+      await legacySuggestion(draft);
+      await sql`UPDATE mail.drafts SET ${sql(counter)} = ${counter === "consolidated_count" ? "2147483647" : "9223372036854775807"}
+        WHERE id = ${draft.id}::uuid`;
+      await expect(migrate()).rejects.toThrow("consolidation counters exceed their storage range");
+      expect(await sql`SELECT version FROM mail.schema_migrations WHERE version = 4`).toHaveLength(0);
+      await sql`UPDATE mail.drafts SET ${sql(counter)} = ${counter === "consolidated_count" ? 0 : 1} WHERE id = ${draft.id}::uuid`;
+      await migrate();
+    });
+  }
+  for (const broken of ["content", "quote"]) {
+    test(`F6 retires a loser with broken ${broken} without rendering or parsing it`, async () => {
+      const draft = await create();
+      await beginLegacyMigration();
+      const loser = await legacySuggestion(draft);
+      if (broken === "content") {
+        // A legacy JSON array can satisfy the database constraint but fail provider-content validation.
+        await sql`UPDATE mail.drafts SET to_addresses = '[{"address":"invalid"}]' WHERE id = ${loser.id}::uuid`;
+      } else {
+        await sql`UPDATE mail.message_contents SET plain_text = repeat('x', 2097153) WHERE id = ${draft.sourceMessageId}::uuid`;
+        await sql`UPDATE mail.drafts SET quote_source = true WHERE id = ${loser.id}::uuid`;
+        const quote = await loadDraftSourceQuote({
+          db: sql,
+          mailboxId,
+          sourceMessageId: draft.sourceMessageId,
+          access: { scope: "mailbox", permission: "read" },
+          quoteSource: { locale: "en", timeZone: "UTC" },
+        });
+        expect(quote.ok).toBeFalse();
+      }
+      const [snapshot] = await sql<{ id: string }[]>`INSERT INTO mail.draft_provider_snapshots
+        (mailbox_id, draft_id, cloud_revision, direction, state, stable_message_id, content_fingerprint, content_snapshot, completed_at)
+        VALUES (${mailboxId}::uuid, ${loser.id}::uuid, 1, 'export', 'active', ${crypto.randomUUID()},
+          ${"c".repeat(64)}, '{"body":"Legacy remote content"}', ${at}) RETURNING id`;
+      expect(await migrate()).toMatchObject({ deletedDrafts: 1, completed: true });
+      expect((await sql`SELECT state, body_markdown, to_addresses FROM mail.drafts WHERE id = ${loser.id}::uuid`)[0]).toEqual({
+        state: "discarded",
+        body_markdown: "",
+        to_addresses: [],
+      });
+      expect(unwrap(await drafts.getDraft(owner, mailboxId, draft.id))).toMatchObject({
+        state: "draft",
+        body: "My text",
+        consolidatedCount: 1,
+      });
+      expect(
+        (await sql`SELECT state, content_snapshot, completed_at FROM mail.draft_provider_snapshots WHERE id = ${snapshot!.id}::uuid`)[0],
+      ).toEqual({
+        state: "retiring",
+        content_snapshot: {},
+        completed_at: null,
+      });
+    });
+  }
   test("F6 keeps a scheduled send ahead of a newer suggestion and preserves terminal history", async () => {
     for (const pendingState of ["scheduled", "undo_window"]) {
       const committed = await create();
@@ -999,6 +1121,58 @@ suite("one reply draft per conversation", () => {
       SELECT 'B1' || lpad(n::text, 4, '0'), ${mailboxId}::uuid, ${source.conversationId}::uuid,
         ${source.sourceMessageId}::uuid, 'forward', ${identityId}::uuid, 'workflow', ${crypto.randomUUID()}::uuid, 'workflow', ${crypto.randomUUID()}::uuid, 'user',
         'Old automated copy', '2026-10-01' FROM generate_series(1, 103) n`;
+    // Emulate a database lock failure only after the first 100-deletion transaction commits.
+    await sql`CREATE FUNCTION mail.test_f6_lock_timeout() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.metadata->>'reason' = 'reply_draft_consolidation' AND
+          (SELECT count(*) FROM mail.drafts WHERE conversation_id = NEW.conversation_id AND state = 'discarded') > 100 THEN
+          RAISE EXCEPTION 'simulated F6 lock timeout' USING ERRCODE = '55P03';
+        END IF;
+        RETURN NEW;
+      END $$`.simple();
+    await sql`CREATE TRIGGER test_f6_lock_timeout BEFORE INSERT ON mail.activity_events
+      FOR EACH ROW EXECUTE FUNCTION mail.test_f6_lock_timeout()`.simple();
+    try {
+      await expect(migrate()).rejects.toThrow("simulated F6 lock timeout");
+      expect((await sql`SELECT details FROM mail.schema_migrations WHERE version = 4`)[0]?.details).toEqual({
+        deletedDrafts: 100,
+        affectedConversations: 1,
+        completed: false,
+      });
+      expect(
+        await sql`SELECT id FROM mail.drafts WHERE conversation_id = ${source.conversationId}::uuid AND state = 'discarded'`,
+      ).toHaveLength(100);
+      expect(
+        await sql`SELECT id FROM mail.activity_events WHERE conversation_id = ${source.conversationId}::uuid AND action = 'draft.discarded'`,
+      ).toHaveLength(100);
+    } finally {
+      await sql`DROP TRIGGER test_f6_lock_timeout ON mail.activity_events`.simple();
+      await sql`DROP FUNCTION mail.test_f6_lock_timeout()`.simple();
+    }
+    // Also interrupt finish after all erasures and the unique index have committed.
+    await sql`CREATE FUNCTION mail.test_f6_finish_timeout() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.version = 4 AND (NEW.details->>'completed')::boolean THEN
+          RAISE EXCEPTION 'simulated F6 finish timeout' USING ERRCODE = '55P03';
+        END IF;
+        RETURN NEW;
+      END $$`.simple();
+    await sql`CREATE TRIGGER test_f6_finish_timeout BEFORE UPDATE ON mail.schema_migrations
+      FOR EACH ROW EXECUTE FUNCTION mail.test_f6_finish_timeout()`.simple();
+    try {
+      await expect(migrate()).rejects.toThrow("simulated F6 finish timeout");
+      expect((await sql`SELECT details FROM mail.schema_migrations WHERE version = 4`)[0]?.details).toEqual({
+        deletedDrafts: 104,
+        affectedConversations: 1,
+        completed: false,
+      });
+      expect(
+        (await sql`SELECT indisvalid FROM pg_index WHERE indexrelid = 'mail.drafts_one_open_reply_idx'::regclass`)[0]?.indisvalid,
+      ).toBeTrue();
+    } finally {
+      await sql`DROP TRIGGER test_f6_finish_timeout ON mail.schema_migrations`.simple();
+      await sql`DROP FUNCTION mail.test_f6_finish_timeout()`.simple();
+    }
     const result = await migrate();
     expect(result).toEqual({ deletedDrafts: 104, affectedConversations: 1, completed: true });
     const kept = unwrap(await drafts.getDraft(owner, mailboxId, older.id));
