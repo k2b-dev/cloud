@@ -930,7 +930,9 @@ length/validation budget and the retained log and awareness topic budgets.
 Backpressure closes with 1013; gaps and cursor mismatches request resync and
 close with 1012. Transient stream/storage failures also use 1012, internal
 errors use 1011, and access failures use 1008. Error codes remain stable;
-applications supply localized messages. Dirty documents queue a snapshot every
+applications supply localized messages, including `busy` for admission
+contention and `tooManyMessages` for the pending-message limit.
+Dirty documents queue a snapshot every
 8 seconds and on leave/shutdown, using the existing ordered snapshot pipeline.
 A failed final enqueue makes drain retry instead of discarding accepted work.
 Stream shutdown, base release and context reset still run if enqueueing or an
@@ -1029,7 +1031,10 @@ must forward it. After BUSY the server rejects already queued deltas
 immediately, without acquiring admission again. A marked retry can acquire
 admission; missing causal dependencies remain BUSY, while incompatible
 revision or structural history still requires recovery. An accepted retry
-clears the gate. Ordinary publication packets are unchanged.
+clears the gate. Ordinary publication packets are unchanged. During a rolling
+deploy, older browser providers do not recognize BUSY: after a CAS conflict
+they retain their edits until `SYNC_TIMEOUT` (about 30 seconds), then reconnect
+and resend without losing input.
 A stalled or expired owner still has to pass expected-head CAS. Ordinary
 server edits retry at most three CAS conflicts, with 25/50 ms backoff,
 reusing the prepared update identities. Freeze releases admission after its

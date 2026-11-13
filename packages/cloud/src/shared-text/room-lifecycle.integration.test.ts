@@ -39,6 +39,7 @@ const messages: SharedTextRoomMessages = {
   jsonTextOnly: "text",
   messageTooLarge: "large",
   tooManyMessages: "many",
+  busy: "Document is busy; retrying",
   handlingFailed: "handling",
   messageNotAllowed: () => "phase",
 };

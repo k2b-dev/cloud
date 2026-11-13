@@ -43,6 +43,7 @@ export type SharedTextRoomMessages = {
   jsonTextOnly: string;
   messageTooLarge: string;
   tooManyMessages: string;
+  busy: string;
   handlingFailed: string;
   messageNotAllowed(input: { type: string; phase: string }): string;
 };
@@ -655,7 +656,7 @@ export function createSharedTextRoom<
 
     const session = state(ctx);
     if (session.busy && !payload.retry) {
-      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, payload.docId);
+      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.busy, payload.docId);
       return;
     }
     const update = fromBase64(payload.payload);
@@ -694,7 +695,7 @@ export function createSharedTextRoom<
     } catch (error) {
       if (!(error instanceof ConflictError)) throw error;
       session.busy = true;
-      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, payload.docId);
+      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.busy, payload.docId);
       return;
     } finally {
       state(ctx).acceptTask = null;
@@ -709,7 +710,7 @@ export function createSharedTextRoom<
       return;
     }
     if (published.status === "recoveryRequired" && published.reason === "dependencies" && session.busy) {
-      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, payload.docId);
+      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.busy, payload.docId);
       return;
     }
     if (published.status !== "accepted") {
@@ -775,41 +776,44 @@ export function createSharedTextRoom<
       await session.acceptTask?.catch(() => undefined);
       try {
         await queueSnapshotIfNeeded(ctx, "unload");
-        const removal = session.trustedAwareness?.remove();
-        session.trustedAwareness = null;
-        session.awarenessUserId = null;
-        if (removal && ctx.docId) {
-          try {
-            await createYjsAwarenessTopic().publish({
-              tenantId: ctx.docId,
-              data: { kind: "awareness", payload: toBase64(removal), originNodeId: NODE_ID, originPeerId: ctx.peerId },
-            });
-          } catch (error) {
-            log.warn("Failed to leave cursor presence", { docId: ctx.docId, error: String(error) });
-          }
-        }
       } finally {
         try {
-          await adapter.leave?.(ctx);
-        } finally {
-          stopAccessWatch(ctx);
-          stopSnapshotScheduler(ctx);
-          stopLiveStream(ctx);
+          const removal = session.trustedAwareness?.remove();
           session.trustedAwareness = null;
           session.awarenessUserId = null;
-          releaseBase(ctx);
-          Object.assign(ctx, { docId: null });
-          ctx.publicDocId = null;
-          ctx.restoreRevision = null;
-          ctx.accessScope = null;
-          ctx.invalidationCursor = undefined;
-          ctx.canWrite = false;
-          // Keep the captured enqueue request so close/drain can retry after reset.
-          session.dirty = session.pendingSnapshot !== null;
-          session.lastPublishedCursor = null;
-          session.snapshotCursor = null;
-          session.head = undefined;
-          session.busy = false;
+          if (removal && ctx.docId) {
+            try {
+              await createYjsAwarenessTopic().publish({
+                tenantId: ctx.docId,
+                data: { kind: "awareness", payload: toBase64(removal), originNodeId: NODE_ID, originPeerId: ctx.peerId },
+              });
+            } catch (error) {
+              log.warn("Failed to leave cursor presence", { docId: ctx.docId, error: String(error) });
+            }
+          }
+        } finally {
+          try {
+            await adapter.leave?.(ctx);
+          } finally {
+            stopAccessWatch(ctx);
+            stopSnapshotScheduler(ctx);
+            stopLiveStream(ctx);
+            session.trustedAwareness = null;
+            session.awarenessUserId = null;
+            releaseBase(ctx);
+            Object.assign(ctx, { docId: null });
+            ctx.publicDocId = null;
+            ctx.restoreRevision = null;
+            ctx.accessScope = null;
+            ctx.invalidationCursor = undefined;
+            ctx.canWrite = false;
+            // Keep the captured enqueue request so close/drain can retry after reset.
+            session.dirty = session.pendingSnapshot !== null;
+            session.lastPublishedCursor = null;
+            session.snapshotCursor = null;
+            session.head = undefined;
+            session.busy = false;
+          }
         }
       }
     })().finally(() => {
@@ -972,8 +976,7 @@ export function createSharedTextRoom<
       log.error("Websocket message handling failed", { docId: ctx.docId, error: String(error) });
       if (isStorageExhausted(error))
         await fatal(ctx, ERROR_CODE.storageExhausted, ctx.messages.liveSyncStorageExhausted, ctx.publicDocId ?? undefined);
-      else if (error instanceof ConflictError)
-        warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, ctx.publicDocId ?? undefined);
+      else if (error instanceof ConflictError) warn(ctx.socket, ERROR_CODE.busy, ctx.messages.busy, ctx.publicDocId ?? undefined);
       else await fatal(ctx, ERROR_CODE.internalError, ctx.messages.handlingFailed, ctx.publicDocId ?? undefined);
     };
     const dispatch = async (packet: unknown) => {
