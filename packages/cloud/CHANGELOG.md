@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.70.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.69.0...npm-cloud-v0.70.0) (2026-11-13)
+
+
+### Features
+
+* **cloud:** opt AI conversation streams into event-driven access checks ([#3280](https://github.com/k2b-dev/cloud/issues/3280)) ([77235a8](https://github.com/k2b-dev/cloud/commit/77235a8f14db8bd70c7e9d909daa40574e05abd2))
+* **cloud:** opt covered live channels into event-driven access checks ([#3279](https://github.com/k2b-dev/cloud/issues/3279)) ([4d52065](https://github.com/k2b-dev/cloud/commit/4d52065eb81151fe27127fd5963edc951c608f1f))
+
+
+### Bug Fixes
+
+* **cloud:** locked accounts no longer receive notifications or queued mail and no longer count as readers ([4d52065](https://github.com/k2b-dev/cloud/commit/4d52065eb81151fe27127fd5963edc951c608f1f))
+* **cloud:** the FreeIPA sync matches accounts by their directory identity instead of their e-mail address ([4d52065](https://github.com/k2b-dev/cloud/commit/4d52065eb81151fe27127fd5963edc951c608f1f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.57.0 to 0.57.1
+    * @k2b/editor bumped from 0.11.3 to 0.11.4
+
 ## [0.69.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.68.0...npm-cloud-v0.69.0) (2026-11-13)
 
 

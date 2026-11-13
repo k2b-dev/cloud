@@ -3,6 +3,24 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.77.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.76.0...cloud-v0.77.0) (2026-11-13)
+
+
+### Features
+
+* **cloud:** opt AI conversation streams into event-driven access checks ([#3280](https://github.com/k2b-dev/cloud/issues/3280)) ([77235a8](https://github.com/k2b-dev/cloud/commit/77235a8f14db8bd70c7e9d909daa40574e05abd2))
+* **cloud:** opt covered live channels into event-driven access checks ([#3279](https://github.com/k2b-dev/cloud/issues/3279)) ([4d52065](https://github.com/k2b-dev/cloud/commit/4d52065eb81151fe27127fd5963edc951c608f1f))
+* **mail:** shared drafts are the default for every mailbox ([#3276](https://github.com/k2b-dev/cloud/issues/3276)) ([15d5533](https://github.com/k2b-dev/cloud/commit/15d553321d79a6aae6683516a361d5976837027d))
+* **mail:** the reply box sits above the conversation again, with a per-browser choice ([#3288](https://github.com/k2b-dev/cloud/issues/3288)) ([d04d038](https://github.com/k2b-dev/cloud/commit/d04d038c559d2599ca3d55beb7fbed17cd981273))
+
+
+### Bug Fixes
+
+* **cloud:** locked accounts no longer receive notifications or queued mail and no longer count as readers ([4d52065](https://github.com/k2b-dev/cloud/commit/4d52065eb81151fe27127fd5963edc951c608f1f))
+* **cloud:** the FreeIPA sync matches accounts by their directory identity instead of their e-mail address ([4d52065](https://github.com/k2b-dev/cloud/commit/4d52065eb81151fe27127fd5963edc951c608f1f))
+* **mail:** index shared-draft access checks during bulk deletion ([#3274](https://github.com/k2b-dev/cloud/issues/3274)) ([5ef5426](https://github.com/k2b-dev/cloud/commit/5ef5426f377f45edfbedd3edc6b1d52f67485d44))
+* **ui:** keep popup anchors stable while pressing ([#3292](https://github.com/k2b-dev/cloud/issues/3292)) ([a7fe35b](https://github.com/k2b-dev/cloud/commit/a7fe35bc113274fb5556e60b8ba62659652ef655))
+
 ## [0.76.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.75.0...cloud-v0.76.0) (2026-11-13)
 
 
