@@ -1,15 +1,24 @@
 import { afterAll, expect, spyOn, test } from "bun:test";
 import { SQL } from "bun";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { closeMigratedDatabaseTemplate, migratedDatabaseTemplate } from "../../../../scripts/fixtures/test-database-template";
-import { createMigratedDatabase, databaseSuite, requireDatabaseUrl, testInfra } from "../../../../scripts/fixtures/test-infra";
+import {
+  databaseSuite,
+  initializeTestPlatform,
+  requireDatabaseUrl,
+  testInfra,
+  useMigratedDatabase,
+} from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import * as registry from "../_internal/registry";
 import { capabilityCallDigest, capabilityValueDigest } from "../capabilities/calls";
 import { NormalizedCapabilityCallSchema } from "../contracts/capabilities";
 import { approvalReviewDigest, approvals } from "../services/approvals";
-import { projectCapabilityMigrationErrors, projectMigratedCapabilityCalls } from "./capability-targets-history";
+import { projectMigratedCapabilityCalls } from "./capability-targets-history";
 import { migrateAiCapabilityTargets } from "./capability-targets-migrate";
 import { buildBlocksFromMessages } from "./protocol";
+import { aiConversations } from "./store";
+import { loadAiStreamState } from "./stream";
 
 // A direct single-file run has no runner bootstrap. Prepare the cold production
 // schema before timing migration assertions; each test still gets its own clone.
@@ -20,7 +29,8 @@ if (testInfra.database) {
 
 databaseSuite()("capability target upgrade with existing Assistant data", () => {
   test("preserves approvals, old history, and every unrelated data row; runs twice without changes", async () => {
-    const database = await createMigratedDatabase("capability_targets");
+    const originalDatabaseUrl = process.env.DATABASE_URL;
+    const database = await useMigratedDatabase("capability_targets");
     const db = new SQL(database.url);
     const appLookup = spyOn(registry, "getApp").mockImplementation(async (id) => ({
       id,
@@ -119,6 +129,14 @@ databaseSuite()("capability target upgrade with existing Assistant data", () => 
           await db`UPDATE ai.pending_actions SET status='resolved', resolved_event='{"type":"approval_response","approved":true}'::jsonb,
             resolved_at=now() WHERE id=${action!.id}::uuid`;
         }
+      }
+
+      // Real stored history must retain its bytes while the read path adds the notice.
+      for (const seq of [1, 2, 3]) {
+        await db`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message,loop_id,compacted_at)
+          VALUES(${testShortId()},${pending[1]!.chatId}::uuid,${seq},'message','assistant',
+            ${JSON.stringify(originalMessage)}::text::jsonb,${pending[1]!.turnId},
+            ${seq === 3 ? "2026-10-31T00:00:00Z" : null}::timestamptz)`;
       }
 
       // PostgreSQL's binary row serialization includes JSON, bytea, timestamps, nulls, and generated columns.
@@ -236,28 +254,60 @@ databaseSuite()("capability target upgrade with existing Assistant data", () => 
         },
         { id: "capability-target-migration", kind: "text", text: "Bitte neu anfragen" },
       ]);
-      const displayed = await projectCapabilityMigrationErrors(db, pending[1]!.chatId, [
-        {
-          id: "fictional",
-          shortId: testShortId(),
-          conversationId: pending[1]!.chatId,
-          seq: 1,
-          kind: "message",
-          message: originalMessage,
-          loopId: pending[1]!.turnId,
-          createdAt: "2026-10-31T00:00:00Z",
-          modelId: null,
-          providerModel: null,
-          usage: null,
-          stopReason: null,
-          loopAggregate: null,
-          loopDoneReason: null,
-          compactedAt: null,
-          meta: null,
-        },
+      const displayed = await aiConversations.listMessages({ conversationId: pending[1]!.chatId });
+      expect(displayed).toHaveLength(3);
+      expect(displayed.map((message) => message.meta?.turnError)).toEqual([
+        { code: "capability_changed" },
+        { code: "capability_changed" },
+        { code: "capability_changed" },
       ]);
-      expect(displayed[0]!.meta?.turnError).toEqual({ code: "capability_changed" });
-      expect(displayed[0]!.message).toEqual(originalMessage);
+      expect(displayed.map((message) => message.loopDoneReason)).toEqual([null, "aborted", null]);
+      expect(displayed.map((message) => message.message)).toEqual([originalMessage, originalMessage, originalMessage]);
+      // A page without the final non-compacted assistant must not invent another turn end.
+      const earlier = await aiConversations.listMessagesPage({ conversationId: pending[1]!.chatId, limit: 1, beforeSeq: 2 });
+      expect(earlier.messages).toHaveLength(1);
+      expect(earlier.messages[0]).toMatchObject({ loopDoneReason: null, meta: { turnError: { code: "capability_changed" } } });
+      const final = await aiConversations.listMessagesPage({ conversationId: pending[1]!.chatId, limit: 1, beforeSeq: 3 });
+      expect(final.messages).toHaveLength(1);
+      expect(final.messages[0]).toMatchObject({ loopDoneReason: "aborted", meta: { turnError: { code: "capability_changed" } } });
+      const conversation = await aiConversations.getConversation({ conversationId: pending[1]!.chatId });
+      const state = await loadAiStreamState(conversation!);
+      expect(state.messages).toHaveLength(3);
+      expect(state.messages[1]).toMatchObject({ loopDoneReason: "aborted", meta: { turnError: { code: "capability_changed" } } });
+
+      const meter = await meterSql();
+      try {
+        // Ordinary and empty history need only the message query (+ the nonempty page's older-row check).
+        expect(
+          await meter.during(async () => {
+            const messages = await aiConversations.listMessages({ conversationId: chatId });
+            expect(messages).toHaveLength(1);
+            expect(messages[0]!.meta?.turnError).toBeUndefined();
+          }),
+        ).toHaveLength(1);
+        expect(
+          await meter.during(async () => {
+            const page = await aiConversations.listMessagesPage({ conversationId: chatId });
+            expect(page.messages).toHaveLength(1);
+            expect(page.messages[0]!.meta?.turnError).toBeUndefined();
+          }),
+        ).toHaveLength(2);
+        expect(
+          await meter.during(async () => {
+            expect(await aiConversations.listMessages({ conversationId: pending[2]!.chatId })).toEqual([]);
+          }),
+        ).toHaveLength(1);
+        expect(
+          await meter.during(async () => {
+            expect(await aiConversations.listMessagesPage({ conversationId: pending[2]!.chatId })).toEqual({
+              messages: [],
+              hasMore: false,
+            });
+          }),
+        ).toHaveLength(1);
+      } finally {
+        await meter.close();
+      }
       expect(buildBlocksFromMessages([{ seq: 1, message: originalMessage }])[0]).toMatchObject({ args: originalMessage.content[0]!.args });
 
       const allChangedTables = [...untouched, "pending_actions", "turns"];
@@ -278,6 +328,8 @@ databaseSuite()("capability target upgrade with existing Assistant data", () => 
     } finally {
       appLookup.mockRestore();
       await db.close();
+      process.env.DATABASE_URL = originalDatabaseUrl;
+      await initializeTestPlatform();
       await database.drop();
     }
   });

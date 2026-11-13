@@ -15,7 +15,12 @@ export { AI_TOOL_CHECK_STALE_MS };
 
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { projectSettledAiToolChecks } from "./capability-result";
-import { projectCapabilityMigrationErrors, projectMigratedCapabilityCalls } from "./capability-targets-history";
+import {
+  type CapabilityMigrationHistoryRow,
+  capabilityMigrationHistoryJoin,
+  projectCapabilityMigrationError,
+  projectMigratedCapabilityCalls,
+} from "./capability-targets-history";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
@@ -2684,17 +2689,19 @@ export const aiConversations: AiConversationService = {
     // Human view: compacted messages stay visible; superseded (compacted)
     // summaries are hidden. The active summary sorts after archived rows
     // sharing its checkpoint seq, marking where the model context begins.
-    const rows = await sql<MessageRow[]>`
+    const rows = await sql<(MessageRow & CapabilityMigrationHistoryRow)[]>`
       SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
         usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
         feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at,
-        ${compactReviewMetaSql(todoMetaJson())} AS meta
+        ${compactReviewMetaSql(todoMetaJson())} AS meta,
+        migrated_turn_id, migrated_last_assistant_id
       FROM ai.messages
+      ${capabilityMigrationHistoryJoin(sql)}
       WHERE conversation_id = ${input.conversationId}
         AND NOT (kind = 'summary' AND compacted_at IS NOT NULL)
       ORDER BY seq ASC, (kind = 'summary')::int ASC
     `;
-    return projectCapabilityMigrationErrors(sql, input.conversationId, await projectAiMaps(rows.map(rowToMessage)));
+    return projectAiMaps(rows.map((row) => projectCapabilityMigrationError(rowToMessage(row), row)));
   },
 
   listMessagesPage: async (input) => {
@@ -2703,7 +2710,7 @@ export const aiConversations: AiConversationService = {
     // Window by DISTINCT seq: a seq group (archived rows + their compaction
     // summary share one seq) is never split, so `beforeSeq = min(seq)` is a
     // lossless cursor. Same visibility rules as listMessages.
-    const rows = await sql<MessageRow[]>`
+    const rows = await sql<(MessageRow & CapabilityMigrationHistoryRow)[]>`
       WITH page_seqs AS (
         SELECT DISTINCT seq
         FROM ai.messages
@@ -2716,14 +2723,16 @@ export const aiConversations: AiConversationService = {
       SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
         usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
         feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at,
-        ${compactReviewMetaSql(todoMetaJson())} AS meta
+        ${compactReviewMetaSql(todoMetaJson())} AS meta,
+        migrated_turn_id, migrated_last_assistant_id
       FROM ai.messages
+      ${capabilityMigrationHistoryJoin(sql)}
       WHERE conversation_id = ${input.conversationId}
         AND seq IN (SELECT seq FROM page_seqs)
         AND NOT (kind = 'summary' AND compacted_at IS NOT NULL)
       ORDER BY seq ASC, (kind = 'summary')::int ASC
     `;
-    const messages = await projectCapabilityMigrationErrors(sql, input.conversationId, await projectAiMaps(rows.map(rowToMessage)));
+    const messages = await projectAiMaps(rows.map((row) => projectCapabilityMigrationError(rowToMessage(row), row)));
     const oldestSeq = messages[0]?.seq;
     if (oldestSeq === undefined) return { messages, hasMore: false };
     const older = await sql<{ exists: boolean }[]>`
