@@ -380,10 +380,17 @@ describe("Mail review contract", () => {
     }
   });
   test("all safety warning kinds remain visible; done and receipts never claim completed delivery", () => {
-    const warnings = Array.from({ length: 6 }, (_, i) => ({ title: `Kind ${i}`, description: `Details ${i}.` }));
+    const warnings = [
+      ...Array.from({ length: 6 }, (_, i) => ({ title: `Kind ${i}`, description: `Details ${i}.` })),
+      { title: "No subject", description: "The message has no subject. Send anyway?" },
+    ];
     const review = buildSendReview({ ...sendSource, warnings });
     expect(review.preview?.kind === "message" && review.preview.warnings).toHaveLength(5);
     expect(JSON.stringify(review.preview)).toContain("Kind 5");
+    expect(JSON.stringify(review.preview)).toContain("No subject.");
+    expect(review.content).toMatchObject({
+      warnings: warnings.map(({ title, description }) => `${title}. ${description}`),
+    });
     for (const locale of ["de", "en"])
       for (const scheduledAt of [undefined, "2026-10-20T06:00:00.000Z"]) {
         const review = buildSendReview({ ...sendSource, scheduledAt }, locale);

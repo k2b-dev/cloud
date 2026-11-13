@@ -1396,7 +1396,7 @@ proposed value, including changes beyond the compact preview's limits.
 `content` is a passive `message` or `page` with `format: "plain"`. A message
 contains `subject`, `body`, `to`, optional `from`, `cc`, `bcc`, `attachments`
 (`name`, optional byte `size`), `sendAt`, and `warnings`. It supports 600 total
-recipients, 202 attachment descriptions and six warnings of 300 characters.
+recipients, 202 attachment descriptions and seven warnings of 300 characters.
 Names are bounded to 200 characters, addresses to 320, subjects to 998 and
 attachment names to 255. A page contains `title`, optional `place`, and `body`.
 Both kinds may include the nonnegative integer `baseRevision` of the resource

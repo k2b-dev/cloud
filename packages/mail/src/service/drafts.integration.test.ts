@@ -537,6 +537,46 @@ const draftModeTests = (draftEditMode: "shared" | "lock") => {
       expect(retained?.body_markdown).toBe("Collaborator body");
     });
 
+  test.each(["", "   ", "A subject"])("reviews the saved subject %p before sending", async (subject) => {
+    const draft = await createDraft({
+      context: owner,
+      mailboxId,
+      input: {
+        quoteSource: null,
+        senderIdentityId: identityId,
+        to: [{ address: "customer@example.com" }],
+        cc: [],
+        bcc: [],
+        subject,
+        body: "Hello",
+        format: "plain",
+      },
+    });
+    if (!draft.ok) throw new Error(draft.error.message);
+    const target = { db: sql, mailboxId, draftId: draft.data.id, expectedRevision: draft.data.revision };
+    const review = await reviewDraftComposeSafety({ ...target, context: owner });
+    if (!review.ok) throw new Error(review.error.message);
+    expect(review.data.warnings.map((warning) => warning.id)).toEqual(subject.trim() ? [] : ["missing_subject"]);
+    const unapproved = await validateDraftComposeSafety(target);
+    expect(unapproved.ok).toBe(Boolean(subject.trim()));
+    const approval = {
+      revision: review.data.revision,
+      fingerprint: review.data.fingerprint,
+      warningIds: review.data.warnings.map((warning) => warning.id),
+    };
+    expect(await validateDraftComposeSafety({ ...target, approval })).toMatchObject({ ok: true });
+    if (!subject.trim()) {
+      expect(await validateDraftComposeSafety({ ...target, approval: { ...approval, revision: approval.revision + 1 } })).toMatchObject({
+        ok: false,
+        error: { status: 409 },
+      });
+      expect(await validateDraftComposeSafety({ ...target, approval: { ...approval, fingerprint: "0".repeat(64) } })).toMatchObject({
+        ok: false,
+        error: { status: 409 },
+      });
+    }
+  });
+
   test("refuses an unapproved send when template text would leave the mailbox verbatim", async () => {
     const draft = await createDraft({
       context: owner,

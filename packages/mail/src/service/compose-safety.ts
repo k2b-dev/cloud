@@ -27,6 +27,7 @@ type SafetyDraft = {
   to_addresses: MailAddress[] | string;
   cc_addresses: MailAddress[] | string;
   bcc_addresses: MailAddress[] | string;
+  subject: string;
   body_markdown: string;
   quote_source: DraftQuoteSource | null;
   body_format: "plain" | "markdown";
@@ -38,6 +39,8 @@ const safetyMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      missingSubjectTitle: "No subject",
+      missingSubjectDescription: "The message has no subject. Send anyway?",
       missingAttachmentTitle: "No attachment added",
       missingAttachmentDescription: "The message mentions an attachment, but no file is attached.",
       recipientCount: ({ count }: { count: number }) => `${count} recipients`,
@@ -52,6 +55,8 @@ const safetyMessages = i18n.define({
       unrenderedTemplateDescription: "The message contains template placeholders such as {{ sender.email }} that are sent as literal text.",
     },
     de: {
+      missingSubjectTitle: "Kein Betreff",
+      missingSubjectDescription: "Die E-Mail hat keinen Betreff. Trotzdem senden?",
       missingAttachmentTitle: "Kein Anhang hinzugefügt",
       missingAttachmentDescription: "Die E-Mail erwähnt einen Anhang, enthält aber keine Datei.",
       recipientCount: ({ count }) => `${count} Empfänger`,
@@ -76,6 +81,7 @@ export type ComposeSafetySource = {
   to: MailAddress[];
   cc: MailAddress[];
   bcc: MailAddress[];
+  subject: string;
   body: string;
   format: "plain" | "markdown";
   attachmentNames: string[];
@@ -155,6 +161,13 @@ export const evaluateComposeSafety = (source: ComposeSafetySource, locale = "en"
   const t = safetyMessages.resolve([locale]).t;
   const warnings: ComposeSafetyWarning[] = [];
   const recipients = uniqueRecipients(source);
+  if (!source.subject.trim()) {
+    warnings.push({
+      id: "missing_subject",
+      title: t.missingSubjectTitle,
+      description: t.missingSubjectDescription,
+    });
+  }
   if (source.attachmentNames.length === 0 && mentionsAttachment(source.body)) {
     warnings.push({
       id: "missing_attachment",
@@ -214,6 +227,7 @@ export const evaluateComposeSafety = (source: ComposeSafetySource, locale = "en"
     to: source.to,
     cc: source.cc,
     bcc: source.bcc,
+    subject: source.subject,
     body: source.body,
     format: source.format,
     attachmentNames: [...source.attachmentNames].sort(),
@@ -232,6 +246,7 @@ const loadSafetySource = async (params: { db: SQL; mailboxId: string; draftId: s
       draft.to_addresses,
       draft.cc_addresses,
       draft.bcc_addresses,
+      draft.subject,
       draft.body_markdown, CASE WHEN draft.quote_source THEN jsonb_build_object('locale', draft.quote_locale, 'timeZone', draft.quote_time_zone) ELSE NULL END AS quote_source,
       draft.body_format,
       draft.origin,
@@ -264,6 +279,7 @@ const loadSafetySource = async (params: { db: SQL; mailboxId: string; draftId: s
     to: parseAddresses(draft.to_addresses),
     cc: parseAddresses(draft.cc_addresses),
     bcc: parseAddresses(draft.bcc_addresses),
+    subject: draft.subject,
     body: draft.body_markdown,
     quoteSource: draft.quote_source,
     format: draft.body_format,

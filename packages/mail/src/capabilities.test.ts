@@ -3439,9 +3439,26 @@ describe("mail capabilities", () => {
       expectedRevision: 2,
       senderIdentityId,
       expectedContentHash: "a".repeat(64),
-      safetyApproval: { revision: 2, fingerprint: "a".repeat(64), warningIds: ["missing_attachment"] },
+      safetyApproval: { revision: 2, fingerprint: "a".repeat(64), warningIds: ["missing_subject"] },
     };
     expect(DraftSendInputSchema.safeParse(input).success).toBeTrue();
+    expect(
+      DraftSendInputSchema.safeParse({
+        ...input,
+        safetyApproval: {
+          ...input.safetyApproval,
+          warningIds: [
+            "missing_attachment",
+            "large_recipient_set",
+            "external_recipients",
+            "reply_all",
+            "suspicious_link",
+            "unrendered_template",
+            "missing_subject",
+          ],
+        },
+      }).success,
+    ).toBeTrue();
     expect(DraftSendInputSchema.safeParse({ ...input, expectedContentHash: undefined }).success).toBeFalse();
     expect(DraftSendInputSchema.safeParse({ ...input, expectedContentHash: "tampered" }).success).toBeFalse();
     expect(DraftSendInputSchema.safeParse({ ...input, safetyApproval: { warningIds: [] } }).success).toBeFalse();

@@ -3715,6 +3715,7 @@
                 "id": {
                   "type": "string",
                   "enum": [
+                    "missing_subject",
                     "missing_attachment",
                     "large_recipient_set",
                     "external_recipients",
@@ -3742,7 +3743,7 @@
         "required": ["draftId", "revision", "fingerprint", "warnings", "contentHash"],
         "additionalProperties": false
       },
-      "schemaHash": "a2f71f1d137441f8e6ea6e627fa142c865e749bcb67f5a1318eedc5879dd4a5f",
+      "schemaHash": "bebf926b82be8153701cb3f70949906e525e8bfbb37a72ed7435b1c33cef0c29",
       "openWorld": false,
       "target": "mailbox"
     },
@@ -7833,11 +7834,12 @@
                 "description": "Exact review fingerprint."
               },
               "warningIds": {
-                "maxItems": 6,
+                "maxItems": 7,
                 "type": "array",
                 "items": {
                   "type": "string",
                   "enum": [
+                    "missing_subject",
                     "missing_attachment",
                     "large_recipient_set",
                     "external_recipients",
@@ -7890,7 +7892,7 @@
         "required": ["commandId", "state", "draftId", "conversationId"],
         "additionalProperties": false
       },
-      "schemaHash": "5622ff491883e115729aa3ec1e3dfd30636d038b2d7e3133c7d94d10a69e083b",
+      "schemaHash": "2f2087947acdd1b758fe02c76aea12edb1f48d3afeb7115815853e1410129c3b",
       "destructive": true,
       "openWorld": true,
       "idempotency": "required",

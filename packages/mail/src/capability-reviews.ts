@@ -259,7 +259,7 @@ export const buildSendReview = (source: SendReviewSource, locale?: string): Capa
   const warningLead = (title: string) => (/\p{P}$/u.test(title) ? title : title + ".");
   const warnings = source.warnings.map((w) => warningLead(w.title) + " " + w.description);
   const compactWarnings = warnings.map((warning) => reviewLine(warning, 300));
-  // Six kinds currently exist. Keep complete first four, then every remaining lead.
+  // Keep the first four warnings complete, then combine every remaining title.
   p.warnings =
     compactWarnings.length <= 5
       ? compactWarnings

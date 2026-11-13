@@ -553,7 +553,7 @@ export const CapabilityReviewContentSchema = /* @__PURE__ */ (() => {
             .max(202)
             .optional(),
           sendAt: reviewTime.optional(),
-          warnings: z.array(z.string().max(300)).max(6).optional(),
+          warnings: z.array(z.string().max(300)).max(7).optional(),
         })
         .strict(),
       z
