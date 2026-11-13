@@ -1,4 +1,4 @@
-import { ConflictError } from "@k2b/sync";
+import { ConflictError, PayloadTooLargeError, StoreFullError } from "@k2b/sync";
 import * as Y from "yjs";
 import { checkSharedTextBoundary, SHARED_TEXT_FREEZE_SAFETY_MS, SharedTextBoundaryError } from "./boundary";
 import { createDoc } from "./documents";
@@ -63,8 +63,16 @@ export const createRoomLifecycle = (config: {
         }
       } else {
         if (value?.state === "closed") throw new SharedTextBoundaryError("DOCUMENT_CLOSED");
-        if (options.freezeCursor && (value?.state !== "frozen" || value.freezeCursor !== options.freezeCursor))
-          throw new ConflictError("The shared text freeze lease is no longer owned");
+        if (value?.state === "frozen") {
+          if (!options.freezeCursor || value.freezeCursor !== options.freezeCursor)
+            throw new ConflictError("Thawing shared text requires the current freeze cursor");
+        } else if (value?.state === "open" && value.thaw && value.thaw.freezeCursor === options.freezeCursor && options.freezeCursor) {
+          if (value.thaw.cursor) return value.thaw.cursor;
+          // The authority opened but its notification failed: resume it below.
+        } else {
+          if (options.freezeCursor) throw new ConflictError("The shared text freeze lease is no longer owned");
+          return null;
+        }
       }
       // A successful domain commit may retire or delete the snapshot row.
       // The freeze token carries everything needed to finish close without it.
@@ -75,9 +83,15 @@ export const createRoomLifecycle = (config: {
               target: await config.log.topic().latestCursor({ tenantId: docId }),
               restoreRevision: value.restoreRevision,
             }
-          : await inspect(docId, signal).then((current) =>
-              current ? { ...current, restoreRevision: current.stored.restoreRevision } : null,
-            );
+          : value?.state === "open" && value.thaw
+            ? {
+                topic: config.log.topic(),
+                target: await config.log.topic().latestCursor({ tenantId: docId }),
+                restoreRevision: value.thaw.restoreRevision,
+              }
+            : await inspect(docId, signal).then((current) =>
+                current ? { ...current, restoreRevision: current.stored.restoreRevision } : null,
+              );
       if (!current) return null;
       const { topic, target, restoreRevision } = current;
       if ("tail" in current && current.tail?.restoreRevision !== undefined && current.tail.restoreRevision !== restoreRevision)
@@ -90,7 +104,7 @@ export const createRoomLifecycle = (config: {
         entry,
         state === "closed"
           ? { state: "closed", freezeCursor: options.freezeCursor!, closeCursor: null, restoreRevision }
-          : { state: "open" },
+          : { state: "open", thaw: { freezeCursor: options.freezeCursor!, cursor: null, restoreRevision } },
       );
       signal.throwIfAborted();
       const marker = await topic.publish({
@@ -111,6 +125,11 @@ export const createRoomLifecycle = (config: {
           freezeCursor: options.freezeCursor!,
           closeCursor: marker.cursor,
           restoreRevision,
+        });
+      else
+        await authority.put(docId, entry, {
+          state: "open",
+          thaw: { freezeCursor: options.freezeCursor!, cursor: marker.cursor, restoreRevision },
         });
       return marker.cursor;
     });
@@ -143,19 +162,42 @@ export const createRoomLifecycle = (config: {
             freezeCursor: null,
             restoreRevision: stored.restoreRevision,
           });
-          signal.throwIfAborted();
-          const marker = await topic.publish({
-            tenantId: docId,
-            expectedAfter: target,
-            data: {
-              kind: "freeze",
-              payload: "",
-              restoreRevision: stored.restoreRevision,
-              originNodeId: sharedTextNodeId,
-              originPeerId: null,
-              room: { state: "frozen", expiresAt: leaseExpiresAt },
-            },
-          });
+          let attempted = false;
+          const marker = await (async () => {
+            try {
+              signal.throwIfAborted();
+              attempted = true;
+              return await topic.publish({
+                tenantId: docId,
+                expectedAfter: target,
+                data: {
+                  kind: "freeze",
+                  payload: "",
+                  restoreRevision: stored.restoreRevision,
+                  originNodeId: sharedTextNodeId,
+                  originPeerId: null,
+                  room: { state: "frozen", expiresAt: leaseExpiresAt },
+                },
+              });
+            } catch (error) {
+              // Explicit rejections guarantee no marker. A timeout/disconnect
+              // might have committed, so keep those unknown outcomes fenced.
+              if (
+                !attempted ||
+                error instanceof ConflictError ||
+                error instanceof StoreFullError ||
+                error instanceof PayloadTooLargeError
+              ) {
+                try {
+                  await authority.put(docId, preparing, previous?.value ?? { state: "open" });
+                } catch (revertError) {
+                  if (!(revertError instanceof ConflictError))
+                    throw new AggregateError([error, revertError], "Freeze failed and its preparation could not be released");
+                }
+              }
+              throw error;
+            }
+          })();
           await authority.put(docId, preparing, {
             state: "frozen",
             expiresAt: leaseExpiresAt,

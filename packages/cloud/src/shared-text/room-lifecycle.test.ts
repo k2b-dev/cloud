@@ -1,5 +1,5 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
-import type { Sync } from "@k2b/sync";
+import { ConflictError, StoreFullError, type Sync } from "@k2b/sync";
 import * as Y from "yjs";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { createDoc } from "./documents";
@@ -18,7 +18,8 @@ const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void) => 
   let marker: SharedTextSyncEvent | undefined;
   let cursor: string | null = null;
   let sequence = 0;
-  let failPublication = false;
+  let publicationFailure: Error | undefined;
+  let abortAfterPreparation: (() => void) | undefined;
   let removed = false;
   const topic = {
     latestCursor: async () => cursor,
@@ -28,9 +29,10 @@ const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void) => 
       if (marker && cursor) yield { cursor, data: marker };
     },
     publish: async (input: { data: SharedTextSyncEvent }) => {
-      if (failPublication) {
-        failPublication = false;
-        throw new Error("broker unavailable");
+      if (publicationFailure) {
+        const error = publicationFailure;
+        publicationFailure = undefined;
+        throw error;
       }
       marker = input.data;
       cursor = `s6t.freeze.${++sequence}`;
@@ -44,10 +46,14 @@ const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void) => 
   const stored: SharedTextStoredState = { state, text: "visible", restoreRevision: "0", cursor: "s6t.freeze.0" };
   let entry: SharedTextLifecycleEntry | null = null;
   const lifecycle: SharedTextLifecycleStore = {
+    forget: async () => {
+      throw new Error("Not used");
+    },
     get: async () => entry,
     put: async (_docId, previous, value) => {
       if (previous !== entry) throw new Error("Stale lifecycle CAS");
       entry = { revision: (entry?.revision ?? 0) + 1, value };
+      if (value.state === "frozen" && value.freezeCursor === null) abortAfterPreparation?.();
       return entry;
     },
   };
@@ -57,8 +63,11 @@ const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void) => 
     removeSnapshot: () => {
       removed = true;
     },
-    failNextPublish: () => {
-      failPublication = true;
+    abortAfterPreparation: (abort: () => void) => {
+      abortAfterPreparation = abort;
+    },
+    failNextPublish: (error = new Error("broker unavailable")) => {
+      publicationFailure = error;
     },
     room: createRoomLifecycle({
       log: { ...sharedText.define({ id: "freeze", whenFull: "reject", retention: { maxBytes: 1_000_000 } }), lifecycle },
@@ -213,6 +222,85 @@ test("a crash before the freeze marker leaves only a bounded admission lease", a
     setSystemTime(new Date(NOW.getTime() + 60_001));
     await checkLifecycleAdmission(f.lifecycle, "doc");
     expect((await f.lifecycle.get("doc"))?.value.state).toBe("open");
+  } finally {
+    source.destroy();
+  }
+});
+
+for (const rejection of [new StoreFullError("storage exhausted"), new ConflictError("head changed")])
+  test(`a definitely rejected freeze releases preparation immediately: ${rejection.name}`, async () => {
+    const { source, state } = deleted();
+    try {
+      const f = fixture(state, state);
+      f.failNextPublish(rejection);
+      await expect(f.room.freeze("doc")).rejects.toThrow(rejection.message);
+      await checkLifecycleAdmission(f.lifecycle, "doc");
+      expect((await f.lifecycle.get("doc"))?.value.state).toBe("open");
+      expect((await f.room.freeze("doc"))?.cursor).toBe("s6t.freeze.1");
+    } finally {
+      source.destroy();
+    }
+  });
+
+test("aborting before marker publication releases preparation immediately", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const abort = new AbortController();
+    f.abortAfterPreparation(() => abort.abort(new Error("cancelled")));
+    await expect(f.room.freeze("doc", { signal: abort.signal })).rejects.toThrow();
+    await checkLifecycleAdmission(f.lifecycle, "doc");
+    expect(f.marker()).toBeUndefined();
+  } finally {
+    source.destroy();
+  }
+});
+
+test("thaw requires its freeze cursor and retries after an open authority put without a notification", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const frozen = await f.room.freeze("doc");
+    await expect(f.room.thaw("doc")).rejects.toThrow("requires the current freeze cursor");
+    await expect(f.room.thaw("doc", { freezeCursor: "wrong" })).rejects.toThrow("requires the current freeze cursor");
+    f.failNextPublish();
+    await expect(f.room.thaw("doc", { freezeCursor: frozen!.cursor })).rejects.toThrow("broker unavailable");
+    await checkLifecycleAdmission(f.lifecycle, "doc");
+    const cursor = await f.room.thaw("doc", { freezeCursor: frozen!.cursor });
+    expect(f.marker()?.room?.state).toBe("open");
+    expect(await f.room.thaw("doc", { freezeCursor: frozen!.cursor })).toBe(cursor);
+    const second = await f.room.freeze("doc");
+    await expect(f.room.thaw("doc", { freezeCursor: frozen!.cursor })).rejects.toThrow();
+    await f.room.thaw("doc", { freezeCursor: second!.cursor });
+  } finally {
+    source.destroy();
+  }
+});
+
+test("rejected preparation restores the prior thaw retry token", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const frozen = await f.room.freeze("doc");
+    const thawCursor = await f.room.thaw("doc", { freezeCursor: frozen!.cursor });
+    const previous = (await f.lifecycle.get("doc"))!.value;
+    f.failNextPublish(new StoreFullError("storage exhausted"));
+    await expect(f.room.freeze("doc")).rejects.toThrow("storage exhausted");
+    expect((await f.lifecycle.get("doc"))!.value).toEqual(previous);
+    expect(await f.room.thaw("doc", { freezeCursor: frozen!.cursor })).toBe(thawCursor);
+  } finally {
+    source.destroy();
+  }
+});
+
+test("a freeze followed by thaw cannot hide a lifecycle transition from a stalled publisher", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const confirm = await checkLifecycleAdmission(f.lifecycle, "doc");
+    const frozen = await f.room.freeze("doc");
+    await f.room.thaw("doc", { freezeCursor: frozen!.cursor });
+    await expect(confirm()).rejects.toThrow("DOCUMENT_FROZEN");
   } finally {
     source.destroy();
   }

@@ -200,20 +200,21 @@ const createSnapshots = <Input>(
         let cursor = target && compareStreamCursor(target, head) > 0 ? target : head;
         if (repair && !fenced && !doc.store.pendingStructs && !doc.store.pendingDs) {
           const repairCurrent = async (signal: AbortSignal) => {
-            if (log.lifecycle) {
-              try {
-                await checkLifecycleAdmission(log.lifecycle, docId);
-              } catch (error) {
-                if (error instanceof SharedTextBoundaryError) return false;
-                throw error;
-              }
-              signal.throwIfAborted();
-            }
             const text = doc.getText(SHARED_TEXT_NAME);
             const planned = repair.plan(text.toString());
             if (planned.some((change) => change.from !== change.to)) throw new RangeError("Snapshot repair may only insert text");
             const changes = planned.length ? validateChanges(text.toString(), planned, repair.maxLength) : [];
             if (changes.length) {
+              let confirm: (() => Promise<void>) | undefined;
+              if (log.lifecycle) {
+                try {
+                  confirm = await checkLifecycleAdmission(log.lifecycle, docId);
+                } catch (error) {
+                  if (error instanceof SharedTextBoundaryError) return false;
+                  throw error;
+                }
+                signal.throwIfAborted();
+              }
               const before = Y.encodeStateVector(doc);
               doc.transact(() => {
                 for (const change of [...changes].reverse()) text.insert(change.from, change.insert);
@@ -233,6 +234,7 @@ const createSnapshots = <Input>(
                   restoreRevision: initial.restoreRevision,
                 },
               });
+              await confirm?.();
               cursor = published.cursor;
               return true;
             }

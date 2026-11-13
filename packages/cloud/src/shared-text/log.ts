@@ -28,7 +28,11 @@ const define = (
     ? lazySync(() => createLifecycleStore({ id: topicConfig.id, maxBytes: lifecycleConfig.maxBytes, ready: () => topic().ready() }))
     : undefined;
   const lifecycle: SharedTextLifecycleStore | undefined = lifecycleHandle
-    ? { get: (id) => lifecycleHandle().get(id), put: (id, previous, value) => lifecycleHandle().put(id, previous, value) }
+    ? {
+        get: (id) => lifecycleHandle().get(id),
+        put: (id, previous, value) => lifecycleHandle().put(id, previous, value),
+        forget: (id) => lifecycleHandle().forget(id),
+      }
     : undefined;
   const replay = async (config: {
     docId: string;
