@@ -197,7 +197,7 @@ export default function MailReaderHead(props: {
     const fit = fittingChipCount({
       widths: items.map((item) => item.getBoundingClientRect().width),
       available: list.getBoundingClientRect().width,
-      gap: Number.parseFloat(getComputedStyle(list).columnGap) || 0,
+      gap: Number.parseFloat(list.ownerDocument.defaultView?.getComputedStyle(list).columnGap ?? "") || 0,
     });
     for (const item of items.slice(fit)) item.setAttribute("data-overflow", "hidden");
     setVisibleCount(fit);
