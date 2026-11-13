@@ -116,4 +116,61 @@ suiteFor("database", "nats")("Mail room access invalidations", () => {
         });
       expect(await sql`SELECT id FROM events.outbox WHERE app_id = 'mail'`).toHaveLength(0);
     });
+  for (const deletion of ["unlink", "cascade"] as const)
+    test(`bulk ${deletion} coalesces source and derived shared-draft hints across mailboxes`, async () => {
+      await sql
+        .begin(async (tx) => {
+          const mailboxes = Array.from({ length: 4 }, () => crypto.randomUUID());
+          const senders = mailboxes.map(() => crypto.randomUUID());
+          const conversations = mailboxes.map(() => crypto.randomUUID());
+          for (const [index, mailbox] of mailboxes.entries()) {
+            await tx`INSERT INTO mail.mailboxes (id, short_id, name) VALUES (${mailbox}::uuid, ${testShortId()}, 'Bulk room access')`;
+            await tx`INSERT INTO mail.sender_identities (id, short_id, mailbox_id, label, display_name, from_address, status)
+            VALUES (${senders[index]}::uuid, ${testShortId()}, ${mailbox}::uuid, 'Sender', 'Sender', 'sender@example.test', 'verified')`;
+            await tx`INSERT INTO mail.conversations (id, short_id, mailbox_id, latest_message_at)
+            VALUES (${conversations[index]}::uuid, ${testShortId()}, ${mailbox}::uuid, '2026-11-13T12:00:00Z')`;
+          }
+          const messages = [crypto.randomUUID(), crypto.randomUUID()];
+          for (const [index, message] of messages.entries()) {
+            await tx`INSERT INTO mail.message_contents (id, short_id, mailbox_id, message_id, internal_date, content_hash)
+            VALUES (${message}::uuid, ${testShortId()}, ${mailboxes[0]}::uuid, ${`<${message}@example.test>`},
+              '2026-11-13T12:00:00Z', ${String(index).repeat(64)})`;
+            await tx`INSERT INTO mail.conversation_messages (conversation_id, message_id, position)
+            VALUES (${conversations[0]}::uuid, ${message}::uuid, ${index})`;
+            // Two derived drafts in one mailbox must still produce just one coalesced hint.
+            await tx`INSERT INTO mail.drafts (short_id, mailbox_id, sender_identity_id, author_kind, last_editor_kind,
+            edit_mode, derived_from_message_id, derivation_kind, derivation_key, derivation_request_hash)
+            VALUES (${testShortId()}, ${mailboxes[2]}::uuid, ${senders[2]}::uuid, 'system', 'system',
+              'shared', ${message}::uuid, 'edit_as_new', ${crypto.randomUUID()}::uuid, ${"a".repeat(64)})`;
+          }
+          await tx`INSERT INTO mail.drafts (short_id, mailbox_id, sender_identity_id, author_kind, last_editor_kind,
+          edit_mode, intent, conversation_id, source_message_id)
+          VALUES (${testShortId()}, ${mailboxes[1]}::uuid, ${senders[1]}::uuid, 'system', 'system',
+            'shared', 'reply', ${conversations[1]}::uuid, ${messages[0]}::uuid)`;
+          // Neither a private open draft nor a discarded shared draft grants a room writer.
+          for (const [mode, state] of [
+            ["lock", "draft"],
+            ["shared", "discarded"],
+          ] as const)
+            await tx`INSERT INTO mail.drafts (short_id, mailbox_id, sender_identity_id, author_kind, last_editor_kind,
+            edit_mode, state, derived_from_message_id, derivation_kind, derivation_key, derivation_request_hash)
+            VALUES (${testShortId()}, ${mailboxes[3]}::uuid, ${senders[3]}::uuid, 'system', 'system',
+              ${mode}, ${state}, ${messages[0]}::uuid, 'edit_as_new', ${crypto.randomUUID()}::uuid, ${"a".repeat(64)})`;
+          await tx`DELETE FROM events.outbox WHERE app_id = 'mail'`;
+          if (deletion === "unlink") await tx`DELETE FROM mail.conversation_messages WHERE conversation_id = ${conversations[0]}::uuid`;
+          else await tx`DELETE FROM mail.conversations WHERE id = ${conversations[0]}::uuid`;
+          const hints = await tx<{ payload: { v: number; k: string; a: boolean }; coalesce_key: string }[]>`
+          SELECT payload, coalesce_key FROM events.outbox WHERE app_id = 'mail' AND payload->>'a' = 'true'`;
+          const expected = deletion === "cascade" ? mailboxes.slice(0, 3) : mailboxes.slice(1, 3);
+          expect(hints.map((hint) => hint.payload.k).sort()).toEqual(expected.sort());
+          for (const hint of hints) {
+            expect(hint.payload).toEqual({ v: 1, k: hint.payload.k, a: true });
+            expect(hint.coalesce_key).toEndWith(`:room.access:${hint.payload.k}`);
+          }
+          throw new Error("fixture rollback");
+        })
+        .catch((error) => {
+          if (!(error instanceof Error) || error.message !== "fixture rollback") throw error;
+        });
+    });
 });

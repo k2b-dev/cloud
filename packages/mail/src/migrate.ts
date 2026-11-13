@@ -23,7 +23,7 @@ import {
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
-import { migrateRoomAccessEvents } from "./service/room-access-events";
+import { migrateRoomAccessEvents, migrateRoomAccessIndexes } from "./service/room-access-events";
 import { MAIL_RULE_RETIREMENT_NAME, MAIL_RULE_RETIREMENT_VERSION, retireMailRules } from "./service/rule-retirement-migrate";
 import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
@@ -810,6 +810,7 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
         await migrateWorkspacePreferences(tx);
         await migrateWorkflowAi(tx);
       });
+      await migrateRoomAccessIndexes();
       // F6 first, then the rule retirement: this is the 0.74 -> 0.75 -> Code order. F6 refuses before its
       // marker, and a refused retirement leaves at most F6's marker, so either refusal keeps a previous
       // image that can start and reconcile the blocking sends.
