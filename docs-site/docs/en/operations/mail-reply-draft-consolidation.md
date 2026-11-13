@@ -37,6 +37,38 @@ or any deletion. The error reports their count: let them send or cancel them
 using the previous Mail image, stop it, then retry the upgrade. In-flight,
 uncertain and inconsistent deliveries also require reconciliation first.
 
+## When preflight keeps refusing
+
+A submission in `accepted`, `sent`, `sent_sync_pending` or `reconciled_accepted`
+can still belong to an open reply draft in a duplicate conversation. These
+states also block consolidation; the previous image may offer no UI action that
+resolves them. Use this read-only query to list those drafts and submissions:
+
+```sql
+WITH open_replies AS (
+  SELECT id, short_id, conversation_id, state
+  FROM mail.drafts
+  WHERE origin = 'user' AND intent <> 'new'
+    AND state IN ('draft', 'scheduled', 'sending')
+), duplicates AS (
+  SELECT conversation_id FROM open_replies
+  GROUP BY conversation_id HAVING count(*) > 1
+)
+SELECT d.conversation_id, d.id AS draft_id, d.short_id AS draft_short_id,
+  d.state AS draft_state, o.id AS submission_id, o.state AS submission_state
+FROM open_replies d
+JOIN duplicates c ON c.conversation_id = d.conversation_id
+JOIN mail.outbox_submissions o ON o.draft_id = d.id
+WHERE o.state IN ('accepted', 'sent', 'sent_sync_pending', 'reconciled_accepted')
+ORDER BY d.conversation_id, d.id, o.id;
+```
+
+Keep the backup and contact support or the maintainer with the startup error
+and query results. Delivery may already have happened. The maintainer must
+verify the provider outcome and reconcile the draft lifecycle before retrying
+F6. Do not reset submission states, delete drafts or migration markers, or
+resend these messages to bypass the refusal.
+
 ## What F6 keeps and removes
 
 A committed send has first priority. Otherwise human-authored and adopted

@@ -171,7 +171,9 @@ const batch = () =>
         // cannot have an active submission from that input. Old processes must be stopped and new
         // workers start only after migration. Keep this guard for unexpected concurrent writes.
         if (active)
-          throw new Error("F6 cannot erase a reply draft with an active submission; let it send or cancel it with the previous Mail image");
+          throw new Error(
+            `F6 cannot erase reply draft ${loser.id} with an active submission; let it send or cancel it with the previous Mail image`,
+          );
         // Terminal outbox submissions and command history are immutable migration evidence.
         await tx`INSERT INTO mail.reply_draft_retirements (draft_id) VALUES (${loser.id}::uuid) ON CONFLICT DO NOTHING`;
         await retireDraftInTransaction(tx, loser.id);
