@@ -89,6 +89,7 @@ the platform can prove every producer has drained; asynchronous close and
 access events alone do not establish that boundary. Monitor lifecycle storage
 as well as the retained content log. A full lifecycle stream rejects new
 lifecycle transitions without evicting existing fences.
+Safe retirement is tracked in [#3254](https://github.com/k2b-dev/cloud/issues/3254).
 
 An isolated sample of 100 closed drafts with seven-digit log sequences used
 139 JSON bytes and about 377 JetStream-reported bytes per entry. At that size,

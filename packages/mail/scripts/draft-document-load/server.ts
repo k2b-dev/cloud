@@ -22,6 +22,12 @@ const { options, out, primaryOut }: { options: Options; out: string; primaryOut?
 await writeFile(`${out}/server-pid.json`, JSON.stringify({ pid: process.pid }));
 const ackBudgetMs = 30000;
 const cleanup: Array<() => unknown | Promise<unknown>> = [];
+const cleanupWork = new Map<symbol, { label: string; docId: string; started: number }>();
+const trackCleanupWork = <T>(label: string, docId: string, work: () => Promise<T>): Promise<T> => {
+  const key = Symbol();
+  cleanupWork.set(key, { label, docId, started: performance.now() });
+  return Promise.resolve().then(work).finally(() => cleanupWork.delete(key));
+};
 const done = Promise.withResolvers<void>();
 let failure: string | undefined;
 const stop = () => {
@@ -181,6 +187,13 @@ try {
   const originalMutex = sync.mutex.bind(sync);
   const mutexSpy = spyOn(sync, "mutex").mockImplementation((config) => {
     const mutex = originalMutex(config);
+    if (config.id === "cloud:mail:draft-documents:snapshot-writer") {
+      const withLock = mutex.withLock.bind(mutex);
+      mutex.withLock = <T>(input: Parameters<Mutex["withLock"]>[0], operation: (lock: Lock) => Promise<T>) =>
+        trackCleanupWork("snapshot lock", input.resource, () =>
+          withLock(input, (lock) => trackCleanupWork("snapshot write", input.resource, () => operation(lock))),
+        );
+    }
     if (config.id === "cloud:mail:draft-documents:admission") {
       const withLock = mutex.withLock.bind(mutex);
       mutex.withLock = <T>(input: Parameters<Mutex["withLock"]>[0], operation: (lock: Lock) => Promise<T>) => {
@@ -275,6 +288,11 @@ try {
   const { draftDocumentSnapshots, flushDraftDocumentSnapshot, stopDraftDocumentSnapshots } = await import(
     "../../src/service/draft-document-snapshots"
   );
+  const flushNow = draftDocumentSnapshots.flushNow.bind(draftDocumentSnapshots);
+  const flushSpy = spyOn(draftDocumentSnapshots, "flushNow").mockImplementation((docId, options) =>
+    trackCleanupWork("snapshot flush", docId, () => flushNow(docId, options)),
+  );
+  cleanup.push(() => flushSpy.mockRestore());
   await draftDocumentSnapshots.start();
   cleanup.push(stopDraftDocumentSnapshots);
   const { startLiveOutbox } = await import("@k2b/cloud/events/testing");
@@ -507,12 +525,26 @@ try {
   if (timer) clearInterval(timer);
   await within(sampled, 30000, "Sampler").catch(() => undefined);
   await waitForSecondary?.();
-  for (const action of cleanup.reverse())
+  for (const [index, action] of cleanup.reverse().entries()) {
+    const label = action.name || action.toString().split("\n")[0];
+    const started = performance.now();
+    const pending = () => [...cleanupWork.values()].map((entry) => ({ ...entry, ageMs: performance.now() - entry.started }));
+    writeSample(`${out}/cleanup.ndjson`, { index, label, phase: "start", pending: pending() });
     try {
-      await within(Promise.resolve().then(action), 10000, "Cleanup");
+      await within(Promise.resolve().then(action), 10000, `Cleanup ${label}`);
+      writeSample(`${out}/cleanup.ndjson`, { index, label, phase: "done", durationMs: performance.now() - started });
     } catch (e) {
       failure ??= String(e);
+      writeSample(`${out}/cleanup.ndjson`, {
+        index,
+        label,
+        phase: "failed",
+        durationMs: performance.now() - started,
+        error: String(e),
+        pending: pending(),
+      });
     }
+  }
   Bun.gc(true);
   await Bun.sleep(250);
   Bun.gc(true);
