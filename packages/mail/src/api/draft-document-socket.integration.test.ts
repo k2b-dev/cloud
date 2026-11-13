@@ -5,7 +5,7 @@ import { startLiveOutbox } from "@k2b/cloud/events/testing";
 import { auth } from "@k2b/cloud/server";
 import { fromBase64, MalformedSharedTextEventError, toBase64 } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
-import { StoreFullError, type TopicConfig } from "@k2b/sync";
+import { RetentionGapError, StoreFullError, type TopicConfig } from "@k2b/sync";
 import type { Server } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
@@ -755,6 +755,58 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     } finally {
       activeSession = previous;
     }
+  });
+
+  test("retention recovery rebuilds the stored base at head and preserves the original before resync", async () => {
+    await draft();
+    const base = await read();
+    const lost = await createDraftRevisionUpdate(
+      base.fresh.state,
+      { ...base.fresh.content, subject: "Lost header" },
+      { deadline: Date.now() + 5000 },
+    );
+    const retained = await createDraftRevisionUpdate(
+      base.fresh.state,
+      { ...base.fresh.content, body: "Retained after gap" },
+      { deadline: Date.now() + 5000 },
+    );
+    const topic = mailDraftDocumentLog.topic();
+    const append = (update: Uint8Array) =>
+      topic.publish({
+        tenantId: currentDraft.id,
+        data: { kind: "sync", payload: toBase64(update), restoreRevision: base.generation, originNodeId: "fixture", originPeerId: null },
+      });
+    const missing = await append(lost);
+    const head = (await append(retained)).cursor;
+    await topic.prune({ through: missing.cursor });
+    // The platform room's native prune suite verifies that an uncovered join
+    // calls adapter.recover. Exercise Mail's actual store with the real gap.
+    let cause: unknown;
+    try {
+      for await (const _event of topic.replay({ tenantId: currentDraft.id, after: base.durable.cursor!, until: head })) {
+        // Retention must reject this uncovered prefix before any event is read.
+      }
+    } catch (error) {
+      cause = error;
+    }
+    expect(cause).toBeInstanceOf(RetentionGapError);
+    await draftDocumentSnapshotStore.recover(currentDraft.id, cause, {});
+    const [row] = await sql<
+      { doc_state: Uint8Array; doc_cursor: string; doc_history_complete: boolean; body_markdown: string; revision: number }[]
+    >`SELECT doc_state, doc_cursor, doc_history_complete, body_markdown, revision::int AS revision
+      FROM mail.drafts WHERE id = ${currentDraft.id}::uuid`;
+    expect(row).toMatchObject({ doc_cursor: head, doc_history_complete: false, body_markdown: "Original", revision: base.revision + 1 });
+    expect(decode(row!.doc_state)).toMatchObject({ body: "Retained after gap", subject: "Subject" });
+    const [original] = await sql<{ state: Uint8Array }[]>`SELECT state FROM mail.draft_document_revisions
+      WHERE draft_id = ${currentDraft.id}::uuid AND revision = ${base.revision}`;
+    expect(Buffer.from(original!.state)).toEqual(Buffer.from(base.durable.state));
+    // Lost bytes remain lost: joining cannot make this draft editable or sendable.
+    expect(value(await readDraftDocument({ context, mailboxId, draftId: currentDraft.id })).historyComplete).toBe(false);
+    const client = await connect();
+    client.send({ type: "replayRequest", payload: { docId: currentDraft.short_id, generation: null, fromCursor: null } });
+    const message = await client.wait((packet) => packet.type === "error");
+    expect(message.type === "error" && message.payload.code).toBe("RESYNC_REQUIRED");
+    expect(client.messages.some((packet) => packet.type === "replayReady")).toBe(false);
   });
 
   test("malformed history recovery preserves valid updates, unresolved dependencies and the original base", async () => {

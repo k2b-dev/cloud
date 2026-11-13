@@ -26,7 +26,9 @@ const cleanupWork = new Map<symbol, { label: string; docId: string; started: num
 const trackCleanupWork = <T>(label: string, docId: string, work: () => Promise<T>): Promise<T> => {
   const key = Symbol();
   cleanupWork.set(key, { label, docId, started: performance.now() });
-  return Promise.resolve().then(work).finally(() => cleanupWork.delete(key));
+  return Promise.resolve()
+    .then(work)
+    .finally(() => cleanupWork.delete(key));
 };
 const done = Promise.withResolvers<void>();
 let failure: string | undefined;
@@ -81,6 +83,8 @@ try {
   const { initializeTestPlatform } = await import("../../../../scripts/fixtures/platform");
   const { closePlatformClients } = await import("../../../cloud/src/runtime/clients");
   cleanup.push(closePlatformClients);
+  const { stopDraftDocumentCancellation } = await import("../../src/service/draft-document-socket-sql");
+  cleanup.push(stopDraftDocumentCancellation);
   await initializeTestPlatform("mail");
   const { deleteTestNamespace } = await import("../../../../scripts/fixtures/test-sync");
   if (!shared) {
