@@ -51,6 +51,14 @@ const fixture = () => {
   const live = new Set<ReturnType<typeof stream<TopicEvent<SharedTextEvent>>>>();
   let authenticateWait: Promise<void> | undefined;
   let revalidateWait: Promise<void> | undefined;
+  let joinWait: Promise<void> | undefined;
+  let admissionWait: Promise<void> | undefined;
+  let joinEntered = Promise.withResolvers<void>();
+  let admissionEntered = Promise.withResolvers<void>();
+  let queueFailure = false,
+    leaveFailure = false;
+  let admissionCalls = 0,
+    leaveCalls = 0;
   let denied = false,
     revoked = false,
     readOnly = false;
@@ -107,6 +115,9 @@ const fixture = () => {
     topic: () => topic,
     mutex: () => ({
       withLock: async (_input: unknown, run: () => Promise<unknown>) => {
+        admissionCalls++;
+        admissionEntered.resolve();
+        await admissionWait;
         if (admissionBusy) throw new ConflictError("busy");
         return run();
       },
@@ -160,6 +171,7 @@ const fixture = () => {
     snapshots: {
       queue: async () => {
         snapshots++;
+        if (queueFailure) throw new Error("queue failed");
       },
     },
     adapter: {
@@ -176,13 +188,21 @@ const fixture = () => {
         sql++;
         return { state: new Uint8Array([0, 0]), text: "", cursor: "s6t.room.0", restoreRevision: "0" };
       },
+      join: async () => {
+        joinEntered.resolve();
+        await joinWait;
+      },
+      leave: async () => {
+        leaveCalls++;
+        if (leaveFailure) throw new Error("leave failed");
+      },
       actor: (user) => ({ kind: "user", id: user.id }),
       awarenessUser: (user) => ({ userId: user.id, name: "User", color: "#fff" }),
       revalidate: async () => {
         sql++;
         const ok = !revoked;
         await revalidateWait;
-        return { ok, code: "ACCESS_REVOKED" };
+        return { ok, code: "ACCESS_REVOKED", canWrite: !readOnly };
       },
       invalidations: (_ctx, signal) => invalidations.read(signal),
       recover: async () => {
@@ -215,6 +235,27 @@ const fixture = () => {
     entries,
     replays,
     sql: () => sql,
+    admissionCalls: () => admissionCalls,
+    leaveCalls: () => leaveCalls,
+    holdJoin: (wait: Promise<void>) => {
+      joinWait = wait;
+      joinEntered = Promise.withResolvers<void>();
+      return joinEntered.promise;
+    },
+    holdAdmission: (wait: Promise<void>) => {
+      admissionWait = wait;
+      admissionEntered = Promise.withResolvers<void>();
+      return admissionEntered.promise;
+    },
+    failQueue: (value: boolean) => {
+      queueFailure = value;
+    },
+    failLeave: (value: boolean) => {
+      leaveFailure = value;
+    },
+    writable: () => {
+      readOnly = false;
+    },
     snapshots: () => snapshots,
     holdAuthentication: (wait: Promise<void>) => {
       authenticateWait = wait;
@@ -542,9 +583,240 @@ test("admission contention warns BUSY without closing or acknowledging; the same
     expect(f.entries).toHaveLength(0);
     expect(f.ctx.phase).toBe("joined");
     f.busy(false);
-    await f.request("edit", payload);
+    await f.request("edit", { ...payload, retry: true });
     await waitFor(() => f.entries.length === 1);
     expect(f.closed).toEqual([]);
+  } finally {
+    source.destroy();
+    await f.connection.close();
+  }
+});
+
+test("BUSY gates queued dependent edits without admission, then accepts the complete retry", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 7;
+  try {
+    await f.join();
+    await f.ready;
+    source.getText("codemirror").insert(0, "one");
+    const first = toBase64(Y.encodeStateAsUpdate(source));
+    const vector = Y.encodeStateVector(source);
+    source.getText("codemirror").insert(3, " two");
+    const second = toBase64(Y.encodeStateAsUpdate(source, vector));
+    const request = (payload: string, retry?: true) =>
+      f.room.handle(f.ctx, {
+        type: "edit",
+        payload: { docId: "public", payload, baseCursor: "s6t.room.0", restoreRevision: "0", ...(retry ? { retry } : {}) },
+      });
+    f.busy(true);
+    await request(first);
+    const attempts = f.admissionCalls();
+    f.busy(false);
+    for (let index = 0; index < 10; index++) await request(second);
+    expect(f.admissionCalls()).toBe(attempts);
+    expect(f.closed).toEqual([]);
+    expect(f.entries).toHaveLength(0);
+    // A malformed retry with missing predecessors must also stay recoverable.
+    await request(second, true);
+    expect(f.sent.at(-1)?.payload.code).toBe("BUSY");
+    expect(f.closed).toEqual([]);
+    await request(toBase64(Y.encodeStateAsUpdate(source)), true);
+    expect(f.entries).toHaveLength(1);
+    const received = new Y.Doc();
+    try {
+      Y.applyUpdate(received, Buffer.from(f.entries[0]!.data.payload, "base64"));
+      expect(received.getText("codemirror").toString()).toBe("one two");
+    } finally {
+      received.destroy();
+    }
+    const before = Y.encodeStateVector(source);
+    source.getText("codemirror").insert(7, " three");
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: {
+        docId: "public",
+        payload: toBase64(Y.encodeStateAsUpdate(source, before)),
+        baseCursor: f.entries[0]!.cursor,
+        restoreRevision: "0",
+      },
+    });
+    expect(f.entries).toHaveLength(2);
+    expect(f.closed).toEqual([]);
+    expect(f.sent.filter((packet) => packet.type === "error").every((packet) => packet.payload.code === "BUSY")).toBe(true);
+  } finally {
+    source.destroy();
+    await f.connection.close();
+  }
+});
+
+test("a reader upgraded by an event reconnects to obtain a writer admission base", async () => {
+  const f = fixture();
+  try {
+    f.readOnly();
+    await f.join();
+    await f.ready;
+    expect(f.ctx.canWrite).toBe(false);
+    f.writable();
+    expect(await f.room.revalidate(f.ctx)).toBe(false);
+    expect(f.sent.at(-1)?.payload.code).toBe("STREAM_FAILED");
+    expect(f.closed).toEqual([1012]);
+    expect(f.sent.some((packet) => packet.payload.code === "RESYNC_REQUIRED")).toBe(false);
+  } finally {
+    await f.connection.close();
+  }
+});
+
+test("a same-socket rejoin stops the old stream before replacing its sole writer base", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 7;
+  const release = Promise.withResolvers<void>();
+  const topic = sharedText.define({ id: "room", retention: { maxAgeMs: 60_000, maxBytes: 1_000_000 } }).topic();
+  const publish = (update: Uint8Array) =>
+    topic.publish({
+      tenantId: "doc",
+      data: {
+        kind: "sync",
+        payload: toBase64(update),
+        restoreRevision: "0",
+        originNodeId: "remote",
+        originPeerId: "remote",
+        history: { patches: [], tables: [] },
+      },
+    });
+  try {
+    await f.join();
+    await f.ready;
+    source.getText("codemirror").insert(0, "one");
+    await publish(Y.encodeStateAsUpdate(source));
+    await waitFor(() => f.sent.filter((packet) => packet.type === "push").length >= 2);
+    const entered = f.holdJoin(release.promise);
+    const rejoin = f.room.handle(f.ctx, { type: "replay", payload: { docId: "public", restoreRevision: "0", fromCursor: "s6t.room.1" } });
+    await entered;
+    const vector = Y.encodeStateVector(source);
+    source.getText("codemirror").insert(3, " two");
+    await publish(Y.encodeStateAsUpdate(source, vector));
+    release.resolve();
+    await rejoin;
+    await waitFor(() => f.sent.filter((packet) => packet.type === "ready").length === 2);
+    const before = Y.encodeStateVector(source);
+    source.getText("codemirror").insert(7, " three");
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: {
+        docId: "public",
+        payload: toBase64(Y.encodeStateAsUpdate(source, before)),
+        baseCursor: "s6t.room.2",
+        restoreRevision: "0",
+      },
+    });
+    expect(f.entries).toHaveLength(3);
+    expect(f.closed).toEqual([]);
+  } finally {
+    release.resolve();
+    source.destroy();
+    await f.connection.close();
+  }
+});
+
+for (const failure of ["queue", "leave"] as const)
+  test(`failed ${failure} cleanup releases the base and resets the context; close can retry`, async () => {
+    const f = fixture();
+    const source = new Y.Doc();
+    source.clientID = 7;
+    let base: RoomWriterBase | undefined;
+    const original = RoomWriterBase.prototype.commit;
+    const commit = spyOn(RoomWriterBase.prototype, "commit").mockImplementation(function (this: RoomWriterBase, ...args) {
+      base = this;
+      original.apply(this, args);
+    });
+    try {
+      await f.join();
+      await f.ready;
+      source.getText("codemirror").insert(0, "accepted");
+      await f.room.handle(f.ctx, {
+        type: "edit",
+        payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(source)), baseCursor: "s6t.room.0", restoreRevision: "0" },
+      });
+      f.failQueue(failure === "queue");
+      f.failLeave(failure === "leave");
+      await expect(f.connection.close()).rejects.toThrow(`${failure} failed`);
+      expect(f.leaveCalls()).toBe(1);
+      expect(base?.writers).toBe(0);
+      expect(base?.doc.isDestroyed).toBe(true);
+      expect(f.ctx.docId).toBeNull();
+      expect(f.ctx.restoreRevision).toBeNull();
+      expect(f.ctx.canWrite).toBe(false);
+      f.failQueue(false);
+      f.failLeave(false);
+      await f.connection.close();
+      expect(f.snapshots()).toBe(failure === "queue" ? 2 : 1);
+    } finally {
+      f.failQueue(false);
+      f.failLeave(false);
+      commit.mockRestore();
+      source.destroy();
+      await f.connection.close();
+    }
+  });
+
+test("admission reads its base lazily after acquiring ownership", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 7;
+  const release = Promise.withResolvers<void>();
+  const snapshot = spyOn(RoomWriterBase.prototype, "snapshot");
+  try {
+    await f.join();
+    await f.ready;
+    source.getText("codemirror").insert(0, "pending");
+    const entered = f.holdAdmission(release.promise);
+    const admission = f.room.handle(f.ctx, {
+      type: "edit",
+      payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(source)), baseCursor: "s6t.room.0", restoreRevision: "0" },
+    });
+    await entered;
+    expect(snapshot).not.toHaveBeenCalled();
+    release.resolve();
+    await admission;
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    expect(f.entries).toHaveLength(1);
+  } finally {
+    release.resolve();
+    snapshot.mockRestore();
+    source.destroy();
+    await f.connection.close();
+  }
+});
+
+test("warm admissions encode once and apply only the accepted delta to the live base", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 7;
+  try {
+    await f.join();
+    await f.ready;
+    const merge = spyOn(RoomWriterBase.prototype, "merge");
+    const encode = spyOn(Y, "encodeStateAsUpdate");
+    try {
+      for (let index = 0; index < 3; index++) {
+        const vector = Y.encodeStateVector(source);
+        source.getText("codemirror").insert(index, "x");
+        const payload = toBase64(Y.encodeStateAsUpdate(source, vector));
+        encode.mockClear();
+        await f.room.handle(f.ctx, {
+          type: "edit",
+          payload: { docId: "public", payload, baseCursor: `s6t.room.${index}`, restoreRevision: "0" },
+        });
+        expect(encode).toHaveBeenCalledTimes(1);
+      }
+      expect(merge).not.toHaveBeenCalled();
+      expect(f.entries).toHaveLength(3);
+    } finally {
+      merge.mockRestore();
+      encode.mockRestore();
+    }
   } finally {
     source.destroy();
     await f.connection.close();

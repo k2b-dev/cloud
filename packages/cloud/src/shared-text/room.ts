@@ -118,8 +118,10 @@ type RoomState = {
   acceptTask: Promise<void> | null;
   accessWatchAbort: AbortController | null;
   dirty: boolean;
+  pendingSnapshot: { docId: string; targetCursor: string } | null;
   lastPublishedCursor: string | null;
   snapshotCursor: string | null;
+  busy: boolean;
   base?: RoomWriterBase;
   revalidation?: Promise<boolean>;
   revalidationAgain?: boolean;
@@ -172,8 +174,10 @@ export function createSharedTextRoom<
         acceptTask: null,
         accessWatchAbort: null,
         dirty: false,
+        pendingSnapshot: null,
         lastPublishedCursor: null,
         snapshotCursor: null,
+        busy: false,
       };
       sessions.set(ctx, current);
     }
@@ -252,26 +256,28 @@ export function createSharedTextRoom<
 
   const queueSnapshotIfNeeded = async (ctx: Context, reason: "periodic" | "unload") => {
     const session = state(ctx);
-    if (!ctx.docId || !session.dirty || !session.lastPublishedCursor) return;
+    const request = session.pendingSnapshot;
+    if (!request) return;
 
-    const queuedCursor = session.lastPublishedCursor;
+    const queuedCursor = request.targetCursor;
     try {
       await config.snapshots.queue({
-        docId: ctx.docId,
+        docId: request.docId,
         targetCursor: queuedCursor,
         reason,
       });
-      session.dirty = session.lastPublishedCursor !== queuedCursor;
+      if (session.pendingSnapshot === request) session.pendingSnapshot = null;
+      session.dirty = session.pendingSnapshot !== null;
       if (!session.dirty) stopSnapshotScheduler(ctx);
       log.debug("Queued snapshot save", {
-        docId: ctx.docId,
-        cursor: session.lastPublishedCursor,
+        docId: request.docId,
+        cursor: queuedCursor,
         reason,
       });
     } catch (error) {
       log.error("Failed to queue snapshot save", {
-        docId: ctx.docId,
-        cursor: session.lastPublishedCursor,
+        docId: request.docId,
+        cursor: queuedCursor,
         reason,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -289,6 +295,7 @@ export function createSharedTextRoom<
   const markDirty = (ctx: Context, cursor: string) => {
     state(ctx).lastPublishedCursor = maxStreamCursor(state(ctx).lastPublishedCursor, cursor);
     state(ctx).dirty = true;
+    state(ctx).pendingSnapshot = { docId: ctx.docId!, targetCursor: state(ctx).lastPublishedCursor! };
     startSnapshotScheduler(ctx);
   };
 
@@ -567,7 +574,9 @@ export function createSharedTextRoom<
     ctx.presencePeerId = payload.presencePeerId;
     ctx.accessScope = access.scope ?? null;
     ctx.invalidationCursor = access.invalidationCursor;
+    stopLiveStream(ctx);
     releaseBase(ctx);
+    state(ctx).busy = false;
     state(ctx).snapshotCursor = snapshot.cursor;
     ctx.canWrite = access.canWrite ?? false;
     if (ctx.canWrite) {
@@ -644,11 +653,17 @@ export function createSharedTextRoom<
       return;
     }
 
+    const session = state(ctx);
+    if (session.busy && !payload.retry) {
+      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, payload.docId);
+      return;
+    }
+    const update = fromBase64(payload.payload);
     // Decode alone cannot validate the target of a delayed edit. Admission and
     // its CAS happen before the echo that acknowledges the person's bytes.
     const publication = documents.accept(docId, {
-      snapshot: state(ctx).base?.snapshot() ?? null,
-      update: fromBase64(payload.payload),
+      snapshot: () => state(ctx).base?.snapshot() ?? null,
+      update,
       baseCursor: payload.baseCursor ?? null,
       restoreRevision: payload.restoreRevision,
       originNodeId: NODE_ID,
@@ -658,8 +673,8 @@ export function createSharedTextRoom<
       maxLength: config.maxLength,
       validateState: config.validateState,
       observedHead: state(ctx).head,
-      applied: (snapshot) => {
-        state(ctx).base?.merge(snapshot);
+      applied: (snapshot, previousCursor) => {
+        state(ctx).base?.commit(snapshot, previousCursor, update);
         const head = state(ctx).head;
         if (snapshot.cursor && (!head || compareStreamCursor(snapshot.cursor, head.cursor) > 0))
           state(ctx).head = {
@@ -678,6 +693,7 @@ export function createSharedTextRoom<
       published = await publication;
     } catch (error) {
       if (!(error instanceof ConflictError)) throw error;
+      session.busy = true;
       warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, payload.docId);
       return;
     } finally {
@@ -692,10 +708,15 @@ export function createSharedTextRoom<
       );
       return;
     }
+    if (published.status === "recoveryRequired" && published.reason === "dependencies" && session.busy) {
+      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, payload.docId);
+      return;
+    }
     if (published.status !== "accepted") {
       await requireReopen(ctx, payload.docId);
       return;
     }
+    session.busy = false;
   };
 
   const handleAwarenessPublish = async (ctx: Context, payload: z.infer<typeof AwarenessPublishMessageSchema.shape.payload>) => {
@@ -752,35 +773,45 @@ export function createSharedTextRoom<
     session.leaveTask = (async () => {
       if (ctx.phase !== "closing") Object.assign(ctx, { phase: "open" });
       await session.acceptTask?.catch(() => undefined);
-      await queueSnapshotIfNeeded(ctx, "unload");
-      stopAccessWatch(ctx);
-      stopSnapshotScheduler(ctx);
-      stopLiveStream(ctx);
-      const removal = session.trustedAwareness?.remove();
-      session.trustedAwareness = null;
-      session.awarenessUserId = null;
-      if (removal && ctx.docId) {
+      try {
+        await queueSnapshotIfNeeded(ctx, "unload");
+        const removal = session.trustedAwareness?.remove();
+        session.trustedAwareness = null;
+        session.awarenessUserId = null;
+        if (removal && ctx.docId) {
+          try {
+            await createYjsAwarenessTopic().publish({
+              tenantId: ctx.docId,
+              data: { kind: "awareness", payload: toBase64(removal), originNodeId: NODE_ID, originPeerId: ctx.peerId },
+            });
+          } catch (error) {
+            log.warn("Failed to leave cursor presence", { docId: ctx.docId, error: String(error) });
+          }
+        }
+      } finally {
         try {
-          await createYjsAwarenessTopic().publish({
-            tenantId: ctx.docId,
-            data: { kind: "awareness", payload: toBase64(removal), originNodeId: NODE_ID, originPeerId: ctx.peerId },
-          });
-        } catch (error) {
-          log.warn("Failed to leave cursor presence", { docId: ctx.docId, error: String(error) });
+          await adapter.leave?.(ctx);
+        } finally {
+          stopAccessWatch(ctx);
+          stopSnapshotScheduler(ctx);
+          stopLiveStream(ctx);
+          session.trustedAwareness = null;
+          session.awarenessUserId = null;
+          releaseBase(ctx);
+          Object.assign(ctx, { docId: null });
+          ctx.publicDocId = null;
+          ctx.restoreRevision = null;
+          ctx.accessScope = null;
+          ctx.invalidationCursor = undefined;
+          ctx.canWrite = false;
+          // Keep the captured enqueue request so close/drain can retry after reset.
+          session.dirty = session.pendingSnapshot !== null;
+          session.lastPublishedCursor = null;
+          session.snapshotCursor = null;
+          session.head = undefined;
+          session.busy = false;
         }
       }
-      await adapter.leave?.(ctx);
-      releaseBase(ctx);
-      Object.assign(ctx, { docId: null });
-      ctx.publicDocId = null;
-      ctx.restoreRevision = null;
-      ctx.accessScope = null;
-      ctx.invalidationCursor = undefined;
-      ctx.canWrite = false;
-      session.dirty = false;
-      session.lastPublishedCursor = null;
-      session.snapshotCursor = null;
-      session.head = undefined;
     })().finally(() => {
       session.leaveTask = null;
     });
@@ -821,8 +852,8 @@ export function createSharedTextRoom<
     try {
       const access = await adapter.revalidate(ctx);
       if (!current()) return false;
-      if (access.ok && access.scope !== undefined && access.scope !== ctx.accessScope) {
-        // Reconnect so the new scope's invalidations are observed too.
+      if (access.ok && ((!couldWrite && access.canWrite === true) || (access.scope !== undefined && access.scope !== ctx.accessScope))) {
+        // Reconnect to load a writer base and observe the new scope's invalidations.
         await fatal(ctx, ERROR_CODE.streamFailed, ctx.messages.liveSyncStreamFailed, ctx.publicDocId ?? undefined);
         return false;
       }

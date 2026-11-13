@@ -540,7 +540,7 @@ test("BUSY retries pending input on the same socket after backoff and retains th
     jest.advanceTimersByTime(1_999);
     expect(publishes(socket)).toHaveLength(1);
     jest.advanceTimersByTime(1);
-    expect(publishes(socket)).toEqual([first, first]);
+    expect(publishes(socket)).toEqual([first, { ...first, payload: { ...first.payload, retry: true } }]);
     expect(Socket.instances).toHaveLength(1);
     socket.sync(first.payload.payload);
     expect(provider.hasUnsentChanges()).toBe(false);
@@ -573,6 +573,40 @@ test("typing during BUSY remains recoverable and is included in the same-socket 
     expect(received.getText("codemirror").toString()).toBe("first and second");
     socket.sync(retried.payload.payload);
     expect(provider.hasUnsentChanges()).toBe(false);
+    expect(Socket.instances).toHaveLength(1);
+  } finally {
+    random.mockRestore();
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});
+
+test("BUSY retries the full state after dependent edits were already published", () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-12T12:00:00Z"));
+  const random = spyOn(Math, "random").mockReturnValue(0.5);
+  try {
+    const { provider, socket, local } = fixture();
+    socket.ready();
+    local.getText("codemirror").insert(0, "first");
+    local.getText("codemirror").insert(5, " and second");
+    expect(publishes(socket)).toHaveLength(2);
+    const journal = provider.pendingState();
+    socket.message({ type: "error", payload: { code: "BUSY", message: "Retry" } });
+    socket.message({ type: "error", payload: { code: "BUSY", message: "Retry" } });
+    expect(provider.pendingState()).toEqual(journal);
+    jest.advanceTimersByTime(2_000);
+    const retry = publishes(socket).at(-1)!;
+    expect(retry.payload.retry).toBe(true);
+    expect(retry.payload.baseCursor).toBe("s6t.test.1");
+    const received = doc(202);
+    Y.applyUpdate(received, encoding.fromBase64(retry.payload.payload));
+    expect(received.getText("codemirror").toString()).toBe("first and second");
+    expect(received.store.pendingStructs).toBeNull();
+    socket.sync(retry.payload.payload);
+    expect(provider.hasUnsentChanges()).toBe(false);
+    local.getText("codemirror").insert(16, " third");
+    expect(publishes(socket).at(-1)!.payload.retry).toBeUndefined();
     expect(Socket.instances).toHaveLength(1);
   } finally {
     random.mockRestore();

@@ -302,9 +302,10 @@ history is enabled. `baseCursor` is the state the browser had observed when it
 made the edit. Keep that cursor with pending bytes across reconnects; assigning
 a newer replay cursor to old input would erase the check's context.
 
-Supply the authorized snapshot from join or resync as `snapshot`; admission
-never loads the store. The room advances its base with live events and local
-publications. Admission reuses covered state and structural history, reads only
+Supply the authorized snapshot from join or resync as `snapshot`, or a
+synchronous function that reads the room's in-memory base after admission
+ownership is acquired; admission never loads the store. The room advances its
+base with live events and local publications. Admission reuses covered state and structural history, reads only
 the missing log tail, and checks changes since that base before publishing
 against the captured document head. Ordinary
 Markdown input and server `edit` calls receive the same classification: edits
@@ -867,7 +868,8 @@ Access is checked once when connecting or joining a document. Reconnects
 check again. The room performs no access polling, periodic revalidation,
 or SQL on edits, awareness messages, live delivery or an idle connection.
 Only a revocation/lifecycle event may cause the adapter to query current
-access. A lost write grant closes an existing writer too. Applications must
+access. A lost write grant closes an existing writer too. A reader gaining
+write access reconnects to load its writer base. Applications must
 publish invalidations for every mutation that changes access or generation.
 An unavailable invalidation stream closes the room; reconnect establishes
 current access and a new stream.
@@ -931,6 +933,9 @@ errors use 1011, and access failures use 1008. Error codes remain stable;
 applications supply localized messages. Dirty documents queue a snapshot every
 8 seconds and on leave/shutdown, using the existing ordered snapshot pipeline.
 A failed final enqueue makes drain retry instead of discarding accepted work.
+Stream shutdown, base release and context reset still run if enqueueing or an
+application leave hook fails. Rejoining stops the old stream before attaching
+the new base.
 
 ### Scale and flush before a durable action
 
@@ -938,7 +943,10 @@ Fan-out and acknowledgements travel through NATS, including back to the
 publishing socket. Each node keeps one disposable live `Y.Doc` per document
 with local writers, shared across those sockets and released with its last
 writer. Readers keep no admission base. Live events apply once without full
-state encoding; admission encodes the current base. A reconnect replays from
+state encoding. Admission reads the base lazily after acquiring ownership,
+reuses its cached encoding and applies only the accepted delta when current.
+A base behind the admission target catches up from the fully replayed result.
+A warm admission encodes its candidate state once. A reconnect replays from
 the base cursor even when its client cursor is newer than SQL, delivering
 only events beyond the client cursor. Any pod can accept a reconnect. Snapshot jobs retain their existing partitioned
 ordering; synchronous flush and background writers additionally share one
@@ -1014,8 +1022,14 @@ cancellation budget. Admissions queue FIFO per document on each node. Broker
 contention uses exponential backoff from 25 ms to 400 ms with ±50% jitter,
 at most 16 attempts within that budget. Busy or timed-out admission responds
 with `BUSY` without closing the socket or acknowledging the edit. The browser
-keeps its journal, pauses publication and retries pending input on the same
-socket after its configured backoff with ±50% jitter.
+keeps its journal, pauses publication and retries the full document state on
+the same socket after its configured backoff with ±50% jitter. Full-state
+retries carry optional `retry: true` on `syncPublish`; custom wire adapters
+must forward it. After BUSY the server rejects already queued deltas
+immediately, without acquiring admission again. A marked retry can acquire
+admission; missing causal dependencies remain BUSY, while incompatible
+revision or structural history still requires recovery. An accepted retry
+clears the gate. Ordinary publication packets are unchanged.
 A stalled or expired owner still has to pass expected-head CAS. Ordinary
 server edits retry at most three CAS conflicts, with 25/50 ms backoff,
 reusing the prepared update identities. Freeze releases admission after its

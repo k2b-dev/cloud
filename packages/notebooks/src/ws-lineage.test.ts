@@ -658,20 +658,27 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     }
   });
 
-  test("an admission CAS race reconnects with STREAM_FAILED and never confirms rejected input", async () => {
+  test("an admission CAS race keeps the revision and retries BUSY input without reopening", async () => {
     reset();
+    revision = "7";
     admissionFailure = new ConflictError("head advanced");
     const socket = await openSocket();
     try {
-      socket.replay("0", "s6t.fixture.9");
+      socket.replay("7", "s6t.fixture.9");
       await socket.ready();
-      socket.publish("0");
-      await waitFor(() => socket.closed.length > 0);
-      expect(socket.sent.filter((value) => value.type === "notes.yjs.error").map((value) => value.payload)).toEqual([
-        expect.objectContaining({ code: "STREAM_FAILED" }),
-      ]);
+      socket.publish("7");
+      await waitFor(() => socket.sent.some((value) => value.payload.code === "BUSY"));
+      expect(socket.closed).toEqual([]);
       expect(published).toHaveLength(0);
       expect(socket.sent.filter((value) => value.type === "notes.yjs.sync.push")).toHaveLength(0);
+      admissionFailure = null;
+      socket.publish("7");
+      await waitFor(() => socket.sent.filter((value) => value.payload.code === "BUSY").length === 2);
+      expect(ingress).toHaveLength(1);
+      socket.message("notes.yjs.sync.publish", { restoreRevision: "7", payload: "AAA=", baseCursor: "s6t.fixture.9", retry: true });
+      await waitFor(() => published.length === 1);
+      expect(published[0]?.data.restoreRevision).toBe("7");
+      expect(socket.closed).toEqual([]);
     } finally {
       await socket.close();
     }

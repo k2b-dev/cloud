@@ -61,6 +61,8 @@ export const createSharedTextRoomSchemas = (protocol: SharedTextRoomProtocol) =>
       docId: protocol.documentId,
       payload: z.string().min(1).max(protocol.maxSyncPayloadLength),
       baseCursor: z.string().max(256).nullable().optional(),
+      /** Identifies a full-state retry, rather than deltas already queued before BUSY. */
+      retry: z.literal(true).optional(),
       restoreRevision: SharedTextRestoreRevisionSchema,
     }),
   });

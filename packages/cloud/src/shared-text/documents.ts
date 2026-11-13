@@ -344,8 +344,8 @@ export const bindDocuments = <Saved, Context>(
     async accept(
       docId: string,
       options: {
-        /** Authorized state captured at join/resync; admission never loads the store. */
-        snapshot: SharedTextStoredState | null;
+        /** Authorized join/resync state, or a lazy in-memory base read after admission; never a store load. */
+        snapshot: SharedTextStoredState | null | (() => SharedTextStoredState | null);
         actor: SharedTextActor;
         update: Uint8Array;
         baseCursor: string | null;
@@ -359,18 +359,20 @@ export const bindDocuments = <Saved, Context>(
         /** Validate application-owned fields in the fully merged encoded state. */
         validateState?: (state: Uint8Array) => boolean | Promise<boolean>;
         /** Advance a transport-owned accepted base without waiting for live fan-out. */
-        applied?: (snapshot: SharedTextStoredState) => void;
+        applied?: (snapshot: SharedTextStoredState, previousCursor: string | null) => void;
         /** Server-observed broker head; a newer head still requires an exact retained lookup. */
         observedHead?: { cursor: string; data: SharedTextSyncEvent };
       },
-    ): Promise<{ status: "accepted"; cursor: string } | { status: "recoveryRequired" | "notFound" | "frozen" | "closed" }> {
+    ): Promise<
+      { status: "accepted"; cursor: string } | { status: "recoveryRequired" | "notFound" | "frozen" | "closed"; reason?: "dependencies" }
+    > {
       return admit(docId, options.signal, async (signal) => {
         options = { ...options, signal };
         if (options.maxLength !== undefined && (!Number.isSafeInteger(options.maxLength) || options.maxLength < 0))
           throw new RangeError("maxLength must be a nonnegative safe integer");
         Y.decodeUpdate(options.update);
         if (!events) throw new Error("This document log cannot validate ingress");
-        const joined = options.snapshot;
+        const joined = typeof options.snapshot === "function" ? options.snapshot() : options.snapshot;
         if (!joined) return { status: "notFound" };
         const cached = acceptedBase?.docId === docId ? acceptedBase.snapshot : undefined;
         const stored =
@@ -439,10 +441,11 @@ export const bindDocuments = <Saved, Context>(
           // a predecessor which was rejected for requiring recovery.
           const finishHistory = prepareIngressHistory(doc.getText(SHARED_TEXT_NAME));
           Y.applyUpdate(doc, options.update, "ingress-probe");
-          if (doc.store.pendingStructs || doc.store.pendingDs) return { status: "recoveryRequired" };
+          if (doc.store.pendingStructs || doc.store.pendingDs) return { status: "recoveryRequired", reason: "dependencies" };
           if (options.maxLength !== undefined && doc.getText(SHARED_TEXT_NAME).length > options.maxLength)
             return { status: "recoveryRequired" };
-          if (options.validateState && !(await options.validateState(Y.encodeStateAsUpdate(doc)))) return { status: "recoveryRequired" };
+          const encoded = options.validateState ? Y.encodeStateAsUpdate(doc) : undefined;
+          if (encoded && options.validateState && !(await options.validateState(encoded))) return { status: "recoveryRequired" };
           options.signal?.throwIfAborted();
           if (options.validate && !(await options.validate())) return { status: "recoveryRequired" };
           options.signal?.throwIfAborted();
@@ -458,13 +461,13 @@ export const bindDocuments = <Saved, Context>(
           const published = await handle.publish({ tenantId: docId, expectedAfter: target, data: event });
           historyCache!.remember(docId, target, { cursor: published.cursor, data: event });
           const snapshot = {
-            state: Y.encodeStateAsUpdate(doc),
+            state: encoded ?? Y.encodeStateAsUpdate(doc),
             text: doc.getText(SHARED_TEXT_NAME).toString(),
             cursor: published.cursor,
             restoreRevision: stored.restoreRevision,
           };
           acceptedBase = { docId, snapshot };
-          options.applied?.(snapshot);
+          options.applied?.(snapshot, target);
           return { status: "accepted", cursor: published.cursor };
         } catch (error) {
           if (error instanceof ConflictError) {

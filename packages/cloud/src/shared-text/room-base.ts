@@ -11,11 +11,13 @@ export class RoomWriterBase {
   cursor: string | null;
   readonly restoreRevision: string;
   writers = 0;
+  private encoded: SharedTextStoredState | undefined;
 
   constructor(snapshot: SharedTextStoredState) {
     this.doc = createDoc(snapshot);
     this.cursor = snapshot.cursor;
     this.restoreRevision = snapshot.restoreRevision;
+    this.encoded = snapshot;
   }
 
   apply(docId: string, event: { cursor: string; data: SharedTextSyncEvent }): void {
@@ -23,6 +25,7 @@ export class RoomWriterBase {
     if (event.data.restoreRevision !== undefined && event.data.restoreRevision !== this.restoreRevision) return;
     applySharedTextEvent(this.doc, event, docId, this.restoreRevision);
     this.cursor = event.cursor;
+    this.encoded = undefined;
   }
 
   merge(snapshot: SharedTextStoredState): void {
@@ -30,15 +33,31 @@ export class RoomWriterBase {
     if (this.cursor && (!snapshot.cursor || compareStreamCursor(snapshot.cursor, this.cursor) <= 0)) return;
     if (snapshot.state) Y.applyUpdate(this.doc, snapshot.state);
     this.cursor = snapshot.cursor;
+    this.encoded = snapshot;
+  }
+
+  /** A current base needs only the accepted delta; missed remote input requires
+   * the fully replayed admission result before its cursor may advance. */
+  commit(snapshot: SharedTextStoredState, previousCursor: string | null, update: Uint8Array): void {
+    if (snapshot.restoreRevision !== this.restoreRevision) return;
+    if (this.cursor && (!snapshot.cursor || compareStreamCursor(snapshot.cursor, this.cursor) <= 0)) return;
+    if (previousCursor && (!this.cursor || compareStreamCursor(this.cursor, previousCursor) < 0)) {
+      this.merge(snapshot);
+      return;
+    }
+    Y.applyUpdate(this.doc, update);
+    this.cursor = snapshot.cursor;
+    this.encoded = snapshot;
   }
 
   /** Encoding is needed for admission, never for receiving fan-out. */
   snapshot(): SharedTextStoredState {
-    return {
+    this.encoded ??= {
       state: Y.encodeStateAsUpdate(this.doc),
       text: this.doc.getText(SHARED_TEXT_NAME).toString(),
       cursor: this.cursor,
       restoreRevision: this.restoreRevision,
     };
+    return this.encoded;
   }
 }
