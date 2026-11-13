@@ -1,5 +1,5 @@
 import { spyOn } from "bun:test";
-import { writeFile } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 import { loadavg } from "node:os";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import { auth } from "@k2b/cloud/server";
@@ -47,6 +47,7 @@ const listener = (data: unknown) => {
 };
 draftDocumentDiagnostics.subscribe(listener);
 let timer: ReturnType<typeof setInterval> | undefined;
+let waitForSecondary: (() => Promise<void>) | undefined;
 let sampled: Promise<void> = Promise.resolve();
 let finalState: unknown, inspect: (() => { sockets: number; buffers: unknown }) | undefined, afterGc: unknown;
 let endMemory: NodeJS.MemoryUsage | undefined;
@@ -76,7 +77,21 @@ try {
   cleanup.push(closePlatformClients);
   await initializeTestPlatform("mail");
   const { deleteTestNamespace } = await import("../../../../scripts/fixtures/test-sync");
-  if (!shared) cleanup.push(() => deleteTestNamespace(namespace));
+  if (!shared) {
+    cleanup.push(() => deleteTestNamespace(namespace));
+    // This node owns the shared DB/namespace, but its own failure can stop it
+    // first. The supervisor drains the other node before releasing this gate.
+    waitForSecondary = async () => {
+      if (!(await Bun.file(`${out}/node-2/server-pid.json`).exists())) return;
+      await within(
+        (async () => {
+          while (!(await Bun.file(`${out}/secondary-stopped.json`).exists())) await Bun.sleep(25);
+        })(),
+        90_000,
+        "Secondary cleanup before shared resources",
+      );
+    };
+  }
   const { sql, startProcessSync } = await import("@k2b/cloud");
   const runtime = await startProcessSync({ application: "mail" });
   cleanup.push(() => runtime.stop());
@@ -398,9 +413,10 @@ try {
   const sample = async () => {
     checkHost();
     const memory = process.memoryUsage();
-    if (memory.rss > options.rssMib * 1024 ** 2) throw new Error("Server RSS budget exceeded");
     peakRss = Math.max(peakRss, memory.rss);
     peakHeap = Math.max(peakHeap, memory.heapUsed);
+    if (memory.rss > options.rssMib * 1024 ** 2)
+      throw new Error(`Server RSS budget exceeded: ${(memory.rss / 1024 ** 2).toFixed(1)} MiB > ${options.rssMib} MiB`);
     const usage = process.cpuUsage(cpu);
     cpu = process.cpuUsage();
     const activity =
@@ -442,9 +458,13 @@ try {
 } catch (e) {
   failure = e instanceof Error ? e.message : String(e);
 } finally {
+  // Report the initiating failure before teardown changes what peers observe.
+  await writeFile(`${out}/stopping.tmp`, JSON.stringify({ failure: failure ?? "Server stopped before clients completed" }));
+  await rename(`${out}/stopping.tmp`, `${out}/stopping.json`);
   endMemory = process.memoryUsage();
   if (timer) clearInterval(timer);
   await within(sampled, 30000, "Sampler").catch(() => undefined);
+  await waitForSecondary?.();
   for (const action of cleanup.reverse())
     try {
       await within(Promise.resolve().then(action), 10000, "Cleanup");

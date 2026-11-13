@@ -119,6 +119,7 @@ export async function run(options: Options) {
       await writeFile(`${out}/resources.json`, JSON.stringify(limits, null, 2));
     }
     const abort = Promise.withResolvers<never>();
+    let monitoring = false;
     monitor = setInterval(() => {
       writeSample(`${out}/host.ndjson`, { at: Date.now(), load: loadavg() });
       try {
@@ -126,6 +127,18 @@ export async function run(options: Options) {
       } catch (e) {
         abort.reject(e);
       }
+      if (monitoring) return;
+      monitoring = true;
+      void (async () => {
+        for (const node of [out, `${out}/node-2`]) {
+          const status = Bun.file(`${node}/stopping.json`);
+          if (await status.exists()) throw new Error((await status.json()).failure);
+        }
+      })()
+        .catch(abort.reject)
+        .finally(() => {
+          monitoring = false;
+        });
     }, 1000);
     const code = await within(
       Promise.race([
@@ -147,6 +160,7 @@ export async function run(options: Options) {
       () => undefined,
     );
     await within(second.child.exited, 90000, "Second server cleanup");
+    await writeFile(`${out}/secondary-stopped.json`, "{}");
     await fetch(`http://127.0.0.1:${port}/__load/stop`, { method: "POST", signal: AbortSignal.timeout(3000) }).catch(() => undefined);
     await within(server.child.exited, 90000, "Server cleanup");
   } catch (e) {
@@ -154,7 +168,10 @@ export async function run(options: Options) {
   } finally {
     if (monitor) clearInterval(monitor);
     for (const owned of [...children].reverse()) {
-      if (owned.child.exitCode !== null) continue;
+      if (owned.child.exitCode !== null) {
+        if (owned.name === "server-2") await writeFile(`${out}/secondary-stopped.json`, "{}");
+        continue;
+      }
       if (owned.pid) {
         try {
           process.kill(owned.pid, "SIGTERM");
@@ -170,6 +187,7 @@ export async function run(options: Options) {
         } else owned.child.kill("SIGKILL");
       });
       await owned.child.exited;
+      if (owned.name === "server-2") await writeFile(`${out}/secondary-stopped.json`, "{}");
     }
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", interrupt);
