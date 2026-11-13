@@ -452,8 +452,7 @@ export const requireVisibleMessages = async (
 /**
  * The access of each reader on one mailbox, by the grant, binding and scope rules of
  * `getMailboxAccess()`, with one query per scope for all of their grants. The live channel decides
- * with it. It leaves out whether each account is still active: the live socket checks every
- * credential again every 10 seconds.
+ * with it. The live socket also rechecks credentials on identity events and closes at known expiry deadlines.
  */
 export const getMailboxAccesses = async (
   mailboxId: string,

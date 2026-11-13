@@ -22,6 +22,7 @@ const ownerOf = (viewer: LiveViewer): string | null => (viewer.accessSubject.typ
  */
 export const aiLiveChannels = {
   user: {
+    eventOnly: true as const,
     scope: z.object({}).strict(),
     keys: async (_scope: unknown, viewer: LiveViewer) => {
       const owner = ownerOf(viewer);

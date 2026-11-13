@@ -56,6 +56,8 @@ const log = logger("auth:ipa");
 const upsertUserIpaData = async (
   params: {
     userId: string;
+    /** FreeIPA's entry ID (`ipaEntryId`); never replaces a stored one. */
+    entryId?: string | null;
     uidNumber?: number | null;
     primaryGidNumber?: number | null;
     homeDirectory?: string | null;
@@ -84,11 +86,12 @@ const upsertUserIpaData = async (
   });
   await tx`
     INSERT INTO auth.user_ipa_data (
-      user_id, uid_number, phone, employee_type, mobile, addr_street, addr_postal_code,
+      user_id, ipa_entry_id, uid_number, phone, employee_type, mobile, addr_street, addr_postal_code,
       addr_city, addr_state, ipa_password_expires, last_login_ipa, synced_at, ssh_public_keys, ssh_fingerprints
     )
     VALUES (
       ${params.userId},
+      ${params.entryId ?? null},
       ${params.uidNumber ?? null},
       ${params.phone ?? null},
       ${params.employeeType ?? null},
@@ -104,6 +107,7 @@ const upsertUserIpaData = async (
       ${freeipa.util.toPgTextArray(params.sshFingerprints ?? [])}::text[]
     )
     ON CONFLICT (user_id) DO UPDATE SET
+      ipa_entry_id = COALESCE(auth.user_ipa_data.ipa_entry_id, EXCLUDED.ipa_entry_id),
       uid_number = EXCLUDED.uid_number,
       phone = EXCLUDED.phone,
       employee_type = EXCLUDED.employee_type,
@@ -477,6 +481,7 @@ export const addIpa = async (params: {
         await upsertUserIpaData(
           {
             userId: id,
+            entryId: ipaResult ? ipaEntryId(ipaResult) : null,
             uidNumber,
             primaryGidNumber: ipaResult ? freeipa.util.num(ipaResult.gidnumber) : null,
             homeDirectory: ipaResult ? freeipa.util.str(ipaResult.homedirectory) || null : null,
@@ -507,6 +512,7 @@ export const addIpa = async (params: {
         await upsertUserIpaData(
           {
             userId: id,
+            entryId: ipaResult ? ipaEntryId(ipaResult) : null,
             uidNumber,
             primaryGidNumber: ipaResult ? freeipa.util.num(ipaResult.gidnumber) : null,
             homeDirectory: ipaResult ? freeipa.util.str(ipaResult.homedirectory) || null : null,

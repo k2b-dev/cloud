@@ -9,7 +9,7 @@ const deOptions: Partial<Record<string, Record<string, string>>> = {
   },
   "freeipa.user_match_mode": {
     ignore: "Lokales Konto ignorieren",
-    migrate: "Passendes lokales Konto migrieren",
+    migrate: "Passendes lokales Konto vorschlagen",
   },
   "freeipa.account_transition_policy": {
     delete: "Konto löschen",
