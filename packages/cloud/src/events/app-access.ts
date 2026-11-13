@@ -22,7 +22,7 @@ const identityChange = z.object({
   sid: z.string().nullish(),
   serviceAccountId: z.string().nullish(),
 });
-type Listener = { changed(): void; subject?: IdentityAccessSubject };
+type Listener = { changed(subject?: IdentityAccessSubject): void; subject?: IdentityAccessSubject };
 const listeners = new Map<string, Set<Listener>>();
 export const identityAccessAffects = (event: IdentityAccessSubject, subject: IdentityAccessSubject): boolean =>
   (!event.userId || event.userId === subject.userId) &&
@@ -31,7 +31,11 @@ export const identityAccessAffects = (event: IdentityAccessSubject, subject: Ide
 let active: AbortController | undefined;
 
 /** One follower per process, released as soon as the last live connection ends. */
-export const subscribeAppAccessChanged = (appId: string, changed: () => void, subject?: IdentityAccessSubject): (() => void) => {
+export const subscribeAppAccessChanged = (
+  appId: string,
+  changed: (subject?: IdentityAccessSubject) => void,
+  subject?: IdentityAccessSubject,
+): (() => void) => {
   let callbacks = listeners.get(appId);
   if (!callbacks) {
     callbacks = new Set();
@@ -64,7 +68,7 @@ export const subscribeAppAccessChanged = (appId: string, changed: () => void, su
             if (!identity.data.userId && !identity.data.sid && !identity.data.serviceAccountId) invalidateIdentityRuntimeConfig();
             for (const callbacks of listeners.values())
               for (const callback of callbacks)
-                if (!callback.subject || identityAccessAffects(identity.data, callback.subject)) callback.changed();
+                if (!callback.subject || identityAccessAffects(identity.data, callback.subject)) callback.changed(identity.data);
           }
         }
       },
@@ -110,8 +114,10 @@ export const scheduleSessionIdleAccessChanged = async (tx: SQL, sid: string, tim
 };
 
 /** Identity/group/session mutations and deadline events, on Core's existing shared live follower. */
-export const subscribeIdentityAccessChanged = (changed: () => void, subject?: IdentityAccessSubject): (() => void) =>
-  subscribeAppAccessChanged("*", changed, subject);
+export const subscribeIdentityAccessChanged = (
+  changed: (subject?: IdentityAccessSubject) => void,
+  subject?: IdentityAccessSubject,
+): (() => void) => subscribeAppAccessChanged("*", changed, subject);
 
 /** Run once during lifecycle.start before accepting event-only authenticated rooms. */
 export const requireIdentityAccessEvents = async (): Promise<void> => {

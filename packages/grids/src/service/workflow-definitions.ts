@@ -44,7 +44,7 @@ import type {
 import { GridsWorkflowRevisionSchema } from "../workflows/contracts";
 import { GRIDS_EVENT } from "../workflows/events";
 import { logAudit } from "./audit";
-import { gridsLive, publishMetadataChange } from "./live";
+import { gridsLive, gridsLiveKey, publishMetadataChange } from "./live";
 import { insertWithShortId } from "./short-id";
 import { loadWorkflowCatalog } from "./workflow-catalog";
 import { assertWorkflowEmailTemplatesAvailable, lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
@@ -462,6 +462,7 @@ export const removeWorkflow = async (id: string, actorId: string | null, locale?
       tx,
     );
     await publishMetadataChange(tx, existing.baseId, "workflow.deleted");
+    await gridsLive.publish(tx, { key: gridsLiveKey.workflow(id), access: true });
   });
   await workflowChanged(existing.id);
   return ok();
