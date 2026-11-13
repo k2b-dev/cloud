@@ -3,6 +3,17 @@ import { truncateUtf8 } from "../lib/utf8";
 const REPLY_PREFIX = /^(?:\[[^\]\r\n]+\]\s*)*(?:re|fw|fwd|aw|wg|rv|sv|antw)(?:\[\d+\])?\s*:\s*/i;
 const LEADING_TAG = /^(?:\[[^\]\r\n]+\]\s*)+/;
 
+/** Remove only reply/forward prefixes, retaining the subject's identifying tags and spelling. */
+export const stripMailSubjectPrefixes = (subject: string): string => {
+  let value = subject.trim();
+  for (;;) {
+    const match = value.match(REPLY_PREFIX);
+    if (!match) return value;
+    const tags = match[0].match(LEADING_TAG)?.[0] ?? "";
+    value = `${tags}${value.slice(match[0].length)}`.trim();
+  }
+};
+
 const collapseSubject = (subject: string): string => subject.trim().toLowerCase().replace(/\s+/g, " ");
 
 export const normalizeMailSubject = (subject: string): string => {

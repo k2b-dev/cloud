@@ -7,16 +7,13 @@ import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from
 import { apiClient } from "../../api/client";
 import { MailComposeCommandInputSchema, mailCommandMessages } from "../../commands";
 import type { MailContactDirectory } from "../../contact-directory-settings";
-import type { MailDraftSeed, SenderIdentity } from "../../contracts";
-import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
+import type { MailDraft, MailDraftSeed, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
 import { readContact } from "./contact-capabilities";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { type MailComposeIntentErrorCode, parseMailtoIntent } from "./mail-compose-intent";
-import { mailDraftReturnHref, mailDraftSeedHref } from "./mail-compose-route";
 import { mailComposeDraftSeedInput } from "./mail-compose-seed";
 import { mailComposerMessages } from "./mail-composer-messages";
-import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./mail-sender-preference";
 
 type WritableMailbox = {
@@ -41,16 +38,8 @@ export default function MailComposeIntentPage(props: {
   currentUserId?: string;
 }) {
   const locale = useLocale();
-  let seedStorage: Storage | undefined;
-  onMount(() => {
-    if (props.currentUserId) {
-      try {
-        seedStorage = openMailUserDraftStorage(localStorage, props.currentUserId);
-      } catch {
-        /* Starting a draft reports storage failure. */
-      }
-    }
-  });
+  // A seed whose materialization has no answer yet: the next try materializes it again, so no second draft appears.
+  let pendingSeed: { key: string; seed: MailDraftSeed } | null = null;
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const [mailto, setMailto] = createSignal(props.mailto);
   const [returnHref, setReturnHref] = createSignal(CommandPathSchema.safeParse(props.returnHref).success ? props.returnHref : null);
@@ -209,33 +198,38 @@ export default function MailComposeIntentPage(props: {
     }
   };
   const selectedIdentity = createMemo(() => identities().find((identity) => identity.id === identityId()) ?? null);
-  const draftCreation = mutations.create<{ seed: MailDraftSeed; identityId: string }, { mailboxId: string; identityId: string }>({
+  /**
+   * The message opens as a window in its mailbox: the draft is created here (seed and materialize, as Compose in the
+   * mailbox does), then Mail opens with `?draft=`, which opens the window.
+   */
+  const draftCreation = mutations.create<{ draft: MailDraft; identityId: string }, { mailboxId: string; identityId: string }>({
     mutation: async ({ mailboxId: selectedMailboxId, identityId }, { abortSignal }) => {
       const parsed = parsedIntent();
       if (!parsed.ok) throw new Error(intentErrorMessage(parsed.code));
-      const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
-        { param: { mailboxId: selectedMailboxId }, json: mailComposeDraftSeedInput(identityId, parsed.intent) },
+      const key = JSON.stringify([selectedMailboxId, identityId, parsed.intent]);
+      let seed = pendingSeed?.key === key ? pendingSeed.seed : null;
+      if (!seed) {
+        const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
+          { param: { mailboxId: selectedMailboxId }, json: mailComposeDraftSeedInput(identityId, parsed.intent) },
+          { init: { signal: abortSignal } },
+        );
+        if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
+        const created: MailDraftSeed = await response.json();
+        seed = created;
+        pendingSeed = { key, seed: created };
+      }
+      const materialized = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].materialize.$post(
+        { param: { mailboxId: selectedMailboxId }, json: { idempotencyKey: seed.id, origin: seed.origin, draft: seed.content } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
-      return { seed: await response.json(), identityId };
+      if (!materialized.ok) throw new Error(await readApiError(materialized, t().draftCreateFailed));
+      const draft: MailDraft = await materialized.json();
+      pendingSeed = null;
+      return { draft, identityId };
     },
-    onSuccess: ({ seed, identityId }) => {
-      writeMailSenderPreference(localStorage, seed.mailboxId, identityId);
-      try {
-        if (!seedStorage) throw new Error(t().localMessageFailed);
-        storeMailDraftSeed(seedStorage, seed);
-      } catch {
-        setAutoStartFailed(true);
-        setDirect(false);
-        void prompts.error(t().localMessageFailed, {
-          title: t().startMessageFailed,
-        });
-        return;
-      }
-      const fallbackReturnHref = `/app/mail/${seed.mailboxId}`;
-      const destination = returnHref() ? mailDraftReturnHref(returnHref()!, seed.mailboxId) : fallbackReturnHref;
-      window.location.replace(mailDraftSeedHref(seed.mailboxId, seed.id, destination));
+    onSuccess: ({ draft, identityId }) => {
+      writeMailSenderPreference(localStorage, draft.mailboxId, identityId);
+      window.location.replace(`/app/mail/${encodeURIComponent(draft.mailboxId)}?${new URLSearchParams({ draft: draft.id })}`);
     },
     onError: (error) => {
       setAutoStartFailed(true);

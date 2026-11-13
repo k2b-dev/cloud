@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { MailAttachmentsHarnessAttachment } from "./MailMessageAttachments.browser-harness";
 
 // Type sizes, line clamping, truncation and focus need real layout, so the real attachment list runs in a browser.
@@ -106,10 +106,45 @@ const openPreview = async (context: BrowserContextOptions, index: number): Promi
   const page = await (await browser.newContext(context)).newPage();
   await page.goto(server.url.href);
   await page.evaluate((list) => window.mountAttachments(list), attachments);
-  await page.locator(".k2b-file-grid__open").nth(index).click();
+  await page.locator(".mail-attachment-tile__open").nth(index).click();
   await page.locator("dialog.k2b-lightbox[open] .k2b-content-markdown").waitFor();
   return page;
 };
+
+describe("Mail attachment tiles", () => {
+  for (const [name, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`every tile has the same size, a long name stays on one line, and nothing scrolls sideways on ${name}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate((list) => window.mountAttachments(list), attachments);
+        await page.locator(".mail-attachment-tile").first().waitFor();
+        await settled(page);
+        const layout = await page.evaluate(() => ({
+          tiles: [...document.querySelectorAll<HTMLElement>(".mail-attachment-tile")].map((tile) => {
+            const box = tile.getBoundingClientRect();
+            return [Math.round(box.width), Math.round(box.height)];
+          }),
+          names: [...document.querySelectorAll<HTMLElement>(".mail-attachment-tile__name")].map(
+            (label) => label.getClientRects().length === 1 && label.scrollHeight <= label.clientHeight + 1,
+          ),
+          overflow: document.documentElement.scrollWidth > window.innerWidth,
+        }));
+        expect(layout.tiles).toHaveLength(2);
+        expect(layout.tiles[0]).toEqual(layout.tiles[1]!);
+        expect(layout.tiles[0]![1]).toBe(56);
+        expect(layout.names).toEqual([true, true]);
+        expect(layout.overflow).toBe(false);
+        expect(await page.locator("[data-mail-download-all]").textContent()).toContain("Download all 2");
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+});
 
 describe("Mail attachment preview in the Lightbox", () => {
   test("a document shows a placeholder while it loads, then its title in the name pill", async () => {
@@ -118,7 +153,7 @@ describe("Mail attachment preview in the Lightbox", () => {
     try {
       await page.goto(server.url.href);
       await page.evaluate((list) => window.mountAttachments(list), attachments);
-      await page.locator(".k2b-file-grid__open").first().click();
+      await page.locator(".mail-attachment-tile__open").first().click();
       await page.locator('dialog.k2b-lightbox[open] .k2b-lightbox__placeholder[role="status"]').waitFor();
       await page.locator("dialog.k2b-lightbox[open] .k2b-content-markdown").waitFor();
       expect(await page.locator("dialog.k2b-lightbox[open]").getAttribute("aria-label")).toBe("Summer party 2026");

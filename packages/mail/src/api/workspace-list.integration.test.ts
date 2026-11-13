@@ -249,12 +249,36 @@ suite("Mail workspace list pages", () => {
         ids.add(shortId);
         ids.add(msgShortId);
         for (const state of ["draft", "scheduled"]) {
+          // A scheduled send occupies its own reply box. Its source has no folder placement,
+          // so folder/search/conversation pages retain the same 52 visible + one hidden rows.
+          let draftConversationId = conversation!.id;
+          let draftSourceMessageId = message!.id;
+          if (state === "scheduled") {
+            const scheduledConversationShortId = newShortId();
+            const scheduledMessageShortId = newShortId();
+            ids.add(scheduledConversationShortId);
+            ids.add(scheduledMessageShortId);
+            const [scheduledConversation] = await tx<{ id: string }[]>`INSERT INTO mail.conversations
+              (short_id, mailbox_id, subject, participant_summary, latest_message_at)
+              VALUES (${scheduledConversationShortId}, ${mailboxId}::uuid, ${`Scheduled ${i}`}, 'Customer', ${date}) RETURNING id`;
+            const [scheduledMessage] = await tx<{ id: string }[]>`INSERT INTO mail.message_contents
+              (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status)
+              VALUES (${scheduledMessageShortId}, ${mailboxId}::uuid, ${`<scheduled-${suffix}-${i}@example.test>`},
+                ${`Scheduled ${i}`}, ${date}, 0, ${(i + 53).toString(16).padStart(64, "0")}, 'complete') RETURNING id`;
+            draftConversationId = scheduledConversation!.id;
+            draftSourceMessageId = scheduledMessage!.id;
+            await tx`INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+              VALUES (${draftConversationId}::uuid, ${draftSourceMessageId}::uuid, 1, 'headers')`;
+            if (i < 52)
+              await tx`INSERT INTO mail.conversation_assignees (conversation_id, user_id, assigned_at)
+              VALUES (${draftConversationId}::uuid, ${reader.id}::uuid, ${anchor})`;
+          }
           const draftShortId = newShortId();
           ids.add(draftShortId);
           const [draft] = await tx<{ id: string }[]>`INSERT INTO mail.drafts
             (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id, author_kind, author_id,
               last_editor_kind, last_editor_id, subject, body_markdown, state, updated_at)
-            VALUES (${draftShortId}, ${mailboxId}::uuid, ${conversation!.id}::uuid, ${message!.id}::uuid, 'reply', ${identity!.id}::uuid,
+            VALUES (${draftShortId}, ${mailboxId}::uuid, ${draftConversationId}::uuid, ${draftSourceMessageId}::uuid, 'reply', ${identity!.id}::uuid,
               'user', ${owner.id}::uuid, 'user', ${owner.id}::uuid, ${`Draft ${i}`}, 'Draft body', ${state}, ${date}) RETURNING id`;
           if (state === "draft") continue;
           const key = crypto.randomUUID();

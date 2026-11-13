@@ -48,7 +48,10 @@ const assignTarget = (item: Pick<AutomationLogItem, "effects">) =>
   item.effects.find((effect) => effect.kind === "assign")?.target.name ?? "";
 
 /** The bold first line: what happened, in past tense. */
-export const formatLogTitle = (item: Pick<AutomationLogItem, "outcome" | "effects">, t: MailAutomationLogText): string => {
+export const formatLogTitle = (
+  item: Pick<AutomationLogItem, "outcome" | "effects"> & Partial<Pick<AutomationLogItem, "reasons">>,
+  t: MailAutomationLogText,
+): string => {
   switch (item.outcome) {
     case "assigned":
       return t.assignedTo({ name: assignTarget(item) });
@@ -57,7 +60,7 @@ export const formatLogTitle = (item: Pick<AutomationLogItem, "outcome" | "effect
     case "nobody":
       return t.nobody;
     case "skipped":
-      return t.skippedAssign;
+      return item.reasons?.some((reason) => reason.kind === "reply_draft_occupied") ? t.replyDraftSkipped : t.skippedAssign;
     case "manual_change":
       return t.manualChange;
     case "failed":
@@ -83,6 +86,8 @@ const formatReason = (reason: AutomationLogReason, t: MailAutomationLogText, loc
       return [{ text: t.upperRule({ name: reason.name }), ai: false }];
     case "already_assigned":
       return [{ text: t.alreadyAssigned, ai: false }];
+    case "reply_draft_occupied":
+      return [{ text: t.replyDraftOccupied, ai: false }];
     case "undone_before":
       return [{ text: t.undoneBefore, ai: false }];
     case "manual": {

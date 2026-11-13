@@ -39,6 +39,7 @@ import {
   recordProviderFailure,
   releaseProviderLease,
 } from "./provider-operation-lock";
+import { lockConversationReplyDraft } from "./reply-draft-box";
 
 type SqlClient = typeof sql;
 type ProjectionState =
@@ -220,20 +221,23 @@ const loadDraftContent = async (
   return { mailboxId: row.mailbox_id, revision, state: row.state, content };
 };
 
+/** Retirement needs transport coordinates only; legacy content may no longer render or validate. */
+export const retireDraftProjectionInTransaction = async (params: { db: SqlClient; draftId: string }): Promise<string | null> => {
+  const [retiring] = await params.db<{ id: string }[]>`
+    UPDATE mail.draft_provider_snapshots
+    SET state = 'retiring', completed_at = NULL
+    WHERE draft_id = ${params.draftId}::uuid
+      AND direction = 'export'
+      AND state = 'active'
+    RETURNING id
+  `;
+  return retiring?.id ?? null;
+};
+
 export const queueDraftProjectionInTransaction = async (params: { db: SqlClient; draftId: string }): Promise<string | null> => {
   const draft = await loadDraftContent(params.draftId, params.db);
   if (!draft) return null;
-  if (draft.state !== "draft") {
-    const [retiring] = await params.db<{ id: string }[]>`
-      UPDATE mail.draft_provider_snapshots
-      SET state = 'retiring', completed_at = NULL
-      WHERE draft_id = ${params.draftId}::uuid
-        AND direction = 'export'
-        AND state = 'active'
-      RETURNING id
-    `;
-    return retiring?.id ?? null;
-  }
+  if (draft.state !== "draft") return retireDraftProjectionInTransaction(params);
   const fingerprint = draftProviderFingerprint(draft.content);
   const snapshotId = crypto.randomUUID();
   const stableMessageId = draftProviderMessageId(snapshotId);
@@ -1234,6 +1238,24 @@ const applyImportedDraft = async (params: {
             LIMIT 1
           `
         : [];
+      const occupied = thread ? await lockConversationReplyDraft(tx, thread.conversation_id) : null;
+      if (occupied) {
+        await storeProviderRecovery({
+          db: tx,
+          draftId: occupied.id,
+          baseRevision: Number(occupied.revision),
+          parsed: params.parsed,
+          senderIdentityId: params.senderIdentityId,
+          fingerprint: params.fingerprint,
+        });
+        await tx`UPDATE mail.draft_provider_snapshots SET draft_id = ${occupied.id}::uuid,
+          cloud_revision = ${Number(occupied.revision)}, content_fingerprint = ${params.fingerprint},
+          content_snapshot = ${params.parsed}::jsonb, state = 'conflict', completed_at = now(),
+          last_error_code = 'DRAFT_REPLY_BOX_OCCUPIED', last_error_message = 'The conversation already has a reply draft; external content was saved as recovery'
+          WHERE id = ${params.snapshot.id}::uuid`;
+        await enqueueMailInvalidation(tx, { mailboxId: params.snapshot.mailbox_id, conversationId: thread!.conversation_id });
+        return { draftId: occupied.id, revision: Number(occupied.revision), state: "conflict" as const };
+      }
       const editMode = await newDraftEditMode(tx, params.snapshot.mailbox_id);
       draftId = crypto.randomUUID();
       await withShortIdDb(

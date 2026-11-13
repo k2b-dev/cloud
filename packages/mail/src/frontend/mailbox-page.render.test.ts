@@ -221,6 +221,7 @@ test.each([
 
 test("mailbox scope uses the public ID and Mail's page without a mailbox has no mailbox scope (#1471)", async () => {
   const snapshot: MailboxPageData = {
+    workspacePreference: { listShare: null, seenHints: [] },
     viewPreference: { large: "auto", phone: "compact" },
     doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
     receivingAddress: null,

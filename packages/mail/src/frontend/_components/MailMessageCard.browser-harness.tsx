@@ -5,6 +5,19 @@ import { render } from "solid-js/web";
 import type { MessageDetail } from "../../service/messages";
 import MailConversationReader from "./MailConversationReader";
 
+const NO_DETAIL_ERRORS = {
+  collaboration: null,
+  tags: null,
+  comments: null,
+  assignableUsers: null,
+  activity: null,
+  reminder: null,
+  keep: null,
+  reference: null,
+  summary: null,
+  drafts: null,
+};
+
 /** The real reader with one message whose body has not arrived; the test answers its body requests. */
 declare global {
   interface Window {
@@ -84,11 +97,18 @@ window.mountReader = (locale) => {
             readingFormat="automatic"
             theme="light"
             calendarIntegrationAvailable={false}
-            listAway={false}
-            detailsOpen={false}
-            toolbarActions={["reply"]}
-            onToggleDetails={noop}
-            onToolbarActionsChange={noop}
+            collaboration={null}
+            reminder={null}
+            assignableUsers={[]}
+            onCollaborationChange={noop}
+            tags={[]}
+            comments={[]}
+            commentsCursor={null}
+            detailErrors={NO_DETAIL_ERRORS}
+            presence={[]}
+            hintSeen={(hint) => hint === "reader-head-moved"}
+            toolbarCustomized={false}
+            onHintSeen={noop}
             actionPending={false}
             structurePending={false}
             onAction={noop}

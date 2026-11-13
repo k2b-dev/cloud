@@ -31,6 +31,12 @@ export const toggleMailConversationSelection = (params: {
   return { ids: next, anchorId: params.conversationId };
 };
 
+/** The first shown conversations up to the limit, as the tab row's checkbox selects them. */
+export const selectAllMailConversations = (orderedConversationIds: readonly string[]): MailConversationSelection => {
+  const ids = new Set(orderedConversationIds.slice(0, MAX_MAIL_CONVERSATION_SELECTION));
+  return { ids, anchorId: orderedConversationIds[0] ?? null };
+};
+
 export const pruneMailConversationSelection = (
   selection: MailConversationSelection,
   availableConversationIds: ReadonlySet<string>,

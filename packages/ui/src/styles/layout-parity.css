@@ -2068,13 +2068,48 @@ html {
 
 /* ------------------------------------------------------- floating window */
 
-.k2b-ui .k2b-floating-window[data-mobile="true"] {
-  inset: 0.5rem;
+/* On a phone an open window is a full-screen sheet: close first, the status below the title. */
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) {
+  inset: 0;
   width: auto;
   height: auto;
   max-width: none;
   max-height: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   transform: none;
+}
+
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) > header {
+  height: 3.5rem;
+  gap: 0.25rem;
+  padding: 0 0.75rem 0 0.25rem;
+  background: transparent;
+  cursor: default;
+}
+
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) .k2b-floating-window__controls {
+  order: -1;
+}
+
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) .k2b-floating-window__close {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) .k2b-floating-window__heading {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+}
+
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) .k2b-floating-window__title {
+  max-width: 100%;
+  font-size: 0.9375rem;
+  cursor: default;
 }
 
 /* ------------------------------------------------------------ responsive */
