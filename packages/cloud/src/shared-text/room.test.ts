@@ -7,6 +7,7 @@ import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { toBase64 } from "./events";
 import { sharedText } from "./log";
 import { createSharedTextRoom, createSharedTextRoomContext, type SharedTextRoomMessages } from "./room";
+import { RoomWriterBase } from "./room-base";
 import type { SharedTextEvent } from "./types";
 
 const NOW = new Date("2026-11-12T12:00:00Z");
@@ -47,11 +48,12 @@ const stream = <T>() => {
 const fixture = () => {
   setSystemTime(NOW);
   const invalidations = stream<void>();
-  const live = stream<TopicEvent<SharedTextEvent>>();
+  const live = new Set<ReturnType<typeof stream<TopicEvent<SharedTextEvent>>>>();
   let authenticateWait: Promise<void> | undefined;
   let revalidateWait: Promise<void> | undefined;
   let denied = false,
-    revoked = false;
+    revoked = false,
+    readOnly = false;
   let sql = 0,
     snapshots = 0;
   let failure: Error | undefined;
@@ -74,7 +76,7 @@ const fixture = () => {
         publishedAt: NOW,
       };
       entries.push(entry);
-      live.push(entry);
+      for (const subscriber of live) subscriber.push(entry);
       return { cursor: head, streamSequence: sequence, messageId: String(sequence), duplicate: false };
     },
     replay: async function* (options: { after?: string; until?: string }) {
@@ -87,7 +89,17 @@ const fixture = () => {
       replays.push(batch.length);
       yield* batch;
     },
-    hub: () => ({ subscribe: ({ signal }: { signal: AbortSignal }) => live.read(signal) }),
+    hub: () => ({
+      subscribe: async function* ({ signal }: { signal: AbortSignal }) {
+        const subscriber = stream<TopicEvent<SharedTextEvent>>();
+        live.add(subscriber);
+        try {
+          yield* subscriber.read(signal);
+        } finally {
+          live.delete(subscriber);
+        }
+      },
+    }),
     live: ({ signal }: { signal: AbortSignal }) => stream<TopicEvent<SharedTextEvent>>().read(signal),
   };
   bindProcessSync({
@@ -152,7 +164,7 @@ const fixture = () => {
       },
       authorize: async () => {
         sql++;
-        return { ok: !denied, resolvedDocId: "doc", canWrite: true };
+        return { ok: !denied, resolvedDocId: "doc", canWrite: !readOnly };
       },
       load: async () => {
         sql++;
@@ -203,6 +215,9 @@ const fixture = () => {
     },
     holdRevalidation: (wait: Promise<void>) => {
       revalidateWait = wait;
+    },
+    readOnly: () => {
+      readOnly = true;
     },
     deny: () => {
       denied = true;
@@ -366,6 +381,138 @@ test("revalidation is single-flight and an invalidation during its query is chec
     expect(f.sent.at(-1)?.payload.code).toBe("ACCESS_REVOKED");
   } finally {
     release.resolve();
+    await f.connection.close();
+  }
+});
+
+for (const fromCursor of ["s6t.room.1", "s6t.room.2"])
+  test(`reconnect at ${fromCursor} ahead of SQL preserves the complete admission base`, async () => {
+    const f = fixture();
+    const topic = sharedText.define({ id: "room", retention: { maxAgeMs: 60_000, maxBytes: 1_000_000 } }).topic();
+    const remote = new Y.Doc();
+    const local = new Y.Doc();
+    remote.clientID = 7;
+    local.clientID = 42;
+    try {
+      remote.getText("codemirror").insert(0, "ab");
+      const first = Y.encodeStateAsUpdate(remote);
+      const vector = Y.encodeStateVector(remote);
+      await topic.publish({
+        tenantId: "doc",
+        data: {
+          kind: "sync",
+          payload: toBase64(first),
+          restoreRevision: "0",
+          originNodeId: "n",
+          originPeerId: "p",
+          history: { patches: [], tables: [] },
+        },
+      });
+      remote.getText("codemirror").insert(2, "c");
+      const second = Y.encodeStateAsUpdate(remote, vector);
+      await topic.publish({
+        tenantId: "doc",
+        data: {
+          kind: "sync",
+          payload: toBase64(second),
+          restoreRevision: "0",
+          originNodeId: "n",
+          originPeerId: "p",
+          history: { patches: [], tables: [] },
+        },
+      });
+      await f.request("replay", { restoreRevision: "0", fromCursor });
+      await f.ready;
+      Y.applyUpdate(local, first);
+      Y.applyUpdate(local, second);
+      const before = Y.encodeStateVector(local);
+      local.getText("codemirror").insert(3, "d");
+      await f.room.handle(f.ctx, {
+        type: "edit",
+        payload: {
+          docId: "public",
+          payload: toBase64(Y.encodeStateAsUpdate(local, before)),
+          baseCursor: "s6t.room.2",
+          restoreRevision: "0",
+        },
+      });
+      expect(f.entries).toHaveLength(3);
+      expect(f.closed).toEqual([]);
+      expect(f.sent.filter((packet) => packet.type === "error")).toEqual([]);
+      const replayed = f.sent.filter((packet) => packet.type === "push").flatMap((packet) => packet.payload.updates ?? []);
+      expect(replayed).toHaveLength(fromCursor === "s6t.room.1" ? 1 : 0);
+    } finally {
+      local.destroy();
+      remote.destroy();
+      await f.connection.close();
+    }
+  });
+
+test("fan-out shares one live base across writers, keeps none for readers, and never encodes it", async () => {
+  const f = fixture();
+  const additional: Array<ReturnType<typeof f.room.connect>> = [];
+  const join = async () => {
+    const ready = Promise.withResolvers<void>();
+    const ctx = createSharedTextRoomContext<{ id: string }, SharedTextRoomMessages>(
+      {
+        send: (raw) => {
+          if (JSON.parse(raw).type === "ready") ready.resolve();
+        },
+        close() {},
+      },
+      "credential",
+      f.ctx.messages,
+    );
+    const connection = f.room.connect(ctx);
+    additional.push(connection);
+    await f.room.handle(ctx, { type: "replay", payload: { docId: "public", restoreRevision: null } });
+    await ready.promise;
+  };
+  const source = new Y.Doc();
+  source.clientID = 7;
+  const bases = new Set<RoomWriterBase>();
+  const original = RoomWriterBase.prototype.apply;
+  const applied = Promise.withResolvers<void>();
+  let calls = 0;
+  const apply = spyOn(RoomWriterBase.prototype, "apply").mockImplementation(function (this: RoomWriterBase, ...args) {
+    bases.add(this);
+    original.apply(this, args);
+    if (++calls === 2) applied.resolve();
+  });
+  let encode: ReturnType<typeof spyOn> | undefined;
+  try {
+    await f.join();
+    await f.ready;
+    await join();
+    f.readOnly();
+    await join();
+    source.getText("codemirror").insert(0, "remote");
+    const payload = toBase64(Y.encodeStateAsUpdate(source));
+    encode = spyOn(Y, "encodeStateAsUpdate");
+    await sharedText
+      .define({ id: "room", retention: { maxAgeMs: 60_000, maxBytes: 1_000_000 } })
+      .topic()
+      .publish({
+        tenantId: "doc",
+        data: {
+          kind: "sync",
+          payload,
+          restoreRevision: "0",
+          originNodeId: "remote",
+          originPeerId: "remote",
+          history: { patches: [], tables: [] },
+        },
+      });
+    await applied.promise;
+    expect(bases.size).toBe(1);
+    expect(calls).toBe(2);
+    expect([...bases][0]!.doc.getText("codemirror").toString()).toBe("remote");
+    expect(encode).not.toHaveBeenCalled();
+  } finally {
+    encode?.mockRestore();
+    apply.mockRestore();
+    source.destroy();
+    for (const connection of additional) await connection.close();
     await f.connection.close();
   }
 });

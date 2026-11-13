@@ -1,20 +1,12 @@
 import { ConflictError, CursorMismatchError, RetentionGapError, type Topic, type TopicEvent, type TopicLiveEvent } from "@k2b/sync";
 import { retry } from "@k2b/sync/retry";
-import * as Y from "yjs";
 import type { z } from "zod";
 import { logger } from "../services/logging";
 import { createTrustedTextAwareness, InvalidSharedTextAwarenessError } from "./awareness";
 import { compareStreamCursor, maxStreamCursor } from "./cursor";
-import { createDoc } from "./documents";
-import {
-  applySharedTextEvent,
-  fromBase64,
-  isValidSharedTextUpdate as isValidYjsUpdate,
-  sharedTextNodeId as NODE_ID,
-  SHARED_TEXT_NAME,
-  toBase64,
-} from "./events";
+import { fromBase64, isValidSharedTextUpdate as isValidYjsUpdate, sharedTextNodeId as NODE_ID, toBase64 } from "./events";
 import type { sharedText } from "./log";
+import { RoomWriterBase } from "./room-base";
 import { createRoomLifecycle } from "./room-lifecycle";
 import { createSharedTextRoomSchemas, SHARED_TEXT_ROOM_ERROR_CODE as ERROR_CODE, type SharedTextRoomProtocol } from "./room-protocol";
 import type { SharedTextActor, SharedTextEvent, SharedTextStoredState, SharedTextSyncEvent } from "./types";
@@ -127,8 +119,8 @@ type RoomState = {
   accessWatchAbort: AbortController | null;
   dirty: boolean;
   lastPublishedCursor: string | null;
-  snapshot: SharedTextRoomSnapshot | null;
-  documents?: ReturnType<ReturnType<typeof sharedText.define>["withStore"]>;
+  snapshotCursor: string | null;
+  base?: RoomWriterBase;
   revalidation?: Promise<boolean>;
   revalidationAgain?: boolean;
   head?: { cursor: string; data: SharedTextSyncEvent };
@@ -181,20 +173,32 @@ export function createSharedTextRoom<
         accessWatchAbort: null,
         dirty: false,
         lastPublishedCursor: null,
-        snapshot: null,
+        snapshotCursor: null,
       };
       sessions.set(ctx, current);
     }
     return current;
   };
-  const updateBase = (ctx: Context, snapshot: SharedTextStoredState) => {
-    const current = state(ctx).snapshot;
-    if (
-      snapshot.restoreRevision === ctx.restoreRevision &&
-      (!current?.cursor || (snapshot.cursor && compareStreamCursor(snapshot.cursor, current.cursor) > 0))
-    )
-      state(ctx).snapshot = snapshot;
+  const bases = new Map<string, RoomWriterBase>();
+  const baseKey = (docId: string, revision: string) => JSON.stringify([docId, revision]);
+  const releaseBase = (ctx: Context) => {
+    const session = state(ctx);
+    if (!session.base || !ctx.docId) return;
+    if (--session.base.writers === 0) {
+      bases.delete(baseKey(ctx.docId, session.base.restoreRevision));
+      session.base.doc.destroy();
+    }
+    session.base = undefined;
   };
+  // The binding owns the shared structural history cache, rather than each socket.
+  const documents = config.log.withStore({
+    load: async () => {
+      throw new Error("Room admission never loads the store");
+    },
+    save: async () => {
+      throw new Error("Room admission never persists snapshots");
+    },
+  });
   const log = config.logger ?? logger("shared-text-room");
   const WS_TYPE = config.protocol.wsType;
   const createYjsTopic = config.log.topic;
@@ -416,12 +420,17 @@ export function createSharedTextRoom<
               }
             }
           }
+          // A reconnect's delivery cursor can be ahead of SQL. The writer base
+          // must consume the missing prefix too, without echoing it to the client.
+          const baseCursor = state(ctx).base?.cursor;
+          const baseAfter = state(ctx).base ? (baseCursor ?? documentTopic.cursorAt(0)) : replay.after;
+          const after = baseAfter && (!replay.after || compareStreamCursor(baseAfter, replay.after) < 0) ? baseAfter : replay.after;
           if (head) {
             let delivered = 0;
             try {
               for await (const event of documentTopic.replay({
                 tenantId: docId,
-                after: replay.after ?? documentTopic.cursorAt(0),
+                after: after ?? documentTopic.cursorAt(0),
                 until: head,
                 signal: abort.signal,
               })) {
@@ -453,35 +462,21 @@ export function createSharedTextRoom<
           if (
             event.data.restoreRevision !== undefined &&
             event.data.restoreRevision !== ctx.restoreRevision &&
-            (!state(ctx).snapshot?.cursor || compareStreamCursor(event.cursor, state(ctx).snapshot!.cursor!) > 0)
+            (!state(ctx).snapshotCursor || compareStreamCursor(event.cursor, state(ctx).snapshotCursor!) > 0)
           ) {
             await requireReopen(ctx, publicDocId);
             break;
           }
           if (!state(ctx).head || compareStreamCursor(event.cursor, state(ctx).head!.cursor) > 0)
             state(ctx).head = { cursor: event.cursor, data: event.data };
-          const base = state(ctx).snapshot;
-          if (base && (!base.cursor || compareStreamCursor(event.cursor, base.cursor) > 0)) {
-            const doc = createDoc(base);
-            try {
-              applySharedTextEvent(doc, event, docId, base.restoreRevision);
-              updateBase(ctx, {
-                state: Y.encodeStateAsUpdate(doc),
-                text: doc.getText(SHARED_TEXT_NAME).toString(),
-                cursor: event.cursor,
-                restoreRevision: base.restoreRevision,
-              });
-            } finally {
-              doc.destroy();
-            }
-          }
+          state(ctx).base?.apply(docId, event);
           if (event.data.room?.state === "closed") {
             await flush();
             await fatal(ctx, ERROR_CODE.closed, ERROR_CODE.closed, publicDocId);
             break;
           }
           // Lifecycle markers have no Yjs payload and must never be echoed as receipts.
-          if (event.data.kind !== "sync") continue;
+          if (event.data.kind !== "sync" || (replay.after && compareStreamCursor(event.cursor, replay.after) <= 0)) continue;
           const update = toPushUpdate(event);
           pending.push(update);
           pendingBytes += update.payload.length;
@@ -572,8 +567,20 @@ export function createSharedTextRoom<
     ctx.presencePeerId = payload.presencePeerId;
     ctx.accessScope = access.scope ?? null;
     ctx.invalidationCursor = access.invalidationCursor;
-    state(ctx).snapshot = snapshot;
+    releaseBase(ctx);
+    state(ctx).snapshotCursor = snapshot.cursor;
     ctx.canWrite = access.canWrite ?? false;
+    if (ctx.canWrite) {
+      const key = baseKey(dbDocId, snapshot.restoreRevision);
+      let base = bases.get(key);
+      if (base) base.merge(snapshot);
+      else {
+        base = new RoomWriterBase(snapshot);
+        bases.set(key, base);
+      }
+      base.writers++;
+      state(ctx).base = base;
+    }
 
     startAccessWatch(ctx);
     if (ctx.accessInvalidated && !(await revalidate(ctx))) return;
@@ -639,16 +646,8 @@ export function createSharedTextRoom<
 
     // Decode alone cannot validate the target of a delayed edit. Admission and
     // its CAS happen before the echo that acknowledges the person's bytes.
-    const session = state(ctx);
-    session.documents ??= config.log.withStore({
-      load: async () => state(ctx).snapshot,
-      save: async () => {
-        throw new Error("Room admission never persists snapshots");
-      },
-    });
-    const documents = session.documents;
     const publication = documents.accept(docId, {
-      snapshot: state(ctx).snapshot,
+      snapshot: state(ctx).base?.snapshot() ?? null,
       update: fromBase64(payload.payload),
       baseCursor: payload.baseCursor ?? null,
       restoreRevision: payload.restoreRevision,
@@ -660,7 +659,7 @@ export function createSharedTextRoom<
       validateState: config.validateState,
       observedHead: state(ctx).head,
       applied: (snapshot) => {
-        updateBase(ctx, snapshot);
+        state(ctx).base?.merge(snapshot);
         const head = state(ctx).head;
         if (snapshot.cursor && (!head || compareStreamCursor(snapshot.cursor, head.cursor) > 0))
           state(ctx).head = {
@@ -767,6 +766,7 @@ export function createSharedTextRoom<
         }
       }
       await adapter.leave?.(ctx);
+      releaseBase(ctx);
       Object.assign(ctx, { docId: null });
       ctx.publicDocId = null;
       ctx.restoreRevision = null;
@@ -775,7 +775,7 @@ export function createSharedTextRoom<
       ctx.canWrite = false;
       session.dirty = false;
       session.lastPublishedCursor = null;
-      session.snapshot = null;
+      session.snapshotCursor = null;
       session.head = undefined;
     })().finally(() => {
       session.leaveTask = null;
