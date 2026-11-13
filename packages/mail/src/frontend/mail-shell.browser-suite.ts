@@ -3022,11 +3022,29 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             // Another conversation and Back to the same link: the conversation stays unfolded.
             await page.locator('.mail-workspace [data-conversation-id="Conv01"] a.mail-list-row').click();
             await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
-            await settled(page);
-            await page.goBack();
-            await page.waitForFunction(() => new URL(location.href).searchParams.get("message") === "Long02");
-            await settled(page);
+            await ready(page);
+            // Back loads the link's workspace again, and the URL changes before it arrives. The test holds that answer,
+            // so it meets the pending Back on every run, not only on a slow runner, and counts once the reader is idle (#3268).
+            const backRequested = Promise.withResolvers<void>();
+            const releaseBack = Promise.withResolvers<void>();
+            await page.route("**/api/mail/mailboxes/Box001/workspace-route?*", async (route) => {
+              backRequested.resolve();
+              await releaseBack.promise;
+              await route.fallback();
+            });
+            try {
+              await page.goBack();
+              await backRequested.promise;
+              expect(new URL(page.url()).searchParams.get("message")).toBe("Long02");
+              expect(await page.locator(".k2b-app-workspace__main").getAttribute("aria-busy"), "the pending Back says it is busy").toBe(
+                "true",
+              );
+            } finally {
+              releaseBack.resolve();
+            }
+            await ready(page);
             expect(await cards.count()).toBe(6);
+            expect(await page.locator("[data-mail-older-messages]").count()).toBe(0);
           } finally {
             await close(page);
           }
