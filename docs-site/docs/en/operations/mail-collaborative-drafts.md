@@ -116,11 +116,14 @@ recover work that outlived a process.
 
 Edits saved in another client's Drafts folder update the shared draft and its
 attachments when they replace Mail's current copy and no newer Mail input
-exists. Open editors reconnect to the imported version. If either client
+exists. This also applies immediately after Undo or a definite send failure;
+those lifecycle changes alone do not make an external edit a recovery copy.
+Open editors reconnect to the imported version. If either client
 changed an older copy, or room input is still awaiting its SQL snapshot, Mail
 keeps the external edit as a recovery copy instead of overwriting newer work.
 Restoring a recovery copy also retains the version it replaces, including its
-attachments.
+attachments. A restore rejected before accepting input leaves the recovery list
+unchanged.
 
 The document log retains accepted input until all replayable drafts have
 covering SQL snapshots. Mail then prunes the covered prefix. A full log

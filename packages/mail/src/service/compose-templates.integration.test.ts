@@ -30,6 +30,7 @@ import {
   updateMailboxComposeLogo,
   updateMailboxComposeStyle,
 } from "./compose-templates";
+import { readDraftDocument } from "./draft-documents";
 import { acquireDraftLease, releaseDraftLease } from "./draft-leases";
 import {
   createDraft,
@@ -1432,6 +1433,37 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     ).toMatchObject({ ok: true, data: { body: "Edited answer", signatureTemplateId: chosen.id } });
   });
 
+  if (draftEditMode === "shared") {
+    test("failed shared recovery restores never add false recovery copies on retry", async () => {
+      const created = await createDraft({ context: owner, mailboxId, input: newContent() });
+      if (!created.ok) throw new Error(created.error.message);
+      const target = { context: owner, mailboxId, draftId: created.data.id };
+      const seeded = await readDraftDocument(target);
+      if (!seeded.ok) throw new Error(seeded.error.message);
+      // Real expired authenticated history, rather than a fabricated future revision.
+      await sql`DELETE FROM mail.draft_document_revisions WHERE draft_id = ${created.data.id}::uuid`;
+      expect(
+        await updateDraft({
+          ...target,
+          expectedRevision: created.data.revision,
+          input: { ...content(created.data), body: "Recover this text" },
+        }),
+      ).toMatchObject({ ok: false, error: { status: 409 } });
+      const copies = await listDraftRecoveryCopies(target);
+      if (!copies.ok || copies.data.length !== 1) throw new Error("Expected one retained edit");
+      for (const historyComplete of [true, false]) {
+        await sql`UPDATE mail.drafts SET doc_history_complete = ${historyComplete} WHERE id = ${created.data.id}::uuid`;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          expect(
+            await restoreDraftRecoveryCopy({ ...target, recoveryCopyId: copies.data[0]!.id, expectedRevision: created.data.revision }),
+          ).toMatchObject({ ok: false, error: { status: 409 } });
+          expect(await listDraftRecoveryCopies(target)).toEqual(copies);
+        }
+      }
+      await sql`UPDATE mail.drafts SET doc_history_complete = true WHERE id = ${created.data.id}::uuid`;
+    });
+  }
+
   test("recovery copies restore explicit choices and keep the current choice for old copies", async () => {
     const first = await signature("recoveryfirst");
     const second = await signature("recoverysecond");
@@ -1446,8 +1478,10 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     });
     if (!current.ok) throw new Error(current.error.message);
     const { signatureTemplateId: _, ...oldContent } = content(current.data);
-    // Authenticated stale shared edits merge. An unavailable base requests recovery.
-    const recoveryRevision = draftEditMode === "shared" ? current.data.revision + 1 : created.data.revision;
+    // Simulate an offline client's stale base aging out of authenticated history.
+    if (draftEditMode === "shared")
+      await sql`DELETE FROM mail.draft_document_revisions WHERE draft_id = ${created.data.id}::uuid AND revision = ${created.data.revision}`;
+    const recoveryRevision = created.data.revision;
     for (const choice of [{ signatureTemplateId: second.id }, {}, { signatureTemplateId: null }]) {
       const conflict = await updateDraft({
         context: owner,
@@ -1590,13 +1624,15 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     if (!current.ok) throw new Error(current.error.message);
     const { signatureTemplateId: _, ...oldContent } = content(current.data);
     const expectedBody = `Recovered answer\n\n${markComposeTemplateSegment(other.body)}`;
+    if (draftEditMode === "shared")
+      await sql`DELETE FROM mail.draft_document_revisions WHERE draft_id = ${created.data.id}::uuid AND revision = ${created.data.revision}`;
     expect(
       await updateDraft({
         context: owner,
         mailboxId,
         draftId: current.data.id,
-        // Shared stale bases merge; an unavailable base retains the submitted recovery body.
-        expectedRevision: draftEditMode === "shared" ? current.data.revision + 1 : created.data.revision,
+        // The offline client's actual base is no longer retained.
+        expectedRevision: created.data.revision,
         input: { ...oldContent, body: `${expectedBody}\n\n${markComposeTemplateSegment(chosen.body)}` },
       }),
     ).toMatchObject({ ok: false, error: { status: 409 } });

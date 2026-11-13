@@ -2576,18 +2576,11 @@ export const restoreDraftRecoveryCopy = async (params: {
           requested: content.data.signatureTemplateId,
         });
         if (!signature.ok) return signature;
-        // Restoring is an explicit replacement. Preserve the replaced server
-        // version in the same transaction, including its attachment set.
+        // Read before shared admission can project new content, but retain this
+        // version only once replacement input has actually been accepted.
         const [previous] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
         if (!previous) return fail(err.notFound("Draft"));
-        await storeRecoveryCopy({
-          db: tx,
-          draftId,
-          baseRevision: Number(draft.revision),
-          content: internalDraftEditableContentSchema.strip().parse(mapDraft(previous)),
-          actor,
-          includeAttachments: true,
-        });
+        let pendingPersistence = false;
         if (draft.edit_mode === "shared") {
           const publicContent = await publicDraftContent(tx, params.mailboxId, {
             ...content.data,
@@ -2608,9 +2601,21 @@ export const restoreDraftRecoveryCopy = async (params: {
               published = locked.data.publishedCursor !== null;
             });
           if (!saved.ok) return saved;
-          if (saved.data.status !== "accepted")
+          if (saved.data.status === "recoveryRequired")
             return conflict("Recovery is awaiting synchronization. The copy remains available; refresh before retrying.");
+          pendingPersistence = saved.data.status === "pendingPersistence";
         }
+        await storeRecoveryCopy({
+          db: tx,
+          draftId,
+          baseRevision: Number(draft.revision),
+          content: internalDraftEditableContentSchema.strip().parse(mapDraft(previous)),
+          actor,
+          includeAttachments: true,
+        });
+        // Published input can still replace the document after this request.
+        if (pendingPersistence)
+          return conflict("Recovery is awaiting synchronization. The copy remains available; refresh before retrying.");
         const recoveryAttachments = copy.has_attachment_snapshot
           ? await tx<
               {

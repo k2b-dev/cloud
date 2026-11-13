@@ -1500,12 +1500,14 @@ const draftModeTests = (draftEditMode: "shared" | "lock") => {
       ORDER BY id
     `;
     expect(draftActivity).toEqual([{ action: "draft.created", revision: 1 }]);
+    // Simulate an offline client's stale base aging out of authenticated history.
+    if (draftEditMode === "shared")
+      await sql`DELETE FROM mail.draft_document_revisions WHERE draft_id = ${draft.data.id}::uuid AND revision = ${emptyDraft.data.revision}`;
     const staleUpdate = await updateDraft({
       context,
       mailboxId: mailbox.data.id,
       draftId: draft.data.id,
-      // Shared mode merges authenticated old revisions; use an unavailable base to exercise recovery.
-      expectedRevision: draftEditMode === "shared" ? draft.data.revision + 1 : emptyDraft.data.revision,
+      expectedRevision: emptyDraft.data.revision,
       input: {
         quoteSource: null,
         senderIdentityId: identity!.id,
