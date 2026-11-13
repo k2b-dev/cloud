@@ -5,7 +5,7 @@ section: Automation
 order: 645
 description: Write an application's live updates in the transaction that makes the change and serve them to its open tabs over one socket.
 tags: [live, realtime, outbox, transactions, websocket]
-updated: 2026-11-12
+updated: 2026-11-13
 ---
 
 # Live updates
@@ -96,8 +96,7 @@ warehouse, publish it with `access: true`:
 await inventoryLive.publish(tx, { key: warehouseId, access: true });
 ```
 
-Every replica forgets its cached decisions for the key and checks the key's
-subscribers again before it delivers anything after the update, so a viewer
+Every replica checks the key's subscribers again before it delivers anything after the update, so a viewer
 who lost the key loses it at once. Right after, without holding up delivery,
 it runs `keys()` for its collections; a collection that gained a key loads its
 state again. Access updates that arrive while that runs share one more run.
@@ -204,9 +203,10 @@ const api = new Hono<AuthContext>().route("/live", inventoryLive.routes(inventor
   `getEffectivePermission()`. Apply the same role and credential rules as the
   API. Pass an array of access IDs or a Bun `SQLQuery` selecting one uuid
   column to keep large grant sets in the database.
-- `collection: true` marks a channel whose key set can change without an
-  update, such as "every book I can read". Cloud runs `keys()` again every
-  minute and after an access update. A collection may start with no keys.
+- `collection: true` marks a channel whose key set can change, such as
+  "every book I can read". Cloud runs `keys()` again after domain and identity
+  access events. Publish `access: true` when a domain change adds or removes
+  keys. A collection may start with no keys.
 
 The channels are passed to `routes()`, not to `defineLive()`: the services that
 decide access usually also publish updates, so the definition must not import
@@ -280,16 +280,22 @@ beyond the topic's head receives `resync`.
 `resync` is a normal path: an oversized update, a collection whose keys
 changed, and a cursor outside the window all end there.
 
-### Access at delivery
+### Access changes
 
-| Change | Reaches the tab within |
-| --- | --- |
-| Update published with `access: true` | at once |
-| Access lost, while updates arrive | 2 seconds (the decision cache, counted from the check) |
-| Access lost on a quiet subscription | 10 seconds (a sweep checks every key) |
-| Role or account change, such as a removed administrator | 10 seconds (the sweep loads the viewer again) |
-| Session or token ended | 10 seconds; the socket closes with `1008` |
-| Key gained through a group, without an update | 60 seconds (collections) |
+Cloud checks access when a subscription starts and retains its authorized keys
+until an access event. Ordinary deliveries and progress frames run no SQL,
+regardless of how long the subscription has been open.
+
+- Domain changes publish `access: true` in the transaction that changes access.
+  Every replica rechecks the affected key before delivering later updates.
+- Identity-Access events recheck credentials, viewer roles, and subscriptions
+  on every replica. Group changes, ended sessions, and account changes use
+  Core's existing outbox and NATS follower.
+- Known account and credential expiry times also close sockets with local
+  timers. There is no periodic credential, key, or collection polling.
+
+A domain decision that can change must have an access event from the service
+that owns that change. A time-to-live cache cannot replace that event.
 
 Updates that were already sent can still arrive after a revocation: what
 waits in the application's send buffer (256 KiB) and in the gateway, which
@@ -305,12 +311,10 @@ A collection that comes back from its cursor receives `resync` when its
 replica has already read an access update published after that cursor, even
 one of a key it does not follow now: Cloud does not know which keys the tab
 had, and only loading the state again removes a key it lost. An access update
-the replica reads only after the tab subscribed, usually one made within the
-second before, shows at the next reload, as does a key gained or lost through
-a group without an update.
+the replica reads after the tab subscribed refreshes its collections. Group
+changes refresh them through the Identity-Access follower.
 
-A replay uses the same access decisions as live delivery, so the table above
-applies to it too. A subscription that comes back from its cursor while its
+A replay uses the same subscription decisions as live delivery. A subscription that comes back from its cursor while its
 replica reads an access update receives `resync` instead of a replay, so an
 answer from before that update releases nothing published after it.
 
@@ -366,8 +370,8 @@ message multiplies with the typing speed and with every reader of the same
 document, so do it in memory and on NATS:
 
 - Check access and load state when the socket opens. After that, react to
-  access-change updates and a bounded refresh. `defineLive()` works this way,
-  with its 2-second decision cache and 10-second sweep.
+  access events and known expiry deadlines. `defineLive()` retains its
+  subscription decisions until these events; delivery and progress run no SQL.
 - Fan out over NATS: `defineLive()` for updates,
   [`@k2b/cloud/shared-text`](/en/docs/data/shared-text-documents) for
   collaborative text, and a Sync `ephemeral` registry for presence.

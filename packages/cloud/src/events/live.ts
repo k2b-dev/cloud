@@ -2,12 +2,14 @@ import type { ServerWebSocket } from "bun";
 import { type Context, Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import type { z } from "zod";
-import { guardAppAccessSocket } from "../server/middleware/app-access";
+import { userFromActor } from "../server/actor";
+import { guardAppAccessSocket, watchCredentialExpiry } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { rateLimit } from "../server/middleware/rate-limit";
 import { hasRefusedSessionOrigin } from "../server/middleware/session-origin";
 import * as settings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
+import { subscribeIdentityAccessChanged } from "./app-access";
 import { defineLivePublisher, liveTopic, startLiveDelivery } from "./live-delivery";
 import { createLiveEngine, type LiveChannel, type LiveConnectionHandle, type LiveEngine, type LiveViewer } from "./live-engine";
 
@@ -156,7 +158,7 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
       let engine: LiveEngine | null = null;
       const serve = (): LiveEngine => {
         if (engine && engines.has(engine)) return engine;
-        engine = createLiveEngine({ appId, topic: () => liveTopic(appId), channels });
+        engine = createLiveEngine({ appId, topic: () => liveTopic(appId), channels, subscribeAccess: subscribeIdentityAccessChanged });
         engines.add(engine);
         // A socket that opens while the application stops closes with 1012 and starts nothing.
         if (stopped) engine.stop();
@@ -179,13 +181,34 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
           const viewer = viewerOf(c);
           const revalidate = revalidator(c);
           let connection: LiveConnectionHandle | null = null;
-          return guardAppAccessSocket(c, appId, {
-            onOpen: (_event, ws) => {
-              connection = serve().open(ws.raw as ServerWebSocket<unknown>, viewer, revalidate);
+          const proof = c.get("credentialProof");
+          const actor = c.get("actor");
+          const deadlines = [
+            proof?.kind === "session" ? proof.expiresAt : undefined,
+            actor.kind === "service_account" ? actor.credentialExpiresAt : undefined,
+            userFromActor(actor)?.accountExpires,
+          ]
+            .filter((value): value is string => typeof value === "string")
+            .map(Date.parse)
+            .concat(proof?.kind === "oauth" && typeof proof.payload.exp === "number" ? [proof.payload.exp * 1_000] : [])
+            .filter(Number.isFinite);
+          return guardAppAccessSocket(
+            c,
+            appId,
+            {
+              onOpen: (_event, ws) => {
+                connection = serve().open(
+                  ws.raw as ServerWebSocket<unknown>,
+                  viewer,
+                  revalidate,
+                  deadlines.length ? (expired) => watchCredentialExpiry(Math.min(...deadlines), expired) : undefined,
+                );
+              },
+              onMessage: (message) => connection?.message(message.data),
+              onClose: () => connection?.closed(),
             },
-            onMessage: (message) => connection?.message(message.data),
-            onClose: () => connection?.closed(),
-          });
+            { eventOnly: true },
+          );
         }),
       );
     },

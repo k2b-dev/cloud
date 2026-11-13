@@ -18,16 +18,12 @@ export const LIVE_LIMITS = {
   socketsPerViewer: 16,
   sendBufferBytes: 256 * 1024,
   replayWaitMs: 10_000,
-  cacheMs: 2_000,
-  /** A check that takes longer than a sweep round fails, so the 10-second bounds hold. */
+  /** Access checks fail closed within ten seconds. */
   checkMs: 10_000,
-  cacheEntries: 50_000,
   viewersPerCall: 500,
   callsInFlight: 8,
-  sweepInFlight: 4,
+  accessInFlight: 4,
   batchEvents: 256,
-  sweepMs: 10_000,
-  keysEveryRounds: 6,
   progressMs: 30_000,
 };
 
@@ -52,7 +48,7 @@ export type LiveChannel<Scope extends z.ZodType = z.ZodType> = {
   keys(scope: z.output<Scope>, viewer: LiveViewer): Promise<readonly string[] | null>;
   /** IDs of the viewers allowed to read `key`. Called with at most 500 viewers. */
   authorize(key: string, viewers: readonly LiveViewer[]): Promise<ReadonlySet<string>>;
-  /** The key set can change without an event; it is refreshed every minute and on access changes. */
+  /** The key set is refreshed on domain and identity access changes. */
   collection?: true;
 };
 
@@ -98,6 +94,7 @@ type Connection = {
   pending: number;
   work: Promise<void>;
   closed: boolean;
+  stopExpiry?: () => void;
 };
 
 type Subscription = {
@@ -145,15 +142,21 @@ const eachLimited = async <T>(items: readonly T[], limit: number, run: (item: T)
 
 /**
  * Delivery of one application's live topic in this process: one follower with a
- * ring of recent events, an index from key to subscriptions, delivery-time
- * authorization with a short cache, and a periodic sweep of sessions and access.
+ * ring of recent events and an index of authorized subscriptions. Only setup
+ * and domain/identity access events run authorization; ordinary delivery runs no SQL.
  */
-export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic; channels: Readonly<Record<string, LiveChannel>> }) => {
+export const createLiveEngine = (input: {
+  appId: string;
+  topic: () => LiveTopic;
+  channels: Readonly<Record<string, LiveChannel>>;
+  /** The platform's existing shared Identity-Access follower; absent for in-memory channel tests. */
+  subscribeAccess?: (changed: () => void) => () => void;
+}) => {
   const { appId, channels } = input;
   const stopping = new AbortController();
   const connections = new Set<Connection>();
   const index = new Map<string, Set<Subscription>>();
-  const cache = new Map<string, { at: number; ok: boolean }>();
+  let stopAccess: (() => void) | undefined;
   let ring: Entry[] = [];
   let ringBytes = 0;
   /** Every event up to `head` was delivered; `received` is the follower's read position. */
@@ -183,7 +186,12 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
 
   const detach = (conn: Connection) => {
     for (const sub of conn.subs.values()) removeSubscription(sub);
+    conn.stopExpiry?.();
     connections.delete(conn);
+    if (connections.size === 0) {
+      stopAccess?.();
+      stopAccess = undefined;
+    }
   };
 
   const close = (conn: Connection, code: number, reason: string, text?: string) => {
@@ -302,58 +310,32 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     }
   };
 
-  const cacheKey = (channel: string, key: string, viewerId: string) => `${channel}\u0000${key}\u0000${viewerId}`;
-  /** Counts access updates; an answer requested before one is used, but not cached. */
+  // Incremented as soon as an invalidation arrives, including while setup is awaiting SQL.
   let accessUpdates = 0;
 
-  type Decision = { decided: Map<string, boolean> /** When the oldest of them was requested. */; at: number };
-
-  /**
-   * Whether each viewer may read `key`: cached for 2 seconds from the request
-   * unless `fresh`, one call per 500 uncached viewers.
-   */
-  const decide = async (channel: string, key: string, viewers: readonly LiveViewer[], fresh = false): Promise<Decision> => {
+  const decide = async (channel: string, key: string, viewers: readonly LiveViewer[]): Promise<Map<string, boolean>> => {
     const decided = new Map<string, boolean>();
-    const missing = new Map<string, LiveViewer>();
-    let at = Date.now();
-    for (const viewer of viewers) {
-      const hit = fresh ? undefined : cache.get(cacheKey(channel, key, viewer.id));
-      if (hit && Date.now() - hit.at < LIVE_LIMITS.cacheMs) {
-        decided.set(viewer.id, hit.ok);
-        at = Math.min(at, hit.at);
-      } else missing.set(viewer.id, viewer);
-    }
-    const pending = [...missing.values()];
+    const pending = [...new Map(viewers.map((viewer) => [viewer.id, viewer])).values()];
     for (let start = 0; start < pending.length; start += LIVE_LIMITS.viewersPerCall) {
       const part = pending.slice(start, start + LIVE_LIMITS.viewersPerCall);
-      const asked = { at: Date.now(), updates: accessUpdates };
       const allowed = await limited(() => bounded("authorize()", (channels[channel] as LiveChannel).authorize(key, part)));
-      for (const viewer of part) {
-        const ok = allowed.has(viewer.id);
-        decided.set(viewer.id, ok);
-        if (asked.updates !== accessUpdates) continue;
-        const id = cacheKey(channel, key, viewer.id);
-        cache.delete(id);
-        cache.set(id, { at: asked.at, ok });
-        if (cache.size > LIVE_LIMITS.cacheEntries) cache.delete(cache.keys().next().value as string);
-      }
-      at = Math.min(at, asked.at);
+      for (const viewer of part) decided.set(viewer.id, allowed.has(viewer.id));
     }
-    return { decided, at };
+    return decided;
   };
 
   const readableKeys = async (channel: string, keys: readonly string[], viewer: LiveViewer): Promise<string[]> => {
     const unique = [...new Set(keys)];
     const decided = await Promise.all(unique.map((key) => decide(channel, key, [viewer])));
-    return unique.filter((_, position) => decided[position]?.decided.get(viewer.id) === true);
+    return unique.filter((_, position) => decided[position]?.get(viewer.id) === true);
   };
 
-  /** Checks every subscriber of `key` without the cache; denied viewers lose the key. */
+  /** Rechecks the subscribers named by an access update; denied viewers lose the key. */
   const reauthorize = async (key: string) => {
     for (const [channel, viewers] of viewersOf(key)) {
       const subs = [...(index.get(key) ?? [])].filter((sub) => sub.channel === channel);
       try {
-        const { decided } = await decide(channel, key, viewers, true);
+        const decided = await decide(channel, key, viewers);
         for (const sub of subs) if (sub.keys.has(key) && decided.get(sub.conn.viewer.id) === false) loseKey(sub, key);
       } catch (error) {
         fail(
@@ -380,16 +362,21 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
 
   /**
    * Runs `keys()` again for collection subscriptions; a changed key set
-   * reloads. Only added keys are authorized: kept keys are checked at delivery
-   * and by the sweep.
+   * reloads. Only added keys are authorized; retained keys were checked by
+   * the access invalidation.
    */
   const refreshCollections = async () => {
     const subs = [...connections].flatMap((conn) => [...conn.subs.values()]).filter((sub) => sub.collection);
     const unchecked: Connection[] = [];
     let failure: unknown;
-    await eachLimited(subs, LIVE_LIMITS.sweepInFlight, async (sub) => {
+    await eachLimited(subs, LIVE_LIMITS.accessInFlight, async (sub) => {
       try {
+        const version = accessUpdates;
         const keys = await bounded("keys()", (channels[sub.channel] as LiveChannel).keys(sub.scope, sub.conn.viewer));
+        if (version !== accessUpdates) {
+          refreshAgain = true;
+          return;
+        }
         const listed = keys === null ? null : followed(sub.channel, keys);
         const added =
           listed === null
@@ -400,6 +387,10 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
                 sub.conn.viewer,
               );
         if (sub.conn.subs.get(sub.id) !== sub) return;
+        if (version !== accessUpdates) {
+          refreshAgain = true;
+          return;
+        }
         if (listed === null) {
           send(sub, frame.revoked(sub.id, "not_found"));
           removeSubscription(sub);
@@ -452,7 +443,10 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
       return { ...base, key: null, data: undefined, resync: false, access: false, bytes: 64 };
     }
     const { k, d, r, a } = parsed.data;
-    if (a === true) lastAccess = event.sequence;
+    if (a === true) {
+      lastAccess = event.sequence;
+      accessUpdates++;
+    }
     const data = d === undefined ? undefined : JSON.stringify(d);
     return { ...base, key: k, data, resync: r === true, access: a === true, bytes: (data?.length ?? 0) + k.length + 64 };
   };
@@ -463,61 +457,29 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     while (ring.length > LIVE_LIMITS.ringEvents || ringBytes > LIVE_LIMITS.ringBytes) ringBytes -= ring.shift()?.bytes ?? 0;
   };
 
-  /** Decisions of a batch, requested together before its first event is delivered. */
-  type Prefetched = Map<string, Promise<Decision>>;
-
-  const deliver = async (entry: Entry, decisions: Prefetched) => {
-    // Remembered before the candidates are taken: a subscription that registers
-    // from here on starts after this event and gets it from the ring instead.
+  const deliver = async (entry: Entry) => {
+    // An identity invalidation suspends delivery until its fresh decisions settle.
+    while (checkingAccess) await checkingAccess;
     remember(entry);
     const key = entry.key;
     if (key && (entry.data !== undefined || entry.resync)) {
-      const groups = new Map<string, Subscription[]>();
       for (const sub of index.get(key) ?? []) {
-        if (entry.seq <= sub.from) continue;
-        const group = groups.get(sub.channel);
-        if (group) group.push(sub);
-        else groups.set(sub.channel, [sub]);
-      }
-      for (const [channel, candidates] of groups) {
-        let decided: Map<string, boolean>;
-        try {
-          const prefetched = await decisions.get(`${channel}\u0000${key}`);
-          // A decision older than the cache, for example behind a slow batch, is requested again.
-          decided = prefetched && Date.now() - prefetched.at < LIVE_LIMITS.cacheMs ? new Map(prefetched.decided) : new Map();
-          // Subscriptions added after the batch started are checked on their own.
-          const late = candidates.map((sub) => sub.conn.viewer).filter((viewer) => !decided.has(viewer.id));
-          if (late.length > 0) for (const [id, ok] of (await decide(channel, key, late)).decided) decided.set(id, ok);
-        } catch (error) {
-          fail(
-            candidates.map((sub) => sub.conn),
-            error,
-            "access check",
-          );
-          continue;
-        }
-        for (const sub of candidates) {
-          if (sub.conn.closed || !sub.keys.has(key)) continue;
-          if (decided.get(sub.conn.viewer.id)) send(sub, frame.event(sub.id, entry));
-          else loseKey(sub, key);
-        }
+        if (entry.seq > sub.from && !sub.conn.closed) send(sub, frame.event(sub.id, entry));
       }
     }
     head = entry.seq;
   };
 
   /**
-   * An access change: forget the key's decisions and check its subscribers
+   * An access change: check the key's subscribers
    * before the update is delivered. Collections run `keys()` again next to
    * delivery, not in its way; a changed key set reloads them.
    */
   const changeAccess = async (entry: Entry) => {
     const key = entry.key as string;
-    accessUpdates++;
-    for (const id of [...cache.keys()]) if (id.includes(`\u0000${key}\u0000`)) cache.delete(id);
     await reauthorize(key);
     void refresh();
-    await deliver(entry, new Map());
+    await deliver(entry);
   };
 
   /** The topic lost events before the follower read them: every subscription reloads. */
@@ -528,28 +490,13 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     for (const conn of connections) for (const sub of conn.subs.values()) send(sub, frame.resync(sub.id, cursorAt(head)));
   };
 
-  /** Starts every authorization of a batch at once, then delivers it in order. */
   const deliverBatch = async (batch: Entry[]) => {
-    let start = 0;
-    while (start < batch.length) {
-      let end = start;
-      while (end < batch.length && !batch[end]?.access && !batch[end]?.gap) end++;
-      const decisions: Prefetched = new Map();
-      for (const entry of batch.slice(start, end)) {
-        if (!entry.key) continue;
-        for (const [channel, viewers] of viewersOf(entry.key)) {
-          const id = `${channel}\u0000${entry.key}`;
-          if (decisions.has(id)) continue;
-          const decision = decide(channel, entry.key, viewers);
-          decision.catch(() => undefined);
-          decisions.set(id, decision);
-        }
-      }
-      for (const entry of batch.slice(start, end)) await deliver(entry, decisions);
-      const special = batch[end];
-      if (special?.gap) recoverGap(special);
-      else if (special) await changeAccess(special);
-      start = end + 1;
+    for (const entry of batch) {
+      if (entry.gap) {
+        await invalidateAccess();
+        recoverGap(entry);
+      } else if (entry.access) await changeAccess(entry);
+      else await deliver(entry);
     }
   };
 
@@ -594,6 +541,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
           void drain();
           continue;
         }
+        fail([...connections], error, "live follower");
         log.warn("Live follower failed; it resumes", { appId, error: message(error) });
         await sleep(1_000);
       }
@@ -603,7 +551,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
   /** Fills the ring with one replay of the recent events, then follows the topic. */
   const start = (): Promise<void> => {
     if (timers.length === 0) {
-      timers = [setInterval(() => void sweep(), LIVE_LIMITS.sweepMs), setInterval(progress, LIVE_LIMITS.progressMs)];
+      timers = [setInterval(progress, LIVE_LIMITS.progressMs)];
       for (const timer of timers) timer.unref?.();
     }
     started ??= (async () => {
@@ -660,6 +608,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
   const replayTo = async (sub: Subscription, entries: Entry[]) => {
     const deadline = Date.now() + LIVE_LIMITS.replayWaitMs;
     for (const entry of entries) {
+      while (checkingAccess) await checkingAccess;
       if (sub.conn.subs.get(sub.id) !== sub) break;
       if (!sub.keys.has(entry.key as string)) continue;
       if (!(await writeWaiting(sub.conn, frame.event(sub.id, entry), deadline))) return;
@@ -683,14 +632,23 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     if (!scope.success) return violation(conn, "invalid_scope");
     await whenStarted();
     const accessBefore = lastAccess;
-    const keys = await channel.keys(scope.data, conn.viewer);
-    const readable = keys === null ? [] : await readableKeys(request.channel, followed(request.channel, keys), conn.viewer);
+    let keys: readonly string[] | null;
+    let readable: string[];
+    let version: number;
+    do {
+      while (checkingAccess) await checkingAccess;
+      version = accessUpdates;
+      keys = await bounded("keys()", channel.keys(scope.data, conn.viewer));
+      readable = keys === null ? [] : await readableKeys(request.channel, followed(request.channel, keys), conn.viewer);
+    } while (version !== accessUpdates && !conn.closed);
     // Not found and not readable look the same.
     if (keys === null || (readable.length === 0 && !channel.collection)) return write(conn, frame.revoked(request.id, "not_found"));
     const after = request.after === undefined ? null : sequenceOf(request.after);
     // A cursor ahead of the follower is fine unless it is also ahead of the topic, which was then recreated.
     const recreated = after !== null && after > head && after > input.topic().cursorSequence(await input.topic().head());
     if (conn.closed) return;
+    // A cursor/head read can overlap an invalidation too. Start admission again.
+    if (version !== accessUpdates) return subscribe(conn, request);
 
     // Synchronous from here. The position includes an event that is being delivered right now:
     // the replay covers everything up to it, live delivery everything after it.
@@ -743,36 +701,47 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     await subscribe(conn, request);
   };
 
-  // ---------- sweep and progress ----------
+  // ---------- event-driven identity access and progress ----------
 
-  let sweeping = false;
-  let round = 0;
-  const sweep = async () => {
-    if (sweeping || stopping.signal.aborted) return;
-    sweeping = true;
-    round++;
-    try {
-      const unchecked: Connection[] = [];
-      let failure: unknown;
-      await eachLimited([...connections], LIVE_LIMITS.sweepInFlight, async (conn) => {
-        if (conn.closed) return;
-        try {
-          const viewer = await bounded("The credential check", conn.revalidate());
-          if (!viewer || viewer.id !== conn.viewer.id) close(conn, 1008, "session_expired", "The session ended.");
-          else conn.viewer = viewer;
-        } catch (error) {
-          unchecked.push(conn);
-          failure = error;
-        }
-      });
-      fail(unchecked, failure, "credential check");
-      await eachLimited([...index.keys()], LIVE_LIMITS.sweepInFlight, reauthorize);
-      if (round % LIVE_LIMITS.keysEveryRounds === 0) await refresh();
-    } catch (error) {
-      log.error("Live sweep failed", { appId, error: message(error) });
-    } finally {
-      sweeping = false;
-    }
+  let checkingAccess: Promise<void> | null = null;
+  let checkAgain = false;
+  const checkAccess = async () => {
+    const unchecked: Connection[] = [];
+    let failure: unknown;
+    await eachLimited([...connections], LIVE_LIMITS.accessInFlight, async (conn) => {
+      if (conn.closed) return;
+      try {
+        const viewer = await bounded("The credential check", conn.revalidate());
+        if (!viewer || viewer.id !== conn.viewer.id) close(conn, 1008, "session_expired", "The session ended.");
+        else conn.viewer = viewer;
+      } catch (error) {
+        unchecked.push(conn);
+        failure = error;
+      }
+    });
+    fail(unchecked, failure, "credential check");
+    await eachLimited([...index.keys()], LIVE_LIMITS.accessInFlight, reauthorize);
+    await refresh();
+  };
+
+  const invalidateAccess = (): Promise<void> => {
+    if (stopping.signal.aborted) return Promise.resolve();
+    accessUpdates++;
+    checkAgain = true;
+    if (checkingAccess) return checkingAccess;
+    checkingAccess = (async () => {
+      try {
+        do {
+          checkAgain = false;
+          await checkAccess();
+        } while (checkAgain && !stopping.signal.aborted);
+      } catch (error) {
+        fail([...connections], error, "identity access");
+      } finally {
+        checkingAccess = null;
+      }
+    })();
+    return checkingAccess;
   };
 
   /** Lets quiet subscriptions move their cursor along, so they stay inside the ring. */
@@ -790,7 +759,12 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
   };
 
   return {
-    open: (socket: LiveSocket, viewer: LiveViewer, revalidate: () => Promise<LiveViewer | null>): LiveConnectionHandle => {
+    open: (
+      socket: LiveSocket,
+      viewer: LiveViewer,
+      revalidate: () => Promise<LiveViewer | null>,
+      watchExpiry?: (expired: () => void) => () => void,
+    ): LiveConnectionHandle => {
       const conn: Connection = { socket, viewer, revalidate, subs: new Map(), pending: 0, work: Promise.resolve(), closed: false };
       // A stopped engine starts no follower or timers again: the socket reconnects to a running replica.
       if (stopping.signal.aborted) close(conn, 1012, "restart");
@@ -798,6 +772,8 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
         start().catch((error) => log.warn("Live follower could not start", { appId, error: message(error) }));
         const open = [...connections].filter((other) => other.viewer.id === viewer.id).length;
         connections.add(conn);
+        stopAccess ??= input.subscribeAccess?.(() => void invalidateAccess());
+        conn.stopExpiry = watchExpiry?.(() => close(conn, 1008, "session_expired", "The session ended."));
         if (open >= LIVE_LIMITS.socketsPerViewer) close(conn, 1013, "too_many_sockets", "Too many live sockets are open.");
       }
       return {
@@ -821,6 +797,8 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     },
     stop: () => {
       stopping.abort();
+      stopAccess?.();
+      stopAccess = undefined;
       for (const timer of timers) clearInterval(timer);
       for (const conn of [...connections]) close(conn, 1012, "restart");
     },
