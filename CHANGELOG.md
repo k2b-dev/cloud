@@ -3,6 +3,21 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.76.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.75.0...cloud-v0.76.0) (2026-11-13)
+
+
+### Features
+
+* **cloud:** shared text rooms for collaborative documents ([#3235](https://github.com/k2b-dev/cloud/issues/3235)) ([f2fea74](https://github.com/k2b-dev/cloud/commit/f2fea7422198e6f622304df6dd239214ca2147ed))
+* **mail:** collaborative drafts on the shared text room with zero SQL per edit ([#3258](https://github.com/k2b-dev/cloud/issues/3258)) ([ca45d88](https://github.com/k2b-dev/cloud/commit/ca45d883ef89790a79da1a0d63b36bca98ddfcf7))
+
+
+### Bug Fixes
+
+* **cloud:** session end reaches open live connections on every path ([#3273](https://github.com/k2b-dev/cloud/issues/3273)) ([7f2afa9](https://github.com/k2b-dev/cloud/commit/7f2afa940c989b19f881c36aaec5dae2ae8306ed))
+* **mail:** cancelling every shared-draft transaction at once no longer blocks the database pool ([#3256](https://github.com/k2b-dev/cloud/issues/3256)) ([619fd7b](https://github.com/k2b-dev/cloud/commit/619fd7b139de3557cc3dad9ac4b6b63391e8714c))
+* **mail:** the reader Back test counts messages only after the Back has loaded ([#3270](https://github.com/k2b-dev/cloud/issues/3270)) ([605cfc1](https://github.com/k2b-dev/cloud/commit/605cfc1ad9522bac2e6389f7012e1f034970a102))
+
 ## [0.75.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.74.0...cloud-v0.75.0) (2026-11-13)
 
 
