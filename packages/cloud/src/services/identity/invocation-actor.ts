@@ -155,14 +155,22 @@ export const resolveInvocationAuthority = async (
       claims.scopes.length !== 0
     )
       return null;
-    const [entry] = await query<{ id: string }[]>`
+  }
+  // Keep provider/issuance admission current, but read the mandate and service
+  // principal in one statement. Personal principals retain their own projection.
+  const codeMandateCurrent =
+    claims.workload_type === "code.version"
+      ? sql`EXISTS (
       SELECT id FROM auth.mandates
       WHERE id=${claims.mandate_id}::uuid AND revision=${claims.mandate_revision}
         AND owner_app_id IN ('core','runner') AND workload_type='code.version' AND workload_id=${claims.workload_id}
         AND state='active' AND confirmed_at IS NOT NULL AND (expires_at IS NULL OR expires_at>now())
         AND subject_kind=${claims.principal_type}
         AND COALESCE(subject_user_id,subject_service_account_id)=${claims.sub}::uuid
-    `;
+  )`
+      : sql`true`;
+  if (claims.workload_type === "code.version" && claims.principal_type === "user") {
+    const [entry] = await query`SELECT 1 WHERE ${codeMandateCurrent}`;
     if (!entry) return null;
   }
   const groupsAdmin = groupsAdminOverride ?? (await getIdentityRuntimeConfig()).groupsAdmin;
@@ -201,7 +209,7 @@ export const resolveInvocationAuthority = async (
     LEFT JOIN auth.users u ON u.id = sa.delegated_user_id
     ${userProjectionJoin()}
     WHERE sa.id = ${claims.sub}::uuid
-      AND sa.status = 'active'
+      AND sa.status = 'active' AND ${codeMandateCurrent}
   `;
   const row = rows[0];
   if (!row) return null;
