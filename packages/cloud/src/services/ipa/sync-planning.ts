@@ -1,6 +1,38 @@
+/** A directory user: its login name and FreeIPA's immutable entry ID (`ipaEntryId`), when the directory returned one. */
 export type IpaIdentity = {
   uid: string;
-  mail: string | null;
+  entryId: string | null;
+};
+
+/** A local FreeIPA account and the directory entry ID stored at its last sync; null until a sync binds it. */
+export type LocalIpaIdentity = IpaIdentity & { id: string };
+
+/**
+ * `matched`: the same directory user. `unverified`: the account stores an entry ID, the directory returned none, so
+ * the record neither confirms nor replaces it. `conflict`: the username now belongs to another directory entry.
+ */
+export type IpaIdentityMatch<T extends LocalIpaIdentity> =
+  | { kind: "matched"; row: T }
+  | { kind: "unverified"; row: T }
+  | { kind: "conflict"; row: T }
+  | { kind: "none" };
+
+/**
+ * Finds the local account of a directory user by directory identity, never by email. A stored entry ID wins:
+ * the same ID under a new name is a rename. An account without a stored ID matches by name once, and the sync
+ * then stores the ID. A name whose account stores another entry ID belongs to someone else: a conflict.
+ */
+export const createIpaIdentityMatcher = <T extends LocalIpaIdentity>(rows: T[]) => {
+  const byEntryId = new Map(rows.flatMap((row) => (row.entryId ? [[row.entryId, row] as const] : [])));
+  const byUid = new Map(rows.map((row) => [row.uid, row]));
+  return (remote: IpaIdentity): IpaIdentityMatch<T> => {
+    const byId = remote.entryId ? byEntryId.get(remote.entryId) : undefined;
+    if (byId) return { kind: "matched", row: byId };
+    const byName = byUid.get(remote.uid);
+    if (!byName) return { kind: "none" };
+    if (!byName.entryId) return { kind: "matched", row: byName };
+    return remote.entryId ? { kind: "conflict", row: byName } : { kind: "unverified", row: byName };
+  };
 };
 
 export const readCompleteIpaList = (params: {
@@ -44,15 +76,15 @@ export type IpaDestructionGuardReport = {
   violations: Array<"user_count" | "user_percent" | "group_count" | "group_percent">;
 };
 
-export const selectStaleLocalIpaRows = <T extends IpaIdentity>(params: { localRows: T[]; activeRemoteUsers: IpaIdentity[] }): T[] => {
-  const activeUids = new Set(params.activeRemoteUsers.map((user) => user.uid));
-  const activeMails = new Set(params.activeRemoteUsers.map((user) => user.mail).filter((mail): mail is string => Boolean(mail)));
-
-  return params.localRows.filter((row) => {
-    if (activeUids.has(row.uid)) return false;
-    if (row.mail && activeMails.has(row.mail)) return false;
-    return true;
-  });
+/** Local accounts that no active directory user matches by identity. A record without an entry ID proves no departure. */
+export const selectStaleLocalIpaRows = <T extends LocalIpaIdentity>(params: { localRows: T[]; activeRemoteUsers: IpaIdentity[] }): T[] => {
+  const match = createIpaIdentityMatcher(params.localRows);
+  const present = new Set<string>();
+  for (const remote of params.activeRemoteUsers) {
+    const result = match(remote);
+    if (result.kind === "matched" || result.kind === "unverified") present.add(result.row.id);
+  }
+  return params.localRows.filter((row) => !present.has(row.id));
 };
 
 const percentage = (affected: number, total: number): number => {

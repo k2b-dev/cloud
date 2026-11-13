@@ -21,7 +21,7 @@ import { DEFAULT_TRUSTED_PROXIES, validateNetworkAllowlist, validateTrustedProxi
 
 const IPA_MATCH_MODE_OPTIONS = [
   { value: "ignore", label: "Ignore local match" },
-  { value: "migrate", label: "Migrate matching local account" },
+  { value: "migrate", label: "Propose matching local account" },
 ] as const;
 
 const IPA_ACCOUNT_TRANSITION_OPTIONS = [
