@@ -2560,8 +2560,15 @@ this admission owner before enabling freeze. Snapshot flushes add the Sync mutex
 a 120-second renewable lease; existing atomic snapshot guards remain required
 while older workers are present during a rollout.
 
+Deploy Cloud's pinned Sync 7.1.1 with the room update. It prevents an idle
+document consumer from reporting a false retention gap when another
+document's safely persisted prefix is pruned. Join gaps still use the stored
+snapshot coverage and adapter recovery contract.
+
 Shared-text applications that use `room.freeze` must keep non-expiring,
-reject-on-full document logs and preserve lifecycle markers during pruning.
+reject-on-full document logs, declare a lifecycle byte budget and preserve
+the separate lifecycle stream in backups. Lifecycle authority survives
+pruning the document log, including its freeze and close markers.
 A freeze expires after 60 seconds plus inter-node clock skew; synchronize
 node clocks and finish durable publication within that lease. Known credential
 expiry is also enforced by one local socket timeout, so Core downtime cannot

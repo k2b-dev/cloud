@@ -113,6 +113,7 @@ export type SharedTextRoomAdapter<
   revalidate(context: Context): Promise<SharedTextRoomAccess>;
   /** Yield only invalidations affecting this document/principal; abort must release the subscription. */
   invalidations?(context: Context, signal: AbortSignal): AsyncIterable<unknown>;
+  /** Repair an uncovered stored base before resync; the following join must be able to replay it. */
   recover(docId: string, cause: RetentionGapError, signal: AbortSignal): Promise<unknown>;
   join?(context: Context): Promise<void>;
   leave?(context: Context): Promise<void>;
@@ -326,9 +327,11 @@ export function createSharedTextRoom<
 
   /**
    * Stream failures are never terminal for the editor, but only a cursor the
-   * broker cannot serve any more (`RetentionGapError`, `CursorMismatchError`)
-   * needs `RESYNC_REQUIRED`, which makes the client drop its cursor and rebuild
-   * from the stored snapshot. Everything else (broker failover, lost consumer,
+   * broker cannot serve any more and no covering snapshot can repair it
+   * (`RetentionGapError`, `CursorMismatchError`) needs `RESYNC_REQUIRED`.
+   * Covered join/prefix gaps rebase in place before reaching this fallback;
+   * live-hub gaps retry with STREAM_FAILED so pending echoes can be resent.
+   * Everything else (broker failover, lost consumer,
    * an awareness stream error) closes with `STREAM_FAILED`: the client
    * reconnects with backoff and its last cursor, so an outage never turns into
    * a full-snapshot resend every few seconds.
@@ -355,11 +358,7 @@ export function createSharedTextRoom<
     ctx: Context,
     docId: string,
     publicDocId: string,
-    replay: {
-      after: string | null;
-      /** True when `after` is the stored snapshot's cursor: the client holds that snapshot as its base. */
-      storedBase: boolean;
-    },
+    replay: { after: string | null },
     // Fired only after deterministic replay to the captured head.
     onCaughtUp: (cursor: string) => void,
   ) => {
@@ -431,63 +430,99 @@ export function createSharedTextRoom<
 
       try {
         const events = async function* () {
-          if ((await config.log.lifecycle?.get(docId))?.value.state === "closed") {
-            await fatal(ctx, ERROR_CODE.closed, ERROR_CODE.closed, publicDocId);
-            return;
-          }
-          const head = await documentTopic.latestCursor({ tenantId: docId });
-          // A covering snapshot may already include the terminal marker. Read
-          // its broker metadata so a fresh idle connection cannot reopen it.
-          if (head && replay.after && compareStreamCursor(head, replay.after) <= 0) {
-            for await (const tail of documentTopic.replay({
-              tenantId: docId,
-              after: documentTopic.cursorAt(documentTopic.cursorSequence(head) - 1),
-              until: head,
-              signal: abort.signal,
-            })) {
-              if (tail.data.room?.state === "closed") {
+          let rebasedCursor: string | null = null;
+          let following = false;
+          while (active()) {
+            try {
+              if ((await config.log.lifecycle?.get(docId))?.value.state === "closed") {
                 await fatal(ctx, ERROR_CODE.closed, ERROR_CODE.closed, publicDocId);
                 return;
               }
-            }
-          }
-          // A reconnect's delivery cursor can be ahead of SQL. The writer base
-          // must consume the missing prefix too, without echoing it to the client.
-          const baseCursor = state(ctx).base?.cursor;
-          const baseAfter = state(ctx).base ? (baseCursor ?? documentTopic.cursorAt(0)) : replay.after;
-          const after = baseAfter && (!replay.after || compareStreamCursor(baseAfter, replay.after) < 0) ? baseAfter : replay.after;
-          if (head) {
-            let delivered = 0;
-            try {
+              const head = await documentTopic.latestCursor({ tenantId: docId });
+              // A covering snapshot may already include the terminal marker. Read
+              // its broker metadata so a fresh idle connection cannot reopen it.
+              if (head && replay.after && compareStreamCursor(head, replay.after) <= 0) {
+                for await (const tail of documentTopic.replay({
+                  tenantId: docId,
+                  after: documentTopic.cursorAt(documentTopic.cursorSequence(head) - 1),
+                  until: head,
+                  signal: abort.signal,
+                })) {
+                  if (tail.data.room?.state === "closed") {
+                    await fatal(ctx, ERROR_CODE.closed, ERROR_CODE.closed, publicDocId);
+                    return;
+                  }
+                }
+              }
+              // A reconnect's delivery cursor can be ahead of SQL. The writer base
+              // must consume the missing prefix too, without echoing it to the client.
+              const baseCursor = state(ctx).base?.cursor;
+              const baseAfter = state(ctx).base ? (baseCursor ?? documentTopic.cursorAt(0)) : replay.after;
+              const after = baseAfter && (!replay.after || compareStreamCursor(baseAfter, replay.after) < 0) ? baseAfter : replay.after;
+              // Even an empty tenant must validate the requested global cursor
+              // before readiness; otherwise hub startup can find the gap after
+              // the client has already begun publishing from an obsolete base.
               for await (const event of documentTopic.replay({
                 tenantId: docId,
                 after: after ?? documentTopic.cursorAt(0),
-                until: head,
+                until: maxStreamCursor(head, replay.after) ?? documentTopic.cursorAt(0),
                 signal: abort.signal,
               })) {
-                delivered++;
                 state(ctx).base?.apply(docId, event);
                 if (replay.after && compareStreamCursor(event.cursor, replay.after) <= 0) continue;
                 yield event;
               }
+              if (abort.signal.aborted || state(ctx).streamAbort !== abort) return;
+              await flush();
+              if (!active()) return;
+              const delivered = ctx.phase === "joined" && ctx.docId === docId;
+              const caughtUp = maxStreamCursor(head, replay.after) ?? documentTopic.cursorAt(0);
+              if (delivered && active()) onCaughtUp(caughtUp);
+              if (!delivered || !active()) return;
+              following = true;
+              yield* documentTopic.hub({ tenantId: docId }).subscribe({ after: caughtUp, signal: abort.signal });
+              return;
             } catch (error) {
-              // Recover the retained remainder, then reconnect from the newly
-              // saved snapshot. The snapshot already sent to this client predates
-              // recovery, so jumping straight to live events would omit those edits.
-              if (!(error instanceof RetentionGapError) || !replay.storedBase || delivered > 0) throw error;
-              await adapter.recover(docId, error, abort.signal);
-              throw error;
+              if (!(error instanceof RetentionGapError) || !active()) throw error;
+              if (following) {
+                // A snapshot cannot replace an outstanding publish echo. Retry
+                // the transport so old and new browsers resend pending input;
+                // the next join can rebase before its single readiness frame.
+                await fatal(ctx, ERROR_CODE.streamFailed, ctx.messages.liveSyncStreamFailed, publicDocId);
+                return;
+              }
+              const snapshot = await adapter.load(docId);
+              if (!active()) return;
+              if (
+                !snapshot?.state ||
+                !snapshot.cursor ||
+                documentTopic.cursorSequence(snapshot.cursor) < documentTopic.cursorSequence(error.firstAvailable) - 1 ||
+                (rebasedCursor !== null && compareStreamCursor(snapshot.cursor, rebasedCursor) <= 0)
+              ) {
+                await adapter.recover(docId, error, abort.signal);
+                throw error;
+              }
+              if (snapshot.restoreRevision !== ctx.restoreRevision) {
+                await requireReopen(ctx, publicDocId);
+                return;
+              }
+              // Retention is exceptional, so reload once per advancing covering
+              // snapshot. Never skip missing input or loop on an uncovered base.
+              await flush();
+              if (!active()) return;
+              state(ctx).base?.merge(snapshot);
+              state(ctx).snapshotCursor = snapshot.cursor;
+              send(ctx, WS_TYPE.syncPush, {
+                docId: publicDocId,
+                snapshot: true,
+                historyIncomplete: snapshot.historyIncomplete,
+                restoreRevision: snapshot.restoreRevision,
+                updates: [{ cursor: snapshot.cursor, payload: toBase64(snapshot.state), originPeerId: null }],
+              });
+              rebasedCursor = snapshot.cursor;
+              replay.after = snapshot.cursor;
             }
           }
-          if (abort.signal.aborted || state(ctx).streamAbort !== abort) return;
-          await flush();
-          if (!active()) return;
-          const delivered = ctx.phase === "joined" && ctx.docId === docId;
-          if (delivered && active()) onCaughtUp(head ?? replay.after ?? documentTopic.cursorAt(0));
-          if (!delivered || !active()) return;
-          yield* documentTopic
-            .hub({ tenantId: docId })
-            .subscribe({ after: head ?? replay.after ?? documentTopic.cursorAt(0), signal: abort.signal });
         };
         for await (const event of events()) {
           if (!active() || ctx.phase !== "joined" || ctx.docId !== docId) break;
@@ -670,7 +705,7 @@ export function createSharedTextRoom<
     // `replayReady` is deferred until retained history up to the captured head
     // has been delivered (see `startLiveStream`). Sending it earlier would let
     // the client publish edits while catch-up is still streaming.
-    startLiveStream(ctx, dbDocId, payload.docId, { after: replayCursor, storedBase: !clientCursor }, (cursor) => {
+    startLiveStream(ctx, dbDocId, payload.docId, { after: replayCursor }, (cursor) => {
       send(ctx, WS_TYPE.replayReady, {
         docId: payload.docId,
         cursor,

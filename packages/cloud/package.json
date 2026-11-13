@@ -150,7 +150,7 @@
     "@k2b/ssr": "0.21.2",
     "@k2b/ui": "0.56.0",
     "@k2b/stdlib": "0.32.0",
-    "@k2b/sync": "7.1.0",
+    "@k2b/sync": "7.1.1",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
     "@modelcontextprotocol/sdk": "1.32.2",

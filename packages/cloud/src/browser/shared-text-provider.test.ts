@@ -614,3 +614,42 @@ test("BUSY retries the full state after dependent edits were already published",
     setSystemTime();
   }
 });
+
+test("a hub gap retries and acknowledges pending input covered by the reconnect snapshot without SYNC_TIMEOUT", () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-13T04:00:00Z"));
+  try {
+    const errors: SharedTextProviderError[] = [];
+    const { provider, socket, local } = fixture({ onError: (error) => errors.push(error) });
+    socket.ready();
+    local.getText("codemirror").insert(0, "accepted but not echoed");
+    expect(publishes(socket)).toHaveLength(1);
+    const server = doc(202);
+    Y.applyUpdate(server, Y.encodeStateAsUpdate(local));
+    server.getText("codemirror").insert(server.getText("codemirror").length, " + remote");
+    const covered = encoding.toBase64(Y.encodeStateAsUpdate(server));
+    socket.message({ type: "error", payload: { code: "STREAM_FAILED", message: "Retry stream" } });
+    socket.close();
+    socket.onclose?.({ code: 1012, reason: "STREAM_FAILED" });
+    jest.advanceTimersByTime(2_000);
+    const reconnect = Socket.instances.at(-1)!;
+    expect(reconnect).not.toBe(socket);
+    reconnect.open();
+    reconnect.sync(covered, "s6t.test.3", true);
+    expect(publishes(reconnect)).toHaveLength(0);
+    reconnect.message({
+      type: "replayReady",
+      payload: { docId: DOC_ID, generation: GENERATION, cursor: "s6t.test.3", peerId: "own-peer" },
+    });
+    expect(publishes(reconnect)).toHaveLength(1);
+    reconnect.sync(publishes(reconnect)[0]!.payload.payload, "s6t.test.4");
+    expect(provider.hasUnsentChanges()).toBe(false);
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS * 2);
+    expect(errors.some((error) => error.code === "SYNC_TIMEOUT")).toBe(false);
+    expect(reconnect.readyState).toBe(Socket.OPEN);
+    expect(local.getText("codemirror").toString()).toBe("accepted but not echoed + remote");
+  } finally {
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});

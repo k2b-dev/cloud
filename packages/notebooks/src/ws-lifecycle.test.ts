@@ -29,6 +29,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const replayGap = { head: null as string | null, gapBelow: null as string | null, failure: null as Error | null };
   const invalidations = createWsInvalidations();
   let events: WSEvents | undefined;
+  let storedCursor = "s6t.fixture.9";
   let missingFirstNote = false;
   let holdFirstLeave = false;
   const readerLeaveEntered = Promise.withResolvers<void>();
@@ -80,12 +81,13 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
         },
         getAnchoredYjsState: async () => ({
           yjsState: new Uint8Array([0, 0]),
-          streamCursor: "s6t.fixture.9",
+          streamCursor: storedCursor,
           restoreRevision: "0",
           contentMd: null,
         }),
         adoptSnapshotAtHead: async (input: { noteId: string; cause: RetentionGapError }) => {
           adoptions.push({ noteId: input.noteId, requested: input.cause.requested });
+          storedCursor = "s6t.fixture.20";
           return { cursor: "s6t.fixture.20" };
         },
       },
@@ -114,7 +116,8 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   mock.module("./service/yjs-sync", () => {
     const topic = () => ({
       latestCursor: async () => replayGap.head,
-      cursorAt: () => "s6t.fixture.0",
+      cursorAt: (sequence: number) => `s6t.fixture.${sequence}`,
+      cursorSequence: (cursor: string) => Number(cursor.split(".").at(-1)),
       replay: async function* (config: { after: string }) {
         if (replayGap.failure) throw replayGap.failure;
         if (config.after === replayGap.gapBelow) throw new RetentionGapError(config.after, "s6t.fixture.15", "s6t.fixture.14");
@@ -195,10 +198,10 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       while (!predicate() && Date.now() < deadline) await Bun.sleep(5);
       expect(predicate()).toBe(true);
     };
-    return { sent, closed, request, waitFor };
+    return { sent, closed, request, waitFor, close: () => handlers.onClose?.(new CloseEvent("close"), socket) };
   };
 
-  test("a recovered stored snapshot requires a fresh client base before live subscription", async () => {
+  test("an uncovered stored snapshot is adopted before resync and the next join succeeds", async () => {
     replayGap.head = "s6t.fixture.19";
     replayGap.gapBelow = "s6t.fixture.9";
     subscribedAfter.length = 0;
@@ -211,9 +214,19 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       "RESYNC_REQUIRED",
     ]);
     expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.reopen).toBeUndefined();
+    const reconnect = await openSocket();
+    try {
+      reconnect.request();
+      await reconnect.waitFor(() => reconnect.sent.some((message) => message.type === "notes.yjs.replay.ready"));
+      expect(reconnect.sent.filter((message) => message.type === "notes.yjs.error")).toEqual([]);
+      expect(subscribedAfter).toEqual(["s6t.fixture.20"]);
+    } finally {
+      storedCursor = "s6t.fixture.9";
+      reconnect.close();
+    }
   }, 10_000);
 
-  test("a client cursor below retention resyncs from the stored snapshot without re-anchoring", async () => {
+  test("a client cursor below retention with no covering snapshot requires resync", async () => {
     replayGap.head = "s6t.fixture.19";
     replayGap.gapBelow = "s6t.fixture.3";
     adoptions.length = 0;
@@ -224,8 +237,32 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       "RESYNC_REQUIRED",
     ]);
     expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.reopen).toBeUndefined();
-    expect(adoptions).toEqual([]);
+    expect(adoptions).toEqual([{ noteId: "test-note", requested: "s6t.fixture.3" }]);
+    storedCursor = "s6t.fixture.9";
   }, 10_000);
+
+  test("a client cursor below retention rebases from a covering snapshot on the same socket", async () => {
+    replayGap.head = "s6t.fixture.19";
+    replayGap.gapBelow = "s6t.fixture.3";
+    storedCursor = "s6t.fixture.14";
+    subscribedAfter.length = 0;
+    const socket = await openSocket();
+    try {
+      socket.request("s6t.fixture.3");
+      await socket.waitFor(() => socket.sent.some((message) => message.type === "notes.yjs.replay.ready"));
+      expect(socket.sent.filter((message) => message.type === "notes.yjs.error")).toEqual([]);
+      expect(socket.sent).toContainEqual(
+        expect.objectContaining({
+          type: "notes.yjs.sync.push",
+          payload: expect.objectContaining({ snapshot: true, updates: [expect.objectContaining({ cursor: storedCursor })] }),
+        }),
+      );
+      expect(subscribedAfter).toEqual(["s6t.fixture.19"]);
+    } finally {
+      storedCursor = "s6t.fixture.9";
+      socket.close();
+    }
+  });
 
   test("a transient stream failure closes without demanding a resync so the client keeps its cursor", async () => {
     replayGap.head = "s6t.fixture.19";
