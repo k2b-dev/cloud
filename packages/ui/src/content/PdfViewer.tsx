@@ -1,4 +1,4 @@
-import { createEffect, createSignal, type JSX, lazy, on, onCleanup, Show } from "solid-js";
+import { batch, createEffect, createSignal, type JSX, lazy, on, onCleanup, Show } from "solid-js";
 import { announce } from "../feedback/announce";
 import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
@@ -13,10 +13,13 @@ export type PdfViewerProps = {
   title: string;
   /**
    * The PDF to show: its bytes, or the address of one on this site, which the viewer fetches. A new value shows that
-   * document. Pass either `data` or `request`.
+   * document; the shown pages stay until its first pages are drawn. Pass either `data` or `request`.
    */
   data?: Blob | ArrayBuffer | string;
-  /** Requests the PDF: at once with `autoLoad`, otherwise from the action in the empty state. */
+  /**
+   * Requests the PDF: at once with `autoLoad`, otherwise from the action in the empty state. A new request replaces a
+   * running one, and the shown pages stay while it loads.
+   */
   request?: PdfViewerRequest;
   /** Runs `request` as soon as the viewer shows. Without it, the person starts it. */
   autoLoad?: boolean;
@@ -46,7 +49,10 @@ export type PdfViewerProps = {
   fit?: "width" | "page";
   /** Shows only this page (zero-based) instead of all pages one below the other. */
   page?: number;
-  /** The first visible page is drawn; `pages` counts the document's pages, such as for a host's "4 pages". */
+  /**
+   * The first visible page is drawn, again for each new document; `pages` counts the document's pages, such as for a
+   * host's "4 pages".
+   */
   onReady?: (document: { pages: number }) => void;
   /** The request failed, or pdf.js could not open or draw the document; the viewer shows its error state. */
   onError?: (error: unknown) => void;
@@ -72,13 +78,18 @@ const toBlob = async (response: Response | Blob): Promise<Blob> => {
   return blob;
 };
 
+/** A load that ends within this time shows no progress line; a person reads a shorter wait as instant. */
+const QUIET_DELAY_MS = 400;
+
 // The pages and pdf.js load only once a document shows, so a page that never shows one carries neither.
 const PdfPages = lazy(() => import("./PdfPages"));
 
 /**
  * Shows a PDF with pdf.js on a grey, rounded ground: pages as images with selectable text and a small pill for the
  * page, zoom, and fit. Pass the document as `data`, or a `request` that loads it; the viewer shows the empty, loading,
- * and error states in the same area, so nothing around it moves.
+ * and error states in the same area, so nothing around it moves. A new document loads behind the shown pages, which
+ * keep their zoom and, for the same pages under the same title, their scroll position; a thin line on the top edge
+ * shows a longer wait, and a failed load replaces the pages with its error.
  */
 export default function PdfViewer(props: PdfViewerProps): JSX.Element {
   const messages = useUiMessages();
@@ -90,6 +101,8 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
   // pdf.js could not draw the shown document; the error state offers it in a new tab.
   const [undrawable, setUndrawable] = createSignal(false);
   const [drawn, setDrawn] = createSignal(false);
+  // A new document is opening while the previous one stays drawn.
+  const [replacing, setReplacing] = createSignal(false);
   const [tabBlocked, setTabBlocked] = createSignal(false);
   let root: HTMLDivElement | undefined;
   let generation = 0;
@@ -102,9 +115,12 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
     fetching?.abort();
   });
 
+  /** A drawn document stays until the new one's first pages are drawn; otherwise the loading state shows. */
   const show = (document: Blob | ArrayBuffer) => {
+    const keep = drawn() && Boolean(shown()) && !undrawable();
     setUndrawable(false);
-    setDrawn(false);
+    setDrawn(keep);
+    setReplacing(keep);
     setError(null);
     setShown(document);
   };
@@ -218,6 +234,7 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
   const undrawableNow = (cause: unknown) => {
     setUndrawable(true);
     setDrawn(false);
+    setReplacing(false);
     announce(pdfMessages().pdfPreviewNoViewer);
     props.onError?.(cause);
   };
@@ -229,6 +246,17 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
     if (!shown()) return loading() || (!onDemand() && !props.disabled && (props.data !== undefined || props.request)) ? "loading" : "idle";
     return drawn() ? null : "loading";
   };
+  // While the shown pages wait for a new document, a quiet line appears after a short wait, so a fast load never flickers.
+  const busy = () => !status() && (loading() || replacing());
+  const [quiet, setQuiet] = createSignal(false);
+  createEffect(
+    on(busy, (waiting) => {
+      setQuiet(false);
+      if (!waiting) return;
+      const timer = setTimeout(() => setQuiet(true), QUIET_DELAY_MS);
+      onCleanup(() => clearTimeout(timer));
+    }),
+  );
   // A document pdf.js cannot draw can still open in the browser's viewer, and a generated one can render again, for
   // example after its template input was corrected.
   const undrawableActions = () =>
@@ -251,6 +279,7 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
       data-state={status() ?? "shown"}
       // While a placeholder shows, the viewer holds keyboard focus that has nowhere else to go.
       tabIndex={status() ? -1 : undefined}
+      aria-busy={busy() ? "true" : undefined}
     >
       <Show when={!undrawable() && shown()}>
         {(pdf) => (
@@ -264,7 +293,10 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
             actions={actions()}
             onReady={(drawnDocument) => {
               const waiting = document.activeElement === root;
-              setDrawn(true);
+              batch(() => {
+                setDrawn(true);
+                setReplacing(false);
+              });
               if (waiting) root?.querySelector<HTMLElement>(".k2b-pdf-viewer__pages")?.focus();
               props.onReady?.(drawnDocument);
             }}
@@ -300,6 +332,9 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
             }
           />
         )}
+      </Show>
+      <Show when={quiet()}>
+        <span class="k2b-pdf-viewer__progress" aria-hidden="true" />
       </Show>
       <Show when={tabBlocked()}>
         <p role="alert" class="k2b-pdf-viewer__notice">

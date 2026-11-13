@@ -1,4 +1,4 @@
-import { batch, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Toolbar } from "../actions/Toolbar";
 import { openPdfDocument, type PdfDocumentHandle, type PdfPageImage, type PdfPageSize, pageImageWidth } from "./pdf-document";
 import { usePdfMessages } from "./pdf-messages";
@@ -23,7 +23,10 @@ export type PdfPagesProps = {
   fit?: "width" | "page";
   /** Shows only this page (zero-based) instead of all pages one below the other. */
   page?: number;
-  /** The first visible page is drawn; a host can drop its loading state. */
+  /**
+   * The first visible page of a document is drawn; a host can drop its loading state. A new `data` calls it again once
+   * its pages have replaced the previous document's.
+   */
   onReady?: (document: { pages: number }) => void;
   /** The document could not be opened, or a page could not be drawn and has no image yet. */
   onError?: (error: unknown) => void;
@@ -109,33 +112,125 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
   let drawRun: AbortController | undefined;
   let drawTimer: ReturnType<typeof setTimeout> | undefined;
   let gone = false;
+  // The name the shown document opened under.
+  let shownTitle = untrack(() => props.title);
 
-  const releaseAll = () => {
-    for (const image of images().values()) URL.revokeObjectURL(image.url);
-    setImages(new Map());
+  const release = (map: ReadonlyMap<number, PdfPageImage>) => {
+    for (const image of map.values()) URL.revokeObjectURL(image.url);
+  };
+  const indicesOf = (list: readonly PdfPageSize[]) =>
+    props.page === undefined ? list.map((_, index) => index) : [props.page].filter((index) => index < list.length);
+
+  const commonWidth = createMemo(() => commonPageWidth(pages()));
+  const fitMode = () => props.fit ?? "width";
+  /** Every fitted page of `list` is this wide, so a landscape page among portrait ones never scrolls sideways. */
+  const fittedWidthOf = (list: readonly PdfPageSize[], common: number) => {
+    // The whole page that shows first, also with `page`, fits the area's real height, however short.
+    const first = list[indicesOf(list)[0] ?? 0] ?? { width: common, height: common };
+    const height = first.height * (common / first.width);
+    return fittedPageWidth(fitMode(), { width: Math.max(120, inner()), height: Math.max(1, innerHeight()) }, { width: common, height });
+  };
+  const fittedWidth = createMemo(() => fittedWidthOf(pages(), commonWidth()));
+  /** CSS pixels per point of the common page width; percent, steps, and fixed zoom follow from it. */
+  /** A host that zooms with its own controls scales the fitted width; the viewer's own zoom then stays off. */
+  const hostScale = () => (props.zoom === false ? (props.scale ?? 1) : 1);
+  const factor = () => (fitWidth() ? (fittedWidth() * hostScale()) / commonWidth() : fixed());
+  const percent = () => Math.round((factor() / POINT) * 100);
+  const widthAt = (fitted: number, page: PdfPageSize) =>
+    fitWidth() ? Math.max(1, Math.floor(fitted * hostScale())) : Math.max(1, Math.floor(page.width * fixed()));
+  const pageWidth = (page: PdfPageSize) => widthAt(fittedWidth(), page);
+
+  /**
+   * Draws the pages of a new document that will show first: with the same pages as the shown one, the drawn pages
+   * near the view, else the first page. `null` after an abort or when the first of them cannot be drawn.
+   */
+  const prepare = async (handle: PdfDocumentHandle, same: boolean, signal: AbortSignal) => {
+    const list = handle.pages;
+    const indices = indicesOf(list);
+    const nearShown = same ? indices.filter((index) => near().has(index)) : [];
+    const targets = nearShown.length > 0 ? nearShown : indices.slice(0, 1);
+    const fitted = fittedWidthOf(list, commonPageWidth(list));
+    const drawn = new Map<number, PdfPageImage>();
+    for (const index of targets) {
+      const page = list[index];
+      if (!page) continue;
+      const target = pageImageWidth(widthAt(fitted, page), window.devicePixelRatio, page.height / page.width);
+      const image = await handle.draw(index, target, signal).catch(() => "failed" as const);
+      if (signal.aborted || gone) {
+        if (image && image !== "failed") URL.revokeObjectURL(image.url);
+        release(drawn);
+        return null;
+      }
+      if (image === "failed" || !image) {
+        // A later page draws again once it is near; without the first one, nothing of the new document could show.
+        if (drawn.size > 0) continue;
+        props.onError?.(new Error(`Page ${index + 1} could not be drawn`));
+        return null;
+      }
+      drawn.set(index, image);
+    }
+    return drawn;
   };
 
-  // Opening: a new `data` opens a new document and closes the previous one.
+  /**
+   * Opening: a new `data` opens a new document. The shown one keeps its pages, zoom, and scroll position until the new
+   * document's first pages are drawn, then both change in one step. A newer `data` stops a document still opening.
+   */
   createEffect(
     on(
       () => props.data,
       (data) => {
         const opening = new AbortController();
-        let opened: PdfDocumentHandle | null = null;
+        // Aborting destroys the document, so it stops only a document still opening, never the shown one.
+        let adopted = false;
         onCleanup(() => {
-          opening.abort();
-          drawRun?.abort();
-          releaseAll();
-          void opened?.close();
+          if (!adopted) opening.abort();
         });
-        setReady(false);
+        const title = untrack(() => props.title);
         void openPdfDocument(data, opening.signal).then(
-          (handle) => {
+          async (handle) => {
             if (!handle || opening.signal.aborted) return void handle?.close();
-            opened = handle;
             // A document without pages has nothing to draw; the host shows its fallback instead of waiting forever.
-            if (handle.pages.length === 0) return void props.onError?.(new Error("The PDF has no pages"));
-            setDoc(handle);
+            if (handle.pages.length === 0) {
+              void handle.close();
+              return void props.onError?.(new Error("The PDF has no pages"));
+            }
+            const previous = doc();
+            if (!previous) {
+              adopted = true;
+              shownTitle = title;
+              return void setDoc(handle);
+            }
+            // The same pages under the same name, such as a regenerated report, keep the scroll position.
+            const same =
+              title === shownTitle &&
+              handle.pages.length === previous.pages.length &&
+              handle.pages.every(
+                (page, index) =>
+                  Math.round(page.width) === Math.round(previous.pages[index]?.width ?? -1) &&
+                  Math.round(page.height) === Math.round(previous.pages[index]?.height ?? -1),
+              );
+            const drawn = await prepare(handle, same, opening.signal);
+            if (!drawn || opening.signal.aborted || gone) {
+              if (drawn) release(drawn);
+              return void handle.close();
+            }
+            adopted = true;
+            drawRun?.abort();
+            const replaced = images();
+            batch(() => {
+              setDoc(handle);
+              setImages(drawn);
+            });
+            shownTitle = title;
+            release(replaced);
+            void previous.close();
+            if (!same && area) {
+              area.scrollTop = 0;
+              area.scrollLeft = 0;
+            }
+            setReady(true);
+            props.onReady?.({ pages: handle.pages.length });
           },
           (error: unknown) => {
             if (!opening.signal.aborted) props.onError?.(error);
@@ -147,28 +242,10 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
   onCleanup(() => {
     gone = true;
     clearTimeout(drawTimer);
+    drawRun?.abort();
+    release(images());
+    void doc()?.close();
   });
-
-  const commonWidth = createMemo(() => commonPageWidth(pages()));
-  const fitMode = () => props.fit ?? "width";
-  /** Every fitted page is this wide, so a landscape page among portrait ones never scrolls sideways. */
-  const fittedWidth = () => {
-    // The whole page that shows first, also with `page`, fits the area's real height, however short.
-    const first = pages()[shown()[0] ?? 0] ?? { width: commonWidth(), height: commonWidth() };
-    const height = first.height * (commonWidth() / first.width);
-    return fittedPageWidth(
-      fitMode(),
-      { width: Math.max(120, inner()), height: Math.max(1, innerHeight()) },
-      { width: commonWidth(), height },
-    );
-  };
-  /** CSS pixels per point of the common page width; percent, steps, and fixed zoom follow from it. */
-  /** A host that zooms with its own controls scales the fitted width; the viewer's own zoom then stays off. */
-  const hostScale = () => (props.zoom === false ? (props.scale ?? 1) : 1);
-  const factor = () => (fitWidth() ? (fittedWidth() * hostScale()) / commonWidth() : fixed());
-  const percent = () => Math.round((factor() / POINT) * 100);
-  const pageWidth = (page: PdfPageSize) =>
-    fitWidth() ? Math.max(1, Math.floor(fittedWidth() * hostScale())) : Math.max(1, Math.floor(page.width * fixed()));
 
   /**
    * Draws each near page whose image is too small (blurred) or far too large (memory) for its shown size. A new zoom or
