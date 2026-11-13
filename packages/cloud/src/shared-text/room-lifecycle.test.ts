@@ -6,6 +6,7 @@ import { createDoc } from "./documents";
 import { checkLifecycleAdmission, type SharedTextLifecycleEntry, type SharedTextLifecycleStore } from "./lifecycle-store";
 import { sharedText } from "./log";
 import { createRoomLifecycle } from "./room-lifecycle";
+import { SharedTextSnapshotSaveError } from "./snapshots";
 import type { SharedTextStoredState, SharedTextSyncEvent } from "./types";
 
 const NOW = new Date("2026-11-13T00:00:00Z");
@@ -13,7 +14,7 @@ afterEach(() => {
   unbindProcessSync();
   setSystemTime();
 });
-const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void) => {
+const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void | Promise<void>) => {
   setSystemTime(NOW);
   let marker: SharedTextSyncEvent | undefined;
   let cursor: string | null = null;
@@ -73,7 +74,7 @@ const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void) => 
         return stored;
       },
       flushNow: async () => {
-        flush?.();
+        await flush?.();
         return { ...stored, cursor, state: flushed };
       },
     }),
@@ -89,6 +90,58 @@ const deleted = () => {
   source.getMap("metadata").delete("transient");
   return { source, beforeDeletion, state: Y.encodeStateAsUpdate(source) };
 };
+
+test("a definite drain save failure thaws its own marker and permits immediate freeze retry", async () => {
+  const { source, state } = deleted();
+  let failSave = true;
+  try {
+    const f = fixture(state, state, () => {
+      if (failSave) throw new SharedTextSnapshotSaveError(new Error("save refused"));
+    });
+    await expect(f.room.freeze("doc")).rejects.toThrow("save refused");
+    await checkLifecycleAdmission(f.lifecycle, "doc");
+    expect(f.marker()?.room?.state).toBe("open");
+    failSave = false;
+    expect((await f.room.freeze("doc"))?.cursor).toBe("s6t.freeze.3");
+  } finally {
+    source.destroy();
+  }
+});
+
+for (const error of [new Error("broker outcome unknown"), new DOMException("flush timed out", "TimeoutError")])
+  test(`an uncertain drain failure retains its freeze: ${error.name}`, async () => {
+    const { source, state } = deleted();
+    try {
+      const f = fixture(state, state, () => {
+        throw error;
+      });
+      await expect(f.room.freeze("doc")).rejects.toBe(error);
+      await expect(checkLifecycleAdmission(f.lifecycle, "doc")).rejects.toThrow("DOCUMENT_FROZEN");
+      expect(f.marker()?.room?.state).toBe("frozen");
+    } finally {
+      source.destroy();
+    }
+  });
+
+test("failed-drain compensation cannot release a newer freeze", async () => {
+  const { source, state } = deleted();
+  try {
+    const failure = new SharedTextSnapshotSaveError(new Error("save refused"));
+    const f = fixture(state, state, async () => {
+      await f.lifecycle.put("doc", await f.lifecycle.get("doc"), {
+        state: "frozen",
+        freezeCursor: "new-owner",
+        expiresAt: NOW.getTime() + 60_000,
+        restoreRevision: "0",
+      });
+      throw failure;
+    });
+    await expect(f.room.freeze("doc")).rejects.toBe(failure);
+    expect((await f.lifecycle.get("doc"))?.value).toMatchObject({ state: "frozen", freezeCursor: "new-owner" });
+  } finally {
+    source.destroy();
+  }
+});
 
 test("freeze accepts equivalent state encoded differently by a concurrent snapshot writer", async () => {
   const { source, state } = deleted();
@@ -136,7 +189,9 @@ test("freeze rejects equal text when causal coverage differs", async () => {
 test("freeze refuses a result after its safe window even while the raw lease is active", async () => {
   const { source, state } = deleted();
   try {
-    const f = fixture(state, state, () => setSystemTime(new Date(NOW.getTime() + 55_000)));
+    const f = fixture(state, state, () => {
+      setSystemTime(new Date(NOW.getTime() + 55_000));
+    });
     await expect(f.room.freeze("doc")).rejects.toThrow("expired");
     expect(f.marker()?.room).toEqual({ state: "frozen", expiresAt: NOW.getTime() + 60_000 });
   } finally {

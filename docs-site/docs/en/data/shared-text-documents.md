@@ -1089,9 +1089,13 @@ Lifecycle authority lives outside the prunable document log. Prefix pruning
 through a covering snapshot may remove active freeze and terminal markers;
 active freezes remain enforced and closed documents never pin the prefix.
 If a marker was definitely rejected, freeze CAS-reverts preparation to the
-previous value, allowing immediate retry. A crash or uncertain publish outcome
-keeps admission fenced until the lease expires; it must not undo a marker that
-may have been published. Lifecycle calls reject an expiring or evicting
+previous value, allowing immediate retry. After the marker is published, a
+definite application `save()` rejection during the standard snapshot drain
+thaws that freeze with its matching token and publishes an open marker, so
+editors and a new freeze can proceed immediately. A newer freeze or close is
+never released by this cleanup. A crash, cancellation, timeout, transport
+failure, or uncertain broker outcome keeps admission fenced until the lease
+expires. Lifecycle calls reject an expiring or evicting
 log or a declaration without lifecycle storage. Notebooks keeps its existing
 declaration and does not use these optional methods. Its restore marker
 changes generation without a room lifecycle check. An adapter combining

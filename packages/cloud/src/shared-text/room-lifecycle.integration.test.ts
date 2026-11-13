@@ -18,6 +18,7 @@ import {
   toBase64,
 } from "./index";
 import type { SharedTextRoomMessages, SharedTextRoomSnapshot } from "./room";
+import { createRoomLifecycle } from "./room-lifecycle";
 
 const NOW = new Date("2026-11-12T12:00:00Z");
 const messages: SharedTextRoomMessages = {
@@ -44,6 +45,90 @@ const messages: SharedTextRoomMessages = {
   messageNotAllowed: () => "phase",
 };
 const quiet = { debug() {}, info() {}, warn() {}, error() {} };
+
+testFor("nats")("a failed freeze save immediately admits remote edits and permits a new freeze", async () => {
+  setSystemTime(NOW);
+  const connection = await connectTestNats();
+  const namespace = testSyncNamespace("text-freeze-save-failure");
+  const sync = createSync({ connection, namespace, application: "test", defaults: { replicas: 1 } });
+  bindProcessSync(sync, connection);
+  const log = sharedText.define({
+    id: "text",
+    lifecycle: { maxBytes: 65536 },
+    whenFull: "reject",
+    retention: { maxBytes: 1024 * 1024 },
+    maxPayloadBytes: 8192,
+  });
+  const remoteLog = sharedText.define({ ...log.topicConfig, lifecycle: { maxBytes: 65536 } });
+  let stored: SharedTextRoomSnapshot = { state: new Uint8Array([0, 0]), text: "", restoreRevision: "0", cursor: log.topic().cursorAt(0) };
+  let failSave = true;
+  let saveAttempts = 0;
+  const pipeline = sharedText.snapshots({
+    log,
+    logger: quiet,
+    job: () => sync.job(sharedTextSnapshotJobConfig({ id: "snapshots", retention: { maxAgeMs: 86_400_000, maxBytes: 1024 * 1024 } })),
+    store: {
+      list: async () => [],
+      load: async () => stored,
+      save: async (_id, input) => {
+        saveAttempts++;
+        if (failSave) throw new Error("app save refused");
+        stored = input;
+      },
+      recover: async () => {
+        throw new Error("Unexpected gap");
+      },
+      advance: async () => false,
+    },
+  });
+  const lifecycle = createRoomLifecycle({ log, load: async () => stored, flushNow: pipeline.flushNow });
+  const documents = remoteLog.withStore({
+    load: async () => {
+      throw new Error("Admission must not load the store");
+    },
+    save: async () => {
+      throw new Error("Admission must not save the store");
+    },
+  });
+  const source = new Y.Doc();
+  source.clientID = 42;
+  const edit = async (text: string) => {
+    const vector = Y.encodeStateVector(source);
+    source.getText(SHARED_TEXT_NAME).insert(source.getText(SHARED_TEXT_NAME).length, text);
+    return documents.accept("doc", {
+      snapshot: stored,
+      actor: { kind: "user", id: "editor" },
+      update: Y.encodeStateAsUpdate(source, vector),
+      baseCursor: stored.cursor,
+      restoreRevision: "0",
+      originNodeId: "remote",
+      originPeerId: "editor",
+    });
+  };
+  try {
+    expect(await edit("before")).toMatchObject({ status: "accepted" });
+    await expect(lifecycle.freeze("doc")).rejects.toThrow("app save refused");
+    expect(saveAttempts).toBe(1);
+    expect((await remoteLog.lifecycle!.get("doc"))?.value.state).toBe("open");
+    expect(await edit(" after")).toMatchObject({ status: "accepted" });
+    failSave = false;
+    const frozen = await lifecycle.freeze("doc");
+    expect(frozen?.text).toBe("before after");
+    expect(frozen?.state).toEqual(stored.state!);
+    expect(stored.cursor).toBe(frozen!.cursor);
+    expect(saveAttempts).toBe(2);
+  } finally {
+    source.destroy();
+    await pipeline.stop();
+    setSystemTime();
+    await sync.drain();
+    unbindProcessSync();
+    const manager = await jetstreamManager(connection);
+    for await (const stream of manager.streams.list())
+      if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);
+    await connection.drain();
+  }
+});
 
 testFor("database", "nats")(
   "three concurrent editors in two rooms serialize publication, freeze and drain exactly, thaw, recover a crashed freeze, and close",
