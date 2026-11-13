@@ -21,7 +21,8 @@ import {
   withDraftDocumentCommit,
 } from "./draft-document-log";
 import { draftDocumentHistoryChecked } from "./draft-document-log-policy";
-import { withDraftDocumentReplacement } from "./draft-document-replacement";
+import { type ReplaceDraftDocument, withDraftDocumentReplacement } from "./draft-document-replacement";
+import { DRAFT_DOCUMENT_ACCESS_REFRESH_MS } from "./draft-document-socket-sql";
 import { newDraftEditMode } from "./draft-edit-mode";
 import {
   buildDraftProviderMimeStream,
@@ -1123,7 +1124,7 @@ const applyImportedDraft = async (params: {
   connectionId: string;
   secretRevision: number;
 }): Promise<{ draftId: string; revision: number; state: "active" | "conflict" }> => {
-  const apply = async (tx: typeof sql, replace?: (previousGeneration: string) => Promise<string>) => {
+  const apply = async (tx: typeof sql, replace?: ReplaceDraftDocument, signal?: AbortSignal) => {
     // Match the snapshot writer's coverage-before-draft lock order. The shared
     // admission outside this transaction excludes new room input until commit.
     await lockDraftDocumentCoverage(tx);
@@ -1207,6 +1208,9 @@ const applyImportedDraft = async (params: {
       let pendingSharedInput =
         existing.edit_mode === "shared" && (!existing.doc_history_complete || !(await draftDocumentHistoryChecked(tx)));
       if (!pendingSharedInput && latest !== null && mailDraftDocumentLog.topic().cursorSequence(latest) > Number(existing.doc_seq ?? 0)) {
+        // Editable replacements share admission's short signal. Recovery-only
+        // transactions use the existing SQL-access budget to bound broker reads.
+        const replaySignal = signal ?? AbortSignal.timeout(DRAFT_DOCUMENT_ACCESS_REFRESH_MS);
         // Send/thaw markers carry no edits. Inspect the tail once per import,
         // keeping real room input and foreign replacement lineages recoverable.
         try {
@@ -1216,6 +1220,7 @@ const applyImportedDraft = async (params: {
             docSeq: existing.doc_seq,
             historyComplete: existing.doc_history_complete,
             until: latest,
+            signal: replaySignal,
           })) {
             if (
               event.data.kind !== "freeze" ||
@@ -1229,6 +1234,9 @@ const applyImportedDraft = async (params: {
           if (!(error instanceof RetentionGapError)) throw error;
           pendingSharedInput = true;
         }
+        // Cancellation must roll back even if the iterator ends cleanly or
+        // reports a retention gap at the same time as its signal aborts.
+        replaySignal.throwIfAborted();
       }
       const concurrentEdit = pendingSharedInput || existing.state !== "draft" || currentRevision !== baseRevision || params.cloudCopyKept;
       const externalTemplateEdit = !concurrentEdit && hasUnrenderedTemplateSyntax(body);
@@ -1287,7 +1295,7 @@ const applyImportedDraft = async (params: {
         if (!content.ok) throw Object.assign(new Error(content.error.message), content.error);
         const document = createDraftDocument(content.data);
         try {
-          replacement = { state: Y.encodeStateAsUpdate(document), cursor: await replace(existing.doc_generation) };
+          replacement = { state: Y.encodeStateAsUpdate(document), cursor: await replace(existing.doc_generation, latest) };
         } finally {
           document.destroy();
         }

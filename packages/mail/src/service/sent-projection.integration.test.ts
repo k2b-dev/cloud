@@ -35,6 +35,7 @@ import { withDraftDocumentReplacement } from "./draft-document-replacement";
 import { mailDraftRoom } from "./draft-document-room";
 import { retryPendingDraftSendCloses } from "./draft-document-send";
 import { draftDocumentSnapshotStore } from "./draft-document-snapshots";
+import { DRAFT_DOCUMENT_ACCESS_REFRESH_MS } from "./draft-document-socket-sql";
 import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "./draft-documents";
 import {
   enqueueDraftProjectionSnapshot,
@@ -44,6 +45,7 @@ import {
   submitDueDraftProjectionWork,
 } from "./draft-provider-projection";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
+import * as draftValidation from "./draft-validation";
 import { createDraft, discardDraft, getDraft, materializeDraftSeed, prepareDraftSeed, updateDraft } from "./drafts";
 import { setFolderRole } from "./folders";
 import { pauseDeletedMailboxExecution } from "./mailbox-lifecycle";
@@ -4424,6 +4426,175 @@ suite("mail sent message projection", () => {
         data: { body: "Edited elsewhere.", revision: initial.revision + 1 },
       });
     } finally {
+      provider.restore();
+    }
+  });
+
+  test("a stalled import replay aborts within admission and releases its SQL row lock", async () => {
+    const provider = createProvider("imap");
+    const release = Promise.withResolvers<void>();
+    let restoreSpies = () => {};
+    let failed: Promise<unknown> | undefined;
+    let replayEntered = false;
+    let mailboxId: string | undefined;
+    try {
+      const mailbox = await connect(provider);
+      mailboxId = mailbox.mailboxId;
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      await settleDraftImports(mailbox.mailboxId);
+      const topic = mailDraftDocumentLog.topic();
+      // A harmless thaw tail still needs classification before replacement.
+      await topic.publish({
+        tenantId: target.draftId,
+        data: {
+          kind: "freeze",
+          room: { state: "open" },
+          payload: "",
+          restoreRevision: initial.generation,
+          originNodeId: "stalled-replay-fixture",
+          originPeerId: null,
+        },
+      });
+      const failure = Promise.withResolvers<unknown>();
+      failed = failure.promise;
+      let admissionSignal: AbortSignal | undefined;
+      let replaySignal: AbortSignal | undefined;
+      const admit = mailDraftDocumentLog.admit.bind(mailDraftDocumentLog);
+      const admission = spyOn(mailDraftDocumentLog, "admit").mockImplementation(async (docId, parent, run) => {
+        try {
+          return await admit(docId, parent, (signal) => {
+            if (docId === target.draftId) admissionSignal = signal;
+            return run(signal);
+          });
+        } catch (error) {
+          if (docId === target.draftId) failure.resolve(error);
+          throw error;
+        }
+      });
+      const realReplay = topic.replay.bind(topic);
+      const replay = spyOn(topic, "replay").mockImplementation(async function* (options) {
+        if (options?.tenantId !== target.draftId) {
+          yield* realReplay(options);
+          return;
+        }
+        replayEntered = true;
+        replaySignal = options.signal;
+        // No broker response ever arrives. Only cancellation (or fixture
+        // teardown on regression) can let the transaction finish.
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => reject(options.signal?.reason);
+          options.signal?.addEventListener("abort", abort, { once: true });
+          void release.promise.then(() => {
+            options.signal?.removeEventListener("abort", abort);
+            resolve();
+          });
+          if (options.signal?.aborted) abort();
+        });
+      });
+      const topicHandle = spyOn(mailDraftDocumentLog, "topic").mockReturnValue(topic);
+      restoreSpies = () => {
+        topicHandle.mockRestore();
+        replay.mockRestore();
+        admission.mockRestore();
+      };
+      let rejected = false;
+      void failure.promise.then(() => {
+        rejected = true;
+      });
+      const copies = provider.folder(provider.draftsPath).entries;
+      const original = [...copies.values()][0]!;
+      copies.clear();
+      await provider.saveDraftElsewhere(draftElsewhere(original.messageId!, initial.fresh.content.subject, "Stalled external import"));
+      await mailbox.syncAll();
+      // The real admission owns a five-second bound. The existing SQL-access
+      // budget also bounds this assertion without changing any suite timeout.
+      await waitFor(async () => rejected, "import admission rejection and rollback", DRAFT_DOCUMENT_ACCESS_REFRESH_MS);
+      expect(replayEntered).toBe(true);
+      expect(replaySignal).toBe(admissionSignal);
+      expect(replaySignal?.aborted).toBe(true);
+      expect(await failure.promise).toBeInstanceOf(ConflictError);
+      // Independent pooled transaction: NOWAIT fails immediately if the
+      // cancelled import still owns the draft row.
+      const locked = await sql.begin((db) => db`SELECT id FROM mail.drafts WHERE id = ${target.draftId}::uuid FOR UPDATE NOWAIT`);
+      expect(locked).toHaveLength(1);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({
+          id: target.draftId,
+          body: initial.durable.content.body,
+          revision: String(initial.revision),
+          recoveries: 0,
+        }),
+      ]);
+    } finally {
+      release.resolve();
+      if (replayEntered) await failed;
+      restoreSpies();
+      if (mailboxId)
+        await sql`UPDATE mail.draft_provider_snapshots SET state = 'needs_attention'
+        WHERE mailbox_id = ${mailboxId}::uuid AND direction = 'import' AND state IN ('external', 'importing')`;
+      provider.restore();
+    }
+  });
+
+  test("provider replacement CAS preserves input arriving after import classification without admission", async () => {
+    const provider = createProvider("imap");
+    let restoreValidation = () => {};
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      await settleDraftImports(mailbox.mailboxId);
+      const update = await createDraftRevisionUpdate(
+        initial.fresh.state,
+        { ...initial.fresh.content, body: "Room input won the race" },
+        { deadline: Date.now() + 10000 },
+      );
+      const publicContent = draftValidation.publicDraftContent;
+      let injected = false;
+      const validation = spyOn(draftValidation, "publicDraftContent").mockImplementation(async (...args) => {
+        if (!injected && args[1] === mailbox.mailboxId && args[2].body === "External racing replacement") {
+          injected = true;
+          // A stale/distributed writer deliberately bypasses admission after
+          // classification, before replace can publish its generation marker.
+          await mailDraftDocumentLog.topic().publish({
+            tenantId: target.draftId,
+            data: {
+              kind: "sync",
+              payload: Buffer.from(update).toString("base64"),
+              restoreRevision: initial.generation,
+              originNodeId: "writer-without-admission",
+              originPeerId: "racing-editor",
+            },
+          });
+        }
+        return publicContent(...args);
+      });
+      restoreValidation = () => validation.mockRestore();
+      const copies = provider.folder(provider.draftsPath).entries;
+      const original = [...copies.values()][0]!;
+      copies.clear();
+      await provider.saveDraftElsewhere(draftElsewhere(original.messageId!, initial.fresh.content.subject, "External racing replacement"));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      expect(injected).toBe(true);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({
+          id: target.draftId,
+          body: initial.durable.content.body,
+          revision: String(initial.revision),
+          recoveries: 1,
+        }),
+      ]);
+      const current = await readDraftDocument(target);
+      expect(current).toMatchObject({
+        ok: true,
+        data: { generation: initial.generation, fresh: { content: { body: "Room input won the race" } } },
+      });
+      const [recovery] = await sql<
+        { body: string }[]
+      >`SELECT content->>'body' AS body FROM mail.draft_recovery_copies WHERE draft_id = ${target.draftId}::uuid`;
+      expect(recovery?.body).toBe("External racing replacement");
+    } finally {
+      restoreValidation();
       provider.restore();
     }
   });
