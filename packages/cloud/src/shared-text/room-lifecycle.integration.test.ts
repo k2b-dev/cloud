@@ -1,10 +1,13 @@
 import { expect, setSystemTime } from "bun:test";
 import { createSync, type Sync, type TopicConfig } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
+import * as encoding from "lib0/encoding";
 import * as Y from "yjs";
 import { z } from "zod";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
+import { sql as platformSql } from "../runtime/clients";
 import {
   compareStreamCursor,
   createSharedTextRoom,
@@ -41,9 +44,10 @@ const messages: SharedTextRoomMessages = {
 };
 const quiet = { debug() {}, info() {}, warn() {}, error() {} };
 
-testFor("nats")(
+testFor("database", "nats")(
   "three concurrent editors in two rooms serialize publication, freeze and drain exactly, thaw, recover a crashed freeze, and close",
   async () => {
+    const meter = await meterSql();
     setSystemTime(NOW);
     const connection = await connectTestNats();
     const namespace = testSyncNamespace("text-room-lifecycle");
@@ -154,19 +158,44 @@ testFor("nats")(
           },
         },
       });
+    const activity = new Set<() => void>();
+    const until = async (check: () => boolean) => {
+      const signal = AbortSignal.timeout(10_000);
+      while (!check()) {
+        signal.throwIfAborted();
+        await new Promise<void>((resolve, reject) => {
+          const done = () => {
+            activity.delete(wake);
+            signal.removeEventListener("abort", abort);
+          };
+          const wake = () => {
+            done();
+            resolve();
+          };
+          const abort = () => {
+            done();
+            reject(signal.reason);
+          };
+          activity.add(wake);
+          signal.addEventListener("abort", abort, { once: true });
+          if (check()) wake();
+        });
+      }
+    };
     const a = makeRoom(),
       b = makeRoom();
     const peers: Array<ReturnType<typeof peer>> = [];
     const peer = async (room: typeof a) => {
       const ready = Promise.withResolvers<void>();
       const closed = Promise.withResolvers<string>();
-      const packets: Array<{ type: string; payload?: { code?: string; updates?: Array<{ payload: string }> } }> = [];
+      const packets: Array<{ type: string; payload?: { code?: string; updates?: Array<{ payload: string; cursor?: string }> } }> = [];
       const ctx = createSharedTextRoomContext<{ id: string }, SharedTextRoomMessages>(
         {
           send: (raw) => {
             const packet = JSON.parse(raw);
             packets.push(packet);
             if (packet.type === "ready") ready.resolve();
+            for (const wake of activity) wake();
           },
           close: (_code, reason) => closed.resolve(reason),
         },
@@ -202,6 +231,13 @@ testFor("nats")(
         third = await peer(b);
       peers.push(Promise.resolve(other), Promise.resolve(third));
       const writers = [remote, other, third];
+      // Verify that the meter observes the platform SQL handle before measuring
+      // the fake adapter's edit, receiving delivery, and awareness paths.
+      expect(
+        await meter.during(async () => {
+          await platformSql`SELECT 1`;
+        }),
+      ).toHaveLength(1);
       const sources = writers.map((_, index) => {
         const doc = new Y.Doc();
         doc.clientID = index + 100;
@@ -209,17 +245,44 @@ testFor("nats")(
       });
       const tokens: string[] = [];
       try {
-        for (let turn = 0; turn < 10; turn++)
-          await Promise.all(
-            writers.map(async (writer, index) => {
-              const source = sources[index]!;
-              const token = `[${index}:${turn}]`;
-              tokens.push(token);
-              const vector = Y.encodeStateVector(source);
-              source.getText(SHARED_TEXT_NAME).insert(source.getText(SHARED_TEXT_NAME).length, token);
-              await edit(writer, toBase64(Y.encodeStateAsUpdate(source, vector)));
-            }),
+        const editAndDeliveryStatements = await meter.during(async () => {
+          for (let turn = 0; turn < 10; turn++)
+            await Promise.all(
+              writers.map(async (writer, index) => {
+                const source = sources[index]!;
+                const token = `[${index}:${turn}]`;
+                tokens.push(token);
+                const vector = Y.encodeStateVector(source);
+                source.getText(SHARED_TEXT_NAME).insert(source.getText(SHARED_TEXT_NAME).length, token);
+                await edit(writer, toBase64(Y.encodeStateAsUpdate(source, vector)));
+              }),
+            );
+          const head = await log.topic().latestCursor({ tenantId: "doc" });
+          await until(() =>
+            writers.every((writer) =>
+              writer.packets.some((packet) => packet.type === "push" && packet.payload?.updates?.some((update) => update.cursor === head)),
+            ),
           );
+        });
+        expect(editAndDeliveryStatements).toEqual([]);
+        const awarenessCount = (writer: typeof remote) =>
+          writer.packets.filter(
+            (packet) => packet.type === "awareness" && packet.payload?.updates?.some((update) => update.payload !== "AA=="),
+          ).length;
+        const awarenessStatements = await meter.during(async () => {
+          for (let index = 0; index < 2; index++) {
+            const counts = writers.map(awarenessCount);
+            const encoder = encoding.createEncoder();
+            encoding.writeVarUint(encoder, 1);
+            encoding.writeVarUint(encoder, 42);
+            encoding.writeVarUint(encoder, index + 1);
+            const at = Y.createRelativePositionFromTypeIndex(sources[0]!.getText(SHARED_TEXT_NAME), index);
+            encoding.writeVarString(encoder, JSON.stringify({ cursor: { anchor: at, head: at } }));
+            await a.handle(other.ctx, { type: "cursor", payload: { docId: "doc", payload: toBase64(encoding.toUint8Array(encoder)) } });
+            await until(() => writers.every((writer, position) => awarenessCount(writer) > counts[position]!));
+          }
+        });
+        expect(awarenessStatements).toEqual([]);
         expect(attempts.size).toBe(30);
         expect(Math.max(...attempts.values())).toBe(1);
         const drained = await a.freeze("doc");
@@ -312,6 +375,7 @@ testFor("nats")(
       for await (const stream of manager.streams.list())
         if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);
       await connection.drain();
+      await meter.close();
     }
   },
   30_000,
