@@ -24,13 +24,19 @@ const waitFor = async (check: () => boolean) => {
 const stream = <T>() => {
   const values: T[] = [];
   let wake = () => {};
+  let failure: Error | undefined;
   return {
     push(value: T) {
       values.push(value);
       wake();
     },
+    fail(error: Error) {
+      failure = error;
+      wake();
+    },
     async *read(signal: AbortSignal) {
       while (!signal.aborted) {
+        if (failure) throw failure;
         if (values.length) yield values.shift()!;
         else
           await new Promise<void>((resolve) => {
@@ -49,6 +55,7 @@ const stream = <T>() => {
 const fixture = () => {
   setSystemTime(NOW);
   const invalidations = stream<void>();
+  const subscribed = Promise.withResolvers<void>();
   const live = new Set<ReturnType<typeof stream<TopicEvent<SharedTextEvent>>>>();
   let authenticateWait: Promise<void> | undefined;
   let revalidateWait: Promise<void> | undefined;
@@ -110,6 +117,7 @@ const fixture = () => {
       subscribe: async function* ({ signal }: { signal: AbortSignal }) {
         const subscriber = stream<TopicEvent<SharedTextEvent>>();
         live.add(subscriber);
+        subscribed.resolve();
         try {
           yield* subscriber.read(signal);
         } finally {
@@ -154,7 +162,7 @@ const fixture = () => {
     handlingFailed: "handling",
     messageNotAllowed: () => "phase",
   };
-  const sent: Array<{ type: string; payload: { code?: string; message?: string; updates?: unknown[] } }> = [];
+  const sent: Array<{ type: string; payload: { code?: string; message?: string; docId?: string; updates?: unknown[] } }> = [];
   const closed: number[] = [];
   const ready = Promise.withResolvers<void>();
   const callbackContexts: unknown[] = [];
@@ -244,6 +252,10 @@ const fixture = () => {
   const request = (type: string, payload: object) => connection.receive(JSON.stringify({ type, payload: { docId: "public", ...payload } }));
   return {
     room,
+    liveReady: subscribed.promise,
+    gapInHub(error: RetentionGapError) {
+      for (const subscriber of live) subscriber.fail(error);
+    },
     callbackContexts,
     validatedContexts,
     ready: ready.promise,
@@ -942,3 +954,21 @@ for (const writer of [false, true])
       await f.connection.close();
     }
   });
+
+test("a live hub gap retries the transport without replacing pending echoes or sending a second readiness frame", async () => {
+  const f = fixture();
+  try {
+    await f.join();
+    await f.ready;
+    await f.liveReady;
+    const frames = f.sent.length;
+    f.store({ state: new Uint8Array([0, 0]), text: "", cursor: "s6t.room.3", restoreRevision: "0" });
+    f.gapInHub(new RetentionGapError("s6t.room.2", "s6t.room.4"));
+    await waitFor(() => f.closed.length > 0);
+    expect(f.closed).toEqual([1012]);
+    expect(f.sent.slice(frames)).toEqual([{ type: "error", payload: { code: "STREAM_FAILED", message: "sync", docId: "public" } }]);
+    expect(f.sent.filter((packet) => packet.type === "ready")).toHaveLength(1);
+  } finally {
+    await f.connection.close();
+  }
+});

@@ -856,7 +856,7 @@ Implement `SharedTextRoomAdapter<User, Messages, Context>`:
 | `actor(user)`, `awarenessUser(user)` | Supply trusted audit and awareness identities; never trust names or IDs from client frames. |
 | `revalidate(context)` | Recheck only after an invalidation; return lost access, lock, deletion or changed generation. |
 | `invalidations(context, signal)` | Subscribe to relevant committed permission and lifecycle events; abort releases the subscription. |
-| `recover(docId, cause, signal)` | Apply the application's existing retention-gap recovery. |
+| `recover(docId, cause, signal)` | Required: repair an uncovered stored base before the room requests resync, so the next join can replay. |
 | `join(context)`, `leave(context)` | Optional application presence hooks. |
 
 Capture an invalidation cursor before checking access and subscribe from it
@@ -936,13 +936,21 @@ are limited to 256,000 characters; sync frames use the declared protocol
 limit plus 1,000 characters of framing. Applications supply their document
 length/validation budget and the retained log and awareness topic budgets.
 
-Backpressure closes with 1013. A retention gap during join, replay or resume
+Backpressure closes with 1013. A retention gap during join or prefix replay
 reloads the stored snapshot. When its cursor covers the missing prefix
 (at least the first retained sequence minus one) and its restore revision
 still matches, the room sends that snapshot and replays the remaining log
-without closing the socket. Readiness waits for this replay. An uncovered
-gap or cursor mismatch requests resync and closes with 1012; recovery never
-skips unavailable input. Snapshot reloads occur only on recovery, not edits.
+without closing the socket. Readiness waits for this replay and is sent once.
+For an uncovered gap, the required adapter `recover` repairs the stored base
+before the room requests `RESYNC_REQUIRED` and closes with 1012, so the next
+join can replay the repaired snapshot. As with snapshot-job recovery, the
+adapter preserves valid retained updates and reports incomplete history;
+missing bytes remain missing.
+A gap in the live hub closes with retryable `STREAM_FAILED`: the browser backs
+off, reconnects and resends pending input after join replay. A covering snapshot
+cannot replace the publish echo that acknowledges that input. This reconnect
+also works with browsers from before the deployment. Snapshot reloads occur
+only on recovery, not edits. Cursor mismatches request resync with 1012.
 Transient stream/storage failures also use 1012, internal
 errors use 1011, and access failures use 1008. Error codes remain stable;
 applications supply localized messages, including `busy` for admission

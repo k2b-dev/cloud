@@ -105,6 +105,7 @@ export type SharedTextRoomAdapter<
   revalidate(context: Context): Promise<SharedTextRoomAccess>;
   /** Yield only invalidations affecting this document/principal; abort must release the subscription. */
   invalidations?(context: Context, signal: AbortSignal): AsyncIterable<unknown>;
+  /** Repair an uncovered stored base before resync; the following join must be able to replay it. */
   recover(docId: string, cause: RetentionGapError, signal: AbortSignal): Promise<unknown>;
   join?(context: Context): Promise<void>;
   leave?(context: Context): Promise<void>;
@@ -315,7 +316,8 @@ export function createSharedTextRoom<
    * Stream failures are never terminal for the editor, but only a cursor the
    * broker cannot serve any more and no covering snapshot can repair it
    * (`RetentionGapError`, `CursorMismatchError`) needs `RESYNC_REQUIRED`.
-   * Covered retention gaps rebase in place before reaching this fallback.
+   * Covered join/prefix gaps rebase in place before reaching this fallback;
+   * live-hub gaps retry with STREAM_FAILED so pending echoes can be resent.
    * Everything else (broker failover, lost consumer,
    * an awareness stream error) closes with `STREAM_FAILED`: the client
    * reconnects with backoff and its last cursor, so an outage never turns into
@@ -412,6 +414,7 @@ export function createSharedTextRoom<
       try {
         const events = async function* () {
           let rebasedCursor: string | null = null;
+          let following = false;
           while (active()) {
             try {
               if ((await config.log.lifecycle?.get(docId))?.value.state === "closed") {
@@ -456,10 +459,18 @@ export function createSharedTextRoom<
               const caughtUp = maxStreamCursor(head, replay.after) ?? documentTopic.cursorAt(0);
               if (delivered && active()) onCaughtUp(caughtUp);
               if (!delivered || !active()) return;
+              following = true;
               yield* documentTopic.hub({ tenantId: docId }).subscribe({ after: caughtUp, signal: abort.signal });
               return;
             } catch (error) {
               if (!(error instanceof RetentionGapError) || !active()) throw error;
+              if (following) {
+                // A snapshot cannot replace an outstanding publish echo. Retry
+                // the transport so old and new browsers resend pending input;
+                // the next join can rebase before its single readiness frame.
+                await fatal(ctx, ERROR_CODE.streamFailed, ctx.messages.liveSyncStreamFailed, publicDocId);
+                return;
+              }
               const snapshot = await adapter.load(docId);
               if (!active()) return;
               if (
@@ -467,8 +478,10 @@ export function createSharedTextRoom<
                 !snapshot.cursor ||
                 documentTopic.cursorSequence(snapshot.cursor) < documentTopic.cursorSequence(error.firstAvailable) - 1 ||
                 (rebasedCursor !== null && compareStreamCursor(snapshot.cursor, rebasedCursor) <= 0)
-              )
+              ) {
+                await adapter.recover(docId, error, abort.signal);
                 throw error;
+              }
               if (snapshot.restoreRevision !== ctx.restoreRevision) {
                 await requireReopen(ctx, publicDocId);
                 return;

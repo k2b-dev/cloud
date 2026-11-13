@@ -87,6 +87,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
         }),
         adoptSnapshotAtHead: async (input: { noteId: string; cause: RetentionGapError }) => {
           adoptions.push({ noteId: input.noteId, requested: input.cause.requested });
+          storedCursor = "s6t.fixture.20";
           return { cursor: "s6t.fixture.20" };
         },
       },
@@ -200,19 +201,29 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     return { sent, closed, request, waitFor, close: () => handlers.onClose?.(new CloseEvent("close"), socket) };
   };
 
-  test("an uncovered stored snapshot requires resync before live subscription", async () => {
+  test("an uncovered stored snapshot is adopted before resync and the next join succeeds", async () => {
     replayGap.head = "s6t.fixture.19";
     replayGap.gapBelow = "s6t.fixture.9";
     subscribedAfter.length = 0;
     const socket = await openSocket();
     socket.request();
     expect(await socket.closed.promise).toBe(1012);
-    expect(adoptions).toEqual([]);
+    expect(adoptions).toEqual([{ noteId: "test-note", requested: "s6t.fixture.9" }]);
     expect(subscribedAfter).toEqual([]);
     expect(socket.sent.filter((message) => message.type === "notes.yjs.error").map((message) => message.payload.code)).toEqual([
       "RESYNC_REQUIRED",
     ]);
     expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.reopen).toBeUndefined();
+    const reconnect = await openSocket();
+    try {
+      reconnect.request();
+      await reconnect.waitFor(() => reconnect.sent.some((message) => message.type === "notes.yjs.replay.ready"));
+      expect(reconnect.sent.filter((message) => message.type === "notes.yjs.error")).toEqual([]);
+      expect(subscribedAfter).toEqual(["s6t.fixture.20"]);
+    } finally {
+      storedCursor = "s6t.fixture.9";
+      reconnect.close();
+    }
   }, 10_000);
 
   test("a client cursor below retention with no covering snapshot requires resync", async () => {
@@ -226,7 +237,8 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       "RESYNC_REQUIRED",
     ]);
     expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.reopen).toBeUndefined();
-    expect(adoptions).toEqual([]);
+    expect(adoptions).toEqual([{ noteId: "test-note", requested: "s6t.fixture.3" }]);
+    storedCursor = "s6t.fixture.9";
   }, 10_000);
 
   test("a client cursor below retention rebases from a covering snapshot on the same socket", async () => {

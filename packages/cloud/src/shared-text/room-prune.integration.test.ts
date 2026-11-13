@@ -74,7 +74,8 @@ for (const mode of ["idle", "covered", "covered-other", "uncovered"] as const)
       let storedCursor = log.topic().cursorAt(0);
       const snapshots: string[] = [];
       const ready = Promise.withResolvers<void>();
-      const closed = Promise.withResolvers<never>();
+      let closed = Promise.withResolvers<never>();
+      let recoveries = 0;
       const deliveries = new Map<string, ReturnType<typeof Promise.withResolvers<void>>>();
       const delivered = new Set<string>();
       const room = createSharedTextRoom({
@@ -106,31 +107,36 @@ for (const mode of ["idle", "covered", "covered-other", "uncovered"] as const)
           awarenessUser: (user) => ({ userId: user.id, name: "Reader", color: "#fff" }),
           revalidate: async () => ({ ok: true, canWrite: false }),
           recover: async () => {
-            throw new Error("Unexpected retention gap");
+            recoveries++;
+            // Every fixture event is a Yjs no-op, so the empty stored state can
+            // safely adopt the head just as the application recovery would.
+            storedCursor = (await log.topic().head()) ?? log.topic().cursorAt(0);
           },
         },
       });
-      const ctx = createSharedTextRoomContext<{ id: string }, SharedTextRoomMessages>(
-        {
-          send(raw) {
-            const packet = JSON.parse(raw);
-            if (packet.type === "ready") ready.resolve();
-            if (packet.type === "push")
-              for (const update of packet.payload.updates) {
-                if (packet.payload.snapshot) snapshots.push(update.cursor);
-                else {
-                  delivered.add(update.cursor);
-                  deliveries.get(update.cursor)?.resolve();
+      const makeContext = () =>
+        createSharedTextRoomContext<{ id: string }, SharedTextRoomMessages>(
+          {
+            send(raw) {
+              const packet = JSON.parse(raw);
+              if (packet.type === "ready") ready.resolve();
+              if (packet.type === "push")
+                for (const update of packet.payload.updates) {
+                  if (packet.payload.snapshot) snapshots.push(update.cursor);
+                  else {
+                    delivered.add(update.cursor);
+                    deliveries.get(update.cursor)?.resolve();
+                  }
                 }
-              }
+            },
+            close(code, reason) {
+              closed.reject(new Error(`Room closed ${code}: ${reason}`));
+            },
           },
-          close(code, reason) {
-            closed.reject(new Error(`Room closed ${code}: ${reason}`));
-          },
-        },
-        "credential",
-        messages,
-      );
+          "credential",
+          messages,
+        );
+      let ctx = makeContext();
       // Observe closure immediately, including while a broker request is pending.
       void closed.promise.catch(() => {});
       const until = (promise: Promise<unknown>) => Promise.race([promise, closed.promise]);
@@ -163,6 +169,18 @@ for (const mode of ["idle", "covered", "covered-other", "uncovered"] as const)
           if (mode === "uncovered") {
             await expect(until(ready.promise)).rejects.toThrow("RESYNC_REQUIRED");
             expect(snapshots).toEqual([]);
+            expect(recoveries).toBe(1);
+            expect(storedCursor).toBe(b4.cursor);
+            await peer.close();
+            closed = Promise.withResolvers<never>();
+            void closed.promise.catch(() => {});
+            ctx = makeContext();
+            peer = room.connect(ctx);
+            await room.handle(ctx, { type: "replay", payload: { docId: "b", restoreRevision: "0" } });
+            await until(ready.promise);
+            const b5 = await publish("b");
+            await receive(b5.cursor);
+            expect(recoveries).toBe(1);
             return;
           }
           await until(ready.promise);
