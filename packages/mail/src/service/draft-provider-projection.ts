@@ -221,20 +221,23 @@ const loadDraftContent = async (
   return { mailboxId: row.mailbox_id, revision, state: row.state, content };
 };
 
+/** Retirement needs transport coordinates only; legacy content may no longer render or validate. */
+export const retireDraftProjectionInTransaction = async (params: { db: SqlClient; draftId: string }): Promise<string | null> => {
+  const [retiring] = await params.db<{ id: string }[]>`
+    UPDATE mail.draft_provider_snapshots
+    SET state = 'retiring', completed_at = NULL
+    WHERE draft_id = ${params.draftId}::uuid
+      AND direction = 'export'
+      AND state = 'active'
+    RETURNING id
+  `;
+  return retiring?.id ?? null;
+};
+
 export const queueDraftProjectionInTransaction = async (params: { db: SqlClient; draftId: string }): Promise<string | null> => {
   const draft = await loadDraftContent(params.draftId, params.db);
   if (!draft) return null;
-  if (draft.state !== "draft") {
-    const [retiring] = await params.db<{ id: string }[]>`
-      UPDATE mail.draft_provider_snapshots
-      SET state = 'retiring', completed_at = NULL
-      WHERE draft_id = ${params.draftId}::uuid
-        AND direction = 'export'
-        AND state = 'active'
-      RETURNING id
-    `;
-    return retiring?.id ?? null;
-  }
+  if (draft.state !== "draft") return retireDraftProjectionInTransaction(params);
   const fingerprint = draftProviderFingerprint(draft.content);
   const snapshotId = crypto.randomUUID();
   const stableMessageId = draftProviderMessageId(snapshotId);

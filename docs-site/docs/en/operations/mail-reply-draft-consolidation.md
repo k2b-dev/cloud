@@ -5,7 +5,7 @@ section: Operations
 order: 6480
 description: Prepare the irreversible F6 migration to one reply draft per conversation.
 tags: [mail, upgrade, drafts]
-updated: 2026-11-12
+updated: 2026-11-13
 ---
 
 # Mail reply draft consolidation
@@ -28,8 +28,10 @@ service-account suggestions, and workflow review drafts with that origin.
 it. Private automatic replies use `origin = 'workflow'` and remain outside the
 box, including failed automatic replies that return to `draft`.
 
-F6 never cancels a committed send. A draft in `scheduled`, or in `sending` with
-an `undo_window` or `scheduled` submission, survives consolidation. If a
+F6 never cancels a committed send. A draft in `scheduled` or `sending`, or with
+any active outbox submission, has first priority. Active means every submission
+state except `cancelled`, `failed` and `reconciled_unsent`, even if the draft
+itself is still in `draft`. If a
 conversation has two or more committed sends, startup refuses before marker 4
 or any deletion. The error reports their count: let them send or cancel them
 using the previous Mail image, stop it, then retry the upgrade. In-flight,
@@ -99,7 +101,10 @@ The final `completed` field means consolidation and the unique index succeeded.
 
 The new columns use metadata-only defaults. The nonnegative-count check is
 added without scanning under the column-addition lock and validated after that
-transaction commits, while ordinary writes remain available.
+transaction commits, before marker 4, while ordinary writes remain available.
+Preflight also refuses consolidation counts or revision/generation counters
+that would overflow during consolidation. These refusals leave marker 4 absent
+and all drafts intact; resolve the reported data before retrying.
 
 F6 builds a temporary supporting partial index concurrently, excluding sent,
 discarded, new-message and private workflow drafts. Building it requires a
@@ -116,7 +121,16 @@ The supporting index is removed after the final unique index is valid.
 Each batch uses Mail's existing transaction-scoped migration lock and locks the
 affected mailbox and draft rows. It holds no exclusive table lock across
 consolidation. Progress, activities and survivor counts commit together;
-interrupted runs resume from that checkpoint. The unique index is built with
+interrupted runs resume from that checkpoint. If startup fails after marker 4
+because of a database outage, lock timeout or interrupted index build, restore
+the infrastructure and restart the same upgraded image. The current batch rolls
+back; earlier committed batches and their counts are preserved. Repeating
+attachment classification and provider retirement is safe. Incomplete or invalid
+concurrent indexes are rebuilt on retry. Keep the earlier image stopped: it
+refuses marker 4 even while `completed` is false. Never delete the marker to
+retry an earlier image.
+
+The unique index is built with
 `CREATE UNIQUE INDEX CONCURRENTLY`, outside batch transactions; startup waits
 for it. Index-build detection checks that specific index, so unrelated draft
 indexes do not block F6. If another startup is building a migration index, retry

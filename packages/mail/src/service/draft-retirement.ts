@@ -1,13 +1,13 @@
 import { sql } from "@k2b/cloud";
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
-import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
+import { retireDraftProjectionInTransaction } from "./draft-provider-projection";
 import { mailLive } from "./live";
 
 /** Shared retirement boundary for discard and F6. Provider copies retire through the existing sweep. */
 export const retireDraftInTransaction = async (db: typeof sql, draftId: string): Promise<string | null> => {
   // Marking the lifecycle first fences every document, upload, send and lease writer.
   await db`UPDATE mail.drafts SET state = 'discarded' WHERE id = ${draftId}::uuid AND state <> 'discarded'`;
-  return queueDraftProjectionInTransaction({ db, draftId });
+  return retireDraftProjectionInTransaction({ db, draftId });
 };
 
 /** F6 is irreversible. Keep only the lifecycle tombstone required by outbox/provider audit references. */
