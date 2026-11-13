@@ -28,12 +28,13 @@ export function requireCodePolicyAdmin(context: CodeContext, write = false) {
   return user;
 }
 /** One authoritative statement binds revision to rules. Callers control the shared policy/group snapshot with transaction isolation. No cache. */
-export async function readCodePolicySnapshot(db: SQL = sql): Promise<CodePolicy> {
-  const [row] = await db<{ revision: number; preset: string; updated_by: string | null; updated_at: Date; rules: unknown }[]>`
+type CodePolicySnapshotRow = { revision: number; preset: string; updated_by: string | null; updated_at: Date; rules: unknown };
+type CodePolicyGroupRow = { id: string; provider: string; ancestor_id: string };
+export const codePolicySnapshotQuery = (db: SQL) => db<CodePolicySnapshotRow[]>`
     SELECT p.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('groupId',group_id,'row',row,'value',value)
       ORDER BY group_id NULLS FIRST,row) FROM code.policy_rules),'[]'::jsonb) AS rules
     FROM code.policy p WHERE singleton`;
-  if (!row) throw new Error("Code policy unavailable");
+export function codePolicySnapshotFromRow(row: CodePolicySnapshotRow): CodePolicy {
   const policy = CodePolicySchema.parse({
     revision: row.revision,
     definition: { preset: row.preset, rules: row.rules },
@@ -42,10 +43,13 @@ export async function readCodePolicySnapshot(db: SQL = sql): Promise<CodePolicy>
   });
   return { ...policy, definition: normalizeCodePolicy(policy.definition) };
 }
+export async function readCodePolicySnapshot(db: SQL = sql): Promise<CodePolicy> {
+  const [row] = await codePolicySnapshotQuery(db);
+  if (!row) throw new Error("Code policy unavailable");
+  return codePolicySnapshotFromRow(row);
+}
 /** Current same-provider ancestry, using UNION to terminate cycles. IPA effective memberships are peers. */
-export async function readCodePolicyGroups(userId: string | null, db: SQL = sql): Promise<CodePolicyGroups> {
-  if (!userId) return { groups: [], ancestors: [] };
-  const rows = await db<{ id: string; provider: string; ancestor_id: string }[]>`
+export const codePolicyGroupRowsQuery = (userId: string | null, db: SQL) => db<CodePolicyGroupRow[]>`
     WITH RECURSIVE members(id) AS (
       SELECT group_id FROM auth.user_groups_v2 WHERE user_id=${userId}::uuid
       UNION SELECT g.id FROM auth.ipa_user_effective_groups m JOIN auth.groups g ON g.provider='ipa' AND g.name=m.group_name
@@ -61,10 +65,15 @@ export async function readCodePolicyGroups(userId: string | null, db: SQL = sql)
         JOIN auth.groups parent ON parent.id=edge.parent_group_id AND parent.provider=child.provider
         WHERE child.provider<>'ipa'
     ) SELECT a.id,g.provider,a.ancestor_id FROM ancestry a JOIN auth.groups g ON g.id=a.id`;
+export function codePolicyGroupsFromRows(rows: CodePolicyGroupRow[]): CodePolicyGroups {
   return {
     groups: [...new Map(rows.map((row) => [row.id, { id: row.id, provider: row.provider }])).values()],
     ancestors: rows.map((row) => ({ groupId: row.id, ancestorId: row.ancestor_id })),
   };
+}
+export async function readCodePolicyGroups(userId: string | null, db: SQL = sql): Promise<CodePolicyGroups> {
+  if (!userId) return { groups: [], ancestors: [] };
+  return codePolicyGroupsFromRows(await codePolicyGroupRowsQuery(userId, db));
 }
 const snapshot = <T>(run: (db: SQL) => Promise<T>) =>
   sql.begin(async (tx) => {

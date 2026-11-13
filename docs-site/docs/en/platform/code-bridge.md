@@ -192,7 +192,12 @@ ordinary capability refusals use the error envelope.
 These are Core host contracts, not application entry points. `withCall`
 reserves and finishes the observation; every transport performing an effect
 must use the returned `withMandateIssueAuthority` wrapper inside its issuance
-transaction. C11 supplies `kind: "internet"`, which selects the `internet`
+transaction. The Core capability dispatcher selects `{ receipt: "issuance" }`
+for non-streaming calls so receipt admission and token issuance share that
+transaction. Its callback prepares dispatch; transport starts only after commit.
+Ordinary host callbacks, file transfers, AI reservation and internet calls keep
+the receipt committed before the callback starts. No authority is cached across calls.
+C11 supplies `kind: "internet"`, which selects the `internet`
 policy row and actual-row approval coverage; its C2 operation is `runtime.http`.
 HTTP calls retain Action observations so recovery does not automatically repeat external effects.
 

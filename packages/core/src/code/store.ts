@@ -547,26 +547,64 @@ export const insertCodeRun = async (
   if (!row) throw new Error("Run insert returned no row");
   return row.id;
 };
-/** Append the next observation under the run lock. C13 fences the transaction before calling this. */
-export const appendCodeCall = async (
-  input: { runId: string; kind: CodeCall["kind"]; call: NormalizedCapabilityCall },
-  db: TransactionSQL,
-): Promise<number> => {
+/** A count refusal is distinct from an input-byte refusal at the runner boundary. */
+export class CodeCallLimitError extends CodeDataError {
+  constructor() {
+    super("BAD_INPUT", "Code call count exceeds storage limit before invocation.");
+  }
+}
+/** A rolled-back issuance must never finish an ordinal subsequently reused by another call. */
+export class CodeReceiptNotCommittedError extends CodeDataError {
+  constructor() {
+    super("CONFLICT", "Call receipt transaction did not commit.");
+  }
+}
+type AppendCodeCallInput = {
+  runId: string;
+  kind: CodeCall["kind"];
+  call: NormalizedCapabilityCall;
+  callsLimit?: number;
+  payloadLimit?: number;
+  effectStarted?: boolean;
+};
+type CodeCallRunBudget = { id: string; payload_bytes: number; calls_limit: number };
+/** Generic storage callers acquire the run lock before the next statement's snapshot. */
+export const appendCodeCall = async (input: AppendCodeCallInput, db: TransactionSQL): Promise<number> => {
+  const [run] = await db<CodeCallRunBudget[]>`SELECT id,payload_bytes,calls_limit FROM code.runs WHERE id=${input.runId}::uuid FOR UPDATE`;
+  if (!run) throw new CodeDataError("NOT_FOUND", "Code run not found.");
+  return (await appendLockedCodeCall(input, run, db)).ordinal;
+};
+/** Core bridge only: reuse the run budget projected by its fence in this transaction. */
+export const appendLockedCodeCall = async (
+  input: AppendCodeCallInput,
+  run: CodeCallRunBudget,
+  db: CodeDb,
+): Promise<{ ordinal: number; receiptTransactionId: string }> => {
+  if (input.runId !== run.id) throw new CodeDataError("BAD_INPUT", "Run budget does not match the call.");
   const call = NormalizedCapabilityCallSchema.parse(input.call);
   const encoded = jsonText(call, true);
-  const [run] = await db<
-    { payload_bytes: number; calls_limit: number }[]
-  >`SELECT payload_bytes,calls_limit FROM code.runs WHERE id=${input.runId}::uuid FOR UPDATE`;
-  if (!run) throw new CodeDataError("NOT_FOUND", "Code run not found.");
-  if ((await jsonbBytes(encoded, db)) > run.payload_bytes)
-    throw new CodeDataError("BAD_INPUT", "Capability call input exceeds storage limit before invocation.");
-  const [next] = await db<
-    { ordinal: number }[]
-  >`SELECT COALESCE(MAX(ordinal),0)+1 AS ordinal FROM code.calls WHERE run_id=${input.runId}::uuid`;
-  if (!next || next.ordinal > run.calls_limit)
-    throw new CodeDataError("BAD_INPUT", "Code call count exceeds storage limit before invocation.");
-  await db`INSERT INTO code.calls(run_id,ordinal,kind,call) VALUES(${input.runId}::uuid,${next.ordinal},${input.kind},${encoded}::text::jsonb)`;
-  return next.ordinal;
+  const [result] = await db<{ ordinal: number | null; calls_valid: boolean; payload_valid: boolean; transaction_id: string }[]>`
+    WITH usage AS MATERIALIZED (
+      SELECT COALESCE(MAX(ordinal),0)+1 AS ordinal,count(*) AS used FROM code.calls WHERE run_id=${run.id}::uuid
+    ), budget AS MATERIALIZED (
+      SELECT ${run.id}::uuid AS id,usage.ordinal,
+        usage.used < LEAST(${run.calls_limit},${input.callsLimit ?? null}::int) AS calls_valid,
+        octet_length(${encoded}::text::jsonb::text) <= LEAST(${run.payload_bytes},${input.payloadLimit ?? null}::int) AS payload_valid
+      FROM usage
+    ), inserted AS (
+      INSERT INTO code.calls(run_id,ordinal,kind,call)
+      SELECT id,ordinal,${input.kind},${encoded}::text::jsonb FROM budget
+      WHERE calls_valid AND payload_valid AND ordinal <= ${run.calls_limit}
+      RETURNING ordinal
+    ), effect AS (
+      UPDATE code.runs SET effect_started=TRUE WHERE id=${run.id}::uuid
+        AND ${input.effectStarted ?? false} AND EXISTS (SELECT 1 FROM inserted)
+    ) SELECT inserted.ordinal,budget.calls_valid,budget.payload_valid,pg_current_xact_id()::text AS transaction_id FROM budget LEFT JOIN inserted ON true`;
+  if (!result) throw new CodeDataError("NOT_FOUND", "Code run not found.");
+  if (!result.calls_valid) throw new CodeCallLimitError();
+  if (!result.payload_valid) throw new CodeDataError("BAD_INPUT", "Capability call input exceeds storage limit before invocation.");
+  if (result.ordinal === null) throw new CodeCallLimitError();
+  return { ordinal: result.ordinal, receiptTransactionId: result.transaction_id };
 };
 /** Store the bounded result of one observation. No replay behavior is attached to this record. */
 export const finishCodeCall = async (
@@ -577,11 +615,11 @@ export const finishCodeCall = async (
     result: CodeCall["result"];
     refusalKind?: CodeCallRefusalKind | null;
     endedAt: Date;
+    receiptTransactionId?: string;
   },
-  db: TransactionSQL,
+  db: CodeDb,
 ): Promise<void> => {
   // Match settlement's run-before-call lock order, including late authoritative results.
-  await db`SELECT id FROM code.runs WHERE id=${input.runId}::uuid FOR UPDATE`;
   let encoded: string;
   try {
     encoded = jsonText(input.result);
@@ -593,15 +631,21 @@ export const finishCodeCall = async (
   const size = bytes(encoded);
   const stored = size > CODE_RESULT_STORAGE_BYTES ? jsonText({ code: "code_result_exceeds_capability_contract", bytes: size }) : encoded;
   const refusalKind = input.state === "failed" ? (input.refusalKind ?? null) : null;
-  const result =
-    await db`UPDATE code.calls SET refusal_kind=${refusalKind},state = ${input.state},result = ${stored}::text::json,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state IN ('running','uncertain')`;
-  if (result.count !== 1) throw new CodeDataError("CONFLICT", "Call is missing or already finished.");
-  // The run lock serializes completions. Keep invocation order even when later calls finish first.
-  // This write and the call's result/classification commit or roll back together, before runner completion.
-  if (refusalKind === "target_refused")
-    await db`UPDATE code.runs
-    SET first_refused_call_ordinal=LEAST(COALESCE(first_refused_call_ordinal,${input.ordinal}),${input.ordinal})
-    WHERE id=${input.runId}::uuid`;
+  const [result] = await db<{ count: number; receipt_committed: boolean }[]>`
+    WITH run AS MATERIALIZED (SELECT id FROM code.runs WHERE id=${input.runId}::uuid FOR UPDATE),
+    receipt AS MATERIALIZED (
+      SELECT ${input.receiptTransactionId ?? null}::xid8 IS NULL
+        OR pg_xact_status(${input.receiptTransactionId ?? null}::xid8)='committed' AS committed
+    ), completed AS (
+      UPDATE code.calls SET refusal_kind=${refusalKind},state=${input.state},result=${stored}::text::json,ended_at=${input.endedAt}
+      FROM run,receipt WHERE receipt.committed AND run_id=run.id AND ordinal=${input.ordinal} AND state IN ('running','uncertain')
+      RETURNING run_id,ordinal
+    ), refused AS (
+      UPDATE code.runs SET first_refused_call_ordinal=LEAST(COALESCE(first_refused_call_ordinal,completed.ordinal),completed.ordinal)
+      FROM completed WHERE code.runs.id=completed.run_id AND ${refusalKind}::text='target_refused'
+    ) SELECT count(*)::int AS count,(SELECT committed FROM receipt) AS receipt_committed FROM completed`;
+  if (result && !result.receipt_committed) throw new CodeReceiptNotCommittedError();
+  if (result?.count !== 1) throw new CodeDataError("CONFLICT", "Call is missing or already finished.");
 };
 /** Retention is 30 days after termination; active/queued runs and immutable versions are never swept. */
 export const expireCodeRuns = async (options: { now: Date; limit: number; db?: CodeDb }): Promise<number> => {

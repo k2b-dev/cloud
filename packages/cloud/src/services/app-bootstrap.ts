@@ -50,7 +50,7 @@ export const clearRejectedBootstrapStart = async (appId: string, db: SQL = sql):
 };
 
 /** Shared Postgres uniqueness rejects replay across replicas; each admission also drains one expired proof for its key. */
-export const consumeBootstrapProof = async (keyId: string, jti: string, exp: number, db: SQL = sql): Promise<boolean> => {
+export const consumeBootstrapProof = async (keyId: string, jti: string, exp: number, db: SQL = sql, touch = false): Promise<boolean> => {
   const rows = await db`
     WITH expired AS MATERIALIZED (
       SELECT key_id,jti FROM auth.app_proof_replays
@@ -58,10 +58,17 @@ export const consumeBootstrapProof = async (keyId: string, jti: string, exp: num
     ), pruned AS (
       DELETE FROM auth.app_proof_replays replay USING expired
       WHERE replay.key_id=expired.key_id AND replay.jti=expired.jti AND replay.retain_until<=now()
-    )
+    ), consumed AS (
     INSERT INTO auth.app_proof_replays (key_id, jti, retain_until)
     VALUES (${keyId}::uuid, ${jti}, ${new Date((exp + BOOTSTRAP_REPLAY_RETENTION_SECONDS) * 1000)})
     ON CONFLICT (key_id, jti) DO NOTHING RETURNING jti
+    ), touched AS (
+      UPDATE auth.service_account_credentials c SET last_used_at=now()
+      FROM auth.service_accounts sa WHERE ${touch} AND EXISTS (SELECT 1 FROM consumed)
+        AND c.id=${keyId}::uuid AND c.kind='app_key' AND c.status='active' AND (c.expires_at IS NULL OR c.expires_at>now())
+        AND sa.id=c.service_account_id AND sa.status='active' AND sa.kind='resource_bound'
+        AND sa.resource_type='cloud.app' AND sa.resource_id=sa.app_id
+    ) SELECT jti FROM consumed
   `;
   return rows.length === 1;
 };

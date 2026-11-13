@@ -241,10 +241,13 @@ const subjectAppAccess = async (
   appIds: readonly string[],
   db: SQL,
   groupsAdmin?: readonly string[],
+  serviceAccountKind?: string,
 ): Promise<boolean> => {
   try {
     if (subject.type === "service_account") {
-      const [account] = await db<{ kind: string }[]>`SELECT kind FROM auth.service_accounts WHERE id = ${subject.id}::uuid`;
+      const account = serviceAccountKind
+        ? { kind: serviceAccountKind }
+        : (await db<{ kind: string }[]>`SELECT kind FROM auth.service_accounts WHERE id = ${subject.id}::uuid`)[0];
       // Code has no human entry grant. Admission here only checks app availability;
       // the signed mandate invocation still needs its own resource grant in the target.
       if (account?.kind === "code") {
@@ -756,7 +759,7 @@ export const validateMandateIssueAuthority = async (
   `;
   if (!row || (row.owner_app_id === "core" && row.workload_type === "ai.chat-task"))
     return denyMandateIssue(err.forbidden("Mandate is unavailable"));
-  if (!row.subject_active || !(await validSubject(subjectFromRow(row), db)))
+  if (!row.subject_active || (row.subject_kind === "user" && !(await validSubject(subjectFromRow(row), db))))
     return denyMandateIssue(err.forbidden("Mandate subject is unavailable"));
   if (row.owner_app_id !== owner.data) {
     return denyMandateIssue(err.forbidden("Mandate owner does not match"));
@@ -794,7 +797,15 @@ export const validateMandateIssueAuthority = async (
   const mandate = mapMandate(row);
   if (row.service_account_kind === "code" && !isCodeVersionWorkload(mandate))
     return denyMandateIssue(err.forbidden("Code requires a Core version mandate"));
-  if (!(await subjectAppAccess(mandate.subject, [codeVersion ? "core" : mandate.ownerAppId, target.data], db, options.groupsAdmin))) {
+  if (
+    !(await subjectAppAccess(
+      mandate.subject,
+      [codeVersion ? "core" : mandate.ownerAppId, target.data],
+      db,
+      options.groupsAdmin,
+      row.service_account_kind ?? undefined,
+    ))
+  ) {
     return denyMandateIssue(err.forbidden("App access was denied. Ask someone who manages access before running this mandate."));
   }
   return ok({

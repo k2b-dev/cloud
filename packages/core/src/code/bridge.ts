@@ -21,11 +21,11 @@ import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
 import { codeAiReferenceCost, codeAiReservesAttemptBudget, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
-import { readCodePolicyGroups, readCodePolicySnapshot } from "./policy";
+import { codePolicyGroupRowsQuery, codePolicyGroupsFromRows, codePolicySnapshotFromRow, codePolicySnapshotQuery } from "./policy";
 import { codePolicyRow, isCodeAiOperation } from "./policy-contracts";
 import { effective } from "./policy-effective";
 import { codeSettings } from "./settings";
-import { appendCodeCall, findCode, finishCodeCall } from "./store";
+import { appendLockedCodeCall, CodeCallLimitError, CodeReceiptNotCommittedError, type CodeRow, finishCodeCall, mapCode } from "./store";
 
 const CallVersionSchema = z.object({
   version: CodeCheckedVersionManifestSchema.shape.version,
@@ -58,22 +58,73 @@ export async function requireCodeRunFence(claims: CodeRunTokenClaims, db: SQL): 
     denied("runner_lease_lost", 409);
 }
 async function lockCall(call: CodeBridgeCall, db: SQL) {
-  await db`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
-  await db`SELECT id FROM code.codes WHERE id=${call.claims.codeId} FOR SHARE`;
-  await requireCodeRunFence(call.claims, db);
-  const code = await findCode(call.claims.codeId, db);
-  if (!code || code.state !== "active") denied("code_not_active");
-  // Old versions may drain while a newly activated version takes new work.
-  // Immutable executable data was checked at submission. Read only the small policy/entrypoint projection per call.
-  const [version] = await db<
-    { bundle_hash: string; source_hash: string; manifest: unknown; created_by: string | null; entrypoint_valid: boolean }[]
+  const wallMs = await codeSettings.get("core.code.wall_clock_ms");
+  // Dependencies enforce the shared policy -> Code -> run lock order. Each locked
+  // row supplies its current values even when a concurrent writer made us wait.
+  const [entry] = await db<
+    (CodeRow & {
+      run_code_id: string;
+      version_id: string;
+      entrypoint: string;
+      generation: number;
+      valid: boolean;
+      payload_bytes: number;
+      calls_limit: number;
+      wall_valid: boolean;
+      trigger: string;
+      input: unknown;
+      bundle_hash: string | null;
+      source_hash: string | null;
+      manifest: unknown;
+      author_id: string | null;
+      entrypoint_valid: boolean | null;
+      mandate_owner_app_id: "core" | "runner" | null;
+      mandate_valid: boolean | null;
+    })[]
   >`
-    SELECT bundle_hash,source_hash,created_by,jsonb_build_object(
-      'version',manifest->'version','hashes',manifest->'hashes',
-      'policyRows',manifest->'policyRows','permissions',manifest->'permissions','database',COALESCE(manifest->'database','false'::jsonb)) AS manifest,
-      manifest @> ${JSON.stringify({ entrypoints: [{ entrypoint: call.claims.entrypoint }] })}::text::jsonb AS entrypoint_valid
-    FROM code.versions WHERE id=${call.claims.versionId}::uuid AND code_id=${code.id}`;
-  if (!version || version.bundle_hash !== call.claims.bundleHash) denied("code_bundle_mismatch");
+    WITH policy_lock AS MATERIALIZED (
+      SELECT singleton FROM code.policy WHERE singleton FOR SHARE
+    ), code_lock AS MATERIALIZED (
+      SELECT c.* FROM code.codes c CROSS JOIN policy_lock WHERE c.id=${call.claims.codeId} FOR SHARE OF c
+    ), run_lock AS MATERIALIZED (
+      SELECT r.* FROM code.runs r CROSS JOIN code_lock WHERE r.id=${call.claims.runId}::uuid FOR UPDATE OF r
+    )
+    SELECT c.*, r.code_id AS run_code_id,r.version_id,r.entrypoint,r.generation,r.trigger,r.input,r.payload_bytes,r.calls_limit,
+      (r.state='running' AND r.lease_expires_at>clock_timestamp() AND r.started_at IS NOT NULL
+        AND (r.deadline_at IS NULL OR r.deadline_at>clock_timestamp())) AS valid,
+      r.started_at + ${wallMs} * interval '1 millisecond' > clock_timestamp() AS wall_valid,
+      v.bundle_hash,v.source_hash,v.created_by AS author_id,m.owner_app_id AS mandate_owner_app_id,
+      (m.workload_type='code.version' AND m.workload_id=${call.claims.versionId} AND m.revision=${call.claims.mandateRevision}
+        AND m.state='active' AND m.confirmed_at IS NOT NULL AND (m.expires_at IS NULL OR m.expires_at>clock_timestamp())
+        AND CASE c.owner_kind WHEN 'person' THEN m.subject_kind='user' AND m.subject_user_id=c.owner_user_id
+          ELSE m.subject_kind='service_account' AND m.subject_service_account_id=c.service_account_id END) AS mandate_valid,
+      jsonb_build_object('version',v.manifest->'version','hashes',v.manifest->'hashes',
+        'policyRows',v.manifest->'policyRows','permissions',v.manifest->'permissions',
+        'database',COALESCE(v.manifest->'database','false'::jsonb)) AS manifest,
+      v.manifest @> ${JSON.stringify({ entrypoints: [{ entrypoint: call.claims.entrypoint }] })}::text::jsonb AS entrypoint_valid
+    FROM code_lock c JOIN run_lock r ON true
+    LEFT JOIN code.versions v ON v.id=${call.claims.versionId}::uuid AND v.code_id=c.id
+    LEFT JOIN auth.mandates m ON m.id=${call.claims.mandateId}::uuid AND m.owner_app_id IN ('core','runner')`;
+  if (!entry) denied("runner_lease_lost", 409);
+  if (
+    !entry.valid ||
+    entry.generation !== call.claims.generation ||
+    entry.run_code_id !== call.claims.codeId ||
+    entry.version_id !== call.claims.versionId ||
+    entry.entrypoint !== call.claims.entrypoint ||
+    call.claims.exp * 1000 <= Date.now()
+  )
+    denied("runner_lease_lost", 409);
+  const code = mapCode(entry);
+  if (code.state !== "active") denied("code_not_active");
+  const version = {
+    bundle_hash: entry.bundle_hash,
+    source_hash: entry.source_hash,
+    created_by: entry.author_id,
+    manifest: entry.manifest,
+    entrypoint_valid: entry.entrypoint_valid,
+  };
+  if (!version.bundle_hash || version.bundle_hash !== call.claims.bundleHash) denied("code_bundle_mismatch");
   const manifest = CallVersionSchema.safeParse(version.manifest);
   if (
     !manifest.success ||
@@ -82,15 +133,29 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
     !version.entrypoint_valid
   )
     denied("code_version_mismatch");
-  const wallMs = await codeSettings.get("core.code.wall_clock_ms");
-  const [budget] = await db<
-    { valid: boolean }[]
-  >`SELECT started_at + ${wallMs} * interval '1 millisecond' > clock_timestamp() AS valid FROM code.runs WHERE id=${call.claims.runId}::uuid`;
-  if (!budget?.valid) denied("code_wall_clock_limit");
-  return { code, version, manifest: manifest.data };
+  if (!entry.wall_valid) denied("code_wall_clock_limit");
+  return {
+    code,
+    version,
+    manifest: manifest.data,
+    run: {
+      id: call.claims.runId,
+      trigger: entry.trigger,
+      input: entry.input,
+      payload_bytes: entry.payload_bytes,
+      calls_limit: entry.calls_limit,
+    },
+    mandateOwnerAppId: entry.mandate_owner_app_id,
+    mandateValid: entry.mandate_valid,
+  };
 }
-export async function authorizeCodeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "runner"> {
-  const { code, version, manifest } = await lockCall(call, db);
+
+export async function authorizeCodeCall(
+  call: CodeBridgeCall,
+  db: SQL,
+  locked?: Awaited<ReturnType<typeof lockCall>>,
+): Promise<"core" | "runner"> {
+  const { code, version, manifest } = locked ?? (await lockCall(call, db));
   if (call.kind !== "internet" && call.kind !== "database") requireCodeCapabilityDeclared(call.call, manifest.permissions);
   if (call.kind === "database" && manifest.database !== true) denied("code_db_undeclared", 403);
   const row = call.kind === "database" ? null : codePolicyRow(isCodeAiOperation(call.call.capability) ? "ai" : call.kind, call.policy);
@@ -101,12 +166,6 @@ export async function authorizeCodeCall(call: CodeBridgeCall, db: SQL): Promise<
   )
     denied("code_unattended_forbidden");
   // S2: the ACTUAL call determines this row. A checker permission/row is never authority.
-  const policy = await readCodePolicySnapshot(db);
-  const membership = await readCodePolicyGroups(code.owner.kind === "person" ? code.owner.userId : version.created_by, db);
-  const value = row ? effective(row, code.owner, policy.definition, membership).value : "automatic";
-  if (value === "never") denied("code_policy_never");
-  const manifestValues = manifest.policyRows.map((row) => effective(row, code.owner, policy.definition, membership).value);
-  if (manifestValues.includes("never")) denied("code_policy_never");
   const [evidence] = await db<
     {
       binding_valid: boolean;
@@ -114,9 +173,15 @@ export async function authorizeCodeCall(call: CodeBridgeCall, db: SQL): Promise<
       decision_valid: boolean | null;
       decision_binding_valid: boolean | null;
       database: boolean | null;
+      policy: { revision: number; preset: string; updated_by: string | null; updated_at: string; rules: unknown };
+      memberships: unknown;
+      coverage: string[];
     }[]
   >`
-    SELECT (s.binding->>'codeId'=${code.id} AND s.binding->>'versionId'=${call.claims.versionId}
+    SELECT (SELECT row_to_json(p) FROM (${codePolicySnapshotQuery(db)}) p) AS policy,
+      (SELECT COALESCE(jsonb_agg(g),'[]'::jsonb) FROM (${codePolicyGroupRowsQuery(code.owner.kind === "person" ? code.owner.userId : version.created_by, db)}) g) AS memberships,
+      ARRAY(SELECT row FROM code.policy_coverage WHERE version_id=${call.claims.versionId}::uuid) AS coverage,
+      (s.binding->>'codeId'=${code.id} AND s.binding->>'versionId'=${call.claims.versionId}
       AND s.binding->>'sourceHash'=v.source_hash AND s.binding->>'bundleHash'=v.bundle_hash) AS binding_valid,
       d.approved, d.binding=s.binding AS decision_binding_valid, (s.evidence->>'database')::boolean AS database,
       (u.auth_epoch=d.auth_epoch AND (d.decided_device_id IS NULL OR EXISTS
@@ -125,6 +190,14 @@ export async function authorizeCodeCall(call: CodeBridgeCall, db: SQL): Promise<
     LEFT JOIN code.version_decisions d ON d.version_id=s.version_id LEFT JOIN auth.users u ON u.id=d.decided_by
     WHERE s.version_id=${call.claims.versionId}::uuid AND s.code_id=${code.id}`;
   if (!evidence) denied("code_approval_required");
+  const policy = codePolicySnapshotFromRow({ ...evidence.policy, updated_at: new Date(evidence.policy.updated_at) });
+  const membership = codePolicyGroupsFromRows(
+    z.array(z.object({ id: z.string(), provider: z.string(), ancestor_id: z.string() })).parse(evidence.memberships),
+  );
+  const value = row ? effective(row, code.owner, policy.definition, membership).value : "automatic";
+  if (value === "never") denied("code_policy_never");
+  const manifestValues = manifest.policyRows.map((row) => effective(row, code.owner, policy.definition, membership).value);
+  if (manifestValues.includes("never")) denied("code_policy_never");
   if (call.kind === "database" && evidence.database !== true) denied("code_db_undeclared", 403);
   if (!evidence.binding_valid) denied("code_hash_mismatch");
   if (evidence.approved !== null) {
@@ -135,8 +208,11 @@ export async function authorizeCodeCall(call: CodeBridgeCall, db: SQL): Promise<
   // A valid version decision must explicitly cover the classification of this actual call.
   if (row && value === "admin") {
     if (!evidence.approved) denied("code_approval_required");
-    const [coverage] = await db`SELECT row FROM code.policy_coverage WHERE version_id=${call.claims.versionId}::uuid AND row=${row}`;
-    if (!coverage) denied("code_approval_required");
+    if (!evidence.coverage.includes(row)) denied("code_approval_required");
+  }
+  if (locked) {
+    if (!locked.mandateOwnerAppId || !locked.mandateValid) denied("code_mandate_mismatch");
+    return locked.mandateOwnerAppId;
   }
   const [mandate] = await db<
     {
@@ -168,38 +244,44 @@ export function createCodeBridgeHost(
   const runCall = async (
     call: CodeBridgeCall,
     execution: { capability: (authority: CodeBridgeAuthority) => Promise<Response> } | { observation: () => Promise<Response> },
+    receiptAtIssuance = false,
   ): Promise<Response> => {
     // Commit the observation before an external effect. A crash leaves a visible running call, never an unrecorded effect.
-    const { ordinal, manifest } = await sql.begin(async (tx) => {
-      const { manifest } = await lockCall(call, tx);
+    let ordinal: number | undefined;
+    let receiptTransactionId: string | undefined;
+    let manifest: Awaited<ReturnType<typeof lockCall>>["manifest"] | undefined;
+    // The dispatcher's signer transaction owns admission and the durable receipt.
+    // It commits before transport. Local/AI/file paths still record up front.
+    const deferredReceipt =
+      receiptAtIssuance &&
+      "capability" in execution &&
+      ["query", "action"].includes(call.kind) &&
+      !codeAiReservesAttemptBudget(call.call.capability);
+    const recordReceipt = async (tx: SQL, locked?: Awaited<ReturnType<typeof lockCall>>) => {
+      const current = locked ?? (await lockCall(call, tx));
       const limit = await codeSettings.get("core.code.calls_per_run");
-      const [used] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM code.calls WHERE run_id=${call.claims.runId}::uuid`;
-      if ((used?.count ?? 0) >= limit) denied("code_call_limit");
-      const [run] = await tx<{ calls_limit: number }[]>`SELECT calls_limit FROM code.runs WHERE id=${call.claims.runId}::uuid`;
-      if ((used?.count ?? 0) >= (run?.calls_limit ?? 0)) denied("code_call_limit");
+      const payloadLimit = await codeSettings.get("core.code.payload_bytes");
       try {
-        const ordinal = await appendCodeCall(
+        const receipt = await appendLockedCodeCall(
           {
             runId: call.claims.runId,
             kind: call.kind === "query" || (call.kind === "database" && call.call.capability === "db.query") ? "query" : "action",
             call: call.call,
+            callsLimit: limit,
+            payloadLimit,
+            effectStarted: call.kind !== "query" && !(call.kind === "database" && call.call.capability === "db.query"),
           },
+          current.run,
           tx,
         );
-        // Database writes mark effects just like application actions.
-        if (call.kind !== "query" && !(call.kind === "database" && call.call.capability === "db.query"))
-          await tx`UPDATE code.runs SET effect_started=TRUE WHERE id=${call.claims.runId}::uuid`;
-        const payloadLimit = await codeSettings.get("core.code.payload_bytes");
-        const [payload] = await tx<
-          { valid: boolean }[]
-        >`SELECT octet_length(call::text) <= ${payloadLimit} AS valid FROM code.calls WHERE run_id=${call.claims.runId}::uuid AND ordinal=${ordinal}`;
-        if (!payload?.valid) denied("code_input_limit");
-        return { ordinal, manifest };
+        return { ...receipt, manifest: current.manifest };
       } catch (error) {
+        if (error instanceof CodeCallLimitError) denied("code_call_limit");
         if (error instanceof CodeDataError && error.code === "BAD_INPUT") denied("code_input_limit");
         throw error;
       }
-    });
+    };
+    if (!deferredReceipt) ({ ordinal, manifest, receiptTransactionId } = await sql.begin((tx) => recordReceipt(tx)));
     let response: Response;
     let refusalKind: CodeBridgeRefusalKind = "bridge";
     let issuanceRefusal: CodeBridgeRefusal | undefined;
@@ -208,7 +290,7 @@ export function createCodeBridgeHost(
     let aiFailure: unknown;
     let localFailure: CodeBridgeRefusal | undefined;
     try {
-      if ("capability" in execution && call.kind !== "internet" && call.kind !== "database")
+      if (manifest && "capability" in execution && call.kind !== "internet" && call.kind !== "database")
         requireCodeCapabilityDeclared(call.call, manifest.permissions);
       const rate = await (
         options.checkRate ??
@@ -221,11 +303,13 @@ export function createCodeBridgeHost(
       } else {
         if (call.kind === "database") await sql.begin((tx) => authorizeCodeCall(call, tx));
         if (codeAiReservesAttemptBudget(call.call.capability)) {
+          if (ordinal === undefined) throw new Error("AI receipt missing");
+          const aiOrdinal = ordinal;
           aiProfiles = (await readAiSettingsState()).profiles;
           aiReservation = await sql.begin(async (tx) => {
             // Resolve current group policy before reserving; issuance rechecks it before the model is called.
             await authorizeCodeCall(call, tx);
-            const reservation = await reserveCodeAiBudget(call.claims, ordinal, await codeSettings.get("core.code.ai_budget_usd"), tx, {
+            const reservation = await reserveCodeAiBudget(call.claims, aiOrdinal, await codeSettings.get("core.code.ai_budget_usd"), tx, {
               code: await codeSettings.get("core.code.ai_daily_budget_usd"),
               owner: await codeSettings.get("core.code.ai_owner_daily_budget_usd"),
               timeZone: (await coreSettings.get<string>("app.timezone")) || "UTC",
@@ -235,7 +319,8 @@ export function createCodeBridgeHost(
           });
         }
         const fencedIssue: NonNullable<CapabilityDispatchDependencies["withMandateIssueAuthority"]> = async (input, use, options) => {
-          if (!options?.db) denied("code_bridge_unavailable", 503);
+          const db = options?.db;
+          if (!db) denied("code_bridge_unavailable", 503);
           try {
             if (call.kind !== "internet") {
               const issued = input.call;
@@ -250,15 +335,44 @@ export function createCodeBridgeHost(
               )
                 denied("code_capability_undeclared", 403);
             }
-            const ownerAppId = await authorizeCodeCall(call, options.db);
-            input = { ...input, ownerAppId, codeRun: true };
             if (input.mandateId !== call.claims.mandateId || input.expectedRevision !== call.claims.mandateRevision)
               denied("code_mandate_mismatch");
+            if (deferredReceipt) {
+              const locked = await lockCall(call, db);
+              const receipt = await recordReceipt(db, locked);
+              const ownerAppId = await authorizeCodeCall(call, db, locked);
+              const result = await mandates.withIssueAuthority(
+                { ...input, ownerAppId, codeRun: true },
+                async (authority) => {
+                  if (
+                    authority.workloadType !== "code.version" ||
+                    authority.workloadId !== call.claims.versionId ||
+                    (locked.code.owner.kind === "person"
+                      ? authority.subject.type !== "user" || authority.subject.id !== locked.code.owner.userId
+                      : authority.subject.type !== "service_account" || authority.subject.id !== locked.code.serviceAccountId)
+                  ) {
+                    issuanceRefusal = new CodeBridgeRefusal("code_mandate_mismatch");
+                    throw issuanceRefusal;
+                  }
+                  const event = locked.run.trigger === "event" ? AppEventEnvelopeSchema.parse(locked.run.input) : null;
+                  const trigger = event
+                    ? { type: event.type, subject: event.subject, ...(event.place ? { place: event.place } : {}) }
+                    : null;
+                  return use({ ...authority, trigger });
+                },
+                options,
+              );
+              // These values are used only after the surrounding signer transaction commits.
+              ({ ordinal, manifest, receiptTransactionId } = receipt);
+              return result;
+            }
+            const ownerAppId = await authorizeCodeCall(call, db);
+            input = { ...input, ownerAppId, codeRun: true };
           } catch (error) {
             if (error instanceof CodeBridgeRefusal) issuanceRefusal = error;
             throw error;
           }
-          const [run] = await options.db<
+          const [run] = await db<
             { trigger: string; input: unknown }[]
           >`SELECT trigger,input FROM code.runs WHERE id=${call.claims.runId}::uuid`;
           if (!run) denied("runner_lease_lost", 409);
@@ -295,6 +409,22 @@ export function createCodeBridgeHost(
       localFailure = error instanceof CodeBridgeRefusal ? error : new CodeBridgeRefusal("code_bridge_unavailable", 503);
       response = refusalResponse(localFailure);
     }
+    // Pre-issuance validation/refusal still has a durable observation. A failed
+    // signer transaction rolled its receipt back, so verify it before completion.
+    if (ordinal === undefined) {
+      ({ ordinal, manifest, receiptTransactionId } = await sql.begin((tx) => recordReceipt(tx)));
+      // Dispatch can refuse an invalid shape before requesting issuance. Preserve
+      // the host's declared-coordinate error and durable refusal in that path too.
+      if (deferredReceipt) {
+        try {
+          requireCodeCapabilityDeclared(call.call, manifest.permissions);
+        } catch (error) {
+          if (!(error instanceof CodeBridgeRefusal)) throw error;
+          refusalKind = codeBridgeLocalRefusalKind(error.code);
+          response = refusalResponse(error);
+        }
+      }
+    }
     // Viewer bodies may be bytes or streams. Observe only the outcome; never clone,
     // buffer or persist file contents in the run log.
     const result = RunnerCallResponseSchema.parse(
@@ -308,11 +438,12 @@ export function createCodeBridgeHost(
     );
     if (!result.ok && call.kind === "internet") refusalKind = codeBridgeLocalRefusalKind(result.error.code);
     const success = result.ok;
-    await sql.begin(async (tx) => {
+    const observedOrdinal = ordinal;
+    const complete = async (tx: SQL, callOrdinal = observedOrdinal, transactionId = receiptTransactionId) => {
       if (aiReservation !== null)
         await settleCodeAiBudget(
           call.claims,
-          ordinal,
+          callOrdinal,
           issuanceRefusal
             ? "0"
             : codeAiReferenceCost(call.call.capability, aiFailure ? { ok: false, error: aiFailure } : result, aiProfiles, aiReservation),
@@ -321,7 +452,8 @@ export function createCodeBridgeHost(
       await finishCodeCall(
         {
           runId: call.claims.runId,
-          ordinal,
+          ordinal: callOrdinal,
+          receiptTransactionId: transactionId,
           state: success ? "succeeded" : "failed",
           result,
           refusalKind: success ? null : refusalKind,
@@ -329,11 +461,23 @@ export function createCodeBridgeHost(
         },
         tx,
       );
-    });
+    };
+    if (aiReservation !== null) await sql.begin(complete);
+    else {
+      try {
+        await complete(sql);
+      } catch (error) {
+        if (!(error instanceof CodeReceiptNotCommittedError)) throw error;
+        // A signer abort/failed commit invalidated the in-memory ordinal. Record
+        // this failure afresh, without touching a different call that reused it.
+        const receipt = await sql.begin((tx) => recordReceipt(tx));
+        await complete(sql, receipt.ordinal, receipt.receiptTransactionId);
+      }
+    }
     return response;
   };
   return {
-    withCall: (call, execute) => runCall(call, { capability: execute }),
+    withCall: (call, execute, options) => runCall(call, { capability: execute }, options?.receipt === "issuance"),
     withFileObservation: (observation, execute) => {
       if (!["core.code.file.read", "core.code.file.view"].includes(observation.operation))
         throw new CodeBridgeRefusal("code_capability_undeclared", 403);
