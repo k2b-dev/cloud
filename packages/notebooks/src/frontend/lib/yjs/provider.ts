@@ -100,6 +100,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     throw new TypeError("An initial document requires initialRestoreRevision");
 
   const errorMessageByCode: Record<YjsErrorCode, string> = {
+    BUSY: "Websocket backpressure",
     LOGIN_REQUIRED: "Login required",
     SESSION_EXPIRED: "Session expired",
     ACCESS_DENIED: "Access denied",

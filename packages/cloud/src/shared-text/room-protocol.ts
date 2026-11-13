@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const SHARED_TEXT_ROOM_ERROR_CODE = {
+  busy: "BUSY",
   frozen: "DOCUMENT_FROZEN",
   closed: "DOCUMENT_CLOSED",
   loginRequired: "LOGIN_REQUIRED",

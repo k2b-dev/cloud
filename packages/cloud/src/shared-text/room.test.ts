@@ -1,6 +1,6 @@
 import { afterEach, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import type { Sync, Topic, TopicEvent } from "@k2b/sync";
-import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
+import { ConflictError, CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import * as Y from "yjs";
 import { z } from "zod";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
@@ -57,6 +57,7 @@ const fixture = () => {
   let sql = 0,
     snapshots = 0;
   let failure: Error | undefined;
+  let admissionBusy = false;
   let head: string | null = null;
   const entries: TopicEvent<SharedTextEvent>[] = [];
   const replays: number[] = [];
@@ -104,7 +105,12 @@ const fixture = () => {
   };
   bindProcessSync({
     topic: () => topic,
-    mutex: () => ({ withLock: async (_input: unknown, run: () => Promise<unknown>) => run() }),
+    mutex: () => ({
+      withLock: async (_input: unknown, run: () => Promise<unknown>) => {
+        if (admissionBusy) throw new ConflictError("busy");
+        return run();
+      },
+    }),
   } as unknown as Sync);
   const messages: SharedTextRoomMessages = {
     notFound: "missing",
@@ -215,6 +221,9 @@ const fixture = () => {
     },
     holdRevalidation: (wait: Promise<void>) => {
       revalidateWait = wait;
+    },
+    busy: (value: boolean) => {
+      admissionBusy = value;
     },
     readOnly: () => {
       readOnly = true;
@@ -513,6 +522,31 @@ test("fan-out shares one live base across writers, keeps none for readers, and n
     apply.mockRestore();
     source.destroy();
     for (const connection of additional) await connection.close();
+    await f.connection.close();
+  }
+});
+
+test("admission contention warns BUSY without closing or acknowledging; the same socket can retry", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 7;
+  try {
+    await f.join();
+    await f.ready;
+    source.getText("codemirror").insert(0, "pending");
+    const payload = { payload: toBase64(Y.encodeStateAsUpdate(source)), baseCursor: "s6t.room.0", restoreRevision: "0" };
+    f.busy(true);
+    await f.request("edit", payload);
+    await waitFor(() => f.sent.some((packet) => packet.payload.code === "BUSY"));
+    expect(f.closed).toEqual([]);
+    expect(f.entries).toHaveLength(0);
+    expect(f.ctx.phase).toBe("joined");
+    f.busy(false);
+    await f.request("edit", payload);
+    await waitFor(() => f.entries.length === 1);
+    expect(f.closed).toEqual([]);
+  } finally {
+    source.destroy();
     await f.connection.close();
   }
 });

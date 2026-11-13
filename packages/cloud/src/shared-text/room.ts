@@ -676,6 +676,10 @@ export function createSharedTextRoom<
     try {
       await state(ctx).acceptTask;
       published = await publication;
+    } catch (error) {
+      if (!(error instanceof ConflictError)) throw error;
+      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, payload.docId);
+      return;
     } finally {
       state(ctx).acceptTask = null;
     }
@@ -938,7 +942,7 @@ export function createSharedTextRoom<
       if (isStorageExhausted(error))
         await fatal(ctx, ERROR_CODE.storageExhausted, ctx.messages.liveSyncStorageExhausted, ctx.publicDocId ?? undefined);
       else if (error instanceof ConflictError)
-        await fatal(ctx, ERROR_CODE.streamFailed, ctx.messages.liveSyncStreamFailed, ctx.publicDocId ?? undefined);
+        warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, ctx.publicDocId ?? undefined);
       else await fatal(ctx, ERROR_CODE.internalError, ctx.messages.handlingFailed, ctx.publicDocId ?? undefined);
     };
     const dispatch = async (packet: unknown) => {

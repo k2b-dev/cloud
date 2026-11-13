@@ -13,7 +13,7 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "wh
     sync.mutex({ id: `${topicConfig.id}:snapshot-writer`, ttlMs: 120_000, retry: { maxAttempts: 601, delayMs: 200 } }),
   );
   const admission = lazySync((sync) =>
-    sync.mutex({ id: `${topicConfig.id}:admission`, ttlMs: SHARED_TEXT_ADMISSION_LEASE_MS, retry: { maxAttempts: 101, delayMs: 25 } }),
+    sync.mutex({ id: `${topicConfig.id}:admission`, ttlMs: SHARED_TEXT_ADMISSION_LEASE_MS, retry: { maxAttempts: 1 } }),
   );
   const admit = createSharedTextAdmission(admission);
   const topic = () => getProcessSync().topic<SharedTextSyncEvent>(topicConfig);
