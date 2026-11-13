@@ -462,6 +462,7 @@ export const updateMailbox = async (params: {
               automatic_reply_management_permission
             ),
             compose_safety = COALESCE(${composeSafety?.data ?? null}::jsonb, compose_safety),
+            draft_edit_mode_explicit = draft_edit_mode_explicit OR ${draftEditMode?.success === true},
             health = CASE
               WHEN ${params.syncEnabled === false} THEN 'paused'
               WHEN ${params.syncEnabled === true} AND health = 'paused' THEN 'bootstrapping'

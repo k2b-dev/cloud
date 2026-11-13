@@ -76,13 +76,16 @@ audited like other mailbox settings.
 ### Cloud 0.77 upgrade note
 
 Mail switches existing mailbox settings to shared in batches of 100, after
-log readiness. Version 5 (`shared_drafts_default`) in `mail.schema_migrations`
-records the durable cursor and completion; an unsupported start leaves the
-marker unset and retries on a later start. Drafts keep their own edit mode and
-generation. Once `details.completed` is true, administrators can use
-`cld mail configure --mailbox <id> --drafts lock` or PATCH `draftEditMode` to
-return a mailbox to lock permanently. There is currently no draft-mode
-selector in mailbox settings. See the [upgrade and rollback instructions](mail-collaborative-drafts.md#upgrade-and-switch-back-to-lock).
+log readiness. `mail.shared_drafts_default_migration` records the durable cursor
+and completion without changing the schema compatibility ledger. A deferred
+start leaves the marker unset and retries on a later start. Drafts keep their
+own edit mode and generation. The automatic switch writes no audit entries or live invalidations.
+Administrators can use `cld mail configure --mailbox <id> --drafts lock` or
+PATCH `draftEditMode` to return a mailbox to lock permanently, including before
+migration completion.
+Explicit choices through 0.77 are flagged and skipped. During a mixed rollout,
+0.76 cannot record that flag; route changes to 0.77 or reapply them after completion.
+There is currently no draft-mode selector in mailbox settings. See the [upgrade and rollback instructions](mail-collaborative-drafts.md#upgrade-and-switch-back-to-lock).
 
 Two-node testing passed for 200 drafts with two and three editors each and
 zero SQL per edit. At 500 drafts with two editors, RSS exceeded the 1 GiB

@@ -36,22 +36,25 @@ cannot resume retain their local input and request reopening.
 
 ## Upgrade and switch back to lock
 
-The one-time upgrade changes only the mailbox setting, exactly like an
-administrator's PATCH. Open drafts keep their existing `edit_mode`, document
-generation and history. Open lock drafts remain in lock mode until sent or
-discarded; new user drafts inherit the mailbox's current setting.
+The one-time upgrade has the same draft-mode semantics as an administrator's
+PATCH. It deliberately writes no audit entries or live invalidations, avoiding
+10,000 audit rows and notification writes (DATA-13). Open drafts keep their
+existing `edit_mode`, document generation and history. Open lock drafts remain
+in lock mode until sent or discarded; new user drafts inherit the mailbox's
+current setting.
 
-Mail records version 5, `shared_drafts_default`, in `mail.schema_migrations`.
-Its `details` contain the last mailbox ID, mailbox and batch counts, and
-`completed`. Each transaction switches at most 100 mailboxes in ID order and
-commits its cursor. An interrupted run resumes after that cursor. It never
-scans or locks drafts. Check `details.completed` before applying a rollback:
+Mail stores compatible upgrade progress in `mail.shared_drafts_default_migration`,
+which Cloud 0.76 ignores. It adds no schema compatibility ledger entry, so older
+replicas can restart during a rolling deployment or rollback. The row's `details`
+contain the last mailbox ID, mailbox and batch counts, and `completed`. Each
+transaction switches at most 100 mailboxes in ID order and commits its cursor.
+An interrupted run resumes after that cursor. It never scans or locks drafts.
 
 ```sql
-SELECT name, details FROM mail.schema_migrations WHERE version = 5;
+SELECT name, details FROM mail.shared_drafts_default_migration;
 ```
 
-Once completed, a mailbox administrator can switch a mailbox back to lock:
+A mailbox administrator can switch a mailbox back to lock at any time:
 
 ```bash
 cld mail configure --mailbox <id> --drafts lock
@@ -60,8 +63,15 @@ cld mail configure --mailbox <id> --drafts lock
 The API equivalent is `PATCH /api/mail/mailboxes/:mailboxId` with
 `{"draftEditMode":"lock"}`. Mailbox settings currently have no draft-mode
 selector; use the CLI or API for this setting. The explicit lock setting
-survives restarts and later Mail upgrades because the completed migration
-never switches that mailbox again. Existing shared drafts keep working until
+survives restarts and later Mail upgrades. An explicit mode PATCH records
+`draft_edit_mode_explicit` on the mailbox, so the migration skips that choice
+even while log preparation is deferred or the mailbox lies ahead of its cursor.
+A completed migration never reapplies settings.
+
+During a mixed 0.76/0.77 rollout, send mode changes to a 0.77 replica. A 0.76
+replica cannot record the explicit-choice flag: its lock selection ahead of the
+cursor can still be overwritten. Reapply such selections through 0.77 or after
+migration completion. Existing shared drafts keep working until
 sent or discarded. Use `--drafts shared` to enable shared editing again.
 
 While this process prepares its log policy, explicitly selecting shared via
@@ -74,9 +84,9 @@ until preparation succeeds. Do not remove the marker or bypass readiness
 with database writes.
 
 An isolated PostgreSQL 17.11 run with 10,000 mailboxes and 50,000 open lock
-drafts completed the switch in 1.529 seconds. `meterSql()` counted 100
+drafts completed the switch in 1.134 seconds. `meterSql()` counted 100
 nonempty batches, one terminal probe, 101 transactions and 908 statements
-(including BEGIN/COMMIT). The longest transaction was 139 ms, measured from
+(including BEGIN/COMMIT). The longest transaction was 37 ms, measured from
 PostgreSQL statement timestamps through COMMIT completion at 1 ms resolution.
 This measures the setting migration after schema and log preparation.
 

@@ -1,12 +1,13 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { createAccess } from "@k2b/cloud/server";
 import type { Result } from "@k2b/stdlib";
 import { meterSql } from "../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { draftContentInputSchema } from "./contracts";
 import { newShortId } from "./lib/short-id";
 import { migrate } from "./migrate";
-import { migrateSharedDrafts, SHARED_DRAFTS_BATCH_SIZE, SHARED_DRAFTS_MIGRATION_VERSION } from "./migrate-shared-drafts";
+import { migrateSharedDrafts, SHARED_DRAFTS_BATCH_SIZE, SHARED_DRAFTS_MIGRATION_NAME } from "./migrate-shared-drafts";
 import type { MailRequestContext } from "./service/auth";
 import { stopDraftDocumentPruning } from "./service/draft-document-log";
 import { migrateDraftDocumentLogPolicy, sharedDraftsSupported } from "./service/draft-document-log-policy";
@@ -58,13 +59,13 @@ suite("shared drafts default upgrade", () => {
   afterEach(async () => {
     // This file owns the preload's private database, which is dropped after the file.
     await sql`TRUNCATE mail.mailboxes CASCADE`.simple();
-    await sql`DELETE FROM mail.schema_migrations WHERE version = ${SHARED_DRAFTS_MIGRATION_VERSION}`;
+    await sql`DELETE FROM mail.shared_drafts_default_migration`;
   });
   afterAll(async () => {
     await stopDraftDocumentPruning();
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
-  const marker = () => sql`SELECT * FROM mail.schema_migrations WHERE version = ${SHARED_DRAFTS_MIGRATION_VERSION}`;
+  const marker = () => sql`SELECT * FROM mail.shared_drafts_default_migration WHERE name = ${SHARED_DRAFTS_MIGRATION_NAME}`;
   const mailbox = async () => value(await createMailbox(context, { name: "Upgrade mailbox" }));
   const draft = async (mailboxId: string) => {
     const [sender] = await sql<{ id: string }[]>`INSERT INTO mail.sender_identities
@@ -85,6 +86,7 @@ suite("shared drafts default upgrade", () => {
   test("default creation stays shared before readiness and opening the draft gives a visible retry error", async () => {
     expect(await sharedDraftsSupported()).toBe(false);
     const box = await mailbox();
+    const explicitlyLocked = await mailbox();
     expect(box.draftEditMode).toBe("shared");
     const created = await draft(box.id);
     expect(created.editMode).toBe("shared");
@@ -102,12 +104,15 @@ suite("shared drafts default upgrade", () => {
       });
       expect(await migrateSharedDrafts()).toBeNull();
       expect(await marker()).toEqual([]);
+      // An administrator chooses lock after the run has deferred, before preparation succeeds.
+      value(await updateMailbox({ context, mailboxId: explicitlyLocked.id, draftEditMode: "lock" }));
     } finally {
       await sql`INSERT INTO mail.draft_document_log_policy (log_id) VALUES ('cloud:mail:draft-documents') ON CONFLICT DO NOTHING`;
     }
     expect(await migrateDraftDocumentLogPolicy()).toBe(true);
     await stopDraftDocumentPruning();
     expect(await migrateSharedDrafts()).toMatchObject({ completed: true, mailboxes: 1 });
+    expect(await editModes.newDraftEditMode(sql, explicitlyLocked.id)).toBe("lock");
   });
 
   test("upgrade matches PATCH for open lock drafts; a later explicit lock survives schema and startup reruns", async () => {
@@ -115,20 +120,23 @@ suite("shared drafts default upgrade", () => {
     await stopDraftDocumentPruning();
     const patchBox = await mailbox();
     const upgradeBox = await mailbox();
-    for (const box of [patchBox, upgradeBox]) value(await updateMailbox({ context, mailboxId: box.id, draftEditMode: "lock" }));
+    // Legacy defaults have no explicit-choice flag; an admin PATCH is intentionally distinguishable.
+    await sql`UPDATE mail.mailboxes SET draft_edit_mode = 'lock' WHERE id IN (${patchBox.id}::uuid, ${upgradeBox.id}::uuid)`;
+    const ledgerBefore = await sql`SELECT * FROM mail.schema_migrations ORDER BY version`;
     const patchDraft = await draft(patchBox.id);
     const upgradeDraft = await draft(upgradeBox.id);
     // Exercise a noninitial generation, not just untouched default metadata.
     await sql`UPDATE mail.drafts SET doc_generation = 7, revision = 3 WHERE id IN (${patchDraft.id}::uuid, ${upgradeDraft.id}::uuid)`;
     const before = await documentState(upgradeDraft.id);
     value(await updateMailbox({ context, mailboxId: patchBox.id, draftEditMode: "shared" }));
-    expect(await migrateSharedDrafts()).toMatchObject({ completed: true, mailboxes: 2, batches: 1 });
+    expect(await migrateSharedDrafts()).toMatchObject({ completed: true, mailboxes: 1, batches: 1 });
     expect(await documentState(upgradeDraft.id)).toEqual(before);
     expect(await documentState(upgradeDraft.id)).toEqual(await documentState(patchDraft.id));
     expect(await editModes.newDraftEditMode(sql, upgradeBox.id)).toBe("shared");
     const firstMarker = await marker();
-    expect(await migrateSharedDrafts()).toMatchObject({ completed: true, mailboxes: 2, batches: 1 });
+    expect(await migrateSharedDrafts()).toMatchObject({ completed: true, mailboxes: 1, batches: 1 });
     expect(await marker()).toEqual(firstMarker);
+    expect(await sql`SELECT * FROM mail.schema_migrations ORDER BY version`).toEqual(ledgerBefore);
     value(await updateMailbox({ context, mailboxId: upgradeBox.id, draftEditMode: "lock" }));
     await migrate();
     await migrateSharedDrafts();
@@ -143,7 +151,7 @@ suite("shared drafts default upgrade", () => {
       FROM generate_series(1, ${count}) i`;
   };
 
-  test("a committed batch resumes by durable mailbox ID without overwriting an administrator's rollback", async () => {
+  test("an explicit admin lock ahead of the committed cursor survives subsequent batches", async () => {
     expect(await migrateDraftDocumentLogPolicy()).toBe(true);
     await stopDraftDocumentPruning();
     await seedMailboxes(SHARED_DRAFTS_BATCH_SIZE * 2 + 1);
@@ -163,8 +171,13 @@ suite("shared drafts default upgrade", () => {
     expect(batches).toHaveLength(1);
     expect(batches[0]).toHaveLength(SHARED_DRAFTS_BATCH_SIZE);
     expect(batches[0]).toEqual([...batches[0]!].sort());
-    await sql`UPDATE mail.mailboxes SET draft_edit_mode = 'lock' WHERE id = ${batches[0]![0]}::uuid`;
-    expect(await migrateSharedDrafts()).toMatchObject({ completed: true, mailboxes: 201, batches: 3 });
+    const aheadId = "10000000-0000-0000-0000-000000000201";
+    expect(aheadId > batches[0]!.at(-1)!).toBe(true);
+    const access = value(await createAccess({ principal: { type: "user", userId }, permission: "admin" }));
+    await sql`INSERT INTO mail.mailbox_access (mailbox_id, access_id) VALUES (${aheadId}::uuid, ${access.id}::uuid)`;
+    value(await updateMailbox({ context, mailboxId: aheadId, draftEditMode: "lock" }));
+    expect(await migrateSharedDrafts()).toMatchObject({ completed: true, mailboxes: 200, batches: 2 });
+    expect(await editModes.newDraftEditMode(sql, aheadId)).toBe("lock");
     const [locked] = await sql`SELECT count(*)::int AS count FROM mail.mailboxes WHERE draft_edit_mode = 'lock'`;
     expect(locked?.count).toBe(1);
   });
