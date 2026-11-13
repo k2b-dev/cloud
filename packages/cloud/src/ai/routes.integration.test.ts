@@ -689,7 +689,8 @@ suiteFor(
           expect((await readFirstEvent(reader)).type).toBe("state");
         });
         console.log("SQL BUDGET authenticated chat setup", setup.length);
-        expect(setup).toHaveLength(13);
+        // main pins 13; Code adds one admission read per connection (#3265 pinned 13 against main's 12). Never per event.
+        expect(setup).toHaveLength(14);
       }
       for (let event = 1; event <= 3; event++) {
         const delivered = await meter.during(async () => {
