@@ -155,6 +155,13 @@ the page distinguishes that state from an unavailable broker.
 For development credentials and Compose setup, see
 [Monorepo development](/en/docs/operations/monorepo-development#configure-local-nats-accounts).
 
+When a shared-text document topic requires lifecycle storage that is absent or
+smaller than its declared budget, Health and health webhooks show `Shared text lifecycle
+<log-id> reservation is not ready`. Check the file-store and account reservation
+limits. Mail retries preparation with backoff capped at 30 seconds; a successful
+reservation clears the signal without restarting Mail. If the broker cannot be
+queried, the existing incomplete inventory signal remains visible.
+
 ## Inspect a failing deployment
 
 Start with the responding NATS nodes, then inspect the affected stream and its

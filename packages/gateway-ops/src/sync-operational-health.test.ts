@@ -120,6 +120,29 @@ describe("shared-text lifecycle storage", () => {
       sharedTextLifecycle: { namespace: "test", id: "cloud:mail:draft-documents" },
     });
 
+  test("an unprepared lifecycle reservation warns on its owner and clears after preparation", () => {
+    const topic = stream({
+      name: "S6_T_text",
+      deadLetter: false,
+      replicas: 1,
+      cluster: null,
+      sync: { namespace: "test", owner: "mail", kind: "topic", id: "cloud:mail:draft-documents" },
+      sharedTextLifecycleRequiredBytes: 2_000,
+    });
+    for (const records of [[topic], [topic, lifecycle(0)]]) {
+      const result = buildSyncOperationalHealth(inventory(records), ["mail"], "test");
+      expect(result.apps.get("mail")).toEqual({
+        status: "warn",
+        signals: [
+          "Shared text lifecycle cloud:mail:draft-documents reservation is not ready (requires 2000 bytes); the application retries preparation",
+        ],
+      });
+    }
+    expect(buildSyncOperationalHealth(inventory([topic, lifecycle(0, 2_000)]), ["mail"], "test").apps.get("mail")?.status).toBe("ok");
+    expect(buildSyncOperationalHealth(inventory([topic, lifecycle(0, 4_000)]), ["mail"], "test").apps.get("mail")?.status).toBe("ok");
+    expect(buildSyncOperationalHealth(inventory([topic]), ["mail"], "other").apps.get("mail")?.status).toBe("ok");
+  });
+
   test("80% lifecycle usage warns through infrastructure health without Sync ownership", () => {
     const record = lifecycle(800);
     const result = buildSyncOperationalHealth(inventory([record, record]), ["mail"], "test");

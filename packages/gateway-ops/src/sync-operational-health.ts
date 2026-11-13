@@ -34,6 +34,22 @@ export const buildSyncOperationalHealth = (
     seen.add(stream.name);
     const target = (stream.sync && apps.get(stream.sync.owner)) || infrastructure;
     const label = stream.sync ? `Sync ${stream.sync.kind} ${stream.sync.id}` : `Shared text lifecycle ${lifecycle!.id}`;
+    const requiredBytes = stream.sharedTextLifecycleRequiredBytes;
+    const documentLog = stream.sync?.id;
+    if (requiredBytes && documentLog) {
+      const prepared = inventory.streams.some(
+        (candidate) =>
+          candidate.sharedTextLifecycle?.namespace === namespace &&
+          candidate.sharedTextLifecycle.id === documentLog &&
+          candidate.maxBytes >= requiredBytes,
+      );
+      if (!prepared)
+        raise(
+          target,
+          "warn",
+          `Shared text lifecycle ${documentLog} reservation is not ready (requires ${requiredBytes} bytes); the application retries preparation`,
+        );
+    }
     if (lifecycleStorageWarning(stream))
       raise(
         target,

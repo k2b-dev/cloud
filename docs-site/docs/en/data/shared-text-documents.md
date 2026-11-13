@@ -1225,13 +1225,21 @@ Ordinary server edits retry at most three CAS conflicts, with 25/50 ms backoff,
 reusing the prepared update identities. Freeze releases admission after its
 marker and drains persistence outside that lease.
 
+Lifecycle preparation records its required byte budget on the document topic
+before reserving storage. Gateway Ops Health and health webhooks warn when that
+reservation is missing or too small. Applications must retry failed preparation;
+Mail does so automatically with bounded backoff. Broker outages also appear as
+incomplete Sync inventory. See [Mail collaborative drafts](/en/docs/operations/mail-collaborative-drafts)
+for capacity recovery.
+
 An uncontended edit adds four NATS KV operations for admission acquisition
 and release, plus the existing head lookup and CAS publication: **zero SQL
 per edit**. Opting into lifecycle adds two authoritative JetStream last-value
 reads per successful edit (before validation and after publication), without a
-replay consumer; decoded values are cached by broker revision within `lifecycle.maxBytes`.
-Each process can retain that much decoded payload plus JavaScript object
-overhead; raising the declared budget raises this per-node memory ceiling too. An expired freeze adds one CAS
+replay consumer. Each process caches at most 128 decoded entries per log,
+independently of `lifecycle.maxBytes`: a 2 MiB working allowance derived from
+the 4 KiB broker message limit with fourfold headroom for decoded objects and
+keys. This is an entry bound, not an exact JavaScript heap limit. An expired freeze adds one CAS
 write to invalidate its token. Notifications never substitute for those reads, so a delayed event or a pruned
 marker cannot bypass acknowledgement fencing. Awareness and fan-out add no
 lifecycle lookups. Logs without lifecycle storage, including

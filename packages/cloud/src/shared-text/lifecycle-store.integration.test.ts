@@ -96,3 +96,68 @@ testFor("nats")(
   },
   30_000,
 );
+
+testFor("nats")("failed lifecycle reservation remains visible in document topic metadata and recovers on retry", async () => {
+  const connection = await connectTestNats();
+  const namespace = testSyncNamespace("text-lifecycle-readiness");
+  const sync = createSync({ connection, namespace, application: "test", defaults: { replicas: 1 } });
+  bindProcessSync(sync, connection);
+  const manager = await jetstreamManager(connection);
+  // Real broker resources, with one failed reservation request at the transport boundary.
+  const request = connection.request.bind(connection);
+  let rejectReservation = true;
+  const requests = spyOn(connection, "request").mockImplementation((subject, data, options) => {
+    if (subject.startsWith("$JS.API.STREAM.CREATE.cloud_text_lifecycle_") && rejectReservation) {
+      rejectReservation = false;
+      return Promise.reject(new Error("Lifecycle reservation unavailable"));
+    }
+    return request(subject, data, options);
+  });
+  try {
+    const log = sharedText.define({ id: "text", whenFull: "reject", retention: { maxBytes: 1_048_576 }, lifecycle: { maxBytes: 8192 } });
+    await expect(log.ready()).rejects.toThrow("Lifecycle reservation unavailable");
+    const topics = [];
+    for await (const stream of manager.streams.list())
+      if (stream.config.metadata?.["sync.namespace"] === namespace && stream.config.metadata?.["sync.kind"] === "topic")
+        topics.push(stream);
+    expect(topics.some((topic) => topic.config.metadata?.["cloud.shared-text.lifecycle.required-bytes"] === "8192")).toBe(true);
+    await log.ready();
+    expect(await log.lifecycle!.put("after-retry", null, { state: "open" })).toMatchObject({ value: { state: "open" } });
+  } finally {
+    requests.mockRestore();
+    unbindProcessSync();
+    await sync.drain();
+    for await (const stream of manager.streams.list())
+      if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);
+    await connection.drain();
+  }
+});
+
+testFor("nats")("a large disk reservation does not retain every decoded lifecycle entry", async () => {
+  const connection = await connectTestNats();
+  const namespace = testSyncNamespace("text-lifecycle-cache");
+  const sync = createSync({ connection, namespace, application: "test", defaults: { replicas: 1 } });
+  bindProcessSync(sync, connection);
+  try {
+    const log = sharedText.define({
+      id: "text",
+      whenFull: "reject",
+      retention: { maxBytes: 1_048_576 },
+      lifecycle: { maxBytes: 512 * 1024 * 1024 },
+    });
+    const first = await log.lifecycle!.put("first", null, { state: "open" });
+    expect(await log.lifecycle!.get("first")).toBe(first);
+    for (let index = 0; index < 128; index++) await log.lifecycle!.put(`recent-${index}`, null, { state: "open" });
+    const reloaded = await log.lifecycle!.get("first");
+    expect(reloaded).toEqual(first);
+    expect(reloaded).not.toBe(first);
+    expect(await log.lifecycle!.get("first")).toBe(reloaded);
+  } finally {
+    unbindProcessSync();
+    await sync.drain();
+    const manager = await jetstreamManager(connection);
+    for await (const stream of manager.streams.list())
+      if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);
+    await connection.drain();
+  }
+});

@@ -81,6 +81,7 @@ export type NatsStream = {
   cluster: NatsCluster | null;
   sync: { namespace: string; owner: string; kind: string; id: string } | null;
   sharedTextLifecycle?: { namespace: string; id: string };
+  sharedTextLifecycleRequiredBytes?: number;
 };
 export type NatsConsumer = { name: string; pending: number; ackPending: number; redelivered: number; cluster: NatsCluster | null };
 export type NatsNode = {
@@ -202,6 +203,14 @@ const stream = (value: z.infer<typeof streamSchema>): NatsStream => {
     consumers: value.state.consumer_count,
     cluster: cluster(value.cluster),
     sync: namespace && owner && kind && id ? { namespace, owner, kind, id } : null,
+    ...(namespace &&
+    owner &&
+    kind === "topic" &&
+    id &&
+    Number.isSafeInteger(Number(metadata?.["cloud.shared-text.lifecycle.required-bytes"])) &&
+    Number(metadata?.["cloud.shared-text.lifecycle.required-bytes"]) > 0
+      ? { sharedTextLifecycleRequiredBytes: Number(metadata?.["cloud.shared-text.lifecycle.required-bytes"]) }
+      : {}),
     ...(namespace && metadata?.["cloud.shared-text.lifecycle"]
       ? { sharedTextLifecycle: { namespace, id: metadata["cloud.shared-text.lifecycle"] } }
       : {}),

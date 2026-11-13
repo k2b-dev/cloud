@@ -79,8 +79,15 @@ PATCH returns `409 SHARED_DRAFTS_UNSUPPORTED`. Default creation still stores
 shared; it never silently creates a lock mailbox or lock draft. Opening a
 shared draft before history checks finish returns a clear starting/retry
 error. A failed policy preparation is logged, leaves this upgrade's marker
-unset, and retries on a later start. Existing lock mailboxes stay available
-until preparation succeeds. Do not remove the marker or bypass readiness
+unset, and retries automatically with exponential backoff from one to 30 seconds
+and 20% jitter. Existing lock mailboxes stay available until preparation succeeds.
+Gateway Ops Health and health webhooks report `Shared text lifecycle
+cloud:mail:draft-documents reservation is not ready` while the required
+512 MiB lifecycle reservation is missing or too small. Check the NATS file-store
+and account storage limits, free capacity or raise the appropriate limit, and
+let Mail retry; no restart is needed. The signal clears once the reservation
+is prepared. An unavailable broker is reported by the existing incomplete
+Sync inventory signal. Do not remove the marker or bypass readiness
 with database writes.
 
 An isolated PostgreSQL 17.11 run with 10,000 mailboxes and 50,000 open lock
@@ -210,9 +217,10 @@ when sizing PostgreSQL's connection limit.
 Mail prepares the lifecycle stream during its post-startup draft-log preparation,
 including when no one opens or sends a draft. It increases an older 16 MiB
 budget to 512 MiB in place, preserving every entry. A larger operator-set
-`max_bytes` stays unchanged. A reservation failure leaves shared drafts
-unsupported and logs the preparation error; provide account and disk capacity,
-then restart Mail. Other Mail services remain available.
+`max_bytes` stays unchanged. A reservation failure temporarily leaves shared
+drafts unsupported on that process. Mail logs the error and retries with backoff
+capped at 30 seconds; Health reports the missing reservation. Provide account
+and disk capacity and let the retry finish. Other Mail services remain available.
 
 An isolated NATS 2.14.3 sample of 100 freeze/close transitions, with seven-digit
 log sequences and three-digit lifecycle revisions, measured 139 JSON bytes and

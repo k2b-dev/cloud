@@ -598,6 +598,58 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     }
   });
 
+  test("startup retries failed lifecycle preparation and recovers shared drafts without restart", async () => {
+    const original = mailDraftDocumentLog.ready;
+    const failed = Promise.withResolvers<void>();
+    const prepared = Promise.withResolvers<void>();
+    let attempts = 0;
+    const random = spyOn(Math, "random").mockReturnValue(0.5);
+    const readiness = spyOn(mailDraftDocumentLog, "ready").mockImplementation(async () => {
+      attempts++;
+      if (attempts === 1) {
+        failed.resolve();
+        throw new Error("Lifecycle reservation unavailable");
+      }
+      await original();
+    });
+    try {
+      startDraftDocumentLogPolicy(async () => {
+        prepared.resolve();
+      });
+      await failed.promise;
+      expect(await sharedDraftsSupported()).toBe(false);
+      await prepared.promise;
+      expect(attempts).toBe(2);
+      expect(await sharedDraftsSupported()).toBe(true);
+    } finally {
+      await stopDraftDocumentLogPolicy();
+      readiness.mockRestore();
+      random.mockRestore();
+    }
+  });
+
+  test("shutdown cancels preparation backoff without enabling shared drafts", async () => {
+    const failed = Promise.withResolvers<void>();
+    const readiness = spyOn(mailDraftDocumentLog, "ready").mockImplementation(async () => {
+      failed.resolve();
+      throw new Error("Lifecycle reservation unavailable");
+    });
+    let prepared = false;
+    try {
+      startDraftDocumentLogPolicy(async () => {
+        prepared = true;
+      });
+      await failed.promise;
+      await stopDraftDocumentLogPolicy();
+      expect(readiness).toHaveBeenCalledTimes(1);
+      expect(prepared).toBe(false);
+      expect(await sharedDraftsSupported()).toBe(false);
+    } finally {
+      await stopDraftDocumentLogPolicy();
+      readiness.mockRestore();
+    }
+  });
+
   test("a log the platform cannot prepare leaves shared drafts unsupported", async () => {
     await drainDraftDocumentPruning();
     // A fresh process sees drift the platform does not change (sync-budget tests cover the broker side).

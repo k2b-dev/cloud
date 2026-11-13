@@ -242,3 +242,21 @@ test("account inventory identifies lifecycle streams without inventing Sync owne
     sharedTextLifecycle: { namespace: "test", id: "cloud:mail:draft-documents" },
   });
 });
+
+test("document topic readiness metadata survives diagnostics without exposing other metadata", async () => {
+  const topic = resource("S6_T_test");
+  const raw = {
+    ...topic,
+    config: {
+      ...topic.config,
+      metadata: {
+        ...topic.config.metadata,
+        "sync.kind": "topic",
+        "cloud.shared-text.lifecycle.required-bytes": "536870912",
+      },
+    },
+  };
+  const result = await getNatsInventorySummary(config, fake([{ total: 1, offset: 0, limit: 256, streams: [raw] }]).dependencies);
+  expect(result.streams[0]?.sharedTextLifecycleRequiredBytes).toBe(536870912);
+  expect(JSON.stringify(result)).not.toContain("never expose");
+});
