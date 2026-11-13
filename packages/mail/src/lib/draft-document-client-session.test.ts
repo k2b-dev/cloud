@@ -4,6 +4,7 @@ import { encoding } from "@k2b/stdlib";
 import * as Y from "yjs";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { DraftEditableContent, MailDraft } from "../contracts";
+import { draftDocumentSessionSchema } from "../draft-document-contracts";
 import { createDraftDocument, readDraftDocument } from "./draft-document";
 import { type MailDraftDocumentClient, openMailDraftDocumentClient } from "./draft-document-client";
 import { synchronizeMailDraftStorageUser } from "./mail-user-draft-storage";
@@ -216,6 +217,14 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
     silence: () => {
       silent = true;
     },
+    resume: () => {
+      silent = false;
+      for (const socket of sockets)
+        for (const raw of [...socket.sent]) {
+          const packet = JSON.parse(raw);
+          if (packet.type === "syncPublish") socket.send(raw);
+        }
+    },
     reload: async () => {
       client?.dispose();
       await Bun.sleep(0);
@@ -323,7 +332,7 @@ test("shared snapshot, table action, refresh and recovery report 401 to the owni
     await expect(client.recover()).rejects.toThrow("Session expired");
     expect(f.authenticationRequests()).toBe(4);
     expect(client.content().body).toBe("Pending input");
-    expect(client.state().dirty).toBe(true);
+    expect(client.state().dirty).toBe(false);
   } finally {
     await f.cleanup();
   }
@@ -422,6 +431,7 @@ test("typing after a snapshot starts keeps newer input pending without reporting
     client.edit({ ...client.content(), body: "Snapshot input" });
     await Bun.sleep(0);
     f.afterSnapshot(async () => {
+      f.silence();
       client.edit({ ...client.content(), body: "New typing during the request", subject: "New header" });
       await Bun.sleep(0);
     });
@@ -429,6 +439,7 @@ test("typing after a snapshot starts keeps newer input pending without reporting
     expect(client.state()).toMatchObject({ dirty: true, error: false });
     expect(client.content()).toMatchObject({ body: "New typing during the request", subject: "New header" });
     f.afterSnapshot(async () => {});
+    f.resume();
     await client.save();
     expect(client.state()).toMatchObject({ dirty: false, error: false });
   } finally {
@@ -436,18 +447,19 @@ test("typing after a snapshot starts keeps newer input pending without reporting
   }
 });
 
-test("real session: transport echo stays dirty; durable save fences generation and advances Mail revision", async () => {
+test("JetStream echo is durable without a snapshot POST; explicit save still advances Mail revision", async () => {
   const f = fixture();
   try {
     const client = await f.open();
     client.edit({ ...client.content(), subject: "Local subject", body: "Hello device" });
     await Bun.sleep(0);
     expect(client.provider.hasUnsentChanges()).toBe(false);
-    expect(client.state().dirty).toBe(true);
+    expect(client.state().dirty).toBe(false);
     expect(f.lastRevision()).toBeUndefined();
+    expect(f.requests.some((request) => request.url.endsWith("/snapshot"))).toBe(false);
     f.failSave();
     await expect(client.save()).rejects.toThrow("durable storage failed");
-    expect(client.state().dirty).toBe(true);
+    expect(client.state().dirty).toBe(false);
     expect(client.content().body).toBe("Hello device");
     f.allowSave();
     await client.save();
@@ -799,7 +811,7 @@ test("snapshot and table POSTs bind their own request after a successful GET", a
     expect((await client.postAction({ generation: "1", actionId: "A-action" }, new AbortController().signal)).status).toBe(403);
     await expect(client.refresh()).rejects.toThrow("Account changed");
     expect(f.admitted).toHaveLength(1); // the original GET only
-    expect(client.state().dirty).toBe(true);
+    expect(client.state().dirty).toBe(false);
     expect(f.requests.every((request) => new URL(request.url, "http://localhost").searchParams.get("expectedUserId") === "Usr001")).toBe(
       true,
     );
@@ -921,7 +933,9 @@ test("a durable reconnect snapshot merges without losing unconfirmed body or hea
     client.provider.reconnectNow();
     await until(() => client.state().ready);
     expect(client.content()).toMatchObject({ body: "Unsent after pruning", subject: "Unsent header" });
-    expect(client.state().dirty).toBe(true);
+    await until(() => !client.provider.hasUnsentChanges());
+    await Bun.sleep(0);
+    expect(client.state().dirty).toBe(false);
     const publications = f.sockets
       .at(-1)!
       .sent.map((raw) => JSON.parse(raw))
@@ -936,6 +950,205 @@ test("a durable reconnect snapshot merges without losing unconfirmed body or hea
       resent.destroy();
     }
   } finally {
+    await f.cleanup();
+  }
+});
+
+test("retained peer input is durable without a client snapshot request", async () => {
+  const f = fixture();
+  const peer = new Y.Doc();
+  peer.clientID = 992;
+  try {
+    const client = await f.open();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(client.doc));
+    const vector = Y.encodeStateVector(peer);
+    peer.getText("codemirror").insert(0, "Peer ");
+    f.sockets[0]!.receive("syncPush", {
+      docId: "Draft1",
+      generation: "1",
+      updates: [{ generation: "1", payload: encoding.toBase64(Y.encodeStateAsUpdate(peer, vector)), cursor: "s6t.fixture.2" }],
+    });
+    await Bun.sleep(0);
+    expect(client.content().body).toBe("Peer Hello");
+    expect(client.state().dirty).toBe(false);
+    expect(f.requests.some((r) => r.url.includes("/snapshot"))).toBe(false);
+  } finally {
+    peer.destroy();
+    await f.cleanup();
+  }
+});
+test("a retained peer update cannot clear local input awaiting its own acknowledgement", async () => {
+  const f = fixture();
+  const peer = new Y.Doc();
+  peer.clientID = 993;
+  try {
+    const client = await f.open();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(client.doc));
+    f.silence();
+    client.edit({ ...client.content(), subject: "Pending local header" });
+    const vector = Y.encodeStateVector(peer);
+    peer.getText("codemirror").insert(0, "Peer ");
+    f.sockets[0]!.receive("syncPush", {
+      docId: "Draft1",
+      generation: "1",
+      updates: [{ generation: "1", payload: encoding.toBase64(Y.encodeStateAsUpdate(peer, vector)), cursor: "s6t.fixture.2" }],
+    });
+    await Bun.sleep(0);
+    expect(client.content()).toMatchObject({ body: "Peer Hello", subject: "Pending local header" });
+    expect(client.state().dirty).toBe(true);
+    expect(client.provider.hasUnsentChanges()).toBe(true);
+  } finally {
+    peer.destroy();
+    await f.cleanup();
+  }
+});
+
+test("reopening before the lazy snapshot counts the retained log as saved instead of saving forever", async () => {
+  const f = fixture();
+  try {
+    const first = await f.open();
+    first.edit({ ...first.content(), body: "Acked before reload" });
+    await until(() => !first.provider.hasUnsentChanges());
+    await f.reload();
+    // The SQL row still holds the old state; only the retained log has the edit.
+    const client = await f.open();
+    expect(client.content().body).toBe("Acked before reload");
+    expect(client.state().dirty).toBe(false);
+    expect(client.provider.hasUnsentChanges()).toBe(false);
+    client.edit({ ...client.content(), subject: "Second acked edit" });
+    await until(() => !client.provider.hasUnsentChanges());
+    await Bun.sleep(0);
+    expect(client.state().dirty).toBe(false);
+    expect(f.requests.some((request) => request.url.includes("/snapshot"))).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("peer input replayed on reconnect is durable before replay-ready and leaves no stale saving state", async () => {
+  const f = fixture();
+  const peer = new Y.Doc();
+  peer.clientID = 994;
+  try {
+    const client = await f.open();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(client.doc));
+    const vector = Y.encodeStateVector(peer);
+    f.disconnect();
+    peer.getText("codemirror").insert(0, "Offline peer ");
+    // Answer the replay by hand so the retained update is processed before replay-ready.
+    f.silence();
+    client.provider.reconnectNow();
+    await until(() => f.sockets.length > 1 && f.sockets.at(-1)!.sent.some((raw) => JSON.parse(raw).type === "replayRequest"));
+    const socket = f.sockets.at(-1)!;
+    socket.receive("syncPush", {
+      docId: "Draft1",
+      generation: "1",
+      updates: [{ payload: encoding.toBase64(Y.encodeStateAsUpdate(peer, vector)), generation: "1", cursor: "s6t.fixture.10" }],
+    });
+    await Bun.sleep(0);
+    expect(client.state().ready).toBe(false);
+    socket.receive("replayReady", { docId: "Draft1", generation: "1", cursor: "s6t.fixture.10", peerId: "peer1" });
+    await until(() => client.state().ready);
+    await Bun.sleep(0);
+    expect(client.content().body).toBe("Offline peer Hello");
+    expect(client.state().dirty).toBe(false);
+    expect(f.requests.some((request) => request.url.includes("/snapshot"))).toBe(false);
+  } finally {
+    peer.destroy();
+    await f.cleanup();
+  }
+});
+
+test("an acknowledgement of older input cannot mark newer local input as saved", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    const socket = f.sockets[0]!;
+    f.silence();
+    client.edit({ ...client.content(), body: "First local" });
+    await Bun.sleep(0);
+    const first = socket.sent.map((raw) => JSON.parse(raw)).find((packet) => packet.type === "syncPublish");
+    expect(first).toBeDefined();
+    client.edit({ ...client.content(), body: "First local, then newer" });
+    await Bun.sleep(0);
+    // The broker retains and echoes only the first update.
+    socket.receive("syncPush", {
+      docId: "Draft1",
+      generation: "1",
+      updates: [{ generation: "1", payload: first.payload.payload, cursor: "s6t.fixture.2" }],
+    });
+    await Bun.sleep(0);
+    expect(client.content().body).toBe("First local, then newer");
+    expect(client.state().dirty).toBe(true);
+    expect(client.provider.hasUnsentChanges()).toBe(true);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("a same-generation offline journal stays unsaved through peer replay until its own acknowledgement", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  const peer = new Y.Doc();
+  peer.clientID = 995;
+  let journal: Uint8Array | undefined;
+  const offline = spyOn(sharedText, "openAuthorizedSharedTextOffline").mockImplementation(async (_identity, authorize) => {
+    const authorization = await authorize(controller.signal);
+    const restored = new Y.Doc();
+    try {
+      // The spy is generic over the authorization; narrow it with the same schema the client uses.
+      Y.applyUpdate(restored, encoding.fromBase64(draftDocumentSessionSchema.parse(authorization).fresh.state));
+      Y.applyUpdate(peer, Y.encodeStateAsUpdate(restored));
+      restored.getText("codemirror").insert(0, "Journal ");
+      journal = Y.encodeStateAsUpdate(restored);
+    } finally {
+      restored.destroy();
+    }
+    const bytes = journal;
+    return {
+      authorization,
+      state: bytes,
+      baseCursor: "s6t.fixture.1",
+      session: {
+        signal: controller.signal,
+        load: async () => bytes,
+        loadPending: async () => ({ state: bytes, baseCursor: "s6t.fixture.1" }),
+        save: async () => bytes,
+        acknowledgeSnapshot: async () => false,
+        forget: async () => {},
+        close: () => {
+          controller.abort();
+        },
+      },
+    };
+  });
+  try {
+    f.silence();
+    const client = await f.open("1", true);
+    expect(client.content().body).toBe("Journal Hello");
+    expect(client.state().dirty).toBe(true);
+    await until(() => f.sockets.length > 0 && f.sockets[0]!.sent.some((raw) => JSON.parse(raw).type === "replayRequest"));
+    const socket = f.sockets[0]!;
+    const vector = Y.encodeStateVector(peer);
+    peer.getText("codemirror").insert(peer.getText("codemirror").length, " from peer");
+    socket.receive("syncPush", {
+      docId: "Draft1",
+      generation: "1",
+      updates: [{ generation: "1", payload: encoding.toBase64(Y.encodeStateAsUpdate(peer, vector)), cursor: "s6t.fixture.2" }],
+    });
+    await Bun.sleep(0);
+    expect(client.state().dirty).toBe(true);
+    socket.receive("replayReady", { docId: "Draft1", generation: "1", cursor: "s6t.fixture.2", peerId: "peer1" });
+    await until(() => client.state().ready);
+    await Bun.sleep(0);
+    expect(client.state().dirty).toBe(true);
+    f.resume();
+    await until(() => !client.provider.hasUnsentChanges());
+    await Bun.sleep(0);
+    expect(client.state().dirty).toBe(false);
+  } finally {
+    offline.mockRestore();
+    peer.destroy();
     await f.cleanup();
   }
 });

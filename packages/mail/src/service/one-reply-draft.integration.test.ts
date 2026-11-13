@@ -4,7 +4,8 @@ import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { accounts, oauthTokens } from "@k2b/cloud/services";
 import { unwrap } from "@k2b/stdlib";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { jetstreamManager } from "@nats-io/jetstream";
+import { connectTestNats, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import api from "../api";
 import { mailCapabilities } from "../capabilities";
 import { DraftCreateInputSchema, DraftSwitchIntentInputSchema } from "../capability-contracts";
@@ -14,6 +15,10 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { lockDraftDocumentCoverage, mailDraftDocumentLog } from "./draft-document-log";
+import * as revisionBase from "./draft-document-revision";
+import { mailDraftRoom } from "./draft-document-room";
+import { flushDraftDocumentSnapshot } from "./draft-document-snapshots";
 import { readDraftDocument } from "./draft-documents";
 import { acquireDraftLease, heartbeatDraftLease } from "./draft-leases";
 import { finishReplyDraftRetirements } from "./draft-retirement";
@@ -548,6 +553,64 @@ suite("one reply draft per conversation", () => {
       await sql`DELETE FROM mail.compose_signature_defaults WHERE mailbox_id = ${mailboxId}::uuid AND sender_identity_id = ${identityId}::uuid`;
     }
   });
+  test("full room log refuses a mode generation marker before changing content or attachments", async () => {
+    let draft = await create();
+    await sql`UPDATE mail.drafts SET edit_mode = 'shared' WHERE id = ${draft.id}::uuid`;
+    unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
+    draft = unwrap(await attach(draft));
+    const [part] = await sql<{ id: string }[]>`INSERT INTO mail.message_parts (message_id, part_path, content_type, size_bytes)
+      VALUES (${draft.sourceMessageId}::uuid, '1', 'text/plain', 4) RETURNING id`;
+    await sql`INSERT INTO mail.attachments (short_id, message_id, part_id, blob_id, filename, content_type, size_bytes, checksum)
+      SELECT ${newShortId()}, ${draft.sourceMessageId}::uuid, ${part!.id}::uuid, blob_id, 'source.txt', content_type, byte_length, content_hash
+      FROM mail.draft_attachments WHERE draft_id = ${draft.id}::uuid LIMIT 1`;
+    draft = unwrap(
+      await drafts.switchDraftIntent({ context: owner, mailboxId, draftId: draft.id, expectedRevision: draft.revision, intent: "forward" }),
+    );
+    expect(draft.attachments.map((item) => item.filename).sort()).toEqual(["personal.txt", "source.txt"]);
+    const before = await sql`SELECT to_jsonb(draft) AS value FROM mail.drafts draft WHERE id = ${draft.id}::uuid`;
+    const attachments =
+      await sql`SELECT to_jsonb(attachment) AS value FROM mail.draft_attachments attachment WHERE draft_id = ${draft.id}::uuid ORDER BY id`;
+    const connection = await connectTestNats();
+    const manager = await jetstreamManager(connection);
+    const held = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const coverage = sql.begin(async (db) => {
+      await lockDraftDocumentCoverage(db);
+      held.resolve();
+      await release.promise;
+    });
+    let stream: string | undefined;
+    let maxBytes: number | undefined;
+    try {
+      await held.promise;
+      for await (const info of manager.streams.list())
+        if (info.config.metadata?.["sync.id"] === mailDraftDocumentLog.id) {
+          stream = info.config.name;
+          maxBytes = info.config.max_bytes;
+          await manager.streams.update(stream, { max_bytes: Math.max(1, info.state.bytes) });
+        }
+      if (!stream) throw new Error("Missing room stream");
+      expect(
+        await drafts.switchDraftIntent({
+          context: owner,
+          mailboxId,
+          draftId: draft.id,
+          expectedRevision: draft.revision,
+          intent: "reply_all",
+        }),
+      ).toMatchObject({ ok: false, error: { code: "DRAFT_DOCUMENT_STREAM_FULL", status: 409 } });
+      expect(await sql`SELECT to_jsonb(draft) AS value FROM mail.drafts draft WHERE id = ${draft.id}::uuid`).toEqual(before);
+      expect(
+        await sql`SELECT to_jsonb(attachment) AS value FROM mail.draft_attachments attachment WHERE draft_id = ${draft.id}::uuid ORDER BY id`,
+      ).toEqual(attachments);
+    } finally {
+      if (stream && maxBytes !== undefined) await manager.streams.update(stream, { max_bytes: maxBytes });
+      release.resolve();
+      await coverage;
+      await connection.close();
+    }
+  });
+
   for (const mode of ["lock", "shared"] as const) {
     test(`mode switch derives recipients, subject and attachments in both directions (${mode})`, async () => {
       let draft = await create();
@@ -592,6 +655,27 @@ suite("one reply draft per conversation", () => {
         const documentAfter = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
         expect(Number(documentAfter.generation)).toBeGreaterThan(Number(documentBefore.generation));
         expect(documentAfter.fresh.content).toMatchObject({ body: "My text", subject: "Re: Question", cc: [] });
+        const frozen = await mailDraftRoom.freeze(draft.id);
+        expect(frozen?.restoreRevision).toBe(documentAfter.generation);
+        if (!frozen) throw new Error("Missing switched draft boundary");
+        expect((await change("forward")).ok).toBeFalse();
+        await mailDraftRoom.thaw(draft.id, { freezeCursor: frozen.cursor });
+        await flushDraftDocumentSnapshot(draft.id);
+        const failReplacement = spyOn(revisionBase, "recordDraftDocumentRevision").mockRejectedValueOnce(new Error("Replacement rollback"));
+        try {
+          const current = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
+          expect((await change("forward", current.revision)).ok).toBeFalse();
+          expect(failReplacement).toHaveBeenCalledTimes(1);
+        } finally {
+          failReplacement.mockRestore();
+        }
+        const rolledBack = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
+        expect(rolledBack.generation).toBe(documentAfter.generation);
+        expect(rolledBack.durable.content).toEqual(documentAfter.durable.content);
+        const resumed = await mailDraftRoom.freeze(draft.id);
+        expect(resumed?.restoreRevision).toBe(documentAfter.generation);
+        if (!resumed) throw new Error("Missing rollback boundary");
+        await mailDraftRoom.thaw(draft.id, { freezeCursor: resumed.cursor });
       }
       expect(draft.body).toBe("My text");
       if (mode === "shared")

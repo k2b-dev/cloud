@@ -170,6 +170,7 @@ export const createMailDraftSession = (options: {
     if (isShared()) {
       const next = sharedState();
       if (!next || next.rejectedEdit) return "pending";
+      if (!next.connected || !next.ready) return next.locallySaved ? "local" : "pending";
       return next.dirty ? (next.locallySaved ? "local" : "pending") : "saved";
     }
     const current = serializedContent();
@@ -657,11 +658,11 @@ export const createMailDraftSession = (options: {
           setStatus(
             next.terminal
               ? "readonly"
-              : next.saving
-                ? "saving"
-                : next.error
-                  ? "error"
-                  : next.dirty
+              : next.error
+                ? "error"
+                : next.saving || (next.connected && next.ready && next.dirty)
+                  ? "saving"
+                  : !next.connected || !next.ready || next.dirty
                     ? next.locallySaved
                       ? "local"
                       : "pending"

@@ -932,7 +932,9 @@ suite("mail baseline schema", () => {
               'enqueue_live_invalidation', 'enqueue_activity_live_invalidation',
               'search_reference_matches', 'touch_updated_at', 'carry_conversation_keep',
               'reject_retired_rule_admission', 'reject_retired_rule_execution', 'reject_retired_rule_command',
-              'reject_retired_reply_draft', 'reject_retired_reply_outbox'
+              'reject_retired_reply_draft', 'reject_retired_reply_outbox',
+              'enqueue_room_access_changed', 'enqueue_assignee_room_access_changed',
+              'enqueue_message_room_access_changed', 'enqueue_mailbox_room_access_changed'
             )
         ) AS functions,
         (
@@ -943,8 +945,33 @@ suite("mail baseline schema", () => {
         ) AS triggers,
         to_regclass('ai.workflow_task') IS NOT NULL AS workflow_ai_table
     `;
-    // Retained domain/retention functions plus permanent retirement fences replace the old Undo invalidation hooks.
-    expect(shape).toEqual({ extensions: 3, functions: 14, triggers: 37, workflow_ai_table: true });
+    // Retained domain/retention functions and permanent retirement fences replace the old Undo invalidation hooks;
+    // four access-hint functions and twelve narrowly scoped triggers revoke room writers without per-edit queries.
+    expect(shape).toEqual({ extensions: 3, functions: 18, triggers: 49, workflow_ai_table: true });
+    const accessTriggers = await sql<{ table_name: string; trigger_name: string; enabled: string }[]>`
+      SELECT pg_class.relname AS table_name, tgname AS trigger_name, tgenabled AS enabled
+      FROM pg_trigger JOIN pg_class ON pg_class.oid = tgrelid
+      JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+      WHERE pg_namespace.nspname = 'mail' AND tgname IN ('room_access_changed', 'room_access_updated')
+      ORDER BY pg_class.relname, tgname`;
+    expect(accessTriggers).toEqual(
+      (
+        [
+          ["compose_templates", "room_access_changed"],
+          ["compose_templates", "room_access_updated"],
+          ["conversation_assignees", "room_access_changed"],
+          ["conversation_messages", "room_access_changed"],
+          ["conversation_messages", "room_access_updated"],
+          ["conversations", "room_access_changed"],
+          ["drafts", "room_access_changed"],
+          ["mailbox_access", "room_access_changed"],
+          ["mailbox_assigned_access", "room_access_changed"],
+          ["mailboxes", "room_access_changed"],
+          ["sender_identities", "room_access_changed"],
+          ["sender_identities", "room_access_updated"],
+        ] as const
+      ).map(([table_name, trigger_name]) => ({ table_name, trigger_name, enabled: "O" })),
+    );
     const [retention] = await sql<{ definition: string; enabled: string }[]>`
       SELECT pg_get_triggerdef(oid) AS definition, tgenabled AS enabled FROM pg_trigger
       WHERE tgrelid = 'mail.draft_document_revisions'::regclass

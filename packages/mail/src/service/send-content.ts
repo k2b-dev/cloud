@@ -1,5 +1,4 @@
 import { sql } from "@k2b/cloud";
-import { compareStreamCursor } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import type { DraftQuoteSource } from "../contracts";
@@ -8,7 +7,6 @@ import { getMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { renderComposeContent, withoutSignatureSegments } from "./compose-renderer";
-import { lockDraftDocumentCoverage, mailDraftDocumentLog, replayDraftDocument } from "./draft-document-log";
 import { draftDocumentHistoryChecked } from "./draft-document-log-policy";
 import { loadDraftSourceQuote } from "./draft-source-quote";
 import { mailboxLogoContentId } from "./mailbox-logos";
@@ -161,39 +159,10 @@ export const loadSendContent = async (params: {
   if (draft.origin === "workflow" || draft.delivery_class !== "normal") return fail(err.forbidden("Automatic replies are retired"));
   if (draft.edit_mode === "shared") {
     if (!draft.doc_history_complete) return fail(sendContentChanged());
-    // Pruning may not pass the SQL coverage this replay starts from. Lock-mode
-    // sends never replay and never wait for a prune.
-    if (params.db === sql) return sql.begin((db) => loadSendContent({ ...params, db }));
-    await lockDraftDocumentCoverage(params.db);
-    const [current] = await params.db<{ doc_seq: string | null; revision: string }[]>`
-      SELECT doc_seq, revision FROM mail.drafts WHERE id = ${params.draftId}::uuid
-    `;
-    if (!current || String(current.doc_seq) !== String(draft.doc_seq) || Number(current.revision) !== params.expectedRevision)
-      return fail(sendContentChanged());
     // Until the recovery marking ran, SQL may lack events the old log expired.
     if (!(await draftDocumentHistoryChecked(params.db))) return fail(sendContentChanged());
-    try {
-      const topic = mailDraftDocumentLog.topic();
-      const head = await topic.latestCursor({ tenantId: params.draftId });
-      if (head && (!draft.doc_cursor || compareStreamCursor(head, draft.doc_cursor) > 0)) {
-        // A rolled-back send leaves an inert marker, not a changed review.
-        // Real unprojected input still requires a new durable revision/review.
-        let reached = draft.doc_cursor;
-        for await (const event of replayDraftDocument({
-          draftId: params.draftId,
-          after: draft.doc_cursor,
-          docSeq: draft.doc_seq,
-          historyComplete: draft.doc_history_complete,
-          until: head,
-        })) {
-          if (event.data.kind !== "freeze") return fail(sendContentChanged());
-          reached = event.cursor;
-        }
-        if (reached !== head) return fail(sendContentChanged());
-      }
-    } catch {
-      return fail(sendContentChanged());
-    }
+    // Command creation owns the distributed freeze/drain and checks this
+    // reviewed revision against its flushed state before the SQL commit.
   }
   if (actorUserId && !draft.actor_uid) return fail(err.badInput("The delegated compose user is no longer available"));
   const content = internalDraftEditableContentInputSchema.safeParse({

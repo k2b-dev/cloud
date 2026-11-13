@@ -5,7 +5,7 @@ section: Operations
 order: 945
 description: Configure senders, inspect the send log, and control outgoing mail retention.
 tags: [mail, smtp, administration, upgrades]
-updated: 2026-11-09
+updated: 2026-11-13
 ---
 
 # Outgoing mail operations
@@ -25,6 +25,11 @@ stored HTML and text. Notebooks keeps formula calculation.
 See [Format outgoing messages](/en/apps/mail#format-outgoing-messages).
 
 ## Shared drafts per mailbox
+
+Shared editing runs on the platform shared text room and stays opt-in per
+mailbox; lock mode remains the default. Its durability, send boundary,
+deployment requirements and measured capacity are described in
+[Mail collaborative drafts](mail-collaborative-drafts.md).
 
 Browser updates now reconnect after 30 seconds without an acknowledgement,
 using the same pending input and original synchronization base. A send waiting
@@ -58,7 +63,8 @@ audited like other mailbox settings.
   migration succeeds and the live log matches its declaration. Do not switch
   draft modes in the database to bypass this gate.
 - When the document log is full, new writes return
-  `409 DRAFT_DOCUMENT_STREAM_FULL` (the socket closes with code 1012).
+  `409 DRAFT_DOCUMENT_STREAM_FULL` over HTTP, or `STORAGE_EXHAUSTED` on the
+  room socket (which closes with code 1012).
   Accepted edits remain in the log. The editor retains unsent input and
   offers **Retry saving**. A send whose freeze marker cannot fit queues
   nothing; table actions and recovery restores leave the draft unchanged.
@@ -68,6 +74,42 @@ audited like other mailbox settings.
 
 Deploy the release to every Mail instance before an administrator turns on a
 shared mailbox. Already scheduled messages keep their immutable send snapshots.
+
+### Durability and projection delay
+
+Shared-room input travels from a Mail instance through the retained JetStream
+log to editors on either instance. A retained echo acknowledges durability
+after the JetStream publish acknowledgement. Admission and delivery perform
+no SQL per edit. Access is checked at join and rechecked after committed
+access or lifecycle events, which close affected sockets across instances.
+Reconnects always check access again.
+
+SQL snapshots use the platform's ordered writer and a per-draft distributed
+lease. Mail schedules them after three seconds without input and at most
+thirty seconds after the first input in a continuous burst. Leaving flushes
+accepted input immediately. Shutdown drains connections and snapshot work;
+startup and hourly reconciliation recover outstanding log work after a crash.
+
+The snapshot updates the body, subject, recipients, sender and compose
+settings together. It also records the first human edit as adoption and
+queues the provider draft export. List previews and search use this SQL
+projection, so they can lag live editors by the debounce interval plus worker
+time. Provider copies also wait for the export queue. Thirty seconds bounds
+the scheduling delay, not a failed or overloaded writer: inspect
+`mail:draft-snapshots` failures and the shared-text snapshot backlog report.
+Accepted input remains retained while persistence is unavailable.
+
+### Capacity and measured limits
+
+Each Mail process admits at most 512 sockets and eight editors per draft.
+Ingress, queued delivery and native socket output each have a 64 MiB budget.
+The room also bounds each connection to 200 queued input frames and closes
+overloaded connections with 1013; pending input remains available for retry.
+These are admission budgets, not a total memory guarantee. Reserve capacity
+for Mail's other workloads before enabling shared editing.
+
+Measured two-node results and their limits are recorded in
+[Mail collaborative drafts](mail-collaborative-drafts.md#capacity-and-deployment).
 
 Shared drafts require Sync 7.1 or later. The application-wide document log
 reserves 1 GiB, rejects new events when full, and has no age expiry. Mail

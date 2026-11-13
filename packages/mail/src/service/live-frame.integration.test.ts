@@ -169,8 +169,12 @@ suite("Mail frame writers invalidate open mailboxes", () => {
     );
   const pending = (mailboxId: string) => sql<Update[]>`
     SELECT payload, split_part(coalesce_key, ':', 1) AS transaction FROM events.outbox
-    WHERE app_id = 'mail' AND kind = 'live' AND ordering_key IN (${mailboxId}, ${`${mailboxId}:assigned`}) ORDER BY seq
+    WHERE app_id = 'mail' AND kind = 'live' AND payload ? 'd'
+      AND ordering_key IN (${mailboxId}, ${`${mailboxId}:assigned`}) ORDER BY seq
   `;
+  const accessHints = (mailboxId: string) => sql<{ payload: { v: number; k: string; a: true } }[]>`
+    SELECT payload FROM events.outbox WHERE app_id = 'mail' AND kind = 'live'
+      AND ordering_key = ${mailboxId} AND payload @> '{"a":true}'::jsonb ORDER BY seq`;
   const clear = async (mailboxId: string) => {
     for (const id of [mailboxId, sentinelId]) {
       await sql`DELETE FROM events.outbox WHERE app_id = 'mail' AND ordering_key IN (${id}, ${`${id}:assigned`})`;
@@ -247,6 +251,7 @@ suite("Mail frame writers invalidate open mailboxes", () => {
     const sender = await identity(mailboxId);
     const params = { context, mailboxId, senderIdentityId: sender.id, input: { displayName: "Changed" } };
     await change(mailboxId, async () => unwrap(await updateSenderIdentity(params)));
+    expect(await accessHints(mailboxId)).toEqual([]);
     await clear(mailboxId);
     unwrap(await updateSenderIdentity(params));
     expect(await pending(mailboxId)).toEqual([]);
@@ -256,8 +261,12 @@ suite("Mail frame writers invalidate open mailboxes", () => {
     const sender = await identity(mailboxId);
     const params = { context, mailboxId, senderIdentityId: sender.id };
     await change(mailboxId, async () => unwrap(await disableSenderIdentity(params)));
+    // The committed status change also revokes room writers; it does not replace
+    // either reader-scope invalidation checked above.
+    expect(await accessHints(mailboxId)).toEqual([{ payload: { v: 1, k: mailboxId, a: true } }]);
     await clear(mailboxId);
     expect((await disableSenderIdentity(params)).ok).toBe(false);
+    expect(await accessHints(mailboxId)).toEqual([]);
     expect(await pending(mailboxId)).toEqual([]);
   });
 

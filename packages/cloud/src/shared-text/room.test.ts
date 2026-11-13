@@ -1,13 +1,19 @@
 import { afterEach, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import type { Sync, Topic, TopicEvent } from "@k2b/sync";
-import { ConflictError, CursorMismatchError, RetentionGapError } from "@k2b/sync";
+import { ConflictError, CursorMismatchError, RetentionGapError, StoreFullError } from "@k2b/sync";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { z } from "zod";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { toBase64 } from "./events";
 import { sharedText } from "./log";
-import { createSharedTextRoom, createSharedTextRoomContext, type SharedTextRoomMessages, type SharedTextRoomSnapshot } from "./room";
+import {
+  createSharedTextRoom,
+  createSharedTextRoomContext,
+  isSharedTextStorageExhausted,
+  type SharedTextRoomMessages,
+  type SharedTextRoomSnapshot,
+} from "./room";
 import { RoomWriterBase } from "./room-base";
 import type { SharedTextEvent } from "./types";
 
@@ -76,6 +82,8 @@ const fixture = () => {
   let stored: SharedTextRoomSnapshot = { state: new Uint8Array([0, 0]), text: "", cursor: "s6t.room.0", restoreRevision: "0" };
   let admissionBusy = false;
   let head: string | null = null;
+  let sequence = 0,
+    conflicts = 0;
   const entries: TopicEvent<SharedTextEvent>[] = [];
   const replays: number[] = [];
   const topic = {
@@ -83,7 +91,11 @@ const fixture = () => {
     cursorAt: (sequence: number) => `s6t.room.${sequence}`,
     latestCursor: async () => head,
     publish: async (input: { data: SharedTextEvent; tenantId?: string }) => {
-      const sequence = entries.length + 1;
+      if (conflicts > 0) {
+        conflicts--;
+        throw new ConflictError("Fixture document-head contention");
+      }
+      sequence++;
       head = `s6t.room.${sequence}`;
       const entry = {
         data: input.data,
@@ -266,6 +278,13 @@ const fixture = () => {
     invalidations,
     entries,
     replays,
+    prune() {
+      entries.length = 0;
+      head = null;
+    },
+    contend() {
+      conflicts = 3;
+    },
     sql: () => sql,
     admissionCalls: () => admissionCalls,
     leaveCalls: () => leaveCalls,
@@ -471,6 +490,38 @@ test("revalidation is single-flight and an invalidation during its query is chec
   }
 });
 
+test("an active room retains its authorized state when covered broker history is pruned", async () => {
+  const f = fixture();
+  const doc = new Y.Doc();
+  doc.clientID = 42;
+  try {
+    await f.join();
+    await f.ready;
+    doc.getText("codemirror").insert(0, "first");
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(doc)), baseCursor: "s6t.room.0", restoreRevision: "0" },
+    });
+    f.prune();
+    const before = Y.encodeStateVector(doc);
+    doc.getText("codemirror").insert(5, " second");
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(doc, before)), baseCursor: "s6t.room.1", restoreRevision: "0" },
+    });
+    expect(f.entries).toHaveLength(1);
+    expect(f.entries[0]?.cursor).toBe("s6t.room.2");
+    expect(f.closed).toEqual([]);
+    expect(f.sql()).toBe(3);
+  } finally {
+    doc.destroy();
+    await f.connection.close();
+  }
+});
+test("a full retained log exposes the recoverable storage error", () => {
+  expect(isSharedTextStorageExhausted(new StoreFullError("retained log full"))).toBe(true);
+  expect(isSharedTextStorageExhausted(new Error("unrelated failure"))).toBe(false);
+});
 for (const fromCursor of ["s6t.room.1", "s6t.room.2"])
   test(`reconnect at ${fromCursor} ahead of SQL preserves the complete admission base`, async () => {
     const f = fixture();

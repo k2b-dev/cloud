@@ -87,8 +87,17 @@ class FakeWebSocket {
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
   static instances: FakeWebSocket[] = [];
+  static acknowledge: boolean | "echo" = true;
   readyState = FakeWebSocket.CONNECTING;
-  sent: Array<{ t: string; id?: string; channel?: string; scope?: unknown; after?: string }> = [];
+  sent: Array<{
+    t: string;
+    id?: string;
+    channel?: string;
+    scope?: unknown;
+    after?: string;
+    type?: string;
+    payload?: { payload?: string };
+  }> = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onclose: ((event: { code: number; reason: string }) => void) | null = null;
@@ -107,14 +116,20 @@ class FakeWebSocket {
     const position = { docId: DRAFT_ID, generation: "1", cursor: "s6t.fixture.1" };
     if (packet.type === "replayRequest")
       queueMicrotask(() => this.message({ type: "replayReady", payload: { ...position, peerId: "peer1" } }));
-    if (packet.type === "syncPublish" && packet.payload.payload)
+    if (FakeWebSocket.acknowledge && packet.type === "syncPublish" && packet.payload.payload)
       queueMicrotask(() =>
         this.message({
           type: "syncPush",
           payload: {
             docId: position.docId,
             generation: position.generation,
-            updates: [{ generation: position.generation, cursor: position.cursor, payload: packet.payload.payload }],
+            updates: [
+              {
+                generation: position.generation,
+                ...(FakeWebSocket.acknowledge === true ? { cursor: position.cursor } : {}),
+                payload: packet.payload.payload,
+              },
+            ],
           },
         }),
       );
@@ -167,6 +182,7 @@ describe("Mail draft session", () => {
     requests = [];
     Object.defineProperty(dom.document, "visibilityState", { configurable: true, get: () => "visible" });
     FakeWebSocket.instances = [];
+    FakeWebSocket.acknowledge = true;
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
   });
 
@@ -298,16 +314,65 @@ describe("Mail draft session", () => {
   };
 
   test("shared transport echoes and offline input never claim durable server storage", async () => {
+    FakeWebSocket.acknowledge = false;
     localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, "no");
     const f = await sharedFixture();
     await f.session.ensureDraft();
     await Bun.sleep(0);
+    const peer = new Y.Doc();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(f.session.shared()!.doc));
     f.setCurrent({ ...f.current(), body: "Unpersisted shared input" });
+    await Bun.sleep(0);
+    const socket = FakeWebSocket.instances.find((socket) => socket.url.includes("/document/socket"))!;
+    const payload = socket.sent.findLast((packet) => packet.type === "syncPublish")?.payload?.payload;
+    if (!payload) throw new Error("Missing local publication");
+    expect(f.session.shared()?.provider.hasUnsentChanges()).toBe(true);
+    expect(f.session.status()).toBe("saving");
+    expect(f.session.saveStatus()).toBe("pending");
+    // A transport echo lacks the cursor that proves broker retention.
+    socket.message({ type: "syncPush", payload: { docId: DRAFT_ID, generation: "1", updates: [{ generation: "1", payload }] } });
     await Bun.sleep(0);
     expect(f.session.shared()?.provider.hasUnsentChanges()).toBe(false);
     expect(f.session.status()).not.toBe("saved");
     expect(f.session.saveStatus()).toBe("pending");
-    FakeWebSocket.instances.find((socket) => socket.url.includes("/document/socket"))!.close(1006);
+    const vector = Y.encodeStateVector(peer);
+    peer.getText("codemirror").insert(0, "Peer ");
+    socket.message({
+      type: "syncPush",
+      payload: {
+        docId: DRAFT_ID,
+        generation: "1",
+        updates: [
+          {
+            generation: "1",
+            cursor: "s6t.fixture.2",
+            originPeerId: "other",
+            payload: encoding.toBase64(Y.encodeStateAsUpdate(peer, vector)),
+          },
+        ],
+      },
+    });
+    peer.destroy();
+    await Bun.sleep(0);
+    expect(f.session.status()).not.toBe("saved");
+    expect(f.session.saveStatus()).toBe("pending");
+    // Only the retained ack covering this person's latest input clears pending.
+    socket.message({
+      type: "syncPush",
+      payload: {
+        docId: DRAFT_ID,
+        generation: "1",
+        updates: [{ generation: "1", cursor: "s6t.fixture.3", originPeerId: "peer1", payload }],
+      },
+    });
+    await Bun.sleep(0);
+    expect(f.session.status()).toBe("saved");
+    expect(f.session.saveStatus()).toBe("saved");
+    expect(requests.some((request) => request.url.endsWith("/snapshot"))).toBe(false);
+    socket.close(1006);
+    f.setCurrent({ ...f.current(), body: "Offline input" });
+    await Bun.sleep(0);
+    expect(f.session.status()).not.toBe("saved");
     expect(f.session.saveStatus()).toBe("pending");
   });
 
@@ -349,6 +414,7 @@ describe("Mail draft session", () => {
   test.each(["tab-only", "remembered", "storage-failed"])(
     "shared sign-in preparation uses reload-safe document storage: %s",
     async (mode) => {
+      FakeWebSocket.acknowledge = "echo";
       const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockResolvedValue([]);
       localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, mode === "tab-only" ? "no" : "yes");
       let stored: Uint8Array | null = null;
@@ -420,6 +486,7 @@ describe("Mail draft session", () => {
   );
 
   test.each(["saved", "pending-save"])("invalidated shared storage blocks sign-in reload: %s", async (mode) => {
+    FakeWebSocket.acknowledge = "echo";
     const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockResolvedValue([]);
     localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, "yes");
     const controller = new AbortController();

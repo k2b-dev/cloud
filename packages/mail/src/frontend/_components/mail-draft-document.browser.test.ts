@@ -62,6 +62,8 @@ let revision = 1,
   lifecycle: MailDraft["state"] = "draft",
   denied = false;
 let frozen: Uint8Array | null = null;
+let holdAcknowledgements = false;
+const pendingAcknowledgements: Uint8Array[] = [];
 const requests: string[] = [];
 const recoveries: { generation: string; clientId: string; state: string }[] = [];
 const sockets = new Set<ServerWebSocket<{ document: boolean }>>();
@@ -217,7 +219,11 @@ const server = Bun.serve<{ document: boolean }>({
         }
         const bytes = encoding.fromBase64(payload.payload);
         Y.applyUpdate(document, bytes);
-        publish(bytes);
+        if (holdAcknowledgements) {
+          pendingAcknowledgements.push(bytes);
+          // Transport echo is not a retained JetStream receipt.
+          packet(socket, "syncPush", { docId: "Draft1", generation: "1", updates: [{ generation: "1", payload: payload.payload }] });
+        } else publish(bytes);
       }
     },
     close(socket) {
@@ -251,6 +257,8 @@ const reset = () => {
   frozen = null;
   requests.length = 0;
   recoveries.length = 0;
+  holdAcknowledgements = false;
+  pendingAcknowledgements.length = 0;
 };
 const open = async (width = 1440) => {
   reset();
@@ -290,10 +298,12 @@ for (const width of [1440, 390])
       const editor = page.locator(".cm-content").first();
       await editor.click();
       await page.keyboard.press("Control+Home");
+      holdAcknowledgements = true;
       await page.keyboard.type("Local ");
       await page.waitForFunction(() => !window.mailSharedFixture.unsent());
-      await waitStored(page, 1); // Echo has arrived, but SQL durability has not.
-      expect(await page.getByTitle("Auf diesem Gerät gesichert", { exact: true }).count()).toBe(1);
+      await waitStored(page, 1);
+      expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(0);
+      expect(await page.locator(".k2b-ste-status").innerText()).toContain("Speichert");
       const vector = Y.encodeStateVector(document);
       const before = readDraftDocument(document);
       writeLocalDraftHeaders(document, before, { ...before, subject: "Peer subject", bcc: [{ name: null, address: "peer@example.test" }] });
@@ -303,6 +313,15 @@ for (const width of [1440, 390])
       expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toContain("Local Hello");
       expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toContain("Peer footer");
       expect(await page.evaluate(() => window.mailSharedFixture.state()?.recipientsChanged)).toBe(true);
+      // A peer's retained delta does not cover our cursorless local echo.
+      expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(0);
+      expect(await page.locator(".k2b-ste-status").innerText()).toContain("Speichert");
+      holdAcknowledgements = false;
+      for (const bytes of pendingAcknowledgements.splice(0)) publish(bytes);
+      await page.getByTitle("Auf dem Server gespeichert", { exact: true }).waitFor();
+      await waitStored(page, 0);
+      expect(revision).toBe(1); // Durable broker receipt precedes lazy SQL persistence.
+      expect(requests.some((value) => value.endsWith("/snapshot"))).toBe(false);
       const peer = new Awareness(document);
       peer.setLocalState({
         cursor: {
@@ -338,7 +357,7 @@ for (const width of [1440, 390])
       saveFails = true;
       await page.getByRole("button", { name: "Speichern", exact: true }).click();
       await page.locator("[data-save-error]").filter({ hasText: "fehlgeschlagen" }).waitFor();
-      await waitStored(page, 1);
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.error)).toBe(true);
       saveFails = false;
       await page.getByRole("button", { name: "Speichern", exact: true }).click();
       await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
@@ -407,6 +426,7 @@ test("offline input survives cleanup/reload, then closes as one stable Rest requ
     expect(await page.getByTitle("Offline · Auf diesem Gerät gesichert", { exact: true }).count()).toBe(1);
     await waitStored(page, 1);
     expect(await page.locator(".k2b-ste-status").innerText()).toContain("Offline");
+    expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(0);
     // The sent boundary excludes the disconnected edit. Re-authorize on reload before reading device bytes.
     frozen = Y.encodeStateAsUpdate(document);
     durable = frozen;

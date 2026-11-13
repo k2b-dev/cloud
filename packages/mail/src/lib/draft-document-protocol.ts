@@ -18,7 +18,7 @@ export const mailDraftDocumentRequestSchema = z.discriminatedUnion("type", [
   }),
   z.strictObject({
     type: z.literal("syncPublish"),
-    payload: draftDocumentUpdateSchema.extend({ ...doc, payload: bytes(MAX_DRAFT_DOCUMENT_PAYLOAD) }),
+    payload: draftDocumentUpdateSchema.extend({ ...doc, payload: bytes(MAX_DRAFT_DOCUMENT_PAYLOAD), retry: z.literal(true).optional() }),
   }),
   z.strictObject({
     type: z.literal("awarenessPublish"),
@@ -80,11 +80,13 @@ export const decodeMailDraftDocumentMessage = (packet: unknown, docId: string): 
 };
 
 export const MAIL_DRAFT_DOCUMENT_TERMINAL_CODES = [
+  "DOCUMENT_CLOSED",
   "SESSION_EXPIRED",
   "ACCESS_DENIED",
   "DOCUMENT_NOT_FOUND",
   "INVALID_PAYLOAD",
   "DRAFT_DOCUMENT_STREAM_FULL",
+  "STORAGE_EXHAUSTED",
 ] as const;
 
 export const mailDraftDocumentMessages = i18n.define({

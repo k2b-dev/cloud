@@ -134,6 +134,14 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
   const { appId } = definition;
   return {
     ...defineLivePublisher(definition),
+    /** Server-side access hints for the application's other long-lived transports.
+     * Capture cursor() before authorization, then subscribe from that cursor.
+     * The process hub shares one broker follower; hints never grant access. */
+    accessChanges: async function* (options: { after: string; signal: AbortSignal }) {
+      for await (const event of liveTopic(appId).hub().subscribe(options)) {
+        if (event.data.a) yield { key: event.data.k, cursor: event.cursor };
+      }
+    },
     /**
      * The live socket with these channels. Mount it once, at `/api/<app>/live`,
      * in the application's own process: `app.start()` of another application fails.
