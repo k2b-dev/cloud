@@ -303,6 +303,27 @@ describe("@k2b/ui PdfViewer", () => {
     }
   });
 
+  // The end marker fills the layer while a drag selects; it must lie below the spans, or the drag selects nothing (#3302).
+  test("dragging the mouse across several lines selects their text", async () => {
+    const page = await load();
+    try {
+      const layer = '[data-pdf-page="0"] .k2b-pdf-viewer__text';
+      await page.locator(`${layer} .k2b-pdf-viewer__text-end`).waitFor({ state: "attached" });
+      const first = (await page.locator(`${layer} span`, { hasText: "Line 1 of page 1" }).boundingBox())!;
+      const third = (await page.locator(`${layer} span`, { hasText: "Line 3 of page 1" }).boundingBox())!;
+      await page.mouse.move(first.x + 2, first.y + first.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2, { steps: 4 });
+      await page.mouse.move(third.x + third.width - 2, third.y + third.height / 2, { steps: 8 });
+      await page.mouse.up();
+      const selected = await page.evaluate(() => String(getSelection()));
+      expect(selected).toContain("Line 2 of page 1");
+      expect(selected).toContain("Line 3 of page");
+    } finally {
+      await page.close();
+    }
+  });
+
   test("scrolling to the end draws the last page and shows it as the current one", async () => {
     const page = await load();
     try {

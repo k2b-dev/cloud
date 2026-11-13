@@ -5995,10 +5995,13 @@
   background: transparent;
 }
 
-.k2b-ui .k2b-pdf-viewer__text-end {
+/* `.endOfContent` in pdf.js. Its rule has the specificity of the span rule above and comes later, so it wins there too;
+   without the child combinator, the span rule would lift the marker above the spans and a drag would select nothing. */
+.k2b-ui .k2b-pdf-viewer__text > .k2b-pdf-viewer__text-end {
   position: absolute;
   inset: 100% 0 0;
   z-index: 0;
+  transform: none;
   display: block;
   cursor: default;
   -webkit-user-select: none;
