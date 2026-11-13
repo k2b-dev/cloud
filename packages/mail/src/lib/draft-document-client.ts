@@ -344,12 +344,18 @@ export async function openMailDraftDocumentClient(options: {
     const undoManager = new Y.UndoManager(doc.getText(DRAFT_BODY), { trackedOrigins: new Set([null, "mail-headers"]) });
     cleanupManager = undoManager;
     const closed = outdated || authorization.frozen !== null || authorization.lifecycle !== "draft";
+    // The authorized fresh state is the SQL snapshot plus the retained JetStream log,
+    // so everything in it is already durable. With lazy snapshots it often runs ahead
+    // of the SQL row; starting from SQL alone would keep "saving" forever.
+    let durableState = outdated
+      ? encoding.fromBase64(authorization.durable.state)
+      : Y.mergeUpdates([encoding.fromBase64(authorization.durable.state), encoding.fromBase64(authorization.fresh.state)]);
     const state: MailSharedDraftState = {
       connected: false,
       ready: false,
       terminal: closed,
       changes: local ? 1 : 0,
-      dirty: !draftSnapshotCovers(encoding.fromBase64(authorization.durable.state), Y.encodeStateAsUpdate(doc)),
+      dirty: !draftSnapshotCovers(durableState, Y.encodeStateAsUpdate(doc)),
       remembering,
       locallySaved: Boolean(local) && !metadataFailure,
       saving: false,
@@ -387,7 +393,6 @@ export async function openMailDraftDocumentClient(options: {
       }
     }
     let storageVersion = 0;
-    let durableState = encoding.fromBase64(authorization.durable.state);
     const waiters = new Set<() => void>();
     let structuralPending = 0;
     /** A socket error the provider survives; a later replay proves the connection works again. */
@@ -502,7 +507,9 @@ export async function openMailDraftDocumentClient(options: {
     doc.on("update", project);
     const acknowledgeLogState = (bytes: Uint8Array[]) =>
       queueMicrotask(() => {
-        if (!disposed && state.connected && state.ready && !state.terminal && bytes.length) acknowledge(Y.mergeUpdates(bytes));
+        // A broker cursor proves retention whatever the connection state: replay
+        // frames arrive before replayReady and must still count as durable.
+        if (!disposed && !state.terminal && bytes.length) acknowledge(Y.mergeUpdates(bytes));
       });
     const socketUrl = new URL(`${path}/socket?${accountQuery}`, window.location.href);
     socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
@@ -858,7 +865,7 @@ export async function openMailDraftDocumentClient(options: {
         const current = await authorize(options.signal);
         if (current.generation !== generation || current.frozen || current.lifecycle !== "draft") throw new Error(t().generation);
         Y.applyUpdate(doc, encoding.fromBase64(current.fresh.state), "remote");
-        acknowledge(encoding.fromBase64(current.durable.state));
+        acknowledge(Y.mergeUpdates([encoding.fromBase64(current.durable.state), encoding.fromBase64(current.fresh.state)]));
         options.onDurable(current.durable.content, current.revision);
       },
       retry: async () => {

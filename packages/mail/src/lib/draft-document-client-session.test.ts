@@ -1001,3 +1001,86 @@ test("a retained peer update cannot clear local input awaiting its own acknowled
     await f.cleanup();
   }
 });
+
+test("reopening before the lazy snapshot counts the retained log as saved instead of saving forever", async () => {
+  const f = fixture();
+  try {
+    const first = await f.open();
+    first.edit({ ...first.content(), body: "Acked before reload" });
+    await until(() => !first.provider.hasUnsentChanges());
+    await f.reload();
+    // The SQL row still holds the old state; only the retained log has the edit.
+    const client = await f.open();
+    expect(client.content().body).toBe("Acked before reload");
+    expect(client.state().dirty).toBe(false);
+    expect(client.provider.hasUnsentChanges()).toBe(false);
+    client.edit({ ...client.content(), subject: "Second acked edit" });
+    await until(() => !client.provider.hasUnsentChanges());
+    await Bun.sleep(0);
+    expect(client.state().dirty).toBe(false);
+    expect(f.requests.some((request) => request.url.includes("/snapshot"))).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("peer input replayed on reconnect is durable before replay-ready and leaves no stale saving state", async () => {
+  const f = fixture();
+  const peer = new Y.Doc();
+  peer.clientID = 994;
+  try {
+    const client = await f.open();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(client.doc));
+    const vector = Y.encodeStateVector(peer);
+    f.disconnect();
+    peer.getText("codemirror").insert(0, "Offline peer ");
+    // Answer the replay by hand so the retained update is processed before replay-ready.
+    f.silence();
+    client.provider.reconnectNow();
+    await until(() => f.sockets.length > 1 && f.sockets.at(-1)!.sent.some((raw) => JSON.parse(raw).type === "replayRequest"));
+    const socket = f.sockets.at(-1)!;
+    socket.receive("syncPush", {
+      docId: "Draft1",
+      generation: "1",
+      updates: [{ payload: encoding.toBase64(Y.encodeStateAsUpdate(peer, vector)), generation: "1", cursor: "s6t.fixture.10" }],
+    });
+    await Bun.sleep(0);
+    expect(client.state().ready).toBe(false);
+    socket.receive("replayReady", { docId: "Draft1", generation: "1", cursor: "s6t.fixture.10", peerId: "peer1" });
+    await until(() => client.state().ready);
+    await Bun.sleep(0);
+    expect(client.content().body).toBe("Offline peer Hello");
+    expect(client.state().dirty).toBe(false);
+    expect(f.requests.some((request) => request.url.includes("/snapshot"))).toBe(false);
+  } finally {
+    peer.destroy();
+    await f.cleanup();
+  }
+});
+
+test("an acknowledgement of older input cannot mark newer local input as saved", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    const socket = f.sockets[0]!;
+    f.silence();
+    client.edit({ ...client.content(), body: "First local" });
+    await Bun.sleep(0);
+    const first = socket.sent.map((raw) => JSON.parse(raw)).find((packet) => packet.type === "syncPublish");
+    expect(first).toBeDefined();
+    client.edit({ ...client.content(), body: "First local, then newer" });
+    await Bun.sleep(0);
+    // The broker retains and echoes only the first update.
+    socket.receive("syncPush", {
+      docId: "Draft1",
+      generation: "1",
+      updates: [{ generation: "1", payload: first.payload.payload, cursor: "s6t.fixture.2" }],
+    });
+    await Bun.sleep(0);
+    expect(client.content().body).toBe("First local, then newer");
+    expect(client.state().dirty).toBe(true);
+    expect(client.provider.hasUnsentChanges()).toBe(true);
+  } finally {
+    await f.cleanup();
+  }
+});
