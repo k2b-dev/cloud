@@ -24,7 +24,7 @@ import { acquireDraftLease, getDraftLease, releaseDraftLease } from "./draft-lea
 import { applyDraftTableAction } from "./draft-table-actions";
 import * as uploads from "./draft-uploads";
 import * as drafts from "./drafts";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, updateMailbox } from "./mailboxes";
 
 const suite = suiteFor("database", "nats", "valkey");
 const at = "2026-11-08T12:00:00.000Z";
@@ -148,6 +148,7 @@ suite("Mail service-account suggestions", () => {
     if (!user) throw new Error("Missing test user");
     owner = { actor: { kind: "user", user }, accessSubject: { type: "user", userId } };
     mailboxId = unwrap(await createMailbox(owner, { name: "Suggestion tests", description: "C3" })).id;
+    unwrap(await updateMailbox({ context: owner, mailboxId, draftEditMode: "lock" }));
     const [mailbox] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     mailboxShortId = mailbox!.short_id;
     const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)

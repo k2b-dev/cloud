@@ -2,15 +2,27 @@ import { type Readable, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { lazySync, sql } from "@k2b/cloud";
 import { createRuntimeTaskTracker, logger, stopRuntimeJobs, toPgTextArray } from "@k2b/cloud/services";
-import type { Lock, Worker } from "@k2b/sync";
+import { type Lock, RetentionGapError, type Worker } from "@k2b/sync";
 import { Splitter, Streamer } from "@zone-eu/mailsplit";
 import { type AddressObject, type AttachmentStream, type Headers, MailParser, type MessageText } from "mailparser";
+import * as Y from "yjs";
 import type { DraftQuoteSource } from "../contracts";
+import { createDraftDocument } from "../lib/draft-document";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
 import { hasUnrenderedTemplateSyntax, removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
+import {
+  draftDocumentSnapshotWritten,
+  lockDraftDocumentCoverage,
+  mailDraftDocumentLog,
+  replayDraftDocument,
+  withDraftDocumentCommit,
+} from "./draft-document-log";
+import { draftDocumentHistoryChecked } from "./draft-document-log-policy";
+import { type ReplaceDraftDocument, withDraftDocumentReplacement } from "./draft-document-replacement";
+import { DRAFT_DOCUMENT_ACCESS_REFRESH_MS } from "./draft-document-socket-sql";
 import { newDraftEditMode } from "./draft-edit-mode";
 import {
   buildDraftProviderMimeStream,
@@ -20,6 +32,7 @@ import {
   draftProviderMessageId,
 } from "./draft-provider-mime";
 import { loadDraftSourceQuote } from "./draft-source-quote";
+import { publicDraftContent } from "./draft-validation";
 import { resolveMailExecution } from "./execution";
 import { resolveRoleFolder } from "./folders";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
@@ -1110,8 +1123,11 @@ const applyImportedDraft = async (params: {
   bindingId: string;
   connectionId: string;
   secretRevision: number;
-}): Promise<{ draftId: string; revision: number; state: "active" | "conflict" }> =>
-  sql.begin(async (tx) => {
+}): Promise<{ draftId: string; revision: number; state: "active" | "conflict" }> => {
+  const apply = async (tx: typeof sql, replace?: ReplaceDraftDocument, signal?: AbortSignal) => {
+    // Match the snapshot writer's coverage-before-draft lock order. The shared
+    // admission outside this transaction excludes new room input until commit.
+    await lockDraftDocumentCoverage(tx);
     await assertMailboxTransportFence(params.fence, tx);
     const authority = await resolveMailExecution({
       mailboxId: params.snapshot.mailbox_id,
@@ -1147,8 +1163,26 @@ const applyImportedDraft = async (params: {
     const body = removeOrphanComposeSegmentMarks(params.parsed.body);
     let draftId = params.draftId;
     const [found] = draftId
-      ? await tx<{ id: string; revision: string | number; state: string; edit_mode: "lock" | "shared"; conversation_id: string | null }[]>`
-          SELECT id, revision, state, edit_mode, conversation_id
+      ? await tx<
+          {
+            id: string;
+            revision: string | number;
+            state: string;
+            edit_mode: "lock" | "shared";
+            conversation_id: string | null;
+            doc_generation: string;
+            doc_seq: string | null;
+            doc_cursor: string | null;
+            seeded: boolean;
+            doc_history_complete: boolean;
+            signature_template_id: string | null;
+            priority: "low" | "normal" | "high";
+            request_delivery_receipt: boolean;
+            request_read_receipt: boolean;
+          }[]
+        >`
+          SELECT id, revision, state, edit_mode, conversation_id, doc_generation::text, doc_seq::text,
+            doc_cursor, doc_state IS NOT NULL AS seeded, doc_history_complete, signature_template_id, priority, request_delivery_receipt, request_read_receipt
           FROM mail.drafts
           WHERE id = ${draftId}::uuid
             AND mailbox_id = ${params.snapshot.mailbox_id}::uuid
@@ -1167,10 +1201,44 @@ const applyImportedDraft = async (params: {
       });
       // A provider draft carries no segment markers, so template text returning from another client can no
       // longer be rendered. Keep the Cloud draft and surface the external edit as a recovery copy instead.
-      // IMAP cannot prove a Yjs generation or an exact header/attachment base.
-      // Preserve the full external input as recovery instead of overwriting shared identities.
-      const concurrentEdit =
-        existing.edit_mode === "shared" || existing.state !== "draft" || currentRevision !== baseRevision || params.cloudCopyKept;
+      // A verified provider replacement authenticates its exported revision.
+      // Shared input accepted since that SQL snapshot must stay recoverable;
+      // never replace it with a stale external body or attachment set.
+      const latest = existing.edit_mode === "shared" ? await mailDraftDocumentLog.topic().latestCursor({ tenantId: existing.id }) : null;
+      let pendingSharedInput =
+        existing.edit_mode === "shared" && (!existing.doc_history_complete || !(await draftDocumentHistoryChecked(tx)));
+      if (!pendingSharedInput && latest !== null && mailDraftDocumentLog.topic().cursorSequence(latest) > Number(existing.doc_seq ?? 0)) {
+        // Editable replacements share admission's short signal. Recovery-only
+        // transactions use the existing SQL-access budget to bound broker reads.
+        const replaySignal = signal ?? AbortSignal.timeout(DRAFT_DOCUMENT_ACCESS_REFRESH_MS);
+        // Send/thaw markers carry no edits. Inspect the tail once per import,
+        // keeping real room input and foreign replacement lineages recoverable.
+        try {
+          for await (const event of replayDraftDocument({
+            draftId: existing.id,
+            after: existing.doc_cursor,
+            docSeq: existing.doc_seq,
+            historyComplete: existing.doc_history_complete,
+            until: latest,
+            signal: replaySignal,
+          })) {
+            if (
+              event.data.kind !== "freeze" ||
+              (event.data.restoreRevision !== undefined && event.data.restoreRevision !== existing.doc_generation)
+            ) {
+              pendingSharedInput = true;
+              break;
+            }
+          }
+        } catch (error) {
+          if (!(error instanceof RetentionGapError)) throw error;
+          pendingSharedInput = true;
+        }
+        // Cancellation must roll back even if the iterator ends cleanly or
+        // reports a retention gap at the same time as its signal aborts.
+        replaySignal.throwIfAborted();
+      }
+      const concurrentEdit = pendingSharedInput || existing.state !== "draft" || currentRevision !== baseRevision || params.cloudCopyKept;
       const externalTemplateEdit = !concurrentEdit && hasUnrenderedTemplateSyntax(body);
       if (concurrentEdit || externalTemplateEdit) {
         await storeProviderRecovery({
@@ -1204,6 +1272,34 @@ const applyImportedDraft = async (params: {
         await enqueueMailInvalidation(tx, { mailboxId: params.snapshot.mailbox_id, conversationId: existing.conversation_id });
         return { draftId: existing.id, revision: currentRevision, state: "conflict" as const };
       }
+      let replacement: { state: Uint8Array; cursor: string } | undefined;
+      // No document or retained input has ever been acknowledged for a pristine
+      // draft. Update its SQL seed directly, so rollback cannot strand markers
+      // that neither reconciliation nor pruning can cover until its first join.
+      if (existing.edit_mode === "shared" && (existing.seeded || latest !== null)) {
+        if (!replace) throw new Error("Draft became editable during provider import; retry reconciliation");
+        const content = await publicDraftContent(tx, params.snapshot.mailbox_id, {
+          senderIdentityId: params.senderIdentityId,
+          signatureTemplateId: existing.signature_template_id,
+          to: params.parsed.to,
+          cc: params.parsed.cc,
+          bcc: params.parsed.bcc,
+          subject: params.parsed.subject,
+          body,
+          format: params.parsed.format,
+          quoteSource: null,
+          priority: existing.priority,
+          requestDeliveryReceipt: existing.request_delivery_receipt,
+          requestReadReceipt: existing.request_read_receipt,
+        });
+        if (!content.ok) throw Object.assign(new Error(content.error.message), content.error);
+        const document = createDraftDocument(content.data);
+        try {
+          replacement = { state: Y.encodeStateAsUpdate(document), cursor: await replace(existing.doc_generation, latest) };
+        } finally {
+          document.destroy();
+        }
+      }
       // Remove like every other draft edit: an upload row still points at an attachment it attached.
       await tx`UPDATE mail.draft_attachments SET removed_at = now() WHERE draft_id = ${existing.id}::uuid AND removed_at IS NULL`;
       await tx`
@@ -1220,9 +1316,19 @@ const applyImportedDraft = async (params: {
           adopted_at = COALESCE(adopted_at, now()),
           last_editor_kind = 'system',
           last_editor_id = NULL,
+          doc_generation = doc_generation + ${replacement ? 1 : 0},
+          doc_state = CASE WHEN ${replacement !== undefined} THEN ${replacement ? Buffer.from(replacement.state) : null} ELSE doc_state END,
+          doc_cursor = CASE WHEN ${replacement !== undefined} THEN ${replacement?.cursor ?? null} ELSE doc_cursor END,
+          doc_seq = CASE WHEN ${replacement !== undefined} THEN ${replacement ? mailDraftDocumentLog.topic().cursorSequence(replacement.cursor) : null} ELSE doc_seq END,
           revision = revision + 1
         WHERE id = ${existing.id}::uuid
       `;
+      if (replacement) {
+        await tx`INSERT INTO mail.draft_document_revisions (draft_id, generation, revision, state, cursor)
+          VALUES (${existing.id}::uuid, ${BigInt(existing.doc_generation) + 1n}, ${currentRevision + 1},
+            ${Buffer.from(replacement.state)}, ${replacement.cursor})`;
+        draftDocumentSnapshotWritten(tx);
+      }
       draftId = existing.id;
     } else {
       const [thread] = params.parsed.inReplyTo
@@ -1395,7 +1501,15 @@ const applyImportedDraft = async (params: {
         last_error_message = NULL
     `;
     return { draftId, revision: Number(updated.revision), state: "active" as const };
-  });
+  };
+  // Closed or scheduled drafts only need a recovery copy. They must not try
+  // to acquire the editable room's replacement fence.
+  const [target] = params.draftId
+    ? await sql<{ editable: boolean }[]>`SELECT edit_mode = 'shared' AND state = 'draft' AS editable
+        FROM mail.drafts WHERE id = ${params.draftId}::uuid`
+    : [];
+  return params.draftId && target?.editable ? withDraftDocumentReplacement(params.draftId, apply) : withDraftDocumentCommit(apply);
+};
 
 const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Promise<void>): Promise<void> => {
   const [snapshot] = await sql<DbProjection[]>`

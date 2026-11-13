@@ -3,6 +3,9 @@ import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { newShortId } from "./lib/short-id";
 import { buildBackfillActivityIndex, buildCommandTargetIndex, buildOptionalSearchIndex, migrate } from "./migrate";
+import { migrateSharedDrafts } from "./migrate-shared-drafts";
+import { stopDraftDocumentPruning } from "./service/draft-document-log";
+import { migrateDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
 
 const suite = suiteFor("database", "nats");
 
@@ -238,6 +241,34 @@ suite("mail baseline schema", () => {
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
     }
     await migrate();
+  });
+
+  test("upgrades a 0.76 mailbox without the explicit-mode flag and runs the shared-default migration", async () => {
+    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name, draft_edit_mode)
+      VALUES (${newShortId()}, 'Shared default upgrade', 'lock') RETURNING id`;
+    if (!mailbox) throw new Error("Shared default upgrade fixture missing");
+    try {
+      await sql`ALTER TABLE mail.mailboxes DROP COLUMN draft_edit_mode_explicit`.simple();
+      await migrate();
+      const [column] = await sql<{ not_null: boolean; default_value: string }[]>`
+        SELECT a.attnotnull AS not_null, pg_get_expr(d.adbin, d.adrelid) AS default_value
+        FROM pg_attribute a JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        WHERE a.attrelid = 'mail.mailboxes'::regclass AND a.attname = 'draft_edit_mode_explicit' AND NOT a.attisdropped
+      `;
+      expect(column).toEqual({ not_null: true, default_value: "false" });
+      expect(await migrateDraftDocumentLogPolicy()).toBe(true);
+      await stopDraftDocumentPruning();
+      expect(await migrateSharedDrafts()).toMatchObject({ completed: true });
+      expect(
+        await sql<
+          { draft_edit_mode: string; draft_edit_mode_explicit: boolean }[]
+        >`SELECT draft_edit_mode, draft_edit_mode_explicit FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`,
+      ).toEqual([{ draft_edit_mode: "shared", draft_edit_mode_explicit: false }]);
+    } finally {
+      await stopDraftDocumentPruning();
+      await migrate();
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
+    }
   });
 
   test("adds tables and indexes created after the baseline to a database installed before them", async () => {

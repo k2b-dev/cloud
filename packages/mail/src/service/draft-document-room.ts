@@ -76,7 +76,12 @@ const authorize = async (id: string, session: Session, messages: MailDraftRoomMe
   const lease = await requireDraftLeaseAvailable({ context, mailboxId, draftId });
   if (!lease.ok) return { ok: false, code: "ACCESS_DENIED", message: lease.error.message };
   const read = await readDraftDocument({ context, mailboxId, draftId, signal });
-  if (!read.ok) return { ok: false, code: "RESYNC_REQUIRED", message: messages.reopenRequired };
+  if (!read.ok) {
+    // A move or revocation can happen after the first access check. Preserve
+    // that terminal reason when the transaction-bound read observes it.
+    if (read.error.status === 403 || read.error.status === 404) return { ok: false, code: "ACCESS_DENIED", message: messages.accessDenied };
+    return { ok: false, code: "RESYNC_REQUIRED", message: messages.reopenRequired };
+  }
   if (read.data.lifecycle !== "draft" || read.data.frozen || !read.data.historyComplete)
     return { ok: false, code: "RESYNC_REQUIRED", message: messages.reopenRequired };
   scope.generation = read.data.generation;

@@ -33,6 +33,7 @@ import {
   userBackedActor,
 } from "./auth";
 import { sharedDraftsSupported } from "./draft-documents";
+import { setMailboxDraftEditMode } from "./draft-edit-mode";
 import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
 import { mailLive } from "./live";
 import { pauseDeletedMailboxExecution, pauseMailboxTransport } from "./mailbox-lifecycle";
@@ -448,6 +449,7 @@ export const updateMailbox = async (params: {
             }),
           );
         }
+        if (draftEditMode?.success) await setMailboxDraftEditMode(tx, [params.mailboxId], draftEditMode.data);
         const [row] = await tx<DbMailbox[]>`
           UPDATE mail.mailboxes
           SET
@@ -459,8 +461,8 @@ export const updateMailbox = async (params: {
               ${params.automaticReplyManagementPermission ?? null},
               automatic_reply_management_permission
             ),
-            draft_edit_mode = COALESCE(${draftEditMode?.data ?? null}, draft_edit_mode),
             compose_safety = COALESCE(${composeSafety?.data ?? null}::jsonb, compose_safety),
+            draft_edit_mode_explicit = draft_edit_mode_explicit OR ${draftEditMode?.success === true},
             health = CASE
               WHEN ${params.syncEnabled === false} THEN 'paused'
               WHEN ${params.syncEnabled === true} AND health = 'paused' THEN 'bootstrapping'

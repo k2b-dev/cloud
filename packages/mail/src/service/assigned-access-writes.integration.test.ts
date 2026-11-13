@@ -27,7 +27,7 @@ import * as leases from "./draft-leases";
 import * as uploads from "./draft-uploads";
 import * as drafts from "./drafts";
 import * as tags from "./local-tags";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, updateMailbox } from "./mailboxes";
 import * as presence from "./presence";
 import * as reminders from "./reminders";
 import * as scheduled from "./scheduled-sends";
@@ -217,6 +217,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
     writer = await createUser("W");
     reader = await createUser("A");
     mailboxId = unwrap(await createMailbox(contextFor(owner), { name: `Assigned writes ${suffix}` })).id;
+    unwrap(await updateMailbox({ context: contextFor(owner), mailboxId, draftEditMode: "lock" }));
     const [mailbox] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     if (!mailbox) throw new Error("Mailbox fixture missing");
     mailboxShortId = mailbox.short_id;

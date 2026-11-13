@@ -3,14 +3,17 @@ title: Mail draft writing leases
 navTitle: Mail draft writing leases
 section: Operations
 order: 1199
-description: Offline draft recovery and person-owned writing reservations in Mail's default editing mode.
+description: Offline draft recovery and person-owned writing reservations for Mail lock drafts.
 tags: [mail, upgrade, collaboration]
-updated: 2026-11-09
+updated: 2026-11-13
 ---
 
 # Mail draft writing leases
 
-Mail's default lock mode reserves a draft when someone starts editing. Reading
+Mail's lock mode reserves a draft when someone starts editing. Shared editing
+is the default from Cloud 0.77; see
+[Collaborative drafts](mail-collaborative-drafts.md#upgrade-and-switch-back-to-lock)
+for switching a mailbox back to lock permanently. Reading a lock draft
 does not acquire a lease. One person's tabs, popouts, and devices share the
 lease; revision checks still protect concurrent edits from that person.
 Permission checks and explicit takeover stay unchanged.
@@ -34,6 +37,6 @@ When someone else holds the lease, local input remains available for copying
 and explicit recovery. A conflicting save creates a recovery copy. Local
 journals retain their existing 24-hour expiry and account isolation.
 
-No migration, environment variable, or operator action is required. Deploy Mail
-with its matching browser assets. Older open clients keep their previous
+The writing-lease behavior itself needs no migration or environment variable.
+Deploy Mail with its matching browser assets. Older open clients keep their previous
 heartbeat behavior until reloaded. Shared Yjs draft mode is unchanged.

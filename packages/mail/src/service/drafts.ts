@@ -2142,7 +2142,26 @@ export const updateDraft = async (params: {
         return conflict("Draft can no longer be edited; the submitted content was saved as a recovery copy");
       }
       if (current.edit_mode === "shared") {
-        const content = await publicDraftContent(tx, params.mailboxId, parsed.data);
+        // Normalize legacy PUTs before compiling their document update, just as
+        // lock-mode writes do. Projection must never change published bytes.
+        const signature = await resolveDraftSignature({
+          db: tx,
+          context: params.context,
+          mailboxId: params.mailboxId,
+          stored: { body: current.body_markdown, signatureTemplateId: current.signature_template_id },
+          body: parsed.data.body,
+          requested: parsed.data.signatureTemplateId,
+        });
+        if (!signature.ok) {
+          if (Number(current.revision) === params.expectedRevision) return signature;
+          await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
+          return conflict("Draft update requires recovery; the submitted content was saved as a recovery copy");
+        }
+        const content = await publicDraftContent(tx, params.mailboxId, {
+          ...parsed.data,
+          body: signature.data.body,
+          signatureTemplateId: signature.data.signatureTemplateId,
+        });
         const locked = content.ok
           ? await lockDraftDocumentInTransaction({ db: tx, context: params.context, mailboxId: params.mailboxId, draftId })
           : content;
@@ -2557,6 +2576,11 @@ export const restoreDraftRecoveryCopy = async (params: {
           requested: content.data.signatureTemplateId,
         });
         if (!signature.ok) return signature;
+        // Read before shared admission can project new content, but retain this
+        // version only once replacement input has actually been accepted.
+        const [previous] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
+        if (!previous) return fail(err.notFound("Draft"));
+        let pendingPersistence = false;
         if (draft.edit_mode === "shared") {
           const publicContent = await publicDraftContent(tx, params.mailboxId, {
             ...content.data,
@@ -2577,23 +2601,21 @@ export const restoreDraftRecoveryCopy = async (params: {
               published = locked.data.publishedCursor !== null;
             });
           if (!saved.ok) return saved;
-          if (saved.data.status !== "accepted")
+          if (saved.data.status === "recoveryRequired")
             return conflict("Recovery is awaiting synchronization. The copy remains available; refresh before retrying.");
+          pendingPersistence = saved.data.status === "pendingPersistence";
         }
-        if (draft.edit_mode === "lock") {
-          // Restoring is an explicit replacement. Preserve the replaced server
-          // version in the same transaction, including its attachment set.
-          const [previous] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
-          if (!previous) return fail(err.notFound("Draft"));
-          await storeRecoveryCopy({
-            db: tx,
-            draftId,
-            baseRevision: Number(draft.revision),
-            content: internalDraftEditableContentSchema.strip().parse(mapDraft(previous)),
-            actor,
-            includeAttachments: true,
-          });
-        }
+        await storeRecoveryCopy({
+          db: tx,
+          draftId,
+          baseRevision: Number(draft.revision),
+          content: internalDraftEditableContentSchema.strip().parse(mapDraft(previous)),
+          actor,
+          includeAttachments: true,
+        });
+        // Published input can still replace the document after this request.
+        if (pendingPersistence)
+          return conflict("Recovery is awaiting synchronization. The copy remains available; refresh before retrying.");
         const recoveryAttachments = copy.has_attachment_snapshot
           ? await tx<
               {
