@@ -5,7 +5,7 @@ section: Data
 order: 430
 description: Let people and agents edit the same text through a retained log and application-owned snapshots.
 tags: [data, text, collaboration, sync, yjs]
-updated: 2026-11-12
+updated: 2026-11-13
 ---
 
 # Shared text documents
@@ -1039,6 +1039,35 @@ fences intact; expand its budget before retrying. Closed lifecycle entries
 remain durable; there is no deletion or retirement API. Budget for cumulative
 closed documents, monitor `state.bytes` and raise `maxBytes` before exhaustion.
 Preserve this stream alongside document snapshots and the log in backups.
+
+#### Operate the lifecycle stream
+
+The lifecycle stream is a JetStream stream named
+`cloud_text_lifecycle_<hash>`. `<hash>` is the hex SHA-256 of the JSON array
+`[namespace, id]`: the installation's `SYNC_NAMESPACE` and the document log
+`id` passed to `sharedText.define`. Its subjects are
+`cloud_text_lifecycle_<hash>.<document hash>`, with the hex SHA-256 of the
+document ID, and it keeps one last value per document: the freeze, thaw or
+close state that admission checks. The stream is file-backed, rejects new
+values when full, has no age limit and uses the document log's replica count.
+Its metadata names the log in `cloud.shared-text.lifecycle` and the namespace
+in `sync.namespace`.
+
+Its storage budget is the declared `lifecycle.maxBytes`, reserved on every
+replica. Mail declares 16 MiB for `cloud:mail:draft-documents`; see
+[Mail collaborative drafts](../operations/mail-collaborative-drafts.md#capacity-and-deployment).
+Closed entries are retained and nothing cleans them up yet; safe retirement
+is tracked in [#3254](https://github.com/k2b-dev/cloud/issues/3254).
+Back up this stream together with the document log and the SQL snapshots.
+
+The stream carries no Sync owner metadata, so
+`cld admin nats streams list` shows it only without `--app` or `--namespace`.
+With the NATS CLI, list and inspect it directly:
+
+```bash
+nats stream ls --names | grep cloud_text_lifecycle_
+nats stream info cloud_text_lifecycle_<hash>
+```
 
 A room configured with this lifecycle store and `snapshots.flushNow` exposes:
 
