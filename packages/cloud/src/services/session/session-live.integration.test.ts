@@ -232,9 +232,10 @@ suiteFor(
         const f = await create(true);
         const old = await connect(f.token);
         await dispatch();
-        // real clock: PostgreSQL owns idle deadlines. Leave two seconds of the
-        // configured two minutes, then let the inherited deadline pass without input.
-        await sql`UPDATE auth.session_families SET last_input_at = clock_timestamp() - interval '118 seconds' WHERE sid = ${f.claims.sid}::uuid`;
+        // real clock: PostgreSQL owns idle deadlines. Leave eight seconds of the
+        // configured two minutes, so rotation and the replacement connect finish
+        // first even on a loaded runner, then let the inherited deadline pass without input.
+        await sql`UPDATE auth.session_families SET last_input_at = clock_timestamp() - interval '112 seconds' WHERE sid = ${f.claims.sid}::uuid`;
         const rotated = await session.endOtherSignIns(f.userId, { keep: { sid: f.claims.sid, authEpoch: f.claims.auth_epoch }, reason });
         expect(rotated.kept).not.toBeNull();
         await dispatch();
