@@ -188,7 +188,9 @@ Before calling a change complete, decide which of these apply:
   repeat: input sizes, pagination, batches, queues and buffers, concurrency,
   retries, and tool or agent loops. Define cancellation and overload behavior
   explicitly. Derive limits from a public contract or operational budget; do
-  not invent arbitrary caps.
+  not invent arbitrary caps. Keep the database out of per-message, per-keystroke
+  and per-delivery paths (DATA-13), and pin each hot path's statement count
+  with `scripts/fixtures/sql-meter.ts`.
 - **Shared UI:** use public `@k2b/ui` components for controls, feedback,
   surfaces, and layout whenever they can express the requirement. Application
   components compose domain behavior; they do not recreate generic UI
