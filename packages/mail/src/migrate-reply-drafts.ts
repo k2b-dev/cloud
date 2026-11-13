@@ -9,8 +9,10 @@ const log = logger("mail:migrate");
 export type ReplyDraftMigrationResult = { deletedDrafts: number; affectedConversations: number; completed: boolean };
 const BATCH_SIZE = 100;
 const occupied = () => sql`origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')`;
-const committedSend = () => sql`(d.state = 'scheduled' OR (d.state = 'sending' AND EXISTS (
-  SELECT 1 FROM mail.outbox_submissions o WHERE o.draft_id = d.id AND o.state IN ('undo_window', 'scheduled'))))`;
+// Lifecycle and outbox can disagree after an interrupted send. Either one commits the draft.
+const committedSend = () => sql`(d.state IN ('scheduled', 'sending') OR EXISTS (
+  SELECT 1 FROM mail.outbox_submissions o WHERE o.draft_id = d.id
+    AND o.state NOT IN ('cancelled', 'failed', 'reconciled_unsent')))`;
 
 const editTimes = () => sql`CROSS JOIN LATERAL (SELECT coalesce(greatest(d.content_edited_at,
   (SELECT max(r.created_at) FROM mail.draft_document_revisions r WHERE r.draft_id = d.id AND r.revision > 1)),
@@ -61,6 +63,11 @@ const initialize = () =>
   sql.begin(async (tx) => {
     await tx`SET LOCAL lock_timeout = '10s'`;
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.mail.migrations', 0))`;
+    const [countConstraint] = await tx<{ validated: boolean }[]>`SELECT convalidated AS validated FROM pg_constraint
+      WHERE conrelid = 'mail.drafts'::regclass AND conname = 'drafts_consolidated_count_check'`;
+    // VALIDATE uses SHARE UPDATE EXCLUSIVE after the metadata-only transaction committed; writes continue.
+    if (countConstraint && !countConstraint.validated)
+      await tx`ALTER TABLE mail.drafts VALIDATE CONSTRAINT drafts_consolidated_count_check`.simple();
     const [marker] = await tx`SELECT version FROM mail.schema_migrations WHERE version = ${REPLY_DRAFT_MIGRATION_VERSION}`;
     if (marker) return;
     const [unsafe] = await tx<{ conversation_id: string; committed_sends: number }[]>`SELECT d.conversation_id,
@@ -78,6 +85,15 @@ const initialize = () =>
         unsafe.committed_sends > 1
           ? `F6 preflight: conversation ${unsafe.conversation_id} has ${unsafe.committed_sends} committed sends. Let them send or cancel them with the previous Mail image, then stop it and retry; no F6 marker or deletions were committed`
           : "F6 preflight: reconcile in-flight or uncertain deliveries in duplicate conversations using the previous Mail image, then stop it and retry; no F6 marker or deletions were committed",
+      );
+    // All arithmetic performed by retirement/count accumulation must fit before the downgrade fence.
+    const [overflow] = await tx<{ conversation_id: string }[]>`SELECT conversation_id FROM mail.drafts
+      WHERE ${occupied()} GROUP BY conversation_id HAVING count(*) > 1 AND (
+        sum(consolidated_count::bigint) + count(*) - 1 > 2147483647
+        OR bool_or(revision = 9223372036854775807 OR doc_generation = 9223372036854775807)) LIMIT 1`;
+    if (overflow)
+      throw new Error(
+        `F6 preflight: consolidation counters exceed their storage range in conversation ${overflow.conversation_id}; no F6 marker or deletions were committed`,
       );
     await tx`INSERT INTO mail.schema_migrations (version, name, details)
       VALUES (${REPLY_DRAFT_MIGRATION_VERSION}, ${REPLY_DRAFT_MIGRATION_NAME},
@@ -125,11 +141,6 @@ const batch = () =>
     const [marker] = await tx<{ details: ReplyDraftMigrationResult }[]>`SELECT details FROM mail.schema_migrations
       WHERE version = ${REPLY_DRAFT_MIGRATION_VERSION} FOR UPDATE`;
     if (!marker) throw new Error("Reply draft migration marker is missing");
-    const [countConstraint] = await tx<{ validated: boolean }[]>`SELECT convalidated AS validated FROM pg_constraint
-      WHERE conrelid = 'mail.drafts'::regclass AND conname = 'drafts_consolidated_count_check'`;
-    // VALIDATE uses SHARE UPDATE EXCLUSIVE after the metadata-only transaction committed; writes continue.
-    if (countConstraint && !countConstraint.validated)
-      await tx`ALTER TABLE mail.drafts VALIDATE CONSTRAINT drafts_consolidated_count_check`.simple();
     if (marker.details.completed) return marker.details;
     const conversations = await tx<{ conversation_id: string; mailbox_id: string }[]>`SELECT conversation_id,
       min(mailbox_id::text)::uuid AS mailbox_id FROM mail.drafts WHERE ${occupied()}
@@ -156,8 +167,13 @@ const batch = () =>
       for (const loser of losers) {
         const [active] = await tx`SELECT id FROM mail.outbox_submissions WHERE draft_id = ${loser.id}::uuid
           AND state NOT IN ('cancelled', 'failed', 'reconciled_unsent') LIMIT 1 FOR UPDATE`;
+        // Preflight permits at most one committed draft; the same key ranks it first, so a loser
+        // cannot have an active submission from that input. Old processes must be stopped and new
+        // workers start only after migration. Keep this guard for unexpected concurrent writes.
         if (active)
-          throw new Error("F6 cannot erase a reply draft with an active submission; let it send or cancel it with the previous Mail image");
+          throw new Error(
+            `F6 cannot erase reply draft ${loser.id} with an active submission; let it send or cancel it with the previous Mail image`,
+          );
         // Terminal outbox submissions and command history are immutable migration evidence.
         await tx`INSERT INTO mail.reply_draft_retirements (draft_id) VALUES (${loser.id}::uuid) ON CONFLICT DO NOTHING`;
         await retireDraftInTransaction(tx, loser.id);
