@@ -140,24 +140,34 @@ suiteFor(
     };
     const topic = liveTopic("core");
     const engine = createLiveEngine({ appId: "core", topic: () => topic, channels: aiLiveChannels });
-    const cards = Array.from({ length: 3 }, () => [] as Array<{ t: string; data?: unknown }>);
-    const until = async (check: () => boolean) => {
-      for (let attempt = 0; attempt < 400 && !check(); attempt++) await Bun.sleep(5);
-      expect(check()).toBe(true);
-    };
+    const cards = Array.from({ length: 3 }, () => ({
+      frames: [] as Array<{ t: string; data?: unknown }>,
+      ready: Promise.withResolvers<void>(),
+      events: Array.from({ length: 3 }, () => Promise.withResolvers<void>()),
+    }));
     const fixed = new Date("2026-11-13T00:00:00Z").getTime();
     setSystemTime(fixed);
     try {
       const setup = await meter.during(async () => {
-        for (const frames of cards) {
+        for (const card of cards) {
           const socket = engine.open(
-            { send: (frame) => frames.push(JSON.parse(frame)), close: () => {}, getBufferedAmount: () => 0 },
+            {
+              send: (frame) => {
+                const received: (typeof card.frames)[number] = JSON.parse(frame);
+                card.frames.push(received);
+                if (received.t === "ready") card.ready.resolve();
+                if (received.t === "event") card.events[card.frames.filter((item) => item.t === "event").length - 1]?.resolve();
+              },
+              close: () => {},
+              getBufferedAmount: () => 0,
+            },
             viewer,
             async () => viewer,
           );
           socket.message(JSON.stringify({ t: "sub", id: "card", channel: "user", scope: {}, after: await topic.head() }));
         }
-        await until(() => cards.every((frames) => frames.some((frame) => frame.t === "ready")));
+        await Promise.all(cards.map((card) => card.ready.promise));
+        expect(cards.every((card) => card.frames.some((frame) => frame.t === "ready"))).toBe(true);
       });
       expect(setup).toEqual([]);
       for (let index = 0; index < 3; index++) {
@@ -177,10 +187,11 @@ suiteFor(
               },
             },
           });
-          await until(() => cards.every((frames) => frames.filter((frame) => frame.t === "event").length === index + 1));
+          await Promise.all(cards.map((card) => card.events[index]!.promise));
+          expect(cards.every((card) => card.frames.filter((frame) => frame.t === "event").length === index + 1)).toBe(true);
         });
         expect(statements).toEqual([]);
-        for (const frames of cards)
+        for (const { frames } of cards)
           expect(frames.at(-1)?.data).toEqual({
             type: "ai.invalidated",
             changeId: "33333333-3333-4333-8333-333333333333",

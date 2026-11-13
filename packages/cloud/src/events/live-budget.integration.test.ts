@@ -12,6 +12,8 @@ testFor("database")("SQL budget of live authorization across the two-second cach
   const meter = await meterSql();
   const topic = createMemoryLiveTopic();
   const frames: Array<{ t: string }> = [];
+  const ready = Promise.withResolvers<void>();
+  const events = Array.from({ length: 3 }, () => Promise.withResolvers<void>());
   const fixed = new Date("2026-11-13T00:00:00Z").getTime();
   const viewer: LiveViewer = {
     id: "budget",
@@ -54,27 +56,34 @@ testFor("database")("SQL budget of live authorization across the two-second cach
       },
     },
   });
-  const until = async (check: () => boolean) => {
-    for (let attempt = 0; attempt < 200 && !check(); attempt++) await Bun.sleep(1);
-    expect(check()).toBe(true);
-  };
   setSystemTime(fixed);
   try {
     const setup = await meter.during(async () => {
       const connection = engine.open(
-        { send: (frame) => frames.push(JSON.parse(frame)), close: () => {}, getBufferedAmount: () => 0 },
+        {
+          send: (frame) => {
+            const received: (typeof frames)[number] = JSON.parse(frame);
+            frames.push(received);
+            if (received.t === "ready") ready.resolve();
+            if (received.t === "event") events[frames.filter((item) => item.t === "event").length - 1]?.resolve();
+          },
+          close: () => {},
+          getBufferedAmount: () => 0,
+        },
         viewer,
         async () => viewer,
       );
       connection.message(JSON.stringify({ t: "sub", id: "one", channel: "item", scope: {}, after: await topic.head() }));
-      await until(() => frames.some((frame) => frame.t === "ready"));
+      await ready.promise;
+      expect(frames.some((frame) => frame.t === "ready")).toBe(true);
     });
     expect(setup).toHaveLength(1);
     for (const [index, elapsed] of [1, LIVE_LIMITS.cacheMs + 1, 2 * LIVE_LIMITS.cacheMs + 2].entries()) {
       setSystemTime(fixed + elapsed);
       const statements = await meter.during(async () => {
         topic.publish({ v: 1, k: "one", d: { changed: index } });
-        await until(() => frames.filter((frame) => frame.t === "event").length === index + 1);
+        await events[index]!.promise;
+        expect(frames.filter((frame) => frame.t === "event")).toHaveLength(index + 1);
       });
       console.log("SQL BUDGET shared live delivery", elapsed, statements.length);
       expect(statements).toHaveLength(index === 0 ? 0 : 1);
