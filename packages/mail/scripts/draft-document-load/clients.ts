@@ -108,6 +108,8 @@ try {
     pendingBase: string | null;
     sequence: number;
     next: number;
+    retryTimer?: ReturnType<typeof setTimeout>;
+    busyRetries: number;
   };
   const drafts = new Map<string, Draft>();
   for (let i = 0; i < fixture.drafts.length; i++) {
@@ -135,12 +137,14 @@ try {
         pendingBase: null,
         sequence: 0,
         next: 0,
+        busyRetries: 0,
       });
     }
   }
   cleanup.push(() => {
     for (const d of drafts.values())
       for (const c of d.clients) {
+        clearTimeout(c.retryTimer);
         c.socket?.terminate();
         c.awareness.destroy();
         c.doc.destroy();
@@ -172,6 +176,30 @@ try {
       try {
         const packet = mailDraftDocumentMessageSchema.parse(JSON.parse(String(event.data)));
         if (packet.type === "error") {
+          if (packet.payload.code === "BUSY") {
+            error("BUSY");
+            trace("client_busy", { peerId: c.peerId });
+            if (!c.retryTimer && c.pending) {
+              // Match the public provider: retain input and retry complete state,
+              // never resend a dependent delta after admission has gated it.
+              const delay = Math.min(1000 * 2 ** Math.min(c.busyRetries++, 5), 30_000) * (0.5 + Math.random());
+              c.retryTimer = setTimeout(() => {
+                c.retryTimer = undefined;
+                if (c.socket !== socket || !c.ready || !c.pending) return;
+                send(c, {
+                  type: "syncPublish",
+                  payload: {
+                    docId: d.short_id,
+                    generation: c.generation,
+                    baseCursor: c.pendingBase,
+                    payload: toBase64(Y.encodeStateAsUpdate(c.doc)),
+                    retry: true,
+                  },
+                });
+              }, delay);
+            }
+            return;
+          }
           const planned =
             (packet.payload.code === "STREAM_FAILED" && expectedStops.has(socket)) || (revoking && packet.payload.code === "ACCESS_DENIED");
           trace("client_error", { peerId: c.peerId, code: packet.payload.code, planned });
@@ -242,6 +270,9 @@ try {
         if (packet.payload.snapshot || packet.payload.updates.some((u) => u.originPeerId === c.peerId)) {
           if (c.pending && visible.includes(c.pending)) {
             trace("durable_ack", { updateId: c.pendingId, peerId: c.peerId });
+            clearTimeout(c.retryTimer);
+            c.retryTimer = undefined;
+            c.busyRetries = 0;
             c.pending = null;
             c.pendingId = null;
           }
@@ -399,6 +430,7 @@ try {
       for (const d of drafts.values())
         for (const c of d.clients)
           if (c.node === 1) {
+            clearTimeout(c.retryTimer);
             c.socket?.terminate();
             c.node = 0;
             await connect(d, c);

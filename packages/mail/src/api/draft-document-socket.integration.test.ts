@@ -12,6 +12,7 @@ import { websocket } from "hono/bun";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { z } from "zod";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { useRegisteredTestApp } from "../../../cloud/src/services/identity/application.test-fixture";
 import { prepareDraftSendBinding } from "../../test/fixtures/draft-send";
@@ -265,6 +266,59 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     client.send({ type: "syncPublish", payload: { docId: newShortId(), generation: "1", baseCursor: null, payload: "AAA=" } });
     await client.wait((packet) => packet.type === "error");
     expect((await read()).durable.content.body).toBe("Original");
+  });
+
+  test("SQL budget: real room edits, delivery to another socket and cursor updates each cost zero", async () => {
+    const meter = await meterSql();
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    try {
+      // Fixtures and join are deliberately outside the hot-path windows.
+      const created = await draft();
+      const base = await read();
+      Y.applyUpdate(doc, base.fresh.state);
+      const publisher = await connect();
+      await publisher.ready();
+      const receiver = await connect();
+      await receiver.ready();
+      const update = await createDraftRevisionUpdate(
+        base.fresh.state,
+        { ...base.fresh.content, body: "Metered edit" },
+        { deadline: Date.now() + 10000 },
+      );
+      const delivered = (packet: MailDraftDocumentMessage) =>
+        packet.type === "syncPush" && !packet.payload.snapshot && packet.payload.updates.some((u) => u.payload === toBase64(update));
+      const statements = await meter.during(async () => {
+        publish(publisher, base, update);
+        await Promise.all([publisher.wait(delivered), receiver.wait(delivered)]);
+      });
+      expect({ perEdit: statements.length, perDelivery: statements.length, statements }).toEqual({
+        perEdit: 0,
+        perDelivery: 0,
+        statements: [],
+      });
+      Y.applyUpdate(doc, update);
+      const position = Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(doc.getText("codemirror"), 1));
+      awareness.setLocalState({ cursor: { anchor: position, head: position } });
+      const cursorStatements = await meter.during(async () => {
+        publisher.send({
+          type: "awarenessPublish",
+          payload: {
+            docId: created.short_id,
+            generation: base.generation,
+            payload: toBase64(encodeAwarenessUpdate(awareness, [doc.clientID])),
+          },
+        });
+        await receiver.wait((packet) => packet.type === "awarenessPush" && packet.payload.updates.some((u) => u.payload !== "AA=="));
+      });
+      expect({ perAwareness: cursorStatements.length, statements: cursorStatements }).toEqual({ perAwareness: 0, statements: [] });
+    } finally {
+      for (const socket of sockets) socket.close();
+      await stopMailDraftConnections();
+      awareness.destroy();
+      doc.destroy();
+      await meter.close();
+    }
   });
 
   test("JetStream echo precedes lazy SQL and a snapshot projects body, headers, adoption and provider export", async () => {
