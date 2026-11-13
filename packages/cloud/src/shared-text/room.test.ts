@@ -1,6 +1,7 @@
 import { afterEach, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import type { Sync, Topic, TopicEvent } from "@k2b/sync";
 import { ConflictError, CursorMismatchError, RetentionGapError, StoreFullError } from "@k2b/sync";
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { z } from "zod";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
@@ -148,12 +149,15 @@ const fixture = () => {
     jsonTextOnly: "text",
     messageTooLarge: "large",
     tooManyMessages: "many",
+    busy: "Document is busy; retrying",
     handlingFailed: "handling",
     messageNotAllowed: () => "phase",
   };
-  const sent: Array<{ type: string; payload: { code?: string; updates?: unknown[] } }> = [];
+  const sent: Array<{ type: string; payload: { code?: string; message?: string; updates?: unknown[] } }> = [];
   const closed: number[] = [];
   const ready = Promise.withResolvers<void>();
+  const callbackContexts: unknown[] = [];
+  const validatedContexts: unknown[] = [];
   const room = createSharedTextRoom({
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     protocol: {
@@ -170,7 +174,10 @@ const fixture = () => {
       maxSyncPayloadLength: 8_000_000,
       streamCursorPattern: /^s6t\./,
       decode: (value) => value,
-      encode: (type, payload) => ({ type, payload }),
+      encode: (type, payload, ctx) => {
+        callbackContexts.push(ctx);
+        return { type, payload };
+      },
     },
     log: sharedText.define({ id: "room", retention: { maxAgeMs: 60_000, maxBytes: 1_000_000 } }),
     awarenessTopic: () => topic as unknown as Topic<SharedTextEvent & { kind: "awareness" }>,
@@ -179,6 +186,10 @@ const fixture = () => {
         snapshots++;
         if (queueFailure) throw new Error("queue failed");
       },
+    },
+    validateState: (_state, ctx) => {
+      validatedContexts.push(ctx);
+      return true;
     },
     adapter: {
       authenticate: async () => {
@@ -232,6 +243,8 @@ const fixture = () => {
   const request = (type: string, payload: object) => connection.receive(JSON.stringify({ type, payload: { docId: "public", ...payload } }));
   return {
     room,
+    callbackContexts,
+    validatedContexts,
     ready: ready.promise,
     ctx,
     connection,
@@ -656,15 +669,18 @@ test("BUSY gates queued dependent edits without admission, then accepts the comp
       });
     f.busy(true);
     await request(first);
+    expect(f.sent.at(-1)?.payload.message).toBe("Document is busy; retrying");
     const attempts = f.admissionCalls();
     f.busy(false);
     for (let index = 0; index < 10; index++) await request(second);
     expect(f.admissionCalls()).toBe(attempts);
+    expect(f.sent.at(-1)?.payload.message).toBe("Document is busy; retrying");
     expect(f.closed).toEqual([]);
     expect(f.entries).toHaveLength(0);
     // A malformed retry with missing predecessors must also stay recoverable.
     await request(second, true);
     expect(f.sent.at(-1)?.payload.code).toBe("BUSY");
+    expect(f.sent.at(-1)?.payload.message).toBe("Document is busy; retrying");
     expect(f.closed).toEqual([]);
     await request(toBase64(Y.encodeStateAsUpdate(source)), true);
     expect(f.entries).toHaveLength(1);
@@ -862,6 +878,76 @@ test("warm admissions encode once and apply only the accepted delta to the live 
       merge.mockRestore();
       encode.mockRestore();
     }
+  } finally {
+    source.destroy();
+    await f.connection.close();
+  }
+});
+
+test("a failed final snapshot enqueue still removes awareness for remote peers", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 7;
+  const awareness = new Awareness(source);
+  const observerDoc = new Y.Doc();
+  observerDoc.clientID = 8;
+  const observer = new Awareness(observerDoc);
+  observer.setLocalState(null);
+  try {
+    await f.join();
+    await f.ready;
+    source.getText("codemirror").insert(0, "accepted");
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(source)), baseCursor: "s6t.room.0", restoreRevision: "0" },
+    });
+    await f.room.handle(f.ctx, {
+      type: "cursor",
+      payload: { docId: "public", payload: toBase64(encodeAwarenessUpdate(awareness, [source.clientID])) },
+    });
+    for (const entry of f.entries.filter((entry) => entry.data.kind === "awareness"))
+      applyAwarenessUpdate(observer, Buffer.from(entry.data.payload, "base64"), "remote");
+    expect(observer.getStates().size).toBe(1);
+    const beforeClose = f.entries.length;
+    f.failQueue(true);
+    await expect(f.connection.close()).rejects.toThrow("queue failed");
+    const removals = f.entries.slice(beforeClose).filter((entry) => entry.data.kind === "awareness");
+    expect(removals).toHaveLength(1);
+    applyAwarenessUpdate(observer, Buffer.from(removals[0]!.data.payload, "base64"), "remote");
+    expect(observer.getStates().size).toBe(0);
+    expect(f.ctx.docId).toBeNull();
+    f.failQueue(false);
+    await f.connection.close();
+    expect(f.snapshots()).toBe(2);
+    expect(f.entries).toHaveLength(beforeClose + 1);
+  } finally {
+    f.failQueue(false);
+    await f.connection.close();
+    awareness.destroy();
+    observer.destroy();
+    source.destroy();
+    observerDoc.destroy();
+  }
+});
+
+test("validation, wire encoding and terminal close encoding receive the connection context", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 42;
+  try {
+    await f.join();
+    await f.ready;
+    source.getText("codemirror").insert(0, "scoped");
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(source)), baseCursor: "s6t.room.0", restoreRevision: "0" },
+    });
+    expect(f.validatedContexts).toEqual([f.ctx]);
+    const beforeClose = f.callbackContexts.length;
+    f.revoke();
+    await waitFor(() => f.closed.length > 0);
+    expect(f.callbackContexts.length).toBeGreaterThanOrEqual(beforeClose + 2);
+    expect(f.callbackContexts.every((ctx) => ctx === f.ctx)).toBe(true);
   } finally {
     source.destroy();
     await f.connection.close();

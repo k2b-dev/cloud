@@ -19,7 +19,7 @@ export const SHARED_TEXT_ROOM_ERROR_CODE = {
   storageExhausted: "STORAGE_EXHAUSTED",
 } as const;
 
-export type SharedTextRoomProtocol = {
+export type SharedTextRoomProtocol<Context = unknown> = {
   wsType: {
     replayRequest: string;
     replayReady: string;
@@ -34,7 +34,7 @@ export type SharedTextRoomProtocol = {
   documentId: z.ZodString;
   /** Normalize application wire keys to docId/restoreRevision at the boundary. */
   decode(packet: unknown): unknown;
-  encode(type: string, payload?: unknown): unknown;
+  encode(type: string, payload: unknown, ctx: Context): unknown;
 };
 
 /** Canonical nonnegative Postgres bigint, used by the existing snapshot contract. */
@@ -45,7 +45,7 @@ export const SharedTextRestoreRevisionSchema = z
   .refine((value) => /^(0|[1-9]\d*)$/.test(value) && value.length <= 19 && BigInt(value) <= 9_223_372_036_854_775_807n);
 
 /** Same bounded JSON messages for server rooms and custom application transports. */
-export const createSharedTextRoomSchemas = (protocol: SharedTextRoomProtocol) => {
+export const createSharedTextRoomSchemas = (protocol: Pick<SharedTextRoomProtocol, "wsType" | "maxSyncPayloadLength" | "documentId">) => {
   const ReplayRequestMessageSchema = z.object({
     type: z.literal(protocol.wsType.replayRequest),
     payload: z.object({

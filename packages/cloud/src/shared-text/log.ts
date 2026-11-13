@@ -5,10 +5,17 @@ import { createSharedTextAdmission, SHARED_TEXT_ADMISSION_LEASE_MS } from "./adm
 import { compareStreamCursor } from "./cursor";
 import { bindDocuments } from "./documents";
 import { applySharedTextEvent, MalformedSharedTextEventError } from "./events";
+import { checkLifecycleAdmission, createLifecycleStore, type SharedTextLifecycleStore } from "./lifecycle-store";
 import { snapshots } from "./snapshots";
 import type { SharedTextContributor, SharedTextStore, SharedTextSyncEvent } from "./types";
 
-const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "whenFull" | "deadLetterRetention" | "maxPayloadBytes">>) => {
+const define = (
+  config: Readonly<Pick<TopicConfig, "id" | "retention" | "whenFull" | "deadLetterRetention" | "maxPayloadBytes">> & {
+    /** Opt into prune-safe freeze/close; reserves this many broker bytes, with one durable value per document. */
+    lifecycle?: { maxBytes: number };
+  },
+) => {
+  const { lifecycle: lifecycleConfig, ...topicConfig } = config;
   const writer = lazySync((sync) =>
     sync.mutex({ id: `${topicConfig.id}:snapshot-writer`, ttlMs: 120_000, retry: { maxAttempts: 601, delayMs: 200 } }),
   );
@@ -17,6 +24,12 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "wh
   );
   const admit = createSharedTextAdmission(admission);
   const topic = () => getProcessSync().topic<SharedTextSyncEvent>(topicConfig);
+  const lifecycleHandle = lifecycleConfig
+    ? lazySync(() => createLifecycleStore({ id: topicConfig.id, maxBytes: lifecycleConfig.maxBytes, ready: () => topic().ready() }))
+    : undefined;
+  const lifecycle: SharedTextLifecycleStore | undefined = lifecycleHandle
+    ? { get: (id) => lifecycleHandle().get(id), put: (id, previous, value) => lifecycleHandle().put(id, previous, value) }
+    : undefined;
   const replay = async (config: {
     docId: string;
     after: string | null;
@@ -86,6 +99,7 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "wh
   return {
     id: topicConfig.id,
     topicConfig,
+    lifecycle,
     topic,
     writer,
     admit,
@@ -102,6 +116,7 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "wh
         {
           topic,
           replay,
+          checkLifecycle: lifecycle ? (docId) => checkLifecycleAdmission(lifecycle, docId) : undefined,
           admit,
           maxPayloadBytes: topicConfig.maxPayloadBytes,
           async *events(docId, after, until, signal) {

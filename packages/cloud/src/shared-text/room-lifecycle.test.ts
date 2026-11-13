@@ -3,6 +3,7 @@ import type { Sync } from "@k2b/sync";
 import * as Y from "yjs";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { createDoc } from "./documents";
+import { checkLifecycleAdmission, type SharedTextLifecycleEntry, type SharedTextLifecycleStore } from "./lifecycle-store";
 import { sharedText } from "./log";
 import { createRoomLifecycle } from "./room-lifecycle";
 import type { SharedTextStoredState, SharedTextSyncEvent } from "./types";
@@ -16,16 +17,23 @@ const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void) => 
   setSystemTime(NOW);
   let marker: SharedTextSyncEvent | undefined;
   let cursor: string | null = null;
+  let sequence = 0;
+  let failPublication = false;
+  let removed = false;
   const topic = {
     latestCursor: async () => cursor,
-    cursorSequence: () => 1,
+    cursorSequence: () => sequence,
     cursorAt: (sequence: number) => `s6t.freeze.${sequence}`,
     replay: async function* () {
       if (marker && cursor) yield { cursor, data: marker };
     },
     publish: async (input: { data: SharedTextSyncEvent }) => {
+      if (failPublication) {
+        failPublication = false;
+        throw new Error("broker unavailable");
+      }
       marker = input.data;
-      cursor = "s6t.freeze.1";
+      cursor = `s6t.freeze.${++sequence}`;
       return { cursor };
     },
   };
@@ -34,11 +42,30 @@ const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void) => 
     mutex: () => ({ withLock: async (_input: unknown, run: () => Promise<unknown>) => run() }),
   } as unknown as Sync);
   const stored: SharedTextStoredState = { state, text: "visible", restoreRevision: "0", cursor: "s6t.freeze.0" };
+  let entry: SharedTextLifecycleEntry | null = null;
+  const lifecycle: SharedTextLifecycleStore = {
+    get: async () => entry,
+    put: async (_docId, previous, value) => {
+      if (previous !== entry) throw new Error("Stale lifecycle CAS");
+      entry = { revision: (entry?.revision ?? 0) + 1, value };
+      return entry;
+    },
+  };
   return {
     marker: () => marker,
+    lifecycle,
+    removeSnapshot: () => {
+      removed = true;
+    },
+    failNextPublish: () => {
+      failPublication = true;
+    },
     room: createRoomLifecycle({
-      log: sharedText.define({ id: "freeze", whenFull: "reject", retention: { maxBytes: 1_000_000 } }),
-      load: async () => stored,
+      log: { ...sharedText.define({ id: "freeze", whenFull: "reject", retention: { maxBytes: 1_000_000 } }), lifecycle },
+      load: async () => {
+        if (removed) throw new Error("retired snapshot cannot be loaded");
+        return stored;
+      },
       flushNow: async () => {
         flush?.();
         return { ...stored, cursor, state: flushed };
@@ -111,16 +138,81 @@ test("freeze refuses a result after its safe window even while the raw lease is 
   }
 });
 
-test("cursor-fenced thaw and close refuse the clock-skew safety margin", async () => {
+test("a committed freeze token can close after expiry, idempotently, without allowing thaw", async () => {
   const { source, state } = deleted();
   try {
     const f = fixture(state, state);
     const frozen = await f.room.freeze("doc");
     expect(frozen).not.toBeNull();
     setSystemTime(new Date(frozen!.expiresAt));
-    await expect(f.room.thaw("doc", { freezeCursor: frozen!.cursor })).rejects.toThrow("no longer owned");
+    const closed = await f.room.closeDocument("doc", { freezeCursor: frozen!.cursor });
+    expect(await f.room.closeDocument("doc", { freezeCursor: frozen!.cursor })).toBe(closed);
+    await expect(f.room.thaw("doc", { freezeCursor: frozen!.cursor })).rejects.toThrow("DOCUMENT_CLOSED");
+    expect(f.marker()?.room?.state).toBe("closed");
+  } finally {
+    source.destroy();
+  }
+});
+
+test("rollback can thaw a freeze; close requires the current freeze token", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    await expect(f.room.closeDocument("doc", { freezeCursor: "s6t.freeze.1" })).rejects.toThrow("no longer owned");
+    const first = await f.room.freeze("doc");
+    await f.room.thaw("doc", { freezeCursor: first!.cursor });
+    expect(f.marker()?.room?.state).toBe("open");
+    await expect(f.room.closeDocument("doc", { freezeCursor: first!.cursor })).rejects.toThrow("no longer owned");
+    const second = await f.room.freeze("doc");
+    await expect(f.room.closeDocument("doc", { freezeCursor: first!.cursor })).rejects.toThrow("no longer owned");
+    await f.room.closeDocument("doc", { freezeCursor: second!.cursor });
+    expect(f.marker()?.room?.state).toBe("closed");
+  } finally {
+    source.destroy();
+  }
+});
+
+test("a crash after durable close but before notification is retryable with the same token", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const frozen = await f.room.freeze("doc");
+    f.removeSnapshot();
+    f.failNextPublish();
+    await expect(f.room.closeDocument("doc", { freezeCursor: frozen!.cursor })).rejects.toThrow("broker unavailable");
+    await expect(checkLifecycleAdmission(f.lifecycle, "doc")).rejects.toThrow("DOCUMENT_CLOSED");
+    await f.room.closeDocument("doc", { freezeCursor: frozen!.cursor });
+    expect(f.marker()?.room?.state).toBe("closed");
+  } finally {
+    source.destroy();
+  }
+});
+
+test("resuming after a crashed freeze expires invalidates its token before accepting new input", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const frozen = await f.room.freeze("doc");
+    await expect(checkLifecycleAdmission(f.lifecycle, "doc")).rejects.toThrow("DOCUMENT_FROZEN");
+    setSystemTime(new Date(NOW.getTime() + 60_001));
+    await checkLifecycleAdmission(f.lifecycle, "doc");
+    expect((await f.lifecycle.get("doc"))?.value).toEqual({ state: "open" });
     await expect(f.room.closeDocument("doc", { freezeCursor: frozen!.cursor })).rejects.toThrow("no longer owned");
-    expect(f.marker()?.room?.state).toBe("frozen");
+  } finally {
+    source.destroy();
+  }
+});
+
+test("a crash before the freeze marker leaves only a bounded admission lease", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    f.failNextPublish();
+    await expect(f.room.freeze("doc")).rejects.toThrow("broker unavailable");
+    await expect(checkLifecycleAdmission(f.lifecycle, "doc")).rejects.toThrow("DOCUMENT_FROZEN");
+    setSystemTime(new Date(NOW.getTime() + 60_001));
+    await checkLifecycleAdmission(f.lifecycle, "doc");
+    expect((await f.lifecycle.get("doc"))?.value.state).toBe("open");
   } finally {
     source.destroy();
   }

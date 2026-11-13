@@ -23,7 +23,7 @@ export {
   type SharedTextRoomSnapshot,
   type SharedTextRoomSocket,
 } from "./room";
-export type { SharedTextRoomFreeze, SharedTextRoomLifecycleOptions } from "./room-lifecycle";
+export type { SharedTextRoomCloseOptions, SharedTextRoomFreeze, SharedTextRoomLifecycleOptions } from "./room-lifecycle";
 export {
   createSharedTextRoomSchemas,
   SHARED_TEXT_ROOM_ERROR_CODE,

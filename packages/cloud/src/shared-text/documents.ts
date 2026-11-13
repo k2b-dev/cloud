@@ -31,6 +31,7 @@ import type {
 type PlannedEdit = string | readonly SharedTextChange[] | { update: Uint8Array };
 
 type DocumentLog = {
+  checkLifecycle?(docId: string): Promise<void>;
   /** Ordered custom transports may supply their own admission owner. */
   admit?: SharedTextAdmission;
   /** Omitted logs use Sync’s default message payload limit (128 KiB) for diffs and skip the event size check. */
@@ -77,7 +78,14 @@ export const createDoc = (stored: SharedTextStoredState): Y.Doc => {
 };
 
 export const bindDocuments = <Saved, Context>(
-  { topic, replay, events, maxPayloadBytes, admit = async (_id, signal, run) => run(signal ?? new AbortController().signal) }: DocumentLog,
+  {
+    topic,
+    replay,
+    events,
+    maxPayloadBytes,
+    checkLifecycle,
+    admit = async (_id, signal, run) => run(signal ?? new AbortController().signal),
+  }: DocumentLog,
   store: SharedTextStore<Saved, Context>,
 ) => {
   const historyCache = events ? createSharedTextEventCache(events, maxPayloadBytes ?? 128 * 1024) : undefined;
@@ -90,6 +98,7 @@ export const bindDocuments = <Saved, Context>(
     signal?: AbortSignal,
     observed?: { cursor: string; data: SharedTextSyncEvent },
   ) => {
+    await checkLifecycle?.(docId);
     if (!target || !events) return;
     if (observed?.cursor === target) cachedTail = { cursor: target, event: observed.data };
     if (cachedTail?.cursor !== target) {

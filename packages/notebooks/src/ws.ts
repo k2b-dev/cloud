@@ -8,7 +8,6 @@ import {
   type SharedTextRoomAccess,
   type SharedTextRoomContext,
   type SharedTextRoomMessages,
-  type SharedTextRoomSocket,
 } from "@k2b/cloud/shared-text";
 import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import { personColor } from "@k2b/ui";
@@ -82,12 +81,12 @@ const stopWorkspaceStream = (ctx: WsContext) => {
 };
 
 const sendPresenceMessage = (
-  socket: SharedTextRoomSocket,
+  ctx: WsContext,
   type: typeof WS_TYPE.presenceSnapshot | typeof WS_TYPE.presenceChanged,
   noteId: string,
   participants: NotebookPresenceParticipant[],
 ) => {
-  send(socket, type, {
+  send(ctx, type, {
     noteId,
     participants,
   });
@@ -100,7 +99,7 @@ const broadcastPresence = (
 ) => {
   for (const member of channel.members) {
     if (member.phase !== "joined" || member.docId !== channel.noteId || !member.publicDocId) continue;
-    sendPresenceMessage(member.socket, type, member.publicDocId, participants);
+    sendPresenceMessage(member, type, member.publicDocId, participants);
   }
 };
 
@@ -168,7 +167,7 @@ const unregisterPresenceMember = (ctx: WsContext, noteId: string) => {
 const sendPresenceSnapshot = async (ctx: WsContext, noteId: string) => {
   const state = await notebooksService.presence.snapshot({ noteId });
   if (ctx.docId === noteId && ctx.phase === "joined" && ctx.publicDocId)
-    sendPresenceMessage(ctx.socket, WS_TYPE.presenceSnapshot, ctx.publicDocId, state.participants);
+    sendPresenceMessage(ctx, WS_TYPE.presenceSnapshot, ctx.publicDocId, state.participants);
 };
 
 const startPresenceHeartbeat = (ctx: WsContext) => {
@@ -418,7 +417,7 @@ const refreshWorkspaceAccess = async (ctx: WsContext): Promise<AccessEvaluation>
 const leaveReaderPresence = async (ctx: WsContext) => {
   const publicDocId = ctx.publicDocId;
   await leaveCurrentNote(ctx);
-  if (publicDocId) sendPresenceMessage(ctx.socket, WS_TYPE.presenceChanged, publicDocId, []);
+  if (publicDocId) sendPresenceMessage(ctx, WS_TYPE.presenceChanged, publicDocId, []);
 };
 
 /** Re-evaluate the joined note. Readers leave only that note; collaboration failures remain terminal. */
@@ -486,7 +485,7 @@ const revalidateWorkspaceAccessOnce = async (ctx: WsContext): Promise<boolean> =
       if (ctx.docId && ctx.restoreRevision === null) await revalidateReaderAccess(ctx);
       return true;
     }
-    send(ctx.socket, WORKSPACE_WS_TYPE.revoked, {
+    send(ctx, WORKSPACE_WS_TYPE.revoked, {
       notebookId: ctx.workspaceNotebookShortId,
       code: access.code ?? ERROR_CODE.accessRevoked,
       message: access.message ?? ctx.messages.workspaceAccessRevoked,
@@ -498,7 +497,7 @@ const revalidateWorkspaceAccessOnce = async (ctx: WsContext): Promise<boolean> =
       notebookId: ctx.workspaceNotebookId,
       error: error instanceof Error ? error.message : String(error),
     });
-    send(ctx.socket, WORKSPACE_WS_TYPE.error, {
+    send(ctx, WORKSPACE_WS_TYPE.error, {
       notebookId: ctx.workspaceNotebookShortId,
       code: ERROR_CODE.internalError,
       message: ctx.messages.workspaceAccessRefreshFailed,
@@ -537,7 +536,7 @@ const startWorkspaceStream = (ctx: WsContext, notebookId: string, notebookShortI
 
   void (async () => {
     try {
-      send(ctx.socket, WORKSPACE_WS_TYPE.ready, { notebookId: notebookShortId });
+      send(ctx, WORKSPACE_WS_TYPE.ready, { notebookId: notebookShortId });
       for await (const event of notebooksService.workspaceEvents.live({
         notebookId,
         after: afterCursor ?? undefined,
@@ -546,7 +545,7 @@ const startWorkspaceStream = (ctx: WsContext, notebookId: string, notebookShortI
         if (abort.signal.aborted || ctx.workspaceNotebookId !== notebookId) break;
         const publicEvent = toPublicWorkspaceEvent(event.data, { notebookShortId, userId: ctx.user?.id ?? null });
         if (!publicEvent) continue;
-        send(ctx.socket, WORKSPACE_WS_TYPE.event, { notebookId: notebookShortId, cursor: event.cursor, event: publicEvent });
+        send(ctx, WORKSPACE_WS_TYPE.event, { notebookId: notebookShortId, cursor: event.cursor, event: publicEvent });
         // The client was told; now re-check on the server, which is the side
         // that decides. Previously this event was forwarded and nothing else.
         if (isPermissionInvalidation(event.data) && !(await revalidateWorkspaceAccess(ctx))) break;
@@ -562,7 +561,7 @@ const startWorkspaceStream = (ctx: WsContext, notebookId: string, notebookShortI
       if (!abort.signal.aborted) {
         if (error instanceof CursorMismatchError || error instanceof RetentionGapError) {
           const head = await notebooksService.workspaceEvents.latestCursor({ notebookId });
-          send(ctx.socket, WORKSPACE_WS_TYPE.event, {
+          send(ctx, WORKSPACE_WS_TYPE.event, {
             notebookId: notebookShortId,
             cursor: head,
             event: {
@@ -580,7 +579,7 @@ const startWorkspaceStream = (ctx: WsContext, notebookId: string, notebookShortI
           notebookId,
           error: error instanceof Error ? error.message : String(error),
         });
-        send(ctx.socket, WORKSPACE_WS_TYPE.error, {
+        send(ctx, WORKSPACE_WS_TYPE.error, {
           notebookId: notebookShortId,
           code: ERROR_CODE.internalError,
           message: ctx.messages.workspaceStreamFailed,
@@ -597,7 +596,7 @@ const startWorkspaceStream = (ctx: WsContext, notebookId: string, notebookShortI
 const handleWorkspaceSubscribe = async (ctx: WsContext, payload: z.infer<typeof WorkspaceSubscribeMessageSchema.shape.payload>) => {
   const user = await resolveSessionUser(ctx.sessionToken);
   if (!user) {
-    send(ctx.socket, WORKSPACE_WS_TYPE.error, {
+    send(ctx, WORKSPACE_WS_TYPE.error, {
       notebookId: payload.notebookId,
       code: ERROR_CODE.loginRequired,
       message: ctx.messages.loginRequired,
@@ -611,7 +610,7 @@ const handleWorkspaceSubscribe = async (ctx: WsContext, payload: z.infer<typeof 
     ? await evaluateResolvedNotebookAccess(notebook, payload.notebookId, user, ERROR_CODE.accessDenied, ctx.messages)
     : { ok: false, notebookId: undefined };
   if (!access.ok || !access.notebookId) {
-    send(ctx.socket, WORKSPACE_WS_TYPE.error, {
+    send(ctx, WORKSPACE_WS_TYPE.error, {
       notebookId: payload.notebookId,
       code: access.code ?? ERROR_CODE.accessDenied,
       message: access.message ?? ctx.messages.accessDenied,
@@ -633,7 +632,7 @@ const handleWorkspaceSubscribe = async (ctx: WsContext, payload: z.infer<typeof 
 /** One opened note per workspace socket; replacing it never starts Yjs replay. */
 const handleWorkspacePresenceWatch = async (ctx: WsContext, payload: z.infer<typeof WorkspacePresenceWatchMessageSchema.shape.payload>) => {
   if (!ctx.workspaceNotebookId || ctx.restoreRevision !== null) {
-    send(ctx.socket, WORKSPACE_WS_TYPE.error, { code: ERROR_CODE.invalidMessage, message: ctx.messages.invalidMessage });
+    send(ctx, WORKSPACE_WS_TYPE.error, { code: ERROR_CODE.invalidMessage, message: ctx.messages.invalidMessage });
     return;
   }
   const workspaceNotebookId = ctx.workspaceNotebookId;
@@ -643,7 +642,7 @@ const handleWorkspacePresenceWatch = async (ctx: WsContext, payload: z.infer<typ
   const access = user ? await evaluateAccess(payload.noteId, user, "presence", ERROR_CODE.accessDenied, ctx.messages) : null;
   if (ctx.phase === "closing" || ctx.workspaceNotebookId !== workspaceNotebookId) return;
   if (!user || !access?.ok || access.notebookId !== workspaceNotebookId || !access.resolvedDocId) {
-    send(ctx.socket, WORKSPACE_WS_TYPE.error, {
+    send(ctx, WORKSPACE_WS_TYPE.error, {
       noteId: payload.noteId,
       code: !user ? ERROR_CODE.loginRequired : ERROR_CODE.accessDenied,
       message: !user ? ctx.messages.loginRequired : ctx.messages.accessDenied,
@@ -774,7 +773,7 @@ const app = new Hono<AuthContext>().get(
             handle: async (packet) => {
               const message = ClientMessageSchema.safeParse(packet);
               if (!message.success) {
-                warn(ctx.socket, ERROR_CODE.invalidMessage, ctx.messages.invalidMessage);
+                warn(ctx, ERROR_CODE.invalidMessage, ctx.messages.invalidMessage);
                 return;
               }
               if (ctx.phase === "closing") return;

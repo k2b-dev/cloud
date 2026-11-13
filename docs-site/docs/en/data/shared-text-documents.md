@@ -806,6 +806,8 @@ validates a copy of the full state and publishes a generation-scoped freeze
 marker with a compare-and-set against that head. It returns the exact
 `{ state, text, cursor, restoreRevision }`, or null for a missing document.
 It does not change the application's lifecycle or save its snapshot.
+Rooms expose a distributed lifecycle boundary in
+[Freeze, submit, thaw or close](#freeze-submit-thaw-or-close).
 
 The application must serialize admission and sending through the same
 persistent document lock. In the send transaction, store the marker,
@@ -843,7 +845,14 @@ connection extension handles application messages on the same socket and
 releases application subscriptions on close. It does not participate in
 collaboration admission. `protocol` supplies message names, document-ID
 validation, cursor validation, the payload limit, and `decode`/`encode` to
-map application wire keys to `docId`. Room restore revisions are canonical
+map application wire keys to `docId`. `protocol.encode(type, payload, ctx)`
+and `validateState(state, ctx)` receive the actual connection/adapter context,
+so one room per process can validate sender scope or map envelope fields
+without closing over a single connection. Keep validation free of SQL; capture
+the required scope at join and update it only through invalidation. Existing callbacks may ignore the
+trailing argument. Room extensions also pass the context to
+`room.send(ctx, type, payload)` and `room.warn(ctx, code, message, docId?)`.
+Room restore revisions are canonical
 nonnegative PostgreSQL bigint strings. Keep existing wire names, log and
 awareness declarations, snapshot job IDs and codecs during migration so
 older tabs and pods can continue using the same resources.
@@ -946,7 +955,9 @@ after delivery or cancellation.
 Backpressure closes with 1013; gaps and cursor mismatches request resync and
 close with 1012. Transient stream/storage failures also use 1012, internal
 errors use 1011, and access failures use 1008. Error codes remain stable;
-applications supply localized messages. Dirty documents queue a snapshot every
+applications supply localized messages, including `busy` for admission
+contention and `tooManyMessages` for the pending-message limit.
+Dirty documents queue a snapshot every
 8 seconds by default and on leave/shutdown, using the existing ordered snapshot pipeline.
 An application can supply synchronous, SQL-free
 `snapshots.markDirty({ docId, targetCursor })` to own its debounce instead;
@@ -992,12 +1003,22 @@ captured head. A flush alone permits later edits.
 
 ### Freeze, submit, thaw or close
 
-A room configured with `snapshots.flushNow` exposes:
+For freeze/close, declare `lifecycle: { maxBytes }` on `sharedText.define`,
+in addition to `whenFull: "reject"` and retention without `maxAgeMs`.
+`maxBytes` (at least 4096) budgets one compacted broker stream per log, with
+one durable lifecycle value per document, using the document log's replica
+count. It reserves that additional budget on every replica. All nodes using
+the log must deploy the same declaration before enabling these methods;
+older nodes without lifecycle support must be drained first. A full
+lifecycle store rejects changes rather than evicting another document's fence.
+Preserve this stream alongside document snapshots and the log in backups.
+
+A room configured with this lifecycle store and `snapshots.flushNow` exposes:
 
 ```ts
 room.freeze(docId, { signal? }): Promise<SharedTextRoomFreeze | null>
 room.thaw(docId, { signal?, freezeCursor? }): Promise<string | null>
-room.closeDocument(docId, { signal?, freezeCursor? }): Promise<string | null>
+room.closeDocument(docId, { freezeCursor, signal? }): Promise<string | null>
 // SharedTextRoomFreeze:
 // { state: Uint8Array, text: string, cursor: string,
 //   restoreRevision: string, expiresAt: number }
@@ -1018,27 +1039,49 @@ publication. A crashed owner cannot block admission beyond 60 seconds plus
 the operator's inter-node clock skew. Keep the clock difference between nodes
 below five seconds. The returned `expiresAt` reserves that five-second safety
 margin, leaving at most 55 seconds, less admission and persistence time.
-Freeze and cursor-fenced thaw/close reject an expired safe window.
-Complete the durable submit/send transition before the returned `expiresAt`; if the
-remaining lease is insufficient, cancel and retry. `freeze` also checks that
-the lease is still current after persistence. Pass the returned cursor as
-`freezeCursor` to thaw or close: a stale or expired owner cannot release or
-close a later freeze. On cancellation/failure, `thaw` appends an open marker.
-`closeDocument` appends a terminal marker and closes sockets on every node
-with `1008 DOCUMENT_CLOSED`; new joins also close when a covering snapshot
-already includes the marker. The browser stops reconnecting. Close the room
-before exposing the terminal domain transition. These methods return the
-marker cursor, or null for a missing document.
+`freeze` rejects an expired safe window. Complete the application's durable
+submit/send transition before the returned `expiresAt`; if too little time
+remains, thaw and retry.
 
-Lifecycle methods require a log with `whenFull: "reject"` and no age expiry.
-Keep terminal/active lifecycle markers when pruning history; deleting those
-markers would remove the admission fence. The room rejects lifecycle calls
-against an expiring or evicting log. Notebooks keeps its existing topic
-configuration and does not call these optional lifecycle methods. Its restore
-marker changes generation without a room lifecycle check. An adapter that
-combines restore with lifecycle must inspect the latest marker under the same
-document admission lease and reject restore while frozen or closed before
-publishing a generation marker; a new generation otherwise supersedes that fence.
+Use this sequence:
+
+1. Freeze and use its returned state as the exact submitted content.
+2. Commit the domain transition and a retryable close intent containing
+   `freezeCursor: frozen.cursor` in the application's SQL transaction.
+3. After commit, call `closeDocument(docId, { freezeCursor: frozen.cursor })`.
+   Retry that intent after a crash or uncertain response, including on restart.
+4. On cancellation or SQL rollback, call `thaw(docId, { freezeCursor: frozen.cursor })`.
+
+Close requires that matching frozen token, becomes permanent, and is
+idempotent for that token. It returns the same close cursor even after its
+log marker was pruned. A different token conflicts. A crash after durable
+close but before its notification is completed by retrying the same close.
+Close publishes a terminal notification and closes sockets on every node
+with `1008 DOCUMENT_CLOSED`; fresh joins read the durable authority too.
+The browser stops reconnecting. Thaw publishes an open notification; it
+cannot reopen a closed document. Both return a marker cursor, or null for a
+missing document.
+
+The durable frozen value survives its 60-second admission lease. After expiry,
+the next admission atomically invalidates that token before reopening the
+edit path. A post-commit close can still use an expired token if no later
+admission or thaw has invalidated it; it cannot close a newer freeze or
+silently discard resumed input. The committed domain state must deny edits
+and publish its usual lock/retirement invalidation, while the durable close
+intent completes. If an expired token has already been invalidated, reconcile
+that conflict against the committed domain state rather than blindly closing
+with a different token. There is no renewal, polling, or recovery worker.
+
+Lifecycle authority lives outside the prunable document log. Prefix pruning
+through a covering snapshot may remove active freeze and terminal markers;
+active freezes remain enforced and closed documents never pin the prefix.
+A freeze interrupted before publishing its marker still blocks admission
+only until its lease expires. Lifecycle calls reject an expiring or evicting
+log or a declaration without lifecycle storage. Notebooks keeps its existing
+declaration and does not use these optional methods. Its restore marker
+changes generation without a room lifecycle check. An adapter combining
+restore with lifecycle must check the durable authority under the same
+document admission lease and reject restore while frozen or closed.
 
 Validation and publication run under the same per-document NATS admission
 lease on every node, including server edits, freeze, thaw and close. Editors
@@ -1055,7 +1098,10 @@ must forward it. After BUSY the server rejects already queued deltas
 immediately, without acquiring admission again. A marked retry can acquire
 admission; missing causal dependencies remain BUSY, while incompatible
 revision or structural history still requires recovery. An accepted retry
-clears the gate. Ordinary publication packets are unchanged.
+clears the gate. Ordinary publication packets are unchanged. During a rolling
+deploy, older browser providers do not recognize BUSY: after a CAS conflict
+they retain their edits until `SYNC_TIMEOUT` (about 30 seconds), then reconnect
+and resend without losing input.
 A stalled or expired owner still has to pass expected-head CAS. Ordinary
 server edits retry at most three CAS conflicts, with 25/50 ms backoff,
 reusing the prepared update identities. Freeze releases admission after its
@@ -1063,8 +1109,13 @@ marker and drains persistence outside that lease.
 
 An uncontended edit adds four NATS KV operations for admission acquisition
 and release, plus the existing head lookup and CAS publication: **zero SQL
-per edit**. The lifecycle check itself is an in-memory comparison on a cache
-hit. Delayed events on another node cannot bypass the fence.
+per edit**. Opting into lifecycle adds one authoritative JetStream last-value
+read per admission, without a replay consumer; decoded values are cached by
+broker revision within `lifecycle.maxBytes`. An expired freeze adds one CAS
+write to invalidate its token. Notifications never substitute for that read,
+so a delayed event or a pruned marker cannot bypass the fence. Awareness and
+fan-out add no lifecycle lookups. Logs without lifecycle storage, including
+Notebooks, keep their existing hot-path cost.
 
 A disposable per-context state and head cache advances with live input and
 successful local publications. An up-to-date edit needs no state replay.

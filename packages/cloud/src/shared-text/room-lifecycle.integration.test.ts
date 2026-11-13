@@ -39,6 +39,7 @@ const messages: SharedTextRoomMessages = {
   jsonTextOnly: "text",
   messageTooLarge: "large",
   tooManyMessages: "many",
+  busy: "Document is busy; retrying",
   handlingFailed: "handling",
   messageNotAllowed: () => "phase",
 };
@@ -75,9 +76,10 @@ testFor("database", "nats")(
         };
       },
     };
-    bindProcessSync(measured);
+    bindProcessSync(measured, connection);
     const log = sharedText.define({
       id: "text",
+      lifecycle: { maxBytes: 65536 },
       whenFull: "reject",
       retention: { maxBytes: 1024 * 1024 },
       maxPayloadBytes: 8192,
@@ -105,12 +107,14 @@ testFor("database", "nats")(
         advance: async () => false,
       },
     });
+    const validatedContexts: unknown[] = [];
+    const encodedContexts: unknown[] = [];
     let holdValidation: Promise<void> | undefined;
     const entered = Promise.withResolvers<void>();
-    const makeRoom = () =>
+    const makeRoom = (roomLog = log) =>
       createSharedTextRoom({
         logger: quiet,
-        log,
+        log: roomLog,
         snapshots: { queue: async () => {}, flushNow: pipeline.flushNow },
         awarenessTopic: () =>
           sync.topic({ id: "awareness", retention: { maxAgeMs: 60_000, maxBytes: 65536 }, dedupeWindowMs: 60_000, maxPayloadBytes: 8192 }),
@@ -128,9 +132,13 @@ testFor("database", "nats")(
           maxSyncPayloadLength: 8192,
           streamCursorPattern: /^s6t\./,
           decode: (x) => x,
-          encode: (type, payload) => ({ type, payload }),
+          encode: (type, payload, ctx) => {
+            encodedContexts.push(ctx);
+            return { type, payload };
+          },
         },
-        validateState: async () => {
+        validateState: async (_state, ctx) => {
+          validatedContexts.push(ctx);
           if (holdValidation) {
             entered.resolve();
             await holdValidation;
@@ -183,7 +191,7 @@ testFor("database", "nats")(
       }
     };
     const a = makeRoom(),
-      b = makeRoom();
+      b = makeRoom(sharedText.define({ ...log.topicConfig, lifecycle: { maxBytes: 65536 } }));
     const peers: Array<ReturnType<typeof peer>> = [];
     const peer = async (room: typeof a) => {
       const ready = Promise.withResolvers<void>();
@@ -284,6 +292,10 @@ testFor("database", "nats")(
         });
         expect(awarenessStatements).toEqual([]);
         expect(attempts.size).toBe(30);
+        for (const writer of writers) {
+          expect(validatedContexts).toContain(writer.ctx);
+          expect(encodedContexts).toContain(writer.ctx);
+        }
         expect(Math.max(...attempts.values())).toBe(1);
         const drained = await a.freeze("doc");
         for (const token of tokens) expect(drained!.text.split(token)).toHaveLength(2);
@@ -331,12 +343,15 @@ testFor("database", "nats")(
         persisted.destroy();
       }
       expect(await log.topic().latestCursor({ tenantId: "doc" })).toBe(frozen!.cursor);
+      await log.topic().prune({ through: frozen!.cursor });
+      expect(await log.topic().latestCursor({ tenantId: "doc" })).toBeNull();
       const rejectedInput = update(" after");
       const later = await peer(b);
       peers.push(Promise.resolve(later));
       const unchanged = sql;
       await edit(later, rejectedInput);
       expect(await later.closed).toBe("DOCUMENT_FROZEN");
+      expect(await log.topic().latestCursor({ tenantId: "doc" })).toBeNull();
       expect(sql).toBe(unchanged);
       await a.thaw("doc", { freezeCursor: frozen!.cursor });
       const resumed = await peer(b);
@@ -351,11 +366,32 @@ testFor("database", "nats")(
       const recovered = await b.freeze("doc");
       expect(recovered?.text).toBe(`${prefix}visible pending after recovered`);
       await expect(b.thaw("doc", { freezeCursor: secondFreeze!.cursor })).rejects.toThrow();
-      await b.closeDocument("doc", { freezeCursor: recovered!.cursor });
+      // App commit durably records this token. The submitting process then dies
+      // before close; another process can retry after the lease without edits.
+      setSystemTime(new Date(Date.now() + 60_001));
+      const freshLog = sharedText.define({ ...log.topicConfig, lifecycle: { maxBytes: 65536 } });
+      const restarted = makeRoom(freshLog);
+      const closedCursor = await restarted.closeDocument("doc", { freezeCursor: recovered!.cursor });
+      expect(await restarted.closeDocument("doc", { freezeCursor: recovered!.cursor })).toBe(closedCursor);
+      await expect(restarted.closeDocument("doc", { freezeCursor: secondFreeze!.cursor })).rejects.toThrow();
       expect(await resumed.closed).toBe("DOCUMENT_CLOSED");
       // Persist the terminal marker too: the next join must close even when
       // replay starts at a snapshot that already covers that marker.
       await pipeline.flushNow("doc");
+      await log.topic().prune({ through: closedCursor! });
+      expect(await log.topic().latestCursor({ tenantId: "doc" })).toBeNull();
+      expect((await freshLog.lifecycle!.get("doc"))?.value.state).toBe("closed");
+      await expect(freshLog.lifecycle!.put("doc", null, { state: "open" })).rejects.toThrow("Shared text lifecycle changed");
+      const manager = await jetstreamManager(connection);
+      const authorityStreams = [];
+      for await (const stream of manager.streams.list())
+        if (stream.config.metadata?.["cloud.shared-text.lifecycle"] === log.id && stream.config.metadata?.["sync.namespace"] === namespace)
+          authorityStreams.push(stream);
+      expect(authorityStreams).toHaveLength(1);
+      expect(authorityStreams[0]!.state.messages).toBe(1);
+      expect(await restarted.closeDocument("doc", { freezeCursor: recovered!.cursor })).toBe(closedCursor);
+      await expect(restarted.thaw("doc", { freezeCursor: recovered!.cursor })).rejects.toThrow("DOCUMENT_CLOSED");
+      await restarted.drain();
       const rejected = await peer(b);
       peers.push(Promise.resolve(rejected));
       expect(await rejected.closed).toBe("DOCUMENT_CLOSED");

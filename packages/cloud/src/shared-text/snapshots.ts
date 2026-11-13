@@ -1,11 +1,13 @@
 import { type Job, type JobConfig, type Mutex, RetentionGapError, type Topic, type Worker } from "@k2b/sync";
 import * as Y from "yjs";
 import { logger } from "../services/logging";
+import type { SharedTextAdmission } from "./admission";
 import { SharedTextBoundaryError } from "./boundary";
 import { validateChanges } from "./changes";
 import { compareStreamCursor } from "./cursor";
 import { createDoc } from "./documents";
 import { applySharedTextEvent, MalformedSharedTextEventError, SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
+import { checkLifecycleAdmission, type SharedTextLifecycleStore } from "./lifecycle-store";
 import type { SharedTextChange, SharedTextContributor, SharedTextSaveInput, SharedTextStoredState, SharedTextSyncEvent } from "./types";
 
 const ACK_WAIT_MS = 120_000;
@@ -70,6 +72,8 @@ export type SharedTextSnapshotBacklog = {
   };
 };
 type SnapshotLog = {
+  lifecycle?: SharedTextLifecycleStore;
+  admit?: SharedTextAdmission;
   id: string;
   /** Custom ordered transports may omit a writer; synchronous flush requires one. */
   writer?(): Pick<Mutex, "withLock" | "extend">;
@@ -195,32 +199,48 @@ const createSnapshots = <Input>(
         signal.throwIfAborted();
         let cursor = target && compareStreamCursor(target, head) > 0 ? target : head;
         if (repair && !fenced && !doc.store.pendingStructs && !doc.store.pendingDs) {
-          const text = doc.getText(SHARED_TEXT_NAME);
-          const planned = repair.plan(text.toString());
-          if (planned.some((change) => change.from !== change.to)) throw new RangeError("Snapshot repair may only insert text");
-          const changes = planned.length ? validateChanges(text.toString(), planned, repair.maxLength) : [];
-          if (changes.length) {
-            const before = Y.encodeStateVector(doc);
-            doc.transact(() => {
-              for (const change of [...changes].reverse()) text.insert(change.from, change.insert);
-            }, "snapshot-repair");
-            signal.throwIfAborted();
-            if (heartbeatError) throw heartbeatError;
-            // A conflict retries the whole ordered job from the current store
-            // and tenant head; never publish a plan over a newer document.
-            const published = await topic.publish({
-              tenantId: docId,
-              expectedAfter: target,
-              data: {
-                kind: "sync",
-                payload: toBase64(Y.encodeStateAsUpdate(doc, before)),
-                originNodeId: sharedTextNodeId,
-                originPeerId: null,
-                restoreRevision: initial.restoreRevision,
-              },
-            });
-            cursor = published.cursor;
-          } else if (covered) return;
+          const repairCurrent = async (signal: AbortSignal) => {
+            if (log.lifecycle) {
+              try {
+                await checkLifecycleAdmission(log.lifecycle, docId);
+              } catch (error) {
+                if (error instanceof SharedTextBoundaryError) return false;
+                throw error;
+              }
+              signal.throwIfAborted();
+            }
+            const text = doc.getText(SHARED_TEXT_NAME);
+            const planned = repair.plan(text.toString());
+            if (planned.some((change) => change.from !== change.to)) throw new RangeError("Snapshot repair may only insert text");
+            const changes = planned.length ? validateChanges(text.toString(), planned, repair.maxLength) : [];
+            if (changes.length) {
+              const before = Y.encodeStateVector(doc);
+              doc.transact(() => {
+                for (const change of [...changes].reverse()) text.insert(change.from, change.insert);
+              }, "snapshot-repair");
+              signal.throwIfAborted();
+              if (heartbeatError) throw heartbeatError;
+              // A conflict retries the whole ordered job from the current store
+              // and tenant head; never publish a plan over a newer document.
+              const published = await topic.publish({
+                tenantId: docId,
+                expectedAfter: target,
+                data: {
+                  kind: "sync",
+                  payload: toBase64(Y.encodeStateAsUpdate(doc, before)),
+                  originNodeId: sharedTextNodeId,
+                  originPeerId: null,
+                  restoreRevision: initial.restoreRevision,
+                },
+              });
+              cursor = published.cursor;
+              return true;
+            }
+            return false;
+          };
+          if (log.lifecycle && !log.admit) throw new Error("Lifecycle snapshot repair requires document admission");
+          const repaired = log.lifecycle && log.admit ? await log.admit(docId, signal, repairCurrent) : await repairCurrent(signal);
+          if (!repaired && covered) return;
         } else if (covered) return;
         signal.throwIfAborted();
         await store.save(docId, {
