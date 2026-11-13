@@ -1167,6 +1167,14 @@ Available keyboard shortcuts appear next to actions and in Layout Help.
 
 Cmd/Ctrl+Shift+K searches conversations across accessible mailboxes. Cmd/Ctrl+Alt+N opens a new email from the current writable mailbox. R opens a reply to the selected conversation outside input fields; it never sends it. Search actions update the open palette in place. Actions for the selected object appear before page actions.
 
+## Review sending warnings
+
+Mail asks before sending a message whose subject is empty or contains only
+whitespace. This also applies to replies and forwards if you clear their subject;
+`Re:` or `Fwd:` alone still counts as a subject. Return to the draft to add one,
+or choose **Send anyway** after reviewing the warning. The Mail CLI shows the
+same warning and requires `--approve-safety` to continue.
+
 ## Check the complete message before approval
 
 When the Assistant asks to send or change a draft, choose **Read the complete proposal** to inspect the full proposed text, recipients and attachment list. The proposal can include unsaved changes. The draft link opens the current draft, which may have changed since the question was asked.

@@ -233,6 +233,7 @@ Mail nimmt den Organisator aus der bestätigten Absenderidentität des Entwurfs.
 
 Vor einem sofortigen, verzögerten oder geplanten Versand prüft Mail den exakt gespeicherten Entwurf auf häufige Fehler. Mail kann dich bitten, Folgendes zu prüfen:
 
+- einen leeren oder nur aus Leerzeichen bestehenden Betreff;
 - einen fehlenden Anhang;
 - eine ungewöhnlich große Empfängerliste;
 - externe Empfänger;
@@ -240,7 +241,7 @@ Vor einem sofortigen, verzögerten oder geplanten Versand prüft Mail den exakt 
 - einen verdächtigen Link;
 - Platzhalter wie `{{ sender.email }}`, die nicht mehr zu einer Signatur oder einem Textbaustein gehören und als reiner Text versendet würden.
 
-Der Dialog erklärt jede Warnung und lässt dich zum Entwurf zurückkehren. Wähle **Trotzdem senden** erst, nachdem du die aktuellen Empfänger, Links und Anhänge geprüft hast.
+Der Dialog erklärt jede Warnung und lässt dich zum Entwurf zurückkehren. Wähle **Trotzdem senden** erst, nachdem du den aktuellen Betreff, die Empfänger, Links und Anhänge geprüft hast.
 
 Eine Zustimmung gilt nur für diese gespeicherte Fassung des Entwurfs. Bearbeitest du den Entwurf danach, prüft Mail erneut. Mail hält die bestätigten Warnungstypen für die Prüfung der Zustellung fest, aber keine zweite Kopie des Nachrichteninhalts.
 

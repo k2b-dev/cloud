@@ -1321,6 +1321,7 @@ const actorCommandBaseSchema = z
   .strict();
 
 export const composeSafetyWarningIdSchema = z.enum([
+  "missing_subject",
   "missing_attachment",
   "large_recipient_set",
   "external_recipients",
@@ -1334,7 +1335,10 @@ export const composeSafetyApprovalSchema = z
   .object({
     revision: z.number().int().positive().describe("Exact reviewed draft revision."),
     fingerprint: z.string().length(64).describe("Exact review fingerprint."),
-    warningIds: z.array(composeSafetyWarningIdSchema).max(6).describe("Warning identifiers accepted by the caller."),
+    warningIds: z
+      .array(composeSafetyWarningIdSchema)
+      .max(composeSafetyWarningIdSchema.options.length)
+      .describe("Warning identifiers accepted by the caller."),
   })
   .strict();
 export type ComposeSafetyApproval = z.infer<typeof composeSafetyApprovalSchema>;

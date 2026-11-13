@@ -234,6 +234,7 @@ Mail takes the organizer from the verified sender identity of the draft. **To** 
 
 Before an immediate, delayed, or scheduled send, Mail checks the exact saved draft for common mistakes. It can ask you to review:
 
+- a missing or whitespace-only subject;
 - a missing attachment;
 - an unusually large recipient list;
 - external recipients;
@@ -241,7 +242,7 @@ Before an immediate, delayed, or scheduled send, Mail checks the exact saved dra
 - a suspicious link;
 - template placeholders such as `{{ sender.email }}` that are no longer part of a signature or snippet and would be sent as literal text.
 
-The dialog explains each warning and lets you return to the draft. Choose **Send anyway** only after you have reviewed the current recipients, links, and attachments.
+The dialog explains each warning and lets you return to the draft. Choose **Send anyway** only after you have reviewed the current subject, recipients, links, and attachments.
 
 An approval applies only to that saved version of the draft. If you edit the draft after approval, Mail runs the checks again. Mail records the approved warning types for delivery auditing, but not a second copy of the message content.
 

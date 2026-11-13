@@ -1014,6 +1014,7 @@ describe("MailComposer robustness", () => {
       host?: boolean;
       fresh?: boolean;
       popout?: boolean;
+      window?: boolean;
       draft?: MailDraft;
       seed?: MailDraftSeed;
       templates?: { id: string; name: string }[];
@@ -1026,6 +1027,8 @@ describe("MailComposer robustness", () => {
   ) => {
     const [{ default: MailComposer }, { LocaleProvider }] = await Promise.all([import("./MailComposer"), import("@k2b/ui")]);
     const draft = options.seed ? undefined : (options.draft ?? initialDraft);
+    const windowStatus = dom.document.createElement("span");
+    const windowActions = dom.document.createElement("span");
     dispose = render(
       () => (
         <LocaleProvider locale="en">
@@ -1051,6 +1054,7 @@ describe("MailComposer robustness", () => {
                     register: (controls) => {
                       hostControls = controls;
                     },
+                    ...(options.window ? { window: { status: () => windowStatus, actions: () => windowActions, sheet: () => false } } : {}),
                     messageLabel: () => null,
                     leave: (outcome) => leaves.push(outcome),
                     openDraft: (draftId) => opened.push(draftId),
@@ -1089,6 +1093,78 @@ describe("MailComposer robustness", () => {
   const sendShortcut = (target: Element) =>
     target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
   const sent = () => requests.some((request) => request.endsWith("/commands"));
+
+  const sendSurfaces = [
+    { name: "composer", host: false, popout: false, window: false },
+    { name: "inline reply", host: true, popout: false, window: false },
+    { name: "floating window", host: true, popout: false, window: true },
+    { name: "popout", host: false, popout: true, window: false },
+  ];
+
+  test.each(sendSurfaces)("$name asks before sending without a subject and carries the approval", async ({ host, popout, window }) => {
+    const serve = globalThis.fetch;
+    let command: unknown;
+    let reviewedRevision = 0;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        const path = new URL(request.url).pathname;
+        if (path.endsWith("/safety-review")) {
+          requests.push(`${request.method} ${path}`);
+          reviewedRevision = z.object({ expectedRevision: z.number().int().positive() }).parse(await request.json()).expectedRevision;
+          return Response.json({
+            draftId: initialDraft.id,
+            revision: reviewedRevision,
+            fingerprint: "f".repeat(64),
+            contentHash: "a".repeat(64),
+            warnings: [{ id: "missing_subject", title: "No subject", description: "The message has no subject. Send anyway?" }],
+          });
+        }
+        if (path.endsWith("/commands")) command = await request.clone().json();
+        return serve(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const close = spyOn(dom.window, "close").mockImplementation(() => undefined);
+    try {
+      await mount({
+        host,
+        popout,
+        window,
+        draft: { ...initialDraft, subject: "", ...(host ? { intent: "reply", conversationId: "Conv01" } : {}) },
+      });
+      sendButton().click();
+      await waitFor(() => Boolean(dom.document.body.textContent?.includes("The message has no subject.")));
+      expect(sent()).toBe(false);
+      const approve = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) => button.textContent?.trim() === "Send anyway",
+      );
+      expect(approve).toBeDefined();
+      approve!.click();
+      await waitFor(sent);
+      expect(command).toMatchObject({
+        kind: "send",
+        expectedDraftRevision: reviewedRevision,
+        expectedContentHash: "a".repeat(64),
+        safetyApproval: { revision: reviewedRevision, fingerprint: "f".repeat(64), warningIds: ["missing_subject"] },
+      });
+    } finally {
+      close.mockRestore();
+    }
+  });
+
+  test.each(sendSurfaces)("$name sends a message with a subject without a warning dialog", async ({ host, popout, window }) => {
+    const close = spyOn(dom.window, "close").mockImplementation(() => undefined);
+    try {
+      await mount({ host, popout, window });
+      sendButton().click();
+      await waitFor(sent);
+      expect(requests.some((request) => request.endsWith("/safety-review"))).toBe(true);
+      expect(dom.document.body.textContent).not.toContain("Send anyway");
+    } finally {
+      close.mockRestore();
+    }
+  });
 
   test("saving an unchanged fresh draft before a mode switch preserves it", async () => {
     await mount({ host: true, fresh: true });
