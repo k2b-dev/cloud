@@ -4,10 +4,12 @@ import { ConflictError } from "@k2b/sync";
 import { mailDraftDocumentLog, withDraftDocumentCommit } from "./draft-document-log";
 import { withDraftDocumentTransaction } from "./draft-document-socket-sql";
 
+export type ReplaceDraftDocument = (previousGeneration: string, expectedAfter?: string | null) => Promise<string>;
+
 /** Only actual content replacement changes lineage; admission precedes SQL row locks. */
 export const withDraftDocumentReplacement = async <T>(
   draftId: string,
-  operation: (db: typeof sql, replace?: (previousGeneration: string) => Promise<string>) => Promise<T>,
+  operation: (db: typeof sql, replace?: ReplaceDraftDocument, signal?: AbortSignal) => Promise<T>,
 ): Promise<T> => {
   const [row] = await sql<{ edit_mode: string }[]>`SELECT edit_mode FROM mail.drafts WHERE id = ${draftId}::uuid`;
   if (row?.edit_mode !== "shared") return withDraftDocumentCommit((db) => operation(db));
@@ -23,34 +25,40 @@ export const withDraftDocumentReplacement = async <T>(
     let pending: { cursor: string; previousGeneration: string } | undefined;
     try {
       return await withDraftDocumentTransaction(signal, (db) =>
-        operation(db, async (previousGeneration) => {
-          signal.throwIfAborted();
-          const target = await topic.latestCursor({ tenantId: draftId });
-          const marker = await topic.publish({
-            tenantId: draftId,
-            expectedAfter: target,
-            data: {
-              kind: "freeze",
-              payload: "",
-              restoreRevision: (BigInt(previousGeneration) + 1n).toString(),
-              originNodeId: sharedTextNodeId,
-              originPeerId: null,
-            },
-          });
-          pending = { cursor: marker.cursor, previousGeneration };
-          signal.throwIfAborted();
-          if ((await lifecycle.get(draftId))?.revision !== authority?.revision)
-            throw new ConflictError("Draft lifecycle changed during replacement");
-          return marker.cursor;
-        }),
+        operation(
+          db,
+          async (previousGeneration, expectedAfter) => {
+            signal.throwIfAborted();
+            // An importer already classified this exact tail. A newer event must
+            // fail the CAS, including when its classified tail was empty (null).
+            const target = expectedAfter === undefined ? await topic.latestCursor({ tenantId: draftId }) : expectedAfter;
+            const marker = await topic.publish({
+              tenantId: draftId,
+              expectedAfter: target,
+              data: {
+                kind: "freeze",
+                payload: "",
+                restoreRevision: (BigInt(previousGeneration) + 1n).toString(),
+                originNodeId: sharedTextNodeId,
+                originPeerId: null,
+              },
+            });
+            pending = { cursor: marker.cursor, previousGeneration };
+            signal.throwIfAborted();
+            if ((await lifecycle.get(draftId))?.revision !== authority?.revision)
+              throw new ConflictError("Draft lifecycle changed during replacement");
+            return marker.cursor;
+          },
+          signal,
+        ),
       );
     } catch (error) {
       // Like a platform restore, a rolled-back SQL replacement must put back
       // its old generation marker. Exact CAS cannot undo a later replacement.
       if (pending) {
         const rollback = pending;
-        const [current] = await sql<{ generation: string }[]>`
-          SELECT doc_generation::text AS generation FROM mail.drafts WHERE id = ${draftId}::uuid`;
+        const [current] = await sql<{ generation: string; seeded: boolean }[]>`
+          SELECT doc_generation::text AS generation, doc_state IS NOT NULL AS seeded FROM mail.drafts WHERE id = ${draftId}::uuid`;
         if (current?.generation === rollback.previousGeneration) {
           const restored = await topic.publish({
             tenantId: draftId,
@@ -66,16 +74,19 @@ export const withDraftDocumentReplacement = async <T>(
           // The failed replacement marker lies between the old SQL cursor and
           // this compensation. Cover both with the unchanged durable state so
           // snapshot replay never mistakes that abandoned lineage for a restore.
-          await withDraftDocumentCommit(async (db) => {
-            const [row] = await db<{ revision: number; doc_state: Uint8Array }[]>`
+          // An unseeded draft has no acknowledged snapshot. Leave its SQL
+          // baseline untouched; its first seed replays these inert markers.
+          if (current.seeded)
+            await withDraftDocumentCommit(async (db) => {
+              const [row] = await db<{ revision: number; doc_state: Uint8Array }[]>`
               UPDATE mail.drafts SET doc_cursor = ${restored.cursor}, doc_seq = ${topic.cursorSequence(restored.cursor)},
                 revision = revision + 1
               WHERE id = ${draftId}::uuid AND doc_generation = ${rollback.previousGeneration}::bigint
               RETURNING revision, doc_state`;
-            if (!row) throw new ConflictError("Draft generation changed during replacement rollback");
-            await db`INSERT INTO mail.draft_document_revisions (draft_id, generation, revision, state, cursor)
+              if (!row) throw new ConflictError("Draft generation changed during replacement rollback");
+              await db`INSERT INTO mail.draft_document_revisions (draft_id, generation, revision, state, cursor)
               VALUES (${draftId}::uuid, ${rollback.previousGeneration}::bigint, ${row.revision}, ${row.doc_state}, ${restored.cursor})`;
-          });
+            });
         }
       }
       throw error;

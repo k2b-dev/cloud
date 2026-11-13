@@ -30,9 +30,12 @@ import {
 import { imapSmtpConnector } from "./connectors";
 import { mapFetchedEnvelope } from "./connectors/imap-smtp";
 import { mergeConversations } from "./conversations";
+import { pruneDraftDocumentLog } from "./draft-document-log";
+import { withDraftDocumentReplacement } from "./draft-document-replacement";
 import { mailDraftRoom } from "./draft-document-room";
 import { retryPendingDraftSendCloses } from "./draft-document-send";
 import { draftDocumentSnapshotStore } from "./draft-document-snapshots";
+import { DRAFT_DOCUMENT_ACCESS_REFRESH_MS } from "./draft-document-socket-sql";
 import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "./draft-documents";
 import {
   enqueueDraftProjectionSnapshot,
@@ -42,6 +45,7 @@ import {
   submitDueDraftProjectionWork,
 } from "./draft-provider-projection";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
+import * as draftValidation from "./draft-validation";
 import { createDraft, discardDraft, getDraft, materializeDraftSeed, prepareDraftSeed, updateDraft } from "./drafts";
 import { setFolderRole } from "./folders";
 import { pauseDeletedMailboxExecution } from "./mailbox-lifecycle";
@@ -53,7 +57,7 @@ import { listConversations, listFolders } from "./messages";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { outboundDraftSnapshotSchema } from "./outbound-mime";
 import { createProviderConnection } from "./provider-connections";
-import { cancelScheduledSend, getScheduledSend } from "./scheduled-sends";
+import { cancelScheduledSend, cancelSendCommand, getScheduledSend } from "./scheduled-sends";
 import { enqueueFolderReconciliation, hydrateMessageBatch, ingestEnvelope, syncFolderBatch } from "./sync-runtime";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "./workspace";
 
@@ -611,12 +615,17 @@ suite("mail sent message projection", () => {
     for (const userId of userIds) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
 
-  const connect = async (provider: Provider, realTransport = false) => {
+  const connect = async (provider: Provider, realTransport = false, draftEditMode?: "lock" | "shared") => {
     // The wire fixture uses a public literal to avoid DNS while keeping endpoint policy real.
     const imapHost = realTransport ? "93.184.216.34" : `imap.${provider.kind}.example.test`;
     const mailbox = await createMailbox(context, { name: `Sent projection ${provider.kind} ${suffix}` });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxIds.push(mailbox.data.id);
+    expect(mailbox.data.draftEditMode).toBe("shared");
+    if (draftEditMode === "lock") {
+      const mode = await updateMailbox({ context, mailboxId: mailbox.data.id, draftEditMode });
+      if (!mode.ok) throw new Error(mode.error.message);
+    }
     const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(verification(provider.kind));
     const discover = spyOn(imapSmtpConnector, "discoverFolders").mockImplementation(async () => remoteFolders(provider));
     let bindingId = "";
@@ -1009,6 +1018,124 @@ suite("mail sent message projection", () => {
       doc.destroy();
     }
   };
+
+  test("an unseeded import rollback retries as current content without blocking log pruning", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      // A covered event from another tenant makes advancing the global prefix observable.
+      await mailDraftDocumentLog.topic().publish({
+        tenantId: crypto.randomUUID(),
+        data: {
+          kind: "freeze",
+          payload: "",
+          originNodeId: "prune-fixture",
+          originPeerId: null,
+        },
+      });
+      const draft = await newDraft(mailbox, "Unseeded failed import");
+      if (!draft.generation) throw new Error("Expected a shared draft generation");
+      const copies = provider.folder(provider.draftsPath).entries;
+      const original = [...copies.values()][0]!;
+      // nextval survives rollback: fail once at the SQL write after replacement,
+      // then let the import worker's normal retry commit.
+      await sql`CREATE SEQUENCE mail.fixture_import_failure`;
+      await sql.unsafe(`CREATE FUNCTION mail.fixture_fail_import() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.body_markdown = 'Retry imported content' AND nextval('mail.fixture_import_failure') = 1 THEN
+            RAISE EXCEPTION 'Fixture failure after replacement';
+          END IF;
+          RETURN NEW;
+        END $$`);
+      await sql`CREATE TRIGGER fixture_fail_import BEFORE UPDATE OF body_markdown ON mail.drafts
+        FOR EACH ROW EXECUTE FUNCTION mail.fixture_fail_import()`;
+      copies.clear();
+      await provider.saveDraftElsewhere(draftElsewhere(original.messageId!, draft.subject, "Retry imported content"));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ id: draft.id, body: "Retry imported content", revision: "2", recoveries: 0 }),
+      ]);
+      expect((await sql<{ last_value: string }[]>`SELECT last_value FROM mail.fixture_import_failure`)[0]?.last_value).toBe("2");
+      expect(await mailDraftDocumentLog.topic().latestCursor({ tenantId: draft.id })).toBeNull();
+      const head = mailDraftDocumentLog.topic().cursorSequence(await mailDraftDocumentLog.topic().head());
+      // Exercise real SQL coverage and broker cursors without deleting the
+      // global prefix: later cases intentionally test replay without the policy.
+      const topic = mailDraftDocumentLog.topic();
+      const prune = spyOn(topic, "prune").mockResolvedValue({ purged: 0 });
+      const topicHandle = spyOn(mailDraftDocumentLog, "topic").mockReturnValue(topic);
+      try {
+        expect((await pruneDraftDocumentLog())?.through).toBeGreaterThanOrEqual(head);
+        expect(prune).toHaveBeenCalledWith({ through: mailDraftDocumentLog.topic().cursorAt(head) });
+        const [coverage] = await sql<{ through: string }[]>`
+          SELECT doc_idle_through::text AS through FROM mail.drafts WHERE id = ${draft.id}::uuid`;
+        expect(Number(coverage?.through)).toBeGreaterThanOrEqual(head);
+      } finally {
+        topicHandle.mockRestore();
+        prune.mockRestore();
+      }
+      const [stored] = await sql<{ state: Uint8Array | null; generation: string }[]>`
+        SELECT doc_state AS state, doc_generation::text AS generation FROM mail.drafts WHERE id = ${draft.id}::uuid`;
+      expect(stored).toEqual({ state: null, generation: draft.generation });
+      const seeded = await readDraftDocument({ context, mailboxId: mailbox.mailboxId, draftId: draft.id });
+      expect(seeded).toMatchObject({ ok: true, data: { fresh: { content: { body: "Retry imported content" } } } });
+    } finally {
+      await sql`DROP TRIGGER IF EXISTS fixture_fail_import ON mail.drafts`;
+      await sql`DROP FUNCTION IF EXISTS mail.fixture_fail_import()`;
+      await sql`DROP SEQUENCE IF EXISTS mail.fixture_import_failure`;
+      provider.restore();
+    }
+  });
+
+  test.each(["Undo", "definite failure"] as const)("external edits after shared send → %s import as current content", async (outcome) => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      if (outcome === "Undo") {
+        const command = await createActorCommand({
+          context,
+          mailboxId: mailbox.mailboxId,
+          enqueue: false,
+          input: {
+            kind: "send",
+            draftId: target.draftId,
+            senderIdentityId: mailbox.identityId,
+            expectedDraftRevision: initial.revision,
+            expectedContentHash: await reviewedDraftContentHash(context, mailbox.mailboxId, target.draftId, initial.revision),
+            undoSeconds: 60,
+            idempotencyKey: `shared-import-undo-${suffix}`,
+          },
+        });
+        if (!command.ok) throw new Error(command.error.message);
+        expect((await cancelSendCommand({ context, mailboxId: mailbox.mailboxId, commandId: command.data.id })).ok).toBe(true);
+      } else {
+        provider.failNextSubmission("EREJECT", false, 550);
+        await send(mailbox, target.draftId, initial.revision, "shared-import-failure", "failed");
+      }
+      await settleDraftImports(mailbox.mailboxId);
+      await submitDueDraftProjectionWork();
+      await settleDraftImports(mailbox.mailboxId);
+      const [before] = await mailboxDrafts(mailbox.mailboxId);
+      expect(before?.state).toBe("draft");
+      const copies = provider.folder(provider.draftsPath).entries;
+      const original = [...copies.values()][0]!;
+      copies.clear();
+      await provider.saveDraftElsewhere(draftElsewhere(original.messageId!, initial.fresh.content.subject, "Edited after send returned"));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({
+          id: target.draftId,
+          body: "Edited after send returned",
+          revision: String(Number(before!.revision) + 1),
+          recoveries: 0,
+        }),
+      ]);
+    } finally {
+      provider.restore();
+    }
+  });
 
   for (const outcome of ["accepted", "550", "no-recipients", "unknown"] as const) {
     test(`shared-room SMTP ${outcome} preserves the existing editing lifecycle`, async () => {
@@ -1887,7 +2014,8 @@ suite("mail sent message projection", () => {
       provider.failNextSubmission("ECONNECTION", true);
       const outbox = await send(mailbox, draft.id, draft.revision, "gmail-lost-confirmation", "unknown");
       const checks: (string | null)[] = [];
-      while (checks.at(-1) !== "needs_attention" && checks.length < 5) checks.push(await executeOutboxSubmission(outbox.id));
+      while (checks.at(-1) !== "needs_attention" && checks.length < 5)
+        checks.push(await whenProviderFree(() => executeOutboxSubmission(outbox.id)));
       // Gmail's search may list its copy only later, so Mail checks a few more times before it gives up.
       expect(checks).toEqual(["unknown", "unknown", "unknown", "needs_attention"]);
 
@@ -1903,7 +2031,7 @@ suite("mail sent message projection", () => {
         JOIN mail.provider_bindings binding ON binding.id = submission.selected_binding_id
         WHERE submission.id = ${outbox.id}::uuid AND connection.id = binding.connection_id
       `;
-      expect(await executeOutboxSubmission(outbox.id)).toBe("reconciled_accepted");
+      expect(await whenProviderFree(() => executeOutboxSubmission(outbox.id))).toBe("reconciled_accepted");
       expect(await delivery(outbox.id)).toEqual({
         state: "reconciled_accepted",
         last_error_code: null,
@@ -1984,103 +2112,105 @@ suite("mail sent message projection", () => {
     return outbox!;
   };
 
-  test("scheduled new, reply, forward and legacy sends keep frozen inline logo bytes across replacement and removal", async () => {
-    const provider = createProvider("imap");
-    try {
-      const mailbox = await connect(provider);
-      const inbound = await receive(provider, mailbox, "inline-logo");
-      const original = logoPng();
-      const replacement = logoPng(1, 1, 255);
-      const signature = await createComposeTemplate({
-        context,
-        mailboxId: mailbox.mailboxId,
-        input: {
-          kind: "signature",
-          scope: "mailbox",
-          name: "Inline logo",
-          shortcut: "inlinelogo",
-          body: "Regards\n\n{{ mailbox.logo }}",
-        },
-      });
-      if (!signature.ok) throw new Error(signature.error.message);
-      for (const intent of ["new", "reply", "forward", "legacy"] as const) {
-        const uploaded = await updateMailboxComposeLogo({
-          context,
-          mailboxId: mailbox.mailboxId,
-          input: { content: original.toString("base64"), altText: "Frozen logo", displayWidth: 220 },
-        });
-        if (!uploaded.ok) throw new Error(uploaded.error.message);
-        const draft = await createDraft({
+  test.each(["shared", "lock"] as const)(
+    "scheduled new, reply, forward and legacy sends keep frozen inline logo bytes across replacement and removal (%s)",
+    async (draftEditMode) => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider, false, draftEditMode);
+        const inbound = await receive(provider, mailbox, "inline-logo");
+        const original = logoPng();
+        const replacement = logoPng(1, 1, 255);
+        const signature = await createComposeTemplate({
           context,
           mailboxId: mailbox.mailboxId,
           input: {
-            quoteSource: null,
-            senderIdentityId: mailbox.identityId,
-            subject: `Inline ${intent}`,
-            to: [{ name: "Customer", address: CUSTOMER }],
-            cc: [],
-            bcc: [{ name: null, address: "audit@example.test" }],
-            format: "markdown",
-            body: intent === "legacy" ? `Answer\n\n${markComposeTemplateSegment(signature.data.body)}` : "Answer",
-            signatureTemplateId: intent === "legacy" ? null : signature.data.id,
-            ...(intent === "reply" || intent === "forward"
-              ? { intent, conversationId: inbound.conversation_id, sourceMessageId: inbound.id }
-              : {}),
+            kind: "signature",
+            scope: "mailbox",
+            name: "Inline logo",
+            shortcut: "inlinelogo",
+            body: "Regards\n\n{{ mailbox.logo }}",
           },
         });
-        if (!draft.ok) throw new Error(draft.error.message);
-        const preview = await previewComposeDraft({
-          context,
-          mailboxId: mailbox.mailboxId,
-          input: {
-            // Preview accepts editable content, not the full saved-draft response.
-            draft: {
+        if (!signature.ok) throw new Error(signature.error.message);
+        for (const intent of ["new", "reply", "forward", "legacy"] as const) {
+          const uploaded = await updateMailboxComposeLogo({
+            context,
+            mailboxId: mailbox.mailboxId,
+            input: { content: original.toString("base64"), altText: "Frozen logo", displayWidth: 220 },
+          });
+          if (!uploaded.ok) throw new Error(uploaded.error.message);
+          const draft = await createDraft({
+            context,
+            mailboxId: mailbox.mailboxId,
+            input: {
               quoteSource: null,
-              senderIdentityId: draft.data.senderIdentityId,
-              signatureTemplateId: draft.data.signatureTemplateId,
-              to: draft.data.to,
-              cc: draft.data.cc,
-              bcc: draft.data.bcc,
-              subject: draft.data.subject,
-              body: draft.data.body,
-              format: draft.data.format,
-              priority: draft.data.priority,
-              requestDeliveryReceipt: draft.data.requestDeliveryReceipt,
-              requestReadReceipt: draft.data.requestReadReceipt,
+              senderIdentityId: mailbox.identityId,
+              subject: `Inline ${intent}`,
+              to: [{ name: "Customer", address: CUSTOMER }],
+              cc: [],
+              bcc: [{ name: null, address: "audit@example.test" }],
+              format: "markdown",
+              body: intent === "legacy" ? `Answer\n\n${markComposeTemplateSegment(signature.data.body)}` : "Answer",
+              signatureTemplateId: intent === "legacy" ? null : signature.data.id,
+              ...(intent === "reply" || intent === "forward"
+                ? { intent, conversationId: inbound.conversation_id, sourceMessageId: inbound.id }
+                : {}),
             },
-            conversationId: draft.data.conversationId,
-          },
-        });
-        expect(preview).toMatchObject({ ok: true });
-        if (preview.ok) expect(preview.data.html).toContain(`src="data:image/png;base64,${original.toString("base64")}"`);
-        const outbox = await schedule(mailbox, draft.data.id, draft.data.revision, `inline-logo-${intent}`);
-        const [frozen] = await sql<{ draft_snapshot: unknown; inline_logo_version_id: string | null }[]>`
+          });
+          if (!draft.ok) throw new Error(draft.error.message);
+          const preview = await previewComposeDraft({
+            context,
+            mailboxId: mailbox.mailboxId,
+            input: {
+              // Preview accepts editable content, not the full saved-draft response.
+              draft: {
+                quoteSource: null,
+                senderIdentityId: draft.data.senderIdentityId,
+                signatureTemplateId: draft.data.signatureTemplateId,
+                to: draft.data.to,
+                cc: draft.data.cc,
+                bcc: draft.data.bcc,
+                subject: draft.data.subject,
+                body: draft.data.body,
+                format: draft.data.format,
+                priority: draft.data.priority,
+                requestDeliveryReceipt: draft.data.requestDeliveryReceipt,
+                requestReadReceipt: draft.data.requestReadReceipt,
+              },
+              conversationId: draft.data.conversationId,
+            },
+          });
+          expect(preview).toMatchObject({ ok: true });
+          if (preview.ok) expect(preview.data.html).toContain(`src="data:image/png;base64,${original.toString("base64")}"`);
+          const outbox = await schedule(mailbox, draft.data.id, draft.data.revision, `inline-logo-${intent}`);
+          const [frozen] = await sql<{ draft_snapshot: unknown; inline_logo_version_id: string | null }[]>`
           SELECT draft_snapshot, inline_logo_version_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
         `;
-        const snapshot = outboundDraftSnapshotSchema.parse(frozen?.draft_snapshot);
-        const logo = snapshot.inlineLogo;
-        expect(logo).not.toBeNull();
-        if (!logo) throw new Error("Send did not freeze the logo");
-        expect(frozen?.inline_logo_version_id).toBe(logo.versionId);
-        expect(snapshot.renderedHtml).toContain(`src="cid:${logo.contentId}"`);
-        expect(snapshot.renderedHtml).not.toContain('src="http');
-        expect(snapshot.renderedHtml).not.toContain("data:image");
-        expect(snapshot.renderedText).toContain("Frozen logo");
-        const projectedAttachments = await sql<
-          {
-            content_id: string;
-            disposition: string;
-            content_type: string;
-            checksum: string;
-            size_bytes: string | number;
-            blob_id: string;
-            part_content_id: string;
-            part_disposition: string;
-            part_blob_id: string;
-            part_size_bytes: string | number;
-            hydration_status: string;
-          }[]
-        >`
+          const snapshot = outboundDraftSnapshotSchema.parse(frozen?.draft_snapshot);
+          const logo = snapshot.inlineLogo;
+          expect(logo).not.toBeNull();
+          if (!logo) throw new Error("Send did not freeze the logo");
+          expect(frozen?.inline_logo_version_id).toBe(logo.versionId);
+          expect(snapshot.renderedHtml).toContain(`src="cid:${logo.contentId}"`);
+          expect(snapshot.renderedHtml).not.toContain('src="http');
+          expect(snapshot.renderedHtml).not.toContain("data:image");
+          expect(snapshot.renderedText).toContain("Frozen logo");
+          const projectedAttachments = await sql<
+            {
+              content_id: string;
+              disposition: string;
+              content_type: string;
+              checksum: string;
+              size_bytes: string | number;
+              blob_id: string;
+              part_content_id: string;
+              part_disposition: string;
+              part_blob_id: string;
+              part_size_bytes: string | number;
+              hydration_status: string;
+            }[]
+          >`
           SELECT attachment.content_id, attachment.disposition, attachment.content_type,
             attachment.checksum, attachment.size_bytes, attachment.blob_id,
             part.content_id AS part_content_id, part.disposition AS part_disposition,
@@ -2090,77 +2220,80 @@ suite("mail sent message projection", () => {
           JOIN mail.message_parts part ON part.id = attachment.part_id
           WHERE outbox.id = ${outbox.id}::uuid
         `;
-        expect(projectedAttachments).toHaveLength(1);
-        const projectedLogo = projectedAttachments[0];
-        if (!projectedLogo) throw new Error("Projected inline logo missing");
-        expect(projectedLogo).toMatchObject({
-          content_id: `<${logo.contentId}>`,
-          disposition: "inline",
-          content_type: logo.contentType,
-          checksum: logo.sha256,
-          part_content_id: `<${logo.contentId}>`,
-          part_disposition: "inline",
-          part_blob_id: projectedLogo.blob_id,
-          hydration_status: "complete",
-        });
-        expect(Number(projectedLogo.size_bytes)).toBe(original.byteLength);
-        expect(Number(projectedLogo.part_size_bytes)).toBe(original.byteLength);
-        expect(await readAll(createBlobReadable(projectedLogo.blob_id))).toEqual(original);
-        expect(
-          await updateMailboxComposeLogo({
-            context,
-            mailboxId: mailbox.mailboxId,
-            input: { content: replacement.toString("base64"), altText: "Replacement" },
-          }),
-        ).toMatchObject({ ok: true });
-        expect(await loadInlineLogoContent(logo)).toEqual(original);
-        expect(await removeMailboxComposeLogo({ context, mailboxId: mailbox.mailboxId })).toMatchObject({ ok: true });
-        for (const state of ["scheduled", "undo_window", "sending", "accepted", "sent_sync_pending", "unknown", "needs_attention"]) {
-          await sql`UPDATE mail.outbox_submissions SET state = ${state} WHERE id = ${outbox.id}::uuid`;
-          await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 });
+          expect(projectedAttachments).toHaveLength(1);
+          const projectedLogo = projectedAttachments[0];
+          if (!projectedLogo) throw new Error("Projected inline logo missing");
+          expect(projectedLogo).toMatchObject({
+            content_id: `<${logo.contentId}>`,
+            disposition: "inline",
+            content_type: logo.contentType,
+            checksum: logo.sha256,
+            part_content_id: `<${logo.contentId}>`,
+            part_disposition: "inline",
+            part_blob_id: projectedLogo.blob_id,
+            hydration_status: "complete",
+          });
+          expect(Number(projectedLogo.size_bytes)).toBe(original.byteLength);
+          expect(Number(projectedLogo.part_size_bytes)).toBe(original.byteLength);
+          expect(await readAll(createBlobReadable(projectedLogo.blob_id))).toEqual(original);
+          expect(
+            await updateMailboxComposeLogo({
+              context,
+              mailboxId: mailbox.mailboxId,
+              input: { content: replacement.toString("base64"), altText: "Replacement" },
+            }),
+          ).toMatchObject({ ok: true });
           expect(await loadInlineLogoContent(logo)).toEqual(original);
+          expect(await removeMailboxComposeLogo({ context, mailboxId: mailbox.mailboxId })).toMatchObject({ ok: true });
+          for (const state of ["scheduled", "undo_window", "sending", "accepted", "sent_sync_pending", "unknown", "needs_attention"]) {
+            await sql`UPDATE mail.outbox_submissions SET state = ${state} WHERE id = ${outbox.id}::uuid`;
+            await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 });
+            expect(await loadInlineLogoContent(logo)).toEqual(original);
+          }
+          await expect(loadInlineLogoContent({ ...logo, sha256: "0".repeat(64) })).rejects.toMatchObject({
+            code: "INLINE_LOGO_UNAVAILABLE",
+          });
+          await expect(loadInlineLogoContent({ ...logo, byteLength: logo.byteLength + 1 })).rejects.toMatchObject({
+            code: "INLINE_LOGO_UNAVAILABLE",
+          });
+          await sql`UPDATE mail.outbox_submissions SET state = 'scheduled', scheduled_at = now() - interval '1 second', undo_until = NULL WHERE id = ${outbox.id}::uuid`;
+          if (intent === "new") {
+            provider.failNextSubmission("ESOCKET", false);
+            expect(await executeOutboxSubmission(outbox.id)).toBe("scheduled");
+            await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 });
+            expect(await loadInlineLogoContent(logo)).toEqual(original);
+            await sql`UPDATE mail.outbox_submissions SET scheduled_at = now() - interval '1 second' WHERE id = ${outbox.id}::uuid`;
+          }
+          expect(await executeOutboxSubmission(outbox.id)).toBe("sent");
+          const stored = provider.messagesWithId(provider.sentPath, outbox.stable_message_id)[0];
+          if (!stored) throw new Error("Sent copy missing");
+          const mime = await simpleParser(stored.source, { skipImageLinks: true });
+          expect(mime.html).toContain(`src="cid:${logo.contentId}"`);
+          expect(mime.attachments).toHaveLength(1);
+          expect(mime.attachments[0]).toMatchObject({
+            content: original,
+            contentType: "image/png",
+            contentDisposition: "inline",
+            contentId: `<${logo.contentId}>`,
+          });
+          // A pending Sent copy keeps the version even after a terminal delivery outcome.
+          await sql`UPDATE mail.outbox_submissions SET sent_copy_pending = true WHERE id = ${outbox.id}::uuid`;
+          expect(await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 })).toBe(0);
+          await sql`UPDATE mail.outbox_submissions SET sent_copy_pending = false WHERE id = ${outbox.id}::uuid`;
+          expect(await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 })).toBe(1);
+          expect(await sql`SELECT id FROM mail.mailbox_logo_versions WHERE id = ${logo.versionId}::uuid`).toHaveLength(0);
+          const [cleared] = await sql<
+            { inline_logo_version_id: string | null }[]
+          >`SELECT inline_logo_version_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
+          expect(cleared?.inline_logo_version_id).toBeNull();
+          await expect(loadInlineLogoContent(logo)).rejects.toMatchObject({ code: "INLINE_LOGO_UNAVAILABLE" });
+          expect(await readAll(createBlobReadable(projectedLogo.blob_id))).toEqual(original);
         }
-        await expect(loadInlineLogoContent({ ...logo, sha256: "0".repeat(64) })).rejects.toMatchObject({ code: "INLINE_LOGO_UNAVAILABLE" });
-        await expect(loadInlineLogoContent({ ...logo, byteLength: logo.byteLength + 1 })).rejects.toMatchObject({
-          code: "INLINE_LOGO_UNAVAILABLE",
-        });
-        await sql`UPDATE mail.outbox_submissions SET state = 'scheduled', scheduled_at = now() - interval '1 second', undo_until = NULL WHERE id = ${outbox.id}::uuid`;
-        if (intent === "new") {
-          provider.failNextSubmission("ESOCKET", false);
-          expect(await executeOutboxSubmission(outbox.id)).toBe("scheduled");
-          await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 });
-          expect(await loadInlineLogoContent(logo)).toEqual(original);
-          await sql`UPDATE mail.outbox_submissions SET scheduled_at = now() - interval '1 second' WHERE id = ${outbox.id}::uuid`;
-        }
-        expect(await executeOutboxSubmission(outbox.id)).toBe("sent");
-        const stored = provider.messagesWithId(provider.sentPath, outbox.stable_message_id)[0];
-        if (!stored) throw new Error("Sent copy missing");
-        const mime = await simpleParser(stored.source, { skipImageLinks: true });
-        expect(mime.html).toContain(`src="cid:${logo.contentId}"`);
-        expect(mime.attachments).toHaveLength(1);
-        expect(mime.attachments[0]).toMatchObject({
-          content: original,
-          contentType: "image/png",
-          contentDisposition: "inline",
-          contentId: `<${logo.contentId}>`,
-        });
-        // A pending Sent copy keeps the version even after a terminal delivery outcome.
-        await sql`UPDATE mail.outbox_submissions SET sent_copy_pending = true WHERE id = ${outbox.id}::uuid`;
-        expect(await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 })).toBe(0);
-        await sql`UPDATE mail.outbox_submissions SET sent_copy_pending = false WHERE id = ${outbox.id}::uuid`;
-        expect(await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 })).toBe(1);
-        expect(await sql`SELECT id FROM mail.mailbox_logo_versions WHERE id = ${logo.versionId}::uuid`).toHaveLength(0);
-        const [cleared] = await sql<
-          { inline_logo_version_id: string | null }[]
-        >`SELECT inline_logo_version_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
-        expect(cleared?.inline_logo_version_id).toBeNull();
-        await expect(loadInlineLogoContent(logo)).rejects.toMatchObject({ code: "INLINE_LOGO_UNAVAILABLE" });
-        expect(await readAll(createBlobReadable(projectedLogo.blob_id))).toEqual(original);
+      } finally {
+        provider.restore();
       }
-    } finally {
-      provider.restore();
-    }
-  });
+    },
+  );
 
   test("derived seeds keep selectable signatures and reject another user's private signature", async () => {
     const provider = createProvider("imap");
@@ -2329,54 +2462,58 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("sending a never-saved legacy draft fills its in-body signature once", async () => {
-    const provider = createProvider("imap");
-    try {
-      const mailbox = await connect(provider);
-      const signature = await createComposeTemplate({
-        context,
-        mailboxId: mailbox.mailboxId,
-        input: {
-          kind: "signature",
-          scope: "private",
-          name: "Legacy signature",
-          shortcut: "legacysig",
-          body: "Legacy {{ actor.display_name }}",
-        },
-      });
-      if (!signature.ok) throw new Error(signature.error.message);
-      const body = `Answer\n\n${markComposeTemplateSegment(signature.data.body)}`;
-      const draft = await createDraft({
-        context,
-        mailboxId: mailbox.mailboxId,
-        input: {
-          quoteSource: null,
-          cc: [],
-          bcc: [],
-          subject: "Signature test",
-          senderIdentityId: mailbox.identityId,
-          signatureTemplateId: null,
-          to: [{ name: null, address: CUSTOMER }],
-          body,
-          format: "markdown",
-        },
-      });
-      if (!draft.ok) throw new Error(draft.error.message);
-      const outbox = await schedule(mailbox, draft.data.id, draft.data.revision, "legacy-signature");
-      const [row] = await sql<
-        { snapshot: unknown }[]
-      >`SELECT draft_snapshot AS snapshot FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
-      const snapshot = outboundDraftSnapshotSchema.parse(row?.snapshot);
-      expect(snapshot.renderedText).toBe(`Answer\n\nLegacy mail-sent-projection-${suffix}`);
-      expect(snapshot.renderedHtml?.match(/Legacy /g)).toHaveLength(1);
-      const [stored] = await sql<
-        { body: string; signature: string | null }[]
-      >`SELECT body_markdown AS body, signature_template_id AS signature FROM mail.drafts WHERE id = ${draft.data.id}::uuid`;
-      expect(stored).toEqual({ body, signature: null });
-    } finally {
-      provider.restore();
-    }
-  });
+  test.each(["shared", "lock"] as const)(
+    "sending a never-saved legacy draft fills its in-body signature once (%s)",
+    async (draftEditMode) => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider, false, draftEditMode);
+        const signature = await createComposeTemplate({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: {
+            kind: "signature",
+            scope: "private",
+            name: "Legacy signature",
+            shortcut: "legacysig",
+            body: "Legacy {{ actor.display_name }}",
+          },
+        });
+        if (!signature.ok) throw new Error(signature.error.message);
+        const body = `Answer\n\n${markComposeTemplateSegment(signature.data.body)}`;
+        const draft = await createDraft({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: {
+            quoteSource: null,
+            cc: [],
+            bcc: [],
+            subject: "Signature test",
+            senderIdentityId: mailbox.identityId,
+            signatureTemplateId: null,
+            to: [{ name: null, address: CUSTOMER }],
+            body,
+            format: "markdown",
+          },
+        });
+        if (!draft.ok) throw new Error(draft.error.message);
+        const outbox = await schedule(mailbox, draft.data.id, draft.data.revision, "legacy-signature");
+        const [row] = await sql<
+          { snapshot: unknown }[]
+        >`SELECT draft_snapshot AS snapshot FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
+        const snapshot = outboundDraftSnapshotSchema.parse(row?.snapshot);
+        expect(snapshot.renderedText).toBe(`Answer\n\nLegacy mail-sent-projection-${suffix}`);
+        expect(snapshot.renderedHtml?.match(/Legacy /g)).toHaveLength(1);
+        const [stored] = await sql<
+          { body: string; signature: string | null }[]
+        >`SELECT body_markdown AS body, signature_template_id AS signature FROM mail.drafts WHERE id = ${draft.data.id}::uuid`;
+        // Shared admission moves the recognized legacy segment into its canonical selection.
+        expect(stored).toEqual(draftEditMode === "shared" ? { body: "Answer", signature: signature.data.id } : { body, signature: null });
+      } finally {
+        provider.restore();
+      }
+    },
+  );
 
   test("archived selected signatures are omitted from the send snapshot", async () => {
     const provider = createProvider("imap");
@@ -3351,45 +3488,48 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("a draft with marks of a signature deleted by hand saves and sends its text as written", async () => {
-    const provider = createProvider("imap");
-    try {
-      const mailbox = await connect(provider);
-      // The start mark of a signature whose end was deleted, a complete signature, and a stray end mark.
-      const body = `Thanks for waiting.\n\n\u2063Best regards\n\n${markComposeTemplateSegment("Sent by {{ actor.display_name }}")}\u2064`;
-      const draft = await createDraft({
-        context,
-        mailboxId: mailbox.mailboxId,
-        input: {
-          quoteSource: null,
-          senderIdentityId: mailbox.identityId,
-          to: [{ name: "Customer", address: CUSTOMER }],
-          cc: [],
-          bcc: [],
-          subject: "Leftover signature marks",
-          body,
-          format: "markdown",
-        },
-      });
-      if (!draft.ok) throw new Error(JSON.stringify(draft.error));
-      expect(draft.data.body).toBe(
-        `Thanks for waiting.\n\nBest regards\n\n${markComposeTemplateSegment("Sent by {{ actor.display_name }}")}`,
-      );
-      await waitForDraftExport(draft.data.id, ["active"]);
-      // Drafts saved before marks were cleaned up still hold them when they are sent.
-      await sql`UPDATE mail.drafts SET body_markdown = ${body} WHERE id = ${draft.data.id}::uuid`;
+  test.each(["shared", "lock"] as const)(
+    "a draft with marks of a signature deleted by hand saves and sends its text as written (%s)",
+    async (draftEditMode) => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider, false, draftEditMode);
+        // The start mark of a signature whose end was deleted, a complete signature, and a stray end mark.
+        const body = `Thanks for waiting.\n\n\u2063Best regards\n\n${markComposeTemplateSegment("Sent by {{ actor.display_name }}")}\u2064`;
+        const draft = await createDraft({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: {
+            quoteSource: null,
+            senderIdentityId: mailbox.identityId,
+            to: [{ name: "Customer", address: CUSTOMER }],
+            cc: [],
+            bcc: [],
+            subject: "Leftover signature marks",
+            body,
+            format: "markdown",
+          },
+        });
+        if (!draft.ok) throw new Error(JSON.stringify(draft.error));
+        expect(draft.data.body).toBe(
+          `Thanks for waiting.\n\nBest regards\n\n${markComposeTemplateSegment("Sent by {{ actor.display_name }}")}`,
+        );
+        await waitForDraftExport(draft.data.id, ["active"]);
+        // Drafts saved before marks were cleaned up still hold them when they are sent.
+        await sql`UPDATE mail.drafts SET body_markdown = ${body} WHERE id = ${draft.data.id}::uuid`;
 
-      const outbox = await send(mailbox, draft.data.id, draft.data.revision, "leftover-signature-marks");
-      const [copy] = provider.messagesWithId("Sent", outbox.stable_message_id);
-      if (!copy) throw new Error("The Sent copy is missing");
-      const parsed = await simpleParser(copy.source);
-      expect(parsed.text?.trim()).toBe(`Thanks for waiting.\n\nBest regards\n\nSent by mail-sent-projection-${suffix}`);
-      expect(`${parsed.text}${parsed.html}`).not.toMatch(/[\u2063\u2064]/);
-      expect(parsed.html).toContain(`Sent by mail-sent-projection-${suffix}`);
-    } finally {
-      provider.restore();
-    }
-  });
+        const outbox = await send(mailbox, draft.data.id, draft.data.revision, "leftover-signature-marks");
+        const [copy] = provider.messagesWithId("Sent", outbox.stable_message_id);
+        if (!copy) throw new Error("The Sent copy is missing");
+        const parsed = await simpleParser(copy.source);
+        expect(parsed.text?.trim()).toBe(`Thanks for waiting.\n\nBest regards\n\nSent by mail-sent-projection-${suffix}`);
+        expect(`${parsed.text}${parsed.html}`).not.toMatch(/[\u2063\u2064]/);
+        expect(parsed.html).toContain(`Sent by mail-sent-projection-${suffix}`);
+      } finally {
+        provider.restore();
+      }
+    },
+  );
 
   test("rebuilding threads removes projected drafts an earlier sync imported as messages", async () => {
     const provider = createProvider("gmail");
@@ -3900,72 +4040,75 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("a draft saved in another client stays one draft through every later sync of a server without CONDSTORE", async () => {
-    const provider = createProvider("imap");
-    try {
-      const mailbox = await connect(provider);
-      const externalDraft = (subject: string) =>
-        [
-          `Message-ID: <external-draft-${suffix}@example.test>`,
-          `Date: ${new Date().toUTCString()}`,
-          `From: Owner <${OWNER}>`,
-          `To: Customer <${CUSTOMER}>`,
-          `Subject: ${subject}`,
-          "Content-Type: text/plain; charset=utf-8",
-          "",
-          "A note written in another client.",
-        ].join("\r\n");
-      await provider.saveDraftElsewhere(externalDraft("Started elsewhere"));
-      const drafts = () =>
-        sql<{ subject: string; revision: string }[]>`
+  test.each(["shared", "lock"] as const)(
+    "a draft saved in another client stays one draft through every later sync of a server without CONDSTORE (%s)",
+    async (draftEditMode) => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider, false, draftEditMode);
+        const externalDraft = (subject: string) =>
+          [
+            `Message-ID: <external-draft-${suffix}@example.test>`,
+            `Date: ${new Date().toUTCString()}`,
+            `From: Owner <${OWNER}>`,
+            `To: Customer <${CUSTOMER}>`,
+            `Subject: ${subject}`,
+            "Content-Type: text/plain; charset=utf-8",
+            "",
+            "A note written in another client.",
+          ].join("\r\n");
+        await provider.saveDraftElsewhere(externalDraft("Started elsewhere"));
+        const drafts = () =>
+          sql<{ subject: string; revision: string }[]>`
           SELECT subject, revision::text FROM mail.drafts WHERE mailbox_id = ${mailbox.mailboxId}::uuid ORDER BY created_at
         `;
-      const importsSettled = () =>
-        waitFor(async () => {
-          const [pending] = await sql<{ count: number }[]>`
+        const importsSettled = () =>
+          waitFor(async () => {
+            const [pending] = await sql<{ count: number }[]>`
             SELECT count(*)::int AS count FROM mail.draft_provider_snapshots
             WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND direction = 'import' AND state IN ('external', 'importing')
           `;
-          return pending?.count === 0;
-        }, "draft imports");
+            return pending?.count === 0;
+          }, "draft imports");
 
-      await mailbox.syncAll();
-      await importsSettled();
-      expect(await drafts()).toEqual([{ subject: "Started elsewhere", revision: "1" }]);
-      const observations = async () => {
-        const [row] = await sql<{ count: number }[]>`
+        await mailbox.syncAll();
+        await importsSettled();
+        expect(await drafts()).toEqual([{ subject: "Started elsewhere", revision: "1" }]);
+        const observations = async () => {
+          const [row] = await sql<{ count: number }[]>`
           SELECT count(*)::int AS count FROM mail.draft_provider_snapshots
           WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND direction = 'import'
         `;
-        return row?.count ?? 0;
-      };
-      const observationsBefore = await observations();
+          return row?.count ?? 0;
+        };
+        const observationsBefore = await observations();
 
-      // Every six hours the Drafts folder is reconciled in full. Without MODSEQ, that cannot tell an
-      // unchanged draft from an edited one, so each draft is downloaded and compared again.
-      for (let round = 0; round < 2; round += 1) {
-        await sql`
+        // Every six hours the Drafts folder is reconciled in full. Without MODSEQ, that cannot tell an
+        // unchanged draft from an edited one, so each draft is downloaded and compared again.
+        for (let round = 0; round < 2; round += 1) {
+          await sql`
           UPDATE mail.folders
           SET envelope_cursor = jsonb_set(envelope_cursor, '{lastFullReconcileAt}', to_jsonb((now() - interval '7 hours')::text))
           WHERE id = ${mailbox.folderId(provider.draftsPath)}::uuid
         `;
+          await mailbox.syncAll();
+          await importsSettled();
+        }
+        // Seeing the same copy again leaves nothing behind, so the reconciliations do not pile up rows.
+        expect(await observations()).toBe(observationsBefore);
+        expect(await drafts()).toEqual([{ subject: "Started elsewhere", revision: "1" }]);
+
+        // The other client saves an edit as a new message with the same Message-ID.
+        provider.folder(provider.draftsPath).entries.clear();
+        await provider.saveDraftElsewhere(externalDraft("Edited elsewhere"));
         await mailbox.syncAll();
         await importsSettled();
+        expect(await drafts()).toEqual([{ subject: "Edited elsewhere", revision: "2" }]);
+      } finally {
+        provider.restore();
       }
-      // Seeing the same copy again leaves nothing behind, so the reconciliations do not pile up rows.
-      expect(await observations()).toBe(observationsBefore);
-      expect(await drafts()).toEqual([{ subject: "Started elsewhere", revision: "1" }]);
-
-      // The other client saves an edit as a new message with the same Message-ID.
-      provider.folder(provider.draftsPath).entries.clear();
-      await provider.saveDraftElsewhere(externalDraft("Edited elsewhere"));
-      await mailbox.syncAll();
-      await importsSettled();
-      expect(await drafts()).toEqual([{ subject: "Edited elsewhere", revision: "2" }]);
-    } finally {
-      provider.restore();
-    }
-  });
+    },
+  );
 
   test("the Drafts folder lists and counts the drafts saved in Mail and in another client", async () => {
     const provider = createProvider("imap");
@@ -4116,72 +4259,75 @@ suite("mail sent message projection", () => {
   };
 
   for (const change of ["body", "attachment"] as const)
-    test(`a suggestion changed in another client's Drafts folder adopts on ${change} import`, async () => {
-      const provider = createProvider("imap");
-      try {
-        const mailbox = await connect(provider);
-        const draft = await suggestionForImport(mailbox);
-        const copies = provider.folder(provider.draftsPath).entries;
-        const original = [...copies.values()][0]!;
-        const source = draftElsewhere(original.messageId!, draft.subject, "Edited in another client.");
-        copies.clear();
-        await provider.saveDraftElsewhere(
-          change === "body"
-            ? source
-            : [
-                ...source.split("\r\n").slice(0, 5),
-                'Content-Type: multipart/mixed; boundary="external-edit"',
-                "",
-                "--external-edit",
-                "Content-Type: text/plain; charset=utf-8",
-                "",
-                draft.body,
-                "--external-edit",
-                "Content-Type: text/plain",
-                'Content-Disposition: attachment; filename="client.txt"',
-                "",
-                "Attached by another client",
-                "--external-edit--",
-                "",
-              ].join("\r\n"),
-        );
-        await mailbox.syncAll();
-        await settleDraftImports(mailbox.mailboxId);
-        const current = await getDraft(context, mailbox.mailboxId, draft.id);
-        if (!current.ok) throw new Error(current.error.message);
-        expect(current.data.suggestion).toBeFalse();
-        expect(current.data.revision).toBe(draft.revision + 1);
-        if (change === "body") expect(current.data.body).toBe("Edited in another client.");
-        else {
-          expect(current.data.body).toBe(draft.body);
-          expect(current.data.attachments.map((attachment) => attachment.filename)).toEqual(["client.txt"]);
+    test.each(["shared", "lock"] as const)(
+      `a suggestion changed in another client's Drafts folder adopts on ${change} import (%s)`,
+      async (draftEditMode) => {
+        const provider = createProvider("imap");
+        try {
+          const mailbox = await connect(provider, false, draftEditMode);
+          const draft = await suggestionForImport(mailbox);
+          const copies = provider.folder(provider.draftsPath).entries;
+          const original = [...copies.values()][0]!;
+          const source = draftElsewhere(original.messageId!, draft.subject, "Edited in another client.");
+          copies.clear();
+          await provider.saveDraftElsewhere(
+            change === "body"
+              ? source
+              : [
+                  ...source.split("\r\n").slice(0, 5),
+                  'Content-Type: multipart/mixed; boundary="external-edit"',
+                  "",
+                  "--external-edit",
+                  "Content-Type: text/plain; charset=utf-8",
+                  "",
+                  draft.body,
+                  "--external-edit",
+                  "Content-Type: text/plain",
+                  'Content-Disposition: attachment; filename="client.txt"',
+                  "",
+                  "Attached by another client",
+                  "--external-edit--",
+                  "",
+                ].join("\r\n"),
+          );
+          await mailbox.syncAll();
+          await settleDraftImports(mailbox.mailboxId);
+          const current = await getDraft(context, mailbox.mailboxId, draft.id);
+          if (!current.ok) throw new Error(current.error.message);
+          expect(current.data.suggestion).toBeFalse();
+          expect(current.data.revision).toBe(draft.revision + 1);
+          if (change === "body") expect(current.data.body).toBe("Edited in another client.");
+          else {
+            expect(current.data.body).toBe(draft.body);
+            expect(current.data.attachments.map((attachment) => attachment.filename)).toEqual(["client.txt"]);
+          }
+          const replacement = await updateDraft({
+            context: gustav,
+            mailboxId: mailbox.mailboxId,
+            draftId: draft.id,
+            expectedRevision: current.data.revision,
+            input: {
+              senderIdentityId: current.data.senderIdentityId,
+              signatureTemplateId: current.data.signatureTemplateId,
+              to: current.data.to,
+              cc: current.data.cc,
+              bcc: current.data.bcc,
+              subject: current.data.subject,
+              body: "Automatic replacement",
+              format: current.data.format,
+              priority: current.data.priority,
+              requestDeliveryReceipt: current.data.requestDeliveryReceipt,
+              requestReadReceipt: current.data.requestReadReceipt,
+            },
+          });
+          expect(replacement).toMatchObject({ ok: false, error: { code: "DRAFT_ADOPTED" } });
+          const retained = await getDraft(context, mailbox.mailboxId, draft.id);
+          expect(retained).toMatchObject({ ok: true, data: { body: current.data.body, revision: current.data.revision } });
+        } finally {
+          provider.restore();
         }
-        const replacement = await updateDraft({
-          context: gustav,
-          mailboxId: mailbox.mailboxId,
-          draftId: draft.id,
-          expectedRevision: current.data.revision,
-          input: {
-            senderIdentityId: current.data.senderIdentityId,
-            signatureTemplateId: current.data.signatureTemplateId,
-            to: current.data.to,
-            cc: current.data.cc,
-            bcc: current.data.bcc,
-            subject: current.data.subject,
-            body: "Automatic replacement",
-            format: current.data.format,
-            priority: current.data.priority,
-            requestDeliveryReceipt: current.data.requestDeliveryReceipt,
-            requestReadReceipt: current.data.requestReadReceipt,
-          },
-        });
-        expect(replacement).toMatchObject({ ok: false, error: { code: "DRAFT_ADOPTED" } });
-        const retained = await getDraft(context, mailbox.mailboxId, draft.id);
-        expect(retained).toMatchObject({ ok: true, data: { body: current.data.body, revision: current.data.revision } });
-      } finally {
-        provider.restore();
-      }
-    });
+      },
+    );
 
   test("suggestion reconciliation, identical external replacement and export retries do not adopt", async () => {
     const provider = createProvider("imap");
@@ -4221,41 +4367,44 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("an edit another client saves from a copy older than the Cloud edit stays a recovery copy, however often it saves again", async () => {
-    const provider = createProvider("imap");
-    try {
-      const mailbox = await connect(provider);
-      const messageId = `<stale-copy-${suffix}@example.test>`;
-      const drafts = provider.folder(provider.draftsPath).entries;
-      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Original text."));
-      await mailbox.syncAll();
-      await settleDraftImports(mailbox.mailboxId);
-      const [imported] = await mailboxDrafts(mailbox.mailboxId);
-      if (!imported) throw new Error("The external draft was not imported");
+  test.each(["shared", "lock"] as const)(
+    "an edit another client saves from a copy older than the Cloud edit stays a recovery copy, however often it saves again (%s)",
+    async (draftEditMode) => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider, false, draftEditMode);
+        const messageId = `<stale-copy-${suffix}@example.test>`;
+        const drafts = provider.folder(provider.draftsPath).entries;
+        await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Original text."));
+        await mailbox.syncAll();
+        await settleDraftImports(mailbox.mailboxId);
+        const [imported] = await mailboxDrafts(mailbox.mailboxId);
+        if (!imported) throw new Error("The external draft was not imported");
 
-      // Mail replaces the copy in the Drafts folder with its own edit.
-      const original = [...drafts.keys()];
-      await editInCloud(mailbox, imported.id, 1, "Cloud edit.");
-      await settleDraftImports(mailbox.mailboxId);
-      expect(drafts.size).toBe(1);
-      expect(drafts.has(original[0]!)).toBe(false);
+        // Mail replaces the copy in the Drafts folder with its own edit.
+        const original = [...drafts.keys()];
+        await editInCloud(mailbox, imported.id, 1, "Cloud edit.");
+        await settleDraftImports(mailbox.mailboxId);
+        expect(drafts.size).toBe(1);
+        expect(drafts.has(original[0]!)).toBe(false);
 
-      // The other client still shows the original and saves an edit of it, twice; each save replaces its previous one.
-      const first = await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Other client edit one."));
-      await mailbox.syncAll();
-      await settleDraftImports(mailbox.mailboxId);
-      drafts.delete(first.uid);
-      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Other client edit two."));
-      await mailbox.syncAll();
-      await settleDraftImports(mailbox.mailboxId);
+        // The other client still shows the original and saves an edit of it, twice; each save replaces its previous one.
+        const first = await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Other client edit one."));
+        await mailbox.syncAll();
+        await settleDraftImports(mailbox.mailboxId);
+        drafts.delete(first.uid);
+        await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Other client edit two."));
+        await mailbox.syncAll();
+        await settleDraftImports(mailbox.mailboxId);
 
-      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
-        expect.objectContaining({ id: imported.id, body: "Cloud edit.", revision: "2", state: "draft", recoveries: 2 }),
-      ]);
-    } finally {
-      provider.restore();
-    }
-  });
+        expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+          expect.objectContaining({ id: imported.id, body: "Cloud edit.", revision: "2", state: "draft", recoveries: 2 }),
+        ]);
+      } finally {
+        provider.restore();
+      }
+    },
+  );
 
   test("a draft whose text ends in a line break keeps its revision when the sync sees Mail's own copy", async () => {
     const provider = createProvider("imap");
@@ -4281,58 +4430,390 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("a client that edits the current copy updates the draft once, even when it stores the edit twice", async () => {
+  test("replacement rollback before the first shared join preserves the lazy-seed baseline", async () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
-      const messageId = `<double-save-${suffix}@example.test>`;
-      const drafts = provider.folder(provider.draftsPath).entries;
-      const original = await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Original text."));
-      await mailbox.syncAll();
-      await settleDraftImports(mailbox.mailboxId);
-
-      drafts.delete(original.uid);
-      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Edited elsewhere."));
-      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Edited elsewhere."));
-      await mailbox.syncAll();
-      await settleDraftImports(mailbox.mailboxId);
-
-      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
-        expect.objectContaining({ body: "Edited elsewhere.", revision: "2", state: "draft", recoveries: 0 }),
-      ]);
+      const draft = await newDraft(mailbox, "Unseeded replacement rollback");
+      const generation = draft.generation;
+      if (!generation) throw new Error("Shared draft generation is missing");
+      await expect(
+        withDraftDocumentReplacement(draft.id, async (db, replace) => {
+          await db`SELECT id FROM mail.drafts WHERE id = ${draft.id}::uuid FOR UPDATE`;
+          if (!replace) throw new Error("Expected shared replacement admission");
+          await replace(generation);
+          throw new Error("Fixture provider replacement rollback");
+        }),
+      ).rejects.toThrow("Fixture provider replacement rollback");
+      const [stored] = await sql<{ state: Uint8Array | null; cursor: string | null; revision: number; generation: string }[]>`
+        SELECT doc_state AS state, doc_cursor AS cursor, revision::int AS revision, doc_generation::text AS generation
+        FROM mail.drafts WHERE id = ${draft.id}::uuid`;
+      expect(stored).toEqual({ state: null, cursor: null, revision: draft.revision, generation });
+      const current = await readDraftDocument({ context, mailboxId: mailbox.mailboxId, draftId: draft.id });
+      if (!current.ok) throw new Error(current.error.message);
+      expect(current.data.fresh.content.body).toBe(draft.body);
+      expect(current.data.generation).toBe(generation);
     } finally {
       provider.restore();
     }
   });
 
-  test("a draft another client saves keeps only complete signature segments", async () => {
+  test("an external edit of a sent shared draft is retained as recovery without reopening its closed room", async () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
-      const messageId = `<leftover-signature-marks-${suffix}@example.test>`;
-      const drafts = provider.folder(provider.draftsPath).entries;
-      const signature = markComposeTemplateSegment("Regards {{ actor.display_name }}");
-      // The other client kept a start mark whose end was deleted, and an end mark whose start was deleted.
-      const original = await provider.saveDraftElsewhere(
-        draftElsewhere(messageId, "Started elsewhere", `Original\u2063 text. ${signature}\u2064`),
+      const draft = await newDraft(mailbox, "Closed shared draft import");
+      const original = [...provider.folder(provider.draftsPath).entries.values()][0]!;
+      const source = original.source.toString("utf8");
+      expect(source).toContain(draft.body);
+      await send(mailbox, draft.id, draft.revision, "closed-shared-import");
+      await settleDraftImports(mailbox.mailboxId);
+      expect((await mailDraftDocumentLog.lifecycle!.get(draft.id))?.value.state).toBe("closed");
+      await provider.saveDraftElsewhere(source.replace(draft.body, "Edited after send."));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ id: draft.id, body: draft.body, state: "sent", recoveries: 1 }),
+      ]);
+      expect((await mailDraftDocumentLog.lifecycle!.get(draft.id))?.value.state).toBe("closed");
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("shared provider replacement changes generation and rejects the previous document lineage", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      await settleDraftImports(mailbox.mailboxId);
+      const copies = provider.folder(provider.draftsPath).entries;
+      const original = [...copies.values()][0]!;
+      const stale = await createDraftRevisionUpdate(
+        initial.fresh.state,
+        { ...initial.fresh.content, body: "Stale room input" },
+        { deadline: Date.now() + 10000 },
       );
+      copies.clear();
+      await provider.saveDraftElsewhere(draftElsewhere(original.messageId!, initial.fresh.content.subject, "Edited elsewhere."));
       await mailbox.syncAll();
       await settleDraftImports(mailbox.mailboxId);
-      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
-        expect.objectContaining({ body: `Original text. ${signature}`, revision: "1", recoveries: 0 }),
-      ]);
-
-      drafts.delete(original.uid);
-      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", `\u2064Edited text. ${signature}\u2063`));
-      await mailbox.syncAll();
-      await settleDraftImports(mailbox.mailboxId);
-      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
-        expect.objectContaining({ body: `Edited text. ${signature}`, revision: "2", recoveries: 0 }),
-      ]);
+      const current = await readDraftDocument(target);
+      if (!current.ok) throw new Error(current.error.message);
+      expect(current.data.generation).toBe((BigInt(initial.generation) + 1n).toString());
+      expect(current.data.fresh.content.body).toBe("Edited elsewhere.");
+      expect(current.data.durable.content).toEqual(current.data.fresh.content);
+      const rejected = await acceptDraftDocumentUpdate({
+        ...target,
+        generation: initial.generation,
+        baseCursor: initial.fresh.cursor,
+        update: stale,
+      });
+      expect(rejected.ok).toBeFalse();
+      expect(await getDraft(context, mailbox.mailboxId, target.draftId)).toMatchObject({
+        ok: true,
+        data: { body: "Edited elsewhere.", revision: initial.revision + 1 },
+      });
     } finally {
       provider.restore();
     }
   });
+
+  test("a stalled import replay aborts within admission and releases its SQL row lock", async () => {
+    const provider = createProvider("imap");
+    const release = Promise.withResolvers<void>();
+    let restoreSpies = () => {};
+    let failed: Promise<unknown> | undefined;
+    let replayEntered = false;
+    let mailboxId: string | undefined;
+    try {
+      const mailbox = await connect(provider);
+      mailboxId = mailbox.mailboxId;
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      await settleDraftImports(mailbox.mailboxId);
+      const topic = mailDraftDocumentLog.topic();
+      // A harmless thaw tail still needs classification before replacement.
+      await topic.publish({
+        tenantId: target.draftId,
+        data: {
+          kind: "freeze",
+          room: { state: "open" },
+          payload: "",
+          restoreRevision: initial.generation,
+          originNodeId: "stalled-replay-fixture",
+          originPeerId: null,
+        },
+      });
+      const failure = Promise.withResolvers<unknown>();
+      failed = failure.promise;
+      let admissionSignal: AbortSignal | undefined;
+      let replaySignal: AbortSignal | undefined;
+      const admit = mailDraftDocumentLog.admit.bind(mailDraftDocumentLog);
+      const admission = spyOn(mailDraftDocumentLog, "admit").mockImplementation(async (docId, parent, run) => {
+        try {
+          return await admit(docId, parent, (signal) => {
+            if (docId === target.draftId) admissionSignal = signal;
+            return run(signal);
+          });
+        } catch (error) {
+          if (docId === target.draftId) failure.resolve(error);
+          throw error;
+        }
+      });
+      const realReplay = topic.replay.bind(topic);
+      const replay = spyOn(topic, "replay").mockImplementation(async function* (options) {
+        if (options?.tenantId !== target.draftId) {
+          yield* realReplay(options);
+          return;
+        }
+        replayEntered = true;
+        replaySignal = options.signal;
+        // No broker response ever arrives. Only cancellation (or fixture
+        // teardown on regression) can let the transaction finish.
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => reject(options.signal?.reason);
+          options.signal?.addEventListener("abort", abort, { once: true });
+          void release.promise.then(() => {
+            options.signal?.removeEventListener("abort", abort);
+            resolve();
+          });
+          if (options.signal?.aborted) abort();
+        });
+      });
+      const topicHandle = spyOn(mailDraftDocumentLog, "topic").mockReturnValue(topic);
+      restoreSpies = () => {
+        topicHandle.mockRestore();
+        replay.mockRestore();
+        admission.mockRestore();
+      };
+      let rejected = false;
+      void failure.promise.then(() => {
+        rejected = true;
+      });
+      const copies = provider.folder(provider.draftsPath).entries;
+      const original = [...copies.values()][0]!;
+      copies.clear();
+      await provider.saveDraftElsewhere(draftElsewhere(original.messageId!, initial.fresh.content.subject, "Stalled external import"));
+      await mailbox.syncAll();
+      // The real admission owns a five-second bound. The existing SQL-access
+      // budget also bounds this assertion without changing any suite timeout.
+      await waitFor(async () => rejected, "import admission rejection and rollback", DRAFT_DOCUMENT_ACCESS_REFRESH_MS);
+      expect(replayEntered).toBe(true);
+      expect(replaySignal).toBe(admissionSignal);
+      expect(replaySignal?.aborted).toBe(true);
+      expect(await failure.promise).toBeInstanceOf(ConflictError);
+      // Independent pooled transaction: NOWAIT fails immediately if the
+      // cancelled import still owns the draft row.
+      const locked = await sql.begin((db) => db`SELECT id FROM mail.drafts WHERE id = ${target.draftId}::uuid FOR UPDATE NOWAIT`);
+      expect(locked).toHaveLength(1);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({
+          id: target.draftId,
+          body: initial.durable.content.body,
+          revision: String(initial.revision),
+          recoveries: 0,
+        }),
+      ]);
+    } finally {
+      release.resolve();
+      if (replayEntered) await failed;
+      restoreSpies();
+      if (mailboxId)
+        await sql`UPDATE mail.draft_provider_snapshots SET state = 'needs_attention'
+        WHERE mailbox_id = ${mailboxId}::uuid AND direction = 'import' AND state IN ('external', 'importing')`;
+      provider.restore();
+    }
+  });
+
+  test("provider replacement CAS preserves input arriving after import classification without admission", async () => {
+    const provider = createProvider("imap");
+    let restoreValidation = () => {};
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      await settleDraftImports(mailbox.mailboxId);
+      const update = await createDraftRevisionUpdate(
+        initial.fresh.state,
+        { ...initial.fresh.content, body: "Room input won the race" },
+        { deadline: Date.now() + 10000 },
+      );
+      const publicContent = draftValidation.publicDraftContent;
+      let injected = false;
+      const validation = spyOn(draftValidation, "publicDraftContent").mockImplementation(async (...args) => {
+        if (!injected && args[1] === mailbox.mailboxId && args[2].body === "External racing replacement") {
+          injected = true;
+          // A stale/distributed writer deliberately bypasses admission after
+          // classification, before replace can publish its generation marker.
+          await mailDraftDocumentLog.topic().publish({
+            tenantId: target.draftId,
+            data: {
+              kind: "sync",
+              payload: Buffer.from(update).toString("base64"),
+              restoreRevision: initial.generation,
+              originNodeId: "writer-without-admission",
+              originPeerId: "racing-editor",
+            },
+          });
+        }
+        return publicContent(...args);
+      });
+      restoreValidation = () => validation.mockRestore();
+      const copies = provider.folder(provider.draftsPath).entries;
+      const original = [...copies.values()][0]!;
+      copies.clear();
+      await provider.saveDraftElsewhere(draftElsewhere(original.messageId!, initial.fresh.content.subject, "External racing replacement"));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      expect(injected).toBe(true);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({
+          id: target.draftId,
+          body: initial.durable.content.body,
+          revision: String(initial.revision),
+          recoveries: 1,
+        }),
+      ]);
+      const current = await readDraftDocument(target);
+      expect(current).toMatchObject({
+        ok: true,
+        data: { generation: initial.generation, fresh: { content: { body: "Room input won the race" } } },
+      });
+      const [recovery] = await sql<
+        { body: string }[]
+      >`SELECT content->>'body' AS body FROM mail.draft_recovery_copies WHERE draft_id = ${target.draftId}::uuid`;
+      expect(recovery?.body).toBe("External racing replacement");
+    } finally {
+      restoreValidation();
+      provider.restore();
+    }
+  });
+
+  test("an external replacement preserves unprojected shared room input and retains the external body as recovery", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      await settleDraftImports(mailbox.mailboxId);
+      const copies = provider.folder(provider.draftsPath).entries;
+      const original = [...copies.values()][0]!;
+      await lateRoomEdit(target.draftId, "Unprojected room text");
+      const [before] = await sql<{ body: string; revision: number }[]>`
+        SELECT body_markdown AS body, revision::int AS revision FROM mail.drafts WHERE id = ${target.draftId}::uuid`;
+      expect(before).toEqual({ body: initial.durable.content.body, revision: initial.revision });
+      copies.clear();
+      await provider.saveDraftElsewhere(draftElsewhere(original.messageId!, initial.fresh.content.subject, "External replacement"));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      const [preserved] = await mailboxDrafts(mailbox.mailboxId);
+      expect(preserved).toMatchObject({ body: initial.durable.content.body, revision: String(initial.revision), recoveries: 1 });
+      const [recovery] = await sql<{ body: string }[]>`
+        SELECT content->>'body' AS body FROM mail.draft_recovery_copies WHERE draft_id = ${target.draftId}::uuid`;
+      expect(recovery?.body).toBe("External replacement");
+      const current = await readDraftDocument(target);
+      if (!current.ok) throw new Error(current.error.message);
+      expect(current.data.generation).toBe(initial.generation);
+      expect(current.data.fresh.content.body).toBe("Unprojected room text");
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a foreign generation marker keeps an external replacement recoverable", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      await settleDraftImports(mailbox.mailboxId);
+      const copies = provider.folder(provider.draftsPath).entries;
+      const original = [...copies.values()][0]!;
+      await mailDraftDocumentLog.topic().publish({
+        tenantId: target.draftId,
+        data: {
+          kind: "freeze",
+          payload: "",
+          restoreRevision: (BigInt(initial.generation) + 1n).toString(),
+          originNodeId: "foreign-replacement",
+          originPeerId: null,
+        },
+      });
+      copies.clear();
+      await provider.saveDraftElsewhere(draftElsewhere(original.messageId!, initial.fresh.content.subject, "External replacement"));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({
+          id: target.draftId,
+          body: initial.durable.content.body,
+          revision: String(initial.revision),
+          recoveries: 1,
+        }),
+      ]);
+      const [recovery] = await sql<{ body: string }[]>`
+        SELECT content->>'body' AS body FROM mail.draft_recovery_copies WHERE draft_id = ${target.draftId}::uuid`;
+      expect(recovery?.body).toBe("External replacement");
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test.each(["shared", "lock"] as const)(
+    "a client that edits the current copy updates the draft once, even when it stores the edit twice (%s)",
+    async (draftEditMode) => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider, false, draftEditMode);
+        const messageId = `<double-save-${suffix}@example.test>`;
+        const drafts = provider.folder(provider.draftsPath).entries;
+        const original = await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Original text."));
+        await mailbox.syncAll();
+        await settleDraftImports(mailbox.mailboxId);
+
+        drafts.delete(original.uid);
+        await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Edited elsewhere."));
+        await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Edited elsewhere."));
+        await mailbox.syncAll();
+        await settleDraftImports(mailbox.mailboxId);
+
+        expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+          expect.objectContaining({ body: "Edited elsewhere.", revision: "2", state: "draft", recoveries: 0 }),
+        ]);
+      } finally {
+        provider.restore();
+      }
+    },
+  );
+
+  test.each(["shared", "lock"] as const)(
+    "a draft another client saves keeps only complete signature segments (%s)",
+    async (draftEditMode) => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider, false, draftEditMode);
+        const messageId = `<leftover-signature-marks-${suffix}@example.test>`;
+        const drafts = provider.folder(provider.draftsPath).entries;
+        const signature = markComposeTemplateSegment("Regards {{ actor.display_name }}");
+        // The other client kept a start mark whose end was deleted, and an end mark whose start was deleted.
+        const original = await provider.saveDraftElsewhere(
+          draftElsewhere(messageId, "Started elsewhere", `Original\u2063 text. ${signature}\u2064`),
+        );
+        await mailbox.syncAll();
+        await settleDraftImports(mailbox.mailboxId);
+        expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+          expect.objectContaining({ body: `Original text. ${signature}`, revision: "1", recoveries: 0 }),
+        ]);
+
+        drafts.delete(original.uid);
+        await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", `\u2064Edited text. ${signature}\u2063`));
+        await mailbox.syncAll();
+        await settleDraftImports(mailbox.mailboxId);
+        expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+          expect.objectContaining({ body: `Edited text. ${signature}`, revision: "2", recoveries: 0 }),
+        ]);
+      } finally {
+        provider.restore();
+      }
+    },
+  );
 
   test("a draft another client re-saved unchanged leaves the provider when discarded, and a later save from it starts a new draft", async () => {
     const provider = createProvider("imap");
@@ -4369,76 +4850,79 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("an edit from another client imports into a draft whose attachment was uploaded in Mail", async () => {
-    const provider = createProvider("imap");
-    try {
-      const mailbox = await connect(provider);
-      const created = await createDraft({
-        context,
-        mailboxId: mailbox.mailboxId,
-        input: {
-          quoteSource: null,
-          senderIdentityId: mailbox.identityId,
-          to: [{ name: "Customer", address: CUSTOMER }],
-          cc: [],
-          bcc: [],
-          subject: "With attachment",
-          body: "Written in Mail.",
-          format: "plain",
-          conversationId: null,
-          intent: "new",
-          sourceMessageId: null,
-        },
-      });
-      if (!created.ok) throw new Error(JSON.stringify(created.error));
-      const upload = await createDraftAttachmentUpload({
-        context,
-        mailboxId: mailbox.mailboxId,
-        draftId: created.data.id,
-        input: { filename: "notes.txt", contentType: "text/plain", byteLength: 5 },
-      });
-      if (!upload.ok) throw new Error(upload.error.message);
-      const appended = await appendDraftAttachmentUpload({
-        context,
-        mailboxId: mailbox.mailboxId,
-        draftId: created.data.id,
-        uploadId: upload.data.id,
-        offset: 0,
-        bytes: Buffer.from("notes"),
-      });
-      if (!appended.ok) throw new Error(appended.error.message);
-      const attached = await finalizeDraftAttachmentUpload({
-        context,
-        mailboxId: mailbox.mailboxId,
-        draftId: created.data.id,
-        uploadId: upload.data.id,
-        expectedRevision: created.data.revision,
-      });
-      if (!attached.ok) throw new Error(attached.error.message);
-      await settleDraftImports(mailbox.mailboxId);
-      const [exported] = await sql<{ stable_message_id: string; uid: string }[]>`
+  test.each(["shared", "lock"] as const)(
+    "an edit from another client imports into a draft whose attachment was uploaded in Mail (%s)",
+    async (draftEditMode) => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider, false, draftEditMode);
+        const created = await createDraft({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: {
+            quoteSource: null,
+            senderIdentityId: mailbox.identityId,
+            to: [{ name: "Customer", address: CUSTOMER }],
+            cc: [],
+            bcc: [],
+            subject: "With attachment",
+            body: "Written in Mail.",
+            format: "plain",
+            conversationId: null,
+            intent: "new",
+            sourceMessageId: null,
+          },
+        });
+        if (!created.ok) throw new Error(JSON.stringify(created.error));
+        const upload = await createDraftAttachmentUpload({
+          context,
+          mailboxId: mailbox.mailboxId,
+          draftId: created.data.id,
+          input: { filename: "notes.txt", contentType: "text/plain", byteLength: 5 },
+        });
+        if (!upload.ok) throw new Error(upload.error.message);
+        const appended = await appendDraftAttachmentUpload({
+          context,
+          mailboxId: mailbox.mailboxId,
+          draftId: created.data.id,
+          uploadId: upload.data.id,
+          offset: 0,
+          bytes: Buffer.from("notes"),
+        });
+        if (!appended.ok) throw new Error(appended.error.message);
+        const attached = await finalizeDraftAttachmentUpload({
+          context,
+          mailboxId: mailbox.mailboxId,
+          draftId: created.data.id,
+          uploadId: upload.data.id,
+          expectedRevision: created.data.revision,
+        });
+        if (!attached.ok) throw new Error(attached.error.message);
+        await settleDraftImports(mailbox.mailboxId);
+        const [exported] = await sql<{ stable_message_id: string; uid: string }[]>`
         SELECT stable_message_id, uid::text FROM mail.draft_provider_snapshots
         WHERE draft_id = ${created.data.id}::uuid AND direction = 'export' AND state = 'active'
       `;
-      if (!exported) throw new Error("The draft was not exported");
+        if (!exported) throw new Error("The draft was not exported");
 
-      // The other client replaces Mail's copy with its own edit, without Mail's headers or the attachment.
-      provider.folder(provider.draftsPath).entries.delete(Number(exported.uid));
-      await provider.saveDraftElsewhere(draftElsewhere(exported.stable_message_id, "With attachment", "Edited elsewhere."));
-      await mailbox.syncAll();
-      await settleDraftImports(mailbox.mailboxId);
+        // The other client replaces Mail's copy with its own edit, without Mail's headers or the attachment.
+        provider.folder(provider.draftsPath).entries.delete(Number(exported.uid));
+        await provider.saveDraftElsewhere(draftElsewhere(exported.stable_message_id, "With attachment", "Edited elsewhere."));
+        await mailbox.syncAll();
+        await settleDraftImports(mailbox.mailboxId);
 
-      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
-        expect.objectContaining({ id: created.data.id, body: "Edited elsewhere.", revision: String(attached.data.revision + 1) }),
-      ]);
-      const [attachments] = await sql<{ count: number }[]>`
+        expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+          expect.objectContaining({ id: created.data.id, body: "Edited elsewhere.", revision: String(attached.data.revision + 1) }),
+        ]);
+        const [attachments] = await sql<{ count: number }[]>`
         SELECT count(*)::int AS count FROM mail.draft_attachments WHERE draft_id = ${created.data.id}::uuid AND removed_at IS NULL
       `;
-      expect(attachments?.count).toBe(0);
-    } finally {
-      provider.restore();
-    }
-  });
+        expect(attachments?.count).toBe(0);
+      } finally {
+        provider.restore();
+      }
+    },
+  );
 
   const providerDrafts = async (provider: Provider) =>
     Promise.all(

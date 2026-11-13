@@ -33,6 +33,7 @@ import {
   userBackedActor,
 } from "./auth";
 import { sharedDraftsSupported } from "./draft-documents";
+import { setMailboxDraftEditMode } from "./draft-edit-mode";
 import { mailLive } from "./live";
 import { pauseDeletedMailboxExecution, pauseMailboxTransport } from "./mailbox-lifecycle";
 import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
@@ -437,6 +438,7 @@ export const updateMailbox = async (params: {
         if (draftEditMode?.success && draftEditMode.data === "shared" && !(await sharedDraftsSupported())) {
           unwrap(fail({ code: "SHARED_DRAFTS_UNSUPPORTED", status: 409, message: mailDraftDocumentMessages.resolve([]).t.unsupported }));
         }
+        if (draftEditMode?.success) await setMailboxDraftEditMode(tx, [params.mailboxId], draftEditMode.data);
         const [row] = await tx<(DbMailbox & { short_id: string })[]>`
           UPDATE mail.mailboxes
           SET
@@ -444,8 +446,8 @@ export const updateMailbox = async (params: {
             description = CASE WHEN ${params.description !== undefined} THEN ${description} ELSE description END,
             sync_enabled = COALESCE(${params.syncEnabled ?? null}, sync_enabled),
             search_backend = COALESCE(${params.searchBackend ?? null}, search_backend),
-            draft_edit_mode = COALESCE(${draftEditMode?.data ?? null}, draft_edit_mode),
             compose_safety = COALESCE(${composeSafety?.data ?? null}::jsonb, compose_safety),
+            draft_edit_mode_explicit = draft_edit_mode_explicit OR ${draftEditMode?.success === true},
             health = CASE
               WHEN ${params.syncEnabled === false} THEN 'paused'
               WHEN ${params.syncEnabled === true} AND health = 'paused' THEN 'bootstrapping'

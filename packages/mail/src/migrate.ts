@@ -183,10 +183,15 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS hydration_work_unpublished_idx ON mail.hydration_work (queued_at, mailbox_id)
     WHERE job_id IS NOT NULL AND published_at IS NULL
   `.simple();
-  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode text NOT NULL DEFAULT 'lock'
+  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode text NOT NULL DEFAULT 'shared'
     CHECK (draft_edit_mode IN ('lock', 'shared'))`.simple();
-  // Existing drafts retain their mode. Defaults stay lock until verified
-  // per-mailbox activation; no body or document history is rewritten.
+  await tx`ALTER TABLE mail.mailboxes ALTER COLUMN draft_edit_mode SET DEFAULT 'shared'`.simple();
+  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode_explicit boolean NOT NULL DEFAULT false`.simple();
+  // Compatible rollout progress must not exclude older images via schema_migrations.
+  await tx`CREATE TABLE IF NOT EXISTS mail.shared_drafts_default_migration (
+    name text PRIMARY KEY CHECK (name = 'shared_drafts_default'), details jsonb NOT NULL
+  )`.simple();
+  // Existing drafts retain their mode; mailbox switches affect only new user drafts.
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
     CHECK (edit_mode IN ('lock', 'shared'))`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1

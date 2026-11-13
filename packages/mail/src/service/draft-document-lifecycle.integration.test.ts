@@ -90,6 +90,7 @@ suite("Mail document lifecycle boundaries", () => {
       accessSubject: { type: "user", userId },
     };
     mailboxId = value(await createMailbox(context, { name: `Draft lifecycle ${suffix}`, description: "Fictional fixture" })).id;
+    value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
     const [sender] = await sql<{ id: string; short_id: string }[]>`INSERT INTO mail.sender_identities
       (short_id, mailbox_id, label, display_name, from_address, automation_policy, status)
       VALUES (${newShortId()}, ${mailboxId}::uuid, 'Writer', 'Writer', 'writer@example.test', 'disabled', 'verified') RETURNING id, short_id`;

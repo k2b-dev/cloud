@@ -3414,7 +3414,7 @@ const specialistCommands = {
           description: "Enable or pause provider synchronization",
         }),
         drafts: flag.enum(["lock", "shared"] as const, {
-          description: "How new drafts are edited: lock (one person at a time) or shared (together); existing drafts keep theirs",
+          description: "How new drafts are edited: shared (default, together) or lock (one person at a time); existing drafts keep theirs",
         }),
       },
       run: async ({ ctx, flags }) => {

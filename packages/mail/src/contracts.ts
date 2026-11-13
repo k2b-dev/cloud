@@ -612,7 +612,7 @@ export const mailboxSchema = z.object({
   automaticReplyManagementPermission: automaticReplyManagementPermissionSchema,
   composeSafety: composeSafetyConfigSchema,
   // Creation switch only: rollback retains existing shared drafts and their recovery history.
-  draftEditMode: draftEditModeSchema.default("lock"),
+  draftEditMode: draftEditModeSchema.default("shared"),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

@@ -25,7 +25,7 @@ import { finishReplyDraftRetirements } from "./draft-retirement";
 import { loadDraftSourceQuote } from "./draft-source-quote";
 import { uploadDraftAttachmentStream } from "./draft-uploads";
 import * as drafts from "./drafts";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, updateMailbox } from "./mailboxes";
 
 const suite = suiteFor("database", "nats", "valkey");
 const at = "2026-11-01T12:00:00.000Z";
@@ -165,6 +165,7 @@ suite("one reply draft per conversation", () => {
     if (!user) throw new Error("Missing test user");
     owner = { actor: { kind: "user", user }, accessSubject: { type: "user", userId } };
     mailboxId = unwrap(await createMailbox(owner, { name: "One reply draft", description: "B1" })).id;
+    unwrap(await updateMailbox({ context: owner, mailboxId, draftEditMode: "lock" }));
     const [mailbox] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     mailboxShortId = mailbox!.short_id;
     const [identity] = await sql<{ id: string; short_id: string }[]>`INSERT INTO mail.sender_identities

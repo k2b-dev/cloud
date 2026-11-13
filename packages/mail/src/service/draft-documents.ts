@@ -260,7 +260,7 @@ export const lockDraftDocumentInTransaction = async (
       context,
       mailboxId,
       stored: { body: row.body_markdown, signatureTemplateId: row.signature_template_id },
-      body: row.body_markdown,
+      body: removeOrphanComposeSegmentMarks(row.body_markdown),
       requested: undefined,
     });
     if (!signature.ok) return signature;

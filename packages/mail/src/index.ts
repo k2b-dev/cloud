@@ -1,5 +1,5 @@
 import { requireIdentityAccessEvents } from "@k2b/cloud/events";
-import { stopRuntimeResources } from "@k2b/cloud/services";
+import { logger, stopRuntimeResources } from "@k2b/cloud/services";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
 import { stopMailDraftConnections } from "./api/draft-document-socket";
@@ -16,6 +16,7 @@ import {
   buildRuntimeHistoryIndexes,
   migrate,
 } from "./migrate";
+import { migrateSharedDrafts } from "./migrate-shared-drafts";
 import { createMailNotificationService } from "./notifications";
 import { router } from "./router";
 import { commandRuntime, mailRuntime } from "./service";
@@ -93,8 +94,18 @@ const result = await app.start({
 // After startup: the platform has provisioned every resource declared so far,
 // so a draft log it cannot prepare leaves only shared drafts unsupported.
 startDraftDocumentLogPolicy(async (signal) => {
-  await retryPendingDraftSendCloses(signal);
-  await draftDocumentSnapshots.reconcile({ signal });
+  const log = logger("mail:startup");
+  try {
+    await retryPendingDraftSendCloses(signal);
+    await draftDocumentSnapshots.reconcile({ signal });
+  } catch (error) {
+    if (!signal.aborted) log.error("Shared draft startup recovery failed; retained input awaits reconciliation", { error });
+  }
+  try {
+    await migrateSharedDrafts(signal);
+  } catch (error) {
+    if (!signal.aborted) log.error("Shared draft default migration failed; progress retained for the next start", { error });
+  }
 });
 export default { ...result, websocket };
 

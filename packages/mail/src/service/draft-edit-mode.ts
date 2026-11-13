@@ -13,3 +13,11 @@ export const newDraftEditMode = async (db: typeof sql, mailboxId: string): Promi
   if (!mailbox) throw new Error("Draft mailbox is unavailable");
   return mailbox.draft_edit_mode;
 };
+
+/** PATCH and startup share this setting-only switch. Callers lock mailbox rows in ID order.
+ * Open drafts retain edit_mode, doc_generation and all document history; no draft lock or conversion.
+ */
+export const setMailboxDraftEditMode = async (db: typeof sql, mailboxIds: string[], mode: Mailbox["draftEditMode"]): Promise<void> => {
+  await db`UPDATE mail.mailboxes SET draft_edit_mode = ${mode}
+    WHERE id = ANY(${db.array(mailboxIds, "UUID")})`;
+};

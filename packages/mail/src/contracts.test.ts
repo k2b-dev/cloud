@@ -23,6 +23,7 @@ import {
   MAIL_CONVERSATION_ASSIGNEE_LIMIT,
   MAX_CONVERSATION_ACTION_MESSAGES,
   mailboxComposeStyleSchema,
+  mailboxSchema,
   mergeConversationsInputSchema,
   messageStateChangeSchema,
   reassignConversationMessageInputSchema,
@@ -539,4 +540,10 @@ describe("batch conversation completion contracts", () => {
       conversationCompletionResultSchema.safeParse({ completion: "done", results: [{ conversationId: "Convo1", status: "ok" }] }).success,
     ).toBeFalse();
   });
+});
+
+test("mailbox contracts default to shared while preserving explicit lock", () => {
+  const mode = mailboxSchema.shape.draftEditMode;
+  expect(mode.parse(undefined)).toBe("shared");
+  expect(mode.parse("lock")).toBe("lock");
 });
