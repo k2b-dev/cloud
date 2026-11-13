@@ -1,4 +1,4 @@
-import type { sql } from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
 
 /** Mail's existing live topic also carries grant and restricted-membership invalidations. */
 export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => {
@@ -68,4 +68,25 @@ export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => 
       OR OLD.kind IS DISTINCT FROM NEW.kind OR OLD.archived_at IS DISTINCT FROM NEW.archived_at
       OR OLD.scope IS DISTINCT FROM NEW.scope OR OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id)
     EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
+};
+
+/** Startup builds these outside the migration transaction, without blocking ordinary draft writes. */
+export const migrateRoomAccessIndexes = async (): Promise<void> => {
+  for (const [name, column] of [
+    ["drafts_shared_source_message_idx", "source_message_id"],
+    ["drafts_shared_derived_message_idx", "derived_from_message_id"],
+  ] as const) {
+    const [index] = await sql<{ valid: boolean; building: boolean }[]>`SELECT
+      coalesce((SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass(${`mail.${name}`})), false) AS valid,
+      EXISTS (SELECT 1 FROM pg_stat_progress_create_index
+        WHERE datname = current_database() AND relid = 'mail.drafts'::regclass) AS building`;
+    if (index?.valid) continue;
+    if (index?.building) throw new Error("Mail draft index is being built by another startup; retry startup when it completes");
+    // Names and columns are internal constants. Retry an interrupted concurrent build on startup.
+    await sql.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS mail.${name}`).simple();
+    await sql
+      .unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${name} ON mail.drafts (${column})
+      WHERE edit_mode = 'shared' AND state = 'draft'`)
+      .simple();
+  }
 };

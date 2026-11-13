@@ -1127,6 +1127,7 @@ CREATE TABLE mail.drafts (
     body_markdown text DEFAULT ''::text NOT NULL,
     revision bigint DEFAULT 1 NOT NULL,
     doc_idle_through bigint,
+    edit_mode text NOT NULL DEFAULT 'lock' CHECK (edit_mode IN ('lock', 'shared')),
     state text DEFAULT 'draft'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1194,6 +1195,12 @@ CREATE INDEX drafts_origin_state_idx ON mail.drafts USING btree (mailbox_id, ori
 CREATE UNIQUE INDEX drafts_short_id_idx ON mail.drafts USING btree (short_id);
 
 CREATE INDEX drafts_source_message_idx ON mail.drafts USING btree (source_message_id) WHERE (source_message_id IS NOT NULL);
+
+CREATE INDEX drafts_shared_source_message_idx ON mail.drafts (source_message_id)
+WHERE edit_mode = 'shared' AND state = 'draft';
+
+CREATE INDEX drafts_shared_derived_message_idx ON mail.drafts (derived_from_message_id)
+WHERE edit_mode = 'shared' AND state = 'draft';
 
 CREATE TRIGGER drafts_touch_updated_at BEFORE UPDATE ON mail.drafts FOR EACH ROW EXECUTE FUNCTION mail.touch_updated_at();
 
