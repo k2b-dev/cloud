@@ -34,7 +34,9 @@ const presentRetirementTriggers = async () =>
       AND tgname = ANY(${sql.array(retirementTriggers, "TEXT")}) ORDER BY tgname`
   ).map((row) => row.name);
 const index = async (name: string) => {
-  const [row] = await sql<{ valid: boolean; definition: string }[]>`SELECT i.indisvalid AS valid, pg_get_indexdef(i.indexrelid) AS definition
+  const [row] = await sql<
+    { valid: boolean; definition: string }[]
+  >`SELECT i.indisvalid AS valid, pg_get_indexdef(i.indexrelid) AS definition
     FROM pg_index i WHERE i.indexrelid = to_regclass(${`mail.${name}`}::text)`;
   return row ?? null;
 };
@@ -177,6 +179,32 @@ suite("Mail one-way migrations in every upgrade order", () => {
     await migrate();
     expect(await markers()).toEqual(settled);
     expect(await Promise.all([older, edited, automatic, review].map(draft))).toEqual(drafts);
+  });
+
+  test("0.74 → this release with an undrained rule: F6 completes first and the refused retirement leaves the 0.75 history", async () => {
+    await sql`DELETE FROM mail.schema_migrations WHERE version IN (4, 5)`;
+    await removeRetirementFences();
+    await removeOneReplyBox();
+    const shared = await conversation();
+    await personDraft(shared, "Earlier text", "2026-11-01T13:00:00Z");
+    const kept = await personDraft(shared, "Later text", "2026-11-01T14:00:00Z", "2026-11-01T14:30:00Z");
+    const [command] = await sql<{ id: string }[]>`INSERT INTO mail.commands
+      (mailbox_id, kind, state, actor_kind, actor_id, access_subject_kind, idempotency_key, request_hash, target, payload)
+      VALUES (${mailboxId}::uuid, 'set_flags', 'queued', 'workflow', ${crypto.randomUUID()}::uuid, 'system',
+        ${crypto.randomUUID()}, ${"b".repeat(64)}, '{}', '{}') RETURNING id`;
+    try {
+      await expect(migrate()).rejects.toThrow("Mail rule retirement requires drained provider effects");
+      // 0.75 accepts exactly this history, so it can start and drain the rule before the next attempt.
+      expect(await markerNames()).toEqual(released.slice(0, 4));
+      expect(await f6()).toMatchObject({ completed: true });
+      expect((await openReplies(shared.conversationId)).map((row) => row.id)).toEqual([kept]);
+      expect(await presentRetirementTriggers()).toEqual([]);
+    } finally {
+      await sql`UPDATE mail.commands SET state = 'cancelled' WHERE id = ${command!.id}::uuid`;
+    }
+    await migrate();
+    expect(await markerNames()).toEqual(released);
+    expect(await presentRetirementTriggers()).toEqual(retirementTriggers);
   });
 
   test("0.75 → this release: the retirement runs after a completed F6 without changing the reply box", async () => {

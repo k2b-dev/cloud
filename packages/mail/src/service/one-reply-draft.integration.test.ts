@@ -129,6 +129,14 @@ suite("one reply draft per conversation", () => {
   const beginLegacyMigration = async () => {
     await sql`DROP INDEX IF EXISTS mail.drafts_one_open_reply_idx`.simple();
     await sql`DELETE FROM mail.schema_migrations WHERE version = 4`;
+    // 0.74 had no rule retirement either: no marker 5 and none of its admission fences.
+    await sql`DELETE FROM mail.schema_migrations WHERE version = 5 AND name = 'rules_retired'`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_event ON workflows.event`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_run ON workflows.run`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_replay ON workflows.run`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_command ON mail.commands`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_draft ON mail.drafts`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_outbox ON mail.outbox_submissions`;
   };
   let bindingId: string;
   const submission = async (draftId: string, state: string) => {
@@ -325,9 +333,7 @@ suite("one reply draft per conversation", () => {
       const first = draftSchema.parse(await responses[0]!.json());
       const second = draftSchema.parse(await responses[1]!.json());
       expect(second.id).toBe(first.id);
-      const result = unwrap(
-        await mailCapabilities.actions["draft.create"].run(DraftCreateInputSchema.parse(body), cap()),
-      );
+      const result = unwrap(await mailCapabilities.actions["draft.create"].run(DraftCreateInputSchema.parse(body), cap()));
       expect(result.data.id).toBe(first.id);
       expect(result.data.creationOutcome).toBe("existing");
       const occupied = await mailCapabilities.actions["draft.create"].run(
@@ -357,10 +363,7 @@ suite("one reply draft per conversation", () => {
         message: expect.stringContaining(first.id),
       });
       for (const supplied of [{ body: "New text" }, { subject: "New subject" }, { to: [{ address: "new@example.test" }] }]) {
-        const conflict = await mailCapabilities.actions["draft.create"].run(
-          DraftCreateInputSchema.parse({ ...body, ...supplied }),
-          cap(),
-        );
+        const conflict = await mailCapabilities.actions["draft.create"].run(DraftCreateInputSchema.parse({ ...body, ...supplied }), cap());
         expect(conflict).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
       }
       const switched = await api.request(`/mailboxes/${mailboxShortId}/drafts/${first.id}/intent`, {

@@ -5,7 +5,7 @@ section: Operations
 order: 1194
 description: Export, freeze, upgrade and rebuild when Studio, Mail rules, automatic replies and routines give way to Code.
 tags: [operations, upgrades, code, migrations]
-updated: 2026-11-10
+updated: 2026-11-13
 ---
 
 # Upgrade to Code (Gustav release)
@@ -164,6 +164,10 @@ The migrations:
 
 - **Routines:** revoke every routine mandate, abort unfinished routine turns,
   remove their broker timers and refuse any new or replayed admission.
+- **Mail replies:** an installation older than 0.75 first runs the one-time
+  [reply draft consolidation](/en/docs/operations/mail-reply-draft-consolidation)
+  (F6). It runs before the rule retirement, so a refused consolidation changes
+  nothing and the previous Mail image still starts.
 - **Mail:** delete rule timer registrations, cancel recorded backfills and set
   a retirement marker before ordinary workers start. The marker stops an old
   Mail image from starting again.
@@ -180,6 +184,7 @@ Startup stops, with a message, instead of continuing unsafely:
 | Stop | Cause | What to do |
 | --- | --- | --- |
 | Mail does not start | Old Mail commands or sends are still unresolved | Do not start old workers on the migrated database. Follow the coordinated restore below to the step 3 recovery point, including its matching RSQL data. Use the controlled reconciliation procedure below for unresolved sends in that snapshot, then repeat drain and take a new consistent recovery point before trying the upgrade again |
+| Mail reports "F6 preflight" | A conversation has two committed sends or an in-flight delivery among duplicate reply drafts | No marker that blocks the previous release was written. Start the previous Mail image, let the sends finish or cancel them, stop it, and start the upgrade again. See [Mail reply draft consolidation](/en/docs/operations/mail-reply-draft-consolidation) |
 | Mail reports a lock timeout | A database session still holds a conflicting lock, possibly a leftover workflow writer | Identify the blocker and stop leftover writers before retrying. Verify that no writes overlapped the recovery backups. If they did, stop: that recovery point is invalid. Recover a verified pre-cut state through the backup procedure and repeat step 3; never take a replacement pre-cut backup from the partly migrated database |
 | Assistant: "Unreadable pending HTTP scope" | A pending chat HTTP request cannot be decrypted or read, for example after `APP_SECRET` changed | Restore the previous `APP_SECRET` and retry on the new release. If returning to the old release is necessary, use a coordinated restore to the step 3 recovery point, including RSQL if an earlier cleanup attempt deleted namespaces; never just start old images on the migrated database |
 | Assistant: RSQL cleanup fails | The RSQL service is unreachable or answers with an error other than "namespace missing" | Make RSQL reachable with the stored URL, token and allowlist, then start again. Local changes roll back for the retry; remote deletions that already happened stay deleted |

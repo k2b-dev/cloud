@@ -6,7 +6,7 @@ Owner: the Code of a mailbox. Copy it into `code.ts`, replace the fictional IDs 
 
 <!-- check: resource mail.mailbox -->
 ```ts
-import { app, core, mail, owner } from "@sdk";
+import { app, CodeError, core, mail, owner } from "@sdk";
 
 type Category = "support" | "invoice" | "sales" | "spam" | "other";
 // Tag names and the people to assign are configuration: change them here and submit a new version.
@@ -112,17 +112,20 @@ async function draftReply(conversationId: string, message: Message, category: Ca
     output: { type: "text", maxChars: 1500 },
   });
   if (typeof reply.output !== "string" || !reply.output.trim()) return;
-  // Each automated author has its own untouched suggestion in this conversation.
-  // The returned draft may be that account's existing suggestion; this handler does not replace it.
+  // A conversation has one reply draft. If a person or an earlier message already started it, leave it alone.
   // On a rerun the new text conflicts with this key instead of adding a second draft; the run then fails visibly.
-  await owner.draft.create({
-    senderIdentityId: identity.ref.id,
-    intent: "reply",
-    conversationId,
-    sourceMessageId: message.id,
-    body: reply.output.trim(),
-    idempotencyKey: `reply:${message.id}`,
-  });
+  try {
+    await owner.draft.create({
+      senderIdentityId: identity.ref.id,
+      intent: "reply",
+      conversationId,
+      sourceMessageId: message.id,
+      body: reply.output.trim(),
+      idempotencyKey: `reply:${message.id}`,
+    });
+  } catch (error) {
+    if (!(error instanceof CodeError) || error.code !== "draft_reply_box_occupied") throw error;
+  }
 }
 
 app.on("mail.message.received", async event => {

@@ -179,5 +179,6 @@ draft with 409 and a structured `draftId`; signature segments are excluded from
 that comparison. A retry with the original author's own idempotency key returns
 the original stored draft, including for new and derived messages. A subsequent
 revision-checked save persists text typed after the first request. The composer keeps local text in its device journal and offers the
-existing draft; it does not save over it. Review-reply automation encountering
-an occupied box finishes as skipped, with the reason in the automation log.
+existing draft; it does not save over it. Mailbox Code that creates a reply
+with content in an occupied box receives `draft_reply_box_occupied` and leaves
+the existing draft unchanged.

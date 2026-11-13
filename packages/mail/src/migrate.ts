@@ -775,8 +775,8 @@ const migrationErrorCode = (error: unknown): string | null => {
 };
 
 /**
- * Schema additions and each F6 batch run under the transaction-scoped
- * advisory guard, which also holds behind a transaction pooler. The final
+ * Schema additions, each F6 batch and the rule retirement run under the
+ * transaction-scoped advisory guard, which also holds behind a transaction pooler. The final
  * concurrent index build runs outside a transaction. A run
  * that waits longer than `lock_timeout` for the guard or for DDL locks fails
  * with `55P03` and is retried with backoff; deadlock victims (`40P01`) retry too.
@@ -795,9 +795,17 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
         await migrateConversationSummaries(tx);
         await migrateWorkspacePreferences(tx);
         await migrateWorkflowAi(tx);
+      });
+      // F6 first, then the rule retirement: this is the 0.74 -> 0.75 -> Code order. F6 refuses before its
+      // marker, and a refused retirement leaves at most F6's marker, so either refusal keeps a previous
+      // image that can start and reconcile the blocking sends.
+      const replyDrafts = await migrateReplyDrafts();
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout = '10s'`;
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
         await retireMailRules(tx);
       });
-      return await migrateReplyDrafts();
+      return replyDrafts;
     } catch (error) {
       if (!["55P03", "40P01"].includes(migrationErrorCode(error) ?? "") || attempt === 2) throw error;
       await Bun.sleep(250 * 2 ** attempt);

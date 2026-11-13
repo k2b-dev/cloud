@@ -335,7 +335,7 @@ describe("mail capabilities", () => {
   test("declares mailbox targets separately from domain input and keeps chat/MCP fields flat", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
     const mailboxActions = manifest.actions.filter((action) => !action.localId.startsWith("code.access."));
-    expect(mailboxActions).toHaveLength(33);
+    expect(mailboxActions).toHaveLength(35);
     for (const action of mailboxActions) {
       expect(action.target).toBe("mailbox");
       expect(action.inputSchema.properties).not.toHaveProperty("mailboxId");
@@ -350,7 +350,7 @@ describe("mail capabilities", () => {
       refs: {},
       input: { draftId, expectedRevision: 2, patch: { subject: "New" } },
     });
-    expect(manifest.queries.filter((query) => query.target === "mailbox")).toHaveLength(18);
+    expect(manifest.queries.filter((query) => query.target === "mailbox")).toHaveLength(19);
     for (const query of manifest.queries.filter((query) => query.target)) {
       expect(query.inputSchema.properties).not.toHaveProperty("mailboxId");
       expect(query.target).toBe("mailbox");
@@ -2158,8 +2158,7 @@ describe("mail capabilities", () => {
       {
         localId: "draft.intent",
         action: mailCapabilities.actions["draft.intent"],
-        run: () =>
-          mailCapabilities.actions["draft.intent"].run({ draftId, expectedRevision: 2, intent: "forward" }, idempotentContext),
+        run: () => mailCapabilities.actions["draft.intent"].run({ draftId, expectedRevision: 2, intent: "forward" }, idempotentContext),
       },
       {
         localId: "draft.consolidation.acknowledge",
@@ -2733,10 +2732,7 @@ describe("mail capabilities", () => {
     });
     const query = mailCapabilities.queries["conversation.by_sender"];
     expect(() => query.input.parse({ email: "ada@example.test", limit: 6 })).toThrow();
-    const result = await query.run(
-      query.input.parse({ email: "ada@example.test", excludeConversationId: conversationId }),
-      context,
-    );
+    const result = await query.run(query.input.parse({ email: "ada@example.test", excludeConversationId: conversationId }), context);
     expect(history.mock.calls[0]?.[0]).toMatchObject({
       mailboxId: internalMailboxId,
       email: "ada@example.test",

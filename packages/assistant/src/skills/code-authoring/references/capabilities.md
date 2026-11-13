@@ -81,7 +81,7 @@ its person can read.
 
 ## Mail
 
-Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachment.text.read`, `mail.comment.read`, `mail.mailbox(id).conversation.activity.list`, `mail.mailbox(id).conversation.comment.list`, `mail.conversation.focus`, `mail.mailbox(id).conversation.list`, `mail.conversation.read`, `mail.mailbox(id).conversation.related`, `mail.mailbox(id).conversation.reminder.get`, `mail.mailbox(id).conversation.search`, `mail.mailbox(id).delivery.list`, `mail.delivery.read`, `mail.mailbox(id).draft.list`, `mail.draft.read`, `mail.draft.send.check`, `mail.mailbox(id).draft.send.review`, `mail.mailbox(id).folder.list`, `mail.mailbox.browse`, `mail.mailbox(id).identity.list`, `mail.mailbox.list`, `mail.mailbox(id).member.list`, `mail.mailbox.read`, `mail.mailbox(id).tag.list`, `mail.mailbox(id).mailingList.subscription.get`, `mail.mailbox(id).mailingList.subscription.list`, `mail.mailbox(id).message.catchup`, `mail.message.content.read`, `mail.message.event`, `mail.mailbox(id).message.eventPreview`, `mail.mailbox(id).message.list`, `mail.message.read`, `mail.reminder.read`, `mail.search`.
+Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachment.text.read`, `mail.comment.read`, `mail.mailbox(id).conversation.activity.list`, `mail.mailbox(id).conversation.bySender`, `mail.mailbox(id).conversation.comment.list`, `mail.conversation.focus`, `mail.mailbox(id).conversation.list`, `mail.conversation.read`, `mail.mailbox(id).conversation.related`, `mail.mailbox(id).conversation.reminder.get`, `mail.mailbox(id).conversation.search`, `mail.mailbox(id).delivery.list`, `mail.delivery.read`, `mail.mailbox(id).draft.list`, `mail.draft.read`, `mail.draft.send.check`, `mail.mailbox(id).draft.send.review`, `mail.mailbox(id).folder.list`, `mail.mailbox.browse`, `mail.mailbox(id).identity.list`, `mail.mailbox.list`, `mail.mailbox(id).member.list`, `mail.mailbox.read`, `mail.mailbox(id).tag.list`, `mail.mailbox(id).mailingList.subscription.get`, `mail.mailbox(id).mailingList.subscription.list`, `mail.mailbox(id).message.catchup`, `mail.message.content.read`, `mail.message.event`, `mail.mailbox(id).message.eventPreview`, `mail.mailbox(id).message.list`, `mail.message.read`, `mail.reminder.read`, `mail.search`.
 
 | Action ID | SDK path | Title | Target | Key | Unattended |
 | --- | --- | --- | --- | --- | --- |
@@ -108,8 +108,10 @@ Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachmen
 | `mail.draft.attachment.import.v1` | `mail.mailbox(id).draft.attachment.import.v1` | Attach a file to a draft | mail.mailbox | required | admin approval |
 | `mail.draft.attachment.add` | `mail.mailbox(id).draft.attachment.add` | Add draft attachment | mail.mailbox | required | admin approval |
 | `mail.draft.attachment.remove` | `mail.mailbox(id).draft.attachment.remove` | Remove draft attachment | mail.mailbox | required | never |
+| `mail.draft.consolidation.acknowledge` | `mail.mailbox(id).draft.consolidation.acknowledge` | Acknowledge draft consolidation | mail.mailbox | — | admin approval |
 | `mail.draft.create` | `mail.mailbox(id).draft.create` | Create draft | mail.mailbox | required | admin approval |
 | `mail.draft.discard` | `mail.mailbox(id).draft.discard` | Discard draft | mail.mailbox | required | never |
+| `mail.draft.intent` | `mail.mailbox(id).draft.intent` | Switch reply mode | mail.mailbox | — | admin approval |
 | `mail.draft.patch` | `mail.mailbox(id).draft.patch` | Change selected draft fields | mail.mailbox | — | admin approval |
 | `mail.draft.send` | `mail.mailbox(id).draft.send` | Send mail | mail.mailbox | required | never |
 | `mail.draft.update` | `mail.mailbox(id).draft.update` | Update draft | mail.mailbox | — | admin approval |
@@ -119,7 +121,9 @@ Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachmen
 | `mail.mailbox.tag.update` | `mail.mailbox(id).tag.update` | Update mailbox tag | mail.mailbox | — | admin approval |
 | `mail.mailing-list.unsubscribe` | `mail.mailbox(id).mailingList.unsubscribe` | Unsubscribe from mailing list | mail.mailbox | required | never |
 
-Mail sending stays manual: create a draft and let a person send it.
+Mail sending stays manual: create a draft and let a person send it. A
+conversation has one reply draft; creating one with content while it exists
+rejects with `draft_reply_box_occupied`, so leave the existing draft alone.
 `mail.attachment.content.read` returns an attachment as a [FileRef](file-ref.md). Use the
 guarded Actions with `expectedRevision` from `mail.conversation.read`
 (`collaboration.revision`); summaries also need `summaryRevision`. Assign
@@ -127,7 +131,7 @@ with `onlyIfUnassigned: true` to leave existing assignees alone.
 
 <!-- check: resource mail.mailbox -->
 ```ts
-import { app, mail, owner } from "@sdk";
+import { app, CodeError, mail, owner } from "@sdk";
 
 app.on("mail.message.received", async event => {
   let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
@@ -149,14 +153,18 @@ app.on("mail.message.received", async event => {
     });
   }
   if (identity) {
-    await owner.draft.create({
-      senderIdentityId: identity.ref.id,
-      intent: "reply",
-      conversationId: message.conversationId,
-      sourceMessageId: message.id,
-      body: "Thank you, we received your invoice and will check it this week.",
-      idempotencyKey: `invoice-reply:${message.id}`,
-    });
+    try {
+      await owner.draft.create({
+        senderIdentityId: identity.ref.id,
+        intent: "reply",
+        conversationId: message.conversationId,
+        sourceMessageId: message.id,
+        body: "Thank you, we received your invoice and will check it this week.",
+        idempotencyKey: `invoice-reply:${message.id}`,
+      });
+    } catch (error) {
+      if (!(error instanceof CodeError) || error.code !== "draft_reply_box_occupied") throw error;
+    }
   }
 });
 export default app;
