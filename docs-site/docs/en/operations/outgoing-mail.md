@@ -5,7 +5,7 @@ section: Operations
 order: 945
 description: Configure senders, inspect the send log, and control outgoing mail retention.
 tags: [mail, smtp, administration, upgrades]
-updated: 2026-11-09
+updated: 2026-11-13
 ---
 
 # Outgoing mail operations
@@ -26,11 +26,10 @@ See [Format outgoing messages](/en/apps/mail#format-outgoing-messages).
 
 ## Shared drafts per mailbox
 
-The shared-room migration targets Cloud 0.76. Cloud 0.75 keeps lock-mode
-drafts, and enabling shared mode for all mailboxes remains off. The migration
-is not ready for deployment: distributed freeze/drain with rollback/thaw and
-the two-node send-exactness checks are still required. Keep the SQL send guard
-until that platform boundary is integrated and verified.
+Shared editing runs on the platform shared text room and stays opt-in per
+mailbox; lock mode remains the default. Its durability, send boundary,
+deployment requirements and measured capacity are described in
+[Mail collaborative drafts](mail-collaborative-drafts.md).
 
 Browser updates now reconnect after 30 seconds without an acknowledgement,
 using the same pending input and original synchronization base. A send waiting
@@ -109,27 +108,8 @@ overloaded connections with 1013; pending input remains available for retry.
 These are admission budgets, not a total memory guarantee. Reserve capacity
 for Mail's other workloads before enabling shared editing.
 
-The initial two-node benchmark used two CPUs per server, a 1 GiB RSS abort
-threshold per server and a 1536 MiB hard memory limit. A separate client had
-one CPU and 512 MiB. Postgres had one CPU/768 MiB, NATS one CPU/256 MiB and
-Valkey 0.25 CPU/96 MiB. Editors used 4 KiB starting bodies and bursts every
-two seconds, with at most one unacknowledged edit per editor.
-
-| Drafts × editors | Cross-node p50 / p95 | Result |
-| --- | --- | --- |
-| 10 × 3 | 60 / 90 ms | 60-second run passed. |
-| 50 × 3 | 110 / 340 ms | 60-second run passed. |
-| 200 × 2 | 340 / 690 ms | 90-second run passed; 17,800 edits converged. |
-| 200 × 3 | 600 / 5,760 ms | Failed: head-conflict retries reached the acknowledgement timeout. |
-
-The 200 × 2 run peaked at 697/681 MiB RSS on the two servers. A separate
-10 × 3 failover run killed one server and recovered all acknowledged input
-on the other. Grant revocation closed all 400 sockets across both nodes in
-the 200 × 2 run. A statement-counter probe around one acknowledged edit and
-its peer delivery measured zero SQL statements; background snapshots were
-outside that probe. This is a short-run result, not an endurance or mixed
-Mail-workload guarantee. The 200 × 3 target and 500-draft run remain unproven;
-keep broad activation off.
+Measured two-node results and their limits are recorded in
+[Mail collaborative drafts](mail-collaborative-drafts.md#capacity-and-deployment).
 
 Shared drafts require Sync 7.1 or later. The application-wide document log
 reserves 1 GiB, rejects new events when full, and has no age expiry. Mail
