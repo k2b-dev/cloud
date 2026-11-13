@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { CursorMismatchError, RetentionGapError, type TopicEvent } from "@k2b/sync";
 import { z } from "zod";
 import {
@@ -108,8 +108,8 @@ let engine: LiveEngine;
 let readers: Map<string, Set<string>>;
 let authorizeCalls: { key: string; viewers: string[] }[];
 let authorizeFails = false;
-let accessChanged: () => void = () => {};
-const subscribeAccess = (changed: () => void) => {
+let accessChanged: (subject?: { userId?: string; sid?: string }) => void = () => {};
+const subscribeAccess = (changed: (subject?: { userId?: string; sid?: string }) => void) => {
   accessChanged = changed;
   return () => {
     accessChanged = () => {};
@@ -125,11 +125,13 @@ const authorize = async (key: string, viewers: readonly LiveViewer[]) => {
 
 const channels: Record<string, LiveChannel> = {
   item: {
+    eventOnly: true,
     scope: z.object({ key: z.string() }).strict(),
     keys: async ({ key }: { key: string }) => (key === "missing" ? null : [key]),
     authorize,
   },
   list: {
+    eventOnly: true,
     scope: z.object({}).strict(),
     collection: true,
     keys: async (_scope, who) => [...readers].filter(([, ids]) => ids.has(who.id)).map(([key]) => key),
@@ -582,7 +584,12 @@ describe("live engine", () => {
     const who = viewer("ada");
     let release: (value: LiveViewer | null) => void = () => {};
     let checking = false;
+    let initial = true;
     const connection = engine.open(socket, who, () => {
+      if (initial) {
+        initial = false;
+        return Promise.resolve(who);
+      }
       checking = true;
       return new Promise<LiveViewer | null>((resolve) => {
         release = resolve;
@@ -590,9 +597,13 @@ describe("live engine", () => {
     });
     connection.message(JSON.stringify({ t: "sub", id: "s", channel: "item", scope: { key: "a" } }));
     await until(() => socket.frames.length === 1);
-    accessChanged();
+    const bob = connect("bob");
+    bob.send({ t: "sub", id: "b", channel: "item", scope: { key: "a" } });
+    await until(() => bob.framesOf("b").length === 1);
+    accessChanged({ userId: "ada" });
     await until(() => checking);
     topic.publish(event("a", 1));
+    await until(() => bob.framesOf("b").length === 2);
     await Bun.sleep(0);
     expect(socket.frames.map((frame) => frame.t)).toEqual(["ready"]);
     release(null);
@@ -776,4 +787,186 @@ describe("live engine", () => {
       intervals.mockRestore();
     }
   });
+});
+
+test("channels are periodic by default: two-second delivery cache and ten/sixty-second timers remain", async () => {
+  engine.stop();
+  const intervals = spyOn(globalThis, "setInterval");
+  const fixed = Date.parse("2026-11-13T12:00:00Z");
+  setSystemTime(fixed);
+  try {
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: {
+        item: { ...channels.item!, eventOnly: undefined },
+        list: { ...channels.list!, eventOnly: undefined },
+      },
+    });
+    const ada = connect();
+    ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => ada.framesOf("s").length === 1);
+    expect(intervals.mock.calls.map(([, ms]) => ms)).toEqual([10_000, 30_000]);
+    expect(LIVE_LIMITS.keysEveryRounds * LIVE_LIMITS.sweepMs).toBe(60_000);
+    authorizeCalls.length = 0;
+    topic.publish(event("a", 1));
+    await until(() => ada.framesOf("s").length === 2);
+    expect(authorizeCalls).toHaveLength(0);
+    readers.delete("a");
+    setSystemTime(fixed + 2_001);
+    topic.publish(event("a", 2));
+    await until(() => ada.framesOf("s").length === 3);
+    expect(authorizeCalls).toHaveLength(1);
+    expect(ada.framesOf("s")[2]).toMatchObject({ t: "revoked" });
+  } finally {
+    setSystemTime();
+    intervals.mockRestore();
+  }
+});
+
+test("one canonical access key invalidates every related assigned-reader key", async () => {
+  engine.stop();
+  readers.set("mailbox:ada", new Set(["user:ada"]));
+  readers.set("mailbox:assigned", new Set(["user:ada"]));
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      mailbox: {
+        eventOnly: true,
+        accessKey: (key) => key.split(":")[0]!,
+        scope: z.object({}),
+        keys: async () => ["mailbox:ada", "mailbox:assigned"],
+        authorize,
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "mailbox", scope: {} });
+  await until(() => ada.framesOf("s").length === 1);
+  readers.delete("mailbox:ada");
+  readers.delete("mailbox:assigned");
+  topic.publish({ v: 1, k: "mailbox", a: true });
+  topic.publish(event("mailbox:ada", 1));
+  topic.publish(event("mailbox:assigned", 2));
+  await until(() => ada.framesOf("s").length === 2);
+  expect(ada.framesOf("s").map((frame) => frame.t)).toEqual(["ready", "revoked"]);
+});
+
+test("an event-only connection rechecks credentials before its first subscription", async () => {
+  const socket = fakeSocket();
+  const connection = engine.open(socket, viewer("ada"), async () => null);
+  connection.message(JSON.stringify({ t: "sub", id: "s", channel: "item", scope: { key: "a" } }));
+  await until(() => socket.closes.length === 1);
+  expect(socket.frames.map((frame) => frame.t)).toEqual(["error"]);
+  expect(socket.closes).toEqual([{ code: 1008, reason: "session_expired" }]);
+});
+
+test("identity invalidation allows only one coalesced catch-up", async () => {
+  let checks = 0;
+  const socket = fakeSocket();
+  engine.open(socket, viewer("ada"), async () => {
+    checks++;
+    accessChanged({ userId: "ada" });
+    return viewer("ada");
+  });
+  await until(() => socket.closes.length === 1);
+  expect(checks).toBe(2);
+  expect(socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
+});
+
+test("subscription admission cannot livelock when its authorizer keeps changing access", async () => {
+  engine.stop();
+  let checks = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      item: {
+        eventOnly: true,
+        scope: z.object({}),
+        keys: async () => ["a"],
+        authorize: async (_key, viewers) => {
+          checks++;
+          topic.publish({ v: 1, k: "a", a: true });
+          await Bun.sleep(0);
+          return new Set(viewers.map((viewer) => viewer.id));
+        },
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "item", scope: {} });
+  await until(() => ada.socket.closes.length === 1);
+  expect(checks).toBe(2);
+  expect(ada.socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
+});
+
+test("collection refresh reconnects after one catch-up under continuous domain changes", async () => {
+  engine.stop();
+  let changing = false;
+  let refreshes = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      list: {
+        eventOnly: true,
+        collection: true,
+        scope: z.object({}),
+        keys: async () => {
+          if (changing) {
+            refreshes++;
+            topic.publish({ v: 1, k: "a", a: true });
+            await Bun.sleep(0);
+          }
+          return ["a"];
+        },
+        authorize,
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "list", scope: {} });
+  await until(() => ada.framesOf("s").length === 1);
+  changing = true;
+  topic.publish({ v: 1, k: "a", a: true });
+  await until(() => ada.socket.closes.length === 1);
+  expect(refreshes).toBe(2);
+  expect(ada.socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
+});
+
+test("periodic collection refresh discards decisions from before an access event", async () => {
+  engine.stop();
+  let changing = false;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      list: {
+        collection: true,
+        scope: z.object({}),
+        keys: async () => ["a", "b"],
+        authorize: async (key, viewers) => {
+          const allowed = await authorize(key, viewers);
+          if (changing && key === "a") {
+            changing = false;
+            topic.publish({ v: 1, k: "other", a: true });
+            await Bun.sleep(0);
+          }
+          return allowed;
+        },
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "list", scope: {} });
+  await until(() => ada.framesOf("s").length === 1);
+  readers.delete("a");
+  changing = true;
+  topic.publish({ v: 1, k: "a", a: true });
+  topic.publish(event("a", 1));
+  topic.publish(event("b", 2));
+  await until(() => ada.framesOf("s").some((frame) => frame.t === "event"));
+  expect(ada.framesOf("s").filter((frame) => frame.t === "event")).toEqual([expect.objectContaining({ data: { n: 2 } })]);
 });

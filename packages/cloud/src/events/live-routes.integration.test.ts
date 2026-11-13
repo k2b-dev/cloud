@@ -52,8 +52,9 @@ const authorize = async (key: string, viewers: readonly LiveViewer[]) => {
   );
 };
 const channels = {
-  item: { scope: z.object({ key: z.string() }).strict(), keys: async ({ key }: { key: string }) => [key], authorize },
+  item: { eventOnly: true, scope: z.object({ key: z.string() }).strict(), keys: async ({ key }: { key: string }) => [key], authorize },
   list: {
+    eventOnly: true,
     scope: z.object({}).strict(),
     collection: true,
     keys: async (_scope: unknown, viewer: LiveViewer) => [...readers].filter(([, ids]) => ids.has(principal(viewer))).map(([key]) => key),

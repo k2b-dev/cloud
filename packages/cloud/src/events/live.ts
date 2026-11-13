@@ -3,7 +3,7 @@ import { type Context, Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import type { z } from "zod";
 import { userFromActor } from "../server/actor";
-import { guardAppAccessSocket, watchCredentialExpiry } from "../server/middleware/app-access";
+import { credentialExpiresAt, guardAppAccessSocket, watchCredentialExpiry } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { rateLimit } from "../server/middleware/rate-limit";
 import { hasRefusedSessionOrigin } from "../server/middleware/session-origin";
@@ -183,15 +183,7 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
           let connection: LiveConnectionHandle | null = null;
           const proof = c.get("credentialProof");
           const actor = c.get("actor");
-          const deadlines = [
-            proof?.kind === "session" ? proof.expiresAt : undefined,
-            actor.kind === "service_account" ? actor.credentialExpiresAt : undefined,
-            userFromActor(actor)?.accountExpires,
-          ]
-            .filter((value): value is string => typeof value === "string")
-            .map(Date.parse)
-            .concat(proof?.kind === "oauth" && typeof proof.payload.exp === "number" ? [proof.payload.exp * 1_000] : [])
-            .filter(Number.isFinite);
+          const expiresAt = credentialExpiresAt(c);
           return guardAppAccessSocket(
             c,
             appId,
@@ -201,13 +193,18 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
                   ws.raw as ServerWebSocket<unknown>,
                   viewer,
                   revalidate,
-                  deadlines.length ? (expired) => watchCredentialExpiry(Math.min(...deadlines), expired) : undefined,
+                  expiresAt !== undefined ? (expired) => watchCredentialExpiry(expiresAt, expired) : undefined,
+                  {
+                    userId: userFromActor(viewer.actor)?.id,
+                    sid: proof?.kind === "session" ? proof.sid : undefined,
+                    serviceAccountId: actor.kind === "service_account" ? actor.serviceAccount.id : undefined,
+                  },
                 );
               },
               onMessage: (message) => connection?.message(message.data),
               onClose: () => connection?.closed(),
             },
-            { eventOnly: true },
+            { eventOnly: Object.values(channels).every((channel) => channel.eventOnly === true) },
           );
         }),
       );

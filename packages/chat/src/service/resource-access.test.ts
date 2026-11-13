@@ -60,6 +60,7 @@ const envelope = (permission = "write", contained = false) => ({
 });
 const cache = new Map<string, { value: string; until: number }>();
 let catalog: ReturnType<typeof mockDiscussionCatalog>, get: ReturnType<typeof spyOn>, set: ReturnType<typeof spyOn>;
+let del: ReturnType<typeof spyOn<typeof redis, "del">>;
 let publicUrl: ReturnType<typeof spyOn<typeof platform, "get">>;
 beforeEach(() => {
   setSystemTime(new Date(now));
@@ -72,6 +73,9 @@ beforeEach(() => {
     const entry = cache.get(key);
     return entry && entry.until > Date.now() ? entry.value : null;
   });
+  del = spyOn(redis, "del").mockImplementation(async (...keys: string[]) =>
+    keys.reduce((count, key) => count + Number(cache.delete(key)), 0),
+  );
   set = spyOn(redis, "set").mockImplementation(async (...args: unknown[]) => {
     const [key, value, ...options] = args;
     if (typeof key !== "string" || typeof value !== "string") throw new Error("String values expected");
@@ -85,6 +89,7 @@ afterEach(() => {
   publicUrl.mockRestore();
   catalog.mockRestore();
   get.mockRestore();
+  del.mockRestore();
   set.mockRestore();
   setSystemTime();
   if (originalOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
@@ -371,4 +376,22 @@ test("readers without open links remain readable and manifest icons are constrai
   const resource = await readResource(context(), ref, { invoke: async () => ({ data: envelope().data }) });
   expect(resource).toMatchObject({ title: "Inventory", icon: "ti ti-messages" });
   expect(resource?.href).toBeUndefined();
+});
+
+test("an identity change discards live authority and forces a fresh owner read across locales", async () => {
+  const c = context();
+  await readResource({ ...c, locale: "de" }, ref, { invoke: async () => envelope() });
+  expect(await cachedResource(contextPrincipal(c), ref)).toMatchObject({ permission: "write" });
+  expect(await cachedResource(contextPrincipal(c), ref, true)).toBeNull();
+  let calls = 0;
+  expect(
+    await readResource({ ...context(), locale: "de" }, ref, {
+      invoke: async () => {
+        calls++;
+        return null;
+      },
+    }),
+  ).toBeNull();
+  expect(calls).toBe(1);
+  expect(await cachedResource(contextPrincipal(c), ref)).toBeNull();
 });

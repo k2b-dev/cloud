@@ -196,17 +196,26 @@ const api = new Hono<AuthContext>().route("/live", inventoryLive.routes(inventor
 - `keys(scope, viewer)` returns the keys that the subscription follows, or
   `null` when the resource does not exist or the viewer may not read it. Cloud
   follows the first 1,000 keys and logs a warning about the rest.
-- `authorize(key, viewers)` returns the IDs of the viewers who may read `key`.
+- `authorize(key, viewers, context)` returns the IDs of the viewers who may read `key`.
   Cloud calls it with up to 500 viewers at once, so check them together
   instead of one by one: `getEffectivePermissions()` from `@k2b/cloud/server`
   decides every viewer's `accessSubject` with one query, by the same rules as
   `getEffectivePermission()`. Apply the same role and credential rules as the
-  API. Pass an array of access IDs or a Bun `SQLQuery` selecting one uuid
+  API. `context.identityChanged` is true during an Identity-Access recheck;
+  discard any cached authority from before that change. Pass an array of access IDs or a Bun `SQLQuery` selecting one uuid
   column to keep large grant sets in the database.
 - `collection: true` marks a channel whose key set can change, such as
   "every book I can read". Cloud runs `keys()` again after domain and identity
-  access events. Publish `access: true` when a domain change adds or removes
+  access events and, by default, every 60 seconds. Publish `access: true` when a domain change adds or removes
   keys. A collection may start with no keys.
+- `eventOnly: true` opts this channel out of the delivery cache and periodic
+  checks. Declare it only when every input to `keys()` and `authorize()` has
+  an access event from its owner. Credential and account expiry use local
+  timers. Subscription admission still checks credentials and access.
+- `accessKey(key)` maps a delivery key to its canonical domain access key.
+  For example, Mail maps both `mailbox:principal` and `mailbox:assigned` to
+  `mailbox`. An access update of that root rechecks every mapped delivery key.
+  Without this option, access updates name the delivery key itself.
 
 The channels are passed to `routes()`, not to `defineLive()`: the services that
 decide access usually also publish updates, so the definition must not import
@@ -282,20 +291,32 @@ changed, and a cursor outside the window all end there.
 
 ### Access changes
 
-Cloud checks access when a subscription starts and retains its authorized keys
-until an access event. Ordinary deliveries and progress frames run no SQL,
-regardless of how long the subscription has been open.
+Cloud checks access when a subscription starts. By default, delivery decisions
+have a two-second cache, credentials and channel access are checked every ten
+seconds, and collection keys refresh every sixty seconds. These bounds remain
+available for channels whose decision inputs do not all publish events.
+
+A channel declaring `eventOnly: true` retains its admitted keys until an access
+event. Its ordinary deliveries and progress frames run no SQL, regardless of
+how long the subscription has been open:
 
 - Domain changes publish `access: true` in the transaction that changes access.
-  Every replica rechecks the affected key before delivering later updates.
+  Every replica rechecks the affected key and its `accessKey` mappings before
+  delivering later updates.
 - Identity-Access events recheck credentials, viewer roles, and subscriptions
-  on every replica. Group changes, ended sessions, and account changes use
+  of affected connections on every replica. Events without a subject recheck
+  every connection. Group changes, ended sessions, and account changes use
   Core's existing outbox and NATS follower.
-- Known account and credential expiry times also close sockets with local
-  timers. There is no periodic credential, key, or collection polling.
+- Known account and credential expiry times close sockets with local timers.
+  Polling is disabled only for explicitly opted-in channels. The socket's app
+  entry guard opts out only when all its channels do, and resource-derived
+  app entry rules retain periodic checks.
 
-A domain decision that can change must have an access event from the service
-that owns that change. A time-to-live cache cannot replace that event.
+Every mutable input of an event-only decision needs an access event from its
+owner. A time-to-live cache cannot supply that guarantee. Keep a channel
+periodic until that coverage exists. Admission and refresh allow one catch-up
+when access changes during a check; continued changes close with `1013`
+(`access_changing`) so the client can reconnect.
 
 Updates that were already sent can still arrive after a revocation: what
 waits in the application's send buffer (256 KiB) and in the gateway, which
@@ -370,8 +391,11 @@ message multiplies with the typing speed and with every reader of the same
 document, so do it in memory and on NATS:
 
 - Check access and load state when the socket opens. After that, react to
-  access events and known expiry deadlines. `defineLive()` retains its
-  subscription decisions until these events; delivery and progress run no SQL.
+  access events and known expiry deadlines. With complete event coverage,
+  declare `eventOnly: true` on the channel to retain subscription decisions
+  until those events and run delivery and progress with no SQL. Pin setup,
+  delivery, progress, and targeted Identity-Access costs with `meterSql()`
+  from `scripts/fixtures/sql-meter.ts` (DATA-13).
 - Fan out over NATS: `defineLive()` for updates,
   [`@k2b/cloud/shared-text`](/en/docs/data/shared-text-documents) for
   collaborative text, and a Sync `ephemeral` registry for presence.

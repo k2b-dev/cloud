@@ -1,8 +1,10 @@
 import { RetentionGapError, SyncLifecycleError, type Topic, type TopicEvent } from "@k2b/sync";
 import { z } from "zod";
+import { userFromActor } from "../server/actor";
 import type { RequestActor } from "../server/middleware/auth";
 import type { AccessSubject } from "../server/services/access";
 import { logger } from "../services/logging";
+import { type IdentityAccessSubject, identityAccessAffects } from "./app-access";
 import { type LiveClientMessage, LiveClientMessageSchema } from "./live-protocol";
 
 /** Bounds of every live socket. Code constants; tests only shorten the intervals. */
@@ -18,11 +20,15 @@ export const LIVE_LIMITS = {
   socketsPerViewer: 16,
   sendBufferBytes: 256 * 1024,
   replayWaitMs: 10_000,
+  cacheMs: 2_000,
+  cacheEntries: 50_000,
+  sweepMs: 10_000,
+  keysEveryRounds: 6,
   /** Access checks fail closed within ten seconds. */
   checkMs: 10_000,
   viewersPerCall: 500,
   callsInFlight: 8,
-  accessInFlight: 4,
+  sweepInFlight: 4,
   batchEvents: 256,
   progressMs: 30_000,
 };
@@ -47,8 +53,12 @@ export type LiveChannel<Scope extends z.ZodType = z.ZodType> = {
   /** Routing keys of the scope; Cloud follows the first 1,000. `null` when it does not exist or is not readable. */
   keys(scope: z.output<Scope>, viewer: LiveViewer): Promise<readonly string[] | null>;
   /** IDs of the viewers allowed to read `key`. Called with at most 500 viewers. */
-  authorize(key: string, viewers: readonly LiveViewer[]): Promise<ReadonlySet<string>>;
-  /** The key set is refreshed on domain and identity access changes. */
+  authorize(key: string, viewers: readonly LiveViewer[], context?: { identityChanged: boolean }): Promise<ReadonlySet<string>>;
+  /** Explicit opt-in: every decision input must have an access event. Defaults retain 2/10/60-second checks. */
+  eventOnly?: true;
+  /** Canonical access key for related delivery keys, e.g. mailbox:principal -> mailbox. */
+  accessKey?: (key: string) => string;
+  /** Collections refresh on access events and, by default, every minute. */
   collection?: true;
 };
 
@@ -95,6 +105,9 @@ type Connection = {
   work: Promise<void>;
   closed: boolean;
   stopExpiry?: () => void;
+  subject: IdentityAccessSubject;
+  accessCheck: Promise<void> | null;
+  checkAgain: boolean;
 };
 
 type Subscription = {
@@ -143,19 +156,23 @@ const eachLimited = async <T>(items: readonly T[], limit: number, run: (item: T)
 /**
  * Delivery of one application's live topic in this process: one follower with a
  * ring of recent events and an index of authorized subscriptions. Only setup
- * and domain/identity access events run authorization; ordinary delivery runs no SQL.
+ * and domain/identity access events authorize eventOnly channels. Other channels
+ * retain the public cache and periodic refresh contract.
  */
 export const createLiveEngine = (input: {
   appId: string;
   topic: () => LiveTopic;
   channels: Readonly<Record<string, LiveChannel>>;
   /** The platform's existing shared Identity-Access follower; absent for in-memory channel tests. */
-  subscribeAccess?: (changed: () => void) => () => void;
+  subscribeAccess?: (changed: (subject?: IdentityAccessSubject) => void) => () => void;
 }) => {
   const { appId, channels } = input;
   const stopping = new AbortController();
   const connections = new Set<Connection>();
   const index = new Map<string, Set<Subscription>>();
+  const accessIndex = new Map<string, Map<string, number>>();
+  const cache = new Map<string, { at: number; ok: boolean }>();
+  const periodic = Object.values(channels).some((channel) => !channel.eventOnly);
   let stopAccess: (() => void) | undefined;
   let ring: Entry[] = [];
   let ringBytes = 0;
@@ -259,12 +276,26 @@ export const createLiveEngine = (input: {
     const subs = index.get(key);
     if (subs) subs.add(sub);
     else index.set(key, new Set([sub]));
+    const accessKey = channels[sub.channel]?.accessKey?.(key);
+    if (accessKey && accessKey !== key) {
+      const related = accessIndex.get(accessKey) ?? new Map<string, number>();
+      related.set(key, (related.get(key) ?? 0) + 1);
+      accessIndex.set(accessKey, related);
+    }
   };
 
   const unindexKey = (sub: Subscription, key: string) => {
     const subs = index.get(key);
     subs?.delete(sub);
     if (subs?.size === 0) index.delete(key);
+    const accessKey = channels[sub.channel]?.accessKey?.(key);
+    const related = accessKey && accessIndex.get(accessKey);
+    if (related) {
+      const count = (related.get(key) ?? 0) - 1;
+      if (count > 0) related.set(key, count);
+      else related.delete(key);
+      if (!related.size) accessIndex.delete(accessKey);
+    }
   };
 
   const removeSubscription = (sub: Subscription) => {
@@ -274,6 +305,7 @@ export const createLiveEngine = (input: {
 
   /** A single-key subscription ends; a collection drops the key and reloads. */
   const loseKey = (sub: Subscription, key: string) => {
+    if (sub.conn.subs.get(sub.id) !== sub) return;
     if (!sub.collection) {
       send(sub, frame.revoked(sub.id, "access_denied"));
       removeSubscription(sub);
@@ -313,13 +345,39 @@ export const createLiveEngine = (input: {
   // Incremented as soon as an invalidation arrives, including while setup is awaiting SQL.
   let accessUpdates = 0;
 
-  const decide = async (channel: string, key: string, viewers: readonly LiveViewer[]): Promise<Map<string, boolean>> => {
+  const cacheKey = (channel: string, key: string, viewer: string) => `${channel}\u0000${key}\u0000${viewer}`;
+  const decide = async (
+    channel: string,
+    key: string,
+    viewers: readonly LiveViewer[],
+    fresh = false,
+    identityChanged = false,
+  ): Promise<Map<string, boolean>> => {
     const decided = new Map<string, boolean>();
-    const pending = [...new Map(viewers.map((viewer) => [viewer.id, viewer])).values()];
+    const missing = new Map<string, LiveViewer>();
+    const eventOnly = channels[channel]?.eventOnly;
+    for (const viewer of viewers) {
+      const hit = !fresh && !eventOnly && cache.get(cacheKey(channel, key, viewer.id));
+      if (hit && Date.now() - hit.at < LIVE_LIMITS.cacheMs) decided.set(viewer.id, hit.ok);
+      else missing.set(viewer.id, viewer);
+    }
+    const pending = [...missing.values()];
     for (let start = 0; start < pending.length; start += LIVE_LIMITS.viewersPerCall) {
       const part = pending.slice(start, start + LIVE_LIMITS.viewersPerCall);
-      const allowed = await limited(() => bounded("authorize()", (channels[channel] as LiveChannel).authorize(key, part)));
-      for (const viewer of part) decided.set(viewer.id, allowed.has(viewer.id));
+      const at = Date.now();
+      const version = accessUpdates;
+      const allowed = await limited(() =>
+        bounded("authorize()", (channels[channel] as LiveChannel).authorize(key, part, { identityChanged })),
+      );
+      for (const viewer of part) {
+        const ok = allowed.has(viewer.id);
+        decided.set(viewer.id, ok);
+        if (eventOnly || version !== accessUpdates) continue;
+        const id = cacheKey(channel, key, viewer.id);
+        cache.delete(id);
+        cache.set(id, { at, ok });
+        if (cache.size > LIVE_LIMITS.cacheEntries) cache.delete(cache.keys().next().value as string);
+      }
     }
     return decided;
   };
@@ -331,11 +389,14 @@ export const createLiveEngine = (input: {
   };
 
   /** Rechecks the subscribers named by an access update; denied viewers lose the key. */
-  const reauthorize = async (key: string) => {
-    for (const [channel, viewers] of viewersOf(key)) {
-      const subs = [...(index.get(key) ?? [])].filter((sub) => sub.channel === channel);
+  const reauthorize = async (key: string, selected?: ReadonlySet<Connection>, periodicOnly = false, identityChanged = false) => {
+    for (const [channel] of viewersOf(key)) {
+      if (periodicOnly && channels[channel]?.eventOnly) continue;
+      const subs = [...(index.get(key) ?? [])].filter((sub) => sub.channel === channel && (!selected || selected.has(sub.conn)));
+      if (!subs.length) continue;
+      const viewers = subs.map((sub) => sub.conn.viewer);
       try {
-        const decided = await decide(channel, key, viewers);
+        const decided = await decide(channel, key, viewers, true, identityChanged);
         for (const sub of subs) if (sub.keys.has(key) && decided.get(sub.conn.viewer.id) === false) loseKey(sub, key);
       } catch (error) {
         fail(
@@ -365,11 +426,13 @@ export const createLiveEngine = (input: {
    * reloads. Only added keys are authorized; retained keys were checked by
    * the access invalidation.
    */
-  const refreshCollections = async () => {
-    const subs = [...connections].flatMap((conn) => [...conn.subs.values()]).filter((sub) => sub.collection);
+  const refreshCollections = async (selected: ReadonlySet<Connection> = connections, periodicOnly = false) => {
+    const subs = [...selected]
+      .flatMap((conn) => [...conn.subs.values()])
+      .filter((sub) => sub.collection && (!periodicOnly || !channels[sub.channel]?.eventOnly));
     const unchecked: Connection[] = [];
     let failure: unknown;
-    await eachLimited(subs, LIVE_LIMITS.accessInFlight, async (sub) => {
+    await eachLimited(subs, LIVE_LIMITS.sweepInFlight, async (sub) => {
       try {
         const version = accessUpdates;
         const keys = await bounded("keys()", (channels[sub.channel] as LiveChannel).keys(sub.scope, sub.conn.viewer));
@@ -418,18 +481,24 @@ export const createLiveEngine = (input: {
       refreshAgain = true;
       return refreshing;
     }
-    refreshing = (async () => {
+    refreshing = Promise.resolve().then(async () => {
       try {
-        do {
+        // One initial pass and one coalesced catch-up. Continuous changes reconnect.
+        for (let pass = 0; pass < 2 && !stopping.signal.aborted; pass++) {
           refreshAgain = false;
           await refreshCollections();
-        } while (refreshAgain && !stopping.signal.aborted);
+          if (!refreshAgain) break;
+        }
+        if (refreshAgain)
+          for (const conn of [...connections]) {
+            if ([...conn.subs.values()].some((sub) => sub.collection)) close(conn, 1013, "access_changing");
+          }
       } catch (error) {
         log.error("Live collection refresh failed", { appId, error: message(error) });
       } finally {
         refreshing = null;
       }
-    })();
+    });
     return refreshing;
   };
 
@@ -446,6 +515,8 @@ export const createLiveEngine = (input: {
     if (a === true) {
       lastAccess = event.sequence;
       accessUpdates++;
+      const keys = [k, ...(accessIndex.get(k)?.keys() ?? [])];
+      for (const id of cache.keys()) if (keys.some((key) => id.includes(`\u0000${key}\u0000`))) cache.delete(id);
     }
     const data = d === undefined ? undefined : JSON.stringify(d);
     return { ...base, key: k, data, resync: r === true, access: a === true, bytes: (data?.length ?? 0) + k.length + 64 };
@@ -458,14 +529,32 @@ export const createLiveEngine = (input: {
   };
 
   const deliver = async (entry: Entry) => {
-    // An identity invalidation suspends delivery until its fresh decisions settle.
-    while (checkingAccess) await checkingAccess;
     remember(entry);
     const key = entry.key;
     if (key && (entry.data !== undefined || entry.resync)) {
-      for (const sub of index.get(key) ?? []) {
-        if (entry.seq > sub.from && !sub.conn.closed) send(sub, frame.event(sub.id, entry));
+      const candidates = [...(index.get(key) ?? [])];
+      // Periodic channels retain their delivery-time cache; eventOnly channels use admitted keys.
+      const decisions = new Map<string, Map<string, boolean>>();
+      for (const [channel, viewers] of viewersOf(key)) {
+        if (channels[channel]?.eventOnly) continue;
+        try {
+          decisions.set(channel, await decide(channel, key, viewers));
+        } catch (error) {
+          fail(
+            candidates.filter((sub) => sub.channel === channel).map((sub) => sub.conn),
+            error,
+            "access check",
+          );
+        }
       }
+      await Promise.all(
+        candidates.map(async (sub) => {
+          if (!(await accessSettled(sub.conn)) || sub.conn.subs.get(sub.id) !== sub || !sub.keys.has(key) || entry.seq <= sub.from) return;
+          if (channels[sub.channel]?.eventOnly || decisions.get(sub.channel)?.get(sub.conn.viewer.id))
+            send(sub, frame.event(sub.id, entry));
+          else loseKey(sub, key);
+        }),
+      );
     }
     head = entry.seq;
   };
@@ -477,7 +566,8 @@ export const createLiveEngine = (input: {
    */
   const changeAccess = async (entry: Entry) => {
     const key = entry.key as string;
-    await reauthorize(key);
+    const keys = new Set([key, ...(accessIndex.get(key)?.keys() ?? [])]);
+    await eachLimited([...keys], LIVE_LIMITS.sweepInFlight, (item) => reauthorize(item));
     void refresh();
     await deliver(entry);
   };
@@ -541,7 +631,8 @@ export const createLiveEngine = (input: {
           void drain();
           continue;
         }
-        fail([...connections], error, "live follower");
+        // Transport retries retain the admitted state; a retention gap rechecks access.
+        // Core/NATS liveness monitoring is owned separately, not a reconnect storm here.
         log.warn("Live follower failed; it resumes", { appId, error: message(error) });
         await sleep(1_000);
       }
@@ -551,7 +642,7 @@ export const createLiveEngine = (input: {
   /** Fills the ring with one replay of the recent events, then follows the topic. */
   const start = (): Promise<void> => {
     if (timers.length === 0) {
-      timers = [setInterval(progress, LIVE_LIMITS.progressMs)];
+      timers = [...(periodic ? [setInterval(() => void sweep(), LIVE_LIMITS.sweepMs)] : []), setInterval(progress, LIVE_LIMITS.progressMs)];
       for (const timer of timers) timer.unref?.();
     }
     started ??= (async () => {
@@ -608,7 +699,7 @@ export const createLiveEngine = (input: {
   const replayTo = async (sub: Subscription, entries: Entry[]) => {
     const deadline = Date.now() + LIVE_LIMITS.replayWaitMs;
     for (const entry of entries) {
-      while (checkingAccess) await checkingAccess;
+      if (!(await accessSettled(sub.conn))) return;
       if (sub.conn.subs.get(sub.id) !== sub) break;
       if (!sub.keys.has(entry.key as string)) continue;
       if (!(await writeWaiting(sub.conn, frame.event(sub.id, entry), deadline))) return;
@@ -623,7 +714,7 @@ export const createLiveEngine = (input: {
     sub.backlogBytes = 0;
   };
 
-  const subscribe = async (conn: Connection, request: Extract<LiveClientMessage, { t: "sub" }>) => {
+  const subscribe = async (conn: Connection, request: Extract<LiveClientMessage, { t: "sub" }>, retries = 0): Promise<void> => {
     const channel = Object.hasOwn(channels, request.channel) ? channels[request.channel] : undefined;
     if (!channel) return violation(conn, "unknown_channel");
     if (conn.subs.has(request.id)) return violation(conn, "duplicate_subscription");
@@ -636,10 +727,11 @@ export const createLiveEngine = (input: {
     let readable: string[];
     let version: number;
     do {
-      while (checkingAccess) await checkingAccess;
+      if (!(await accessSettled(conn))) return;
       version = accessUpdates;
       keys = await bounded("keys()", channel.keys(scope.data, conn.viewer));
       readable = keys === null ? [] : await readableKeys(request.channel, followed(request.channel, keys), conn.viewer);
+      if (version !== accessUpdates && retries++ >= 1) return close(conn, 1013, "access_changing");
     } while (version !== accessUpdates && !conn.closed);
     // Not found and not readable look the same.
     if (keys === null || (readable.length === 0 && !channel.collection)) return write(conn, frame.revoked(request.id, "not_found"));
@@ -648,7 +740,10 @@ export const createLiveEngine = (input: {
     const recreated = after !== null && after > head && after > input.topic().cursorSequence(await input.topic().head());
     if (conn.closed) return;
     // A cursor/head read can overlap an invalidation too. Start admission again.
-    if (version !== accessUpdates) return subscribe(conn, request);
+    if (version !== accessUpdates) {
+      if (retries >= 1) return close(conn, 1013, "access_changing");
+      return subscribe(conn, request, retries + 1);
+    }
 
     // Synchronous from here. The position includes an event that is being delivered right now:
     // the replay covers everything up to it, live delivery everything after it.
@@ -703,45 +798,78 @@ export const createLiveEngine = (input: {
 
   // ---------- event-driven identity access and progress ----------
 
-  let checkingAccess: Promise<void> | null = null;
-  let checkAgain = false;
-  const checkAccess = async () => {
-    const unchecked: Connection[] = [];
-    let failure: unknown;
-    await eachLimited([...connections], LIVE_LIMITS.accessInFlight, async (conn) => {
-      if (conn.closed) return;
+  const checkConnection = (conn: Connection): Promise<void> => {
+    if (conn.closed || stopping.signal.aborted) return Promise.resolve();
+    conn.checkAgain = true;
+    if (conn.accessCheck) return conn.accessCheck;
+    conn.accessCheck = Promise.resolve().then(async () => {
       try {
-        const viewer = await bounded("The credential check", conn.revalidate());
-        if (!viewer || viewer.id !== conn.viewer.id) close(conn, 1008, "session_expired", "The session ended.");
-        else conn.viewer = viewer;
+        // At most one coalesced catch-up; repeated invalidations cannot hold delivery forever.
+        for (let pass = 0; pass < 2 && !conn.closed; pass++) {
+          conn.checkAgain = false;
+          const viewer = await limited(() => bounded("The credential check", conn.revalidate()));
+          if (!viewer || viewer.id !== conn.viewer.id) return close(conn, 1008, "session_expired", "The session ended.");
+          conn.viewer = viewer;
+          const selected = new Set([conn]);
+          const keys = new Set([...conn.subs.values()].flatMap((sub) => [...sub.keys]));
+          await eachLimited([...keys], LIVE_LIMITS.sweepInFlight, (key) => reauthorize(key, selected, false, true));
+          await refreshCollections(selected);
+          if (!conn.checkAgain) break;
+        }
+        if (conn.checkAgain && !conn.closed) close(conn, 1013, "access_changing");
       } catch (error) {
-        unchecked.push(conn);
-        failure = error;
+        fail([conn], error, "identity access");
+      } finally {
+        conn.accessCheck = null;
       }
     });
-    fail(unchecked, failure, "credential check");
-    await eachLimited([...index.keys()], LIVE_LIMITS.accessInFlight, reauthorize);
-    await refresh();
+    return conn.accessCheck;
   };
 
-  const invalidateAccess = (): Promise<void> => {
-    if (stopping.signal.aborted) return Promise.resolve();
+  const accessSettled = async (conn: Connection): Promise<boolean> => {
+    for (let pass = 0; pass < 2 && conn.accessCheck; pass++) await conn.accessCheck;
+    if (conn.accessCheck && !conn.closed) close(conn, 1013, "access_changing");
+    return !conn.closed;
+  };
+
+  const invalidateAccess = async (subject?: IdentityAccessSubject): Promise<void> => {
+    if (stopping.signal.aborted) return;
     accessUpdates++;
-    checkAgain = true;
-    if (checkingAccess) return checkingAccess;
-    checkingAccess = (async () => {
-      try {
-        do {
-          checkAgain = false;
-          await checkAccess();
-        } while (checkAgain && !stopping.signal.aborted);
-      } catch (error) {
-        fail([...connections], error, "identity access");
-      } finally {
-        checkingAccess = null;
-      }
-    })();
-    return checkingAccess;
+    const affected = [...connections].filter((conn) => !subject || identityAccessAffects(subject, conn.subject));
+    if (!subject) cache.clear();
+    else {
+      const viewers = affected.map((conn) => `\u0000${conn.viewer.id}`);
+      for (const id of cache.keys()) if (viewers.some((viewer) => id.endsWith(viewer))) cache.delete(id);
+    }
+    await Promise.all(affected.map(checkConnection));
+  };
+
+  let sweeping = false;
+  let round = 0;
+  const sweep = async () => {
+    if (sweeping || stopping.signal.aborted) return;
+    sweeping = true;
+    round++;
+    const selected = new Set([...connections].filter((conn) => [...conn.subs.values()].some((sub) => !channels[sub.channel]?.eventOnly)));
+    try {
+      await eachLimited([...selected], LIVE_LIMITS.sweepInFlight, async (conn) => {
+        try {
+          const version = accessUpdates;
+          const viewer = await bounded("The credential check", conn.revalidate());
+          if (version !== accessUpdates || conn.closed) return;
+          if (!viewer || viewer.id !== conn.viewer.id) close(conn, 1008, "session_expired", "The session ended.");
+          else conn.viewer = viewer;
+        } catch (error) {
+          fail([conn], error, "credential check");
+        }
+      });
+      await eachLimited([...index.keys()], LIVE_LIMITS.sweepInFlight, (key) => reauthorize(key, selected, true));
+      if (round % LIVE_LIMITS.keysEveryRounds === 0) await refreshCollections(selected, true);
+    } catch (error) {
+      log.error("Live sweep failed", { appId, error: message(error) });
+    } finally {
+      sweeping = false;
+    }
   };
 
   /** Lets quiet subscriptions move their cursor along, so they stay inside the ring. */
@@ -764,15 +892,32 @@ export const createLiveEngine = (input: {
       viewer: LiveViewer,
       revalidate: () => Promise<LiveViewer | null>,
       watchExpiry?: (expired: () => void) => () => void,
+      subject?: IdentityAccessSubject,
     ): LiveConnectionHandle => {
-      const conn: Connection = { socket, viewer, revalidate, subs: new Map(), pending: 0, work: Promise.resolve(), closed: false };
+      const conn: Connection = {
+        socket,
+        viewer,
+        revalidate,
+        subs: new Map(),
+        pending: 0,
+        work: Promise.resolve(),
+        closed: false,
+        subject: subject ?? {
+          userId: userFromActor(viewer.actor)?.id,
+          serviceAccountId: viewer.actor.kind === "service_account" ? viewer.actor.serviceAccount.id : undefined,
+        },
+        accessCheck: null,
+        checkAgain: false,
+      };
       // A stopped engine starts no follower or timers again: the socket reconnects to a running replica.
       if (stopping.signal.aborted) close(conn, 1012, "restart");
       else {
         start().catch((error) => log.warn("Live follower could not start", { appId, error: message(error) }));
         const open = [...connections].filter((other) => other.viewer.id === viewer.id).length;
         connections.add(conn);
-        stopAccess ??= input.subscribeAccess?.(() => void invalidateAccess());
+        stopAccess ??= input.subscribeAccess?.((subject) => void invalidateAccess(subject));
+        // Subscribe before reauthenticating, so a change during the handshake cannot be lost.
+        void checkConnection(conn);
         conn.stopExpiry = watchExpiry?.(() => close(conn, 1008, "session_expired", "The session ended."));
         if (open >= LIVE_LIMITS.socketsPerViewer) close(conn, 1013, "too_many_sockets", "Too many live sockets are open.");
       }

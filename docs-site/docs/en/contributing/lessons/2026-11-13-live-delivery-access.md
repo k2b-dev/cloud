@@ -1,6 +1,6 @@
 ### Live delivery repeated database decisions after a cache expired
 
 - **What happened:** A channel with a one-statement access decision ran one SQL statement again on the first delivery after every two-second cache window.
-- **Root cause:** Delivery expired authorization decisions, and a periodic sweep also reloaded credentials and channel access.
+- **Root cause:** The delivery cache was the only available channel mode, even when every decision input already published an access event.
 - **Error class:** Database-backed authorization in a live delivery hot path.
-- **Guard:** `events/live-budget.integration.test.ts` pins setup to one statement and delivery to zero at +1, +2001, +4002, and +60001 ms. Event-driven revocation tests and DATA-13 require access events instead of polling.
+- **Guard:** `events/live-budget.integration.test.ts` pins an explicitly event-only channel to two setup statements, zero delivery and progress statements at +1, +2001, +4002, and +60001 ms, and two statements per affected Identity-Access event with none for unrelated subjects. Default-mode and event-driven admission and revocation tests preserve both contracts. DATA-13 requires a measured budget and complete event coverage before opting out of polling.

@@ -387,3 +387,23 @@ scope lists. Replace a limited key by issuing a new one and revoking the old
 one. New OAuth clients created with `cld admin agents create` include `admin`;
 existing clients are unchanged. No data migration is required. See
 [Standalone service accounts and agents](/en/docs/identity/service-accounts#use-an-agent-from-the-cli).
+
+## Event-only live channels
+
+Live channels can explicitly declare `eventOnly: true` when their owning
+services publish every access change. This disables the channel's two-second
+delivery cache and ten-second access sweep, and its sixty-second collection
+refresh. Existing channels keep those defaults until they opt in. There is
+no operator setting or database migration for the option.
+
+AI's user channel, Chat's personal channel, Mail's mailbox channel, Spaces'
+space channel, and Grids' record, metadata and run channels opt in. Mail maps
+assigned-reader delivery keys to their mailbox access key. Grids publishes
+access hints when a table or workflow is soft-deleted. Chat conversation and
+list channels and Contacts channels retain periodic checks.
+
+Deploy the owning application's event sources with its opted-in channels.
+Keep Core's Identity-Access delivery running on NATS and verify event-driven
+revocation and known expiry deadlines as part of an upgrade. See
+[Live updates](/en/docs/automation/live-updates#access-changes) for the channel
+contract and SQL budget guards.

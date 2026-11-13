@@ -74,8 +74,14 @@ export const contextPrincipal = (context: ChatContext) => {
     : principal;
 };
 /** Live delivery needs only authority, independent of the locale of the last HTTP read. */
-export const cachedResource = async (principal: string, ref: ResourceRef) => {
+export const cachedResource = async (principal: string, ref: ResourceRef, identityChanged = false) => {
   try {
+    if (identityChanged) {
+      // A fresh HTTP read must ask the owner again, regardless of its display locale.
+      // The live subscription resyncs until that authoritative read completes.
+      await redis.del(authorizationKey(principal, ref));
+      return null;
+    }
     const value = await redis.get(authorizationKey(principal, ref));
     return value === null ? null : AuthorizationSchema.nullable().parse(JSON.parse(value));
   } catch {
@@ -111,7 +117,9 @@ const loadResource = async (
   try {
     context.caller?.signal?.throwIfAborted();
     const cached = context.capabilityQuery ? null : await redis.get(key);
-    if (cached !== null) return ResourceDecisionSchema.nullable().parse(JSON.parse(cached));
+    // Presentation cache entries never outlive their locale-independent authority.
+    if (cached !== null && (await redis.get(authorizationKey(principal, ref))) !== null)
+      return ResourceDecisionSchema.nullable().parse(JSON.parse(cached));
     if (!context.caller || !CloudResourceRefSchema.safeParse(ref).success) return null;
     const provider = await providerFor(context, ref.type);
     if (!provider) return null;
