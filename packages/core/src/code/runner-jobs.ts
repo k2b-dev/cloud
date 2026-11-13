@@ -10,6 +10,7 @@ import {
   type CodeTestLimits,
   CodeTestResultSchema,
 } from "@k2b/cloud/code";
+import { notifyChatRun } from "@k2b/cloud/code/chat-run-wake";
 import {
   type RunnerJobLease,
   type RunnerJobProof,
@@ -108,11 +109,14 @@ export async function heartbeatCodeJob(proof: RunnerJobProof) {
     await db`UPDATE code.runner_instances SET last_seen_at=clock_timestamp() WHERE instance_id=(SELECT runner_instance_id FROM code.jobs WHERE id=${proof.jobId}::uuid)`;
     return { leaseExpiresAt: row!.lease_expires_at.getTime() };
   });
-  if (!heartbeat) throw new RunnerLeaseLostError();
+  if (!heartbeat) {
+    notifyChatRun(proof.jobId, "status");
+    throw new RunnerLeaseLostError();
+  }
   return heartbeat;
 }
 export async function completeCodeJob(proof: RunnerJobProof, result: RunnerJobResult) {
-  return sql.begin(async (db) => {
+  const kind = await sql.begin(async (db) => {
     const row = await fenceCodeJob(proof, db);
     const validation = RunnerJobResultSchema.safeParse(result);
     let parsed: RunnerJobResult = validation.success ? validation.data : { kind: "error", code: "code_job_failed" };
@@ -123,7 +127,9 @@ export async function completeCodeJob(proof: RunnerJobProof, result: RunnerJobRe
     )
       parsed = { kind: "error", code: "code_job_failed" };
     await db`UPDATE code.jobs SET state=${parsed.kind === "error" ? "failed" : "succeeded"},result=${JSON.stringify(parsed)}::text::jsonb,input=NULL,lease_expires_at=NULL,lease_key_hash=NULL WHERE id=${proof.jobId}::uuid`;
+    return row.kind;
   });
+  if (kind === "chat") notifyChatRun(proof.jobId, "status");
 }
 /** Crash recovery never replays production effects: authoring roles have only a fake bridge. */
 export async function reconcileCodeJobs() {
@@ -133,9 +139,12 @@ export async function reconcileCodeJobs() {
     lease_expires_at=NULL,lease_key_hash=NULL
     WHERE kind<>'chat' AND id IN(SELECT id FROM code.jobs WHERE (state='running' AND lease_expires_at<=clock_timestamp()) OR (state='queued' AND deadline_at<=clock_timestamp()) ORDER BY deadline_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)`;
   // Chat jobs can have real effects. Expiry is terminal, never a retry of an uncertain execution.
-  await sql`UPDATE code.jobs SET state='failed',result='{"kind":"error","code":"code_job_time_limit"}'::jsonb,
+  const expired = await sql<
+    { id: string }[]
+  >`UPDATE code.jobs SET state='failed',result='{"kind":"error","code":"code_job_time_limit"}'::jsonb,
     input=NULL,lease_expires_at=NULL,lease_key_hash=NULL
-    WHERE id IN(SELECT id FROM code.jobs WHERE kind='chat' AND ((state='running' AND lease_expires_at<=clock_timestamp()) OR (state='queued' AND deadline_at<=clock_timestamp())) ORDER BY deadline_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)`;
+    WHERE id IN(SELECT id FROM code.jobs WHERE kind='chat' AND ((state='running' AND lease_expires_at<=clock_timestamp()) OR (state='queued' AND deadline_at<=clock_timestamp())) ORDER BY deadline_at,id LIMIT 100 FOR UPDATE SKIP LOCKED) RETURNING id`;
+  for (const job of expired) notifyChatRun(job.id, "status");
   await sql`INSERT INTO code.job_outbox(job_id) SELECT id FROM code.jobs WHERE state='queued' ORDER BY created_at,id LIMIT 100 ON CONFLICT DO NOTHING`;
   await sql`DELETE FROM code.jobs WHERE id IN(SELECT id FROM code.jobs WHERE deadline_at<clock_timestamp()-interval '15 seconds' ORDER BY deadline_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
 }

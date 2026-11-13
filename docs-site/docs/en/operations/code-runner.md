@@ -514,6 +514,12 @@ pool; adding chat tools does not move user-code execution into Core. A busy
 or unavailable runner produces the shared versioned failure result. Chat
 submission saves a version; activation remains a human action.
 
+Chat mailbox and reply waits use NATS notifications on the existing Cloud
+connection. If a notification is lost, the 2-second fallback reads durable
+state. A disconnected broker can therefore delay chat output until that
+fallback; it does not replay a claimed effect or restart an expired chat job.
+No additional service or configuration is needed.
+
 ## Review internet destinations
 
 Each Code version declares its exact HTTPS origins in `manifest.internet`,
