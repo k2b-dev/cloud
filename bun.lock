@@ -164,7 +164,7 @@
     },
     "packages/cloud": {
       "name": "@k2b/cloud",
-      "version": "0.67.0",
+      "version": "0.68.0",
       "dependencies": {
         "@codemirror/state": "6.7.6",
         "@firecrawl/anydoc": "0.2.4",
@@ -229,7 +229,7 @@
     },
     "packages/cloud-cli": {
       "name": "@k2b/cloud-cli",
-      "version": "0.74.0",
+      "version": "0.75.0",
       "bin": {
         "cld": "src/index.ts",
       },
@@ -310,7 +310,7 @@
     },
     "packages/editor": {
       "name": "@k2b/editor",
-      "version": "0.11.2",
+      "version": "0.11.3",
       "dependencies": {
         "@codemirror/autocomplete": "6.20.4",
         "@codemirror/commands": "6.11.1",
@@ -786,7 +786,7 @@
     },
     "packages/ui": {
       "name": "@k2b/ui",
-      "version": "0.56.0",
+      "version": "0.57.0",
       "dependencies": {
         "@codemirror/commands": "6.11.1",
         "@codemirror/language": "6.13.1",
