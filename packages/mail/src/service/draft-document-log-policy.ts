@@ -90,7 +90,7 @@ export const migrateDraftDocumentLogPolicy = async (signal?: AbortSignal): Promi
     requestDraftDocumentPrune();
     return true;
   } catch (error) {
-    if (!signal?.aborted) log.error("Shared drafts remain unsupported: the draft document log could not be prepared", { error });
+    if (!signal?.aborted) log.warn("Shared drafts remain unsupported: the draft document log could not be prepared", { error });
     return false;
   }
 };
