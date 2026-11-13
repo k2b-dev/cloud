@@ -25,7 +25,7 @@ import {
   sharedText,
   sharedTextSnapshotJobConfig,
 } from "./index";
-import type { SharedTextLifecycleStore } from "./lifecycle-store";
+import type { SharedTextLifecycleEntry, SharedTextLifecycleStore } from "./lifecycle-store";
 
 const NOW = new Date("2026-10-19T12:00:00Z");
 beforeEach(() => setSystemTime(NOW));
@@ -890,9 +890,6 @@ test("a snapshot repair cannot overwrite a restore fence while its SQL transacti
 for (const state of ["frozen", "closed"] as const)
   test(`snapshot repair respects a durable ${state} authority after its log marker was pruned`, async () => {
     const authority: SharedTextLifecycleStore = {
-      forget: async () => {
-        throw new Error("Not used");
-      },
       get: async () => ({
         revision: 1,
         value:
@@ -916,9 +913,6 @@ for (const state of ["frozen", "closed"] as const)
 test("a no-op snapshot repair preserves an expired freeze token", async () => {
   let reads = 0;
   const authority: SharedTextLifecycleStore = {
-    forget: async () => {
-      throw new Error("Not used");
-    },
     get: async () => {
       reads++;
       return {
@@ -936,3 +930,61 @@ test("a no-op snapshot repair preserves an expired freeze token", async () => {
   expect(f.publications).toHaveLength(0);
   expect(f.saves).toHaveLength(1);
 });
+
+for (const covered of [false, true])
+  for (const boundary of ["frozen", "closed", "unavailable"] as const)
+    test(`repair post-check ${boundary} preserves the pre-repair snapshot (${covered ? "covered" : "uncovered"})`, async () => {
+      let entry: SharedTextLifecycleEntry | null = null;
+      let unavailable = false;
+      const authority: SharedTextLifecycleStore = {
+        get: async () => {
+          if (unavailable) throw new Error("lifecycle unavailable");
+          return entry;
+        },
+        put: async () => {
+          throw new Error("No lifecycle write expected");
+        },
+      };
+      const f = fixture({ maxLength: 100, plan: () => [{ from: 0, to: 0, insert: "repair" }] }, authority);
+      if (covered) {
+        f.states.set("doc", { state: new Uint8Array([0, 0]), text: "", cursor: cursor(10), restoreRevision: "revision" });
+        f.events.length = 0;
+        f.latest.delete("doc");
+      }
+      f.control.beforePublish = () => {
+        if (boundary === "unavailable") unavailable = true;
+        else
+          entry = {
+            revision: 1,
+            value:
+              boundary === "closed"
+                ? { state: "closed", freezeCursor: cursor(10), closeCursor: cursor(11), restoreRevision: "revision" }
+                : { state: "frozen", expiresAt: NOW.getTime() + 60_000, freezeCursor: cursor(10), restoreRevision: "revision" },
+          };
+      };
+      if (boundary === "unavailable") await expect(f.run()).rejects.toThrow("lifecycle unavailable");
+      else await f.run();
+      expect(f.publications).toHaveLength(1);
+      expect(f.saves).toHaveLength(covered || boundary === "unavailable" ? 0 : 1);
+      if (f.saves.length) {
+        const saved = f.saves[0]![1];
+        const doc = createDoc(saved);
+        try {
+          expect(saved.text).toBe("text5");
+          expect(doc.getText(SHARED_TEXT_NAME).toString()).toBe("text5");
+          expect(saved.cursor).toBe(cursor(10));
+        } finally {
+          doc.destroy();
+        }
+      }
+      // The published update is retained, not silently deleted; a later replay
+      // can cover it normally while the lifecycle fence prevents another repair.
+      expect(f.events.at(-1)?.data.kind).toBe("sync");
+      if (boundary !== "unavailable") {
+        f.control.beforePublish = undefined;
+        await f.run();
+        expect(f.publications).toHaveLength(1); // The fence prevents another repair.
+        expect(f.saves.at(-1)?.[1].text).toBe(`repair${covered ? "" : "text5"}`);
+        expect(f.saves.at(-1)?.[1].cursor).toBe(cursor(11));
+      }
+    });

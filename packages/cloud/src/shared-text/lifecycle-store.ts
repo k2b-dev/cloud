@@ -3,6 +3,7 @@ import { ConflictError } from "@k2b/sync";
 import { DiscardPolicy, JetStreamApiError, jetstream, jetstreamManager, StorageType, type StreamInfo } from "@nats-io/jetstream";
 import { z } from "zod";
 import { getProcessSync } from "../_internal/process-sync";
+import { logger } from "../services/logging";
 import { SharedTextBoundaryError } from "./boundary";
 
 const valueSchema = z.discriminatedUnion("state", [
@@ -16,8 +17,6 @@ const valueSchema = z.discriminatedUnion("state", [
 export type SharedTextLifecycleValue = z.infer<typeof valueSchema>;
 export type SharedTextLifecycleEntry = { revision: number; value: SharedTextLifecycleValue };
 export type SharedTextLifecycleStore = {
-  /** Only after durable domain retirement and producer shutdown; IDs must never be reused. */
-  forget(docId: string): Promise<void>;
   get(docId: string): Promise<SharedTextLifecycleEntry | null>;
   put(docId: string, previous: SharedTextLifecycleEntry | null, value: SharedTextLifecycleValue): Promise<SharedTextLifecycleEntry>;
 };
@@ -44,6 +43,7 @@ export const checkLifecycleAdmission = async (store: SharedTextLifecycleStore, d
 export const createLifecycleStore = (config: { id: string; maxBytes: number; ready(): Promise<void> }): SharedTextLifecycleStore => {
   if (!Number.isSafeInteger(config.maxBytes) || config.maxBytes < 4096) throw new RangeError("Lifecycle maxBytes must be at least 4096");
   let pending: ReturnType<typeof prepare> | undefined;
+  let warnedLargerBudget = false;
   // Cache decoded values within the declared byte budget. Each read still verifies
   // the broker revision: delayed/lost invalidations must never admit an edit.
   const cache = new Map<string, { entry: SharedTextLifecycleEntry; bytes: number }>();
@@ -106,10 +106,20 @@ export const createLifecycleStore = (config: { id: string; maxBytes: number; rea
         existing.config.metadata?.["sync.namespace"] !== control.namespace
       )
         throw new Error("Shared text lifecycle stream identity differs");
-      // Reject a shrink rather than risk losing another document's fence.
-      if (config.maxBytes < existing.config.max_bytes) throw new RangeError("Lifecycle maxBytes cannot be decreased");
-      if (existing.config.max_bytes !== config.maxBytes || existing.config.num_replicas !== replicas)
-        existing = await manager.streams.update(name, { max_bytes: config.maxBytes, num_replicas: replicas });
+      // Old pods and rollbacks retain the larger reservation without evicting fences.
+      if (existing.config.max_bytes > declared.max_bytes) {
+        declared.max_bytes = existing.config.max_bytes;
+        if (!warnedLargerBudget) {
+          warnedLargerBudget = true;
+          logger("shared-text-lifecycle").warn("Keeping the larger existing lifecycle byte budget", {
+            log: config.id,
+            declaredMaxBytes: config.maxBytes,
+            retainedMaxBytes: declared.max_bytes,
+          });
+        }
+      }
+      if (existing.config.max_bytes !== declared.max_bytes || existing.config.num_replicas !== replicas)
+        existing = await manager.streams.update(name, { max_bytes: declared.max_bytes, num_replicas: replicas });
     }
     const actual = (existing ?? (await manager.streams.add(declared))).config;
     for (const key of ["max_bytes", "max_msgs_per_subject", "max_msg_size", "max_age", "discard", "storage", "num_replicas"] as const)
@@ -123,19 +133,6 @@ export const createLifecycleStore = (config: { id: string; maxBytes: number; rea
     }));
   const keyFor = (docId: string) => createHash("sha256").update(docId).digest("hex");
   return {
-    async forget(docId) {
-      const entry = await this.get(docId);
-      if (!entry) return;
-      if (entry.value.state !== "closed" || !entry.value.closeCursor)
-        throw new ConflictError("Only a completed, retired close can be forgotten");
-      const { manager, name } = await ready();
-      // Delete the exact revision, never a concurrently replaced subject value.
-      await manager.streams.deleteMessage(name, entry.revision);
-      const key = keyFor(docId);
-      const old = cache.get(key);
-      if (old) bytes -= old.bytes;
-      cache.delete(key);
-    },
     async get(docId) {
       const { manager, name, subject } = await ready();
       const key = keyFor(docId);

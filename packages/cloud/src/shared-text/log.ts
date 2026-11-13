@@ -31,7 +31,6 @@ const define = (
     ? {
         get: (id) => lifecycleHandle().get(id),
         put: (id, previous, value) => lifecycleHandle().put(id, previous, value),
-        forget: (id) => lifecycleHandle().forget(id),
       }
     : undefined;
   const replay = async (config: {
