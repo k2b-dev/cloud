@@ -121,7 +121,7 @@ suiteFor(
       const persisted = await meter.during(() => pipeline.persistSnapshot());
       console.log("SQL BUDGET lazy chat snapshot", persisted.length, persisted);
       expect(persisted).toHaveLength(1);
-      expect(admission).toHaveLength(27);
+      expect(admission).toHaveLength(24);
     } finally {
       abort.abort();
       await pipeline.flush();
