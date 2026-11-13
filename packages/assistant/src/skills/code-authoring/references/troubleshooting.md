@@ -4,6 +4,12 @@ Diagnostics carry a stable `code`, a message (German in this release), and a
 one-based `file`, `line` and `column`. Fix the cause; never suppress type
 errors (`code_type_suppression`).
 
+## Delayed one-off chat output
+
+A missed update can delay `code_run` output until its automatic 2-second
+recovery read. Keep inspecting the existing run. Starting another run can
+repeat effects that already happened.
+
 ## Missing draft
 
 A `NOT_FOUND` that asks for `code_pull` means this chat has no current draft

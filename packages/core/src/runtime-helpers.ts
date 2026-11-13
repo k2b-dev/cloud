@@ -69,6 +69,7 @@ import { migratePersonalGroupHistory, startPersonalGroupHistory } from "./migrat
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
+import { migrate as migrateRoomAccessEvents } from "./migrate/core/room-access-events";
 import { migrate as migrateScreenPreferences } from "./migrate/core/screen-preferences";
 import { migrate as migrateSettings } from "./migrate/core/settings";
 import { migrate as migrateStorageBuckets } from "./migrate/core/storage-buckets";
@@ -174,6 +175,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "workflows", run: migrateWorkflows },
     { name: "events", run: migrateEvents },
     { name: "code-lifecycle", run: migrateCodeLifecycle },
+    { name: "room-access-events", run: migrateRoomAccessEvents },
     { name: "app-events", run: migrateAppEvents },
     { name: "weather", run: migrateWeather },
     { name: "geo", run: migrateGeo },

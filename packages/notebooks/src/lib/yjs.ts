@@ -15,6 +15,7 @@ export const NOTEBOOKS_YJS_WS_TYPE = {
 export type NotebooksYjsWsType = (typeof NOTEBOOKS_YJS_WS_TYPE)[keyof typeof NOTEBOOKS_YJS_WS_TYPE];
 
 export const NOTEBOOKS_YJS_ERROR_CODE = {
+  busy: "BUSY",
   loginRequired: "LOGIN_REQUIRED",
   sessionExpired: "SESSION_EXPIRED",
   accessDenied: "ACCESS_DENIED",

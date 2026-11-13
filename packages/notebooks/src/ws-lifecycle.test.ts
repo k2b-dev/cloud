@@ -2,6 +2,7 @@ import { expect, mock, test } from "bun:test";
 import { RetentionGapError } from "@k2b/sync";
 import type { Context } from "hono";
 import { WSContext, type WSEvents } from "hono/ws";
+import { createWsInvalidations } from "../test/ws-invalidations";
 
 // Keep the transport/module fixture inside its own process so package-wide
 // test runs never replace the real application modules used by other suites.
@@ -26,7 +27,9 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const subscribedAfter: string[] = [];
   const adoptions: unknown[] = [];
   const replayGap = { head: null as string | null, gapBelow: null as string | null, failure: null as Error | null };
+  const invalidations = createWsInvalidations();
   let events: WSEvents | undefined;
+  let storedCursor = "s6t.fixture.9";
   let missingFirstNote = false;
   let holdFirstLeave = false;
   const readerLeaveEntered = Promise.withResolvers<void>();
@@ -37,6 +40,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       await new Promise<void>((resolve) => config.signal?.addEventListener("abort", () => resolve(), { once: true }));
   };
   const note = { id: "test-note", notebookId: "test-notebook", lockedAt: null };
+  mock.module("@k2b/cloud/events", () => ({ subscribeIdentityAccessChanged: () => () => {} }));
   mock.module("@k2b/cloud/server", () => ({
     getLocale: () => "en",
     guardAppAccessSocket: async (_c: Context, _appId: string, events: WSEvents) => events,
@@ -71,6 +75,8 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
         },
         getByShortId: async ({ shortId }: { shortId: string }) => ({ ...note, id: shortId === "ghijkl" ? "second-note" : note.id }),
         get: async ({ id }: { id: string }) => (id === note.id && missingFirstNote ? null : { ...note, id }),
+        getRoomAccessState: async ({ noteId }: { noteId: string }) =>
+          noteId === note.id && missingFirstNote ? null : { ...note, id: noteId, restoreRevision: "0" },
         getYjsStateWithCursor: async () => ({ restoreRevision: "0" }),
         deliverAtRestoreRevision: async (input: { deliver: () => undefined }) => {
           input.deliver();
@@ -78,12 +84,13 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
         },
         getAnchoredYjsState: async () => ({
           yjsState: new Uint8Array([0, 0]),
-          streamCursor: "s6t.fixture.9",
+          streamCursor: storedCursor,
           restoreRevision: "0",
           contentMd: null,
         }),
         adoptSnapshotAtHead: async (input: { noteId: string; cause: RetentionGapError }) => {
           adoptions.push({ noteId: input.noteId, requested: input.cause.requested });
+          storedCursor = "s6t.fixture.20";
           return { cursor: "s6t.fixture.20" };
         },
       },
@@ -92,7 +99,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
         get: async () => ({ id: note.notebookId }),
         permission: { get: async () => "write" },
       },
-      workspaceEvents: { live: waitUntilAborted },
+      workspaceEvents: { live: invalidations.live, latestCursor: async () => "s6t.events.0" },
       presence: {
         snapshot: async () => ({ participants: [], cursor: "0" }),
         watch: waitUntilAborted,
@@ -109,15 +116,11 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     },
   }));
   mock.module("./service/presence", () => ({ PRESENCE_HEARTBEAT_INTERVAL_MS: 10_000 }));
-  mock.module("./service/yjs-sync", () => ({
-    NODE_ID: "fixture-node",
-    toBase64: () => "",
-    isValidYjsUpdate: () => true,
-    isStorageExhausted: (error: unknown) => /insufficient (storage )?resources/i.test(String(error)),
-    maxStreamCursor: (_previous: string | null, next: string) => next,
-    createYjsTopic: () => ({
+  mock.module("./service/yjs-sync", () => {
+    const topic = () => ({
       latestCursor: async () => replayGap.head,
-      cursorAt: () => "s6t.fixture.0",
+      cursorAt: (sequence: number) => `s6t.fixture.${sequence}`,
+      cursorSequence: (cursor: string) => Number(cursor.split(".").at(-1)),
       replay: async function* (config: { after: string }) {
         if (replayGap.failure) throw replayGap.failure;
         if (config.after === replayGap.gapBelow) throw new RetentionGapError(config.after, "s6t.fixture.15", "s6t.fixture.14");
@@ -133,9 +136,29 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
         publishEntered.resolve();
         return published.promise;
       },
-    }),
-    createYjsAwarenessTopic: () => ({ live: waitUntilAborted }),
-  }));
+    });
+    return {
+      notebooksTextLog: {
+        topic,
+        withStore: () => ({
+          accept: async (
+            docId: string,
+            input: Omit<Parameters<typeof import("./service")["notebooksService"]["note"]["acceptYjsUpdate"]>[0], "noteId">,
+          ) => {
+            const { notebooksService } = await import("./service");
+            return notebooksService.note.acceptYjsUpdate({ ...input, noteId: docId });
+          },
+        }),
+      },
+      NODE_ID: "fixture-node",
+      toBase64: () => "",
+      isValidYjsUpdate: () => true,
+      isStorageExhausted: (error: unknown) => /insufficient (storage )?resources/i.test(String(error)),
+      maxStreamCursor: (_previous: string | null, next: string) => next,
+      createYjsTopic: topic,
+      createYjsAwarenessTopic: () => ({ live: waitUntilAborted }),
+    };
+  });
   mock.module("./service/yjs-snapshot-worker", () => ({
     yjsSnapshotWorker: {
       queueSnapshotSave: async (input: unknown) => {
@@ -178,10 +201,10 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       while (!predicate() && Date.now() < deadline) await Bun.sleep(5);
       expect(predicate()).toBe(true);
     };
-    return { sent, closed, request, waitFor };
+    return { sent, closed, request, waitFor, close: () => handlers.onClose?.(new CloseEvent("close"), socket) };
   };
 
-  test("a recovered stored snapshot requires a fresh client base before live subscription", async () => {
+  test("an uncovered stored snapshot is adopted before resync and the next join succeeds", async () => {
     replayGap.head = "s6t.fixture.19";
     replayGap.gapBelow = "s6t.fixture.9";
     subscribedAfter.length = 0;
@@ -194,9 +217,19 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       "RESYNC_REQUIRED",
     ]);
     expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.reopen).toBeUndefined();
+    const reconnect = await openSocket();
+    try {
+      reconnect.request();
+      await reconnect.waitFor(() => reconnect.sent.some((message) => message.type === "notes.yjs.replay.ready"));
+      expect(reconnect.sent.filter((message) => message.type === "notes.yjs.error")).toEqual([]);
+      expect(subscribedAfter).toEqual(["s6t.fixture.20"]);
+    } finally {
+      storedCursor = "s6t.fixture.9";
+      reconnect.close();
+    }
   }, 10_000);
 
-  test("a client cursor below retention resyncs from the stored snapshot without re-anchoring", async () => {
+  test("a client cursor below retention with no covering snapshot requires resync", async () => {
     replayGap.head = "s6t.fixture.19";
     replayGap.gapBelow = "s6t.fixture.3";
     adoptions.length = 0;
@@ -207,8 +240,32 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       "RESYNC_REQUIRED",
     ]);
     expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.reopen).toBeUndefined();
-    expect(adoptions).toEqual([]);
+    expect(adoptions).toEqual([{ noteId: "test-note", requested: "s6t.fixture.3" }]);
+    storedCursor = "s6t.fixture.9";
   }, 10_000);
+
+  test("a client cursor below retention rebases from a covering snapshot on the same socket", async () => {
+    replayGap.head = "s6t.fixture.19";
+    replayGap.gapBelow = "s6t.fixture.3";
+    storedCursor = "s6t.fixture.14";
+    subscribedAfter.length = 0;
+    const socket = await openSocket();
+    try {
+      socket.request("s6t.fixture.3");
+      await socket.waitFor(() => socket.sent.some((message) => message.type === "notes.yjs.replay.ready"));
+      expect(socket.sent.filter((message) => message.type === "notes.yjs.error")).toEqual([]);
+      expect(socket.sent).toContainEqual(
+        expect.objectContaining({
+          type: "notes.yjs.sync.push",
+          payload: expect.objectContaining({ snapshot: true, updates: [expect.objectContaining({ cursor: storedCursor })] }),
+        }),
+      );
+      expect(subscribedAfter).toEqual(["s6t.fixture.19"]);
+    } finally {
+      storedCursor = "s6t.fixture.9";
+      socket.close();
+    }
+  });
 
   test("a transient stream failure closes without demanding a resync so the client keeps its cursor", async () => {
     replayGap.head = "s6t.fixture.19";
@@ -239,12 +296,6 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   }, 10_000);
 
   test("reader expiry racing a new watch cannot overwrite that note or leak its lease", async () => {
-    const originalSetTimeout = globalThis.setTimeout;
-    let refreshWorkspace: (() => Promise<void>) | undefined;
-    globalThis.setTimeout = ((callback: () => Promise<void>, delay: number, ...args: unknown[]) => {
-      if (delay === 10_000) refreshWorkspace = callback;
-      return originalSetTimeout(callback, delay, ...args);
-    }) as typeof setTimeout;
     await app.request("/");
     const handlers = events!;
     const sent: Array<{ type: string; payload: { noteId?: string } }> = [];
@@ -267,7 +318,8 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       expect(sent.some((m) => m.type === "notes.presence.snapshot" && m.payload.noteId === "abcdef")).toBe(true);
       missingFirstNote = true;
       holdFirstLeave = true;
-      const expiring = refreshWorkspace!();
+      invalidations.emit();
+      const expiring = readerLeaveEntered.promise;
       await readerLeaveEntered.promise;
       await send("notes.workspace.presence.watch", { noteId: "ghijkl", presencePeerId: peer });
       // All unblocked mock I/O completes before releasing the old note's removal.
@@ -282,7 +334,6 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       readerLeaveReleased.resolve();
       missingFirstNote = false;
       holdFirstLeave = false;
-      globalThis.setTimeout = originalSetTimeout;
       await handlers.onClose?.(new CloseEvent("close"), socket);
     }
   });

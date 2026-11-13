@@ -2480,3 +2480,41 @@ durable Code account cleanup. Cleanup waits for the activation worker and
 owner reports to drain, then deletes the account and its normal shares through
 existing foreign keys. Failed deletion remains visible in the administrator
 cleanup read model. Do not erase pending jobs manually. See [Code lifecycle](/en/docs/platform/code-lifecycle).
+
+## Collaboration room access events
+
+Shared text rooms check access at connect/join and reconnect. They no longer
+periodically query permissions. Complete the Core rollout, including its room-access migration and live
+outbox delivery, before applications adopt event-only rooms. Notebooks refuses
+startup until the scoped Core source function is installed. Deferred rows
+use the existing retry gate so older dispatchers also respect their due time;
+current dispatchers bound long deadline timers to the runtime timer range. Keep Core and
+application live delivery healthy: revocations, locks and expiry deadlines
+reach open connections through these existing retained topics. See
+[Shared text documents](/en/docs/data/shared-text-documents#check-access-at-connect-or-join-revoke-through-events)
+for the event sources and application adapter contract.
+
+Core's outbox holds one future expiry event per account/session and one idle
+event per shared-workstation session; renewal replaces the deadline. Future
+rows are not delivery backlog until due. No new environment setting or bus is
+required. Notebooks keeps its wire protocol, topic declarations and snapshot
+job IDs. Shared-text admission adds the Sync mutex `<log.id>:admission`
+with a 10-second lease and a 5-second admission budget; all nodes must use
+this admission owner before enabling freeze. Snapshot flushes add the Sync mutex `<log.id>:snapshot-writer` with
+a 120-second renewable lease; existing atomic snapshot guards remain required
+while older workers are present during a rollout.
+
+Deploy Cloud's pinned Sync 7.1.1 with the room update. It prevents an idle
+document consumer from reporting a false retention gap when another
+document's safely persisted prefix is pruned. Join gaps still use the stored
+snapshot coverage and adapter recovery contract.
+
+Shared-text applications that use `room.freeze` must keep non-expiring,
+reject-on-full document logs, declare a lifecycle byte budget and preserve
+the separate lifecycle stream in backups. Lifecycle authority survives
+pruning the document log, including its freeze and close markers.
+A freeze expires after 60 seconds plus inter-node clock skew; synchronize
+node clocks and finish durable publication within that lease. Known credential
+expiry is also enforced by one local socket timeout, so Core downtime cannot
+extend an already-known deadline. See the
+[freeze contract](/en/docs/data/shared-text-documents#freeze-submit-thaw-or-close).
