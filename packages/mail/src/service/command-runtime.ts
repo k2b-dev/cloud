@@ -29,6 +29,7 @@ import {
 import { isMailReceivedSinceSend, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState } from "./conversation-work-state";
 import { isTransientDatabaseError } from "./database-errors";
+import { recordDraftSendCloseIntent, retryDraftSendClose, verifyDraftSendBeforeDispatch } from "./draft-document-send";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { mailLive } from "./live";
 import { localStateProjectionSchema, rollbackLocalStateProjection } from "./local-state-projection";
@@ -2850,6 +2851,7 @@ const finishOutbox = async (params: {
       WHERE id = ${params.outbox.command_id}::uuid
     `;
     await tx`UPDATE mail.drafts SET state = ${params.draftState} WHERE id = ${params.outbox.draft_id}::uuid`;
+    if (params.draftState === "sent") await recordDraftSendCloseIntent(tx, params.outbox.command_id);
     await tx`
       UPDATE mail.automatic_reply_effects
       SET
@@ -2946,6 +2948,7 @@ const finishOutbox = async (params: {
   });
   if (result.updated) {
     mailLive.wake();
+    if (params.draftState === "sent") await retryDraftSendClose(params.outbox.command_id);
   }
   if (result.updated && typeof parseJsonRecord(params.command.payload).scheduledAt === "string") {
     mailLive.wake();
@@ -3462,7 +3465,9 @@ const recordSmtpOutcome = async (outbox: DbOutboxExecution, command: DbCommandEx
       SET provider_response = provider_response || ${response}::jsonb, updated_at = now()
       WHERE id = ${outbox.id}::uuid
     `;
+    await recordDraftSendCloseIntent(tx, command.id);
   });
+  await retryDraftSendClose(command.id);
 };
 
 type SentCopyTarget = {
@@ -3691,6 +3696,7 @@ const executeFreshOutbox = async (
 
   await assertLeaseActive();
   try {
+    await verifyDraftSendBeforeDispatch(command.id, signal);
     await beginProviderEffect(command, outbox.sender_identity_id, outbox.selected_identity_transport_revision);
   } catch (error) {
     await settlePreDispatchFailure(outbox, command, error);

@@ -407,7 +407,8 @@ suite("Mail document lifecycle boundaries", () => {
       expect(unprojected.revision).toBe(base.revision);
       expect(await send(target, checked)).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED", status: 409 } });
       await nothingQueued(target.draftId);
-      expect(value(await readDraftDocument(target)).durable.content.body).toBe("Durable");
+      // The platform freeze repairs the failed lazy projection before refusing the stale review.
+      expect(value(await readDraftDocument(target)).durable.content.body).toBe("Unprojected Durable");
     } finally {
       editor.destroy();
     }
@@ -737,7 +738,7 @@ suite("Mail document lifecycle boundaries", () => {
     }
   });
 
-  test("an orphan send marker permits the unchanged review, but real unprojected input does not", async () => {
+  test("an orphan marker permits review; platform drain rejects a stale send after unprojected input", async () => {
     const target = await draft("Reviewed body");
     const base = value(await readDraftDocument(target));
     await expect(
@@ -755,6 +756,7 @@ suite("Mail document lifecycle boundaries", () => {
       actor: { kind: "user" as const, userId },
     };
     expect((await loadSendContent(request)).ok).toBe(true);
+    const checked = await review(target);
     const doc = new Y.Doc();
     try {
       Y.applyUpdate(doc, base.durable.state);
@@ -770,7 +772,8 @@ suite("Mail document lifecycle boundaries", () => {
           originPeerId: "test-peer",
         },
       });
-      expect((await loadSendContent(request)).ok).toBe(false);
+      expect(await send(target, checked)).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED" } });
+      await nothingQueued(target.draftId);
     } finally {
       doc.destroy();
     }

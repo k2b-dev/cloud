@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Readable, Writable } from "node:stream";
+import * as Y from "yjs";
 import { sql } from "@k2b/cloud";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
@@ -9,6 +10,7 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { logoPng } from "../../test/mailbox-logo-fixtures";
 import { type ConnectorVerification, type RemoteFolder, unavailableProviderLimitSnapshot } from "../contracts";
+import { createDraftRevisionUpdate } from "../lib/draft-document";
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
@@ -26,6 +28,9 @@ import {
 import { imapSmtpConnector } from "./connectors";
 import { mapFetchedEnvelope } from "./connectors/imap-smtp";
 import { mergeConversations } from "./conversations";
+import { mailDraftRoom } from "./draft-document-room";
+import { retryPendingDraftSendCloses } from "./draft-document-send";
+import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "./draft-documents";
 import {
   enqueueDraftProjectionSnapshot,
   queueDraftProjectionInTransaction,
@@ -114,6 +119,7 @@ const createProvider = (kind: ProviderKind) => {
   let searchFailureCode = "ECONNRESET";
   // The next SMTP submission fails: before the server received the message, or after it stored it.
   let submissionFailure: { error: Error; afterTransfer: boolean } | null = null;
+  let duringNextSubmission: (() => Promise<void>) | null = null;
   let submissions = 0;
   let searches = 0;
   // Recipients the SMTP server refuses at RCPT while it accepts the others.
@@ -266,6 +272,9 @@ const createProvider = (kind: ProviderKind) => {
       }
     }),
     spyOn(imapSmtpConnector, "sendSource").mockImplementation(async (_config, request) => {
+      const during = duringNextSubmission;
+      duringNextSubmission = null;
+      if (during) await during();
       const failure = submissionFailure;
       submissionFailure = null;
       if (failure && !failure.afterTransfer) throw failure.error;
@@ -352,6 +361,9 @@ const createProvider = (kind: ProviderKind) => {
     },
     duringNextDraftsStatus: (work: () => Promise<void>) => {
       duringNextDraftsStatus = work;
+    },
+    duringNextSubmission: (work: () => Promise<void>) => {
+      duringNextSubmission = work;
     },
     submissions: () => submissions,
     searches: () => searches,
@@ -837,6 +849,246 @@ suite("mail sent message projection", () => {
     if (!draft.ok) throw new Error(JSON.stringify(draft.error));
     return draft.data;
   };
+
+  const sharedRoomDraft = async (mailbox: Connected) => {
+    const created = await createDraft({
+      context,
+      mailboxId: mailbox.mailboxId,
+      input: {
+        quoteSource: null,
+        senderIdentityId: mailbox.identityId,
+        to: [{ address: CUSTOMER }],
+        cc: [],
+        bcc: [],
+        subject: "Shared room exact send",
+        body: "Committed shared text",
+        format: "plain",
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    await sql`UPDATE mail.drafts SET edit_mode = 'shared' WHERE id = ${created.data.id}::uuid`;
+    const target = { context, mailboxId: mailbox.mailboxId, draftId: created.data.id };
+    const initial = await readDraftDocument(target);
+    if (!initial.ok) throw new Error(initial.error.message);
+    return { target, initial: initial.data };
+  };
+
+  for (const outcome of ["accepted", "550", "no-recipients", "unknown"] as const) {
+    test(`shared-room SMTP ${outcome} preserves the existing editing lifecycle`, async () => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider);
+        const { target, initial } = await sharedRoomDraft(mailbox);
+        if (outcome === "550") provider.failNextSubmission("EREJECT", false, 550);
+        if (outcome === "no-recipients") provider.refuseRecipient(CUSTOMER);
+        if (outcome === "unknown") provider.failNextSubmission("ECONNRESET", true);
+        const expected = outcome === "accepted" ? "sent" : outcome === "unknown" ? "unknown" : "failed";
+        const outbox = await send(mailbox, target.draftId, initial.revision, `shared-room-${outcome}`, expected);
+        const [saved] = await sql<{ close_pending: boolean; close_cursor: string | null }[]>`
+          SELECT close_pending, close_cursor FROM mail.draft_document_sends WHERE draft_id = ${target.draftId}::uuid`;
+        expect(saved?.close_pending).toBe(false);
+        const lifecycle = (await mailDraftDocumentLog.lifecycle!.get(target.draftId))?.value;
+        if (expected === "failed") {
+          expect(lifecycle?.state).toBe("open");
+          expect(saved?.close_cursor).toBeNull();
+          const current = await readDraftDocument(target);
+          if (!current.ok) throw new Error(current.error.message);
+          const update = await createDraftRevisionUpdate(
+            current.data.fresh.state,
+            { ...current.data.fresh.content, body: "Editing continues in the same room" },
+            { deadline: Date.now() + 10000 },
+          );
+          expect(
+            (
+              await acceptDraftDocumentUpdate({
+                ...target,
+                generation: current.data.generation,
+                baseCursor: current.data.fresh.cursor,
+                update,
+              })
+            ).ok,
+          ).toBe(true);
+        } else {
+          expect(lifecycle?.state).toBe("closed");
+          expect(saved?.close_cursor).toBeString();
+        }
+        expect(provider.submissions()).toBe(outcome === "550" ? 0 : 1);
+        expect(
+          (
+            await sql<{ draft_snapshot: { body: string } }[]>`SELECT draft_snapshot FROM mail.outbox_submissions
+          WHERE id = ${outbox.id}::uuid`
+          )[0]?.draft_snapshot.body,
+        ).toBe("Committed shared text");
+      } finally {
+        provider.restore();
+      }
+    });
+  }
+
+  test("shared-room scheduled send verifies its immutable snapshot at dispatch days later", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      const command = await createActorCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        enqueue: false,
+        input: {
+          kind: "send",
+          draftId: target.draftId,
+          senderIdentityId: mailbox.identityId,
+          expectedDraftRevision: initial.revision,
+          expectedContentHash: await reviewedDraftContentHash(context, mailbox.mailboxId, target.draftId, initial.revision),
+          scheduledAt: "2100-01-04T12:00:00.000Z",
+          undoSeconds: 0,
+          idempotencyKey: `shared-room-later-${suffix}`,
+        },
+      });
+      if (!command.ok) throw new Error(command.error.message);
+      expect((await mailDraftDocumentLog.lifecycle!.get(target.draftId))?.value.state).toBe("open");
+      const queued = await readDraftDocument(target);
+      if (!queued.ok) throw new Error(queued.error.message);
+      const update = await createDraftRevisionUpdate(
+        queued.data.fresh.state,
+        { ...queued.data.fresh.content, body: "Forbidden scheduled edit" },
+        { deadline: Date.now() + 10000 },
+      );
+      expect(
+        (await acceptDraftDocumentUpdate({ ...target, generation: queued.data.generation, baseCursor: queued.data.fresh.cursor, update }))
+          .ok,
+      ).toBe(false);
+      // The SQL scheduler makes it due. The previous freeze has already been released;
+      // simulate days of lease expiry without holding a token over the waiting period.
+      setSystemTime(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000));
+      const [outbox] = await sql<{ id: string }[]>`UPDATE mail.outbox_submissions
+        SET scheduled_at = now() - interval '1 second', undo_until = NULL WHERE command_id = ${command.data.id}::uuid RETURNING id`;
+      expect(await whenProviderFree(() => executeOutboxSubmission(outbox!.id))).toBe("sent");
+      expect((await mailDraftDocumentLog.lifecycle!.get(target.draftId))?.value.state).toBe("closed");
+      const [snapshot] = await sql<{ draft_snapshot: { body: string } }[]>`SELECT draft_snapshot FROM mail.outbox_submissions
+        WHERE id = ${outbox!.id}::uuid`;
+      expect(snapshot?.draft_snapshot.body).toBe("Committed shared text");
+    } finally {
+      setSystemTime();
+      provider.restore();
+    }
+  });
+
+  test("shared-room accepted record survives a crash before close and retries idempotently", async () => {
+    const provider = createProvider("imap");
+    const close = spyOn(mailDraftRoom, "closeDocument").mockRejectedValue(new Error("Fixture crash before close"));
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      await send(mailbox, target.draftId, initial.revision, "shared-room-close-crash");
+      const [pending] = await sql<
+        { close_pending: boolean; close_freeze_cursor: string | null }[]
+      >`SELECT close_pending, close_freeze_cursor
+        FROM mail.draft_document_sends WHERE draft_id = ${target.draftId}::uuid`;
+      expect(pending?.close_pending).toBe(true);
+      expect(pending?.close_freeze_cursor).toBeString();
+      close.mockRestore();
+      await retryPendingDraftSendCloses();
+      await retryPendingDraftSendCloses();
+      expect((await mailDraftDocumentLog.lifecycle!.get(target.draftId))?.value.state).toBe("closed");
+      expect(
+        (
+          await sql<{ close_pending: boolean }[]>`SELECT close_pending FROM mail.draft_document_sends
+        WHERE draft_id = ${target.draftId}::uuid`
+        )[0]?.close_pending,
+      ).toBe(false);
+    } finally {
+      close.mockRestore();
+      provider.restore();
+    }
+  });
+
+  test("shared-room snapshot mismatch refuses SMTP and restores editing", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      const command = await createActorCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        enqueue: false,
+        input: {
+          kind: "send",
+          draftId: target.draftId,
+          senderIdentityId: mailbox.identityId,
+          expectedDraftRevision: initial.revision,
+          expectedContentHash: await reviewedDraftContentHash(context, mailbox.mailboxId, target.draftId, initial.revision),
+          undoSeconds: 60,
+          idempotencyKey: `shared-room-mismatch-${suffix}`,
+        },
+      });
+      if (!command.ok) throw new Error(command.error.message);
+      // Simulate a broken domain invariant outside admission. Dispatch must still
+      // refuse a changed committed document before attempting any provider effect.
+      const altered = new Y.Doc();
+      try {
+        Y.applyUpdate(altered, initial.fresh.state);
+        altered.getText("codemirror").insert(0, "Unexpected ");
+        await sql`UPDATE mail.drafts SET doc_state = ${Buffer.from(Y.encodeStateAsUpdate(altered))},
+          body_markdown = 'Unexpected Committed shared text' WHERE id = ${target.draftId}::uuid`;
+      } finally {
+        altered.destroy();
+      }
+      const [outbox] = await sql<{ id: string }[]>`UPDATE mail.outbox_submissions
+        SET scheduled_at = now() - interval '1 second', undo_until = NULL
+        WHERE command_id = ${command.data.id}::uuid RETURNING id`;
+      expect(await whenProviderFree(() => executeOutboxSubmission(outbox!.id))).toBe("failed");
+      expect(provider.submissions()).toBe(0);
+      expect((await sql<{ state: string }[]>`SELECT state FROM mail.drafts WHERE id = ${target.draftId}::uuid`)[0]?.state).toBe("draft");
+      expect((await mailDraftDocumentLog.lifecycle!.get(target.draftId))?.value.state).toBe("open");
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("shared-room expired close token reconciles against the committed sent state", async () => {
+    const provider = createProvider("imap");
+    const close = spyOn(mailDraftRoom, "closeDocument").mockRejectedValue(new Error("Fixture crash before close"));
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      await send(mailbox, target.draftId, initial.revision, "shared-room-expired-close");
+      const [pending] = await sql<{ close_freeze_cursor: string }[]>`SELECT close_freeze_cursor FROM mail.draft_document_sends
+        WHERE draft_id = ${target.draftId}::uuid`;
+      close.mockRestore();
+      // Another admission after expiry invalidates a token just as this thaw does.
+      await mailDraftRoom.thaw(target.draftId, { freezeCursor: pending!.close_freeze_cursor });
+      await retryPendingDraftSendCloses();
+      const [reconciled] = await sql<{ close_pending: boolean; last_error: string | null }[]>`SELECT close_pending, last_error
+        FROM mail.draft_document_sends WHERE draft_id = ${target.draftId}::uuid`;
+      expect(reconciled).toEqual({ close_pending: false, last_error: null });
+      expect((await sql<{ state: string }[]>`SELECT state FROM mail.drafts WHERE id = ${target.draftId}::uuid`)[0]?.state).toBe("sent");
+    } finally {
+      close.mockRestore();
+      provider.restore();
+    }
+  });
+
+  test("shared-room slow SMTP carries no freeze token across the provider call", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const { target, initial } = await sharedRoomDraft(mailbox);
+      provider.duringNextSubmission(async () => {
+        expect((await mailDraftDocumentLog.lifecycle!.get(target.draftId))?.value.state).toBe("open");
+        setSystemTime(new Date(Date.now() + 61_000));
+      });
+      try {
+        await send(mailbox, target.draftId, initial.revision, "shared-room-slow-smtp");
+      } finally {
+        setSystemTime();
+      }
+      expect((await mailDraftDocumentLog.lifecycle!.get(target.draftId))?.value.state).toBe("closed");
+    } finally {
+      setSystemTime();
+      provider.restore();
+    }
+  });
 
   test("a reply sent through Gmail shows in Sent at once and stays one message after the sync", async () => {
     const provider = createProvider("gmail");

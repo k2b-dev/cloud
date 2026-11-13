@@ -29,6 +29,7 @@ import { closeReusableImapSessions } from "./connectors/imap-smtp";
 import { keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { isAutomaticSubmission } from "./conversation-work-state";
 import { databaseErrorCode, databaseErrorConstraint, databaseErrorFacts, isPermanentDataError } from "./database-errors";
+import { retryPendingDraftSendCloses } from "./draft-document-send";
 import { draftDocumentSnapshots } from "./draft-document-snapshots";
 import {
   enqueueDraftImports,
@@ -4128,6 +4129,7 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
       misfire: "latest",
       meta: { appId: "mail", family: "mail:drafts", label: "Mail draft document recovery" },
       process: async (ctx) => {
+        await retryPendingDraftSendCloses(ctx.signal);
         await draftDocumentSnapshots.reconcile({ signal: ctx.signal, heartbeat: () => ctx.heartbeat() });
       },
     });

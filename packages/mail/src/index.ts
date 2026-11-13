@@ -24,6 +24,7 @@ import { applicationAiRuntime } from "./service/application-ai-runtime";
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
 import { stopDraftDocumentPruning } from "./service/draft-document-log";
 import { startDraftDocumentLogPolicy, stopDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
+import { retryPendingDraftSendCloses } from "./service/draft-document-send";
 import { draftDocumentSnapshots, stopDraftDocumentSnapshots } from "./service/draft-document-snapshots";
 import { finishReplyDraftRetirements } from "./service/draft-retirement";
 import { stopConversationViewCountCache } from "./service/view-count-cache";
@@ -90,7 +91,10 @@ const result = await app.start({
 });
 // After startup: the platform has provisioned every resource declared so far,
 // so a draft log it cannot prepare leaves only shared drafts unsupported.
-startDraftDocumentLogPolicy((signal) => draftDocumentSnapshots.reconcile({ signal }));
+startDraftDocumentLogPolicy(async (signal) => {
+  await retryPendingDraftSendCloses(signal);
+  await draftDocumentSnapshots.reconcile({ signal });
+});
 export default { ...result, websocket };
 
 export type { ApiType } from "./api";

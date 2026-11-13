@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { readDraftDocument } from "../lib/draft-document";
 
 /** Compare causal coverage and deletions even when equivalent updates encode differently. */
 export const sameDraftDocumentState = (left: Uint8Array | null, right: Uint8Array): boolean => {
@@ -13,8 +14,11 @@ export const sameDraftDocumentState = (left: Uint8Array | null, right: Uint8Arra
       !a.store.pendingDs &&
       !b.store.pendingStructs &&
       !b.store.pendingDs &&
-      Y.equalSnapshots(Y.snapshot(a), Y.snapshot(b))
+      Y.equalSnapshots(Y.snapshot(a), Y.snapshot(b)) &&
+      JSON.stringify(readDraftDocument(a)) === JSON.stringify(readDraftDocument(b))
     );
+  } catch {
+    return false;
   } finally {
     a.destroy();
     b.destroy();
