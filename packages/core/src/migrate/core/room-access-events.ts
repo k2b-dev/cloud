@@ -65,6 +65,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       "service_accounts",
       "service_account_groups",
       "group_manager_service_accounts",
+      "legal_acceptances",
     ]) {
       await tx.unsafe(`CREATE OR REPLACE TRIGGER room_access_changed AFTER INSERT OR UPDATE OR DELETE ON auth.${table}
         FOR EACH ROW EXECUTE FUNCTION auth.enqueue_identity_access_changed()`);
@@ -80,7 +81,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       FOR EACH ROW EXECUTE FUNCTION auth.enqueue_identity_access_changed()`.simple();
     await tx`CREATE OR REPLACE TRIGGER room_account_changed AFTER UPDATE OF auth_epoch, account_expires, provider, profile, admin OR DELETE ON auth.users
       FOR EACH ROW EXECUTE FUNCTION auth.enqueue_identity_access_changed()`.simple();
-    await tx`CREATE OR REPLACE TRIGGER room_session_changed AFTER UPDATE OF revoked_at, expires_at, signing_kid OR DELETE ON auth.session_families
+    await tx`CREATE OR REPLACE TRIGGER room_session_changed AFTER UPDATE OF revoked_at, expires_at, signing_kid, legal_pending OR DELETE ON auth.session_families
       FOR EACH ROW EXECUTE FUNCTION auth.enqueue_identity_access_changed()`.simple();
     // Time passing does not change a row. Put a deadline invalidation into the
     // same durable outbox now; its existing dispatcher delivers it when due.

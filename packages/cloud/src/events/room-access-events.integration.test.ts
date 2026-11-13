@@ -70,6 +70,8 @@ databaseSuite()("room access sources use Core's transactional live outbox", () =
     ["user_ipa_data", "locked_at"],
     ["users", "auth_epoch"],
     ["session_families", "revoked_at"],
+    ["session_families", "legal_pending"],
+    ["legal_acceptances", "user_id"],
     ["signing_keys", "verify_until"],
   ])
     test(`${table} no-op mutations publish no invalidation`, async () => {
@@ -122,6 +124,14 @@ databaseSuite()("room access sources use Core's transactional live outbox", () =
         "session",
         async () => await sql`UPDATE auth.session_families SET expires_at = expires_at + interval '1 minute' WHERE sid = ${sid}::uuid`,
       ],
+      ["pending consent", async () => await sql`UPDATE auth.session_families SET legal_pending = true WHERE sid = ${sid}::uuid`],
+      [
+        "consent acceptance",
+        async () =>
+          await sql`INSERT INTO auth.legal_acceptances(user_id, session_id, document_version, documents)
+          VALUES (${user}::uuid, ${sid}::uuid, 'fixture', '[]'::jsonb)`,
+      ],
+      ["consent removal", async () => await sql`DELETE FROM auth.legal_acceptances WHERE user_id = ${user}::uuid`],
     ];
     for (const [name, mutate] of changes) {
       await clear();

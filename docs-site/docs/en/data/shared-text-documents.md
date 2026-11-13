@@ -905,10 +905,14 @@ transactional outbox for these sources:
   changes or deletion; service-account status and credential revocation, scope
   or expiry changes. Extending a signing key's verification window and writing
   an unchanged directory lock do not emit invalidations.
+- Session consent state and first-use acceptance changes.
 - Account and session expiry deadlines, and shared-workstation idle deadlines.
   Deadline rows are queued at the source and delivered when due; real input
   replaces the idle deadline; an idle-policy change reschedules existing
-  families. Authentication does not rewrite these deadlines. This adds no
+  families. A replacement session keeps both its absolute expiry and its
+  inherited `last_input_at + idle limit` deadline. Ending other sign-ins or
+  changing a password does not restart that idle limit.
+  Authentication does not rewrite these deadlines. This adds no
   access scan. The application socket guard also sets one local timeout for
   the credential's known expiry (session proof/account/credential deadline),
   closing with `1008 SESSION_EXPIRED` even when Core is unavailable. This
