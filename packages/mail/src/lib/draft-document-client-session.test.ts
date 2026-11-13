@@ -4,6 +4,7 @@ import { encoding } from "@k2b/stdlib";
 import * as Y from "yjs";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { DraftEditableContent, MailDraft } from "../contracts";
+import { draftDocumentSessionSchema } from "../draft-document-contracts";
 import { createDraftDocument, readDraftDocument } from "./draft-document";
 import { type MailDraftDocumentClient, openMailDraftDocumentClient } from "./draft-document-client";
 import { synchronizeMailDraftStorageUser } from "./mail-user-draft-storage";
@@ -1095,7 +1096,8 @@ test("a same-generation offline journal stays unsaved through peer replay until 
     const authorization = await authorize(controller.signal);
     const restored = new Y.Doc();
     try {
-      Y.applyUpdate(restored, encoding.fromBase64(authorization.fresh.state));
+      // The spy is generic over the authorization; narrow it with the same schema the client uses.
+      Y.applyUpdate(restored, encoding.fromBase64(draftDocumentSessionSchema.parse(authorization).fresh.state));
       Y.applyUpdate(peer, Y.encodeStateAsUpdate(restored));
       restored.getText("codemirror").insert(0, "Journal ");
       journal = Y.encodeStateAsUpdate(restored);
