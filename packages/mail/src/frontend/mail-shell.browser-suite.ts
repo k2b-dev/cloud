@@ -7,7 +7,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, pageErrors as collectPageErrors, launchBrowser, settled } from "../../../ui/test/browser";
+import { browserName, pageErrors as collectPageErrors, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 import type { MailSearchExpression, MailWorkspacePreference } from "../contracts";
 import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
 import { mailTagSearch } from "../search-url";
@@ -3133,7 +3133,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             };
             await choose("Bottom");
             expect(await readerOrder(page)).toEqual(["older", "Long04", "Long05", "Long06", "box"]);
-            const stored = (await page.context().cookies()).find((cookie) => cookie.name === "cloud_mail_workspace");
+            const stored = await storedCookie(page, "cloud_mail_workspace");
             expect(JSON.parse(decodeURIComponent(stored!.value)).replyPosition).toBe("bottom");
             // The box moved into view where the person chose it.
             const [view, box] = await Promise.all([
