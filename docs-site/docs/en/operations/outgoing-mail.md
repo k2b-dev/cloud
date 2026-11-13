@@ -26,6 +26,12 @@ See [Format outgoing messages](/en/apps/mail#format-outgoing-messages).
 
 ## Shared drafts per mailbox
 
+The shared-room migration targets Cloud 0.76. Cloud 0.75 keeps lock-mode
+drafts, and enabling shared mode for all mailboxes remains off. The migration
+is not ready for deployment: distributed freeze/drain with rollback/thaw and
+the two-node send-exactness checks are still required. Keep the SQL send guard
+until that platform boundary is integrated and verified.
+
 Browser updates now reconnect after 30 seconds without an acknowledgement,
 using the same pending input and original synchronization base. A send waiting
 for synchronization stops after that interval and keeps the text available
@@ -58,7 +64,8 @@ audited like other mailbox settings.
   migration succeeds and the live log matches its declaration. Do not switch
   draft modes in the database to bypass this gate.
 - When the document log is full, new writes return
-  `409 DRAFT_DOCUMENT_STREAM_FULL` (the socket closes with code 1012).
+  `409 DRAFT_DOCUMENT_STREAM_FULL` over HTTP, or `STORAGE_EXHAUSTED` on the
+  room socket (which closes with code 1012).
   Accepted edits remain in the log. The editor retains unsent input and
   offers **Retry saving**. A send whose freeze marker cannot fit queues
   nothing; table actions and recovery restores leave the draft unchanged.
@@ -68,6 +75,61 @@ audited like other mailbox settings.
 
 Deploy the release to every Mail instance before an administrator turns on a
 shared mailbox. Already scheduled messages keep their immutable send snapshots.
+
+### Durability and projection delay
+
+Shared-room input travels from a Mail instance through the retained JetStream
+log to editors on either instance. A retained echo acknowledges durability
+after the JetStream publish acknowledgement. Admission and delivery perform
+no SQL per edit. Access is checked at join and rechecked after committed
+access or lifecycle events, which close affected sockets across instances.
+Reconnects always check access again.
+
+SQL snapshots use the platform's ordered writer and a per-draft distributed
+lease. Mail schedules them after three seconds without input and at most
+thirty seconds after the first input in a continuous burst. Leaving flushes
+accepted input immediately. Shutdown drains connections and snapshot work;
+startup and hourly reconciliation recover outstanding log work after a crash.
+
+The snapshot updates the body, subject, recipients, sender and compose
+settings together. It also records the first human edit as adoption and
+queues the provider draft export. List previews and search use this SQL
+projection, so they can lag live editors by the debounce interval plus worker
+time. Provider copies also wait for the export queue. Thirty seconds bounds
+the scheduling delay, not a failed or overloaded writer: inspect
+`mail:draft-snapshots` failures and the shared-text snapshot backlog report.
+Accepted input remains retained while persistence is unavailable.
+
+### Capacity and measured limits
+
+Each Mail process admits at most 512 sockets and eight editors per draft.
+Ingress, queued delivery and native socket output each have a 64 MiB budget.
+The room also bounds each connection to 200 queued input frames and closes
+overloaded connections with 1013; pending input remains available for retry.
+These are admission budgets, not a total memory guarantee. Reserve capacity
+for Mail's other workloads before enabling shared editing.
+
+The initial two-node benchmark used two CPUs per server, a 1 GiB RSS abort
+threshold per server and a 1536 MiB hard memory limit. A separate client had
+one CPU and 512 MiB. Postgres had one CPU/768 MiB, NATS one CPU/256 MiB and
+Valkey 0.25 CPU/96 MiB. Editors used 4 KiB starting bodies and bursts every
+two seconds, with at most one unacknowledged edit per editor.
+
+| Drafts × editors | Cross-node p50 / p95 | Result |
+| --- | --- | --- |
+| 10 × 3 | 60 / 90 ms | 60-second run passed. |
+| 50 × 3 | 110 / 340 ms | 60-second run passed. |
+| 200 × 2 | 340 / 690 ms | 90-second run passed; 17,800 edits converged. |
+| 200 × 3 | 600 / 5,760 ms | Failed: head-conflict retries reached the acknowledgement timeout. |
+
+The 200 × 2 run peaked at 697/681 MiB RSS on the two servers. A separate
+10 × 3 failover run killed one server and recovered all acknowledged input
+on the other. Grant revocation closed all 400 sockets across both nodes in
+the 200 × 2 run. A statement-counter probe around one acknowledged edit and
+its peer delivery measured zero SQL statements; background snapshots were
+outside that probe. This is a short-run result, not an endurance or mixed
+Mail-workload guarantee. The 200 × 3 target and 500-draft run remain unproven;
+keep broad activation off.
 
 Shared drafts require Sync 7.1 or later. The application-wide document log
 reserves 1 GiB, rejects new events when full, and has no age expiry. Mail

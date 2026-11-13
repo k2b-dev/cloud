@@ -74,6 +74,14 @@ describe("Mail shared document normalized protocol", () => {
     ).toBe(true);
   });
 
+  test("forwards the full-state BUSY retry marker and stops on terminal close", () => {
+    expect(mailDraftDocumentRequestSchema.parse({ ...publish, payload: { ...publish.payload, retry: true } }).payload).toMatchObject({
+      retry: true,
+    });
+    expect(mailDraftDocumentRequestSchema.safeParse({ ...publish, payload: { ...publish.payload, retry: false } }).success).toBe(false);
+    expect(MAIL_DRAFT_DOCUMENT_TERMINAL_CODES).toContain("DOCUMENT_CLOSED");
+  });
+
   test("awareness has a generation fence and no client identity or credentials", () => {
     const payload = { docId, generation, payload: "AA==" };
     expect(mailDraftDocumentRequestSchema.safeParse({ type: "awarenessPublish", payload }).success).toBe(true);

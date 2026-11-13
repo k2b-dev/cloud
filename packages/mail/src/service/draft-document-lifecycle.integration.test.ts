@@ -16,6 +16,7 @@ import { sha256Json } from "./canonical";
 import { createActorCommand } from "./commands";
 import { reviewDraftComposeSafety } from "./compose-safety";
 import * as revisionBase from "./draft-document-revision";
+import { mailDraftRoom } from "./draft-document-room";
 import * as documentService from "./draft-documents";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, mailDraftDocumentLog, readDraftDocument } from "./draft-documents";
 import { draftProviderContentSchema } from "./draft-provider-mime";
@@ -407,13 +408,14 @@ suite("Mail document lifecycle boundaries", () => {
       expect(unprojected.revision).toBe(base.revision);
       expect(await send(target, checked)).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED", status: 409 } });
       await nothingQueued(target.draftId);
-      expect(value(await readDraftDocument(target)).durable.content.body).toBe("Durable");
+      // The platform freeze repairs the failed lazy projection before refusing the stale review.
+      expect(value(await readDraftDocument(target)).durable.content.body).toBe("Unprojected Durable");
     } finally {
       editor.destroy();
     }
   });
 
-  test("B can undo A's mailbox-wide send after rollback; old-generation input recovers without entering the send snapshot", async () => {
+  test("B can undo A's mailbox-wide send after rollback and continue the same document without changing the command snapshot", async () => {
     const target = await draft("Reviewed");
     const base = value(await readDraftDocument(target));
     const checked = await review(target);
@@ -432,22 +434,16 @@ suite("Mail document lifecycle boundaries", () => {
       );
       expect(cancelled.draftId).toBe(target.draftId);
       const reopened = value(await readDraftDocument({ ...target, context: otherWriter }));
-      expect(BigInt(reopened.generation)).toBe(BigInt(base.generation) + 1n);
+      expect(reopened.generation).toBe(base.generation);
       expect(reopened.durable.content.body).toBe("Reviewed");
       expect(value(await getDraft(context, mailboxId, target.draftId)).editMode).toBe("shared");
       const oldInput = { ...target, generation: base.generation, baseCursor: base.durable.cursor, update: Y.encodeStateAsUpdate(local) };
-      expect((await acceptDraftDocumentUpdate(oldInput)).ok).toBe(false);
-      const request = { ...target, generation: base.generation, clientId: crypto.randomUUID(), state: oldInput.update };
-      const recovered = value(await recoverDraftDocumentRest(request));
-      expect(recovered.status).toBe("recovered");
-      if (recovered.status !== "recovered") throw new Error("Missing offline recovery draft");
-      expect(recovered.draft).toMatchObject({ body: "Reviewed offline", editMode: "lock", state: "draft" });
-      expect(value(await recoverDraftDocumentRest(request))).toEqual(recovered);
+      expect((await acceptDraftDocumentUpdate(oldInput)).ok).toBe(true);
+      expect(value(await readDraftDocument(target)).fresh.content.body).toBe("Reviewed offline");
       const [outbox] = await sql<{ state: string; draft_snapshot: { body: string } }[]>`
         SELECT state, draft_snapshot FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
       expect(outbox?.state).toBe("cancelled");
       expect(outbox?.draft_snapshot.body).toBe("Reviewed");
-      expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id=${recovered.draft.id}::uuid`).toHaveLength(0);
       expect(
         await sql`SELECT 1 FROM mail.draft_document_freezes WHERE draft_id=${target.draftId}::uuid AND generation=${base.generation}::bigint`,
       ).toHaveLength(1);
@@ -455,6 +451,39 @@ suite("Mail document lifecycle boundaries", () => {
       local.destroy();
       supported.mockRestore();
       value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
+    }
+  });
+
+  test("an idempotent send retry after undo skips room freeze and flush", async () => {
+    const target = await draft("Retry after Undo");
+    const checked = await review(target);
+    const request = {
+      context,
+      mailboxId,
+      enqueue: false,
+      input: {
+        kind: "send" as const,
+        draftId: target.draftId,
+        senderIdentityId: senderId,
+        expectedDraftRevision: checked.revision,
+        expectedContentHash: checked.contentHash,
+        undoSeconds: 60,
+        idempotencyKey: crypto.randomUUID(),
+        safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
+      },
+    };
+    const command = value(await createActorCommand(request));
+    const [submission] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id = ${command.id}::uuid`;
+    if (!submission) throw new Error("Missing undo submission");
+    value(await cancelScheduledSend({ context, mailboxId, scheduledSendId: submission.id, input: { disposition: "draft" } }));
+    const head = await mailDraftDocumentLog.topic().head();
+    const freeze = spyOn(mailDraftRoom, "freeze");
+    try {
+      expect(value(await createActorCommand(request))).toMatchObject({ id: command.id, state: "cancelled" });
+      expect(freeze).not.toHaveBeenCalled();
+      expect(await mailDraftDocumentLog.topic().head()).toBe(head);
+    } finally {
+      freeze.mockRestore();
     }
   });
 
@@ -737,7 +766,7 @@ suite("Mail document lifecycle boundaries", () => {
     }
   });
 
-  test("an orphan send marker permits the unchanged review, but real unprojected input does not", async () => {
+  test("an orphan marker permits review; platform drain rejects a stale send after unprojected input", async () => {
     const target = await draft("Reviewed body");
     const base = value(await readDraftDocument(target));
     await expect(
@@ -755,6 +784,7 @@ suite("Mail document lifecycle boundaries", () => {
       actor: { kind: "user" as const, userId },
     };
     expect((await loadSendContent(request)).ok).toBe(true);
+    const checked = await review(target);
     const doc = new Y.Doc();
     try {
       Y.applyUpdate(doc, base.durable.state);
@@ -770,7 +800,8 @@ suite("Mail document lifecycle boundaries", () => {
           originPeerId: "test-peer",
         },
       });
-      expect((await loadSendContent(request)).ok).toBe(false);
+      expect(await send(target, checked)).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED" } });
+      await nothingQueued(target.draftId);
     } finally {
       doc.destroy();
     }

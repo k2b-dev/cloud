@@ -92,10 +92,19 @@ export const migrateDraftDocumentLogPolicy = async (signal?: AbortSignal): Promi
   }
 };
 
-/** Starts the step in the background; Mail serves lock-mode drafts meanwhile. */
-export const startDraftDocumentLogPolicy = (): void => {
+/** Prepare the log before startup snapshot recovery; lock-mode Mail stays available. */
+export const startDraftDocumentLogPolicy = (onPrepared: (signal: AbortSignal) => Promise<unknown>): void => {
   const stop = new AbortController();
-  running = { stop, done: migrateDraftDocumentLogPolicy(stop.signal).then(() => undefined) };
+  running = {
+    stop,
+    done: migrateDraftDocumentLogPolicy(stop.signal)
+      .then(async (supported) => {
+        if (supported && !stop.signal.aborted) await onPrepared(stop.signal);
+      })
+      .catch((error) => {
+        if (!stop.signal.aborted) log.error("Shared draft startup recovery failed; retained input awaits reconciliation", { error });
+      }),
+  };
 };
 
 export const stopDraftDocumentLogPolicy = async (): Promise<void> => {

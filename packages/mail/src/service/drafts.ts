@@ -51,7 +51,8 @@ import { composeFormattingWarnings, removeOrphanComposeSegmentMarks } from "./co
 import { requireSelectableSignature, resolveDefaultSignatureTemplateId } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
 import { humanDraftEditor, refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
-import { withDraftDocumentCommit } from "./draft-document-log";
+import { draftDocumentStreamFull, isDraftDocumentStreamFull, mailDraftDocumentLog, withDraftDocumentCommit } from "./draft-document-log";
+import { withDraftDocumentReplacement } from "./draft-document-replacement";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { lockDraftDocumentInTransaction } from "./draft-documents";
 import { newDraftEditMode } from "./draft-edit-mode";
@@ -1966,7 +1967,7 @@ export const previewDraftIntent = async (params: {
     });
   });
 
-/** A mode is a structural edit. Shared documents advance their generation atomically with the mode. */
+/** A mode replaces shared content under ordered generation admission. */
 export const switchDraftIntent = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -1985,7 +1986,7 @@ export const switchDraftIntent = async (params: {
   const lease = await requireDraftLeaseAvailable(params);
   if (!lease.ok) return lease;
   try {
-    const result = await withDraftDocumentCommit(async (tx) => {
+    const result = await withDraftDocumentReplacement(params.draftId, async (tx, replace) => {
       const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       let [row] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d
@@ -2037,6 +2038,11 @@ export const switchDraftIntent = async (params: {
       } finally {
         doc?.destroy();
       }
+      let cursor: string | null = null;
+      if (row.edit_mode === "shared") {
+        if (!replace) throw new Error("Draft editing mode changed; retry the replacement");
+        cursor = await replace(String(row.doc_generation));
+      }
       await tx`UPDATE mail.draft_attachments SET removed_at = now() WHERE draft_id = ${row.id}::uuid
         AND forwarded_source_message_id IS NOT NULL AND removed_at IS NULL`;
       await tx`UPDATE mail.drafts SET intent = ${params.intent}, to_addresses = ${content.to}::jsonb,
@@ -2044,6 +2050,8 @@ export const switchDraftIntent = async (params: {
         revision = revision + 1, last_editor_kind = ${actor.kind}, last_editor_id = ${actorId(actor)}::uuid,
         adopted_at = CASE WHEN ${humanDraftEditor(params.context)} THEN coalesce(adopted_at, now()) ELSE adopted_at END,
         doc_generation = doc_generation + CASE WHEN edit_mode = 'shared' THEN 1 ELSE 0 END,
+        doc_cursor = CASE WHEN edit_mode = 'shared' THEN ${cursor} ELSE doc_cursor END,
+        doc_seq = CASE WHEN edit_mode = 'shared' THEN ${cursor ? mailDraftDocumentLog.topic().cursorSequence(cursor) : null} ELSE doc_seq END,
         doc_state = CASE WHEN edit_mode = 'shared' THEN ${state ? Buffer.from(state) : null} ELSE doc_state END
         WHERE id = ${row.id}::uuid`;
       if (params.intent === "forward") {
@@ -2059,6 +2067,7 @@ export const switchDraftIntent = async (params: {
     if (result.ok) mailLive.wake();
     return wakeDraftProjection(result);
   } catch (error) {
+    if (isDraftDocumentStreamFull(error)) return draftDocumentStreamFull();
     log.error("Failed to switch draft mode", { draftId: params.draftId, error });
     return fail(err.internal("Failed to switch draft mode"));
   }

@@ -115,6 +115,26 @@ test("identity source events notify application and room listeners on the existi
   }
 });
 
+test("application accessChanges filters data hints and releases its shared follower on abort", async () => {
+  setSystemTime(new Date("2026-11-12T12:00:00Z"));
+  const topic = createMemoryLiveTopic();
+  bindProcessSync({ topic: () => ({ ...topic, hub: () => ({ subscribe: topic.follow }) }) } as unknown as Sync);
+  const live = defineLive({ appId: "roomhints", event: z.object({ text: z.string() }) });
+  const signal = new AbortController();
+  const seen: string[] = [];
+  const reading = (async () => {
+    for await (const event of live.accessChanges({ after: await live.cursor(), signal: signal.signal })) {
+      seen.push(event.key);
+      signal.abort();
+    }
+  })();
+  await Bun.sleep(0);
+  topic.publish({ v: 1, k: "data-only", d: { text: "Preview changed" } });
+  topic.publish({ v: 1, k: "mailbox", a: true });
+  await reading;
+  expect(seen).toEqual(["mailbox"]);
+});
+
 test("a scoped session/account event never revalidates another user's sockets", async () => {
   const topic = createMemoryLiveTopic();
   bindProcessSync({ topic: () => topic } as unknown as Sync);

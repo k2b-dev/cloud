@@ -23,6 +23,7 @@ import {
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
+import { migrateRoomAccessEvents } from "./service/room-access-events";
 import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 import { migrateWorkspacePreferences } from "./service/workspace-preferences-migrate";
@@ -251,6 +252,18 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     state bytea NOT NULL,
     PRIMARY KEY (draft_id, generation)
   )`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_sends (
+    command_id uuid PRIMARY KEY REFERENCES mail.commands(id) ON DELETE CASCADE,
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    generation bigint NOT NULL,
+    state bytea NOT NULL,
+    close_pending boolean NOT NULL DEFAULT false,
+    close_freeze_cursor text,
+    close_cursor text,
+    last_error text
+  )`.simple();
+  await tx`CREATE INDEX IF NOT EXISTS draft_document_sends_pending_close_idx
+    ON mail.draft_document_sends(command_id) WHERE close_pending`.simple();
   await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_rests (
     source_draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
     generation bigint NOT NULL CHECK (generation > 0),
@@ -773,6 +786,7 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
         await applyBaseline(tx);
         await applyAdditions(tx);
+        await migrateRoomAccessEvents(tx);
         await migrateBackfillActivity(tx);
         await migrateAiDailyBudget(tx);
         await migrateSourceNames(tx);

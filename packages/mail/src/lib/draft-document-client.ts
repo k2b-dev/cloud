@@ -33,6 +33,7 @@ export const mailSharedDraftMessages = i18n.define({
     en: {
       connecting: "Connecting…",
       saved: "Saved on server",
+      saving: "Saving…",
       localSaved: "Saved on this device",
       pending: "Changes awaiting durable storage",
       offline: "Offline",
@@ -69,6 +70,7 @@ export const mailSharedDraftMessages = i18n.define({
     de: {
       connecting: "Verbindung wird hergestellt…",
       saved: "Auf dem Server gespeichert",
+      saving: "Speichert …",
       localSaved: "Auf diesem Gerät gesichert",
       pending: "Änderungen warten auf dauerhafte Speicherung",
       offline: "Offline",
@@ -342,12 +344,18 @@ export async function openMailDraftDocumentClient(options: {
     const undoManager = new Y.UndoManager(doc.getText(DRAFT_BODY), { trackedOrigins: new Set([null, "mail-headers"]) });
     cleanupManager = undoManager;
     const closed = outdated || authorization.frozen !== null || authorization.lifecycle !== "draft";
+    // The authorized fresh state is the SQL snapshot plus the retained JetStream log,
+    // so everything in it is already durable. With lazy snapshots it often runs ahead
+    // of the SQL row; starting from SQL alone would keep "saving" forever.
+    let durableState = outdated
+      ? encoding.fromBase64(authorization.durable.state)
+      : Y.mergeUpdates([encoding.fromBase64(authorization.durable.state), encoding.fromBase64(authorization.fresh.state)]);
     const state: MailSharedDraftState = {
       connected: false,
       ready: false,
       terminal: closed,
       changes: local ? 1 : 0,
-      dirty: !draftSnapshotCovers(encoding.fromBase64(authorization.durable.state), Y.encodeStateAsUpdate(doc)),
+      dirty: !draftSnapshotCovers(durableState, Y.encodeStateAsUpdate(doc)),
       remembering,
       locallySaved: Boolean(local) && !metadataFailure,
       saving: false,
@@ -385,7 +393,6 @@ export async function openMailDraftDocumentClient(options: {
       }
     }
     let storageVersion = 0;
-    let durableState = encoding.fromBase64(authorization.durable.state);
     const waiters = new Set<() => void>();
     let structuralPending = 0;
     /** A socket error the provider survives; a later replay proves the connection works again. */
@@ -464,13 +471,15 @@ export async function openMailDraftDocumentClient(options: {
       pumpStorage();
     };
     const acknowledge = (bytes: Uint8Array) => {
-      durableState = bytes;
-      pendingSnapshot = bytes;
+      // Retained log updates and persisted snapshots are both durable evidence.
+      // Never fill gaps with the live document: it may contain unacknowledged input.
+      durableState = Y.mergeUpdates([durableState, bytes]);
+      pendingSnapshot = durableState;
       pumpStorage();
-      if (draftSnapshotCovers(bytes, Y.encodeStateAsUpdate(doc))) {
+      if (draftSnapshotCovers(durableState, Y.encodeStateAsUpdate(doc))) {
         state.dirty = false;
         state.changes = 0;
-        if (!state.terminal) {
+        if (!state.terminal && !storageFailure) {
           state.message = t().saved;
           state.error = false;
         }
@@ -496,6 +505,12 @@ export async function openMailDraftDocumentClient(options: {
       }
     };
     doc.on("update", project);
+    const acknowledgeLogState = (bytes: Uint8Array[]) =>
+      queueMicrotask(() => {
+        // A broker cursor proves retention whatever the connection state: replay
+        // frames arrive before replayReady and must still count as durable.
+        if (!disposed && !state.terminal && bytes.length) acknowledge(Y.mergeUpdates(bytes));
+      });
     const socketUrl = new URL(`${path}/socket?${accountQuery}`, window.location.href);
     socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
     const fatal = (error: SharedTextProviderError) => {
@@ -534,7 +549,19 @@ export async function openMailDraftDocumentClient(options: {
       transport: {
         url: socketUrl.href,
         encode: (packet) => packet,
-        decode: (packet) => decodeMailDraftDocumentMessage(packet, options.draft.id),
+        decode: (packet) => {
+          const decoded = decodeMailDraftDocumentMessage(packet, options.draft.id);
+          // Only a broker cursor proves retention. A transport echo, a remote
+          // update or replay-ready cannot acknowledge unrelated local input.
+          // Defer until the provider has validated/applied these exact bytes.
+          if (decoded?.type === "syncPush" && decoded.payload.generation === generation)
+            acknowledgeLogState(
+              decoded.payload.updates
+                .filter((update) => update.cursor && (update.generation ?? decoded.payload.generation) === generation)
+                .map((update) => encoding.fromBase64(update.payload)),
+            );
+          return decoded;
+        },
         closeError: (code, reason) =>
           [1008, 1009, 4401, 4403].includes(code) ? { code: "ACCESS_DENIED", message: reason || t().permission } : null,
       },
@@ -555,7 +582,9 @@ export async function openMailDraftDocumentClient(options: {
         if (!state.dirty && !state.error) state.message = t().saved;
         emit();
       },
-      onUnsentChange: emit,
+      onUnsentChange: () => {
+        emit();
+      },
       onRetainedColumn: () => {
         state.message = t().retainedColumn;
         emit();
@@ -836,7 +865,7 @@ export async function openMailDraftDocumentClient(options: {
         const current = await authorize(options.signal);
         if (current.generation !== generation || current.frozen || current.lifecycle !== "draft") throw new Error(t().generation);
         Y.applyUpdate(doc, encoding.fromBase64(current.fresh.state), "remote");
-        acknowledge(encoding.fromBase64(current.durable.state));
+        acknowledge(Y.mergeUpdates([encoding.fromBase64(current.durable.state), encoding.fromBase64(current.fresh.state)]));
         options.onDurable(current.durable.content, current.revision);
       },
       retry: async () => {

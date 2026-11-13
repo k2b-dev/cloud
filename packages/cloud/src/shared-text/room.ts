@@ -1,4 +1,12 @@
-import { ConflictError, CursorMismatchError, RetentionGapError, type Topic, type TopicEvent, type TopicLiveEvent } from "@k2b/sync";
+import {
+  ConflictError,
+  CursorMismatchError,
+  RetentionGapError,
+  StoreFullError,
+  type Topic,
+  type TopicEvent,
+  type TopicLiveEvent,
+} from "@k2b/sync";
 import { retry } from "@k2b/sync/retry";
 import type { z } from "zod";
 import { logger } from "../services/logging";
@@ -140,6 +148,7 @@ type PushUpdate = {
   restoreRevision?: string;
 };
 export const isSharedTextStorageExhausted = (error: unknown): boolean =>
+  error instanceof StoreFullError ||
   /insufficient (storage )?resources|resource limits exceeded/i.test(error instanceof Error ? error.message : String(error));
 
 /** Stateless document sessions: retained broker history owns fan-out and admission, the app owns durable snapshots. */
@@ -154,6 +163,8 @@ export function createSharedTextRoom<
   awarenessTopic(): Pick<Topic<SharedTextEvent & { kind: "awareness" }>, "live" | "publish">;
   snapshots: {
     queue(input: { docId: string; targetCursor: string; reason: string }): Promise<void>;
+    /** Optional application debounce; synchronous and SQL-free. queue still runs on leave. */
+    markDirty?(input: { docId: string; targetCursor: string }): void;
     flushNow?(
       docId: string,
       options: { signal: AbortSignal; restoreRevision: string; targetCursor: string },
@@ -162,6 +173,7 @@ export function createSharedTextRoom<
   logger?: ReturnType<typeof logger>;
   maxLength?: number;
   validateState?: (state: Uint8Array, ctx: Context) => boolean | Promise<boolean>;
+  deliveryBudget?: { claim(bytes: number): boolean; release(bytes: number): void };
 }) {
   const { adapter } = config;
   const sessions = new WeakMap<Context, RoomState>();
@@ -300,7 +312,8 @@ export function createSharedTextRoom<
     state(ctx).lastPublishedCursor = maxStreamCursor(state(ctx).lastPublishedCursor, cursor);
     state(ctx).dirty = true;
     state(ctx).pendingSnapshot = { docId: ctx.docId!, targetCursor: state(ctx).lastPublishedCursor! };
-    startSnapshotScheduler(ctx);
+    if (config.snapshots.markDirty) config.snapshots.markDirty({ docId: ctx.docId!, targetCursor: state(ctx).lastPublishedCursor! });
+    else startSnapshotScheduler(ctx);
   };
 
   const toPushUpdate = (event: TopicEvent<SharedTextEvent> | TopicLiveEvent<SharedTextEvent>): PushUpdate => ({
@@ -374,6 +387,7 @@ export function createSharedTextRoom<
       const documentTopic = createYjsTopic();
       const pending: PushUpdate[] = [];
       let pendingBytes = 0;
+      let reservedBytes = 0;
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
       let stopped = false;
       let deliveryTail = Promise.resolve();
@@ -390,6 +404,8 @@ export function createSharedTextRoom<
         }
         if (!active() || pending.length === 0) return deliveryTail;
         const batch = pending.splice(0, pending.length);
+        const reservation = reservedBytes;
+        reservedBytes = 0;
         pendingBytes = 0;
         // Capture batches in stream order and serialize timer/size flushes so
         // asynchronous delivery never reorders batches or readiness.
@@ -400,7 +416,8 @@ export function createSharedTextRoom<
             if (delivered && active()) send(ctx, WS_TYPE.syncPush, { docId: publicDocId, updates: batch });
             if (!delivered) stopped = true;
           })
-          .catch(fail);
+          .catch(fail)
+          .finally(() => config.deliveryBudget?.release(reservation));
         return deliveryTail;
       };
 
@@ -450,8 +467,11 @@ export function createSharedTextRoom<
                 after: after ?? documentTopic.cursorAt(0),
                 until: maxStreamCursor(head, replay.after) ?? documentTopic.cursorAt(0),
                 signal: abort.signal,
-              }))
+              })) {
+                state(ctx).base?.apply(docId, event);
+                if (replay.after && compareStreamCursor(event.cursor, replay.after) <= 0) continue;
                 yield event;
+              }
               if (abort.signal.aborted || state(ctx).streamAbort !== abort) return;
               await flush();
               if (!active()) return;
@@ -539,6 +559,12 @@ export function createSharedTextRoom<
           }
           if (!active()) break;
           const update = toPushUpdate(event);
+          const reservation = JSON.stringify(update).length * 2;
+          if (config.deliveryBudget && !config.deliveryBudget.claim(reservation)) {
+            await fatal(ctx, ERROR_CODE.backpressure, ctx.messages.tooManyMessages, publicDocId);
+            break;
+          }
+          reservedBytes += reservation;
           pending.push(update);
           pendingBytes += update.payload.length;
           if (pending.length >= NOTIFY_BATCH_SIZE || pendingBytes >= NOTIFY_BATCH_MAX_BYTES) {
@@ -556,6 +582,7 @@ export function createSharedTextRoom<
         // from finally (including a timer batch queued before the mismatch).
         stopped = true;
         pending.length = 0;
+        config.deliveryBudget?.release(reservedBytes);
         await deliveryTail;
         if (state(ctx).streamAbort === abort) {
           state(ctx).streamAbort = null;
@@ -1045,6 +1072,7 @@ export function createSharedTextRoom<
     else activeConnections.add(close);
     return {
       close,
+      settled: () => processing,
       async receive(data: unknown) {
         if (stopping || closing || ctx.phase === "closing") return;
         if (typeof data !== "string") {
