@@ -224,8 +224,8 @@ them.
 A viewer carries `id`, `actor` and `accessSubject` as on an API request, and
 the credential's `scopes`. Its optional server-only `caller` invokes the owning
 application through Core when a fresh cross-app resource decision is needed.
-Never include this caller in a live event or browser payload. Use `accessSubject` for grants and `actor` for
-roles. `id` starts with `user:<id>` or `service_account:<id>` and adds
+Never include this caller in a live event or browser payload. Use
+`accessSubject` for grants and `actor` for roles. `id` starts with `user:<id>` or `service_account:<id>` and adds
 everything of the credential that can change a decision: `:app` for a phone's
 app session, which never holds the `admin` role, and the scopes of an API key
 or OAuth token. Viewers with the same `id` share decisions, so a person's web

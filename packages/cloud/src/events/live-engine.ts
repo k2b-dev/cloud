@@ -349,8 +349,8 @@ export const createLiveEngine = (input: {
     }
   };
 
-  // Incremented as soon as an invalidation arrives, including while setup is awaiting SQL.
-  let accessUpdates = 0;
+  // Cache publication only: this epoch never controls admission or reconnects.
+  let cacheVersion = 0;
 
   const cacheKey = (channel: string, key: string, viewer: string) => `${channel}\u0000${key}\u0000${viewer}`;
   const decide = async (
@@ -372,14 +372,14 @@ export const createLiveEngine = (input: {
     for (let start = 0; start < pending.length; start += LIVE_LIMITS.viewersPerCall) {
       const part = pending.slice(start, start + LIVE_LIMITS.viewersPerCall);
       const at = Date.now();
-      const version = accessUpdates;
+      const version = cacheVersion;
       const allowed = await limited(() =>
         bounded("authorize()", (channels[channel] as LiveChannel).authorize(key, part, { identityChanged })),
       );
       for (const viewer of part) {
         const ok = allowed.has(viewer.id);
         decided.set(viewer.id, ok);
-        if (eventOnly || version !== accessUpdates) continue;
+        if (eventOnly || version !== cacheVersion) continue;
         const id = cacheKey(channel, key, viewer.id);
         cache.delete(id);
         cache.set(id, { at, ok });
@@ -433,10 +433,15 @@ export const createLiveEngine = (input: {
    * reloads. Only added keys are authorized; retained keys were checked by
    * the access invalidation.
    */
-  const refreshCollections = async (selected: ReadonlySet<Connection> = connections, periodicOnly = false) => {
+  const refreshCollections = async (selected: ReadonlySet<Connection> = connections, periodicOnly = false, onlyStale = false) => {
     const subs = [...selected]
       .flatMap((conn) => [...conn.subs.values()])
-      .filter((sub) => sub.collection && (!periodicOnly || !channels[sub.channel]?.eventOnly));
+      .filter(
+        (sub) =>
+          sub.collection &&
+          (!periodicOnly || !channels[sub.channel]?.eventOnly) &&
+          (!onlyStale || sub.refreshedAt?.identity !== sub.conn.accessVersion || sub.refreshedAt?.domain !== lastAccess),
+      );
     const unchecked: Connection[] = [];
     let failure: unknown;
     await eachLimited(subs, LIVE_LIMITS.sweepInFlight, async (sub) => {
@@ -500,7 +505,7 @@ export const createLiveEngine = (input: {
       try {
         for (let pass = 0; pass < 2 && !stopping.signal.aborted; pass++) {
           refreshAgain = false;
-          await refreshCollections();
+          await refreshCollections(connections, false, true);
           if (!refreshAgain) return;
         }
         for (const conn of [...connections]) {
@@ -530,7 +535,7 @@ export const createLiveEngine = (input: {
     const { k, d, r, a } = parsed.data;
     if (a === true) {
       lastAccess = event.sequence;
-      accessUpdates++;
+      cacheVersion++;
       const keys = [k, ...(accessIndex.get(k)?.keys() ?? [])];
       for (const id of cache.keys()) if (keys.some((key) => id.includes(`\u0000${key}\u0000`))) cache.delete(id);
     }
@@ -879,7 +884,7 @@ export const createLiveEngine = (input: {
     if (stopping.signal.aborted) return;
     const affected = [...connections].filter((conn) => !subject || identityAccessAffects(subject, conn.subject));
     if (!affected.length) return;
-    accessUpdates++;
+    cacheVersion++;
     for (const conn of affected) conn.accessVersion++;
     if (!subject) cache.clear();
     else {
