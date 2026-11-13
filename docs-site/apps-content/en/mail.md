@@ -75,9 +75,14 @@ messages, then the state (**Waiting for reply**, **Later until …**, your
 click on a chip changes its value, and chips that do not fit wait behind
 **+n**. Who else reads the conversation stands at the end of that row.
 
-The timeline reads oldest first; the newest message is open at the bottom and
-the reply bar follows it. Older messages are one line each, and a long
-conversation folds all but the newest three behind **n older messages**.
+The reply box stands at the top of the timeline, and the newest message is open
+right below it; older messages follow, one line each, and a long conversation
+folds all but the newest three behind **n older messages** at the end. **…** ›
+**Reply box** › **Bottom** turns this around for the browser: the timeline then
+reads oldest first, with the fold row at the start, the newest message open at
+the bottom, and the reply box after it. Mail keeps the choice in the
+`cloud_mail_workspace` cookie (`replyPosition`, default `top`), and the server
+renders it, so the first frame already shows the box in its place.
 Internal notes stand at their time between the messages as centered yellow
 tiles marked **internal**; notes that automations write look the same. The
 summary is one collapsible row above the timeline. An open message shows its
@@ -476,10 +481,11 @@ and restores unsaved changes kept in this browser.
 
 ## Write in the conversation
 
-Replies and forwards are written in the conversation, not on a separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
-above the newest message grow into the draft at that place; on a phone the bar
-waits at the bottom and the draft opens at the top over the full width. Mail
-creates the shared draft (`draft-seeds` and `materialize`) before anyone types.
+Replies and forwards are written in the conversation, not on a separate page.
+The reply box stands open at the place the browser chose (see the reader above);
+**Reply**, **Reply all**, **Forward**, a quote, and the **R** key all write into it.
+Opening the conversation prepares a seed (`draft-seeds`); the first typed
+character creates the shared draft (`materialize`).
 A conversation has one reply draft. Reply, Reply all and Forward use the same
 draft; content-free creation returns its current content. Supplying new content
 when it already exists returns a conflict instead of dropping that content.

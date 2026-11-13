@@ -172,6 +172,8 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   onReconcile: async () => undefined,
   onReconcileAfterWrite: async () => undefined,
   onClose: () => undefined,
+  // The tests above the reply-position block were written for the box under the conversation.
+  replyPosition: "bottom",
 };
 
 test.skipIf(isServer)("jumping to newest reads the person's motion choice at click time", async () => {
@@ -1292,6 +1294,143 @@ test.skipIf(isServer)("every reply path lands in the reply box: arrows, menus, q
     dialog.mockRestore();
     cardMock.mockRestore();
     boxMock.mockRestore();
+    dom.cleanup();
+  }
+});
+
+// The reply box on top (the default since 0.76): the newest message comes right below it, older ones further down.
+const timed = (index: number): MessageDetail => {
+  const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+  return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+};
+const shownIds = (root: HTMLElement) =>
+  [...root.querySelectorAll("[data-mail-message-id], [data-mail-older-messages]")].map(
+    (element) => element.getAttribute("data-mail-message-id") ?? "older",
+  );
+
+test.skipIf(isServer)(
+  "with the box on top, a conversation opens at its start and folds its older messages below the newest three",
+  async () => {
+    const dom = createDomTestHarness();
+    const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+    const { MailConversationReader } = modules!;
+    const scrollTo = spyOn(dom.window.HTMLElement.prototype, "scrollTo").mockImplementation(() => {});
+    const dispose = render(
+      () => createComponent(MailConversationReader, { ...readerProps, replyPosition: "top", messages: [1, 2, 3, 4, 5, 6].map(timed) }),
+      dom.root,
+    );
+    try {
+      await waitFor(() => shownIds(dom.root).length === 4);
+      expect(shownIds(dom.root)).toEqual(["Msg006", "Msg005", "Msg004", "older"]);
+      // The reading column says where the box stands, for the phone and the "new messages" button.
+      expect(dom.root.querySelector("[data-mail-reading-column]")!.getAttribute("data-reply-position")).toBe("top");
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      // The newest message is the target; the start of the reader shows the box and that message below it.
+      expect(scrollTo.mock.calls.at(-1)?.[0]).toMatchObject({ top: 0 });
+      // Showing the older ones focuses the newest of them, right below the messages the person read.
+      dom.root.querySelector<HTMLButtonElement>("[data-mail-older-messages]")!.click();
+      await waitFor(() => shownIds(dom.root).length === 6);
+      expect(shownIds(dom.root)).toEqual(["Msg006", "Msg005", "Msg004", "Msg003", "Msg002", "Msg001"]);
+      await waitFor(() => dom.document.activeElement?.closest("[data-mail-message-id]")?.getAttribute("data-mail-message-id") === "Msg003");
+    } finally {
+      scrollTo.mockRestore();
+      dispose();
+      if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss);
+      else Reflect.deleteProperty(globalThis, "CSS");
+      dom.cleanup();
+    }
+  },
+);
+
+test.skipIf(isServer)("with the box on top, new messages show at once at the start; further down, a button points up to them", async () => {
+  const dom = createDomTestHarness();
+  const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+  const { MailConversationReader } = modules!;
+  const [messages, setMessages] = createSignal<MessageDetail[]>([timed(1)]);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        replyPosition: "top",
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  const scroller = dom.root.querySelector<HTMLElement>('[data-scroll-preserve="mail-reader-Conv01"]')!;
+  const scrollTo = spyOn(scroller, "scrollTo").mockImplementation(() => {});
+  const jump = () =>
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.classList.contains("mail-reader-new-below"));
+  try {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    // At the start, a new message takes its place below the box at once, open, with no button.
+    scroller.scrollTop = 0;
+    scroller.dispatchEvent(new Event("scroll"));
+    setMessages((current) => [...current, timed(2)]);
+    await waitFor(() => shownIds(dom.root)[0] === "Msg002");
+    expect(jump()).toBeUndefined();
+    expect(dom.root.querySelector('[data-mail-message-id="Msg002"] [data-mail-message-header]')!.getAttribute("aria-expanded")).not.toBe(
+      "false",
+    );
+    // Further down, the next one waits behind a button at the top that points up and returns to the start.
+    scroller.scrollTop = 400;
+    scroller.dispatchEvent(new Event("scroll"));
+    setMessages((current) => [...current, timed(3)]);
+    await waitFor(() => jump() !== undefined);
+    expect(jump()!.getAttribute("data-reply-position")).toBe("top");
+    expect(jump()!.querySelector(".ti-arrow-up")).not.toBeNull();
+    scrollTo.mockClear();
+    jump()!.click();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(scrollTo.mock.calls[0]?.[0]).toMatchObject({ top: 0 });
+  } finally {
+    scrollTo.mockRestore();
+    dispose();
+    if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss);
+    else Reflect.deleteProperty(globalThis, "CSS");
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("switching the place keeps one reply box and moves it before or after the messages", async () => {
+  const dom = createDomTestHarness();
+  const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+  const { MailConversationReader } = modules!;
+  const [position, setPosition] = createSignal<"top" | "bottom">("top");
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        messages: [timed(1), timed(2)],
+        get replyPosition() {
+          return position();
+        },
+        onReplyPositionChange: setPosition,
+      }),
+    dom.root,
+  );
+  const order = () =>
+    [...dom.root.querySelectorAll("[data-mail-reply-box-frame], [data-mail-message-id]")].map(
+      (element) => element.getAttribute("data-mail-message-id") ?? "box",
+    );
+  try {
+    await waitFor(() => order().length === 3);
+    expect(order()).toEqual(["box", "Msg002", "Msg001"]);
+    setPosition("bottom");
+    await waitFor(() => order()[0] === "Msg001");
+    expect(order()).toEqual(["Msg001", "Msg002", "box"]);
+    expect(dom.root.querySelectorAll("[data-mail-reply-box-frame]")).toHaveLength(1);
+    setPosition("top");
+    await waitFor(() => order()[0] === "box");
+    expect(dom.root.querySelectorAll("[data-mail-reply-box-frame]")).toHaveLength(1);
+  } finally {
+    dispose();
+    if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss);
+    else Reflect.deleteProperty(globalThis, "CSS");
     dom.cleanup();
   }
 });

@@ -9,7 +9,7 @@ kind: task
 
 Cloud collaboration stays attached to a conversation, while the email itself stays normal provider mail. The head of an open conversation shows the shared follow-up state: **Done**, **Archive**, **Delete**, **Later**, and **Assign**, and below the subject a row of chips, such as **Waiting for reply**, **Later until …**, your **Reminder …**, **Kept**, the tags, and linked items. Choose a chip to change its value. Everything else is under **…**.
 
-The conversation reads from the oldest message to the newest one at the bottom. Internal notes stand between the messages, at the time they were written. To see what people and workflows changed, choose **… → Show activity**. Low-level processing events do not show there.
+The conversation shows the newest message first, under the reply box. If you put the reply box at the bottom, the conversation reads from the oldest message to the newest one. Internal notes stand between the messages, at the time they were written. To see what people and workflows changed, choose **… → Show activity**. Low-level processing events do not show there.
 
 ## Use ownership and follow-up consistently {icon="route"}
 

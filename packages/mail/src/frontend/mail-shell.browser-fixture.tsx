@@ -829,6 +829,8 @@ export default function MailShellFixture(props: {
   storedWorkspace?: Partial<MailWorkspacePreference>;
   /** `?notice=1` until the fixture server stored the person's click on "Got it". */
   focusNoticeOpen?: boolean;
+  /** The request's cookies: Mail's browser preferences, such as the reply box's place, as Mail's SSR page reads them. */
+  cookieHeader?: string | null;
 }) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "en";
@@ -844,7 +846,7 @@ export default function MailShellFixture(props: {
         cloudUrl="https://cloud.example"
         dateConfig={{ locale, timeZone: "UTC" }}
         initialPreferences={{
-          ...readMailWorkspacePreferences(""),
+          ...readMailWorkspacePreferences(props.cookieHeader ?? ""),
           // A person who had arranged their own toolbar before Mail v5 (`?toolbar=reply,archive`).
           toolbarCustomized: url.searchParams.has("toolbar"),
         }}

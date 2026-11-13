@@ -34,3 +34,6 @@ export const isNearConversationEnd = (
   metrics: { scrollTop: number; scrollHeight: number; clientHeight: number },
   threshold = 96,
 ): boolean => metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight <= threshold;
+
+/** With the reply box on top the newest message comes first, so the reader follows new messages near the start. */
+export const isNearConversationStart = (metrics: { scrollTop: number }, threshold = 96): boolean => metrics.scrollTop <= threshold;

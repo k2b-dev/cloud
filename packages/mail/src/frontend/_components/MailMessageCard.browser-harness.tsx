@@ -131,6 +131,7 @@ window.mountReader = (locale) => {
             onReconcile={async () => {}}
             onReconcileAfterWrite={async () => {}}
             onClose={noop}
+            replyPosition="bottom"
           />
         </div>
       </LocaleProvider>

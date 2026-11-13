@@ -142,11 +142,11 @@ A quick look never marks a conversation as read, never creates a summary, and ne
 
 The reader keeps its head above the messages while you scroll: **×**, the subject on one line, and the actions **Done**, **Archive**, **Delete**, **Later**, **Assign**, and **…**. On a narrow screen, the actions that do not fit are in **…**. Below the subject, the sender and the number of messages stand next to the chips. **×** and Esc return to the list. The list is where you left it, and the conversation you had open has the focus.
 
-Choose a conversation row to open its thread. The oldest message comes first, and the newest one is open at the bottom. Older messages are one line each, with the sender, the start of the text, the number of attachments, and the date. Choose one to open it. An open message shows its attachments as tiles after its text, each with the name, the type, and the size. From two attachments on, **Download all** packs them into one ZIP file. Images that the text already shows are not tiles.
+Choose a conversation row to open its thread. The reply box stands at the top, and the newest message is open right below it. Older messages follow, one line each, with the sender, the start of the text, the number of attachments, and the date. Choose one to open it. An open message shows its attachments as tiles after its text, each with the name, the type, and the size. From two attachments on, **Download all** packs them into one ZIP file. Images that the text already shows are not tiles.
 
 An optional conversation summary stands as one line above the messages; choose it to read all of it. To keep it current with Markdown formatting, use **More conversation actions → Edit summary** or **Create summary**. Summaries are shared Mail context, and an automation can also update them.
 
-If the conversation has unfinished drafts, they stand below the newest message: the open one in the place of the reply bar, the others as rows with who wrote them and when. Choose a row to continue it in place.
+An unfinished reply stands in the reply box, where you continue it. Each conversation has one reply draft.
 
 In a mailbox that several people use, the end of the chip row shows who else has the conversation open, such as **Tom is reading**. Who has access to the mailbox is in **… → Mailbox details** in the head of the mailbox.
 
