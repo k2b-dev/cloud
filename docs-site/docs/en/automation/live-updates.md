@@ -222,7 +222,9 @@ decide access usually also publish updates, so the definition must not import
 them.
 
 A viewer carries `id`, `actor` and `accessSubject` as on an API request, and
-the credential's `scopes`. Use `accessSubject` for grants and `actor` for
+the credential's `scopes`. Its optional server-only `caller` invokes the owning
+application through Core when a fresh cross-app resource decision is needed.
+Never include this caller in a live event or browser payload. Use `accessSubject` for grants and `actor` for
 roles. `id` starts with `user:<id>` or `service_account:<id>` and adds
 everything of the credential that can change a decision: `:app` for a phone's
 app session, which never holds the `admin` role, and the scopes of an API key
@@ -315,8 +317,12 @@ how long the subscription has been open:
 Every mutable input of an event-only decision needs an access event from its
 owner. A time-to-live cache cannot supply that guarantee. Keep a channel
 periodic until that coverage exists. Admission and refresh allow one catch-up
-when access changes during a check; continued changes close with `1013`
-(`access_changing`) so the client can reconnect.
+when their inputs change during a check. Identity events invalidate only
+affected connections; events for other subjects do not restart their checks.
+A collection refresh retries independently for each subscription. If its inputs
+keep changing across both attempts, only its connection closes with `1013`
+(`access_changing`) so the client can reconnect. Domain events can add unknown
+collection keys, so they also invalidate collection reads in progress.
 
 Updates that were already sent can still arrive after a revocation: what
 waits in the application's send buffer (256 KiB) and in the gateway, which

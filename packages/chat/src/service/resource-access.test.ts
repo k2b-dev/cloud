@@ -15,6 +15,7 @@ import {
   readContainers,
   readerBatch,
   readResource,
+  resourceReaderDependencies,
 } from "./resource-access";
 
 useUnitClients();
@@ -378,20 +379,27 @@ test("readers without open links remain readable and manifest icons are constrai
   expect(resource?.href).toBeUndefined();
 });
 
-test("an identity change discards live authority and forces a fresh owner read across locales", async () => {
+test("an identity change freshly decides live authority through the owner across locales", async () => {
   const c = context();
   await readResource({ ...c, locale: "de" }, ref, { invoke: async () => envelope() });
   expect(await cachedResource(contextPrincipal(c), ref)).toMatchObject({ permission: "write" });
-  expect(await cachedResource(contextPrincipal(c), ref, true)).toBeNull();
   let calls = 0;
-  expect(
-    await readResource({ ...context(), locale: "de" }, ref, {
-      invoke: async () => {
-        calls++;
-        return null;
-      },
-    }),
-  ).toBeNull();
-  expect(calls).toBe(1);
-  expect(await cachedResource(contextPrincipal(c), ref)).toBeNull();
+  const invoke = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async () => {
+    calls++;
+    return envelope("read");
+  });
+  try {
+    expect(await cachedResource(contextPrincipal(c), ref, { ...context(), locale: "en" })).toMatchObject({ permission: "read" });
+    expect(calls).toBe(1);
+    expect(await readResource({ ...context(), locale: "de" }, ref)).toMatchObject({ permission: "read" });
+    expect(calls).toBe(2);
+    expect(await cachedResource(contextPrincipal(c), ref)).toMatchObject({ permission: "read" });
+    invoke.mockResolvedValue(null);
+    expect(await cachedResource(contextPrincipal(c), ref, { ...context(), locale: "en" })).toBeNull();
+    // The old German presentation cannot restore authority after a denial.
+    expect(await readResource({ ...context(), locale: "de" }, ref)).toBeNull();
+    expect(await cachedResource(contextPrincipal(c), ref)).toBeNull();
+  } finally {
+    invoke.mockRestore();
+  }
 });

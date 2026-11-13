@@ -1,5 +1,6 @@
 import { RetentionGapError, SyncLifecycleError, type Topic, type TopicEvent } from "@k2b/sync";
 import { z } from "zod";
+import type { CapabilityCaller } from "../capabilities/server";
 import { userFromActor } from "../server/actor";
 import type { RequestActor } from "../server/middleware/auth";
 import type { AccessSubject } from "../server/services/access";
@@ -45,6 +46,8 @@ export type LiveViewer = {
   accessSubject: AccessSubject;
   /** Credential scopes; empty for sessions. */
   scopes: readonly string[];
+  /** Server-only caller for fresh decisions by a resource-owning application. Never publish it. */
+  caller?: CapabilityCaller;
 };
 
 export type LiveChannel<Scope extends z.ZodType = z.ZodType> = {
@@ -108,6 +111,8 @@ type Connection = {
   subject: IdentityAccessSubject;
   accessCheck: Promise<void> | null;
   checkAgain: boolean;
+  /** Only Identity-Access events affecting this connection advance admission. */
+  accessVersion: number;
 };
 
 type Subscription = {
@@ -122,6 +127,8 @@ type Subscription = {
   /** Live frames held back while the replay is written, and their size. */
   backlog: string[] | null;
   backlogBytes: number;
+  refresh: Promise<void> | null;
+  refreshedAt?: { identity: number; domain: number };
 };
 
 const log = logger("events:live");
@@ -433,47 +440,55 @@ export const createLiveEngine = (input: {
     const unchecked: Connection[] = [];
     let failure: unknown;
     await eachLimited(subs, LIVE_LIMITS.sweepInFlight, async (sub) => {
-      try {
-        const version = accessUpdates;
-        const keys = await bounded("keys()", (channels[sub.channel] as LiveChannel).keys(sub.scope, sub.conn.viewer));
-        if (version !== accessUpdates) {
-          refreshAgain = true;
-          return;
+      if (sub.refresh) return sub.refresh;
+      sub.refresh = Promise.resolve().then(async () => {
+        try {
+          // Retry only this subscription when its inputs changed during the read.
+          for (let pass = 0; pass < 2 && !sub.conn.closed; pass++) {
+            const version = sub.conn.accessVersion;
+            // A domain change can add a previously unknown collection key.
+            const domainVersion = lastAccess;
+            const keys = await bounded("keys()", (channels[sub.channel] as LiveChannel).keys(sub.scope, sub.conn.viewer));
+            if (version !== sub.conn.accessVersion || domainVersion !== lastAccess) continue;
+            const listed = keys === null ? null : followed(sub.channel, keys);
+            const added =
+              listed === null
+                ? []
+                : await readableKeys(
+                    sub.channel,
+                    listed.filter((key) => !sub.keys.has(key)),
+                    sub.conn.viewer,
+                  );
+            if (sub.conn.subs.get(sub.id) !== sub) return;
+            if (version !== sub.conn.accessVersion || domainVersion !== lastAccess) continue;
+            sub.refreshedAt = { identity: version, domain: domainVersion };
+            if (listed === null) {
+              send(sub, frame.revoked(sub.id, "not_found"));
+              removeSubscription(sub);
+              return;
+            }
+            const next = new Set([...listed.filter((key) => sub.keys.has(key)), ...added]);
+            if (next.size === sub.keys.size && [...next].every((key) => sub.keys.has(key))) return;
+            for (const key of sub.keys) if (!next.has(key)) unindexKey(sub, key);
+            for (const key of next) if (!sub.keys.has(key)) indexKey(sub, key);
+            sub.keys = next;
+            send(sub, frame.resync(sub.id, cursorAt(head)));
+            return;
+          }
+          if (!sub.conn.closed) close(sub.conn, 1013, "access_changing");
+        } catch (error) {
+          unchecked.push(sub.conn);
+          failure = error;
+        } finally {
+          sub.refresh = null;
         }
-        const listed = keys === null ? null : followed(sub.channel, keys);
-        const added =
-          listed === null
-            ? []
-            : await readableKeys(
-                sub.channel,
-                listed.filter((key) => !sub.keys.has(key)),
-                sub.conn.viewer,
-              );
-        if (sub.conn.subs.get(sub.id) !== sub) return;
-        if (version !== accessUpdates) {
-          refreshAgain = true;
-          return;
-        }
-        if (listed === null) {
-          send(sub, frame.revoked(sub.id, "not_found"));
-          removeSubscription(sub);
-          return;
-        }
-        const next = new Set([...listed.filter((key) => sub.keys.has(key)), ...added]);
-        if (next.size === sub.keys.size && [...next].every((key) => sub.keys.has(key))) return;
-        for (const key of sub.keys) if (!next.has(key)) unindexKey(sub, key);
-        for (const key of next) if (!sub.keys.has(key)) indexKey(sub, key);
-        sub.keys = next;
-        send(sub, frame.resync(sub.id, cursorAt(head)));
-      } catch (error) {
-        unchecked.push(sub.conn);
-        failure = error;
-      }
+      });
+      await sub.refresh;
     });
     fail(unchecked, failure, "collection keys");
   };
 
-  /** One refresh at a time; requests while it runs share a single next run. */
+  /** Coalesce domain bursts; only subscriptions still stale after catch-up reconnect. */
   let refreshing: Promise<void> | null = null;
   let refreshAgain = false;
   const refresh = (): Promise<void> => {
@@ -483,18 +498,19 @@ export const createLiveEngine = (input: {
     }
     refreshing = Promise.resolve().then(async () => {
       try {
-        // One initial pass and one coalesced catch-up. Continuous changes reconnect.
         for (let pass = 0; pass < 2 && !stopping.signal.aborted; pass++) {
           refreshAgain = false;
           await refreshCollections();
-          if (!refreshAgain) break;
+          if (!refreshAgain) return;
         }
-        if (refreshAgain)
-          for (const conn of [...connections]) {
-            if ([...conn.subs.values()].some((sub) => sub.collection)) close(conn, 1013, "access_changing");
-          }
-      } catch (error) {
-        log.error("Live collection refresh failed", { appId, error: message(error) });
+        for (const conn of [...connections]) {
+          if (
+            [...conn.subs.values()].some(
+              (sub) => sub.collection && (sub.refreshedAt?.identity !== conn.accessVersion || sub.refreshedAt?.domain !== lastAccess),
+            )
+          )
+            close(conn, 1013, "access_changing");
+        }
       } finally {
         refreshing = null;
       }
@@ -528,15 +544,13 @@ export const createLiveEngine = (input: {
     while (ring.length > LIVE_LIMITS.ringEvents || ringBytes > LIVE_LIMITS.ringBytes) ringBytes -= ring.shift()?.bytes ?? 0;
   };
 
-  const deliver = async (entry: Entry) => {
-    remember(entry);
-    const key = entry.key;
-    if (key && (entry.data !== undefined || entry.resync)) {
-      const candidates = [...(index.get(key) ?? [])];
-      // Periodic channels retain their delivery-time cache; eventOnly channels use admitted keys.
-      const decisions = new Map<string, Map<string, boolean>>();
-      for (const [channel, viewers] of viewersOf(key)) {
-        if (channels[channel]?.eventOnly) continue;
+  const deliveryDecisions = async (key: string) => {
+    const candidates = [...(index.get(key) ?? [])];
+    // Periodic channels retain their delivery-time cache; eventOnly channels use admitted keys.
+    const decisions = new Map<string, Map<string, boolean>>();
+    await Promise.all(
+      [...viewersOf(key)].map(async ([channel, viewers]) => {
+        if (channels[channel]?.eventOnly) return;
         try {
           decisions.set(channel, await decide(channel, key, viewers));
         } catch (error) {
@@ -546,7 +560,17 @@ export const createLiveEngine = (input: {
             "access check",
           );
         }
-      }
+      }),
+    );
+    return decisions;
+  };
+
+  const deliver = async (entry: Entry, prepared?: Awaited<ReturnType<typeof deliveryDecisions>>) => {
+    remember(entry);
+    const key = entry.key;
+    if (key && (entry.data !== undefined || entry.resync)) {
+      const candidates = [...(index.get(key) ?? [])];
+      const decisions = prepared ?? (await deliveryDecisions(key));
       await Promise.all(
         candidates.map(async (sub) => {
           if (!(await accessSettled(sub.conn)) || sub.conn.subs.get(sub.id) !== sub || !sub.keys.has(key) || entry.seq <= sub.from) return;
@@ -581,12 +605,27 @@ export const createLiveEngine = (input: {
   };
 
   const deliverBatch = async (batch: Entry[]) => {
-    for (const entry of batch) {
+    for (let start = 0; start < batch.length; ) {
+      const entry = batch[start]!;
       if (entry.gap) {
         await invalidateAccess();
         recoverGap(entry);
-      } else if (entry.access) await changeAccess(entry);
-      else await deliver(entry);
+        start++;
+      } else if (entry.access) {
+        await changeAccess(entry);
+        start++;
+      } else {
+        let end = start;
+        while (end < batch.length && !batch[end]!.gap && !batch[end]!.access) end++;
+        // Prefetch different keys in parallel, bounded by callsInFlight in decide().
+        // An access update is a barrier: never prefetch decisions across it.
+        const decisions = new Map<string, Awaited<ReturnType<typeof deliveryDecisions>>>();
+        const keys = [
+          ...new Set(batch.slice(start, end).flatMap((item) => (item.key && (item.data !== undefined || item.resync) ? [item.key] : []))),
+        ];
+        await Promise.all(keys.map(async (key) => decisions.set(key, await deliveryDecisions(key))));
+        for (; start < end; start++) await deliver(batch[start]!, decisions.get(batch[start]!.key ?? ""));
+      }
     }
   };
 
@@ -632,7 +671,7 @@ export const createLiveEngine = (input: {
           continue;
         }
         // Transport retries retain the admitted state; a retention gap rechecks access.
-        // Core/NATS liveness monitoring is owned separately, not a reconnect storm here.
+        // Core/NATS liveness monitoring is tracked in #3284.
         log.warn("Live follower failed; it resumes", { appId, error: message(error) });
         await sleep(1_000);
       }
@@ -728,11 +767,14 @@ export const createLiveEngine = (input: {
     let version: number;
     do {
       if (!(await accessSettled(conn))) return;
-      version = accessUpdates;
+      version = conn.accessVersion;
+      const domainVersion = lastAccess;
       keys = await bounded("keys()", channel.keys(scope.data, conn.viewer));
       readable = keys === null ? [] : await readableKeys(request.channel, followed(request.channel, keys), conn.viewer);
-      if (version !== accessUpdates && retries++ >= 1) return close(conn, 1013, "access_changing");
-    } while (version !== accessUpdates && !conn.closed);
+      if (domainVersion !== lastAccess) version = -1;
+      if (version !== conn.accessVersion && retries++ >= 1) return close(conn, 1013, "access_changing");
+    } while (version !== conn.accessVersion && !conn.closed);
+    const domainVersion = lastAccess;
     // Not found and not readable look the same.
     if (keys === null || (readable.length === 0 && !channel.collection)) return write(conn, frame.revoked(request.id, "not_found"));
     const after = request.after === undefined ? null : sequenceOf(request.after);
@@ -740,7 +782,7 @@ export const createLiveEngine = (input: {
     const recreated = after !== null && after > head && after > input.topic().cursorSequence(await input.topic().head());
     if (conn.closed) return;
     // A cursor/head read can overlap an invalidation too. Start admission again.
-    if (version !== accessUpdates) {
+    if (version !== conn.accessVersion || domainVersion !== lastAccess) {
       if (retries >= 1) return close(conn, 1013, "access_changing");
       return subscribe(conn, request, retries + 1);
     }
@@ -766,6 +808,7 @@ export const createLiveEngine = (input: {
       from: after !== null && !resync && after > position ? after : position,
       backlog: null,
       backlogBytes: 0,
+      refresh: null,
     };
     conn.subs.set(sub.id, sub);
     for (const key of sub.keys) indexKey(sub, key);
@@ -834,8 +877,10 @@ export const createLiveEngine = (input: {
 
   const invalidateAccess = async (subject?: IdentityAccessSubject): Promise<void> => {
     if (stopping.signal.aborted) return;
-    accessUpdates++;
     const affected = [...connections].filter((conn) => !subject || identityAccessAffects(subject, conn.subject));
+    if (!affected.length) return;
+    accessUpdates++;
+    for (const conn of affected) conn.accessVersion++;
     if (!subject) cache.clear();
     else {
       const viewers = affected.map((conn) => `\u0000${conn.viewer.id}`);
@@ -854,11 +899,11 @@ export const createLiveEngine = (input: {
     try {
       await eachLimited([...selected], LIVE_LIMITS.sweepInFlight, async (conn) => {
         try {
-          const version = accessUpdates;
+          const version = conn.accessVersion;
           const viewer = await bounded("The credential check", conn.revalidate());
-          if (version !== accessUpdates || conn.closed) return;
+          if (conn.closed) return;
           if (!viewer || viewer.id !== conn.viewer.id) close(conn, 1008, "session_expired", "The session ended.");
-          else conn.viewer = viewer;
+          else if (version === conn.accessVersion) conn.viewer = viewer;
         } catch (error) {
           fail([conn], error, "credential check");
         }
@@ -908,6 +953,7 @@ export const createLiveEngine = (input: {
         },
         accessCheck: null,
         checkAgain: false,
+        accessVersion: 0,
       };
       // A stopped engine starts no follower or timers again: the socket reconnects to a running replica.
       if (stopping.signal.aborted) close(conn, 1012, "restart");

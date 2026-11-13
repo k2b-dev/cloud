@@ -74,13 +74,12 @@ export const contextPrincipal = (context: ChatContext) => {
     : principal;
 };
 /** Live delivery needs only authority, independent of the locale of the last HTTP read. */
-export const cachedResource = async (principal: string, ref: ResourceRef, identityChanged = false) => {
+export const cachedResource = async (principal: string, ref: ResourceRef, fresh?: ChatContext) => {
   try {
-    if (identityChanged) {
-      // A fresh HTTP read must ask the owner again, regardless of its display locale.
-      // The live subscription resyncs until that authoritative read completes.
+    if (fresh) {
+      // Invalidate authority across all locales, then decide through the owner now.
       await redis.del(authorizationKey(principal, ref));
-      return null;
+      return await loadResource(fresh, ref, resourceReaderDependencies, undefined, true);
     }
     const value = await redis.get(authorizationKey(principal, ref));
     return value === null ? null : AuthorizationSchema.nullable().parse(JSON.parse(value));
@@ -111,15 +110,19 @@ const loadResource = async (
   ref: ResourceRef,
   dependencies = resourceReaderDependencies,
   onUnavailable?: () => void,
+  fresh = false,
 ): Promise<ResourceDecision | null> => {
   const principal = contextPrincipal(context);
   const key = accessKey(principal, ref, context.locale ?? context.caller?.locale ?? "en");
   try {
     context.caller?.signal?.throwIfAborted();
-    const cached = context.capabilityQuery ? null : await redis.get(key);
-    // Presentation cache entries never outlive their locale-independent authority.
-    if (cached !== null && (await redis.get(authorizationKey(principal, ref))) !== null)
-      return ResourceDecisionSchema.nullable().parse(JSON.parse(cached));
+    const cached = fresh || context.capabilityQuery ? null : await redis.get(key);
+    // A localized view is reusable only while its authority still matches.
+    if (cached !== null) {
+      const decision = ResourceDecisionSchema.nullable().parse(JSON.parse(cached));
+      const authority = await redis.get(authorizationKey(principal, ref));
+      if (authority !== null && authority === JSON.stringify(decision ? AuthorizationSchema.parse(decision) : null)) return decision;
+    }
     if (!context.caller || !CloudResourceRefSchema.safeParse(ref).success) return null;
     const provider = await providerFor(context, ref.type);
     if (!provider) return null;

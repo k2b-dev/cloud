@@ -65,7 +65,13 @@ const viewerOf = <Env extends AuthContext>(c: Context<Env>): LiveViewer => {
         ? ":app"
         : ""
       : `:scopes=${[...new Set(scopes)].sort().join(",")}`;
-  return { id: `${principal}${credential}`, actor: c.get("actor"), accessSubject, scopes };
+  return {
+    id: `${principal}${credential}`,
+    actor: c.get("actor"),
+    accessSubject,
+    scopes,
+    caller: { cookie: c.req.header("cookie"), authorization: c.req.header("authorization") },
+  };
 };
 
 type ProbeEnv = AuthContext & { Bindings: { found: (viewer: LiveViewer) => void } };

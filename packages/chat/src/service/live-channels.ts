@@ -35,14 +35,18 @@ const chatReaders = async (
       : [];
     if (threadId && !thread) return new Set();
     const decisions = await readerBatch(viewers, async (viewer) => {
-      const container = await cachedResource(
-        viewer.id,
-        { type: conversation.resource_type, id: conversation.resource_id },
-        context?.identityChanged,
-      );
+      const fresh = context?.identityChanged
+        ? {
+            actor: viewer.actor,
+            accessSubject: viewer.accessSubject,
+            caller: viewer.caller,
+            credentialPrincipal: viewer.id,
+          }
+        : undefined;
+      const container = await cachedResource(viewer.id, { type: conversation.resource_type, id: conversation.resource_id }, fresh);
       if (!container || !hasPermission(conversationPermission(shortId, container.permission, viewer.actor), "read")) return null;
       if (thread) {
-        const item = await cachedResource(viewer.id, { type: thread.resource_type, id: thread.resource_id }, context?.identityChanged);
+        const item = await cachedResource(viewer.id, { type: thread.resource_type, id: thread.resource_id }, fresh);
         if (item?.container?.ref.type !== conversation.resource_type || item.container.ref.id !== conversation.resource_id) return null;
       }
       return viewer.id;

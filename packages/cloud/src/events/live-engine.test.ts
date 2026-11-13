@@ -970,3 +970,190 @@ test("periodic collection refresh discards decisions from before an access event
   await until(() => ada.framesOf("s").some((frame) => frame.t === "event"));
   expect(ada.framesOf("s").filter((frame) => frame.t === "event")).toEqual([expect.objectContaining({ data: { n: 2 } })]);
 });
+
+test("foreign identity events during periodic refresh and admission do not retry or close connections", async () => {
+  engine.stop();
+  const intervals = spyOn(globalThis, "setInterval");
+  let refreshes = 0;
+  let changing = false;
+  try {
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      subscribeAccess,
+      channels: {
+        list: {
+          ...channels.list!,
+          eventOnly: undefined,
+          keys: async (_scope, who) => {
+            refreshes++;
+            if (changing) {
+              // Bob has a connection, but these events must not invalidate Ada's read.
+              accessChanged({ userId: "bob" });
+              accessChanged({ userId: "unconnected" });
+              await Bun.sleep(0);
+            }
+            return who.id === "user:ada" ? ["a"] : [];
+          },
+        },
+      },
+    });
+    const bob = connect("bob");
+    const ada = connect();
+    changing = true;
+    ada.send({ t: "sub", id: "s", channel: "list", scope: {} });
+    await until(() => ada.framesOf("s").length === 1);
+    expect(refreshes).toBe(1);
+    const sweep = intervals.mock.calls.find(([, ms]) => ms === LIVE_LIMITS.sweepMs)![0] as () => void;
+    for (let round = 0; round < LIVE_LIMITS.keysEveryRounds; round++) {
+      sweep();
+      await Bun.sleep(5);
+    }
+    await until(() => refreshes === 2);
+    topic.publish(event("a", 1));
+    await until(() => ada.framesOf("s").length === 2);
+    expect(refreshes).toBe(2);
+    expect(ada.socket.closes).toEqual([]);
+    expect(bob.socket.closes).toEqual([]);
+  } finally {
+    intervals.mockRestore();
+  }
+});
+
+test("an unstable collection reconnects only its own connection", async () => {
+  engine.stop();
+  let changing = false;
+  let checks = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    subscribeAccess,
+    channels: {
+      list: {
+        ...channels.list!,
+        keys: async (_scope, who) => {
+          if (changing && who.id === "user:ada") {
+            checks++;
+            accessChanged({ userId: "ada" });
+            await Bun.sleep(0);
+          }
+          return ["a"];
+        },
+      },
+    },
+  });
+  const ada = connect(),
+    bob = connect("bob");
+  for (const conn of [ada, bob]) conn.send({ t: "sub", id: "s", channel: "list", scope: {} });
+  await until(() => ada.framesOf("s").length === 1 && bob.framesOf("s").length === 1);
+  changing = true;
+  accessChanged({ userId: "ada" });
+  await until(() => ada.socket.closes.length === 1);
+  expect(checks).toBe(2);
+  expect(ada.socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
+  topic.publish(event("a", 1));
+  await until(() => bob.framesOf("s").length === 2);
+  expect(bob.socket.closes).toEqual([]);
+});
+
+test("a negative periodic credential probe closes even when an identity event overtakes it", async () => {
+  engine.stop();
+  const intervals = spyOn(globalThis, "setInterval");
+  let calls = 0;
+  let release: (value: LiveViewer | null) => void = () => {};
+  try {
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      subscribeAccess,
+      channels: { item: { ...channels.item!, eventOnly: undefined } },
+    });
+    const socket = fakeSocket();
+    const conn = engine.open(socket, viewer("ada"), async () => {
+      if (++calls === 2)
+        return new Promise<LiveViewer | null>((resolve) => {
+          release = resolve;
+        });
+      return viewer("ada");
+    });
+    conn.message(JSON.stringify({ t: "sub", id: "s", channel: "item", scope: { key: "a" } }));
+    await until(() => socket.frames.length === 1);
+    const sweep = intervals.mock.calls.find(([, ms]) => ms === LIVE_LIMITS.sweepMs)![0] as () => void;
+    sweep();
+    await until(() => calls === 2);
+    accessChanged({ userId: "ada" });
+    await until(() => calls === 3);
+    release(null);
+    await until(() => socket.closes.length === 1);
+    expect(socket.closes).toEqual([{ code: 1008, reason: "session_expired" }]);
+  } finally {
+    release(null);
+    intervals.mockRestore();
+  }
+});
+
+test("periodic delivery prefetches eight decisions in parallel and sends the batch in topic order", async () => {
+  engine.stop();
+  const fixed = Date.parse("2026-11-13T12:00:00Z");
+  setSystemTime(fixed);
+  let prefetch = false,
+    active = 0,
+    peak = 0;
+  let releaseFirst: () => void = () => {},
+    releaseBatch: () => void = () => {};
+  const first = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const batch = new Promise<void>((resolve) => {
+    releaseBatch = resolve;
+  });
+  const keys = Array.from({ length: 17 }, (_, i) => `k${i}`);
+  try {
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: {
+        list: {
+          collection: true,
+          scope: z.object({}),
+          keys: async () => keys,
+          authorize: async (key, viewers) => {
+            if (prefetch) {
+              active++;
+              peak = Math.max(peak, active);
+              await (key === "k0" ? first : batch);
+              active--;
+            }
+            return new Set(viewers.map((who) => who.id));
+          },
+        },
+      },
+    });
+    const ada = connect();
+    ada.send({ t: "sub", id: "s", channel: "list", scope: {} });
+    await until(() => ada.framesOf("s").length === 1);
+    setSystemTime(fixed + 2_001);
+    prefetch = true;
+    topic.publish(event("k0", 0));
+    await until(() => active === 1);
+    for (let i = 1; i < keys.length; i++) topic.publish(event(keys[i]!, i));
+    // Wait for the follower to enqueue the burst behind the blocked first entry.
+    await Bun.sleep(5);
+    releaseFirst();
+    await until(() => peak === LIVE_LIMITS.callsInFlight);
+    releaseBatch();
+    await until(() => ada.framesOf("s").length === 18);
+    expect(peak).toBe(8);
+    expect(
+      ada
+        .framesOf("s")
+        .slice(1)
+        .map((frame) => (frame.data as { n: number }).n),
+    ).toEqual(keys.map((_, i) => i));
+    expect(ada.socket.closes).toEqual([]);
+  } finally {
+    releaseFirst();
+    releaseBatch();
+    setSystemTime();
+  }
+});
