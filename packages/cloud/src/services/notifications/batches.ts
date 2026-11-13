@@ -5,6 +5,7 @@ import { lazySync } from "../../_internal/process-sync";
 import { type MailMessage, MailMessageSchema, type MailStatus, MailStatusSchema } from "../../contracts/outgoing-mail";
 import { sql } from "../../runtime/clients";
 import { markdown } from "../../shared/markdown";
+import { accountLockedSql } from "../account-lock";
 import { type AuditActor, audit } from "../audit";
 import { logger, trace } from "../logging";
 import { enqueueMail } from "../outgoing-mail/enqueue";
@@ -213,6 +214,8 @@ const resolveCandidates = async (rawSelection: NotificationBatchSelection): Prom
     SELECT u.id, u.uid, u.display_name, u.mail, u.provider, u.profile, c.source_hits
     FROM candidate_counts c
     JOIN auth.users u ON u.id = c.user_id
+    -- A locked account receives nothing; it is not a recipient.
+    WHERE NOT ${accountLockedSql(sql`u.id`)}
     ORDER BY u.uid
   `;
 };
@@ -308,6 +311,19 @@ const processBatchChunk = async (batchId: string): Promise<{ processed: number; 
       ? CHUNK_SIZE
       : Math.max(0, Math.min(CHUNK_SIZE, profile.quota.dailyRecipients - profile.quota.usedLast24h));
 
+  // An account locked after finalization is skipped before its mail is accepted.
+  await sql`
+    WITH skipped AS (
+      UPDATE notifications.batch_recipients r
+      SET status = 'skipped', error = 'The account is locked.', updated_at = now()
+      WHERE r.batch_id = ${batchId}::uuid AND r.outgoing_mail_id IS NULL
+        AND (r.status = 'pending' OR (r.status = 'sending' AND r.updated_at < now() - interval '5 minutes'))
+        AND ${accountLockedSql(sql`r.user_id`)}
+      RETURNING r.notification_id, r.error
+    )
+    UPDATE notifications.messages m SET error = s.error FROM skipped s WHERE m.id = s.notification_id
+  `;
+
   type ClaimedRecipient = { user_id: string; recipient: string; notification_id: string | null };
   // Persist a send generation before any external effect. Reclaim and worker
   // retries reuse it; operator retries clear it and create a new generation.
@@ -319,6 +335,7 @@ const processBatchChunk = async (batchId: string): Promise<{ processed: number; 
         SELECT batch_id, user_id FROM notifications.batch_recipients
         WHERE batch_id = ${batchId}::uuid AND recipient IS NOT NULL AND outgoing_mail_id IS NULL
           AND (status = 'pending' OR (status = 'sending' AND updated_at < now() - interval '5 minutes'))
+          AND NOT ${accountLockedSql(sql`notifications.batch_recipients.user_id`)}
         ORDER BY updated_at ASC LIMIT ${claimSize} FOR UPDATE SKIP LOCKED
       )
       RETURNING r.user_id, r.recipient, r.notification_id

@@ -2,6 +2,7 @@ import type { ZodType } from "zod";
 import type { BoundNotificationDefinition, NotificationRecipientKind, NotificationSendInput } from "../../contracts/notification-types";
 import type { PaginationParams } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
+import { accountLockedSql } from "../account-lock";
 import { logger } from "../logging";
 import { escapeLikePattern } from "../postgres";
 import { notificationMailOutcome, sendNotificationMail } from "./email-mail";
@@ -186,12 +187,18 @@ export const sendToUser = async (params: SendToUserParams): Promise<{ ok: true; 
   const { userId, subject, content, rawHtml, sentBy } = params;
 
   // Get user's email from database
-  const rows = await sql`SELECT mail FROM auth.users WHERE id = ${userId}`;
-  if (rows.length === 0) {
+  const [user] = await sql<{ mail: string | null; locked: boolean }[]>`
+    SELECT u.mail, ${accountLockedSql(sql`u.id`)} AS locked FROM auth.users u WHERE u.id = ${userId}::uuid
+  `;
+  if (!user) {
     return { ok: false, error: "User not found" };
   }
+  // A locked account receives nothing, like typed notifications.
+  if (user.locked) {
+    return { ok: false, error: "User account is locked" };
+  }
 
-  const email = rows[0]!.mail as string | null;
+  const email = user.mail;
   if (!email) {
     return { ok: false, error: "User has no email address" };
   }

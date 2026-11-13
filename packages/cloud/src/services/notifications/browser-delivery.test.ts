@@ -16,6 +16,7 @@ test("browser delivery carries localized previews, namespaces groups, and preser
     const prepared = [];
     const sql = async (parts) => {
       const query = parts.join("?");
+      if (query === "u.id") return query;
       if (query.includes("SELECT id FROM notifications.endpoints")) return [{ id: endpointId }];
       if (query.includes("pg_advisory_xact_lock")) return [];
       if (query.includes("SELECT id FROM notifications.events")) return [];
@@ -54,6 +55,7 @@ test("browser delivery carries localized previews, namespaces groups, and preser
     mock.module(${JSON.stringify(new URL("./catalog.ts", import.meta.url).pathname)}, () => ({ ensureNotificationDefinition: async () => {} }));
     mock.module(${JSON.stringify(new URL("./dispatcher.ts", import.meta.url).pathname)}, () => ({ processNotificationDelivery: async () => ({ status: "pending" }) }));
     mock.module(${JSON.stringify(new URL("./runtime.ts", import.meta.url).pathname)}, () => ({ enqueueNotificationDelivery: async () => {}, enqueueNotificationDeliveries: async () => {} }));
+    mock.module(${JSON.stringify(new URL("../account-lock.ts", import.meta.url).pathname)}, () => ({ accountLockedSql: () => "false" }));
     mock.module(${JSON.stringify(new URL("../secrets.ts", import.meta.url).pathname)}, () => ({
       decryptSecret: async () => subscription,
       encryptSecret: async payload => { prepared.push(payload); return "encrypted"; },

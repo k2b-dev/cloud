@@ -58,6 +58,7 @@ suiteFor(
     await sql`CREATE TABLE settings.entries(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`.simple();
     await sql`CREATE SCHEMA auth`.simple();
     await sql`CREATE TABLE auth.users(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), uid TEXT, display_name TEXT, mail TEXT)`.simple();
+    await sql`CREATE TABLE auth.user_ipa_data(user_id UUID PRIMARY KEY, locked_at TIMESTAMPTZ)`.simple();
     await migrateMail();
     await migrateAudit();
     await migrateNotifications();

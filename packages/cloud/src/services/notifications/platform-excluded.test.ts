@@ -12,6 +12,7 @@ test("excluded channels never resolve destinations or prepare payloads from olde
     const resolved = [], prepared = [], persisted = [];
     const sql = async (parts, ...values) => {
       const query = parts.join("?");
+      if (query === "u.id") return query;
       if (query.includes("FROM auth.users")) return [{ id: eventId, mail: "reader@example.test" }];
       if (query.includes("FROM notifications.preferences")) return customized ? [{ channels: selected }] : [];
       if (query.includes("INSERT INTO notifications.events")) return [{ id: eventId }];
@@ -31,6 +32,7 @@ test("excluded channels never resolve destinations or prepare payloads from olde
     mock.module(${JSON.stringify(new URL("./catalog.ts", import.meta.url).pathname)}, () => ({ ensureNotificationDefinition: async () => {} }));
     mock.module(${JSON.stringify(new URL("./dispatcher.ts", import.meta.url).pathname)}, () => ({ processNotificationDelivery: async () => { throw new Error("No required delivery"); } }));
     mock.module(${JSON.stringify(new URL("./runtime.ts", import.meta.url).pathname)}, () => ({ enqueueNotificationDelivery: async () => {}, enqueueNotificationDeliveries: async () => {} }));
+    mock.module(${JSON.stringify(new URL("../account-lock.ts", import.meta.url).pathname)}, () => ({ accountLockedSql: () => "false" }));
     mock.module(${JSON.stringify(new URL("../secrets.ts", import.meta.url).pathname)}, () => ({ encryptSecret: async () => "encrypted" }));
     mock.module(${JSON.stringify(new URL("./channels.ts", import.meta.url).pathname)}, () => ({
       getNotificationChannel: channel => ({
