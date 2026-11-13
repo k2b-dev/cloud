@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.57.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.56.0...npm-ui-v0.57.0) (2026-11-13)
+
+
+### Features
+
+* **mail:** Mail v5 with full width, one reply draft per conversation and notes in the timeline ([#3239](https://github.com/k2b-dev/cloud/issues/3239)) ([b61018d](https://github.com/k2b-dev/cloud/commit/b61018d7903905ca6d3c1abc8498d64245a62650))
+
+
+### Bug Fixes
+
+* **ui:** a split button shows one colour under a host tone ([#3220](https://github.com/k2b-dev/cloud/issues/3220)) ([0c91e12](https://github.com/k2b-dev/cloud/commit/0c91e1218f89ce36d536714059d2b76757bb3d99))
+
 ## [0.56.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.55.0...npm-ui-v0.56.0) (2026-11-12)
 
 
