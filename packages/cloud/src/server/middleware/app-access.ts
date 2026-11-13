@@ -9,6 +9,7 @@ import type { AppMeta } from "../../contracts/app";
 import { AppAccessUnavailableError, appAccessAuthority, canUseApp } from "../../services/app-access";
 import { recordAppAccessDenied } from "../../services/app-access-metrics";
 import { createLoginRedirectUrl } from "../../shared/redirect";
+import { userFromActor } from "../actor";
 import { type AuthContext, auth, loadAuthenticatedActor, type RequestAuthority } from "./auth";
 
 type AccessApp = Pick<AppMeta, "id" | "access"> & { name?: string };
@@ -182,11 +183,26 @@ export const watchCredentialExpiry = (expiresAt: number, expired: () => void): (
     clearTimeout(timer);
   };
 };
+/** Earliest known account or credential deadline; enforced locally without SQL. */
+export const credentialExpiresAt = (c: Context<AuthContext>): number | undefined => {
+  const proof = c.get("credentialProof");
+  const actor = c.get("actor");
+  const deadlines = [
+    proof?.kind === "session" ? proof.expiresAt : undefined,
+    actor?.kind === "service_account" ? actor.credentialExpiresAt : undefined,
+    userFromActor(actor)?.accountExpires,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map(Date.parse)
+    .concat(proof?.kind === "oauth" && typeof proof.payload.exp === "number" ? [proof.payload.exp * 1_000] : [])
+    .filter(Number.isFinite);
+  return deadlines.length ? Math.min(...deadlines) : undefined;
+};
 const identitySubject = (c: Context<AuthContext>) => {
   const proof = c.get("credentialProof");
   const actor = c.get("actor");
   return {
-    userId: actor?.kind === "user" ? actor.user.id : undefined,
+    userId: userFromActor(actor)?.id,
     serviceAccountId: actor?.kind === "service_account" ? actor.serviceAccount.id : undefined,
     sid: proof?.kind === "session" ? proof.sid : undefined,
   };
@@ -213,15 +229,7 @@ export const guardAppAccessSocket = async (
   const subscribe = await subscribeApp(appId, identitySubject(c));
   let stop: (() => void) | undefined;
   let stopExpiry = () => {};
-  const proof = c.get("credentialProof");
-  const actor = c.get("actor");
-  const deadlines = [
-    proof?.kind === "session" ? proof.expiresAt : undefined,
-    actor?.kind === "user" ? actor.user.accountExpires : actor?.credentialExpiresAt,
-  ]
-    .filter((value): value is string => typeof value === "string")
-    .map(Date.parse)
-    .filter(Number.isFinite);
+  const expiresAt = credentialExpiresAt(c);
   let denied = false;
   let shutdown = () => {};
   return {
@@ -235,8 +243,8 @@ export const guardAppAccessSocket = async (
         ws.close(1012, "server_restarting");
       };
       connections.add(shutdown);
-      if (deadlines.length)
-        stopExpiry = watchCredentialExpiry(Math.min(...deadlines), () => {
+      if (expiresAt !== undefined)
+        stopExpiry = watchCredentialExpiry(expiresAt, () => {
           denied = true;
           stop?.();
           connections.delete(shutdown);
@@ -245,7 +253,7 @@ export const guardAppAccessSocket = async (
       if (denied) return;
       stop = watchAppAccess({
         check: revalidate,
-        ...(options.eventOnly ? { intervalMs: false as const, checkInitially: false } : {}),
+        ...(options.eventOnly && app.access?.kind !== "resources" ? { intervalMs: false as const } : {}),
         subscribe,
         denied: () => {
           connections.delete(shutdown);
@@ -281,6 +289,8 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
   const reader = response.body.getReader();
   let ended = false;
   let stop = () => {};
+  let stopExpiry = () => {};
+  const expiresAt = credentialExpiresAt(c);
   let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
   const abort = () => {
     if (!ended) streamController?.close();
@@ -290,6 +300,7 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
     if (ended) return;
     ended = true;
     stop();
+    stopExpiry();
     connections.delete(abort);
     c.req.raw.signal.removeEventListener("abort", abort);
     void reader.cancel().catch(() => {});
@@ -299,6 +310,7 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
       streamController = controller;
       connections.add(abort);
       stop = watchAppAccess({
+        ...(c.get("appAccessGuard")?.eventOnly && app.access?.kind !== "resources" ? { intervalMs: false as const } : {}),
         check: appAccessRevalidator(c, app),
         subscribe,
         denied: () => {
@@ -308,6 +320,8 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
           finish();
         },
       });
+      if (expiresAt !== undefined) stopExpiry = watchCredentialExpiry(expiresAt, abort);
+      if (ended) return;
       c.req.raw.signal.addEventListener("abort", abort, { once: true });
       if (c.req.raw.signal.aborted) {
         controller.close();
