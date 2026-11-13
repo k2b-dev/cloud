@@ -1003,7 +1003,9 @@ describe("@k2b/ui action geometry parity", () => {
 
   test("buttons use flat, layout-stable press feedback", () => {
     const button = rule(".k2b-ui .k2b-button");
-    const active = rule('.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):active');
+    // Popup placement reads the trigger's viewport box: scaling it on press moves
+    // the popup when scrolling later repositions it from the settled anchor (#3289).
+    const active = rule('.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"], [aria-haspopup]):active');
     const split = rule(".k2b-ui .k2b-dropdown.k2b-split-button");
     const splitSegmentActive = rule('.k2b-ui .k2b-split-button > .k2b-button:not(:disabled, [aria-disabled="true"]):active');
     const splitPrimaryActive = rule(".k2b-ui .k2b-dropdown.k2b-split-button:has(> .k2b-split-button__primary:not(:disabled):active)");
@@ -1014,6 +1016,7 @@ describe("@k2b/ui action geometry parity", () => {
     expect(button).toContain("font-weight: 600");
     expect(active).toContain("scale: 0.98");
     expect(active).not.toContain("box-shadow");
+    expect(actionsCss).not.toContain('.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):active {');
     expect(split).toContain("transition: scale 100ms ease-out");
     expect(splitSegmentActive).toContain("scale: none");
     expect(splitPrimaryActive).toContain("scale: 0.98");
