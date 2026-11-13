@@ -1,8 +1,8 @@
-import { expect, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { expect, spyOn, test } from "bun:test";
+import { createSql, sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { lockDraftDocumentCoverage } from "./draft-document-log";
-import { awaitDraftDocumentQuery, withDraftDocumentTransaction } from "./draft-document-socket-sql";
+import { awaitDraftDocumentQuery, stopDraftDocumentCancellation, withDraftDocumentTransaction } from "./draft-document-socket-sql";
 
 const suite = suiteFor("database", "nats");
 
@@ -53,5 +53,66 @@ suite("Mail draft SQL cancellation", () => {
     expect(await settled).toBe(true);
     expect(await sql`SELECT pid FROM pg_stat_activity WHERE pid = ${backend!} AND state LIKE 'idle in transaction%'`).toHaveLength(0);
     expect((await sql<{ ready: number }[]>`SELECT 1 AS ready`)[0]?.ready).toBe(1);
+  });
+
+  test("aborting every reserved connection settles both helpers, reuses the pool and closes it", async () => {
+    const capacity = sql.options.max;
+    if (!capacity) throw new Error("Native SQL did not expose its configured pool capacity");
+    const observer = createSql({ max: 1 });
+    const stopped = new AbortController();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const backends: number[] = [];
+    const reservations: Awaited<ReturnType<typeof sql.reserve>>[] = [];
+    const reserve = sql.reserve.bind(sql);
+    const reserveSpy = spyOn(sql, "reserve").mockImplementation(async (...args) => {
+      const connection = await reserve(...args);
+      reservations.push(connection);
+      return connection;
+    });
+    let finished = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const work = Promise.allSettled(
+      Array.from({ length: capacity }, () =>
+        withDraftDocumentTransaction(stopped.signal, async (db) => {
+          const [row] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          backends.push(row!.pid);
+          if (backends.length === capacity) entered.resolve();
+          await release.promise;
+        }),
+      ),
+    ).then((results) => {
+      finished = true;
+      return results;
+    });
+    try {
+      await entered.promise;
+      stopped.abort(new Error("Every socket closed together"));
+      release.resolve();
+      const results = await Promise.race([
+        work,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Cancellation waited for its own full pool")), 5000);
+        }),
+      ]);
+      expect(results.every((result) => result.status === "rejected")).toBe(true);
+      expect(
+        await observer`SELECT pid FROM pg_stat_activity WHERE pid IN ${observer(backends)} AND state LIKE 'idle in transaction%'`,
+      ).toHaveLength(0);
+      expect((await sql<{ ready: number }[]>`SELECT 1 AS ready`)[0]?.ready).toBe(1);
+      await stopDraftDocumentCancellation();
+      // Mail integration files run in isolation; this is the file's last test.
+      await expect(sql.close()).resolves.toBeUndefined();
+    } finally {
+      clearTimeout(timer);
+      reserveSpy.mockRestore();
+      // Only on regression: free this fixture's slots so its expected failure
+      // does not strand teardown. Production waits for cancellation before reuse.
+      if (!finished) for (const connection of reservations) connection.release();
+      release.resolve();
+      await work;
+      await stopDraftDocumentCancellation();
+      await observer.close();
+    }
   });
 });

@@ -150,6 +150,7 @@
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
+    "@codemirror/state": "6.7.6",
     "@firecrawl/anydoc": "0.2.4",
     "@napi-rs/canvas": "1.1.0",
     "pdfjs-dist": "6.5.438",
@@ -161,7 +162,7 @@
     "@k2b/ssr": "0.21.2",
     "@k2b/ui": "0.57.0",
     "@k2b/stdlib": "0.32.0",
-    "@k2b/sync": "7.1.0",
+    "@k2b/sync": "7.1.1",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
     "@modelcontextprotocol/sdk": "1.32.2",

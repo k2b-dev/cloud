@@ -22,6 +22,7 @@ import { applicationAiRuntime } from "./service/application-ai-runtime";
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
 import { stopDraftDocumentPruning } from "./service/draft-document-log";
 import { startDraftDocumentLogPolicy, stopDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
+import { stopDraftDocumentCancellation } from "./service/draft-document-socket-sql";
 import { finishReplyDraftRetirements } from "./service/draft-retirement";
 import { retireMailRuleBroker } from "./service/retired-rule-broker";
 import { stopConversationViewCountCache } from "./service/view-count-cache";
@@ -39,6 +40,7 @@ const stopMailRuntimes = (): Promise<void> =>
     applicationAiRuntime.stop,
     () => commandRuntime.stop(),
     () => mailNotifications.stop(),
+    stopDraftDocumentCancellation,
   ]);
 
 const result = await app.start({

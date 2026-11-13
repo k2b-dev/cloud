@@ -119,6 +119,7 @@ export const createStructuralFixture = (source = "| Header |\n| --- |\n| Origina
   };
   const accept = async (replica: Replica, update = Y.encodeStateAsUpdate(replica.doc), baseCursor = replica.cursor) => {
     const result = await documents().accept("fixture", {
+      snapshot: stored,
       actor: replica.actor,
       update,
       baseCursor,

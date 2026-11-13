@@ -265,7 +265,11 @@ export const deleteLegacyKeys = async (extraKnownKeys: readonly string[] = []): 
 
 /** Serialize a setting and every value it discards, including missing rows. */
 export const lockSettingChanges = async (tx: SqlClient, key: string): Promise<void> => {
-  const owners = SETTINGS.filter((def) => def.resetOnChange?.length && (def.key === key || def.resetOnChange.includes(key)));
+  const owners = SETTINGS.filter(
+    (def) =>
+      (def.key === key && key === "user.session.shared_workstation_idle_minutes") ||
+      (def.resetOnChange?.length && (def.key === key || def.resetOnChange.includes(key))),
+  );
   for (const owner of owners.sort((a, b) => a.key.localeCompare(b.key)))
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`settings.change:${owner.key}`}, 0))`;
 };
@@ -279,6 +283,15 @@ export const resetChangedSettings = async (
   prior?: SettingRead,
 ): Promise<void> => {
   const def = SETTINGS_MAP.get(key);
+  if (key === "user.session.shared_workstation_idle_minutes" && typeof value === "number") {
+    const previous = prior ?? (await readKeyState(key, tx));
+    if (previous.value !== value) {
+      const [source] = await tx<
+        { ready: boolean }[]
+      >`SELECT to_regprocedure('auth.reschedule_room_idle_deadlines(integer)') IS NOT NULL AS ready`;
+      if (source?.ready) await tx`SELECT auth.reschedule_room_idle_deadlines(${Math.floor(value * 60)}::integer)`;
+    }
+  }
   if (!def?.resetOnChange?.length) return;
   const previous = prior ?? (await readKeyState(key, tx));
   if (previous.stored !== "unreadable" && JSON.stringify(previous.value) === JSON.stringify(value)) return;

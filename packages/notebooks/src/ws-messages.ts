@@ -29,6 +29,7 @@ const catalog = i18n.define({
       jsonTextOnly: "Only JSON text messages are supported",
       messageTooLarge: "Websocket message is too large",
       tooManyMessages: "Too many pending websocket messages",
+      busy: "Document is busy; retrying",
       handlingFailed: "Message handling failed",
     },
     de: {
@@ -58,6 +59,7 @@ const catalog = i18n.define({
       jsonTextOnly: "Nur JSON-Textnachrichten werden unterstützt",
       messageTooLarge: "Die WebSocket-Nachricht ist zu groß",
       tooManyMessages: "Zu viele ausstehende WebSocket-Nachrichten",
+      busy: "Das Dokument ist ausgelastet; wir versuchen es erneut",
       handlingFailed: "Die Verarbeitung der Nachricht ist fehlgeschlagen",
     },
   },
