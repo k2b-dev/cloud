@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.57.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.57.0...npm-ui-v0.57.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **ui:** keep popup anchors stable while pressing ([#3292](https://github.com/k2b-dev/cloud/issues/3292)) ([a7fe35b](https://github.com/k2b-dev/cloud/commit/a7fe35bc113274fb5556e60b8ba62659652ef655))
+
 ## [0.57.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.56.0...npm-ui-v0.57.0) (2026-11-13)
 
 
