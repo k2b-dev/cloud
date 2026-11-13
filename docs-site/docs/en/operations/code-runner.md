@@ -226,10 +226,13 @@ failed retries on the next invalidation. Approval never switches the Code on.
 
 Runner heartbeats renew the durable generation fence. Capability requests
 check current authority and record the call before effects. These operations
-execute SQL. The chat runner also polls its mailbox every 100 ms, including
+execute SQL. The Assistant Code host polls Core's mailbox every 100 ms, including
 while idle: five statements per poll permits about 50 SQL statements per
 second per run, excluding request authentication and query latency. This idle
 polling remains an R1 DATA-13 gap.
+While a chat capability call awaits a reply, Core also polls the stored call
+result every 100 ms. This separate wait loop is not covered by the mailbox
+endpoint budget and remains an open measurement gap.
 
 Run lists and details in the Code page and `cld code runs` are snapshots, with
 no run-event stream. Child console output is discarded rather than delivered

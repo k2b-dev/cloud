@@ -2,6 +2,9 @@ import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { createSync, type Sync } from "@k2b/sync";
 import { meterSql, type SqlMeter } from "../../../../scripts/fixtures/sql-meter";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
+import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
+import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { liveTopic } from "../events/live-delivery";
 import { createLiveEngine, type LiveViewer } from "../events/live-engine";
@@ -25,11 +28,7 @@ suiteFor(
   beforeAll(async () => {
     database = await useFreshDatabase("code_live_budget");
     // Core owns these prerequisites; the preview exercises the real AI store and NATS stream.
-    for (const name of ["auth", "events", "settings"]) {
-      const path = `../../../core/src/migrate/core/${name}`;
-      const { migrate } = await import(path);
-      await migrate();
-    }
+    for (const migrate of [migrateAuth, migrateEvents, migrateSettings]) await migrate();
     await migrateCloudAi();
     await sql`INSERT INTO auth.users(id,uid,provider,profile)
       VALUES('11111111-1111-4111-8111-111111111111'::uuid,'code-live-budget','local','user')`;
