@@ -31,12 +31,16 @@ export const createSharedTextEventCache = (read: Read, maxBytes: number) => {
       }
       let from = after;
       if (range?.docId === docId && compare(after, range.after) >= 0 && compare(after, range.until) <= 0) {
-        for (const entry of range.entries) {
+        // Each iterator owns its covered bounds and entry list. A concurrent
+        // document/read may replace the cache or evict entries while we yield.
+        const coveredUntil = range.until;
+        const coveredEntries = range.entries.slice();
+        for (const entry of coveredEntries) {
           signal?.throwIfAborted();
           if (compare(entry.cursor, after) > 0 && compare(entry.cursor, until) <= 0) yield entry;
         }
-        if (compare(until, range.until) <= 0) return;
-        from = range.until;
+        if (compare(until, coveredUntil) <= 0) return;
+        from = coveredUntil;
       }
       for await (const event of read(docId, from, until, signal)) {
         remember(docId, from, event);

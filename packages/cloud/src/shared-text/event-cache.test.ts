@@ -52,3 +52,33 @@ test("eviction or a different document never pretends a gap is covered", async (
   await f.read(cursor(4), cursor(6));
   expect(f.calls.at(-1)).toEqual([cursor(4), cursor(6)]);
 });
+
+test("an interleaved document cannot replace another iterator's covered bounds", async () => {
+  const f = fixture();
+  await f.read(cursor(0), cursor(2));
+  const a = f.cache.events("doc", cursor(0), cursor(4))[Symbol.asyncIterator]();
+  try {
+    expect((await a.next()).value).toMatchObject(entries[0]!);
+    f.cache.remember("other", cursor(7), entries[7]!);
+    const rest = await Array.fromAsync({ [Symbol.asyncIterator]: () => a });
+    expect(rest).toMatchObject(entries.slice(1, 4));
+    expect(f.calls.at(-1)).toEqual([cursor(2), cursor(4)]);
+  } finally {
+    await a.return?.();
+  }
+});
+
+test("eviction during a yield cannot remove an iterator's remaining covered entries", async () => {
+  const bytes = JSON.stringify(entries[0]).length * 2;
+  const f = fixture(bytes * 2);
+  await f.read(cursor(0), cursor(2));
+  const a = f.cache.events("doc", cursor(0), cursor(3))[Symbol.asyncIterator]();
+  try {
+    expect((await a.next()).value).toMatchObject(entries[0]!);
+    f.cache.remember("doc", cursor(2), entries[2]!);
+    const rest = await Array.fromAsync({ [Symbol.asyncIterator]: () => a });
+    expect(rest).toMatchObject(entries.slice(1, 3));
+  } finally {
+    await a.return?.();
+  }
+});

@@ -1,19 +1,29 @@
-import { expect, setSystemTime } from "bun:test";
+import { expect, setSystemTime, spyOn } from "bun:test";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
+import * as logging from "../services/logging";
 import { sharedText } from "./log";
 
 const NOW = new Date("2026-11-13T00:00:00Z");
 testFor("nats")(
-  "lifecycle storage expands without losing fences, rejects shrinking, and forgets only completed retirement",
+  "lifecycle storage preserves closed fences across expansion, rollback and exhaustion",
   async () => {
     setSystemTime(NOW);
     const connection = await connectTestNats();
     const namespace = testSyncNamespace("text-lifecycle-storage");
     const sync = createSync({ connection, namespace, application: "test", defaults: { replicas: 1 } });
     bindProcessSync(sync, connection);
+    const warnings: Array<{ message: string; metadata?: Record<string, unknown> }> = [];
+    const logger = spyOn(logging, "logger").mockImplementation(() => ({
+      debug() {},
+      info() {},
+      error() {},
+      warn(message, metadata) {
+        warnings.push({ message, metadata });
+      },
+    }));
     try {
       const declaration = { id: "text", whenFull: "reject", retention: { maxBytes: 1024 * 1024 } } as const;
       const first = sharedText.define({ ...declaration, lifecycle: { maxBytes: 4096 } }).lifecycle!;
@@ -41,28 +51,20 @@ testFor("nats")(
       expect(streams[0]!.config.max_bytes).toBe(8192);
       expect(streams[0]!.config.num_replicas).toBe(1);
       expect(streams[0]!.state.messages).toBe(2);
-      const shrinking = sharedText.define({ ...declaration, lifecycle: { maxBytes: 4096 } }).lifecycle!;
-      await expect(shrinking.get("retired")).rejects.toThrow("cannot be decreased");
-      await expect(expanded.forget("active")).rejects.toThrow("Only a completed, retired close");
-      const preparingClose = await expanded.put("preparing-close", null, {
-        state: "closed",
-        freezeCursor: "freeze-pending",
-        closeCursor: null,
-        restoreRevision: "0",
-      });
-      await expect(expanded.forget("preparing-close")).rejects.toThrow("Only a completed, retired close");
-      await expanded.put("preparing-close", preparingClose, {
-        state: "closed",
-        freezeCursor: "freeze-pending",
-        closeCursor: "close-pending",
-        restoreRevision: "0",
-      });
-      await expanded.forget("preparing-close");
-      await expanded.forget("retired");
-      await expanded.forget("retired");
-      expect(await first.get("retired")).toBeNull(); // The original handle's decoded cache cannot resurrect it.
-      expect(await expanded.get("active")).toEqual(frozen);
-      expect((await manager.streams.info(streams[0]!.config.name)).state.messages).toBe(1);
+      const rolledBack = sharedText.define({ ...declaration, lifecycle: { maxBytes: 4096 } }).lifecycle!;
+      expect(await rolledBack.get("retired")).toEqual(closed);
+      expect(await rolledBack.get("active")).toEqual(frozen);
+      const admitted = await rolledBack.put("another", null, { state: "open" });
+      expect(await rolledBack.get("another")).toEqual(admitted);
+      expect((await manager.streams.info(streams[0]!.config.name)).config.max_bytes).toBe(8192);
+      expect(warnings).toEqual([
+        {
+          message: "Keeping the larger existing lifecycle byte budget",
+          metadata: { log: "text", declaredMaxBytes: 4096, retainedMaxBytes: 8192 },
+        },
+      ]);
+      expect(Object.keys(rolledBack).sort()).toEqual(["get", "put"]);
+      expect((await manager.streams.info(streams[0]!.config.name)).state.messages).toBe(3);
       // A full store rejects another entry without evicting any existing fence.
       let full: unknown;
       for (let index = 0; index < 100 && !full; index++) {
@@ -74,7 +76,9 @@ testFor("nats")(
       }
       expect(full).toBeDefined();
       expect(await expanded.get("active")).toEqual(frozen);
+      expect(await rolledBack.get("retired")).toEqual(closed);
     } finally {
+      logger.mockRestore();
       unbindProcessSync();
       await sync.drain();
       const manager = await jetstreamManager(connection);

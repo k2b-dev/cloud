@@ -215,10 +215,21 @@ const createSnapshots = <Input>(
                 }
                 signal.throwIfAborted();
               }
-              const before = Y.encodeStateVector(doc);
-              doc.transact(() => {
-                for (const change of [...changes].reverse()) text.insert(change.from, change.insert);
-              }, "snapshot-repair");
+              // Stage the repair separately: a rejected post-check must not
+              // leak its tentative state into the snapshot saved below.
+              const staged = new Y.Doc();
+              let update: Uint8Array;
+              try {
+                Y.applyUpdate(staged, Y.encodeStateAsUpdate(doc));
+                const before = Y.encodeStateVector(staged);
+                const text = staged.getText(SHARED_TEXT_NAME);
+                staged.transact(() => {
+                  for (const change of [...changes].reverse()) text.insert(change.from, change.insert);
+                }, "snapshot-repair");
+                update = Y.encodeStateAsUpdate(staged, before);
+              } finally {
+                staged.destroy();
+              }
               signal.throwIfAborted();
               if (heartbeatError) throw heartbeatError;
               // A conflict retries the whole ordered job from the current store
@@ -228,13 +239,21 @@ const createSnapshots = <Input>(
                 expectedAfter: target,
                 data: {
                   kind: "sync",
-                  payload: toBase64(Y.encodeStateAsUpdate(doc, before)),
+                  payload: toBase64(update),
                   originNodeId: sharedTextNodeId,
                   originPeerId: null,
                   restoreRevision: initial.restoreRevision,
                 },
               });
-              await confirm?.();
+              try {
+                await confirm?.();
+              } catch (error) {
+                if (error instanceof SharedTextBoundaryError) return false;
+                // An unavailable authority has an unknown outcome; retry the
+                // job rather than treating an infrastructure failure as a fence.
+                throw error;
+              }
+              Y.applyUpdate(doc, update, "snapshot-repair");
               cursor = published.cursor;
               return true;
             }

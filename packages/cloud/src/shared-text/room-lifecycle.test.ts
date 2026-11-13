@@ -46,9 +46,6 @@ const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void) => 
   const stored: SharedTextStoredState = { state, text: "visible", restoreRevision: "0", cursor: "s6t.freeze.0" };
   let entry: SharedTextLifecycleEntry | null = null;
   const lifecycle: SharedTextLifecycleStore = {
-    forget: async () => {
-      throw new Error("Not used");
-    },
     get: async () => entry,
     put: async (_docId, previous, value) => {
       if (previous !== entry) throw new Error("Stale lifecycle CAS");
@@ -212,20 +209,32 @@ test("resuming after a crashed freeze expires invalidates its token before accep
   }
 });
 
-test("a crash before the freeze marker leaves only a bounded admission lease", async () => {
-  const { source, state } = deleted();
-  try {
-    const f = fixture(state, state);
-    f.failNextPublish();
-    await expect(f.room.freeze("doc")).rejects.toThrow("broker unavailable");
-    await expect(checkLifecycleAdmission(f.lifecycle, "doc")).rejects.toThrow("DOCUMENT_FROZEN");
-    setSystemTime(new Date(NOW.getTime() + 60_001));
-    await checkLifecycleAdmission(f.lifecycle, "doc");
-    expect((await f.lifecycle.get("doc"))?.value.state).toBe("open");
-  } finally {
-    source.destroy();
-  }
-});
+for (const uncertain of [new Error("broker unavailable"), new DOMException("publish timed out", "TimeoutError")])
+  test(`an uncertain freeze publication keeps preparing fenced: ${uncertain.name}`, async () => {
+    const { source, state } = deleted();
+    try {
+      const f = fixture(state, state);
+      f.failNextPublish(uncertain);
+      await expect(f.room.freeze("doc")).rejects.toThrow(uncertain.message);
+      expect(f.marker()).toBeUndefined();
+      expect((await f.lifecycle.get("doc"))?.value).toEqual({
+        state: "frozen",
+        expiresAt: NOW.getTime() + 60_000,
+        freezeCursor: null,
+        restoreRevision: "0",
+      });
+      await expect(checkLifecycleAdmission(f.lifecycle, "doc")).rejects.toThrow("DOCUMENT_FROZEN");
+      await expect(f.room.freeze("doc")).rejects.toThrow("DOCUMENT_FROZEN");
+      setSystemTime(new Date(NOW.getTime() + 59_999));
+      await expect(checkLifecycleAdmission(f.lifecycle, "doc")).rejects.toThrow("DOCUMENT_FROZEN");
+      setSystemTime(new Date(NOW.getTime() + 60_001));
+      await checkLifecycleAdmission(f.lifecycle, "doc");
+      expect((await f.lifecycle.get("doc"))?.value.state).toBe("open");
+      expect((await f.room.freeze("doc"))?.cursor).toBe("s6t.freeze.1");
+    } finally {
+      source.destroy();
+    }
+  });
 
 for (const rejection of [new StoreFullError("storage exhausted"), new ConflictError("head changed")])
   test(`a definitely rejected freeze releases preparation immediately: ${rejection.name}`, async () => {
@@ -304,4 +313,9 @@ test("a freeze followed by thaw cannot hide a lifecycle transition from a stalle
   } finally {
     source.destroy();
   }
+});
+
+test("the lifecycle declaration exposes no retirement deletion API", () => {
+  const log = sharedText.define({ id: "fenced", lifecycle: { maxBytes: 4096 }, whenFull: "reject", retention: { maxBytes: 65536 } });
+  expect(Object.keys(log.lifecycle!).sort()).toEqual(["get", "put"]);
 });

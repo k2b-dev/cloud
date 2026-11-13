@@ -1018,9 +1018,12 @@ the stream's measured `state.bytes`. For example, one million 300-byte entries
 need at least 300 MB per replica before headroom. This reservation is separate
 from the document log. Increasing `maxBytes` or changing the document log's
 replica count updates the lifecycle stream on initialization without clearing
-its entries. All nodes must use the new declaration; lowering `maxBytes` is
-rejected. A full store fails new freezes/changes visibly and leaves existing
-fences intact; expand its budget or retire documents before retrying.
+its entries. Older pods and rollback versions tolerate a larger existing byte
+budget, keep it unchanged and log once per initialized handle; they never shrink
+it. A full store fails new freezes/changes visibly and leaves existing
+fences intact; expand its budget before retrying. Closed lifecycle entries
+remain durable; there is no deletion or retirement API. Budget for cumulative
+closed documents, monitor `state.bytes` and raise `maxBytes` before exhaustion.
 Preserve this stream alongside document snapshots and the log in backups.
 
 A room configured with this lifecycle store and `snapshots.flushNow` exposes:
@@ -1029,7 +1032,6 @@ A room configured with this lifecycle store and `snapshots.flushNow` exposes:
 room.freeze(docId, { signal? }): Promise<SharedTextRoomFreeze | null>
 room.thaw(docId, { signal?, freezeCursor? }): Promise<string | null>
 room.closeDocument(docId, { freezeCursor, signal? }): Promise<string | null>
-log.lifecycle!.forget(docId): Promise<void>
 // SharedTextRoomFreeze:
 // { state: Uint8Array, text: string, cursor: string,
 //   restoreRevision: string, expiresAt: number }
@@ -1043,7 +1045,10 @@ and delete set; equivalent Yjs encodings are accepted. It fails on a competing p
 the bounded action from the new head. Across nodes, an edit is either ordered
 before the marker or rejected without an acknowledgement as `DOCUMENT_FROZEN`
 (close 1013). The browser keeps its input/journal and reconnects to resend it.
-Snapshot repair cannot change the frozen state.
+Snapshot repair cannot change the frozen state. If authority changes during
+repair publication, that repair attempt returns without saving tentative state;
+the retained update remains available to a subsequent snapshot replay. An
+unavailable authority still fails the job for retry.
 
 The freeze is a nonrenewing 60-second lease starting just before marker
 publication. A crashed owner cannot block admission beyond 60 seconds plus
@@ -1075,12 +1080,12 @@ Retrying thaw with the same token returns its original marker, including after
 a crash between opening authority and notification. An already open document
 without a token is a no-op returning null; a stale token conflicts.
 
-After durable domain retirement, complete the close intent, deny future joins
-and edits in the application, and drain existing producers and retry intents.
-Then call `log.lifecycle!.forget(docId)` to reclaim the lifecycle entry. It
-requires a completed close and is idempotent once absent. Never reuse that
-document ID: forgetting removes the room's fence, so the domain must continue
-to reject it. A retry of close after forgetting is no longer supported.
+After durable domain retirement, complete the close intent and deny future
+joins and edits in the application. Keep the lifecycle entry: close notifications
+alone cannot prove that every stalled producer has drained. Removing authority
+after pruning can make an old expected-empty-head publication appear valid
+again. Safe retirement is tracked in [#3254](https://github.com/k2b-dev/cloud/issues/3254).
+Do not manually delete closed entries or reuse document IDs.
 
 The durable frozen value survives its 60-second admission lease. After expiry,
 the next admission atomically invalidates that token before reopening the
@@ -1144,7 +1149,9 @@ An uncontended edit adds four NATS KV operations for admission acquisition
 and release, plus the existing head lookup and CAS publication: **zero SQL
 per edit**. Opting into lifecycle adds two authoritative JetStream last-value
 reads per successful edit (before validation and after publication), without a
-replay consumer; decoded values are cached by broker revision within `lifecycle.maxBytes`. An expired freeze adds one CAS
+replay consumer; decoded values are cached by broker revision within `lifecycle.maxBytes`.
+Each process can retain that much decoded payload plus JavaScript object
+overhead; raising the declared budget raises this per-node memory ceiling too. An expired freeze adds one CAS
 write to invalidate its token. Notifications never substitute for those reads, so a delayed event or a pruned
 marker cannot bypass acknowledgement fencing. Awareness and fan-out add no
 lifecycle lookups. Logs without lifecycle storage, including

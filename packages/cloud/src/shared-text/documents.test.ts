@@ -948,3 +948,84 @@ for (const code of ["DOCUMENT_FROZEN", "DOCUMENT_CLOSED"] as const) {
     expect(f.saves).toHaveLength(0);
   });
 }
+
+test("two documents interleaved after their head yield retain independent admission authority", async () => {
+  const yielded = Promise.withResolvers<void>();
+  const resume = Promise.withResolvers<void>();
+  const heads = new Map([
+    ["a", { cursor: "s6t.multi.1", revision: "revision-a" }],
+    ["b", { cursor: "s6t.multi.2", revision: "revision-b" }],
+  ]);
+  const head = (id: string) => {
+    const entry = heads.get(id);
+    if (!entry) throw new Error("Unknown fixture document");
+    return entry;
+  };
+  const publications: Array<{ id: string; revision?: string }> = [];
+  const documents = bindDocuments(
+    {
+      topic: () => ({
+        latestCursor: async ({ tenantId } = {}) => head(tenantId ?? "").cursor,
+        publish: async (input) => {
+          publications.push({ id: input.tenantId!, revision: input.data.restoreRevision });
+          const cursor = `s6t.multi.${publications.length + 2}`;
+          return { cursor, eventId: cursor, messageId: cursor, streamSequence: publications.length + 2, duplicate: false };
+        },
+      }),
+      events: async function* (id) {
+        const current = head(id);
+        yield {
+          cursor: current.cursor,
+          data: { kind: "freeze", payload: "", restoreRevision: current.revision, originNodeId: "node", originPeerId: null },
+        };
+        if (id === "a") {
+          yielded.resolve();
+          await resume.promise;
+        }
+      },
+      replay: async () => {
+        throw new Error("Joined snapshot already covers the head");
+      },
+    },
+    {
+      load: async () => {
+        throw new Error("Ordinary admission must not load the store");
+      },
+      save: async () => {
+        throw new Error("Ordinary admission must not save the store");
+      },
+    },
+  );
+  const admit = async (id: string) => {
+    const doc = new Y.Doc();
+    try {
+      doc.clientID = id === "a" ? 100 : 200;
+      doc.getText(SHARED_TEXT_NAME).insert(0, id);
+      return await documents.accept(id, {
+        snapshot: { state: null, cursor: head(id).cursor, restoreRevision: head(id).revision, text: "" },
+        actor: { kind: "user", id },
+        update: Y.encodeStateAsUpdate(doc),
+        baseCursor: head(id).cursor,
+        restoreRevision: head(id).revision,
+        originNodeId: "node",
+        originPeerId: id,
+      });
+    } finally {
+      doc.destroy();
+    }
+  };
+  const a = admit("a");
+  try {
+    await yielded.promise;
+    expect(await admit("b")).toMatchObject({ status: "accepted" });
+    resume.resolve();
+    expect(await a).toMatchObject({ status: "accepted" });
+    expect(publications).toEqual([
+      { id: "b", revision: "revision-b" },
+      { id: "a", revision: "revision-a" },
+    ]);
+  } finally {
+    resume.resolve();
+    await a.catch(() => {});
+  }
+});
