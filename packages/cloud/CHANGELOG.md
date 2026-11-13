@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.69.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.68.0...npm-cloud-v0.69.0) (2026-11-13)
+
+
+### Features
+
+* **cloud:** shared text rooms for collaborative documents ([#3235](https://github.com/k2b-dev/cloud/issues/3235)) ([f2fea74](https://github.com/k2b-dev/cloud/commit/f2fea7422198e6f622304df6dd239214ca2147ed))
+* **mail:** collaborative drafts on the shared text room with zero SQL per edit ([#3258](https://github.com/k2b-dev/cloud/issues/3258)) ([ca45d88](https://github.com/k2b-dev/cloud/commit/ca45d883ef89790a79da1a0d63b36bca98ddfcf7))
+
+
+### Bug Fixes
+
+* **cloud:** session end reaches open live connections on every path ([#3273](https://github.com/k2b-dev/cloud/issues/3273)) ([7f2afa9](https://github.com/k2b-dev/cloud/commit/7f2afa940c989b19f881c36aaec5dae2ae8306ed))
+
 ## [0.68.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.67.0...npm-cloud-v0.68.0) (2026-11-13)
 
 
