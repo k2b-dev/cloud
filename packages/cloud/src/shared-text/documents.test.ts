@@ -3,11 +3,12 @@ import { ConflictError, type TopicPublish } from "@k2b/sync";
 import * as Y from "yjs";
 import { createStructuralFixture } from "../../../../scripts/fixtures/shared-text-history";
 import { captureTextAnchor, resolveTextAnchor } from "./anchors";
+import { SharedTextBoundaryError } from "./boundary";
 import { bindDocuments, createDoc } from "./documents";
 import { applySharedTextEvent, SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
 import type { SharedTextSaveInput, SharedTextStoredState, SharedTextSyncEvent } from "./types";
 
-const fixture = () => {
+const fixture = (checkLifecycle?: () => Promise<() => Promise<void>>) => {
   let stored: SharedTextStoredState | null = { state: null, cursor: null, restoreRevision: "revision", text: null };
   const publications: TopicPublish<SharedTextSyncEvent>[] = [];
   const events: { cursor: string; data: SharedTextSyncEvent }[] = [];
@@ -33,6 +34,7 @@ const fixture = () => {
   };
   const documents = bindDocuments(
     {
+      checkLifecycle,
       topic: () => handle,
       async *events(_docId, after, until) {
         const start = after === until ? Number(until.split(".").at(-1)) - 1 : after ? Number(after.split(".").at(-1)) : 0;
@@ -906,3 +908,43 @@ test("admission uses its join snapshot and accepted base without loading SQL or 
     source.destroy();
   }
 });
+
+for (const code of ["DOCUMENT_FROZEN", "DOCUMENT_CLOSED"] as const) {
+  test(`an ordinary ingress published across ${code} cannot be acknowledged or advance its accepted base`, async () => {
+    const f = fixture(async () => async () => {
+      throw new SharedTextBoundaryError(code);
+    });
+    const source = new Y.Doc();
+    let applied = false;
+    try {
+      source.getText(SHARED_TEXT_NAME).insert(0, "late input");
+      expect(
+        await f.documents.accept("doc", {
+          snapshot: f.stored(),
+          actor: { kind: "user", id: "author" },
+          update: Y.encodeStateAsUpdate(source),
+          baseCursor: null,
+          restoreRevision: "revision",
+          originNodeId: "node",
+          originPeerId: "peer",
+          applied: () => {
+            applied = true;
+          },
+        }),
+      ).toEqual({ status: code === "DOCUMENT_FROZEN" ? "frozen" : "closed" });
+      expect(f.events).toHaveLength(1); // Retain the late publication for drainage.
+      expect(applied).toBe(false);
+      expect(f.saves).toHaveLength(0);
+    } finally {
+      source.destroy();
+    }
+  });
+  test(`a server edit published across ${code} cannot report success or save an unfenced state`, async () => {
+    const f = fixture(async () => async () => {
+      throw new SharedTextBoundaryError(code);
+    });
+    await expect(f.documents.edit("doc", { actor: null }, () => "late input")).rejects.toThrow(code);
+    expect(f.events).toHaveLength(1);
+    expect(f.saves).toHaveLength(0);
+  });
+}

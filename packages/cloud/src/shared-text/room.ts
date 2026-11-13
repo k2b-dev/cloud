@@ -125,6 +125,7 @@ type RoomState = {
   snapshotInterval: ReturnType<typeof setInterval> | null;
   leaveTask: Promise<void> | null;
   acceptTask: Promise<void> | null;
+  confirmedCursor: string | null;
   accessWatchAbort: AbortController | null;
   dirty: boolean;
   pendingSnapshot: { docId: string; targetCursor: string } | null;
@@ -185,6 +186,7 @@ export function createSharedTextRoom<
         snapshotInterval: null,
         leaveTask: null,
         acceptTask: null,
+        confirmedCursor: null,
         accessWatchAbort: null,
         dirty: false,
         pendingSnapshot: null,
@@ -508,6 +510,19 @@ export function createSharedTextRoom<
           }
           // Lifecycle markers have no Yjs payload and must never be echoed as receipts.
           if (event.data.kind !== "sync" || (replay.after && compareStreamCursor(event.cursor, replay.after) <= 0)) continue;
+          // The broker can fan out before the publisher's lifecycle post-check.
+          // An echo acknowledges local input only after admission confirms it.
+          if (config.log.lifecycle && event.data.originPeerId === ctx.peerId && event.data.originNodeId === NODE_ID) {
+            const confirmed = () => {
+              const cursor = state(ctx).confirmedCursor;
+              return cursor !== null && compareStreamCursor(event.cursor, cursor) <= 0;
+            };
+            if (!confirmed()) await state(ctx).acceptTask?.catch(() => {});
+            // An admission timeout may have returned BUSY before the broker
+            // finishes publishing. Only its successful post-check can confirm it.
+            if (!confirmed()) continue;
+          }
+          if (!active()) break;
           const update = toPushUpdate(event);
           const reservation = JSON.stringify(update).length * 2;
           if (config.deliveryBudget && !config.deliveryBudget.claim(reservation)) {
@@ -608,6 +623,7 @@ export function createSharedTextRoom<
     stopLiveStream(ctx);
     releaseBase(ctx);
     state(ctx).busy = false;
+    state(ctx).confirmedCursor = null;
     state(ctx).snapshotCursor = snapshot.cursor;
     ctx.canWrite = access.canWrite ?? false;
     if (ctx.canWrite) {
@@ -705,6 +721,7 @@ export function createSharedTextRoom<
       validateState: config.validateState ? (state) => config.validateState!(state, ctx) : undefined,
       observedHead: state(ctx).head,
       applied: (snapshot, previousCursor) => {
+        state(ctx).confirmedCursor = maxStreamCursor(state(ctx).confirmedCursor, snapshot.cursor);
         state(ctx).base?.commit(snapshot, previousCursor, update);
         const head = state(ctx).head;
         if (snapshot.cursor && (!head || compareStreamCursor(snapshot.cursor, head.cursor) > 0))
@@ -841,6 +858,7 @@ export function createSharedTextRoom<
             session.dirty = session.pendingSnapshot !== null;
             session.lastPublishedCursor = null;
             session.snapshotCursor = null;
+            session.confirmedCursor = null;
             session.head = undefined;
             session.busy = false;
           }

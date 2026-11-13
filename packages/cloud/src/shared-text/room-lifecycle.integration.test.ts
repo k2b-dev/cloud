@@ -1,5 +1,5 @@
 import { expect, setSystemTime } from "bun:test";
-import { createSync, type Sync, type TopicConfig } from "@k2b/sync";
+import { ConflictError, createSync, type Lock, type MutexConfig, type Sync, type TopicConfig } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import * as encoding from "lib0/encoding";
 import * as Y from "yjs";
@@ -416,3 +416,247 @@ testFor("database", "nats")(
   },
   30_000,
 );
+
+for (const abandoned of [false, true])
+  testFor("nats")(
+    `a publication stalled across ${abandoned ? "abandoned admission" : "lease loss"}, freeze and prune is retained but never acknowledged`,
+    async () => {
+      setSystemTime(NOW);
+      const connection = await connectTestNats();
+      const namespace = testSyncNamespace("text-room-prune-aba");
+      const sync = createSync({ connection, namespace, application: "test", defaults: { replicas: 1 } });
+      const publishing = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const checking = Promise.withResolvers<void>();
+      const offered = Promise.withResolvers<void>();
+      const confirm = Promise.withResolvers<void>();
+      const abandon = Promise.withResolvers<never>();
+      const publicationFinished = Promise.withResolvers<void>();
+      let stalled = false;
+      let admission: { config: MutexConfig; lock: Lock } | undefined;
+      const measured: Sync = {
+        ...sync,
+        mutex(config) {
+          const mutex = sync.mutex(config);
+          return {
+            ...mutex,
+            async withLock(input, run) {
+              const lock = await mutex.acquire(input);
+              if (!lock) return null;
+              const first = config.id.endsWith(":admission") && !admission;
+              if (config.id.endsWith(":admission")) admission = { config, lock };
+              const running = run(lock);
+              if (first) void running.finally(() => publicationFinished.resolve()).catch(() => {});
+              try {
+                return abandoned && first ? await Promise.race([running, abandon.promise]) : await running;
+              } finally {
+                await mutex.release(lock);
+              }
+            },
+          };
+        },
+        topic<T>(config: TopicConfig) {
+          const topic = sync.topic<T>(config);
+          return {
+            ...topic,
+            hub(options) {
+              const hub = topic.hub(options);
+              return {
+                ...hub,
+                subscribe: async function* (input) {
+                  for await (const event of hub.subscribe(input)) {
+                    if (event.data && typeof event.data === "object" && "kind" in event.data && event.data.kind === "sync")
+                      offered.resolve();
+                    yield event;
+                  }
+                },
+              };
+            },
+            async publish(input: Parameters<typeof topic.publish>[0]) {
+              if (!stalled && input.data && typeof input.data === "object" && "kind" in input.data && input.data.kind === "sync") {
+                stalled = true;
+                publishing.resolve();
+                await resume.promise;
+              }
+              return topic.publish(input);
+            },
+          };
+        },
+      };
+      bindProcessSync(measured, connection);
+      const declaration = {
+        id: "text",
+        lifecycle: { maxBytes: 65536 },
+        whenFull: "reject",
+        retention: { maxBytes: 4 * 1024 * 1024 },
+        maxPayloadBytes: 1024 * 1024,
+      } as const;
+      const log = sharedText.define(declaration);
+      const otherLog = sharedText.define(declaration);
+      let stored: SharedTextRoomSnapshot = {
+        state: new Uint8Array([0, 0]),
+        text: "",
+        cursor: log.topic().cursorAt(0),
+        restoreRevision: "0",
+      };
+      const pipeline = sharedText.snapshots({
+        log,
+        logger: quiet,
+        job: () => sync.job(sharedTextSnapshotJobConfig({ id: "snapshots", retention: { maxAgeMs: 86_400_000, maxBytes: 65536 } })),
+        store: {
+          load: async () => stored,
+          save: async (_id, input) => {
+            stored = input;
+          },
+          list: async () => [],
+          advance: async () => false,
+          recover: async () => {
+            throw new Error("Unexpected gap");
+          },
+        },
+      });
+      let pausePostcheck = false;
+      const get = log.lifecycle!.get;
+      log.lifecycle!.get = async (id) => {
+        const entry = await get(id);
+        if (pausePostcheck && entry?.value.state === "frozen") {
+          checking.resolve();
+          await confirm.promise;
+        }
+        return entry;
+      };
+      const makeRoom = (roomLog: typeof log) =>
+        createSharedTextRoom({
+          logger: quiet,
+          log: roomLog,
+          snapshots: { queue: async () => {}, flushNow: pipeline.flushNow },
+          awarenessTopic: () => sync.topic({ id: "awareness", retention: { maxAgeMs: 60000, maxBytes: 65536 }, dedupeWindowMs: 60000 }),
+          protocol: {
+            wsType: {
+              replayRequest: "replay",
+              replayReady: "ready",
+              syncPublish: "edit",
+              syncPush: "push",
+              awarenessPublish: "cursor",
+              awarenessPush: "awareness",
+              error: "error",
+            },
+            documentId: z.string(),
+            maxSyncPayloadLength: 1024 * 1024,
+            streamCursorPattern: /^s6t\./,
+            decode: (x) => x,
+            encode: (type, payload) => ({ type, payload }),
+          },
+          adapter: {
+            authenticate: async () => ({ id: "user" }),
+            authorize: async () => ({ ok: true, resolvedDocId: "doc", canWrite: true }),
+            load: async () => stored,
+            actor: (user) => ({ kind: "user", id: user.id }),
+            awarenessUser: (user) => ({ userId: user.id, name: "User", color: "#fff" }),
+            revalidate: async () => ({ ok: true, canWrite: true }),
+            recover: async () => {
+              throw new Error("Unexpected gap");
+            },
+          },
+        });
+      const a = makeRoom(log),
+        b = makeRoom(otherLog);
+      const ready = Promise.withResolvers<void>();
+      const closed = Promise.withResolvers<void>();
+      const packets: Array<{ type: string; payload?: { code?: string } }> = [];
+      const ctx = createSharedTextRoomContext<{ id: string }, SharedTextRoomMessages>(
+        {
+          send: (raw) => {
+            const packet = JSON.parse(raw);
+            packets.push(packet);
+            if (packet.type === "ready") ready.resolve();
+          },
+          close: () => closed.resolve(),
+        },
+        "credential",
+        messages,
+      );
+      const peer = a.connect(ctx);
+      const text = "late input".repeat(30000);
+      const source = new Y.Doc();
+      source.clientID = 99;
+      let pending: Promise<unknown> | undefined;
+      try {
+        await a.handle(ctx, { type: "replay", payload: { docId: "doc", restoreRevision: "0" } });
+        await Promise.race([
+          ready.promise,
+          closed.promise.then(() => {
+            throw new Error("Room closed before ready");
+          }),
+        ]);
+        source.getText(SHARED_TEXT_NAME).insert(0, text);
+        pending = a.handle(ctx, {
+          type: "edit",
+          payload: { docId: "doc", restoreRevision: "0", baseCursor: stored.cursor, payload: toBase64(Y.encodeStateAsUpdate(source)) },
+        });
+        await publishing.promise;
+        expect(admission).toBeDefined();
+        // Expire this exact owner deterministically, without a wall-clock sleep.
+        // The blocked publication is still in flight, just as after lease expiry.
+        if (abandoned) {
+          abandon.reject(new ConflictError("admission expired"));
+          await pending;
+          expect(packets.some((packet) => packet.payload?.code === "BUSY")).toBe(true);
+        } else expect(await sync.mutex(admission!.config).release(admission!.lock)).toBe(true);
+        const frozen = await b.freeze("doc");
+        expect(frozen?.text).toBe("");
+        await log.topic().prune({ through: frozen!.cursor });
+        expect(await log.topic().latestCursor({ tenantId: "doc" })).toBeNull();
+        pausePostcheck = true;
+        resume.resolve();
+        await checking.promise;
+        await offered.promise;
+        const late = await log.topic().latestCursor({ tenantId: "doc" });
+        expect(late).not.toBeNull(); // NATS expected subject sequence zero matched again.
+        // The broker may deliver before the post-check finishes; no echo can
+        // acknowledge that event while admission is still unconfirmed.
+        expect(packets.filter((packet) => packet.type === "push")).toHaveLength(1); // Initial snapshot only.
+        confirm.resolve();
+        await pending;
+        await publicationFinished.promise;
+        if (abandoned) {
+          await a.handle(ctx, {
+            type: "edit",
+            payload: {
+              docId: "doc",
+              restoreRevision: "0",
+              retry: true,
+              baseCursor: stored.cursor,
+              payload: toBase64(Y.encodeStateAsUpdate(source)),
+            },
+          });
+        }
+        await closed.promise;
+        expect(packets.some((packet) => packet.type === "error" && packet.payload?.code === "DOCUMENT_FROZEN")).toBe(true);
+        expect(packets.filter((packet) => packet.type === "push")).toHaveLength(1);
+        pausePostcheck = false;
+        expect((await pipeline.flushNow("doc"))?.text).toBe(text);
+        await b.thaw("doc", { freezeCursor: frozen!.cursor });
+        const drained = await b.freeze("doc");
+        expect(drained!.text).toBe(text);
+        expect(drained!.state).not.toEqual(frozen!.state);
+      } finally {
+        resume.resolve();
+        confirm.resolve();
+        await pending?.catch(() => {});
+        await peer.close();
+        await a.drain();
+        await b.drain();
+        await pipeline.stop();
+        source.destroy();
+        unbindProcessSync();
+        await sync.drain();
+        const manager = await jetstreamManager(connection);
+        for await (const stream of manager.streams.list())
+          if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);
+        await connection.drain();
+        setSystemTime();
+      }
+    },
+    30_000,
+  );

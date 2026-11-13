@@ -1,30 +1,43 @@
 import { createHash } from "node:crypto";
 import { ConflictError } from "@k2b/sync";
-import { DiscardPolicy, JetStreamApiError, jetstream, jetstreamManager, StorageType } from "@nats-io/jetstream";
+import { DiscardPolicy, JetStreamApiError, jetstream, jetstreamManager, StorageType, type StreamInfo } from "@nats-io/jetstream";
 import { z } from "zod";
 import { getProcessSync } from "../_internal/process-sync";
 import { SharedTextBoundaryError } from "./boundary";
 
 const valueSchema = z.discriminatedUnion("state", [
-  z.object({ state: z.literal("open") }),
+  z.object({
+    state: z.literal("open"),
+    thaw: z.object({ freezeCursor: z.string(), cursor: z.string().nullable(), restoreRevision: z.string() }).optional(),
+  }),
   z.object({ state: z.literal("frozen"), expiresAt: z.number(), freezeCursor: z.string().nullable(), restoreRevision: z.string() }),
   z.object({ state: z.literal("closed"), freezeCursor: z.string(), closeCursor: z.string().nullable(), restoreRevision: z.string() }),
 ]);
 export type SharedTextLifecycleValue = z.infer<typeof valueSchema>;
 export type SharedTextLifecycleEntry = { revision: number; value: SharedTextLifecycleValue };
 export type SharedTextLifecycleStore = {
+  /** Only after durable domain retirement and producer shutdown; IDs must never be reused. */
+  forget(docId: string): Promise<void>;
   get(docId: string): Promise<SharedTextLifecycleEntry | null>;
   put(docId: string, previous: SharedTextLifecycleEntry | null, value: SharedTextLifecycleValue): Promise<SharedTextLifecycleEntry>;
 };
 
 /** Call under document admission. Expiry opens admission AND invalidates the old close token atomically. */
 export const checkLifecycleAdmission = async (store: SharedTextLifecycleStore, docId: string) => {
-  const entry = await store.get(docId);
+  let entry = await store.get(docId);
   if (entry?.value.state === "closed") throw new SharedTextBoundaryError("DOCUMENT_CLOSED");
   if (entry?.value.state === "frozen") {
     if (entry.value.expiresAt > Date.now()) throw new SharedTextBoundaryError("DOCUMENT_FROZEN");
-    await store.put(docId, entry, { state: "open" });
+    entry = await store.put(docId, entry, { state: "open" });
   }
+  const revision = entry?.revision;
+  // A prune can make expectedAfter:null match again after an expired owner
+  // resumes. Never acknowledge a publication across a lifecycle transition.
+  return async () => {
+    const current = await store.get(docId);
+    if (current?.value.state === "closed") throw new SharedTextBoundaryError("DOCUMENT_CLOSED");
+    if (current?.revision !== revision) throw new SharedTextBoundaryError("DOCUMENT_FROZEN");
+  };
 };
 
 /** One compacted stream per document log; never a stream per document or a prunable prefix. */
@@ -77,7 +90,28 @@ export const createLifecycleStore = (config: { id: string; maxBytes: number; rea
       num_replicas: replicas,
       metadata: { "cloud.shared-text.lifecycle": config.id, "sync.namespace": control.namespace },
     };
-    const actual = (await manager.streams.add(declared)).config;
+    let existing: StreamInfo | undefined;
+    try {
+      existing = await manager.streams.info(name);
+    } catch (error) {
+      if (!(error instanceof JetStreamApiError && error.code === 10059)) throw error;
+    }
+    if (existing) {
+      for (const key of ["max_msgs_per_subject", "max_msg_size", "max_age", "discard", "storage"] as const)
+        if (existing.config[key] !== declared[key]) throw new Error(`Shared text lifecycle stream configuration differs: ${key}`);
+      if (
+        existing.config.subjects?.length !== 1 ||
+        existing.config.subjects[0] !== declared.subjects[0] ||
+        existing.config.metadata?.["cloud.shared-text.lifecycle"] !== config.id ||
+        existing.config.metadata?.["sync.namespace"] !== control.namespace
+      )
+        throw new Error("Shared text lifecycle stream identity differs");
+      // Reject a shrink rather than risk losing another document's fence.
+      if (config.maxBytes < existing.config.max_bytes) throw new RangeError("Lifecycle maxBytes cannot be decreased");
+      if (existing.config.max_bytes !== config.maxBytes || existing.config.num_replicas !== replicas)
+        existing = await manager.streams.update(name, { max_bytes: config.maxBytes, num_replicas: replicas });
+    }
+    const actual = (existing ?? (await manager.streams.add(declared))).config;
     for (const key of ["max_bytes", "max_msgs_per_subject", "max_msg_size", "max_age", "discard", "storage", "num_replicas"] as const)
       if (actual[key] !== declared[key]) throw new Error(`Shared text lifecycle stream configuration differs: ${key}`);
     return { manager, client: jetstream(connection), name, subject };
@@ -89,6 +123,19 @@ export const createLifecycleStore = (config: { id: string; maxBytes: number; rea
     }));
   const keyFor = (docId: string) => createHash("sha256").update(docId).digest("hex");
   return {
+    async forget(docId) {
+      const entry = await this.get(docId);
+      if (!entry) return;
+      if (entry.value.state !== "closed" || !entry.value.closeCursor)
+        throw new ConflictError("Only a completed, retired close can be forgotten");
+      const { manager, name } = await ready();
+      // Delete the exact revision, never a concurrently replaced subject value.
+      await manager.streams.deleteMessage(name, entry.revision);
+      const key = keyFor(docId);
+      const old = cache.get(key);
+      if (old) bytes -= old.bytes;
+      cache.delete(key);
+    },
     async get(docId) {
       const { manager, name, subject } = await ready();
       const key = keyFor(docId);

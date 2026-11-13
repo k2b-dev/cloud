@@ -890,6 +890,9 @@ test("a snapshot repair cannot overwrite a restore fence while its SQL transacti
 for (const state of ["frozen", "closed"] as const)
   test(`snapshot repair respects a durable ${state} authority after its log marker was pruned`, async () => {
     const authority: SharedTextLifecycleStore = {
+      forget: async () => {
+        throw new Error("Not used");
+      },
       get: async () => ({
         revision: 1,
         value:
@@ -909,3 +912,27 @@ for (const state of ["frozen", "closed"] as const)
     expect(f.publications).toHaveLength(0);
     expect(f.saves).toHaveLength(0);
   });
+
+test("a no-op snapshot repair preserves an expired freeze token", async () => {
+  let reads = 0;
+  const authority: SharedTextLifecycleStore = {
+    forget: async () => {
+      throw new Error("Not used");
+    },
+    get: async () => {
+      reads++;
+      return {
+        revision: 1,
+        value: { state: "frozen", expiresAt: NOW.getTime() - 1, freezeCursor: cursor(10), restoreRevision: "revision" },
+      };
+    },
+    put: async () => {
+      throw new Error("No edit must invalidate the token");
+    },
+  };
+  const f = fixture({ maxLength: 100, plan: () => [] }, authority);
+  await f.run();
+  expect(reads).toBe(0);
+  expect(f.publications).toHaveLength(0);
+  expect(f.saves).toHaveLength(1);
+});

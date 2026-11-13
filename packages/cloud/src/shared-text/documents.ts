@@ -31,7 +31,7 @@ import type {
 type PlannedEdit = string | readonly SharedTextChange[] | { update: Uint8Array };
 
 type DocumentLog = {
-  checkLifecycle?(docId: string): Promise<void>;
+  checkLifecycle?(docId: string): Promise<() => Promise<void>>;
   /** Ordered custom transports may supply their own admission owner. */
   admit?: SharedTextAdmission;
   /** Omitted logs use Sync’s default message payload limit (128 KiB) for diffs and skip the event size check. */
@@ -98,8 +98,8 @@ export const bindDocuments = <Saved, Context>(
     signal?: AbortSignal,
     observed?: { cursor: string; data: SharedTextSyncEvent },
   ) => {
-    await checkLifecycle?.(docId);
-    if (!target || !events) return;
+    const confirm = await checkLifecycle?.(docId);
+    if (!target || !events) return confirm;
     if (observed?.cursor === target) cachedTail = { cursor: target, event: observed.data };
     if (cachedTail?.cursor !== target) {
       for await (const entry of historyCache!.events(docId, target, target, signal))
@@ -107,6 +107,7 @@ export const bindDocuments = <Saved, Context>(
       if (cachedTail?.cursor !== target) throw new Error("Document admission head is unavailable");
     }
     checkSharedTextBoundary(cachedTail.event, revision);
+    return confirm;
   };
   const writeUnowned = async (
     docId: string,
@@ -142,8 +143,9 @@ export const bindDocuments = <Saved, Context>(
     const doc = createDoc(stored);
     try {
       let contributors: SharedTextContributor[] = [];
+      let confirm: (() => Promise<void>) | undefined;
       try {
-        await boundary(docId, target, stored.restoreRevision, options.signal);
+        confirm = await boundary(docId, target, stored.restoreRevision, options.signal);
         if (target)
           contributors = await replay({
             docId,
@@ -234,7 +236,7 @@ export const bindDocuments = <Saved, Context>(
           // Ordinary Yjs edits commute with concurrent input. Keep their item
           // identities, but recheck lifecycle/restore authority at the new head.
           const latest = await handle.latestCursor({ tenantId: docId });
-          await boundary(docId, latest, stored.restoreRevision, options.signal);
+          confirm = await boundary(docId, latest, stored.restoreRevision, options.signal);
           if (latest === publishAfter) throw error;
           publishAfter = latest;
           options.signal?.throwIfAborted();
@@ -244,6 +246,7 @@ export const bindDocuments = <Saved, Context>(
         }
       };
       const published = await publish();
+      await confirm?.();
       let persistedDoc: Y.Doc | undefined;
       try {
         persistedDoc = createDoc(stored);
@@ -408,7 +411,7 @@ export const bindDocuments = <Saved, Context>(
         if (!target && stored.cursor !== options.baseCursor) return { status: "recoveryRequired" };
         const doc = createDoc(stored);
         try {
-          await boundary(docId, target, stored.restoreRevision, options.signal, options.observedHead);
+          const confirm = await boundary(docId, target, stored.restoreRevision, options.signal, options.observedHead);
           if (target && (!stored.cursor || compareStreamCursor(stored.cursor, target) < 0))
             for await (const event of historyCache!.events(docId, stored.cursor, target, options.signal))
               applySharedTextEvent(doc, event, docId, stored.restoreRevision);
@@ -468,6 +471,7 @@ export const bindDocuments = <Saved, Context>(
             originPeerId: options.originPeerId,
           };
           const published = await handle.publish({ tenantId: docId, expectedAfter: target, data: event });
+          await confirm?.();
           historyCache!.remember(docId, target, { cursor: published.cursor, data: event });
           const snapshot = {
             state: encoded ?? Y.encodeStateAsUpdate(doc),
@@ -521,7 +525,7 @@ export const bindDocuments = <Saved, Context>(
         const target = await handle.latestCursor({ tenantId: docId });
         const doc = createDoc(stored);
         try {
-          await boundary(docId, target, stored.restoreRevision, options.signal);
+          const confirm = await boundary(docId, target, stored.restoreRevision, options.signal);
           if (target)
             await replay({
               docId,
@@ -548,6 +552,7 @@ export const bindDocuments = <Saved, Context>(
               originPeerId: null,
             },
           });
+          await confirm?.();
           return {
             state,
             text: doc.getText(SHARED_TEXT_NAME).toString(),

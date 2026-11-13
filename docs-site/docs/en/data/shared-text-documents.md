@@ -1011,6 +1011,16 @@ count. It reserves that additional budget on every replica. All nodes using
 the log must deploy the same declaration before enabling these methods;
 older nodes without lifecycle support must be drained first. A full
 lifecycle store rejects changes rather than evicting another document's fence.
+Allow roughly 250–300 bytes per untouched freeze/close entry, plus subject,
+header and broker overhead; thaw retry metadata and long revision/cursor values
+need more. Size for the peak number of retained documents with headroom, using
+the stream's measured `state.bytes`. For example, one million 300-byte entries
+need at least 300 MB per replica before headroom. This reservation is separate
+from the document log. Increasing `maxBytes` or changing the document log's
+replica count updates the lifecycle stream on initialization without clearing
+its entries. All nodes must use the new declaration; lowering `maxBytes` is
+rejected. A full store fails new freezes/changes visibly and leaves existing
+fences intact; expand its budget or retire documents before retrying.
 Preserve this stream alongside document snapshots and the log in backups.
 
 A room configured with this lifecycle store and `snapshots.flushNow` exposes:
@@ -1019,6 +1029,7 @@ A room configured with this lifecycle store and `snapshots.flushNow` exposes:
 room.freeze(docId, { signal? }): Promise<SharedTextRoomFreeze | null>
 room.thaw(docId, { signal?, freezeCursor? }): Promise<string | null>
 room.closeDocument(docId, { freezeCursor, signal? }): Promise<string | null>
+log.lifecycle!.forget(docId): Promise<void>
 // SharedTextRoomFreeze:
 // { state: Uint8Array, text: string, cursor: string,
 //   restoreRevision: string, expiresAt: number }
@@ -1058,9 +1069,18 @@ log marker was pruned. A different token conflicts. A crash after durable
 close but before its notification is completed by retrying the same close.
 Close publishes a terminal notification and closes sockets on every node
 with `1008 DOCUMENT_CLOSED`; fresh joins read the durable authority too.
-The browser stops reconnecting. Thaw publishes an open notification; it
-cannot reopen a closed document. Both return a marker cursor, or null for a
-missing document.
+The browser stops reconnecting. Thaw requires the matching cursor while
+frozen and publishes an open notification; it cannot reopen a closed document.
+Retrying thaw with the same token returns its original marker, including after
+a crash between opening authority and notification. An already open document
+without a token is a no-op returning null; a stale token conflicts.
+
+After durable domain retirement, complete the close intent, deny future joins
+and edits in the application, and drain existing producers and retry intents.
+Then call `log.lifecycle!.forget(docId)` to reclaim the lifecycle entry. It
+requires a completed close and is idempotent once absent. Never reuse that
+document ID: forgetting removes the room's fence, so the domain must continue
+to reject it. A retry of close after forgetting is no longer supported.
 
 The durable frozen value survives its 60-second admission lease. After expiry,
 the next admission atomically invalidates that token before reopening the
@@ -1075,8 +1095,10 @@ with a different token. There is no renewal, polling, or recovery worker.
 Lifecycle authority lives outside the prunable document log. Prefix pruning
 through a covering snapshot may remove active freeze and terminal markers;
 active freezes remain enforced and closed documents never pin the prefix.
-A freeze interrupted before publishing its marker still blocks admission
-only until its lease expires. Lifecycle calls reject an expiring or evicting
+If a marker was definitely rejected, freeze CAS-reverts preparation to the
+previous value, allowing immediate retry. A crash or uncertain publish outcome
+keeps admission fenced until the lease expires; it must not undo a marker that
+may have been published. Lifecycle calls reject an expiring or evicting
 log or a declaration without lifecycle storage. Notebooks keeps its existing
 declaration and does not use these optional methods. Its restore marker
 changes generation without a room lifecycle check. An adapter combining
@@ -1102,19 +1124,30 @@ clears the gate. Ordinary publication packets are unchanged. During a rolling
 deploy, older browser providers do not recognize BUSY: after a CAS conflict
 they retain their edits until `SYNC_TIMEOUT` (about 30 seconds), then reconnect
 and resend without losing input.
-A stalled or expired owner still has to pass expected-head CAS. Ordinary
-server edits retry at most three CAS conflicts, with 25/50 ms backoff,
+A stalled or expired owner still has to pass expected-head CAS. A prune to an
+empty tenant can make that CAS match again. Every lifecycle-enabled content writer
+therefore rereads the authoritative lifecycle revision after publication and
+before acknowledging or returning success. A changed revision rejects the
+acknowledgement as frozen (or closed), even if a thaw already followed it.
+The publisher's live echo waits for this check too. A late event that passed
+the emptied-subject CAS remains in the log: rejection does not roll it back.
+Snapshot replay preserves it, repair stays fenced, and the next freeze drains
+a state that includes it. Applications must compare the frozen state with the
+visible content they intend to submit and retry/reconcile any difference,
+including when verifying a prior snapshot. Do not prune beyond a covering
+persisted snapshot or silently submit a previous freeze's state.
+Ordinary server edits retry at most three CAS conflicts, with 25/50 ms backoff,
 reusing the prepared update identities. Freeze releases admission after its
 marker and drains persistence outside that lease.
 
 An uncontended edit adds four NATS KV operations for admission acquisition
 and release, plus the existing head lookup and CAS publication: **zero SQL
-per edit**. Opting into lifecycle adds one authoritative JetStream last-value
-read per admission, without a replay consumer; decoded values are cached by
-broker revision within `lifecycle.maxBytes`. An expired freeze adds one CAS
-write to invalidate its token. Notifications never substitute for that read,
-so a delayed event or a pruned marker cannot bypass the fence. Awareness and
-fan-out add no lifecycle lookups. Logs without lifecycle storage, including
+per edit**. Opting into lifecycle adds two authoritative JetStream last-value
+reads per successful edit (before validation and after publication), without a
+replay consumer; decoded values are cached by broker revision within `lifecycle.maxBytes`. An expired freeze adds one CAS
+write to invalidate its token. Notifications never substitute for those reads, so a delayed event or a pruned
+marker cannot bypass acknowledgement fencing. Awareness and fan-out add no
+lifecycle lookups. Logs without lifecycle storage, including
 Notebooks, keep their existing hot-path cost.
 
 A disposable per-context state and head cache advances with live input and
