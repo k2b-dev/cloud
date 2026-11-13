@@ -908,6 +908,16 @@ suite("mail sent message projection", () => {
               })
             ).ok,
           ).toBe(true);
+          // Direct service admission prepares an export for reconciliation. Drain it
+          // while this mailbox's connector fixture still owns the global spies.
+          await submitDueDraftProjectionWork();
+          await waitForDraftExport(target.draftId, ["active"]);
+          await waitFor(async () => {
+            const pending = await sql`SELECT id FROM mail.draft_provider_snapshots
+              WHERE draft_id = ${target.draftId}::uuid AND direction = 'export'
+                AND state IN ('prepared', 'appending', 'retiring')`;
+            return pending.length === 0;
+          }, "failed-send editing export drained before connector restore");
         } else {
           expect(lifecycle?.state).toBe("closed");
           expect(saved?.close_cursor).toBeString();
