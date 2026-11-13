@@ -171,6 +171,9 @@ suite("shared drafts default upgrade", () => {
     expect(batches).toHaveLength(1);
     expect(batches[0]).toHaveLength(SHARED_DRAFTS_BATCH_SIZE);
     expect(batches[0]).toEqual([...batches[0]!].sort());
+    // A 0.76 replica cannot set the explicit-choice flag, but completed cursor work must stay untouched.
+    const behindId = batches[0]![0]!;
+    await sql`UPDATE mail.mailboxes SET draft_edit_mode = 'lock' WHERE id = ${behindId}::uuid`;
     const aheadId = "10000000-0000-0000-0000-000000000201";
     expect(aheadId > batches[0]!.at(-1)!).toBe(true);
     const access = value(await createAccess({ principal: { type: "user", userId }, permission: "admin" }));
@@ -178,8 +181,13 @@ suite("shared drafts default upgrade", () => {
     value(await updateMailbox({ context, mailboxId: aheadId, draftEditMode: "lock" }));
     expect(await migrateSharedDrafts()).toMatchObject({ completed: true, mailboxes: 200, batches: 2 });
     expect(await editModes.newDraftEditMode(sql, aheadId)).toBe("lock");
+    expect(
+      await sql<
+        { draft_edit_mode: string; draft_edit_mode_explicit: boolean }[]
+      >`SELECT draft_edit_mode, draft_edit_mode_explicit FROM mail.mailboxes WHERE id = ${behindId}::uuid`,
+    ).toEqual([{ draft_edit_mode: "lock", draft_edit_mode_explicit: false }]);
     const [locked] = await sql`SELECT count(*)::int AS count FROM mail.mailboxes WHERE draft_edit_mode = 'lock'`;
-    expect(locked?.count).toBe(1);
+    expect(locked?.count).toBe(2);
   });
 
   test("10000 mailboxes and 50000 open drafts stay within the batch and statement budgets", async () => {
