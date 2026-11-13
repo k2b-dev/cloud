@@ -399,7 +399,7 @@ const revokePhones = async (
 /** Copies a web family to a new sid, epoch and signer; sign-in time, expiry, origin, idle limit and the Cloud Login
  * device that approved it stay the same, so removing that device still ends the copy. */
 const copyFamily = async (tx: SQL, from: string, to: { sid: string; authEpoch: number; kid: string }): Promise<void> => {
-  await tx`
+  const [copied] = await tx<{ last_input_at: Date | null }[]>`
     INSERT INTO auth.session_families (
       sid, user_id, auth_epoch, signing_kid, issued_at, expires_at, created_request_id, created_user_agent, legal_pending,
       pwa_device_id, app_device_id, last_input_at
@@ -407,7 +407,9 @@ const copyFamily = async (tx: SQL, from: string, to: { sid: string; authEpoch: n
     SELECT ${to.sid}::uuid, user_id, ${to.authEpoch}, ${to.kid}, issued_at, expires_at,
       created_request_id, created_user_agent, legal_pending, pwa_device_id, app_device_id, last_input_at
     FROM auth.session_families WHERE sid = ${from}::uuid
+    RETURNING last_input_at
   `;
+  if (copied?.last_input_at) await scheduleSessionIdleAccessChanged(tx, to.sid, await sharedWorkstationIdleSeconds(tx));
 };
 
 /**
@@ -730,6 +732,10 @@ export const session = {
     // Handoff precedes the response so the person signing in cannot turn the notice off first.
     if (signIn.notify !== null && notice) await announceNewBrowser(signIn.notify, notice);
 
+    // Switching accounts ends only the web family this request replaces.
+    const previousToken = session.getWebToken(c);
+    const previous = previousToken ? await verifyCredential(previousToken) : null;
+    if (previousToken && previous && previous.sub !== userId) await revokeToken(previousToken, c.req.header("x-request-id"));
     session.setWebCookie(c, clientToken, expiresAt);
     setBrowserCookie(c, cookie);
     if (sharedWorkstation) {
