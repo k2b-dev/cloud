@@ -25,6 +25,7 @@ for (const [id, extra] of [
   ["wide-secondary", { variant: "secondary" }],
   ["wide-menu", { primaryItems: [{ label: "other.ts", action: () => {} }], primaryMenuLabel: "Choose file" }],
   ["natural-menu", { primaryItems: [{ label: "other.ts", action: () => {} }], primaryMenuLabel: "Choose file" }],
+  ["toned", { class: "host-tone", tooltip: "Send now" }],
 ]) app.append(button(id, extra));
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
@@ -81,6 +82,28 @@ describe("@k2b/ui SplitButton width", () => {
       expect(natural.root).toBeLessThan(150);
       expect(natural.primary + natural.trigger - 1).toBe(natural.root);
       expect((widths["natural-menu"] as Widths).root).toBeLessThan(150);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a host tone on the control colours both segments alike, also when the main action has a tooltip", async () => {
+    const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    try {
+      await page.setContent(
+        `<!doctype html><html><head><style>${css}</style><style>.host-tone{--k2b-action-solid:rgb(142, 27, 111)}</style></head>` +
+          `<body class="k2b-ui"><main id="app"></main></body></html>`,
+      );
+      await page.addScriptTag({ content: script });
+      await page.locator("#toned .k2b-split-button__menu-trigger").waitFor();
+      await settled(page);
+      const fills = await page.evaluate(() => {
+        const host = document.getElementById("toned")!;
+        const fill = (selector: string) => getComputedStyle(host.querySelector(selector)!).backgroundColor;
+        return { primary: fill(".k2b-split-button__primary"), trigger: fill(".k2b-split-button__menu-trigger") };
+      });
+      expect(fills.primary).toBe("rgb(142, 27, 111)");
+      expect(fills.trigger).toBe(fills.primary);
     } finally {
       await page.close();
     }

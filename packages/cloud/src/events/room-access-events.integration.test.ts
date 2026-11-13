@@ -1,11 +1,13 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { SQL } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as auth } from "../../../core/src/migrate/core/auth";
 import { migrate as events } from "../../../core/src/migrate/core/events";
 import { migrate } from "../../../core/src/migrate/core/room-access-events";
 import { migrate as settings } from "../../../core/src/migrate/core/settings";
 import { sharedWorkstationIdleSeconds } from "../services/session/shared-workstation";
+import * as settingService from "../services/settings";
 import { lockSettingChanges, resetChangedSettings, writeKey } from "../services/settings/store";
 import { scheduleSessionIdleAccessChanged } from "./app-access";
 import { liveOutbox } from "./live-delivery";
@@ -32,6 +34,22 @@ databaseSuite()("room access sources use Core's transactional live outbox", () =
   });
   afterAll(async () => {
     await database?.drop();
+  });
+  test("idle deadline seeding uses its single supplied connection and durable policy defaults", async () => {
+    const pool = new SQL(database.url, { max: 1, connectionTimeout: 5 });
+    const globalRead = spyOn(settingService, "get").mockImplementation(async () => {
+      throw new Error("Migration must read policy on its transaction, without the global cache");
+    });
+    try {
+      await pool`DELETE FROM settings.migrations WHERE name = 'room-idle-deadlines-v1'`;
+      await migrate(pool);
+      expect(await pool`SELECT name FROM settings.migrations WHERE name = 'room-idle-deadlines-v1'`).toHaveLength(1);
+      await migrate(pool);
+      expect(globalRead).not.toHaveBeenCalled();
+    } finally {
+      globalRead.mockRestore();
+      await pool.close();
+    }
   });
   const due = () => sql<{ payload: { d: { type: string } } }[]>`SELECT payload FROM events.outbox
     WHERE app_id = 'core' AND kind = 'live' AND next_attempt_at <= clock_timestamp()`;

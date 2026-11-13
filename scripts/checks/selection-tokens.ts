@@ -159,13 +159,13 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
   },
   {
     file: "packages/mail/src/styles/app.css",
-    subject: ".mail-compose-action, .mail-compose-action + .k2b-split-button__menu-trigger { --k2b-action-solid }",
-    reason: "Primary action: the one filled action in the app color (workspace R5).",
+    subject: ".mail-compose-action { --k2b-action-solid }",
+    reason: "Primary action: the one filled action in the app color (workspace R5); the class sits on the whole split button.",
   },
   {
     file: "packages/mail/src/styles/app.css",
-    subject: ".mail-compose-action, .mail-compose-action + .k2b-split-button__menu-trigger { --k2b-action-solid-hover }",
-    reason: "Primary action: the one filled action in the app color (workspace R5).",
+    subject: ".mail-compose-action { --k2b-action-solid-hover }",
+    reason: "Primary action: the one filled action in the app color (workspace R5); the class sits on the whole split button.",
   },
   {
     file: "packages/mail/src/styles/app.css",

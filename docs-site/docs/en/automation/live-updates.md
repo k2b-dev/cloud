@@ -5,7 +5,7 @@ section: Automation
 order: 645
 description: Write an application's live updates in the transaction that makes the change and serve them to its open tabs over one socket.
 tags: [live, realtime, outbox, transactions, websocket]
-updated: 2026-10-31
+updated: 2026-11-12
 ---
 
 # Live updates
@@ -358,6 +358,27 @@ at most 256 KiB.
 
 The application's topic, `cloud:live:<application ID>`, retains updates for
 24 hours or 64 MiB. Its configuration is fixed for every installation.
+
+## Keep the database out of the live path
+
+An open socket receives every keystroke, cursor move, and delivery. Work per
+message multiplies with the typing speed and with every reader of the same
+document, so do it in memory and on NATS:
+
+- Check access and load state when the socket opens. After that, react to
+  access-change updates and a bounded refresh. `defineLive()` works this way,
+  with its 2-second decision cache and 10-second sweep.
+- Fan out over NATS: `defineLive()` for updates,
+  [`@k2b/cloud/shared-text`](/en/docs/data/shared-text-documents) for
+  collaborative text, and a Sync `ephemeral` registry for presence.
+- Save state lazily, in batches: on a timer, or when the last reader leaves.
+- Never run SQL, take a row lock, or load a stored document for each message,
+  keystroke, or delivery.
+
+Look in the [public exports](/en/docs/reference/api-surface) before you build
+a socket, presence, retry, rate-limit, or cache mechanism of your own. A
+second live socket beside `defineLive()` and `shared-text` is a parallel
+mechanism, and it does not get the platform's limits and access checks.
 
 ## Test channels
 

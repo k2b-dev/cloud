@@ -302,9 +302,10 @@ history is enabled. `baseCursor` is the state the browser had observed when it
 made the edit. Keep that cursor with pending bytes across reconnects; assigning
 a newer replay cursor to old input would erase the check's context.
 
-Supply the authorized snapshot from join or resync as `snapshot`; admission
-never loads the store. The room advances its base with live events and local
-publications. Admission reuses covered state and structural history, reads only
+Supply the authorized snapshot from join or resync as `snapshot`, or a
+synchronous function that reads the room's in-memory base after admission
+ownership is acquired; admission never loads the store. The room advances its
+base with live events and local publications. Admission reuses covered state and structural history, reads only
 the missing log tail, and checks changes since that base before publishing
 against the captured document head. Ordinary
 Markdown input and server `edit` calls receive the same classification: edits
@@ -330,7 +331,8 @@ update based on the current head remain safe to accept.
 `recoveryRequired` publishes nothing. Preserve the unconfirmed bytes and readable
 local text, stop automatic resubmission, and offer recovery before reopening.
 This also covers missing provenance and an incompatible restored revision.
-`notFound` means the application store no longer has the document. Other
+`notFound` means the authorized snapshot is null. `frozen` and `closed` retain
+the unconfirmed bytes and follow the room lifecycle close semantics. Other
 publication errors propagate; a known head conflict may be revalidated, while
 an unknown publication outcome must be reconciled before another attempt.
 
@@ -877,7 +879,8 @@ Access is checked once when connecting or joining a document. Reconnects
 check again. The room performs no access polling, periodic revalidation,
 or SQL on edits, awareness messages, live delivery or an idle connection.
 Only a revocation/lifecycle event may cause the adapter to query current
-access. A lost write grant closes an existing writer too. Applications must
+access. A lost write grant closes an existing writer too. A reader gaining
+write access reconnects to load its writer base. Applications must
 publish invalidations for every mutation that changes access or generation.
 An unavailable invalidation stream closes the room; reconnect establishes
 current access and a new stream.
@@ -950,14 +953,26 @@ An application can supply synchronous, SQL-free
 `snapshots.queue` still runs on leave. Mail uses three seconds of quiet with
 a thirty-second maximum delay.
 A failed final enqueue makes drain retry instead of discarding accepted work.
+Stream shutdown, base release and context reset still run if enqueueing or an
+application leave hook fails. Rejoining stops the old stream before attaching
+the new base.
 
 ### Scale and flush before a durable action
 
 Fan-out and acknowledgements travel through NATS, including back to the
-publishing socket. Process memory holds only disposable connection state.
-Any pod can accept a reconnect. Snapshot jobs retain their existing partitioned
+publishing socket. Each node keeps one disposable live `Y.Doc` per document
+with local writers, shared across those sockets and released with its last
+writer. Readers keep no admission base. Live events apply once without full
+state encoding. Admission reads the base lazily after acquiring ownership,
+reuses its cached encoding and applies only the accepted delta when current.
+A base behind the admission target catches up from the fully replayed result.
+A warm admission encodes its candidate state once. A reconnect replays from
+the base cursor even when its client cursor is newer than SQL, delivering
+only events beyond the client cursor. Any pod can accept a reconnect. Snapshot jobs retain their existing partitioned
 ordering; synchronous flush and background writers additionally share one
-per-document distributed lease. Stores must still fence generation and
+per-document distributed lease. A background job waiting for that lease
+occupies its job slot for up to 120 seconds (601 attempts, 200 ms apart),
+within its cancellation signal. Stores must still fence generation and
 non-newer cursors atomically, including during rolling upgrades.
 Each connection advances its disposable authorized replay base as retained
 updates arrive, so pruning covered history does not require SQL on delivery.
@@ -991,22 +1006,27 @@ room.closeDocument(docId, { signal?, freezeCursor? }): Promise<string | null>
 First wait for the browser's visible input to be accepted. `freeze` publishes
 an ordered marker using the document log's expected-head CAS, drains all
 accepted input through that marker, persists it through `flushNow`, and returns
-that exact state and marker cursor. It fails on a competing publication; retry
+that exact state and marker cursor. Persistence verifies text, state vector
+and delete set; equivalent Yjs encodings are accepted. It fails on a competing publication; retry
 the bounded action from the new head. Across nodes, an edit is either ordered
 before the marker or rejected without an acknowledgement as `DOCUMENT_FROZEN`
 (close 1013). The browser keeps its input/journal and reconnects to resend it.
 Snapshot repair cannot change the frozen state.
 
-The freeze is a nonrenewing 60-second lease starting at marker publication.
-A crashed owner therefore cannot block admission beyond 60 seconds plus the
-operator's inter-node clock skew. Nodes must have synchronized clocks.
-Complete the durable submit/send transition before `expiresAt`; if the
+The freeze is a nonrenewing 60-second lease starting just before marker
+publication. A crashed owner cannot block admission beyond 60 seconds plus
+the operator's inter-node clock skew. Keep the clock difference between nodes
+below five seconds. The returned `expiresAt` reserves that five-second safety
+margin, leaving at most 55 seconds, less admission and persistence time.
+Freeze and cursor-fenced thaw/close reject an expired safe window.
+Complete the durable submit/send transition before the returned `expiresAt`; if the
 remaining lease is insufficient, cancel and retry. `freeze` also checks that
 the lease is still current after persistence. Pass the returned cursor as
 `freezeCursor` to thaw or close: a stale or expired owner cannot release or
 close a later freeze. On cancellation/failure, `thaw` appends an open marker.
 `closeDocument` appends a terminal marker and closes sockets on every node
-with `1008 DOCUMENT_CLOSED`; the browser stops reconnecting. Close the room
+with `1008 DOCUMENT_CLOSED`; new joins also close when a covering snapshot
+already includes the marker. The browser stops reconnecting. Close the room
 before exposing the terminal domain transition. These methods return the
 marker cursor, or null for a missing document.
 
@@ -1014,15 +1034,28 @@ Lifecycle methods require a log with `whenFull: "reject"` and no age expiry.
 Keep terminal/active lifecycle markers when pruning history; deleting those
 markers would remove the admission fence. The room rejects lifecycle calls
 against an expiring or evicting log. Notebooks keeps its existing topic
-configuration and does not call these optional lifecycle methods.
+configuration and does not call these optional lifecycle methods. Its restore
+marker changes generation without a room lifecycle check. An adapter that
+combines restore with lifecycle must inspect the latest marker under the same
+document admission lease and reject restore while frozen or closed before
+publishing a generation marker; a new generation otherwise supersedes that fence.
 
 Validation and publication run under the same per-document NATS admission
 lease on every node, including server edits, freeze, thaw and close. Editors
 therefore queue behind one owner instead of repeatedly racing the head CAS.
 The lease lasts 10 seconds; acquisition and admission share a 5-second
-cancellation budget. Contenders wait 25 ms between acquisition attempts, with
-at most 101 attempts. A busy or timed-out admission closes with `1012
-STREAM_FAILED`; the browser keeps its journal and reconnects with backoff.
+cancellation budget. Admissions queue FIFO per document on each node. Broker
+contention uses exponential backoff from 25 ms to 400 ms with ±50% jitter,
+at most 16 attempts within that budget. Busy or timed-out admission responds
+with `BUSY` without closing the socket or acknowledging the edit. The browser
+keeps its journal, pauses publication and retries the full document state on
+the same socket after its configured backoff with ±50% jitter. Full-state
+retries carry optional `retry: true` on `syncPublish`; custom wire adapters
+must forward it. After BUSY the server rejects already queued deltas
+immediately, without acquiring admission again. A marked retry can acquire
+admission; missing causal dependencies remain BUSY, while incompatible
+revision or structural history still requires recovery. An accepted retry
+clears the gate. Ordinary publication packets are unchanged.
 A stalled or expired owner still has to pass expected-head CAS. Ordinary
 server edits retry at most three CAS conflicts, with 25/50 ms backoff,
 reusing the prepared update identities. Freeze releases admission after its

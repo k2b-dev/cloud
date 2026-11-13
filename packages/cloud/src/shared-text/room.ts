@@ -8,21 +8,13 @@ import {
   type TopicLiveEvent,
 } from "@k2b/sync";
 import { retry } from "@k2b/sync/retry";
-import * as Y from "yjs";
 import type { z } from "zod";
 import { logger } from "../services/logging";
 import { createTrustedTextAwareness, InvalidSharedTextAwarenessError } from "./awareness";
 import { compareStreamCursor, maxStreamCursor } from "./cursor";
-import { createDoc } from "./documents";
-import {
-  applySharedTextEvent,
-  fromBase64,
-  isValidSharedTextUpdate as isValidYjsUpdate,
-  sharedTextNodeId as NODE_ID,
-  SHARED_TEXT_NAME,
-  toBase64,
-} from "./events";
+import { fromBase64, isValidSharedTextUpdate as isValidYjsUpdate, sharedTextNodeId as NODE_ID, toBase64 } from "./events";
 import type { sharedText } from "./log";
+import { RoomWriterBase } from "./room-base";
 import { createRoomLifecycle } from "./room-lifecycle";
 import { createSharedTextRoomSchemas, SHARED_TEXT_ROOM_ERROR_CODE as ERROR_CODE, type SharedTextRoomProtocol } from "./room-protocol";
 import type { SharedTextActor, SharedTextEvent, SharedTextStoredState, SharedTextSyncEvent } from "./types";
@@ -134,9 +126,11 @@ type RoomState = {
   acceptTask: Promise<void> | null;
   accessWatchAbort: AbortController | null;
   dirty: boolean;
+  pendingSnapshot: { docId: string; targetCursor: string } | null;
   lastPublishedCursor: string | null;
-  snapshot: SharedTextRoomSnapshot | null;
-  documents?: ReturnType<ReturnType<typeof sharedText.define>["withStore"]>;
+  snapshotCursor: string | null;
+  busy: boolean;
+  base?: RoomWriterBase;
   revalidation?: Promise<boolean>;
   revalidationAgain?: boolean;
   head?: { cursor: string; data: SharedTextSyncEvent };
@@ -192,39 +186,35 @@ export function createSharedTextRoom<
         acceptTask: null,
         accessWatchAbort: null,
         dirty: false,
+        pendingSnapshot: null,
         lastPublishedCursor: null,
-        snapshot: null,
+        snapshotCursor: null,
+        busy: false,
       };
       sessions.set(ctx, current);
     }
     return current;
   };
-  const updateBase = (ctx: Context, snapshot: SharedTextStoredState) => {
-    const current = state(ctx).snapshot;
-    if (
-      snapshot.restoreRevision === ctx.restoreRevision &&
-      (!current?.cursor || (snapshot.cursor && compareStreamCursor(snapshot.cursor, current.cursor) > 0))
-    )
-      state(ctx).snapshot = snapshot;
-  };
-  const advanceSnapshot = (ctx: Context, event: TopicEvent<SharedTextSyncEvent>) => {
-    if (!ctx.docId || (event.data.restoreRevision !== undefined && event.data.restoreRevision !== ctx.restoreRevision)) return;
-    const base = state(ctx).snapshot;
-    if (base && (!base.cursor || compareStreamCursor(event.cursor, base.cursor) > 0)) {
-      const doc = createDoc(base);
-      try {
-        applySharedTextEvent(doc, event, ctx.docId, base.restoreRevision);
-        updateBase(ctx, {
-          state: Y.encodeStateAsUpdate(doc),
-          text: doc.getText(SHARED_TEXT_NAME).toString(),
-          cursor: event.cursor,
-          restoreRevision: base.restoreRevision,
-        });
-      } finally {
-        doc.destroy();
-      }
+  const bases = new Map<string, RoomWriterBase>();
+  const baseKey = (docId: string, revision: string) => JSON.stringify([docId, revision]);
+  const releaseBase = (ctx: Context) => {
+    const session = state(ctx);
+    if (!session.base || !ctx.docId) return;
+    if (--session.base.writers === 0) {
+      bases.delete(baseKey(ctx.docId, session.base.restoreRevision));
+      session.base.doc.destroy();
     }
+    session.base = undefined;
   };
+  // The binding owns the shared structural history cache, rather than each socket.
+  const documents = config.log.withStore({
+    load: async () => {
+      throw new Error("Room admission never loads the store");
+    },
+    save: async () => {
+      throw new Error("Room admission never persists snapshots");
+    },
+  });
   const log = config.logger ?? logger("shared-text-room");
   const WS_TYPE = config.protocol.wsType;
   const createYjsTopic = config.log.topic;
@@ -278,26 +268,28 @@ export function createSharedTextRoom<
 
   const queueSnapshotIfNeeded = async (ctx: Context, reason: "periodic" | "unload") => {
     const session = state(ctx);
-    if (!ctx.docId || !session.dirty || !session.lastPublishedCursor) return;
+    const request = session.pendingSnapshot;
+    if (!request) return;
 
-    const queuedCursor = session.lastPublishedCursor;
+    const queuedCursor = request.targetCursor;
     try {
       await config.snapshots.queue({
-        docId: ctx.docId,
+        docId: request.docId,
         targetCursor: queuedCursor,
         reason,
       });
-      session.dirty = session.lastPublishedCursor !== queuedCursor;
+      if (session.pendingSnapshot === request) session.pendingSnapshot = null;
+      session.dirty = session.pendingSnapshot !== null;
       if (!session.dirty) stopSnapshotScheduler(ctx);
       log.debug("Queued snapshot save", {
-        docId: ctx.docId,
-        cursor: session.lastPublishedCursor,
+        docId: request.docId,
+        cursor: queuedCursor,
         reason,
       });
     } catch (error) {
       log.error("Failed to queue snapshot save", {
-        docId: ctx.docId,
-        cursor: session.lastPublishedCursor,
+        docId: request.docId,
+        cursor: queuedCursor,
         reason,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -315,6 +307,7 @@ export function createSharedTextRoom<
   const markDirty = (ctx: Context, cursor: string) => {
     state(ctx).lastPublishedCursor = maxStreamCursor(state(ctx).lastPublishedCursor, cursor);
     state(ctx).dirty = true;
+    state(ctx).pendingSnapshot = { docId: ctx.docId!, targetCursor: state(ctx).lastPublishedCursor! };
     if (config.snapshots.markDirty) config.snapshots.markDirty({ docId: ctx.docId!, targetCursor: state(ctx).lastPublishedCursor! });
     else startSnapshotScheduler(ctx);
   };
@@ -412,8 +405,8 @@ export function createSharedTextRoom<
         const reservation = reservedBytes;
         reservedBytes = 0;
         pendingBytes = 0;
-        // Capture batches in stream order and serialize timer/size flushes. A
-        // slower row-lock acquisition must never reorder batches or readiness.
+        // Capture batches in stream order and serialize timer/size flushes so
+        // asynchronous delivery never reorders batches or readiness.
         deliveryTail = deliveryTail
           .then(async () => {
             if (!active()) return;
@@ -436,20 +429,37 @@ export function createSharedTextRoom<
       try {
         const events = async function* () {
           const head = await documentTopic.latestCursor({ tenantId: docId });
+          // A covering snapshot may already include the terminal marker. Read
+          // its broker metadata so a fresh idle connection cannot reopen it.
+          if (head && replay.after && compareStreamCursor(head, replay.after) <= 0) {
+            for await (const tail of documentTopic.replay({
+              tenantId: docId,
+              after: documentTopic.cursorAt(documentTopic.cursorSequence(head) - 1),
+              until: head,
+              signal: abort.signal,
+            })) {
+              if (tail.data.room?.state === "closed") {
+                await fatal(ctx, ERROR_CODE.closed, ERROR_CODE.closed, publicDocId);
+                return;
+              }
+            }
+          }
+          // A reconnect's delivery cursor can be ahead of SQL. The writer base
+          // must consume the missing prefix too, without echoing it to the client.
+          const baseCursor = state(ctx).base?.cursor;
+          const baseAfter = state(ctx).base ? (baseCursor ?? documentTopic.cursorAt(0)) : replay.after;
+          const after = baseAfter && (!replay.after || compareStreamCursor(baseAfter, replay.after) < 0) ? baseAfter : replay.after;
           if (head) {
             let delivered = 0;
             try {
               for await (const event of documentTopic.replay({
                 tenantId: docId,
-                after:
-                  state(ctx).snapshot?.cursor && replay.after && compareStreamCursor(state(ctx).snapshot!.cursor!, replay.after) >= 0
-                    ? replay.after
-                    : (state(ctx).snapshot?.cursor ?? documentTopic.cursorAt(0)),
+                after: after ?? documentTopic.cursorAt(0),
                 until: head,
                 signal: abort.signal,
               })) {
                 delivered++;
-                advanceSnapshot(ctx, event);
+                state(ctx).base?.apply(docId, event);
                 if (replay.after && compareStreamCursor(event.cursor, replay.after) <= 0) continue;
                 yield event;
               }
@@ -478,21 +488,21 @@ export function createSharedTextRoom<
           if (
             event.data.restoreRevision !== undefined &&
             event.data.restoreRevision !== ctx.restoreRevision &&
-            (!state(ctx).snapshot?.cursor || compareStreamCursor(event.cursor, state(ctx).snapshot!.cursor!) > 0)
+            (!state(ctx).snapshotCursor || compareStreamCursor(event.cursor, state(ctx).snapshotCursor!) > 0)
           ) {
             await requireReopen(ctx, publicDocId);
             break;
           }
           if (!state(ctx).head || compareStreamCursor(event.cursor, state(ctx).head!.cursor) > 0)
             state(ctx).head = { cursor: event.cursor, data: event.data };
-          advanceSnapshot(ctx, event);
+          state(ctx).base?.apply(docId, event);
           if (event.data.room?.state === "closed") {
             await flush();
             await fatal(ctx, ERROR_CODE.closed, ERROR_CODE.closed, publicDocId);
             break;
           }
           // Lifecycle markers have no Yjs payload and must never be echoed as receipts.
-          if (event.data.kind !== "sync") continue;
+          if (event.data.kind !== "sync" || (replay.after && compareStreamCursor(event.cursor, replay.after) <= 0)) continue;
           const update = toPushUpdate(event);
           const reservation = JSON.stringify(update).length * 2;
           if (config.deliveryBudget && !config.deliveryBudget.claim(reservation)) {
@@ -590,8 +600,22 @@ export function createSharedTextRoom<
     ctx.presencePeerId = payload.presencePeerId;
     ctx.accessScope = access.scope ?? null;
     ctx.invalidationCursor = access.invalidationCursor;
-    state(ctx).snapshot = snapshot;
+    stopLiveStream(ctx);
+    releaseBase(ctx);
+    state(ctx).busy = false;
+    state(ctx).snapshotCursor = snapshot.cursor;
     ctx.canWrite = access.canWrite ?? false;
+    if (ctx.canWrite) {
+      const key = baseKey(dbDocId, snapshot.restoreRevision);
+      let base = bases.get(key);
+      if (base) base.merge(snapshot);
+      else {
+        base = new RoomWriterBase(snapshot);
+        bases.set(key, base);
+      }
+      base.writers++;
+      state(ctx).base = base;
+    }
 
     startAccessWatch(ctx);
     if (ctx.accessInvalidated && !(await revalidate(ctx))) return;
@@ -655,19 +679,17 @@ export function createSharedTextRoom<
       return;
     }
 
+    const session = state(ctx);
+    if (session.busy && !payload.retry) {
+      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, payload.docId);
+      return;
+    }
+    const update = fromBase64(payload.payload);
     // Decode alone cannot validate the target of a delayed edit. Admission and
     // its CAS happen before the echo that acknowledges the person's bytes.
-    const session = state(ctx);
-    session.documents ??= config.log.withStore({
-      load: async () => state(ctx).snapshot,
-      save: async () => {
-        throw new Error("Room admission never persists snapshots");
-      },
-    });
-    const documents = session.documents;
     const publication = documents.accept(docId, {
-      snapshot: state(ctx).snapshot,
-      update: fromBase64(payload.payload),
+      snapshot: () => state(ctx).base?.snapshot() ?? null,
+      update,
       baseCursor: payload.baseCursor ?? null,
       restoreRevision: payload.restoreRevision,
       originNodeId: NODE_ID,
@@ -677,8 +699,8 @@ export function createSharedTextRoom<
       maxLength: config.maxLength,
       validateState: config.validateState,
       observedHead: state(ctx).head,
-      applied: (snapshot) => {
-        updateBase(ctx, snapshot);
+      applied: (snapshot, previousCursor) => {
+        state(ctx).base?.commit(snapshot, previousCursor, update);
         const head = state(ctx).head;
         if (snapshot.cursor && (!head || compareStreamCursor(snapshot.cursor, head.cursor) > 0))
           state(ctx).head = {
@@ -695,6 +717,11 @@ export function createSharedTextRoom<
     try {
       await state(ctx).acceptTask;
       published = await publication;
+    } catch (error) {
+      if (!(error instanceof ConflictError)) throw error;
+      session.busy = true;
+      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, payload.docId);
+      return;
     } finally {
       state(ctx).acceptTask = null;
     }
@@ -707,10 +734,15 @@ export function createSharedTextRoom<
       );
       return;
     }
+    if (published.status === "recoveryRequired" && published.reason === "dependencies" && session.busy) {
+      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, payload.docId);
+      return;
+    }
     if (published.status !== "accepted") {
       await requireReopen(ctx, payload.docId);
       return;
     }
+    session.busy = false;
   };
 
   const handleAwarenessPublish = async (ctx: Context, payload: z.infer<typeof AwarenessPublishMessageSchema.shape.payload>) => {
@@ -767,34 +799,45 @@ export function createSharedTextRoom<
     session.leaveTask = (async () => {
       if (ctx.phase !== "closing") Object.assign(ctx, { phase: "open" });
       await session.acceptTask?.catch(() => undefined);
-      await queueSnapshotIfNeeded(ctx, "unload");
-      stopAccessWatch(ctx);
-      stopSnapshotScheduler(ctx);
-      stopLiveStream(ctx);
-      const removal = session.trustedAwareness?.remove();
-      session.trustedAwareness = null;
-      session.awarenessUserId = null;
-      if (removal && ctx.docId) {
+      try {
+        await queueSnapshotIfNeeded(ctx, "unload");
+        const removal = session.trustedAwareness?.remove();
+        session.trustedAwareness = null;
+        session.awarenessUserId = null;
+        if (removal && ctx.docId) {
+          try {
+            await createYjsAwarenessTopic().publish({
+              tenantId: ctx.docId,
+              data: { kind: "awareness", payload: toBase64(removal), originNodeId: NODE_ID, originPeerId: ctx.peerId },
+            });
+          } catch (error) {
+            log.warn("Failed to leave cursor presence", { docId: ctx.docId, error: String(error) });
+          }
+        }
+      } finally {
         try {
-          await createYjsAwarenessTopic().publish({
-            tenantId: ctx.docId,
-            data: { kind: "awareness", payload: toBase64(removal), originNodeId: NODE_ID, originPeerId: ctx.peerId },
-          });
-        } catch (error) {
-          log.warn("Failed to leave cursor presence", { docId: ctx.docId, error: String(error) });
+          await adapter.leave?.(ctx);
+        } finally {
+          stopAccessWatch(ctx);
+          stopSnapshotScheduler(ctx);
+          stopLiveStream(ctx);
+          session.trustedAwareness = null;
+          session.awarenessUserId = null;
+          releaseBase(ctx);
+          Object.assign(ctx, { docId: null });
+          ctx.publicDocId = null;
+          ctx.restoreRevision = null;
+          ctx.accessScope = null;
+          ctx.invalidationCursor = undefined;
+          ctx.canWrite = false;
+          // Keep the captured enqueue request so close/drain can retry after reset.
+          session.dirty = session.pendingSnapshot !== null;
+          session.lastPublishedCursor = null;
+          session.snapshotCursor = null;
+          session.head = undefined;
+          session.busy = false;
         }
       }
-      await adapter.leave?.(ctx);
-      Object.assign(ctx, { docId: null });
-      ctx.publicDocId = null;
-      ctx.restoreRevision = null;
-      ctx.accessScope = null;
-      ctx.invalidationCursor = undefined;
-      ctx.canWrite = false;
-      session.dirty = false;
-      session.lastPublishedCursor = null;
-      session.snapshot = null;
-      session.head = undefined;
     })().finally(() => {
       session.leaveTask = null;
     });
@@ -835,8 +878,8 @@ export function createSharedTextRoom<
     try {
       const access = await adapter.revalidate(ctx);
       if (!current()) return false;
-      if (access.ok && access.scope !== undefined && access.scope !== ctx.accessScope) {
-        // Reconnect so the new scope's invalidations are observed too.
+      if (access.ok && ((!couldWrite && access.canWrite === true) || (access.scope !== undefined && access.scope !== ctx.accessScope))) {
+        // Reconnect to load a writer base and observe the new scope's invalidations.
         await fatal(ctx, ERROR_CODE.streamFailed, ctx.messages.liveSyncStreamFailed, ctx.publicDocId ?? undefined);
         return false;
       }
@@ -956,7 +999,7 @@ export function createSharedTextRoom<
       if (isStorageExhausted(error))
         await fatal(ctx, ERROR_CODE.storageExhausted, ctx.messages.liveSyncStorageExhausted, ctx.publicDocId ?? undefined);
       else if (error instanceof ConflictError)
-        await fatal(ctx, ERROR_CODE.streamFailed, ctx.messages.liveSyncStreamFailed, ctx.publicDocId ?? undefined);
+        warn(ctx.socket, ERROR_CODE.busy, ctx.messages.tooManyMessages, ctx.publicDocId ?? undefined);
       else await fatal(ctx, ERROR_CODE.internalError, ctx.messages.handlingFailed, ctx.publicDocId ?? undefined);
     };
     const dispatch = async (packet: unknown) => {

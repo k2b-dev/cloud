@@ -43,7 +43,7 @@ export type SharedTextProviderMessage<Event = never, Participant = never> =
 /** Normalized outbound packets; encode supplies the application's wire names and fields. */
 export type SharedTextProviderRequest =
   | { type: "replayRequest"; payload: { docId: string; fromCursor: string | null; generation: string | null } }
-  | { type: "syncPublish"; payload: { docId: string; payload: string; generation: string; baseCursor: string | null } }
+  | { type: "syncPublish"; payload: { docId: string; payload: string; generation: string; baseCursor: string | null; retry?: true } }
   | { type: "awarenessPublish"; payload: { docId: string; payload: string; generation: string | null } }
   | { type: "subscribe"; payload: { fromCursor: string | null } };
 
@@ -166,6 +166,9 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   let isTerminated = false;
   let needsReopen = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let busyTimer: ReturnType<typeof setTimeout> | null = null;
+  let busyAttempts = 0;
+  let busyRecovery = false;
   let awarenessTimer: ReturnType<typeof setTimeout> | null = null;
   let acknowledgementTimer: ReturnType<typeof setTimeout> | null = null;
   const publishedAt = new Map<string, number>();
@@ -238,6 +241,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   const sendSyncPublish = (
     data: Uint8Array,
     baseCursor = unsentBase === undefined ? (unconfirmed.size ? unconfirmed.values().next().value! : lastCursor) : unsentBase,
+    retry = false,
   ): boolean => {
     if (generation === null) return false;
     const payload = encoding.toBase64(data);
@@ -274,7 +278,13 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       });
       return false;
     }
-    if (!send({ type: "syncPublish", payload: { docId: activeDocId, payload, generation, baseCursor } })) return false;
+    if (
+      !send({
+        type: "syncPublish",
+        payload: { docId: activeDocId, payload, generation, baseCursor, ...(retry ? { retry: true as const } : {}) },
+      })
+    )
+      return false;
     if (!unconfirmed.has(payload)) unconfirmedBytes += payload.length;
     unconfirmed.set(payload, baseCursor);
     if (!publishedAt.has(payload)) publishedAt.set(payload, Date.now());
@@ -314,7 +324,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       // The full state keeps its original base; replay must never relabel stale
       // unconfirmed input with the server's newly delivered cursor.
       const localState = Y.encodeStateAsUpdate(doc);
-      if (localState.length > 0 && !sendSyncPublish(localState)) return;
+      if (localState.length > 0 && !sendSyncPublish(localState, undefined, busyRecovery)) return;
       covering.clear();
       covering.set(encoding.toBase64(localState), [...unconfirmed.keys()]);
     } else {
@@ -350,8 +360,14 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     }
   };
 
+  const clearBusy = () => {
+    if (busyTimer) clearTimeout(busyTimer);
+    busyTimer = null;
+  };
+
   const terminate = (error: SharedTextProviderError) => {
     if (isTerminated) return;
+    clearBusy();
     if (error.reopen) needsReopen = true;
     if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
     acknowledgementTimer = null;
@@ -416,7 +432,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       const baseCursor = unsentBase === undefined ? (unconfirmed.size ? unconfirmed.values().next().value! : lastCursor) : unsentBase;
       opts.onLocalUpdate({ ...pendingState(), baseCursor });
     }
-    if (isTerminated || !replayReady) {
+    if (isTerminated || !replayReady || busyTimer) {
       if (unsentBase === undefined) unsentBase = unconfirmed.size ? unconfirmed.values().next().value : lastCursor;
       needsFullResync = true;
       pendingChanged();
@@ -457,6 +473,27 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     if (error.code === "STORAGE_EXHAUSTED") {
       storageFailures += 1;
       if (storageFailures >= MAX_SHARED_TEXT_STORAGE_RETRIES) terminate(error);
+      return true;
+    }
+    if (error.code === "BUSY") {
+      needsFullResync = true;
+      busyRecovery = true;
+      // Keep the socket and journal. Coalesce rejections into one jittered retry
+      // and pause new publications while the document owner is contended.
+      if (!busyTimer) {
+        if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
+        acknowledgementTimer = null;
+        publishedAt.clear();
+        busyTimer = setTimeout(
+          () => {
+            busyTimer = null;
+            if (isDisposed || isTerminated || !replayReady) return;
+            localStateSent = false;
+            sendLocalStateIfNeeded();
+          },
+          opts.reconnectDelayMs(busyAttempts++) * (0.5 + Math.random()),
+        );
+      }
       return true;
     }
     if (error.code === BUSY_ERROR_CODE || error.code === "DOCUMENT_FROZEN") {
@@ -623,6 +660,8 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
           } else forgetPending(update.payload);
           watchAcknowledgements();
           if (echoed) {
+            busyAttempts = 0;
+            if (!unconfirmed.size && !needsFullResync) busyRecovery = false;
             if (!unconfirmed.size) covering.clear();
             failedConnects = 0;
             storageFailures = 0;
@@ -699,6 +738,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
 
     socket.onclose = (event) => {
       if (ws !== socket) return;
+      clearBusy();
       if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
       acknowledgementTimer = null;
       publishedAt.clear();
@@ -792,6 +832,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       return "resumed";
     },
     dispose: () => {
+      clearBusy();
       isDisposed = true;
       actionHistory?.dispose();
       if (reconnectTimer) clearTimeout(reconnectTimer);

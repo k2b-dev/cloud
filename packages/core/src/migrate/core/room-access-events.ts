@@ -4,7 +4,6 @@ import type { SQL } from "bun";
 
 /** Core's existing live outbox carries identity invalidations, including directory-sync writes and cascades. */
 export const migrate = async (db: SQL = sql): Promise<void> => {
-  const idleSeconds = await sharedWorkstationIdleSeconds();
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.room-access.migrate', 0))`;
     // Keep deadline replacement indexed without giving the generic outbox busy-key
@@ -135,12 +134,16 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       END $$`.simple();
     const idleSeeded =
       await tx`INSERT INTO settings.migrations(name) VALUES ('room-idle-deadlines-v1') ON CONFLICT DO NOTHING RETURNING name`;
-    if (idleSeeded.length)
+    if (idleSeeded.length) {
+      // Read policy on the migration's connection, including defaults. Startup
+      // must not borrow a cached settings reader's separate pool or snapshot.
+      const idleSeconds = await sharedWorkstationIdleSeconds(tx);
       await tx`INSERT INTO events.outbox(id, app_id, kind, ordering_key, payload, attempts, next_attempt_at)
       SELECT gen_random_uuid(), 'core', 'live', 'identity.deadline.idle:' || sid::text,
         jsonb_build_object('v', 1, 'k', 'identity.access', 'd', jsonb_build_object('type', 'identity.access.changed', 'userId', user_id, 'sid', sid)),
         1, GREATEST(now(), last_input_at + ${idleSeconds} * interval '1 second')
       FROM auth.session_families WHERE last_input_at IS NOT NULL AND revoked_at IS NULL AND expires_at > now()`;
+    }
     await tx`CREATE OR REPLACE FUNCTION auth.enqueue_room_setting_changed() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         IF COALESCE(NEW.key, OLD.key) IN ('freeipa.groups.admin', 'user.session.shared_workstation_idle_minutes', 'user.category.login.enabled', 'user.category.guest.enabled', 'user.category.freeipa.enabled') THEN

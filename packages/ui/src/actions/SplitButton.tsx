@@ -3,6 +3,8 @@ import { Button, type ButtonProps } from "./Button";
 import { Dropdown, type DropdownItem, type DropdownPosition, type DropdownProps } from "./Dropdown";
 
 export type SplitButtonProps = Omit<ButtonProps, "align"> & {
+  /** Classes for the whole control, so host tone tokens such as `--k2b-action-solid` reach both segments. */
+  class?: string;
   /** Actions shown from the secondary menu trigger. */
   items: readonly DropdownItem[];
   /** Optional selection menu in place of the primary immediate action. */
@@ -45,7 +47,7 @@ export function SplitButton(props: SplitButtonProps): JSX.Element {
 
   return (
     <Dropdown.Root
-      class="k2b-split-button"
+      class={`k2b-split-button ${local.class ?? ""}`}
       disabled={disabled()}
       items={local.items}
       label={local.menuLabel}
@@ -59,7 +61,7 @@ export function SplitButton(props: SplitButtonProps): JSX.Element {
         fallback={
           <Button
             {...buttonProps}
-            class={`k2b-split-button__primary ${local.class ?? ""}`}
+            class="k2b-split-button__primary"
             disabled={local.disabled}
             loading={local.loading}
             size={local.size}
@@ -84,7 +86,7 @@ export function SplitButton(props: SplitButtonProps): JSX.Element {
               size={local.size}
               variant={local.variant ?? "primary"}
               label={local.primaryMenuLabel}
-              class={`k2b-split-button__primary ${local.class ?? ""}`}
+              class="k2b-split-button__primary"
             >
               {local.children}
             </Dropdown.Trigger>
