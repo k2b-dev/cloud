@@ -64,16 +64,15 @@ export const writeMailReplyNote = (storage: Pick<Storage, "setItem" | "removeIte
   }
 };
 
-/** The stored `meanwhile` copies, newest first; a single plain text from before the list counts as one copy. */
+/** The stored `meanwhile` copies, newest first (a JSON list of texts). */
 export const readMeanwhileCopies = (stored: string): string[] => {
   if (!stored) return [];
   try {
     const parsed: unknown = JSON.parse(stored);
-    if (Array.isArray(parsed)) return parsed.filter((copy): copy is string => typeof copy === "string" && copy.length > 0);
+    return Array.isArray(parsed) ? parsed.filter((copy): copy is string => typeof copy === "string" && copy.length > 0) : [];
   } catch {
-    /* A plain text copy. */
+    return [];
   }
-  return [stored];
 };
 
 const SEND_LATER_HOUR = "08:00";

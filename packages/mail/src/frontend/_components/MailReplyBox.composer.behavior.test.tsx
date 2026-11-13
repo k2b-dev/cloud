@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { EditorView } from "@codemirror/view";
+import { createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 import type { ConversationDraftSummary, MailDraft, SenderIdentity } from "../../contracts";
@@ -139,6 +140,10 @@ describe("MailReplyBox with the real composer", () => {
   let createdDraftId: string | null = null;
   /** What the server holds per draft after a materialization or a save. */
   let saved: Record<string, Partial<MailDraft>> = {};
+  /** Answers a request before the default server does; null leaves it to the default. */
+  let intercept: ((entry: { method: string; path: string; body: Record<string, unknown> | null }) => Promise<Response | null>) | null =
+    null;
+  let reconcile: (() => Promise<void>) | null = null;
   let mailbox = 100;
 
   beforeEach(() => {
@@ -166,6 +171,8 @@ describe("MailReplyBox with the real composer", () => {
     materializeGate = null;
     createdDraftId = null;
     saved = {};
+    intercept = null;
+    reconcile = null;
     mailbox += 1;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -174,6 +181,8 @@ describe("MailReplyBox with the real composer", () => {
         const raw = request.method === "GET" ? "" : await request.text();
         const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
         requests.push({ method: request.method, path, body });
+        const injected = await intercept?.({ method: request.method, path, body });
+        if (injected) return injected;
         if (path.endsWith("/draft-seeds") && seedFailures > 0 && requests.filter((entry) => entry.path === path).length > 1) {
           seedFailures -= 1;
           return Response.json({ code: "UNAVAILABLE", message: "The server is busy." }, { status: 503 });
@@ -213,10 +222,11 @@ describe("MailReplyBox with the real composer", () => {
           });
         const draftPath = /\/drafts\/(Draft\w+)(?:\/\w+)?$/.exec(path);
         const id = draftPath?.[1] ?? "Draft1";
-        if (path.endsWith("/intent"))
-          return intentConflict
-            ? Response.json({ code: "CONFLICT", message: "Someone else changed the draft." }, { status: 409 })
-            : Response.json(draft({ ...saved[id], id, intent: (body as { intent: MailDraft["intent"] }).intent, revision: 4 }));
+        if (path.endsWith("/intent")) {
+          if (intentConflict) return Response.json({ code: "CONFLICT", message: "Someone else changed the draft." }, { status: 409 });
+          saved[id] = { ...saved[id], intent: (body as { intent: MailDraft["intent"] }).intent, revision: 4 };
+          return Response.json(draft({ ...saved[id], id }));
+        }
         if (path.endsWith("/discard")) return Response.json(draft({ id, state: "discarded" } as Partial<MailDraft>));
         if (/\/drafts\/Draft\w+$/.test(path) && request.method === "PUT") {
           saved[id] = { ...saved[id], ...(body!.draft as Partial<MailDraft>), revision: 4 };
@@ -271,7 +281,9 @@ describe("MailReplyBox with the real composer", () => {
             createNote={async () => {
               throw new Error("not used");
             }}
-            onReconcile={async () => undefined}
+            onReconcile={async () => {
+              await reconcile?.();
+            }}
             onExplainSenderUnavailable={() => undefined}
             register={(next) => {
               api = next;
@@ -503,4 +515,148 @@ describe("MailReplyBox with the real composer", () => {
     expect(keys.filter((key) => key.startsWith("cloud:user:Usr001:"))).toEqual([]);
     expect(field.value).toBe("After signing out");
   });
+
+  /** The first materialization stores the draft, but its answer never arrives; asking again with its key returns it. */
+  const loseFirstMaterializeAnswer = () => {
+    let committedKey: unknown = null;
+    intercept = async ({ path, body }) => {
+      if (!path.endsWith("/materialize")) return null;
+      if (materializeGate) await materializeGate;
+      if (!createdDraftId) {
+        committedKey = body!.idempotencyKey;
+        createdDraftId = "DraftN";
+        saved.DraftN = { ...(body!.draft as Partial<MailDraft>), intent: "reply", revision: 1 };
+        throw new TypeError("Connection closed after commit");
+      }
+      if (body!.idempotencyKey === committedKey)
+        return Response.json({ ...draft({ id: "DraftN", ...saved.DraftN }), creationOutcome: "created" });
+      return Response.json({ code: "DRAFT_REPLY_BOX_OCCUPIED", message: "The reply place is taken.", draftId: "DraftN" }, { status: 409 });
+    };
+  };
+
+  test("discarding while the first save's answer is lost asks again with its key and discards the stored draft", async () => {
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    try {
+      await mount();
+      const release = holdMaterialize();
+      loseFirstMaterializeAnswer();
+      type("Discard this stored text");
+      await waitFor(() => materialized().length === 1);
+      dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-discard]")!.click();
+      await waitFor(() => confirm.mock.calls.length === 1);
+      release();
+      // fixed wait: the discard settles after the first save is resolved.
+      await Bun.sleep(1_100);
+      const keys = materialized().map((request) => request.body!.idempotencyKey);
+      expect(new Set(keys).size).toBe(1);
+      expect(requests.filter((request) => request.path.endsWith("/DraftN/discard"))).toHaveLength(1);
+    } finally {
+      confirm.mockRestore();
+    }
+  }, 15_000);
+
+  test("a mode switch while the first save's answer is lost switches the stored draft and keeps newer typing", async () => {
+    await mount();
+    const release = holdMaterialize();
+    loseFirstMaterializeAnswer();
+    type("Original text.");
+    await waitFor(() => materialized().length === 1);
+    await chooseMode("Forward");
+    type(" Newer input.");
+    release();
+    await waitFor(() => saved.DraftN?.intent === "forward");
+    const keys = materialized().map((request) => request.body!.idempotencyKey);
+    expect(new Set(keys).size).toBe(1);
+    await waitFor(() => boxText().includes("Original text. Newer input."));
+    await remount({ drafts: [{ ...summary, id: "DraftN" }] });
+    await waitFor(() => boxText().includes("Original text. Newer input."));
+  }, 15_000);
+
+  test("text that meets a colleague's reply draft during a mode switch is offered to restore after reopening", async () => {
+    createdDraftId = "DraftC";
+    await mount();
+    intercept = async ({ path }) => {
+      if (!path.endsWith("/materialize")) return null;
+      if (materializeGate) await materializeGate;
+      return Response.json({ code: "DRAFT_REPLY_BOX_OCCUPIED", message: "Occupied", draftId: "DraftC" }, { status: 409 });
+    };
+    const release = holdMaterialize();
+    type("My private local input");
+    await waitFor(() => materialized().length === 1);
+    await chooseMode("Forward");
+    release();
+    await waitFor(() => materialized().length === 2);
+    // fixed wait: the second seed takes in its occupied answer.
+    await Bun.sleep(100);
+    expect(boxText()).toContain("My private local input");
+    expect(requests.filter((request) => request.path.includes("/DraftC") && request.method !== "GET")).toHaveLength(0);
+    await remount({ drafts: [{ ...summary, id: "DraftC" }] });
+    await waitFor(() => meanwhileLines().length > 0);
+    expect(meanwhileLines()).toHaveLength(1);
+    expect(meanwhileLines()[0]).toContain("My private local input");
+    expect(requests.filter((request) => request.path.includes("/DraftC") && request.method !== "GET")).toHaveLength(0);
+  }, 15_000);
+
+  test("a discard confirmed while a mode switch waits for the first save wins, and the box starts empty", async () => {
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    try {
+      const [list, setList] = createSignal<ConversationDraftSummary[]>([]);
+      await mount({
+        get drafts() {
+          return list();
+        },
+      });
+      reconcile = async () => {
+        setList([]);
+      };
+      const release = holdMaterialize();
+      type("Discard wins");
+      await waitFor(() => materialized().length === 1);
+      await chooseMode("Forward");
+      dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-discard]")!.click();
+      await waitFor(() => confirm.mock.calls.length === 1);
+      release();
+      await waitFor(() => requests.some((request) => request.path.endsWith("/DraftN/discard")));
+      // fixed wait: a switch that went on would send its mode change now.
+      await Bun.sleep(1_000);
+      expect(requests.some((request) => request.path.endsWith("/DraftN/intent"))).toBe(false);
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-reply-box='mail'] .cm-content")));
+      expect(boxText()).not.toContain("Discard wins");
+      expect(dom.root.querySelector("[data-mail-reply-box='mail']")!.getAttribute("data-intent")).toBe("reply");
+    } finally {
+      confirm.mockRestore();
+    }
+  }, 15_000);
+
+  test("only the list format of texts typed meanwhile is read; any other stored value offers nothing", async () => {
+    const key = `cloud:user:Usr001:mail:reply-box:Box${mailbox}:Conv01:meanwhile`;
+    dom.window.localStorage.setItem(key, "A plain text from an unreleased build");
+    await mount({ drafts: [summary] });
+    // fixed wait: the box has read its stored copies once it shows the draft.
+    await Bun.sleep(100);
+    expect(meanwhileLines()).toHaveLength(0);
+  }, 15_000);
+
+  test("a mode switch after a server error on the first save asks again with its key and keeps all typing", async () => {
+    await mount();
+    const release = holdMaterialize();
+    let failFirst = true;
+    intercept = async ({ path }) => {
+      if (!path.endsWith("/materialize") || !failFirst) return null;
+      if (materializeGate) await materializeGate;
+      failFirst = false;
+      return Response.json({ code: "UNAVAILABLE", message: "The server is busy." }, { status: 503 });
+    };
+    type("Must survive the failure.");
+    await waitFor(() => materialized().length === 1);
+    await chooseMode("Forward");
+    type(" And later typing.");
+    release();
+    await waitFor(() => saved.DraftN?.intent === "forward");
+    expect(new Set(materialized().map((request) => request.body!.idempotencyKey)).size).toBe(1);
+    await waitFor(() => boxText().includes("Must survive the failure. And later typing."));
+    expect(saved.DraftN?.body).toContain("Must survive the failure. And later typing.");
+  }, 15_000);
 });

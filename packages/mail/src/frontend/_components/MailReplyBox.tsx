@@ -173,6 +173,8 @@ export default function MailReplyBox(props: {
   const gone = new Set<string>();
   let mountKey = 0;
   let loadGeneration = 0;
+  /** The composer saved and released its draft for the running mode switch. */
+  let releasedForSwitch = false;
   /** A load is on its way; a state change meanwhile must not start a second one that would replace it. */
   let loading = false;
   let disposed = false;
@@ -378,10 +380,26 @@ export default function MailReplyBox(props: {
     }
     setSwitching(true);
     setSwitchError(null);
-    try {
-      // A first save on its way decides what the seed is: wait for it, so a draft it creates switches on the server.
-      if (current.kind === "seed") await controls()?.settleMaterialization();
+    // The mode on display goes back to the draft's; a reason, when there is one, shows as one quiet line.
+    const stop = (error?: unknown) => {
       if (disposed) return;
+      if (mode() !== "note") setMode(mailMode());
+      if (error !== undefined)
+        setSwitchError(error instanceof Error && !(error instanceof NoVerifiedSender) ? error.message : t().modeSwitchFailed);
+    };
+    // A first save on its way decides what the seed is. Until its answer is definite, the seed and its text stay.
+    const settled = async (): Promise<boolean> => {
+      try {
+        await controls()?.settleMaterialization();
+        return !disposed;
+      } catch (error) {
+        stop(error);
+        return false;
+      }
+    };
+    try {
+      // Wait for a first save on its way, so a draft it creates switches on the server instead of a second seed.
+      if (current.kind === "seed" && !(await settled())) return;
       // A seed whose first save created the draft is that draft now: it switches on the server like any draft.
       if (current.kind === "seed" && !draftId()) {
         const message = sourceMessage();
@@ -392,14 +410,11 @@ export default function MailReplyBox(props: {
         try {
           seed = await prepareSeed(next, message, Boolean(typedNow));
         } catch (error) {
-          if (disposed) return;
-          if (mode() !== "note") setMode(mailMode());
-          setSwitchError(error instanceof Error && !(error instanceof NoVerifiedSender) ? error.message : t().modeSwitchFailed);
+          stop(error);
           return;
         }
         // Typing went on meanwhile; a save it started may have created the draft after all.
-        await controls()?.settleMaterialization();
-        if (disposed) return;
+        if (!(await settled())) return;
         if (!draftId()) {
           const typed = takeTypedText();
           const loaded = await load(
@@ -415,8 +430,11 @@ export default function MailReplyBox(props: {
       // A mode is a structural edit: save and give back the lease first, then switch on the server and show the result.
       const id = draftId() ?? (current.kind === "draft" ? current.draft.id : null);
       if (!id) return;
+      // Another step that owns the draft right now (a discard, a send) wins: the switch stops and changes nothing.
+      releasedForSwitch = false;
       await controls()?.collapse({ preserveDraft: true });
       if (disposed) return;
+      if (!releasedForSwitch) return stop();
       const param = { mailboxId: props.mailboxId, draftId: id };
       try {
         const latest = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].$get({ param });
@@ -438,6 +456,8 @@ export default function MailReplyBox(props: {
       }
     } finally {
       setSwitching(false);
+      // A discard that won while the switch waited left the box empty; it fills again like after any discard.
+      if (!disposed && !mount() && !loading && !loadError() && !noSender()) settle();
     }
   };
 
@@ -720,7 +740,10 @@ export default function MailReplyBox(props: {
         return;
       }
       // A mode switch saves and releases on purpose; the switch mounts the result itself.
-      if (outcome === "closed" && untrack(switching)) return;
+      if (outcome === "closed" && untrack(switching)) {
+        releasedForSwitch = true;
+        return;
+      }
       if (id && (outcome === "sent" || outcome === "discarded")) gone.add(id);
       if (outcome === "discarded") storeText("pending", "");
       batch(() => {
