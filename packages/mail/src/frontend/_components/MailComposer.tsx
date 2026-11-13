@@ -132,7 +132,10 @@ export type MailInlineDraftControls = {
   release: () => Promise<void>;
   /** Forgets this device's copy of a draft that was never created on the server. */
   forgetLocal: () => void;
-  /** Waits until a first save already on its way has created the seed's draft (or failed). */
+  /**
+   * Waits until a first save already on its way has a definite answer: the seed's draft exists, or it was never
+   * created. Rejects while that stays open (for example offline); the seed and its text stay.
+   */
   settleMaterialization: () => Promise<void>;
 };
 
@@ -1989,8 +1992,9 @@ export default function MailComposer(props: {
       const [emojiAnchor, setEmojiAnchor] = createSignal<HTMLElement | null>(null);
       let emojiButton: HTMLButtonElement | undefined;
       const changedHere = () => serializeMailDraftContent(content()) !== initialSerializedContent;
-      const holdActive = () => !draft() && box.holdCreate();
-      // While another send holds the place, the box keeps what is typed for this conversation, also across navigation.
+      // Another send holds the place, or a colleague's reply draft took it: the text has no draft of its own.
+      const holdActive = () => !draft() && (box.holdCreate() || Boolean(draftSession.occupiedReplyDraftId()));
+      // While the place is not free, the box keeps what is typed for this conversation, also across navigation.
       // Only this seed's own typing writes the buffer, so mounting a fresh seed never wipes what an earlier one kept.
       let bufferedHere = false;
       createEffect(() => {

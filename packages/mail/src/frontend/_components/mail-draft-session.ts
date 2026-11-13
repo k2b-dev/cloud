@@ -152,6 +152,8 @@ export const createMailDraftSession = (options: {
   const seedBaseline = options.initialSeed ? serializeMailDraftContent(options.initialSeed.content) : null;
   /** The seed was discarded or its text moved elsewhere: it must never become a draft, not even on the way out. */
   let seedAbandoned = false;
+  /** A first save went out without a definite answer (connection lost, server error): the server may hold its draft. */
+  let materializationUnresolved = false;
   let lastSavedContent = seedBaseline ?? "";
   const [confirmedContent, setConfirmedContent] = createSignal(lastSavedContent);
   const [journalContent, setJournalContent] = createSignal<string | null>(null);
@@ -817,6 +819,7 @@ export const createMailDraftSession = (options: {
         const nextContent = options.content();
         setStatus("saving");
         setStatusMessage(t().savingDraft);
+        materializationUnresolved = true;
         const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].materialize
           .$post({
             param: { mailboxId: options.mailboxId },
@@ -830,6 +833,8 @@ export const createMailDraftSession = (options: {
             transportUnavailable = error instanceof TypeError;
             throw error;
           });
+        // Only a server error leaves open whether the draft was stored; every other answer is definite.
+        materializationUnresolved = response.status >= 500;
         if (!response.ok) {
           if (options.isDisposed()) return null;
           if (response.status === 401) {
@@ -1516,7 +1521,12 @@ export const createMailDraftSession = (options: {
      * on the draft it creates instead of racing it. Resolves with the draft this session created, or null.
      */
     settleMaterialization: async (): Promise<MailDraft | null> => {
-      if (!draft() && options.initialSeed && persistPromise) await persistPromise;
+      if (draft() || !options.initialSeed) return draft();
+      if (persistPromise) await persistPromise;
+      // A first save whose answer was lost may have stored the draft. The same idempotency key asks again and gets
+      // that draft back; until the answer is definite, the seed and its text stay.
+      if (!draft() && materializationUnresolved) await persist();
+      if (!draft() && materializationUnresolved) throw new Error(t().draftSaveFailed);
       return draft();
     },
     /** The seed's text was discarded or carried elsewhere: no save, autosave, or save on the way out creates its draft. */
