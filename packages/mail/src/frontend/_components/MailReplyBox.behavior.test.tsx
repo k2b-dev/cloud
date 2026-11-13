@@ -129,6 +129,7 @@ describe("MailReplyBox", () => {
         appendText: spyOn({ fn: (_text: string) => undefined }, "fn"),
         release: spyOn({ fn: async () => undefined }, "fn"),
         forgetLocal: spyOn({ fn: () => undefined }, "fn"),
+        settleMaterialization: async () => undefined,
       };
       props.host.register(fake);
       mounts.push({ host: props.host, initialDraft: props.initialDraft, initialSeed: props.initialSeed, controls: fake });
@@ -226,7 +227,7 @@ describe("MailReplyBox", () => {
               return response.json();
             }}
             onReconcile={async () => {
-              reconciles.push(Date.now());
+              reconciles.push(performance.now());
               await options.onReconcile?.();
             }}
             onExplainSenderUnavailable={() => undefined}

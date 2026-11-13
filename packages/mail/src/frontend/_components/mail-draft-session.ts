@@ -1511,6 +1511,14 @@ export const createMailDraftSession = (options: {
     revisionConflict,
     localCopyFailed,
     localRecoveryCopies,
+    /**
+     * Waits for a first save that is already on its way to create the seed's draft, so a mode switch or a discard acts
+     * on the draft it creates instead of racing it. Resolves with the draft this session created, or null.
+     */
+    settleMaterialization: async (): Promise<MailDraft | null> => {
+      if (!draft() && options.initialSeed && persistPromise) await persistPromise;
+      return draft();
+    },
     /** The seed's text was discarded or carried elsewhere: no save, autosave, or save on the way out creates its draft. */
     abandonSeed: () => {
       if (draft()) return;
