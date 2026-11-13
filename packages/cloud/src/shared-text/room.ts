@@ -146,7 +146,7 @@ export function createSharedTextRoom<
   Messages extends SharedTextRoomMessages,
   Context extends SharedTextRoomContext<User, Messages> = SharedTextRoomContext<User, Messages>,
 >(config: {
-  protocol: SharedTextRoomProtocol;
+  protocol: SharedTextRoomProtocol<Context>;
   adapter: SharedTextRoomAdapter<User, Messages, Context>;
   log: ReturnType<typeof sharedText.define>;
   awarenessTopic(): Pick<Topic<SharedTextEvent & { kind: "awareness" }>, "live" | "publish">;
@@ -159,7 +159,7 @@ export function createSharedTextRoom<
   };
   logger?: ReturnType<typeof logger>;
   maxLength?: number;
-  validateState?: (state: Uint8Array) => boolean | Promise<boolean>;
+  validateState?: (state: Uint8Array, ctx: Context) => boolean | Promise<boolean>;
 }) {
   const { adapter } = config;
   const sessions = new WeakMap<Context, RoomState>();
@@ -219,18 +219,18 @@ export function createSharedTextRoom<
   const MAX_PENDING_MESSAGES = 200;
   const MAX_CLIENT_MESSAGE_LENGTH = config.protocol.maxSyncPayloadLength + 1_000;
   const BASE64_REGEX = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-  const send = (socket: SharedTextRoomSocket, type: string, payload?: unknown) => {
+  const send = (ctx: Context, type: string, payload?: unknown) => {
     try {
-      socket.send(JSON.stringify(config.protocol.encode(type, payload)));
+      ctx.socket.send(JSON.stringify(config.protocol.encode(type, payload, ctx)));
     } catch {
       // Ignore send failures on closed sockets.
     }
   };
 
-  const warn = (socket: SharedTextRoomSocket, code: string, message: string, docId?: string, reopen?: true) => {
+  const warn = (ctx: Context, code: string, message: string, docId?: string, reopen?: true) => {
     const payload: SharedTextRoomError = docId ? { code, message, docId } : { code, message };
     if (reopen) payload.reopen = true;
-    send(socket, WS_TYPE.error, payload);
+    send(ctx, WS_TYPE.error, payload);
   };
 
   const closeCodeForError = (code: string): number => {
@@ -359,7 +359,7 @@ export function createSharedTextRoom<
       try {
         for await (const event of awarenessTopic.live({ tenantId: docId, signal: abort.signal })) {
           if (ctx.phase !== "joined" || ctx.docId !== docId) break;
-          send(ctx.socket, WS_TYPE.awarenessPush, {
+          send(ctx, WS_TYPE.awarenessPush, {
             docId: publicDocId,
             updates: [toPushUpdate(event)],
           });
@@ -396,7 +396,7 @@ export function createSharedTextRoom<
           .then(async () => {
             if (!active()) return;
             const delivered = ctx.phase === "joined" && ctx.docId === docId;
-            if (delivered && active()) send(ctx.socket, WS_TYPE.syncPush, { docId: publicDocId, updates: batch });
+            if (delivered && active()) send(ctx, WS_TYPE.syncPush, { docId: publicDocId, updates: batch });
             if (!delivered) stopped = true;
           })
           .catch(fail);
@@ -412,6 +412,10 @@ export function createSharedTextRoom<
 
       try {
         const events = async function* () {
+          if ((await config.log.lifecycle?.get(docId))?.value.state === "closed") {
+            await fatal(ctx, ERROR_CODE.closed, ERROR_CODE.closed, publicDocId);
+            return;
+          }
           const head = await documentTopic.latestCursor({ tenantId: docId });
           // A covering snapshot may already include the terminal marker. Read
           // its broker metadata so a fresh idle connection cannot reopen it.
@@ -513,7 +517,7 @@ export function createSharedTextRoom<
 
   const ensureJoinedDocument = (ctx: Context, publicDocId: string): boolean => {
     if (ctx.phase !== "joined" || ctx.restoreRevision === null || !ctx.publicDocId || ctx.publicDocId !== publicDocId) {
-      warn(ctx.socket, ERROR_CODE.invalidPayload, ctx.messages.replayRequired, publicDocId);
+      warn(ctx, ERROR_CODE.invalidPayload, ctx.messages.replayRequired, publicDocId);
       return false;
     }
     return true;
@@ -521,7 +525,7 @@ export function createSharedTextRoom<
 
   const ensureWritableDocument = (ctx: Context, docId: string): boolean => {
     if (!ctx.canWrite) {
-      warn(ctx.socket, ERROR_CODE.accessDenied, ctx.messages.writeAccessRequired, docId);
+      warn(ctx, ERROR_CODE.accessDenied, ctx.messages.writeAccessRequired, docId);
       return false;
     }
     return true;
@@ -603,7 +607,7 @@ export function createSharedTextRoom<
       if (snapshot.state) {
         if (ctx.phase !== "joined" || ctx.docId !== dbDocId) return;
         {
-          send(ctx.socket, WS_TYPE.syncPush, {
+          send(ctx, WS_TYPE.syncPush, {
             docId: payload.docId,
             historyIncomplete: snapshot.historyIncomplete,
             snapshot: true,
@@ -625,7 +629,7 @@ export function createSharedTextRoom<
     // has been delivered (see `startLiveStream`). Sending it earlier would let
     // the client publish edits while catch-up is still streaming.
     startLiveStream(ctx, dbDocId, payload.docId, { after: replayCursor, storedBase: !clientCursor }, (cursor) => {
-      send(ctx.socket, WS_TYPE.replayReady, {
+      send(ctx, WS_TYPE.replayReady, {
         docId: payload.docId,
         cursor,
         restoreRevision: snapshot.restoreRevision,
@@ -644,7 +648,7 @@ export function createSharedTextRoom<
     if (!ensureWritableDocument(ctx, payload.docId)) return;
     // Once retained, an undecodable update poisons every replay of this document.
     if (!isValidYjsUpdate(payload.payload)) {
-      warn(ctx.socket, ERROR_CODE.invalidPayload, ctx.messages.invalidSyncUpdate, payload.docId);
+      warn(ctx, ERROR_CODE.invalidPayload, ctx.messages.invalidSyncUpdate, payload.docId);
       return;
     }
 
@@ -656,7 +660,7 @@ export function createSharedTextRoom<
 
     const session = state(ctx);
     if (session.busy && !payload.retry) {
-      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.busy, payload.docId);
+      warn(ctx, ERROR_CODE.busy, ctx.messages.busy, payload.docId);
       return;
     }
     const update = fromBase64(payload.payload);
@@ -672,7 +676,7 @@ export function createSharedTextRoom<
       actor: adapter.actor(ctx.user!),
       signal: state(ctx).streamAbort?.signal,
       maxLength: config.maxLength,
-      validateState: config.validateState,
+      validateState: config.validateState ? (state) => config.validateState!(state, ctx) : undefined,
       observedHead: state(ctx).head,
       applied: (snapshot, previousCursor) => {
         state(ctx).base?.commit(snapshot, previousCursor, update);
@@ -695,7 +699,7 @@ export function createSharedTextRoom<
     } catch (error) {
       if (!(error instanceof ConflictError)) throw error;
       session.busy = true;
-      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.busy, payload.docId);
+      warn(ctx, ERROR_CODE.busy, ctx.messages.busy, payload.docId);
       return;
     } finally {
       state(ctx).acceptTask = null;
@@ -710,7 +714,7 @@ export function createSharedTextRoom<
       return;
     }
     if (published.status === "recoveryRequired" && published.reason === "dependencies" && session.busy) {
-      warn(ctx.socket, ERROR_CODE.busy, ctx.messages.busy, payload.docId);
+      warn(ctx, ERROR_CODE.busy, ctx.messages.busy, payload.docId);
       return;
     }
     if (published.status !== "accepted") {
@@ -724,7 +728,7 @@ export function createSharedTextRoom<
     const session = state(ctx);
     if (!ensureJoinedDocument(ctx, payload.docId)) return;
     if (!ensureValidBase64(payload.payload)) {
-      warn(ctx.socket, ERROR_CODE.invalidPayload, ctx.messages.invalidBase64, payload.docId);
+      warn(ctx, ERROR_CODE.invalidPayload, ctx.messages.invalidBase64, payload.docId);
       return;
     }
 
@@ -754,7 +758,7 @@ export function createSharedTextRoom<
       trusted = session.trustedAwareness.publish(fromBase64(payload.payload));
     } catch (error) {
       if (!(error instanceof InvalidSharedTextAwarenessError)) throw error;
-      warn(ctx.socket, ERROR_CODE.invalidPayload, ctx.messages.invalidMessage, payload.docId);
+      warn(ctx, ERROR_CODE.invalidPayload, ctx.messages.invalidMessage, payload.docId);
       return;
     }
     await awarenessTopic.publish({
@@ -824,11 +828,11 @@ export function createSharedTextRoom<
   const fatal = async (ctx: Context, code: string, message: string, docId?: string, reopen?: true) => {
     if (ctx.phase === "closing") return;
     Object.assign(ctx, { phase: "closing" });
-    warn(ctx.socket, code, message, docId, reopen);
+    warn(ctx, code, message, docId, reopen);
     try {
       await leave(ctx);
     } finally {
-      const encoded = config.protocol.encode(WS_TYPE.error, { code });
+      const encoded = config.protocol.encode(WS_TYPE.error, { code }, ctx);
       const reason =
         encoded &&
         typeof encoded === "object" &&
@@ -936,13 +940,13 @@ export function createSharedTextRoom<
     if (!parsed.success) {
       if (parsed.error.issues.some((issue) => issue.path[0] === "payload" && issue.path[1] === "restoreRevision"))
         await requireReopen(ctx, ctx.publicDocId ?? undefined);
-      else warn(ctx.socket, ERROR_CODE.invalidMessage, ctx.messages.invalidMessage);
+      else warn(ctx, ERROR_CODE.invalidMessage, ctx.messages.invalidMessage);
       return true;
     }
     if (ctx.phase === "closing") return true;
     if (parsed.data.type === WS_TYPE.replayRequest) await handleReplayRequest(ctx, ReplayRequestMessageSchema.parse(decoded).payload);
     else if (ctx.phase !== "joined")
-      warn(ctx.socket, ERROR_CODE.invalidMessage, ctx.messages.messageNotAllowed({ type: String(kind), phase: ctx.phase }));
+      warn(ctx, ERROR_CODE.invalidMessage, ctx.messages.messageNotAllowed({ type: String(kind), phase: ctx.phase }));
     else if (parsed.data.type === WS_TYPE.syncPublish) await handleSyncPublish(ctx, SyncPublishMessageSchema.parse(decoded).payload);
     else await handleAwarenessPublish(ctx, AwarenessPublishMessageSchema.parse(decoded).payload);
     return true;
@@ -976,13 +980,13 @@ export function createSharedTextRoom<
       log.error("Websocket message handling failed", { docId: ctx.docId, error: String(error) });
       if (isStorageExhausted(error))
         await fatal(ctx, ERROR_CODE.storageExhausted, ctx.messages.liveSyncStorageExhausted, ctx.publicDocId ?? undefined);
-      else if (error instanceof ConflictError) warn(ctx.socket, ERROR_CODE.busy, ctx.messages.busy, ctx.publicDocId ?? undefined);
+      else if (error instanceof ConflictError) warn(ctx, ERROR_CODE.busy, ctx.messages.busy, ctx.publicDocId ?? undefined);
       else await fatal(ctx, ERROR_CODE.internalError, ctx.messages.handlingFailed, ctx.publicDocId ?? undefined);
     };
     const dispatch = async (packet: unknown) => {
       if (!(await handle(ctx, packet))) {
         if (extension) await extension.handle(packet);
-        else warn(ctx.socket, ERROR_CODE.invalidMessage, ctx.messages.invalidMessage);
+        else warn(ctx, ERROR_CODE.invalidMessage, ctx.messages.invalidMessage);
       }
     };
     if (stopping) void close();
@@ -992,7 +996,7 @@ export function createSharedTextRoom<
       async receive(data: unknown) {
         if (stopping || closing || ctx.phase === "closing") return;
         if (typeof data !== "string") {
-          warn(ctx.socket, ERROR_CODE.invalidMessage, ctx.messages.jsonTextOnly);
+          warn(ctx, ERROR_CODE.invalidMessage, ctx.messages.jsonTextOnly);
           return;
         }
         if (data.length > MAX_CLIENT_MESSAGE_LENGTH) {
@@ -1003,7 +1007,7 @@ export function createSharedTextRoom<
         try {
           parsed = JSON.parse(data);
         } catch {
-          warn(ctx.socket, ERROR_CODE.invalidJson, ctx.messages.invalidJson);
+          warn(ctx, ERROR_CODE.invalidJson, ctx.messages.invalidJson);
           return;
         }
         const awareness = typeof parsed === "object" && parsed !== null && "type" in parsed && parsed.type === WS_TYPE.awarenessPublish;

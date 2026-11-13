@@ -150,6 +150,8 @@ const fixture = () => {
   const sent: Array<{ type: string; payload: { code?: string; message?: string; updates?: unknown[] } }> = [];
   const closed: number[] = [];
   const ready = Promise.withResolvers<void>();
+  const callbackContexts: unknown[] = [];
+  const validatedContexts: unknown[] = [];
   const room = createSharedTextRoom({
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     protocol: {
@@ -166,7 +168,10 @@ const fixture = () => {
       maxSyncPayloadLength: 8_000_000,
       streamCursorPattern: /^s6t\./,
       decode: (value) => value,
-      encode: (type, payload) => ({ type, payload }),
+      encode: (type, payload, ctx) => {
+        callbackContexts.push(ctx);
+        return { type, payload };
+      },
     },
     log: sharedText.define({ id: "room", retention: { maxAgeMs: 60_000, maxBytes: 1_000_000 } }),
     awarenessTopic: () => topic as unknown as Topic<SharedTextEvent & { kind: "awareness" }>,
@@ -175,6 +180,10 @@ const fixture = () => {
         snapshots++;
         if (queueFailure) throw new Error("queue failed");
       },
+    },
+    validateState: (_state, ctx) => {
+      validatedContexts.push(ctx);
+      return true;
     },
     adapter: {
       authenticate: async () => {
@@ -228,6 +237,8 @@ const fixture = () => {
   const request = (type: string, payload: object) => connection.receive(JSON.stringify({ type, payload: { docId: "public", ...payload } }));
   return {
     room,
+    callbackContexts,
+    validatedContexts,
     ready: ready.promise,
     ctx,
     connection,
@@ -871,5 +882,29 @@ test("a failed final snapshot enqueue still removes awareness for remote peers",
     observer.destroy();
     source.destroy();
     observerDoc.destroy();
+  }
+});
+
+test("validation, wire encoding and terminal close encoding receive the connection context", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 42;
+  try {
+    await f.join();
+    await f.ready;
+    source.getText("codemirror").insert(0, "scoped");
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(source)), baseCursor: "s6t.room.0", restoreRevision: "0" },
+    });
+    expect(f.validatedContexts).toEqual([f.ctx]);
+    const beforeClose = f.callbackContexts.length;
+    f.revoke();
+    await waitFor(() => f.closed.length > 0);
+    expect(f.callbackContexts.length).toBeGreaterThanOrEqual(beforeClose + 2);
+    expect(f.callbackContexts.every((ctx) => ctx === f.ctx)).toBe(true);
+  } finally {
+    source.destroy();
+    await f.connection.close();
   }
 });

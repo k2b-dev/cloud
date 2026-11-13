@@ -25,6 +25,7 @@ import {
   sharedText,
   sharedTextSnapshotJobConfig,
 } from "./index";
+import type { SharedTextLifecycleStore } from "./lifecycle-store";
 
 const NOW = new Date("2026-10-19T12:00:00Z");
 beforeEach(() => setSystemTime(NOW));
@@ -60,7 +61,7 @@ const event = (seq: number, docId = "doc", ageMs = 1000): TopicEvent<SharedTextS
     doc.destroy();
   }
 };
-const fixture = (repair?: SharedTextSnapshotRepair) => {
+const fixture = (repair?: SharedTextSnapshotRepair, authority?: SharedTextLifecycleStore) => {
   const calls: string[] = [];
   const publications: TopicPublish<SharedTextSyncEvent>[] = [];
   const rows: Array<{ docId: string; cursor: string | null }> = [];
@@ -180,6 +181,9 @@ const fixture = (repair?: SharedTextSnapshotRepair) => {
     },
   };
   const log = {
+    lifecycle: authority,
+    admit: async <T>(_id: string, signal: AbortSignal | undefined, run: (signal: AbortSignal) => Promise<T>) =>
+      run(signal ?? new AbortController().signal),
     writer: () => ({ ...writer, extend: async () => true }),
     id: "test.text",
     topic: () => topic,
@@ -882,3 +886,26 @@ test("a snapshot repair cannot overwrite a restore fence while its SQL transacti
   await f.run();
   expect(f.saves[0]![1].text).toBe("repair");
 });
+
+for (const state of ["frozen", "closed"] as const)
+  test(`snapshot repair respects a durable ${state} authority after its log marker was pruned`, async () => {
+    const authority: SharedTextLifecycleStore = {
+      get: async () => ({
+        revision: 1,
+        value:
+          state === "frozen"
+            ? { state, expiresAt: NOW.getTime() + 60_000, freezeCursor: cursor(10), restoreRevision: "revision" }
+            : { state, freezeCursor: cursor(10), closeCursor: cursor(11), restoreRevision: "revision" },
+      }),
+      put: async () => {
+        throw new Error("Cannot change an active boundary");
+      },
+    };
+    const f = fixture({ maxLength: 100, plan: () => [{ from: 0, to: 0, insert: "repair" }] }, authority);
+    f.states.set("doc", { state: new Uint8Array([0, 0]), text: "", cursor: cursor(10), restoreRevision: "revision" });
+    f.events.length = 0;
+    f.latest.delete("doc");
+    await f.run();
+    expect(f.publications).toHaveLength(0);
+    expect(f.saves).toHaveLength(0);
+  });
