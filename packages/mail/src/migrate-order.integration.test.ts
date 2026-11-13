@@ -58,6 +58,20 @@ const removeOneReplyBox = async () => {
       AND conversation_id IS NOT NULL`.simple();
 };
 
+/** #3258 (0.76) revokes shared-draft room writers through these triggers; 0.75 has none of them. */
+const roomAccessTriggers = async () =>
+  (
+    await sql<{ name: string }[]>`SELECT pg_class.relname || '.' || tgname AS name FROM pg_trigger
+      JOIN pg_class ON pg_class.oid = tgrelid JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+      WHERE pg_namespace.nspname = 'mail' AND tgname IN ('room_access_changed', 'room_access_updated') ORDER BY 1`
+  ).map((row) => row.name);
+const removeRoomAccessTriggers = async () => {
+  for (const name of await roomAccessTriggers()) {
+    const [table, trigger] = name.split(".");
+    await sql.unsafe(`DROP TRIGGER ${trigger} ON mail.${table}`);
+  }
+};
+
 type DraftRow = { id: string; state: string; body_markdown: string; revision: string; consolidated_count: number; origin: string };
 const draft = async (id: string) => {
   const [row] = await sql<DraftRow[]>`SELECT id, state, body_markdown, revision::text AS revision, consolidated_count, origin
@@ -209,9 +223,11 @@ suite("Mail one-way migrations in every upgrade order", () => {
 
   test("0.75 → this release: the retirement runs after a completed F6 without changing the reply box", async () => {
     const previous = await f6();
-    // 0.75: F6 completed with its unique reply box, no retirement yet.
+    // 0.75: F6 completed with its unique reply box, no retirement yet, no shared-room access triggers.
+    const roomTriggers = await roomAccessTriggers();
     await sql`DELETE FROM mail.schema_migrations WHERE version = 5`;
     await removeRetirementFences();
+    await removeRoomAccessTriggers();
     const first = await conversation();
     const person = await personDraft(first, "Person reply", "2026-11-02T10:00:00Z", "2026-11-02T10:05:00Z");
     const automatic = await automaticReply(first, "Out of office");
@@ -229,7 +245,40 @@ suite("Mail one-way migrations in every upgrade order", () => {
     expect(await draft(automatic)).toMatchObject({ state: "discarded", body_markdown: "Out of office" });
     expect(await draft(scheduledAutomatic)).toMatchObject({ state: "discarded", body_markdown: "Scheduled acknowledgement" });
     expect(await presentRetirementTriggers()).toEqual(retirementTriggers);
+    expect(await roomAccessTriggers()).toEqual(roomTriggers);
     await expect(Promise.resolve(automaticReply(first, "Too late"))).rejects.toThrow("Automatic replies are retired");
+
+    const settled = await markers();
+    await migrate();
+    expect(await markers()).toEqual(settled);
+  });
+
+  test("0.76 → this release: the retirement runs under the shared-room access triggers and leaves shared drafts open", async () => {
+    const previous = await f6();
+    const roomTriggers = await roomAccessTriggers();
+    expect(roomTriggers).toHaveLength(12);
+    // 0.76: F6 completed and shared drafts live in the text room, no retirement yet.
+    await sql`DELETE FROM mail.schema_migrations WHERE version = 5`;
+    await removeRetirementFences();
+    const first = await conversation();
+    const shared = await personDraft(first, "Shared reply", "2026-11-06T10:00:00Z", "2026-11-06T10:05:00Z");
+    await sql`UPDATE mail.drafts SET edit_mode = 'shared' WHERE id = ${shared}::uuid`;
+    const automatic = await automaticReply(first, "Holiday notice");
+    const before = await draft(shared);
+    await sql`DELETE FROM events.outbox WHERE app_id = 'mail'`;
+
+    const result = await migrate();
+
+    expect(result).toEqual(previous as typeof result);
+    expect(await markerNames()).toEqual(released);
+    expect(await draft(shared)).toEqual(before);
+    expect(await draft(automatic)).toMatchObject({ state: "discarded", body_markdown: "Holiday notice" });
+    // Discarding the automatic reply is a room-relevant draft change: open rooms of this mailbox re-check access.
+    expect(
+      await sql`SELECT 1 FROM events.outbox WHERE app_id = 'mail' AND coalesce_key LIKE ${`%:room.access:${mailboxId}`}`,
+    ).not.toHaveLength(0);
+    expect(await roomAccessTriggers()).toEqual(roomTriggers);
+    expect(await presentRetirementTriggers()).toEqual(retirementTriggers);
 
     const settled = await markers();
     await migrate();
