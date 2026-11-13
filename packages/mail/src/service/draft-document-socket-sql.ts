@@ -5,17 +5,22 @@ import { afterDraftDocumentCommit } from "./draft-document-log";
 // Each SQL statement uses the socket's existing access-refresh budget.
 export const DRAFT_DOCUMENT_ACCESS_REFRESH_MS = 10_000;
 
-/** Cancel the actual query, then await its settlement so the transaction can roll back. */
+/** Start a lazy query before cancellation, then await settlement so its transaction can roll back. */
 export const awaitDraftDocumentQuery = async <T>(
   query: Pick<SQL.Query<T>, "then"> & { cancel(): unknown },
   signal?: AbortSignal,
 ): Promise<T> => {
+  // Bun's cancel-before-start leaves a lazy query pending forever. An already
+  // stopped caller must leave it unstarted; otherwise then() starts it before
+  // any abort handler is allowed to call cancel().
+  signal?.throwIfAborted();
+  const running = query.then((value) => value);
   // A cancel after the reservation closed settles with "Connection closed"; the awaited query reports the outcome.
   const abort = () => void Promise.resolve(query.cancel()).catch(() => undefined);
   signal?.addEventListener("abort", abort, { once: true });
   try {
     if (signal?.aborted) abort();
-    const result = await query;
+    const result = await running;
     signal?.throwIfAborted();
     return result;
   } finally {
