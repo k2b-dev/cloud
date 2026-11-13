@@ -1,0 +1,6 @@
+### Retry a rejected predecessor before its dependent edits
+
+- **What happened:** Admission contention returned BUSY for one edit, then a queued dependent edit required reopening. A reader gaining write access had no admission base, and rejoin or failed leave could corrupt or retain a base.
+- **Root cause:** The transport continued admitting deltas after rejecting their predecessor. The browser retried deltas rather than its full state. Base attachment and release did not cover every access transition and cleanup failure.
+- **Error class:** A shared admission change loses causal dependencies or transport ownership.
+- **Guard:** Room tests reject queued BUSY deltas without additional admission, accept a marked complete retry, reconnect promoted readers, stop old streams before rejoin and release bases even when enqueue or leave fails. Browser tests retry dependent input as full state and clear the journal only on its echo. The Notebooks lineage fixture verifies BUSY retry keeps the originating restore revision; its former STREAM_FAILED expectation contradicted the intentional retry contract. Warm-admission tests bound full-state encoding to one candidate and check catch-up before committing a dependent delta.

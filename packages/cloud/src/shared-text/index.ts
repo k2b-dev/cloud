@@ -1,5 +1,6 @@
 export { captureTextAnchor, resolveTextAnchor } from "./anchors";
 export { createTrustedTextAwareness, InvalidSharedTextAwarenessError } from "./awareness";
+export { SharedTextBoundaryError } from "./boundary";
 export { compareStreamCursor, maxStreamCursor, parseStreamCursor } from "./cursor";
 export {
   applySharedTextEvent,
@@ -11,6 +12,24 @@ export {
   toBase64,
 } from "./events";
 export { sharedText } from "./log";
+export {
+  createSharedTextRoom,
+  createSharedTextRoomContext,
+  isSharedTextStorageExhausted,
+  type SharedTextRoomAccess,
+  type SharedTextRoomAdapter,
+  type SharedTextRoomContext,
+  type SharedTextRoomMessages,
+  type SharedTextRoomSnapshot,
+  type SharedTextRoomSocket,
+} from "./room";
+export type { SharedTextRoomCloseOptions, SharedTextRoomFreeze, SharedTextRoomLifecycleOptions } from "./room-lifecycle";
+export {
+  createSharedTextRoomSchemas,
+  SHARED_TEXT_ROOM_ERROR_CODE,
+  SharedTextRestoreRevisionSchema,
+  type SharedTextRoomProtocol,
+} from "./room-protocol";
 export type { SharedTextSnapshotBacklog, SharedTextSnapshotRepair, SharedTextSnapshotRequest, SharedTextSnapshotStore } from "./snapshots";
 export { sharedTextSnapshotJobConfig } from "./snapshots";
 export { planStructuralInverse, type SharedTextStructuralHistory, validateStructuralIngress } from "./structural-history";

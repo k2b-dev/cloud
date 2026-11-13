@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import { SHARED_TEXT_ACK_TIMEOUT_MS } from "@k2b/cloud/browser/shared-text";
 import { encoding } from "@k2b/stdlib";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from "y-protocols/awareness";
@@ -7,7 +7,7 @@ import { notebooksWorkspace } from "../../../lib/workspace-events";
 import { notebooksYjs } from "../../../lib/yjs";
 import { presencePeerId } from "../presence-peer";
 import { reconnectDelayMs } from "../reconnect";
-import { createYjsProvider } from "./provider";
+import { createYjsProvider, type YjsProviderError } from "./provider";
 
 const NOTE_ID = "Note01";
 const NOTEBOOK_ID = "Book01";
@@ -1631,5 +1631,48 @@ test("the shared provider adapter retains exact Notebook request packets and ser
     provider.dispose();
     awareness.destroy();
     doc.destroy();
+  }
+});
+
+test("BUSY has its own label and forwards a full-state retry without ending the editor", () => {
+  jest.useFakeTimers();
+  const random = spyOn(Math, "random").mockReturnValue(0.5);
+  const doc = new Y.Doc();
+  const awareness = new Awareness(doc);
+  const errors: YjsProviderError[] = [];
+  const fatal: string[] = [];
+  const provider = createYjsProvider({
+    doc,
+    awareness,
+    noteId: NOTE_ID,
+    appUrl: "http://localhost",
+    onError: (error) => errors.push(error),
+    onFatal: (error) => fatal.push(error.code),
+  });
+  try {
+    provider.connect();
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    readyReplay(socket);
+    doc.getText("content").insert(0, "first");
+    doc.getText("content").insert(5, " second");
+    socket.message({ type: notebooksYjs.wsType.error, payload: { code: "BUSY" } });
+    expect(errors).toEqual([{ code: "BUSY", message: "Document is busy; retrying", noteId: undefined }]);
+    expect(fatal).toEqual([]);
+    expect(provider.hasUnsentChanges()).toBe(true);
+    jest.advanceTimersByTime(10_000);
+    const retry = JSON.parse(socket.sent.filter((value) => JSON.parse(value).type === notebooksYjs.wsType.syncPublish).at(-1)!);
+    expect(retry.payload.retry).toBe(true);
+    expect(retry.payload.restoreRevision).toBe("0");
+    expect(retry.payload.payload).toBe(Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64"));
+    echo(socket, retry.payload.payload);
+    expect(provider.hasUnsentChanges()).toBe(false);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  } finally {
+    provider.dispose();
+    awareness.destroy();
+    doc.destroy();
+    random.mockRestore();
+    jest.useRealTimers();
   }
 });
