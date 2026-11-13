@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Readable, Writable } from "node:stream";
-import * as Y from "yjs";
 import { sql } from "@k2b/cloud";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { type FetchMessageObject, ImapFlow, type MessageAddressObject } from "imapflow";
 import { type AddressObject, simpleParser } from "mailparser";
+import * as Y from "yjs";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { logoPng } from "../../test/mailbox-logo-fixtures";
