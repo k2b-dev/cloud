@@ -18,7 +18,8 @@ const result = await Bun.build({
     [entry]: `
     import { createComponent, render } from "solid-js/web";
     import { PdfViewer } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
-    const data = await (await fetch("/doc.pdf")).arrayBuffer();
+    // "?doc=text" shows a six-page document dense with text instead of the 40-page one.
+    const data = await (await fetch(new URLSearchParams(location.search).get("doc") === "text" ? "/text.pdf" : "/doc.pdf")).arrayBuffer();
     import { createSignal } from "solid-js";
     window.pdfErrors = [];
     const [shown, setShown] = createSignal(data);
@@ -28,6 +29,15 @@ const result = await Bun.build({
     // "?fit=page&height=416" shows the viewer as a short preview beside other content.
     const query = new URLSearchParams(location.search);
     const app = document.getElementById("app");
+    // How often spans arrive in each text layer that is already in the page, from the first render on.
+    window.pdfTextInsertions = new Map();
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const layer = record.target instanceof Element ? record.target.closest(".k2b-pdf-viewer__text") : null;
+        if (layer && [...record.addedNodes].some((node) => node.nodeName === "SPAN"))
+          window.pdfTextInsertions.set(layer, (window.pdfTextInsertions.get(layer) ?? 0) + 1);
+      }
+    }).observe(app, { childList: true, subtree: true });
     if (query.get("height")) app.style.height = query.get("height") + "px";
     render(() => createComponent(PdfViewer, { get data() { return shown(); }, title: "Fixture", fit: query.get("fit") ?? undefined, open: query.has("open") || undefined, zoom: query.get("zoom") === "0" ? false : undefined, onError: (error) => window.pdfErrors.push(String(error)) }), app);
   `,
@@ -45,6 +55,7 @@ const assets = new Map(
   await Promise.all(result.outputs.map(async (output) => [basename(output.path), await output.arrayBuffer()] as const)),
 );
 const pdf = pdfFixture(40, 7);
+const textPdf = pdfFixture(6, 0, 70);
 
 let browser: Browser;
 beforeAll(async () => {
@@ -60,6 +71,7 @@ const load = async (search = "", viewport = { width: 1000, height: 800 }): Promi
   await page.route(`${origin}**`, (route) => {
     const path = new URL(route.request().url()).pathname.slice(1);
     if (path === "doc.pdf") return route.fulfill({ body: Buffer.from(pdf), contentType: "application/pdf" });
+    if (path === "text.pdf") return route.fulfill({ body: Buffer.from(textPdf), contentType: "application/pdf" });
     const asset = assets.get(path);
     if (asset) return route.fulfill({ body: Buffer.from(asset), contentType: path.endsWith(".js") ? "text/javascript" : undefined });
     return route.fulfill({
@@ -127,6 +139,23 @@ describe("@k2b/ui PdfViewer", () => {
     }
   });
 
+  // pdf.js measures every text item right after adding the previous one; inside the page each measurement recalculated
+  // the whole page, and a large app blocked for seconds (#3307). Built outside the page, a layer's spans arrive at once.
+  test("builds each text layer outside the page and adds its spans in one step", async () => {
+    const page = await load("?doc=text");
+    try {
+      await page.waitForFunction(() => document.querySelectorAll(".k2b-pdf-viewer__text-end").length === 6, undefined, { timeout: 30_000 });
+      const counts = await page.evaluate(() => [
+        ...(window as unknown as { pdfTextInsertions: Map<Element, number> }).pdfTextInsertions.values(),
+      ]);
+      expect(counts).toEqual([1, 1, 1, 1, 1, 1]);
+      // The dense page carries all its text: a heading and two runs on each of its 70 lines.
+      expect(await page.locator('[data-pdf-page="5"] .k2b-pdf-viewer__text span').count()).toBeGreaterThan(140);
+    } finally {
+      await page.close();
+    }
+  });
+
   // The end marker fills the layer while a drag selects; it must lie below the spans, or the drag selects nothing (#3302).
   test("dragging the mouse across several lines selects their text", async () => {
     const page = await load();
@@ -148,13 +177,32 @@ describe("@k2b/ui PdfViewer", () => {
     }
   });
 
+  test("every page gets its text without scrolling, so the browser's find reaches the whole document", async () => {
+    const page = await load();
+    try {
+      await page.waitForFunction(
+        () => document.querySelector('[data-pdf-page="39"] .k2b-pdf-viewer__text')?.textContent?.includes("Line 6 of page 40"),
+        undefined,
+        {
+          timeout: 30_000,
+        },
+      );
+      // Only the pages near the view are drawn.
+      expect(await page.locator("[data-pdf-page] img").count()).toBeLessThan(15);
+      expect(await page.locator(".k2b-pdf-viewer__text-end").count()).toBe(40);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("scrolling to the end draws the last page and shows it as the current one", async () => {
     const page = await load();
     try {
       await page.locator(".k2b-pdf-viewer__pages").evaluate((area) => area.scrollTo({ top: area.scrollHeight }));
       await page.locator('[data-pdf-page="39"] img').waitFor();
       await page.waitForFunction(() => document.querySelector(".k2b-pdf-viewer__page-number")?.textContent?.includes("40 / 40"));
-      expect(await page.locator('[data-pdf-page="0"] .k2b-pdf-viewer__text').count()).toBe(0);
+      // Far from the view, the first page keeps its text, so the browser's find still reaches it.
+      expect(await page.locator('[data-pdf-page="0"] .k2b-pdf-viewer__text').textContent()).toContain("Page 1");
     } finally {
       await page.close();
     }
