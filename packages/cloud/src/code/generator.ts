@@ -213,13 +213,12 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       `export type ${inputName} = ${input.type};`,
       jsdoc(`${entry.title} result.`),
       `export type ${dataName} = ${output.type};`,
-      `type Input${index} = ${inputName};`,
-      `type Data${index} = ${dataName};`,
     );
-    const result = op.stream?.direction === "read" ? "FileRef" : op.kind === "query" ? `CodeQueryResult<Data${index}>` : `Data${index}`;
+    // Signatures name the exported types directly; a private alias per operation would only repeat them.
+    const result = op.stream?.direction === "read" ? "FileRef" : op.kind === "query" ? `CodeQueryResult<${dataName}>` : dataName;
     const optional =
       fields.every((field) => !field.required) && (!Array.isArray(inputSchema.required) || inputSchema.required.length === 0);
-    let signature = `(input${optional ? "?" : ""}: Input${index}) => Promise<${result}>`;
+    let signature = `(input${optional ? "?" : ""}: ${inputName}) => Promise<${result}>`;
     // Original overloads bookend the precise one: preserve call resolution and ReturnType/Parameters.
     if (op.capability === "core.ai.decide") {
       signature = `(${signature}) & (<const Input extends CodeDecisionInput<${inputName}>>(input: Input) => Promise<CodeQueryResult<CodeDecisionData<Input, ${dataName}>>>) & (${signature})`;

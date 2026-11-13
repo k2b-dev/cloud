@@ -762,21 +762,15 @@ export type CodeGenerationOutput<Input> = Input extends { output: infer Output }
 export type Work$hshop_Catalog_ListInput = Record<string, never>;
 /** Catalog result. */
 export type Work$hshop_Catalog_ListData = Array<string>;
-type Input0 = Work$hshop_Catalog_ListInput;
-type Data0 = Work$hshop_Catalog_ListData;
 /** Export input. */
 export type Work$hshop_Stock_ExportInput = Work$hshop_Catalog_ListInput;
 /** Export result. */
 export type Work$hshop_Stock_ExportData = Work$hshop_Catalog_ListInput;
-type Input1 = Work$hshop_Stock_ExportInput;
-type Data1 = Work$hshop_Stock_ExportData;
 type S617d671a6f11 = { id: string; state: (("ready" | "empty")) & (string) };
 /** Stock input. */
 export type Work$hshop_Stock_ListInput = { /** Page cursor. */ cursor?: string };
 /** Stock result. */
 export type Work$hshop_Stock_ListData = { next: (string | null); rows: Array<S617d671a6f11> };
-type Input2 = Work$hshop_Stock_ListInput;
-type Data2 = Work$hshop_Stock_ListData;
 type Sf404a16e7971 = { /** Stable app-owned resource identifier. */ id: string; /** Namespaced resource type declared by… */ type: string };
 type S47a5d34bde7f = { ref: Sf404a16e7971; title: string };
 type Se47ab38f12fe = { container?: S47a5d34bde7f; /** One line in the caller's locale that… */ context?: string; done?: boolean; permission: (("read" | "write" | "admin")) & (string); /** The resource's current state as a… */ status?: string; title: string };
@@ -784,31 +778,23 @@ type Se47ab38f12fe = { container?: S47a5d34bde7f; /** One line in the caller's l
 export type Work$hshop_Workshop_ReadInput = { /** Workshop ID. */ id: string };
 /** Read workshop result. */
 export type Work$hshop_Workshop_ReadData = { view: Se47ab38f12fe };
-type Input3 = Work$hshop_Workshop_ReadInput;
-type Data3 = Work$hshop_Workshop_ReadData;
 type S2f2db2f4d25b = { /** Detail kind. */ kind: ("note") & (string); /** Note text. */ text: string; [key: string]: unknown };
 type S43be3d11d6c4 = { /** Item count. */ count: number; /** Detail kind. */ kind: ("count") & (string); [key: string]: unknown };
 /** Create item input. */
 export type Work$hshop_Item_CreateInput = { /** Item details. */ details?: (S2f2db2f4d25b | S43be3d11d6c4); /** Item title. */ title: string; idempotencyKey: string };
 /** Create item result. */
 export type Work$hshop_Item_CreateData = { id: string };
-type Input4 = Work$hshop_Item_CreateInput;
-type Data4 = Work$hshop_Item_CreateData;
 /** Inspect input. */
 export type Work$hshop_Item_InspectInput = { idempotencyKey?: never };
 /** Inspect result. */
 export type Work$hshop_Item_InspectData = { ok: boolean };
-type Input5 = Work$hshop_Item_InspectInput;
-type Data5 = Work$hshop_Item_InspectData;
 /** Move item input. */
 export type Work$hshop_Item_MoveInput = { /** Item to move. */ itemId: string; destination: CodeHandle<"work-shop.workshop">; idempotencyKey?: never };
 /** Move item result. */
 export type Work$hshop_Item_MoveData = { moved: boolean };
-type Input6 = Work$hshop_Item_MoveInput;
-type Data6 = Work$hshop_Item_MoveData;
-type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": ((((input?: Input0) => Promise<CodeQueryResult<Data0>>) & CodeAiTool)) }; readonly "workshop": { readonly "read": ((((input: Input3) => Promise<CodeQueryResult<Data3>>) & CodeAiTool)) } };
-type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "inspect": ((((input?: Input5) => Promise<Data5>) & CodeAiTool)) };
-type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((((input: Input4) => Promise<Data4>) & CodeAiTool)); readonly "move": (((input: Input6) => Promise<Data6>)) }; readonly "stock": { readonly "export": ((((input?: Input1) => Promise<FileRef>) & CodeAiTool)); readonly "list": ((((input?: Input2) => Promise<CodeQueryResult<Data2>>) & CodeAiTool)) } };
+type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": ((((input?: Work$hshop_Catalog_ListInput) => Promise<CodeQueryResult<Work$hshop_Catalog_ListData>>) & CodeAiTool)) }; readonly "workshop": { readonly "read": ((((input: Work$hshop_Workshop_ReadInput) => Promise<CodeQueryResult<Work$hshop_Workshop_ReadData>>) & CodeAiTool)) } };
+type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "inspect": ((((input?: Work$hshop_Item_InspectInput) => Promise<Work$hshop_Item_InspectData>) & CodeAiTool)) };
+type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((((input: Work$hshop_Item_CreateInput) => Promise<Work$hshop_Item_CreateData>) & CodeAiTool)); readonly "move": (((input: Work$hshop_Item_MoveInput) => Promise<Work$hshop_Item_MoveData>)) }; readonly "stock": { readonly "export": ((((input?: Work$hshop_Stock_ExportInput) => Promise<FileRef>) & CodeAiTool)); readonly "list": ((((input?: Work$hshop_Stock_ListInput) => Promise<CodeQueryResult<Work$hshop_Stock_ListData>>) & CodeAiTool)) } };
 export declare const work_shop: Handle0<"work-shop"> & { readonly "item": (<const Id extends string>(id: Id) => Handle1<Id>); readonly "workshop": (<const Id extends string>(id: Id) => Handle2<Id>) };
 export declare const owner: Handle2<"owner-shop">;
 export type CodeEvent<Type extends string, Data> = {
