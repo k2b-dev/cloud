@@ -15,7 +15,7 @@ import { z } from "zod";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { prepareDraftSendBinding } from "../../test/fixtures/draft-send";
-import { useRegisteredMailTestApp } from "../../test/fixtures/registered-app";
+import { useRegisteredMailTestApp } from "../../test/fixtures/registered-app.test-fixture";
 import { draftEditableContentInputSchema } from "../contracts";
 import { createDraftRevisionUpdate, readDraftDocument as readModel } from "../lib/draft-document";
 import { type MailDraftDocumentMessage, mailDraftDocumentMessageSchema } from "../lib/draft-document-protocol";
