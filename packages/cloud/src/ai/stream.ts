@@ -1,5 +1,6 @@
 import { PayloadTooLargeError } from "@k2b/sync";
 import { lazySync } from "../_internal/process-sync";
+import { watchAppAccess, watchCredentialExpiry } from "../server/middleware/app-access";
 import { logger } from "../services/logging";
 import { latestTopicCursor } from "../services/topic-cursor";
 import type { AiConversationWatch } from "./conversation-watchers";
@@ -384,14 +385,12 @@ export const createAiConversationStreamResponse = (input: {
   viewerUserId?: string | null;
   signal?: AbortSignal;
   heartbeatMs?: number;
-  /**
-   * Re-checked on every heartbeat. A stream can outlive the credential and the
-   * grant that opened it by hours, and authorizing once at connect time means
-   * a revoked session or withdrawn grant keeps delivering model output until
-   * the client happens to disconnect. Returning false closes the stream; the
-   * client's reconnect then meets the ordinary 401, 403, or 404.
-   */
+  /** Checked at admission and on access events, never by the heartbeat. */
   revalidate?: () => Promise<boolean>;
+  /** Existing identity and conversation access followers; failures end the stream. */
+  subscribeAccess?: (changed: () => void, failed: () => void) => () => void;
+  /** Earliest known account or credential expiry, enforced without SQL. */
+  expiresAt?: number;
   /** A signed-in tab's watch: refreshed with each heartbeat and released when the stream ends. */
   watch?: AiConversationWatch;
 }): Response => {
@@ -399,6 +398,8 @@ export const createAiConversationStreamResponse = (input: {
   const liveAbort = new AbortController();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let closed = false;
+  let stopAccess = () => {};
+  let stopExpiry = () => {};
 
   const abortLive = () => liveAbort.abort();
   if (input.signal?.aborted) abortLive();
@@ -433,6 +434,8 @@ export const createAiConversationStreamResponse = (input: {
           closed = true;
           if (heartbeat) clearInterval(heartbeat);
           heartbeat = undefined;
+          stopAccess();
+          stopExpiry();
           void input.watch?.release();
           input.signal?.removeEventListener("abort", abortLive);
           abortLive();
@@ -443,34 +446,50 @@ export const createAiConversationStreamResponse = (input: {
           }
         };
 
+        let pendingAccess: Promise<boolean> = Promise.resolve(true);
+        if (input.revalidate) {
+          const revalidate = input.revalidate;
+          stopAccess = watchAppAccess({
+            intervalMs: false,
+            check: () => {
+              pendingAccess = revalidate();
+              return pendingAccess;
+            },
+            subscribe: (changed) => input.subscribeAccess?.(changed, close) ?? (() => {}),
+            denied: close,
+          });
+        }
+        if (input.expiresAt !== undefined) stopExpiry = watchCredentialExpiry(input.expiresAt, close);
+        if (closed) {
+          stopAccess();
+          stopExpiry();
+          return;
+        }
+
         if (heartbeatMs > 0) {
           heartbeat = setInterval(() => {
             if (!enqueue(encodeSseHeartbeat())) return;
             input.watch?.refresh();
-            if (!input.revalidate) return;
-            // Fail closed: a revalidation that throws is not a pass.
-            void input
-              .revalidate()
-              .catch((error) => {
-                log.warn("AI conversation stream revalidation failed", {
-                  conversationId: input.conversation.id,
-                  error: error instanceof Error ? error.message : "revalidation failed",
-                });
-                return false;
-              })
-              .then((allowed) => {
-                if (!allowed) close();
-              });
           }, heartbeatMs);
         }
 
         try {
+          // Admission and each delivery wait for any access check that raced them.
+          const accessCurrent = async () => {
+            let checked: Promise<boolean>;
+            do {
+              checked = pendingAccess;
+              if (!(await checked)) return false;
+            } while (checked !== pendingAccess);
+            return !closed;
+          };
+          if (!(await accessCurrent())) return;
           for await (const event of streamAiConversationEvents({
             conversation: input.conversation,
             viewerUserId: input.viewerUserId,
             signal: liveAbort.signal,
           })) {
-            if (!enqueue(encodeSseEvent(event))) return;
+            if (!(await accessCurrent()) || !enqueue(encodeSseEvent(event))) return;
           }
         } catch (error) {
           if (!liveAbort.signal.aborted) {
@@ -485,6 +504,9 @@ export const createAiConversationStreamResponse = (input: {
       },
       cancel() {
         closed = true;
+        stopAccess();
+        stopExpiry();
+        input.signal?.removeEventListener("abort", abortLive);
         if (heartbeat) clearInterval(heartbeat);
         void input.watch?.release();
         abortLive();

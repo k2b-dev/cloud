@@ -2260,6 +2260,18 @@ export const migrateCloudAi = async (): Promise<void> => {
         gen_random_uuid(), row_data.created_by_user_id, row_data.short_id, project_short,
         ARRAY['conversation-list', 'conversation-detail']::text[]
       );
+      -- Domain access changes use the existing Core live outbox. No output/message
+      -- update emits this hint: only changes that can end an admitted stream.
+      IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND (
+        OLD.archived_at IS DISTINCT FROM NEW.archived_at
+        OR OLD.created_by_user_id IS DISTINCT FROM NEW.created_by_user_id
+      )) THEN
+        PERFORM events.enqueue(
+          gen_random_uuid(), 'core', 'live', 'ai.conversation:' || row_data.id::text,
+          jsonb_build_object('v', 1, 'k', 'ai.conversation:' || row_data.id::text, 'a', true),
+          'ai.conversation.access:' || row_data.id::text
+        );
+      END IF;
       RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
     END
     $$ LANGUAGE plpgsql

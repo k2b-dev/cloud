@@ -5,7 +5,7 @@ section: Identity and access
 order: 315
 description: Declare who may use an application and keep entry and discovery decisions consistent.
 tags: [identity, applications, authorization]
-updated: 2026-11-03
+updated: 2026-11-13
 ---
 
 # App access
@@ -174,7 +174,9 @@ must observe `signal` and cancel outstanding work when it aborts.
 Cloud reuses an identical decision only within the originating request.
 There is no cache between requests: removing the last right or group
 membership removes visibility and entry on the next request. Existing live
-connections close within the existing one-minute revalidation window.
+connections recheck on access events and within the one-minute periodic
+revalidation window. Resource-derived entry rules retain this periodic check
+because application data can change without an identity event.
 Public-route exemptions keep their own authentication as described below.
 
 ## Preserve public routes
@@ -410,8 +412,18 @@ before issuing an invocation and when the target receives it. Permission
 lookup errors deny access.
 
 Changes take effect on the next request. Open live connections must revalidate
-when access changes and at least once per minute, including current account,
-role, group, and credential state. Failed revalidation closes the connection.
+when access changes and, by default, at least once per minute, including current
+account, role, group, and credential state. Failed revalidation closes the connection.
+
+An SSE route may declare `c.set("appAccessGuard", { eventOnly: true })` to disable
+the app guard's periodic check. A custom socket may pass `{ eventOnly: true }`
+to `guardAppAccessSocket`. Admission still rechecks credentials after subscribing,
+and known credential and account deadlines use local timers. Use this option
+only when every input to the decision has an access event. The owning transport
+must observe domain changes too. `appAccess.resources()` always retains its
+periodic check: its application-owned `hasAnyRight` query has no general domain
+invalidation contract. The built-in AI conversation stream declares this option;
+its conversation trigger publishes archive, owner and deletion changes.
 
 ## Check access inside a service
 
