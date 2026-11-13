@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { SignJWT } from "jose";
@@ -17,7 +17,7 @@ import * as settings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
 import { wakeAppAccessChanged } from "./app-access";
 import { defineLive, startLiveOutbox } from "./live";
-import { startLiveDelivery } from "./live-delivery";
+import { liveTopic, startLiveDelivery } from "./live-delivery";
 import { LIVE_LIMITS, type LiveChannel, type LiveViewer } from "./live-engine";
 
 // Two replicas of one application ("pods") in this process, each with its own
@@ -109,10 +109,10 @@ const open = async (pod: number, headers: Record<string, string>) => {
   };
 };
 
-const until = async (condition: () => boolean, timeoutMs = 5_000, message = "Condition not reached in time") => {
+const until = async (condition: () => boolean, timeoutMs = 5_000, message: string | (() => string) = "Condition not reached in time") => {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error(message);
+    if (Date.now() > deadline) throw new Error(typeof message === "function" ? message() : message);
     await Bun.sleep(20);
   }
 };
@@ -150,46 +150,88 @@ suite("live routes", () => {
     if (users.length > 0) await sql`DELETE FROM auth.users WHERE id IN ${sql(users)}`;
   });
 
-  test("a reconnect to the other replica replays from its ring; old, foreign, and future cursors resync", async () => {
-    const ada = await person("Ada Example");
-    allow("ring", ada);
-    const first = await open(0, ada.headers);
-    first.sub("s", "item", { key: "ring" });
-    await until(() => first.of("s").length === 1);
-    await publish("ring", 1);
-    await publish("ring", 2);
-    await until(() => first.of("s").length === 3);
-    const applied = first.of("s")[2]?.cursor as string;
-    first.socket.close();
-    await publish("ring", 3);
+  for (const holdPublication of [false, true]) {
+    test(`a reconnect to the other replica replays from its ring; old, foreign, and future cursors resync (held publication: ${holdPublication})`, async () => {
+      const topic = liveTopic(APP);
+      const originalPublish = topic.publish.bind(topic);
+      const published = new Map<number, string>();
+      let releasePublication = () => {};
+      const publicationAllowed = new Promise<void>((resolve) => {
+        releasePublication = resolve;
+      });
+      const publishing = spyOn(topic, "publish").mockImplementation(async (input) => {
+        const parsed = z.object({ n: z.number() }).safeParse(input.data.d);
+        const n = parsed.success ? parsed.data.n : undefined;
+        if (holdPublication && input.data.k === "ring" && n === 3) await publicationAllowed;
+        const receipt = await originalPublish(input);
+        if (n !== undefined) published.set(n, receipt.cursor);
+        return receipt;
+      });
+      const sockets: Awaited<ReturnType<typeof open>>[] = [];
+      const ringEvents = LIVE_LIMITS.ringEvents;
+      try {
+        const ada = await person("Ada Example");
+        allow("ring", ada);
+        const first = await open(0, ada.headers);
+        sockets.push(first);
+        first.sub("s", "item", { key: "ring" });
+        await until(() => first.of("s").length === 1);
+        await publish("ring", 1);
+        await publish("ring", 2);
+        await until(() => first.of("s").length === 3);
+        const applied = first.of("s")[2]!.cursor!;
+        first.socket.close();
+        await publish("ring", 3);
 
-    const second = await open(1, ada.headers);
-    // Lets the second replica's follower read event 3, so it comes from the ring.
-    await Bun.sleep(500);
-    second.sub("s", "item", { key: "ring" }, applied);
-    await until(() => second.of("s").length === 2);
-    expect(second.of("s").map((frame) => [frame.t, frame.data?.n])).toEqual([
-      ["event", 3],
-      ["ready", undefined],
-    ]);
+        const second = await open(1, ada.headers);
+        sockets.push(second);
+        if (holdPublication) {
+          // The replica starts and reports its old head while event 3 still waits before NATS.
+          await until(() => second.progress().some((frame) => frame.cursor === applied));
+        }
+        releasePublication();
+        // An outbox commit does not mean publication, nor does publication mean applied.
+        // A progress frame proves this replica has applied event 3 to its ring.
+        await until(
+          () => published.has(3) && second.progress().some((frame) => frame.cursor === published.get(3)),
+          5_000,
+          () =>
+            `Replica did not apply event 3: ${JSON.stringify({ published: published.get(3), progress: second.progress(), closed: second.state.closed })}`,
+        );
+        second.sub("s", "item", { key: "ring" }, applied);
+        await until(
+          () => second.of("s").at(-1)?.t === "ready",
+          5_000,
+          () => `Replay did not become ready: ${JSON.stringify({ frames: second.of("s"), closed: second.state.closed })}`,
+        );
+        expect(second.of("s").map((frame) => [frame.t, frame.data?.n])).toEqual([
+          ["event", 3],
+          ["ready", undefined],
+        ]);
 
-    const head = second.of("s")[1]?.cursor as string;
-    const prefix = head.slice(0, head.lastIndexOf("."));
-    second.sub("foreign", "item", { key: "ring" }, "s6t.elsewhere.1");
-    second.sub("future", "item", { key: "ring" }, `${prefix}.999999`);
-    const ringEvents = LIVE_LIMITS.ringEvents;
-    LIVE_LIMITS.ringEvents = 2;
-    try {
-      for (let n = 4; n <= 6; n++) await publish("ring-other", n);
-      await Bun.sleep(500);
-      second.sub("old", "item", { key: "ring" }, applied);
-      await until(() => second.of("old").length === 1 && second.of("future").length === 1);
-    } finally {
-      LIVE_LIMITS.ringEvents = ringEvents;
-    }
-    for (const id of ["foreign", "future", "old"]) expect(second.of(id).map((frame) => frame.t)).toEqual(["resync"]);
-    second.socket.close();
-  });
+        const head = second.of("s")[1]!.cursor!;
+        const prefix = head.slice(0, head.lastIndexOf("."));
+        second.sub("foreign", "item", { key: "ring" }, "s6t.elsewhere.1");
+        second.sub("future", "item", { key: "ring" }, `${prefix}.999999`);
+        LIVE_LIMITS.ringEvents = 2;
+        for (let n = 4; n <= 6; n++) await publish("ring-other", n);
+        await until(
+          () => published.has(6) && second.progress().some((frame) => frame.cursor === published.get(6)),
+          5_000,
+          () =>
+            `Replica did not apply event 6: ${JSON.stringify({ published: published.get(6), progress: second.progress(), closed: second.state.closed })}`,
+        );
+        second.sub("old", "item", { key: "ring" }, applied);
+        await until(() => ["foreign", "future", "old"].every((id) => second.of(id).length > 0));
+        for (const id of ["foreign", "future", "old"]) expect(second.of(id).map((frame) => frame.t)).toEqual(["resync"]);
+      } finally {
+        releasePublication();
+        publishing.mockRestore();
+        LIVE_LIMITS.ringEvents = ringEvents;
+        for (const socket of sockets) socket.socket.close();
+      }
+    });
+  }
 
   test("an access event revokes a reader before later content on either replica", async () => {
     const ada = await person("Ada Example");
