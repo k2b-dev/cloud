@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { type IdentityAccessSubject, subscribeIdentityAccessChanged } from "../events/app-access";
 import { defineLive, type LiveViewer } from "../events/live";
+import { logger } from "../services/logging";
 import { AiInvalidationSchema } from "./live-events";
 
 /**
@@ -28,4 +30,34 @@ export const aiLiveChannels = {
     authorize: async (key: string, viewers: readonly LiveViewer[]) =>
       new Set(viewers.filter((viewer) => `u:${ownerOf(viewer)}` === key).map((viewer) => viewer.id)),
   },
+};
+
+/** Shared Core followers carry revocation hints; no per-conversation topic or database polling. */
+export const subscribeAiConversationAccess = (input: {
+  conversationId: string;
+  after: string;
+  subject: IdentityAccessSubject;
+  changed: () => void;
+  failed: () => void;
+}): (() => void) => {
+  const abort = new AbortController();
+  const stopIdentity = subscribeIdentityAccessChanged(input.changed, input.subject);
+  void (async () => {
+    try {
+      for await (const event of aiLive.accessChanges({ after: input.after, signal: abort.signal })) {
+        if (event.key === `ai.conversation:${input.conversationId}`) input.changed();
+      }
+      if (!abort.signal.aborted) input.failed();
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      logger("ai:stream").warn("Conversation access follower failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      input.failed();
+    }
+  })();
+  return () => {
+    abort.abort();
+    stopIdentity();
+  };
 };
