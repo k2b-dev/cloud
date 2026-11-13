@@ -17,7 +17,12 @@ release does not enable shared editing for other mailboxes.
 Each process shares one room and one live Yjs base for each locally edited
 draft. An edit travels from the browser through Mail and NATS to editors on
 all nodes. Mail acknowledges it after the JetStream publish acknowledgement.
-That log is the durability boundary; a SQL snapshot may still be pending.
+That log is the durability boundary; a SQL snapshot may still be pending. The
+editor shows “Saved” only after retained server updates cover the visible input. A
+transport echo, an unrelated peer update or offline device storage cannot provide
+that receipt. While connected input awaits its receipt the editor shows “Saving…”;
+offline input keeps the local-storage indicator and any storage error.
+
 Edits, peer delivery and cursor updates execute no SQL. Each successful edit
 checks lifecycle authority twice in JetStream: before validation and after
 publication. Sender acknowledgement waits for the second check too.
@@ -62,19 +67,28 @@ and flushes the exact state. It commits the send command, immutable content
 snapshot and scheduled draft state in one SQL transaction, then releases the
 freeze. Cancellation or rollback releases it too.
 
-Undoable and scheduled sends hold no long-lived freeze. Mail's noneditable
-draft state and revocation events deny further editing. At actual dispatch,
+Undoable and scheduled sends hold no long-lived freeze. New joins check the
+draft state. Existing editors lose access when the committed revocation event
+reaches their node. During this revocation window, after thaw and before event
+delivery, an existing editor can still publish an edit. At actual dispatch,
 Mail briefly freezes again, checks the complete document against the command's
 snapshot, then releases the freeze before contacting SMTP. A mismatch refuses
-the dispatch. Slow SMTP therefore does not depend on a sixty-second lease.
+the dispatch and returns the draft for review and editing. Temporary room or
+broker failures before SMTP use Mail's bounded send retries. Slow SMTP therefore
+does not depend on a sixty-second lease.
 
 A definite failure restores the same draft and room for editing. Undo and
 cancel do the same through the existing revision and reconnect flow. They
 continue the same document generation because the content was not replaced.
 Accepted or uncertain outcomes keep the draft noneditable, preserving Mail's existing
 send semantics. Their outcome transaction stores a durable close intent.
-Mail obtains a fresh verified freeze and closes the room, with an idempotent
-receipt so startup can finish a close interrupted by a crash.
+Mail drains a fresh freeze and closes the room, with an idempotent receipt so
+startup can finish a close interrupted by a crash. Once the outcome has committed,
+the sent draft state is authoritative: late room input is drained only into the
+technical document snapshot and cannot change the outbound content or prevent
+retirement. A definite snapshot rejection during dispatch releases its freeze
+immediately, so a content mismatch returns an editable draft without waiting for
+the lease to expire.
 
 Changing reply or forward mode replaces document content. Mail checks lifecycle
 authority under document admission, publishes the platform's ordered generation
@@ -112,7 +126,7 @@ when sizing PostgreSQL's connection limit.
 
 An isolated sample of 100 closed drafts with seven-digit log sequences used
 139 JSON bytes and about 377 JetStream-reported bytes per entry. At that size,
-16 MiB holds roughly 44,000 closed entries before allowing for open or frozen
+16 MiB holds roughly 44,500 closed entries before allowing for open or frozen
 entries, longer values and operating headroom. This is a storage estimate,
 not a supported draft count. Shared editing remains opt-in per mailbox in 0.76;
 this release does not perform the broader mailbox migration.

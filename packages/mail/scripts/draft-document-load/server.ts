@@ -102,7 +102,7 @@ try {
       );
     };
   }
-  const { sql, startProcessSync } = await import("@k2b/cloud");
+  const { connections, sql, startProcessSync } = await import("@k2b/cloud");
   const runtime = await startProcessSync({ application: "mail" });
   cleanup.push(() => runtime.stop());
   const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
@@ -330,7 +330,7 @@ try {
   if (!shared)
     await writeFile(
       `${out}/cluster.json`,
-      JSON.stringify({ databaseUrl: process.env.DATABASE_URL, namespace, user, mailboxId, identity, drafts: [...drafts.values()] }),
+      JSON.stringify({ databaseUrl: connections().database.url, namespace, user, mailboxId, identity, drafts: [...drafts.values()] }),
       { mode: 0o600 },
     );
   const requestAborts = new Map<string, AbortController>();

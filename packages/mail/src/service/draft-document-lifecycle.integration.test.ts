@@ -16,6 +16,7 @@ import { sha256Json } from "./canonical";
 import { createActorCommand } from "./commands";
 import { reviewDraftComposeSafety } from "./compose-safety";
 import * as revisionBase from "./draft-document-revision";
+import { mailDraftRoom } from "./draft-document-room";
 import * as documentService from "./draft-documents";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, mailDraftDocumentLog, readDraftDocument } from "./draft-documents";
 import { draftProviderContentSchema } from "./draft-provider-mime";
@@ -450,6 +451,39 @@ suite("Mail document lifecycle boundaries", () => {
       local.destroy();
       supported.mockRestore();
       value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
+    }
+  });
+
+  test("an idempotent send retry after undo skips room freeze and flush", async () => {
+    const target = await draft("Retry after Undo");
+    const checked = await review(target);
+    const request = {
+      context,
+      mailboxId,
+      enqueue: false,
+      input: {
+        kind: "send" as const,
+        draftId: target.draftId,
+        senderIdentityId: senderId,
+        expectedDraftRevision: checked.revision,
+        expectedContentHash: checked.contentHash,
+        undoSeconds: 60,
+        idempotencyKey: crypto.randomUUID(),
+        safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
+      },
+    };
+    const command = value(await createActorCommand(request));
+    const [submission] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id = ${command.id}::uuid`;
+    if (!submission) throw new Error("Missing undo submission");
+    value(await cancelScheduledSend({ context, mailboxId, scheduledSendId: submission.id, input: { disposition: "draft" } }));
+    const head = await mailDraftDocumentLog.topic().head();
+    const freeze = spyOn(mailDraftRoom, "freeze");
+    try {
+      expect(value(await createActorCommand(request))).toMatchObject({ id: command.id, state: "cancelled" });
+      expect(freeze).not.toHaveBeenCalled();
+      expect(await mailDraftDocumentLog.topic().head()).toBe(head);
+    } finally {
+      freeze.mockRestore();
     }
   });
 

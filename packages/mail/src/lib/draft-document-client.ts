@@ -33,6 +33,7 @@ export const mailSharedDraftMessages = i18n.define({
     en: {
       connecting: "Connecting…",
       saved: "Saved on server",
+      saving: "Saving…",
       localSaved: "Saved on this device",
       pending: "Changes awaiting durable storage",
       offline: "Offline",
@@ -69,6 +70,7 @@ export const mailSharedDraftMessages = i18n.define({
     de: {
       connecting: "Verbindung wird hergestellt…",
       saved: "Auf dem Server gespeichert",
+      saving: "Speichert …",
       localSaved: "Auf diesem Gerät gesichert",
       pending: "Änderungen warten auf dauerhafte Speicherung",
       offline: "Offline",
@@ -464,10 +466,12 @@ export async function openMailDraftDocumentClient(options: {
       pumpStorage();
     };
     const acknowledge = (bytes: Uint8Array) => {
-      durableState = bytes;
-      pendingSnapshot = bytes;
+      // Retained log updates and persisted snapshots are both durable evidence.
+      // Never fill gaps with the live document: it may contain unacknowledged input.
+      durableState = Y.mergeUpdates([durableState, bytes]);
+      pendingSnapshot = durableState;
       pumpStorage();
-      if (draftSnapshotCovers(bytes, Y.encodeStateAsUpdate(doc))) {
+      if (draftSnapshotCovers(durableState, Y.encodeStateAsUpdate(doc))) {
         state.dirty = false;
         state.changes = 0;
         if (!state.terminal && !storageFailure) {
@@ -496,9 +500,9 @@ export async function openMailDraftDocumentClient(options: {
       }
     };
     doc.on("update", project);
-    const acknowledgeLogState = () =>
+    const acknowledgeLogState = (bytes: Uint8Array[]) =>
       queueMicrotask(() => {
-        if (!disposed && state.ready && !state.terminal && !provider.hasUnsentChanges()) acknowledge(Y.encodeStateAsUpdate(doc));
+        if (!disposed && state.connected && state.ready && !state.terminal && bytes.length) acknowledge(Y.mergeUpdates(bytes));
       });
     const socketUrl = new URL(`${path}/socket?${accountQuery}`, window.location.href);
     socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
@@ -540,9 +544,15 @@ export async function openMailDraftDocumentClient(options: {
         encode: (packet) => packet,
         decode: (packet) => {
           const decoded = decodeMailDraftDocumentMessage(packet, options.draft.id);
-          // Received document input is already retained by JetStream. Defer until
-          // the provider has validated/applied it and reconciled local echoes.
-          if (decoded?.type === "syncPush") acknowledgeLogState();
+          // Only a broker cursor proves retention. A transport echo, a remote
+          // update or replay-ready cannot acknowledge unrelated local input.
+          // Defer until the provider has validated/applied these exact bytes.
+          if (decoded?.type === "syncPush" && decoded.payload.generation === generation)
+            acknowledgeLogState(
+              decoded.payload.updates
+                .filter((update) => update.cursor && (update.generation ?? decoded.payload.generation) === generation)
+                .map((update) => encoding.fromBase64(update.payload)),
+            );
           return decoded;
         },
         closeError: (code, reason) =>
@@ -557,7 +567,6 @@ export async function openMailDraftDocumentClient(options: {
       },
       onReady: () => {
         state.ready = true;
-        acknowledgeLogState();
         if (transportError && !state.terminal) {
           transportError = false;
           state.error = false;
@@ -568,10 +577,6 @@ export async function openMailDraftDocumentClient(options: {
       },
       onUnsentChange: () => {
         emit();
-        // The room echoes only JetStream-acknowledged input. Once every local
-        // update is covered, the complete visible state is durable in the log;
-        // waiting for a SQL snapshot would reintroduce persistence per edit.
-        acknowledgeLogState();
       },
       onRetainedColumn: () => {
         state.message = t().retainedColumn;

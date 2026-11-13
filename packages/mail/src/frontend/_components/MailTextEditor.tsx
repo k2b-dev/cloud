@@ -176,8 +176,8 @@ export default function MailTextEditor(props: {
     if (current.structuring) return st().tablePending;
     if (current.message === st().retainedColumn) return current.message;
     if (!current.ready && current.connected) return st().connecting;
-    const stored = current.dirty ? (current.locallySaved ? st().localSaved : st().pending) : st().saved;
-    return current.connected ? stored : `${st().offline} · ${stored}`;
+    if (!current.connected) return `${st().offline} · ${current.locallySaved ? st().localSaved : st().pending}`;
+    return current.dirty ? st().saving : st().saved;
   };
   const copy = async () => {
     if (!binding) return;

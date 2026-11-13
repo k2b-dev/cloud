@@ -56,7 +56,9 @@ export const draftDocumentSnapshotStore: SharedTextSnapshotStore = {
       SELECT doc_state AS state, body_markdown AS text, doc_cursor AS cursor, doc_generation::text AS "restoreRevision"
       FROM mail.drafts WHERE id = ${docId}::uuid AND edit_mode = 'shared' AND doc_state IS NOT NULL
         AND state IN ('draft', 'scheduled', 'sending', 'sent') AND doc_history_complete`;
-    return row ?? null;
+    // A sent tombstone may drain late admitted room input without changing the
+    // immutable outbound body. The room base must describe its technical state.
+    return row ? { ...row, text: project(row.state).body } : null;
   },
   async save(docId, input: SharedTextSaveInput) {
     const content = project(input.state);
@@ -87,7 +89,15 @@ export const draftDocumentSnapshotStore: SharedTextSnapshotStore = {
         draftDocumentSnapshotWritten(db);
         return;
       }
-      if (row.state !== "draft" || row.doc_frozen_cursor) throw new Error("Noneditable draft content changed before send");
+      if (row.state === "sent") {
+        // Retirement drains the room, never rewrites the sent content/projection.
+        await db`UPDATE mail.drafts SET doc_state = ${Buffer.from(input.state)}, doc_cursor = ${input.cursor}, doc_seq = ${sequence}
+          WHERE id = ${docId}::uuid`;
+        draftDocumentSnapshotWritten(db);
+        return;
+      }
+      if (row.state !== "draft" || row.doc_frozen_cursor)
+        throw Object.assign(new Error("Noneditable draft content changed before send"), { code: "SEND_CONTENT_CHANGED", status: 409 });
       // Adoption inspects the old SQL base and retained human authorship before advancing its cursor.
       await refreshDraftAdoption({ db, draftId: docId });
       const [sender] = await db<{ id: string }[]>`SELECT id FROM mail.sender_identities

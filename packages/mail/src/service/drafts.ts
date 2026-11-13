@@ -51,7 +51,7 @@ import { composeFormattingWarnings, removeOrphanComposeSegmentMarks } from "./co
 import { requireSelectableSignature, resolveDefaultSignatureTemplateId } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
 import { humanDraftEditor, refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
-import { mailDraftDocumentLog, withDraftDocumentCommit } from "./draft-document-log";
+import { draftDocumentStreamFull, isDraftDocumentStreamFull, mailDraftDocumentLog, withDraftDocumentCommit } from "./draft-document-log";
 import { withDraftDocumentReplacement } from "./draft-document-replacement";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { lockDraftDocumentInTransaction } from "./draft-documents";
@@ -2038,13 +2038,13 @@ export const switchDraftIntent = async (params: {
       } finally {
         doc?.destroy();
       }
-      await tx`UPDATE mail.draft_attachments SET removed_at = now() WHERE draft_id = ${row.id}::uuid
-        AND forwarded_source_message_id IS NOT NULL AND removed_at IS NULL`;
       let cursor: string | null = null;
       if (row.edit_mode === "shared") {
         if (!replace) throw new Error("Draft editing mode changed; retry the replacement");
         cursor = await replace(String(row.doc_generation));
       }
+      await tx`UPDATE mail.draft_attachments SET removed_at = now() WHERE draft_id = ${row.id}::uuid
+        AND forwarded_source_message_id IS NOT NULL AND removed_at IS NULL`;
       await tx`UPDATE mail.drafts SET intent = ${params.intent}, to_addresses = ${content.to}::jsonb,
         cc_addresses = ${content.cc}::jsonb, bcc_addresses = ${content.bcc}::jsonb, subject = ${content.subject},
         revision = revision + 1, last_editor_kind = ${actor.kind}, last_editor_id = ${actorId(actor)}::uuid,
@@ -2067,6 +2067,7 @@ export const switchDraftIntent = async (params: {
     if (result.ok) mailLive.wake();
     return wakeDraftProjection(result);
   } catch (error) {
+    if (isDraftDocumentStreamFull(error)) return draftDocumentStreamFull();
     log.error("Failed to switch draft mode", { draftId: params.draftId, error });
     return fail(err.internal("Failed to switch draft mode"));
   }

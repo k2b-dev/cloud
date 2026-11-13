@@ -5,6 +5,7 @@ import { ConflictError } from "@k2b/sync";
 import type { ActorCommandInput } from "../contracts";
 import { requireDraftAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { draftDocumentStreamFull, isDraftDocumentStreamFull } from "./draft-document-log";
 import { mailDraftRoom } from "./draft-document-room";
 import { sameDraftDocumentState } from "./draft-document-state";
 import { readDraftDocument } from "./draft-documents";
@@ -27,6 +28,11 @@ export const withFrozenDraftSends = async <T>(
   try {
     for (const input of params.inputs) {
       if (input.kind !== "send" || frozen.has(input.draftId)) continue;
+      // Undo restores an editable draft, but retrying its old command must not
+      // freeze/flush the document again. The transaction still validates the key.
+      const [existing] = await sql`SELECT id FROM mail.commands
+        WHERE mailbox_id = ${params.mailboxId}::uuid AND idempotency_key = ${input.idempotencyKey.trim()}`;
+      if (existing) continue;
       const [row] = await sql<{ edit_mode: string; state: string; revision: number }[]>`SELECT edit_mode, state, revision FROM mail.drafts
         WHERE id = ${input.draftId}::uuid AND mailbox_id = ${params.mailboxId}::uuid`;
       // Existing commands retain their ordinary idempotent response, including after send.
@@ -44,6 +50,12 @@ export const withFrozenDraftSends = async <T>(
         throw changed();
     }
     return await operation(frozen);
+  } catch (error) {
+    if (isDraftDocumentStreamFull(error)) {
+      const rejected = draftDocumentStreamFull();
+      if (!rejected.ok) throw rejected.error;
+    }
+    throw error;
   } finally {
     // Neither an undo window nor SMTP holds a 60-second platform token.
     for (const [draftId, state] of frozen) {
@@ -83,11 +95,23 @@ const verify = (saved: SendBoundary, frozen: SharedTextRoomFreeze | null): Share
 export const verifyDraftSendBeforeDispatch = async (commandId: string, signal?: AbortSignal): Promise<void> => {
   const saved = await boundary(commandId);
   if (!saved) return; // Lock-mode sends retain their existing path.
-  const frozen = await mailDraftRoom.freeze(saved.draft_id, { signal });
   try {
-    verify(saved, frozen);
-  } finally {
-    if (frozen) await mailDraftRoom.thaw(saved.draft_id, { freezeCursor: frozen.cursor, signal });
+    const frozen = await mailDraftRoom.freeze(saved.draft_id, { signal });
+    try {
+      verify(saved, frozen);
+    } finally {
+      if (frozen) await mailDraftRoom.thaw(saved.draft_id, { freezeCursor: frozen.cursor, signal });
+    }
+  } catch (error) {
+    // The platform wraps definite app snapshot rejections after releasing its fence.
+    const rejection = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+    const code = rejection && typeof rejection === "object" && "code" in rejection ? rejection.code : undefined;
+    if (code === "SEND_CONTENT_CHANGED") throw rejection;
+    // No SMTP effect has started. Lifecycle contention and broker/flush failures
+    // use the existing bounded outbox retry instead of discarding a scheduled send.
+    throw Object.assign(new Error("Shared draft room temporarily unavailable before dispatch", { cause: error }), {
+      code: "DRAFT_ROOM_UNAVAILABLE",
+    });
   }
 };
 
@@ -122,9 +146,13 @@ export const finishDraftSendClose = async (commandId: string, signal?: AbortSign
         WHERE command_id = ${commandId}::uuid AND close_freeze_cursor = ${token}`;
     }
   }
+  const [draft] = await sql<{ state: string }[]>`SELECT state FROM mail.drafts WHERE id = ${saved.draft_id}::uuid`;
+  const retired = !draft || draft.state === "sent" || draft.state === "discarded";
   const frozen = await mailDraftRoom.freeze(saved.draft_id, { signal });
   try {
-    verify(saved, frozen);
+    // After an accepted/unknown outcome the immutable command was already sent.
+    // Late admitted edits cannot invalidate the authoritative domain tombstone.
+    if (!retired) verify(saved, frozen);
   } catch (error) {
     if (frozen) await mailDraftRoom.thaw(saved.draft_id, { freezeCursor: frozen.cursor, signal });
     throw error;

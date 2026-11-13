@@ -2964,7 +2964,12 @@ const finishOutbox = async (params: {
 
 // The mailbox's connection can be briefly unavailable, such as while it needs its password again
 // or its new credentials are being verified; the send waits for it like for an unreachable provider.
-const RETRYABLE_PRE_DISPATCH_CODES = new Set(["COMMAND_JOB_LEASE_LOST", "BINDING_UNAVAILABLE", "CREDENTIAL_REVISION_CHANGED"]);
+const RETRYABLE_PRE_DISPATCH_CODES = new Set([
+  "COMMAND_JOB_LEASE_LOST",
+  "BINDING_UNAVAILABLE",
+  "CREDENTIAL_REVISION_CHANGED",
+  "DRAFT_ROOM_UNAVAILABLE",
+]);
 
 const isRetryablePreDispatchError = (error: unknown): boolean =>
   isTransientProviderFailure(error) || isTransientDatabaseError(error) || RETRYABLE_PRE_DISPATCH_CODES.has(normalizeCode(error, ""));

@@ -14,8 +14,8 @@ import * as Y from "yjs";
 import { z } from "zod";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { useRegisteredTestApp } from "../../../cloud/src/services/identity/application.test-fixture";
 import { prepareDraftSendBinding } from "../../test/fixtures/draft-send";
+import { useRegisteredMailTestApp } from "../../test/fixtures/registered-app";
 import { draftEditableContentInputSchema } from "../contracts";
 import { createDraftRevisionUpdate, readDraftDocument as readModel } from "../lib/draft-document";
 import { type MailDraftDocumentMessage, mailDraftDocumentMessageSchema } from "../lib/draft-document-protocol";
@@ -42,7 +42,7 @@ import type { MailApiContext } from "./public-resource-boundary";
 // Bun accepts headers; lib.dom's global constructor omits Bun's options overload.
 const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
 
-useRegisteredTestApp("mail");
+useRegisteredMailTestApp();
 const suite = suiteFor("database", "nats");
 const value = <T>(result: Result<T>): T => {
   if (!result.ok) throw new Error(result.error.message);
