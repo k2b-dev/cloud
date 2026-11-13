@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
+import { retry } from "@k2b/sync/retry";
 import {
   DRAFT_DOCUMENT_COVERAGE_LOCK,
   enableDraftDocumentPruning,
@@ -75,19 +76,21 @@ export const migrateDraftDocumentLogPolicy = async (signal?: AbortSignal): Promi
   migrated = false;
   await stopDraftDocumentPruning();
   try {
-    await mailDraftDocumentLog.topic().ready();
+    await mailDraftDocumentLog.ready();
+    signal?.throwIfAborted();
     for (let delay = RETRY_MS.first; !(await checkpointed(sql)); delay = Math.min(delay * 2, RETRY_MS.max)) {
       if (await recoverExpiredPrefix()) break;
       signal?.throwIfAborted();
       await Bun.sleep(delay);
       signal?.throwIfAborted();
     }
+    signal?.throwIfAborted();
     migrated = true;
     enableDraftDocumentPruning();
     requestDraftDocumentPrune();
     return true;
   } catch (error) {
-    if (!signal?.aborted) log.error("Shared drafts remain unsupported: the draft document log could not be prepared", { error });
+    if (!signal?.aborted) log.warn("Shared drafts remain unsupported: the draft document log could not be prepared", { error });
     return false;
   }
 };
@@ -97,7 +100,14 @@ export const startDraftDocumentLogPolicy = (onPrepared: (signal: AbortSignal) =>
   const stop = new AbortController();
   running = {
     stop,
-    done: migrateDraftDocumentLogPolicy(stop.signal)
+    done: retry({
+      signal: stop.signal,
+      run: () => migrateDraftDocumentLogPolicy(stop.signal),
+      after: ({ ctx }) => {
+        if (ctx.data === false)
+          ctx.reschedule({ delayMs: Math.min(RETRY_MS.max, ctx.expBackoff({ baseMs: RETRY_MS.first, maxMs: RETRY_MS.max, jitter: 0.2 })) });
+      },
+    })
       .then(async (supported) => {
         if (supported && !stop.signal.aborted) await onPrepared(stop.signal);
       })

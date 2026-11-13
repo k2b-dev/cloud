@@ -1,3 +1,4 @@
+import { lifecycleStorageWarning } from "./observability/nats/capacity";
 import type { NatsInventorySummary } from "./observability/nats/service";
 
 export type SyncOperationalStatus = { status: "ok" | "warn" | "error"; signals: string[] };
@@ -28,21 +29,45 @@ export const buildSyncOperationalHealth = (
 
   const seen = new Set<string>();
   for (const stream of inventory.streams) {
-    if (seen.has(stream.name) || stream.sync?.namespace !== namespace) continue;
+    const lifecycle = stream.sharedTextLifecycle;
+    if (seen.has(stream.name) || (stream.sync?.namespace ?? lifecycle?.namespace) !== namespace) continue;
     seen.add(stream.name);
-    const target = apps.get(stream.sync.owner) ?? infrastructure;
+    const target = (stream.sync && apps.get(stream.sync.owner)) || infrastructure;
+    const label = stream.sync ? `Sync ${stream.sync.kind} ${stream.sync.id}` : `Shared text lifecycle ${lifecycle!.id}`;
+    const requiredBytes = stream.sharedTextLifecycleRequiredBytes;
+    const documentLog = stream.sync?.id;
+    if (requiredBytes && documentLog) {
+      const prepared = inventory.streams.some(
+        (candidate) =>
+          candidate.sharedTextLifecycle?.namespace === namespace &&
+          candidate.sharedTextLifecycle.id === documentLog &&
+          candidate.maxBytes >= requiredBytes,
+      );
+      if (!prepared)
+        raise(
+          target,
+          "warn",
+          `Shared text lifecycle ${documentLog} reservation is not ready (requires ${requiredBytes} bytes); the application retries preparation`,
+        );
+    }
+    if (lifecycleStorageWarning(stream))
+      raise(
+        target,
+        "warn",
+        `${label} storage is ${Math.floor((stream.bytes / stream.maxBytes) * 100)}% full (${stream.bytes}/${stream.maxBytes} bytes); increase its byte budget before it fills`,
+      );
     if (stream.deadLetter && stream.messages > 0) {
-      raise(target, "error", `Sync ${stream.sync.kind} ${stream.sync.id} has ${stream.messages} dead letters`);
+      raise(target, "error", `${label} has ${stream.messages} dead letters`);
     }
     if (stream.replicas > 1) {
       const cluster = stream.cluster;
       if (!cluster?.leader || cluster.replicas.some((replica) => replica.offline)) {
-        raise(target, "error", `Sync ${stream.sync.kind} ${stream.sync.id} has unavailable stream replicas`);
+        raise(target, "error", `${label} has unavailable stream replicas`);
       } else if (
         cluster.replicas.length < stream.replicas - 1 ||
         cluster.replicas.some((replica) => replica.current !== true || (replica.lag ?? 0) > 0)
       ) {
-        raise(target, "warn", `Sync ${stream.sync.kind} ${stream.sync.id} has stream replicas catching up`);
+        raise(target, "warn", `${label} has stream replicas catching up`);
       }
     }
   }

@@ -103,6 +103,10 @@ const define = (
     id: topicConfig.id,
     topicConfig,
     lifecycle,
+    async ready(): Promise<void> {
+      await topic().ready();
+      await lifecycleHandle?.().ready();
+    },
     topic,
     writer,
     admit,

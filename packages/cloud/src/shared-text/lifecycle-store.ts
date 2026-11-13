@@ -40,26 +40,23 @@ export const checkLifecycleAdmission = async (store: SharedTextLifecycleStore, d
 };
 
 /** One compacted stream per document log; never a stream per document or a prunable prefix. */
-export const createLifecycleStore = (config: { id: string; maxBytes: number; ready(): Promise<void> }): SharedTextLifecycleStore => {
+export const createLifecycleStore = (config: {
+  id: string;
+  maxBytes: number;
+  ready(): Promise<void>;
+}): SharedTextLifecycleStore & { ready(): Promise<void> } => {
   if (!Number.isSafeInteger(config.maxBytes) || config.maxBytes < 4096) throw new RangeError("Lifecycle maxBytes must be at least 4096");
   let pending: ReturnType<typeof prepare> | undefined;
   let warnedLargerBudget = false;
-  // Cache decoded values within the declared byte budget. Each read still verifies
-  // the broker revision: delayed/lost invalidations must never admit an edit.
-  const cache = new Map<string, { entry: SharedTextLifecycleEntry; bytes: number }>();
-  let bytes = 0;
-  const remember = (key: string, entry: SharedTextLifecycleEntry, size: number) => {
-    const old = cache.get(key);
-    if (old) bytes -= old.bytes;
+  // A 2 MiB process allowance, at 4 KiB/message and 4x decoded-object/key
+  // headroom, retains 128 entries independently of the broker's disk budget.
+  // Every read still checks the broker revision before reusing a decoded value.
+  const cache = new Map<string, SharedTextLifecycleEntry>();
+  const remember = (key: string, entry: SharedTextLifecycleEntry) => {
     cache.delete(key);
-    cache.set(key, { entry, bytes: size });
-    bytes += size;
-    while (bytes > config.maxBytes) {
-      const first = cache.entries().next().value;
-      if (!first) break;
-      cache.delete(first[0]);
-      bytes -= first[1].bytes;
-    }
+    cache.set(key, entry);
+    const oldest = cache.keys().next().value;
+    if (cache.size > 128 && oldest !== undefined) cache.delete(oldest);
     return entry;
   };
   const prepare = async () => {
@@ -78,6 +75,18 @@ export const createLifecycleStore = (config: { id: string; maxBytes: number; rea
     const { getProcessNats } = await import("../_internal/process-sync");
     const connection = getProcessNats();
     const manager = await jetstreamManager(connection);
+    // Persist the requirement on the already-prepared document topic before
+    // reserving lifecycle storage. Broker health can then see a failed add or
+    // expansion even when the lifecycle stream does not exist yet.
+    for (const topicName of control.natsNames) {
+      const topic = await manager.streams.info(topicName);
+      if (topic.config.metadata?.["sync.kind"] !== "topic" || topic.config.metadata?.["sync.id"] !== config.id) continue;
+      const required = Number(topic.config.metadata["cloud.shared-text.lifecycle.required-bytes"] ?? 0);
+      if (required >= config.maxBytes) continue;
+      await manager.streams.update(topicName, {
+        metadata: { ...topic.config.metadata, "cloud.shared-text.lifecycle.required-bytes": String(config.maxBytes) },
+      });
+    }
     const declared = {
       name,
       subjects: [`${subject}>`],
@@ -133,14 +142,17 @@ export const createLifecycleStore = (config: { id: string; maxBytes: number; rea
     }));
   const keyFor = (docId: string) => createHash("sha256").update(docId).digest("hex");
   return {
+    async ready() {
+      await ready();
+    },
     async get(docId) {
       const { manager, name, subject } = await ready();
       const key = keyFor(docId);
       const message = await manager.streams.getMessage(name, { last_by_subj: subject + key });
       if (!message) return null;
       const cached = cache.get(key);
-      if (cached?.entry.revision === message.seq) return remember(key, cached.entry, cached.bytes);
-      return remember(key, { revision: message.seq, value: valueSchema.parse(message.json()) }, message.data.length);
+      if (cached?.revision === message.seq) return remember(key, cached);
+      return remember(key, { revision: message.seq, value: valueSchema.parse(message.json()) });
     },
     async put(docId, previous, value) {
       const { client, subject } = await ready();
@@ -148,7 +160,7 @@ export const createLifecycleStore = (config: { id: string; maxBytes: number; rea
       const data = new TextEncoder().encode(JSON.stringify(valueSchema.parse(value)));
       try {
         const receipt = await client.publish(subject + key, data, { expect: { lastSubjectSequence: previous?.revision ?? 0 } });
-        return remember(key, { revision: receipt.seq, value }, data.length);
+        return remember(key, { revision: receipt.seq, value });
       } catch (error) {
         if (error instanceof JetStreamApiError && error.code === 10071) throw new ConflictError("Shared text lifecycle changed");
         throw error;
