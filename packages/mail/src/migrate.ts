@@ -20,6 +20,7 @@ import {
   REPLY_DRAFT_MIGRATION_VERSION,
   type ReplyDraftMigrationResult,
 } from "./migrate-reply-drafts";
+import { SHARED_DRAFTS_MIGRATION_NAME, SHARED_DRAFTS_MIGRATION_VERSION } from "./migrate-shared-drafts";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
@@ -51,7 +52,8 @@ const assertSupportedSchema = (applied: readonly { version: number; name: string
       !(row.version === BASELINE_VERSION && row.name === BASELINE_NAME) &&
       !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME) &&
       !(row.version === SUGGESTIONS_PER_AUTHOR_VERSION && row.name === SUGGESTIONS_PER_AUTHOR_NAME) &&
-      !(row.version === REPLY_DRAFT_MIGRATION_VERSION && row.name === REPLY_DRAFT_MIGRATION_NAME),
+      !(row.version === REPLY_DRAFT_MIGRATION_VERSION && row.name === REPLY_DRAFT_MIGRATION_NAME) &&
+      !(row.version === SHARED_DRAFTS_MIGRATION_VERSION && row.name === SHARED_DRAFTS_MIGRATION_NAME),
   );
   if (baseline && foreign.length === 0) return;
   const versions = applied.map((row) => `${row.version} (${row.name})`).join(", ");
@@ -167,10 +169,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS hydration_work_unpublished_idx ON mail.hydration_work (queued_at, mailbox_id)
     WHERE job_id IS NOT NULL AND published_at IS NULL
   `.simple();
-  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode text NOT NULL DEFAULT 'lock'
+  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode text NOT NULL DEFAULT 'shared'
     CHECK (draft_edit_mode IN ('lock', 'shared'))`.simple();
-  // Existing drafts retain their mode. Defaults stay lock until verified
-  // per-mailbox activation; no body or document history is rewritten.
+  await tx`ALTER TABLE mail.mailboxes ALTER COLUMN draft_edit_mode SET DEFAULT 'shared'`.simple();
+  // Existing drafts retain their mode; mailbox switches affect only new user drafts.
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
     CHECK (edit_mode IN ('lock', 'shared'))`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1

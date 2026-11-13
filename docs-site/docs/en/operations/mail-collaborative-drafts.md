@@ -10,9 +10,10 @@ updated: 2026-11-13
 
 # Mail collaborative drafts
 
-Mail uses the platform [shared text room](../data/shared-text-documents.md) for
-mailboxes configured for shared editing. Lock mode remains the default; this
-release does not enable shared editing for other mailboxes.
+Starting with Cloud 0.77, shared editing is the default for every new Mail
+mailbox. Mail uses the platform [shared text room](../data/shared-text-documents.md)
+so people with write access can edit a draft together. Existing mailboxes switch
+to shared once after the draft log is ready.
 
 Each process shares one room and one live Yjs base for each locally edited
 draft. An edit travels from the browser through Mail and NATS to editors on
@@ -32,6 +33,61 @@ writing lease at join. Committed access and lifecycle events revoke affected
 sockets on every node. There is no periodic access query. Deploy the matching
 Core identity-event support and browser assets with Mail. Existing tabs that
 cannot resume retain their local input and request reopening.
+
+## Upgrade and switch back to lock
+
+The one-time upgrade changes only the mailbox setting, exactly like an
+administrator's PATCH. Open drafts keep their existing `edit_mode`, document
+generation and history. Open lock drafts remain in lock mode until sent or
+discarded; new user drafts inherit the mailbox's current setting.
+
+Mail records version 5, `shared_drafts_default`, in `mail.schema_migrations`.
+Its `details` contain the last mailbox ID, mailbox and batch counts, and
+`completed`. Each transaction switches at most 100 mailboxes in ID order and
+commits its cursor. An interrupted run resumes after that cursor. It never
+scans or locks drafts. Check `details.completed` before applying a rollback:
+
+```sql
+SELECT name, details FROM mail.schema_migrations WHERE version = 5;
+```
+
+Once completed, a mailbox administrator can switch a mailbox back to lock:
+
+```bash
+cld mail configure --mailbox <id> --drafts lock
+```
+
+The API equivalent is `PATCH /api/mail/mailboxes/:mailboxId` with
+`{"draftEditMode":"lock"}`. Mailbox settings currently have no draft-mode
+selector; use the CLI or API for this setting. The explicit lock setting
+survives restarts and later Mail upgrades because the completed migration
+never switches that mailbox again. Existing shared drafts keep working until
+sent or discarded. Use `--drafts shared` to enable shared editing again.
+
+While this process prepares its log policy, explicitly selecting shared via
+PATCH returns `409 SHARED_DRAFTS_UNSUPPORTED`. Default creation still stores
+shared; it never silently creates a lock mailbox or lock draft. Opening a
+shared draft before history checks finish returns a clear starting/retry
+error. A failed policy preparation is logged, leaves this upgrade's marker
+unset, and retries on a later start. Existing lock mailboxes stay available
+until preparation succeeds. Do not remove the marker or bypass readiness
+with database writes.
+
+An isolated PostgreSQL 17.11 run with 10,000 mailboxes and 50,000 open lock
+drafts completed the switch in 1.529 seconds. `meterSql()` counted 100
+nonempty batches, one terminal probe, 101 transactions and 908 statements
+(including BEGIN/COMMIT). The longest transaction was 139 ms, measured from
+PostgreSQL statement timestamps through COMMIT completion at 1 ms resolution.
+This measures the setting migration after schema and log preparation.
+
+Each batch takes the existing transaction-scoped migration advisory lock,
+row locks on its marker and at most 100 mailboxes, and RowShare/RowExclusive
+table locks on those two tables, plus the corresponding index locks. Ordinary
+transaction and virtual-transaction ID locks also apply. The mailbox update trigger only
+changes `updated_at`; no statement or trigger accesses `mail.drafts`. The
+separate schema step sets the column default under the existing startup DDL
+lock. These lock claims follow from the executed statements and trigger,
+not a production latency guarantee.
 
 ## Projections and recovery
 
@@ -128,8 +184,8 @@ An isolated sample of 100 closed drafts with seven-digit log sequences used
 139 JSON bytes and about 377 JetStream-reported bytes per entry. At that size,
 16 MiB holds roughly 44,500 closed entries before allowing for open or frozen
 entries, longer values and operating headroom. This is a storage estimate,
-not a supported draft count. Shared editing remains opt-in per mailbox in 0.76;
-this release does not perform the broader mailbox migration.
+not a supported draft count. Allow operating headroom as shared editing becomes
+the default in 0.77.
 
 An isolated two-node test with 4096-byte starting documents, one edit per
 editor every two seconds and awareness traffic passed for 200 drafts with
@@ -144,5 +200,5 @@ At 500 drafts with two editors, the test stopped at 1037 MiB RSS; observed
 cross-node p95 was 3330 ms. That configuration is outside the measured budget.
 The 200-draft result has limited latency headroom and does not establish a
 production concurrency guarantee. Measure with the operator's document sizes,
-hardware and traffic before increasing the opt-in population. Enabling shared
-editing for all mailboxes remains a separate decision.
+hardware and traffic before increasing concurrent editing. The shared mailbox
+default does not increase these measured capacity limits.

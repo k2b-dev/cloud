@@ -19,7 +19,7 @@ import {
   restoreDraftRecoveryCopy,
   updateDraft,
 } from "./drafts";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, updateMailbox } from "./mailboxes";
 import { storeReadableBlob } from "./message-blobs";
 
 const suite = suiteFor("database", "nats");
@@ -71,6 +71,8 @@ suite("mail draft limits", () => {
     const mailbox = await createMailbox(owner, { name: `Draft limits ${suffix}`, description: "Draft limit test" });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxId = mailbox.data.id;
+    const locked = await updateMailbox({ context: owner, mailboxId, draftEditMode: "lock" });
+    if (!locked.ok) throw new Error(locked.error.message);
     const granted = await grantMailboxAccess({
       context: owner,
       mailboxId,

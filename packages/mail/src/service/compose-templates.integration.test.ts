@@ -41,7 +41,7 @@ import {
   updateDraft,
 } from "./drafts";
 import { currentMailboxLogo, deleteUnusedMailboxLogoVersions, mailboxLogoSha256 } from "./mailbox-logos";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, updateMailbox } from "./mailboxes";
 import { updateSenderIdentity } from "./sender-identities";
 
 const markComposeTemplateSegment = (source: string): string => `\u2063${source}\u2064`;
@@ -129,6 +129,8 @@ suite("mail compose templates", () => {
     const mailbox = await createMailbox(owner, { name: `Compose ${suffix}`, description: "Compose template test" });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxId = mailbox.data.id;
+    const locked = await updateMailbox({ context: owner, mailboxId, draftEditMode: "lock" });
+    if (!locked.ok) throw new Error(locked.error.message);
     const granted = await grantMailboxAccess({
       context: owner,
       mailboxId,

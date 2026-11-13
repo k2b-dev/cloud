@@ -144,6 +144,8 @@ suite("mail PostgreSQL foundation", () => {
     expect(mailbox.ok).toBe(true);
     if (!mailbox.ok) return;
     ids.mailboxId = mailbox.data.id;
+    const locked = await updateMailbox({ context, mailboxId: mailbox.data.id, draftEditMode: "lock" });
+    if (!locked.ok) throw new Error(locked.error.message);
     expect(mailbox.data.searchBackend).toBe("auto");
 
     const nativeSearch = await updateMailbox({

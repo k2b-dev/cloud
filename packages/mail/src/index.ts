@@ -16,6 +16,7 @@ import {
   buildRuntimeHistoryIndexes,
   migrate,
 } from "./migrate";
+import { migrateSharedDrafts } from "./migrate-shared-drafts";
 import { createMailNotificationService } from "./notifications";
 import { router } from "./router";
 import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
@@ -96,6 +97,7 @@ const result = await app.start({
 startDraftDocumentLogPolicy(async (signal) => {
   await retryPendingDraftSendCloses(signal);
   await draftDocumentSnapshots.reconcile({ signal });
+  await migrateSharedDrafts(signal);
 });
 export default { ...result, websocket };
 

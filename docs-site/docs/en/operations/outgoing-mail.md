@@ -26,8 +26,8 @@ See [Format outgoing messages](/en/apps/mail#format-outgoing-messages).
 
 ## Shared drafts per mailbox
 
-Shared editing runs on the platform shared text room and stays opt-in per
-mailbox; lock mode remains the default. Its durability, send boundary,
+Starting with Cloud 0.77, shared editing is the default for new mailboxes, and
+existing mailboxes switch once after log preparation. Its durability, send boundary,
 deployment requirements and measured capacity are described in
 [Mail collaborative drafts](mail-collaborative-drafts.md).
 
@@ -46,8 +46,8 @@ as the same account retain recovery input. Shared Yjs offline storage keeps
 its existing separate lifecycle.
 
 Each mailbox has a draft editing mode, `lock` or `shared`. The default is
-`lock`: one person edits a draft at a time and others can take it over.
-With `shared`, everyone with write access edits the same draft at once.
+`shared`: everyone with write access edits the same draft at once. With
+`lock`, one person edits and others can take over.
 A mailbox administrator sets the mode with
 `cld mail configure --mailbox <id> --drafts shared|lock` or the mailbox API
 (`PATCH /api/mail/mailboxes/:mailboxId` with `draftEditMode`); the change is
@@ -58,7 +58,8 @@ audited like other mailbox settings.
 - **Rollback:** setting the mailbox back to `lock` stops new shared drafts.
   Drafts that are already shared keep shared editing, sending, Undo, and
   recovery until they are sent or discarded. Mail never converts them, so no
-  typing is lost.
+  typing is lost. After the one-time migration completes, an explicit lock
+  setting survives restarts and later upgrades.
 - Mail refuses `shared` with `409 SHARED_DRAFTS_UNSUPPORTED` until startup
   migration succeeds and the live log matches its declaration. Do not switch
   draft modes in the database to bypass this gate.
@@ -72,8 +73,24 @@ audited like other mailbox settings.
   If someone changed the draft in the same moment, Mail sends nothing and asks
   to check the text again.
 
-Deploy the release to every Mail instance before an administrator turns on a
-shared mailbox. Already scheduled messages keep their immutable send snapshots.
+### Cloud 0.77 upgrade note
+
+Mail switches existing mailbox settings to shared in batches of 100, after
+log readiness. Version 5 (`shared_drafts_default`) in `mail.schema_migrations`
+records the durable cursor and completion; an unsupported start leaves the
+marker unset and retries on a later start. Drafts keep their own edit mode and
+generation. Once `details.completed` is true, administrators can use
+`cld mail configure --mailbox <id> --drafts lock` or PATCH `draftEditMode` to
+return a mailbox to lock permanently. There is currently no draft-mode
+selector in mailbox settings. See the [upgrade and rollback instructions](mail-collaborative-drafts.md#upgrade-and-switch-back-to-lock).
+
+Two-node testing passed for 200 drafts with two and three editors each and
+zero SQL per edit. At 500 drafts with two editors, RSS exceeded the 1 GiB
+budget; that concurrency is outside the measured capacity. The new default
+does not raise that limit.
+
+Deploy the matching release to every Mail instance. Already scheduled
+messages keep their immutable send snapshots.
 
 ### Durability and projection delay
 
