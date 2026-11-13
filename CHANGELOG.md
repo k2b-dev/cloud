@@ -3,6 +3,23 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.75.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.74.0...cloud-v0.75.0) (2026-11-13)
+
+
+### Features
+
+* **cloud:** the app bar matches the sidebar and shows each app in its colour ([#3211](https://github.com/k2b-dev/cloud/issues/3211)) ([254f50f](https://github.com/k2b-dev/cloud/commit/254f50f966f582b6eb053775c63fbf042c87883c))
+* **mail:** Mail v5 with full width, one reply draft per conversation and notes in the timeline ([#3239](https://github.com/k2b-dev/cloud/issues/3239)) ([b61018d](https://github.com/k2b-dev/cloud/commit/b61018d7903905ca6d3c1abc8498d64245a62650))
+
+
+### Bug Fixes
+
+* **cloud:** opening or loading a Cloud page lifts the privacy screen ([#3222](https://github.com/k2b-dev/cloud/issues/3222)) ([7429ccd](https://github.com/k2b-dev/cloud/commit/7429ccda995510012be44910fa3c62accba5f2d7))
+* **filesv2:** the Lightbox video test checks range support the same way in every engine ([#3250](https://github.com/k2b-dev/cloud/issues/3250)) ([a117ac7](https://github.com/k2b-dev/cloud/commit/a117ac7238521576dbaf30afe68f7ebe27697861))
+* **mail:** a cancelled shared-draft query no longer leaves an idle transaction ([#3253](https://github.com/k2b-dev/cloud/issues/3253)) ([e091fc3](https://github.com/k2b-dev/cloud/commit/e091fc3f9611b717a390ae6a85da34b3a655031d))
+* **mail:** F6 refuses before its marker when a reply draft has an active submission ([#3252](https://github.com/k2b-dev/cloud/issues/3252)) ([7142fa3](https://github.com/k2b-dev/cloud/commit/7142fa3e1edb627a0fc093dbb9e637e2b262854a))
+* **ui:** a split button shows one colour under a host tone ([#3220](https://github.com/k2b-dev/cloud/issues/3220)) ([0c91e12](https://github.com/k2b-dev/cloud/commit/0c91e1218f89ce36d536714059d2b76757bb3d99))
+
 ## [0.74.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.73.0...cloud-v0.74.0) (2026-11-12)
 
 
