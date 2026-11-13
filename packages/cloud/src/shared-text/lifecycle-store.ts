@@ -40,7 +40,11 @@ export const checkLifecycleAdmission = async (store: SharedTextLifecycleStore, d
 };
 
 /** One compacted stream per document log; never a stream per document or a prunable prefix. */
-export const createLifecycleStore = (config: { id: string; maxBytes: number; ready(): Promise<void> }): SharedTextLifecycleStore => {
+export const createLifecycleStore = (config: {
+  id: string;
+  maxBytes: number;
+  ready(): Promise<void>;
+}): SharedTextLifecycleStore & { ready(): Promise<void> } => {
   if (!Number.isSafeInteger(config.maxBytes) || config.maxBytes < 4096) throw new RangeError("Lifecycle maxBytes must be at least 4096");
   let pending: ReturnType<typeof prepare> | undefined;
   let warnedLargerBudget = false;
@@ -133,6 +137,9 @@ export const createLifecycleStore = (config: { id: string; maxBytes: number; rea
     }));
   const keyFor = (docId: string) => createHash("sha256").update(docId).digest("hex");
   return {
+    async ready() {
+      await ready();
+    },
     async get(docId) {
       const { manager, name, subject } = await ready();
       const key = keyFor(docId);

@@ -77,6 +77,12 @@ testFor("nats")(
       expect(full).toBeDefined();
       expect(await expanded.get("active")).toEqual(frozen);
       expect(await rolledBack.get("retired")).toEqual(closed);
+      // Readiness expands even a full store before the first new transition.
+      const recovered = sharedText.define({ ...declaration, lifecycle: { maxBytes: 16384 } });
+      await recovered.ready();
+      expect((await manager.streams.info(streams[0]!.config.name)).config.max_bytes).toBe(16384);
+      expect(await recovered.lifecycle!.put("after-exhaustion", null, { state: "open" })).toMatchObject({ value: { state: "open" } });
+      expect(await recovered.lifecycle!.get("retired")).toEqual(closed);
     } finally {
       logger.mockRestore();
       unbindProcessSync();

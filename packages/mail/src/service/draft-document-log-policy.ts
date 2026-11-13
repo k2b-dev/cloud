@@ -75,7 +75,7 @@ export const migrateDraftDocumentLogPolicy = async (signal?: AbortSignal): Promi
   migrated = false;
   await stopDraftDocumentPruning();
   try {
-    await mailDraftDocumentLog.topic().ready();
+    await mailDraftDocumentLog.ready();
     for (let delay = RETRY_MS.first; !(await checkpointed(sql)); delay = Math.min(delay * 2, RETRY_MS.max)) {
       if (await recoverExpiredPrefix()) break;
       signal?.throwIfAborted();

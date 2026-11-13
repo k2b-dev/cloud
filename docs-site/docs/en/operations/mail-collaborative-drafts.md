@@ -183,7 +183,7 @@ replacement document; frozen and closed rooms reject replacement.
 
 Keep all shared-text declarations identical across Mail nodes. The retained
 document log reserves 1 GiB, awareness reserves 64 MiB, and lifecycle authority
-reserves 16 MiB per replica. Snapshot jobs and dead letters have their own
+reserves 512 MiB per replica. Snapshot jobs and dead letters have their own
 platform budgets. Preserve lifecycle authority together with the document log
 and SQL snapshots in backups. Drain older nodes without lifecycle admission
 before enabling this release's shared editing path.
@@ -207,12 +207,47 @@ reserved transactions without waiting for a free slot in their application
 pool, and closes after Mail's runtimes drain. Include this extra connection
 when sizing PostgreSQL's connection limit.
 
-An isolated sample of 100 closed drafts with seven-digit log sequences used
-139 JSON bytes and about 377 JetStream-reported bytes per entry. At that size,
-16 MiB holds roughly 44,500 closed entries before allowing for open or frozen
-entries, longer values and operating headroom. This is a storage estimate,
-not a supported draft count. Allow operating headroom as shared editing becomes
-the default in 0.77.
+Mail prepares the lifecycle stream during its post-startup draft-log preparation,
+including when no one opens or sends a draft. It increases an older 16 MiB
+budget to 512 MiB in place, preserving every entry. A larger operator-set
+`max_bytes` stays unchanged. A reservation failure leaves shared drafts
+unsupported and logs the preparation error; provide account and disk capacity,
+then restart Mail. Other Mail services remain available.
+
+An isolated NATS 2.14.3 sample of 100 freeze/close transitions, with seven-digit
+log sequences and three-digit lifecycle revisions, measured 139 JSON bytes and
+377 JetStream-reported bytes per closed entry. The planning assumption for a
+large installation is 1,000 sent drafts per day for three years:
+`377 × 1,000 × 365 × 3 = 412,815,000 bytes`, about 394 MiB. The 512 MiB
+budget keeps that estimate below the 80% warning threshold, leaving at least
+20% operating headroom. The reservation is 512 MiB on each replica, or 1.5 GiB
+across three replicas. Include it alongside the document log, dead letters and
+other JetStream reservations when sizing the account and disks.
+
+This increases capacity; it does not reclaim closed entries or remove the
+cumulative limit. Open and frozen documents also consume storage. Longer
+cursors, revisions and retained headers change the cost per entry, so the
+calculation is a planning estimate, not a supported draft count.
+
+### Monitor lifecycle capacity
+
+At 80% of the **installed** byte limit, Gateway Ops raises a shared broker
+health warning with the log ID, percentage, bytes used and byte limit. It
+marks NATS in Observability and participates in existing health webhooks,
+including webhooks scoped to applications. To receive capacity warnings, include
+`warn` in the webhook's **Send on** events and set its minimum status to
+`warn` or `ok`. The default health-check schedule
+is every five minutes. The warning clears on the next evaluation once usage
+is below 80%, for example after an operator increases the byte limit.
+
+Open **Observability → NATS & Sync**, search for `draft-documents` and enable
+**Problems only**. Leave the app-owner filter empty: lifecycle streams have
+no Sync owner. The namespace filter works. The Storage column shows usage,
+limit and percentage; refresh to take a new snapshot. For CLI inspection and
+safe sizing changes, see
+[Operate the lifecycle stream](../data/shared-text-documents.md#operate-the-lifecycle-stream).
+Increase capacity before exhaustion; never purge or delete lifecycle entries
+to free space.
 
 An isolated two-node test with 4096-byte starting documents, one edit per
 editor every two seconds and awareness traffic passed for 200 drafts with
