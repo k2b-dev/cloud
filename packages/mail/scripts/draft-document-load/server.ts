@@ -276,15 +276,34 @@ try {
   cleanup.push(() => meter.close());
   await meter`CREATE EXTENSION IF NOT EXISTS pg_stat_statements`;
   const drafts = new Map<string, { id: string; short_id: string; state: string; cursor: string | null; generation: string }>();
+  let replySource: { conversationId: string; sourceMessageId: string } | undefined;
+  if (!shared && options.modeSwitch) {
+    const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations (short_id, mailbox_id, subject, latest_message_at)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Load', '2026-11-01T12:00:00Z') RETURNING id`;
+    const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
+      (short_id, mailbox_id, message_id, subject, internal_date, content_hash, hydration_status, plain_text)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, '<load-reply@example.test>', 'Load', '2026-11-01T12:00:00Z',
+      ${"a".repeat(64)}, 'complete', 'Source') RETURNING id`;
+    if (!conversation || !message) throw new Error("Missing mode-switch source");
+    await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+      VALUES (${conversation.id}::uuid, ${message.id}::uuid, 0, 'headers')`;
+    await sql`INSERT INTO mail.message_addresses (message_id, role, position, email, normalized_email)
+      VALUES (${message.id}::uuid, 'from', 0, 'recipient@example.test', 'recipient@example.test'),
+      (${message.id}::uuid, 'to', 0, 'load@example.test', 'load@example.test')`;
+    replySource = { conversationId: conversation.id, sourceMessageId: message.id };
+  }
   if (shared) for (const row of shared.drafts) drafts.set(row.short_id, row);
   else
     for (let i = 0; i < options.drafts; i++) {
       checkHost();
       const [row] = await sql<{ id: string; short_id: string }[]>`INSERT INTO mail.drafts
         (short_id, mailbox_id, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id,
-         to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format, priority, edit_mode)
+         to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format, priority, edit_mode,
+         conversation_id, source_message_id, intent)
         VALUES (${newShortId()}, ${mailboxId}::uuid, ${identity.id}::uuid, 'user', ${user.id}::uuid, 'user', ${user.id}::uuid,
-        '[{"address":"recipient@example.test","name":null}]'::jsonb, '[]'::jsonb, '[]'::jsonb, 'Load', ${"x".repeat(options.bodyBytes)}, 'plain', 'normal', 'shared') RETURNING id, short_id`;
+        '[{"address":"recipient@example.test","name":null}]'::jsonb, '[]'::jsonb, '[]'::jsonb, 'Load', ${"x".repeat(options.bodyBytes)}, 'plain', 'normal', 'shared',
+        ${i === 0 ? (replySource?.conversationId ?? null) : null}::uuid,
+        ${i === 0 ? (replySource?.sourceMessageId ?? null) : null}::uuid, ${i === 0 && replySource ? "reply" : "new"}) RETURNING id, short_id`;
       if (!row) throw new Error("Missing draft");
       const base = value(await readDraftDocument({ context, mailboxId, draftId: row.id }));
       drafts.set(row.short_id, { ...row, state: toBase64(base.durable.state), cursor: base.durable.cursor, generation: base.generation });
@@ -384,6 +403,18 @@ try {
       const { cancelScheduledSend } = await import("../../src/service/scheduled-sends");
       const cancelled = value(await cancelScheduledSend({ context, mailboxId, scheduledSendId, input: { disposition: "draft" } }));
       const current = value(await readDraftDocument({ context, mailboxId, draftId: cancelled.draftId }));
+      return c.json({ generation: current.generation, cursor: current.durable.cursor, state: toBase64(current.durable.state) });
+    })
+    .post("/__load/mode", async (c) => {
+      const { draftId } = await c.req.json<{ draftId: string }>();
+      if (!options.modeSwitch || ![...drafts.values()].some((row) => row.id === draftId)) return c.notFound();
+      const { switchDraftIntent } = await import("../../src/service/drafts");
+      await flushDraftDocumentSnapshot(draftId);
+      for (const intent of ["reply_all", "forward", "reply"] as const) {
+        const current = value(await readDraftDocument({ context, mailboxId, draftId }));
+        value(await switchDraftIntent({ context, mailboxId, draftId, expectedRevision: current.revision, intent }));
+      }
+      const current = value(await readDraftDocument({ context, mailboxId, draftId }));
       return c.json({ generation: current.generation, cursor: current.durable.cursor, state: toBase64(current.durable.state) });
     })
     .post("/__load/revoke", async (c) => {

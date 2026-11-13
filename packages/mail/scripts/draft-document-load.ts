@@ -17,6 +17,7 @@ and Sync namespace. Never starts containers or enables shared mailbox editing.
                    requires body-bytes >= burst-bytes)
   --rss-mib N      Server RSS abort budget (default 1024)
   --failover      Kill node 2 mid-run; reconnect its editors to node 1
+  --mode-switch   After Undo, switch a reply through reply-all/forward/reply and edit on both nodes
   --bounded       Separate systemd scopes: server 2 CPUs/1536 MiB, clients 1 CPU/512 MiB
   --out PATH      New result directory (default .local/mail-draft-load/<timestamp>)
   --help          Show this help
@@ -41,6 +42,7 @@ export function options(args: string[]) {
     options: {
       bounded: { type: "boolean" },
       failover: { type: "boolean" },
+      "mode-switch": { type: "boolean" },
       drafts: { type: "string" },
       clients: { type: "string" },
       seconds: { type: "string" },
@@ -51,7 +53,12 @@ export function options(args: string[]) {
       out: { type: "string" },
     },
   });
-  const number = (key: Exclude<keyof typeof values, "bounded" | "failover">, fallback: number, min: number, max: number) => {
+  const number = (
+    key: Exclude<keyof typeof values, "bounded" | "failover" | "mode-switch">,
+    fallback: number,
+    min: number,
+    max: number,
+  ) => {
     const value = values[key] === undefined ? fallback : Number(values[key]);
     if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(`--${key} must be ${min}..${max}`);
     return value;
@@ -63,6 +70,7 @@ export function options(args: string[]) {
   return {
     bounded: values.bounded === true,
     failover: values.failover === true,
+    modeSwitch: values["mode-switch"] === true,
     drafts: number("drafts", 10, 1, 500),
     clients: number("clients", 3, 2, 8),
     seconds: number("seconds", 60, 1, 600),

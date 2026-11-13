@@ -76,6 +76,12 @@ send semantics. Their outcome transaction stores a durable close intent.
 Mail obtains a fresh verified freeze and closes the room, with an idempotent
 receipt so startup can finish a close interrupted by a crash.
 
+Changing reply or forward mode replaces document content. Mail checks lifecycle
+authority under document admission, publishes the platform's ordered generation
+marker, and anchors the replacement SQL snapshot to that cursor. A rolled-back
+replacement restores its previous generation marker. Editors reconnect to the
+replacement document; frozen and closed rooms reject replacement.
+
 ## Capacity and deployment
 
 Keep all shared-text declarations identical across Mail nodes. The retained
@@ -98,9 +104,31 @@ as well as the retained content log. A full lifecycle stream rejects new
 lifecycle transitions without evicting existing fences.
 Safe retirement is tracked in [#3254](https://github.com/k2b-dev/cloud/issues/3254).
 
+Each Mail process can open one additional PostgreSQL control connection,
+created lazily on the first cancelled shared-draft transaction. It cancels
+reserved transactions without waiting for a free slot in their application
+pool, and closes after Mail's runtimes drain. Include this extra connection
+when sizing PostgreSQL's connection limit.
+
 An isolated sample of 100 closed drafts with seven-digit log sequences used
 139 JSON bytes and about 377 JetStream-reported bytes per entry. At that size,
 16 MiB holds roughly 44,000 closed entries before allowing for open or frozen
 entries, longer values and operating headroom. This is a storage estimate,
 not a supported draft count. Shared editing remains opt-in per mailbox in 0.76;
 this release does not perform the broader mailbox migration.
+
+An isolated two-node test with 4096-byte starting documents, one edit per
+editor every two seconds and awareness traffic passed for 200 drafts with
+two and three editors each. Each node had two CPUs, a 1536 MiB hard memory
+limit and a 1024 MiB RSS abort budget. Cross-node p50/p95 was 240/600 ms for
+two editors and 290/950 ms for three; edit and delivery SQL was zero. Peak
+node RSS was 653/645 MiB and 791/822 MiB respectively. The 60-second runs
+also exercised exact send, Undo, resumed editing and access revocation on
+both nodes. A later 200-draft smoke covered reply/forward mode replacement.
+
+At 500 drafts with two editors, the test stopped at 1037 MiB RSS; observed
+cross-node p95 was 3330 ms. That configuration is outside the measured budget.
+The 200-draft result has limited latency headroom and does not establish a
+production concurrency guarantee. Measure with the operator's document sizes,
+hardware and traffic before increasing the opt-in population. Enabling shared
+editing for all mailboxes remains a separate decision.

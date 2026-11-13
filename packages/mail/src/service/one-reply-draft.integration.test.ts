@@ -14,6 +14,9 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import * as revisionBase from "./draft-document-revision";
+import { mailDraftRoom } from "./draft-document-room";
+import { flushDraftDocumentSnapshot } from "./draft-document-snapshots";
 import { readDraftDocument } from "./draft-documents";
 import { acquireDraftLease, heartbeatDraftLease } from "./draft-leases";
 import { finishReplyDraftRetirements } from "./draft-retirement";
@@ -589,6 +592,27 @@ suite("one reply draft per conversation", () => {
         const documentAfter = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
         expect(Number(documentAfter.generation)).toBeGreaterThan(Number(documentBefore.generation));
         expect(documentAfter.fresh.content).toMatchObject({ body: "My text", subject: "Re: Question", cc: [] });
+        const frozen = await mailDraftRoom.freeze(draft.id);
+        expect(frozen?.restoreRevision).toBe(documentAfter.generation);
+        if (!frozen) throw new Error("Missing switched draft boundary");
+        expect((await change("forward")).ok).toBeFalse();
+        await mailDraftRoom.thaw(draft.id, { freezeCursor: frozen.cursor });
+        await flushDraftDocumentSnapshot(draft.id);
+        const failReplacement = spyOn(revisionBase, "recordDraftDocumentRevision").mockRejectedValueOnce(new Error("Replacement rollback"));
+        try {
+          const current = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
+          expect((await change("forward", current.revision)).ok).toBeFalse();
+          expect(failReplacement).toHaveBeenCalledTimes(1);
+        } finally {
+          failReplacement.mockRestore();
+        }
+        const rolledBack = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
+        expect(rolledBack.generation).toBe(documentAfter.generation);
+        expect(rolledBack.durable.content).toEqual(documentAfter.durable.content);
+        const resumed = await mailDraftRoom.freeze(draft.id);
+        expect(resumed?.restoreRevision).toBe(documentAfter.generation);
+        if (!resumed) throw new Error("Missing rollback boundary");
+        await mailDraftRoom.thaw(draft.id, { freezeCursor: resumed.cursor });
       }
       expect(draft.body).toBe("My text");
       if (mode === "shared")

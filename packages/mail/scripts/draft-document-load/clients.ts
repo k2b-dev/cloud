@@ -69,6 +69,7 @@ const scenarios = {
   slowConsumers: 0,
   exactSends: 0,
   undos: 0,
+  modeSwitches: 0,
 };
 const error = (code: string) => {
   errors[code] = (errors[code] ?? 0) + 1;
@@ -629,6 +630,57 @@ try {
       await Bun.sleep(10);
     }
     scenarios.undos++;
+    if (options.modeSwitch) {
+      for (const client of first.clients) {
+        if (client.socket) expectedStops.add(client.socket);
+        client.socket?.close(1000, "mode switch");
+      }
+      const changed = await fetch(`${baseUrl}/__load/mode`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ draftId: first.id }),
+      });
+      if (!changed.ok) throw new Error(`Mode switch failed: ${await changed.text()}`);
+      const replacement = z
+        .object({ generation: z.string(), cursor: z.string().nullable(), state: z.string() })
+        .parse(await changed.json());
+      for (const client of first.clients) {
+        client.awareness.destroy();
+        client.doc.destroy();
+        client.doc = new Y.Doc();
+        Y.applyUpdate(client.doc, fromBase64(replacement.state));
+        client.awareness = new Awareness(client.doc);
+        client.generation = replacement.generation;
+        client.cursor = replacement.cursor;
+        client.ready = false;
+        await connect(first, client);
+      }
+      const ready = performance.now() + ackBudgetMs;
+      while (first.clients.some((client) => !client.ready)) {
+        check();
+        if (performance.now() > ready) throw new Error("Mode switch did not rejoin both nodes");
+        await Bun.sleep(10);
+      }
+      const before = Y.encodeStateVector(editor.doc);
+      const marker = " [editing-after-mode-switch]";
+      editor.doc.getText("codemirror").insert(editor.doc.getText("codemirror").length, marker);
+      const payload = toBase64(Y.encodeStateAsUpdate(editor.doc, before));
+      editor.pending = marker;
+      editor.pendingId = draftUpdateId(payload);
+      editor.pendingBase = editor.cursor;
+      editor.sentAt = performance.now();
+      send(editor, {
+        type: "syncPublish",
+        payload: { docId: first.short_id, generation: editor.generation, baseCursor: editor.cursor, payload },
+      });
+      const applied = performance.now() + ackBudgetMs;
+      while (editor.pending || first.clients.some((client) => !client.doc.getText("codemirror").toString().includes(marker))) {
+        check();
+        if (performance.now() > applied) throw new Error("Mode switch did not restore editing across both nodes");
+        await Bun.sleep(10);
+      }
+      scenarios.modeSwitches = 3;
+    }
   }
   revoking = true;
   const revoke = await fetch(`${baseUrl}/__load/revoke`, { method: "POST" });
