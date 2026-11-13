@@ -66,7 +66,7 @@ import { createConversationTriageCommands } from "./triage";
 
 const suite = suiteFor("database", "nats");
 
-suite("mail PostgreSQL foundation", () => {
+const draftModeTests = (draftEditMode: "shared" | "lock") => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const ids: { userIds: string[]; mailboxId?: string; accessIds: string[]; blobIds: string[] } = {
     userIds: [],
@@ -144,8 +144,11 @@ suite("mail PostgreSQL foundation", () => {
     expect(mailbox.ok).toBe(true);
     if (!mailbox.ok) return;
     ids.mailboxId = mailbox.data.id;
-    const locked = await updateMailbox({ context, mailboxId: mailbox.data.id, draftEditMode: "lock" });
-    if (!locked.ok) throw new Error(locked.error.message);
+    expect(mailbox.data.draftEditMode).toBe("shared");
+    if (draftEditMode === "lock") {
+      const mode = await updateMailbox({ context, mailboxId: mailbox.data.id, draftEditMode });
+      if (!mode.ok) throw new Error(mode.error.message);
+    }
     expect(mailbox.data.searchBackend).toBe("auto");
 
     const nativeSearch = await updateMailbox({
@@ -1501,7 +1504,8 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       draftId: draft.data.id,
-      expectedRevision: emptyDraft.data.revision,
+      // Shared mode merges authenticated old revisions; use an unavailable base to exercise recovery.
+      expectedRevision: draftEditMode === "shared" ? draft.data.revision + 1 : emptyDraft.data.revision,
       input: {
         quoteSource: null,
         senderIdentityId: identity!.id,
@@ -1524,15 +1528,18 @@ suite("mail PostgreSQL foundation", () => {
     const recoveryLease = await acquireDraftLease({ context, mailboxId: mailbox.data.id, draftId: draft.data.id });
     expect(recoveryLease.ok).toBe(true);
     if (!recoveryLease.ok) return;
-    const restoreWithoutLease = await restoreDraftRecoveryCopy({
-      context,
-      mailboxId: mailbox.data.id,
-      draftId: draft.data.id,
-      recoveryCopyId: recoveryCopies.data[0].id,
-      expectedRevision: draft.data.revision,
-      leaseToken: crypto.randomUUID(),
-    });
-    expect(restoreWithoutLease.ok).toBe(false);
+    // Only lock mode requires an exclusive writer lease for recovery.
+    if (draftEditMode === "lock") {
+      const restoreWithoutLease = await restoreDraftRecoveryCopy({
+        context,
+        mailboxId: mailbox.data.id,
+        draftId: draft.data.id,
+        recoveryCopyId: recoveryCopies.data[0].id,
+        expectedRevision: draft.data.revision,
+        leaseToken: crypto.randomUUID(),
+      });
+      expect(restoreWithoutLease.ok).toBe(false);
+    }
     const restoredDraft = await restoreDraftRecoveryCopy({
       context,
       mailboxId: mailbox.data.id,
@@ -3843,4 +3850,7 @@ suite("mail PostgreSQL foundation", () => {
       );
     }
   }, 30_000);
-});
+};
+
+for (const draftEditMode of ["shared", "lock"] as const)
+  suite(`mail PostgreSQL foundation (${draftEditMode})`, () => draftModeTests(draftEditMode));

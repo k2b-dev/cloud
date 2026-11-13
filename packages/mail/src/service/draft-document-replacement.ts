@@ -49,8 +49,8 @@ export const withDraftDocumentReplacement = async <T>(
       // its old generation marker. Exact CAS cannot undo a later replacement.
       if (pending) {
         const rollback = pending;
-        const [current] = await sql<{ generation: string }[]>`
-          SELECT doc_generation::text AS generation FROM mail.drafts WHERE id = ${draftId}::uuid`;
+        const [current] = await sql<{ generation: string; seeded: boolean }[]>`
+          SELECT doc_generation::text AS generation, doc_state IS NOT NULL AS seeded FROM mail.drafts WHERE id = ${draftId}::uuid`;
         if (current?.generation === rollback.previousGeneration) {
           const restored = await topic.publish({
             tenantId: draftId,
@@ -66,16 +66,19 @@ export const withDraftDocumentReplacement = async <T>(
           // The failed replacement marker lies between the old SQL cursor and
           // this compensation. Cover both with the unchanged durable state so
           // snapshot replay never mistakes that abandoned lineage for a restore.
-          await withDraftDocumentCommit(async (db) => {
-            const [row] = await db<{ revision: number; doc_state: Uint8Array }[]>`
+          // An unseeded draft has no acknowledged snapshot. Leave its SQL
+          // baseline untouched; its first seed replays these inert markers.
+          if (current.seeded)
+            await withDraftDocumentCommit(async (db) => {
+              const [row] = await db<{ revision: number; doc_state: Uint8Array }[]>`
               UPDATE mail.drafts SET doc_cursor = ${restored.cursor}, doc_seq = ${topic.cursorSequence(restored.cursor)},
                 revision = revision + 1
               WHERE id = ${draftId}::uuid AND doc_generation = ${rollback.previousGeneration}::bigint
               RETURNING revision, doc_state`;
-            if (!row) throw new ConflictError("Draft generation changed during replacement rollback");
-            await db`INSERT INTO mail.draft_document_revisions (draft_id, generation, revision, state, cursor)
+              if (!row) throw new ConflictError("Draft generation changed during replacement rollback");
+              await db`INSERT INTO mail.draft_document_revisions (draft_id, generation, revision, state, cursor)
               VALUES (${draftId}::uuid, ${rollback.previousGeneration}::bigint, ${row.revision}, ${row.doc_state}, ${restored.cursor})`;
-          });
+            });
         }
       }
       throw error;

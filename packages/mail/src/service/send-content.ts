@@ -1,4 +1,4 @@
-import { sql } from "@k2b/cloud";
+import type { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import type { DraftQuoteSource } from "../contracts";
@@ -6,9 +6,10 @@ import { type ActorRef, draftEditableContentInputSchema } from "../contracts";
 import { getMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
-import { renderComposeContent, withoutSignatureSegments } from "./compose-renderer";
+import { removeOrphanComposeSegmentMarks, renderComposeContent, withoutSignatureSegments } from "./compose-renderer";
 import { draftDocumentHistoryChecked } from "./draft-document-log-policy";
 import { loadDraftSourceQuote } from "./draft-source-quote";
+import { resolveDraftSignature } from "./draft-validation";
 import { mailboxLogoContentId } from "./mailbox-logos";
 import { type OutboundDraftSnapshot, outboundDraftSnapshotSchema } from "./outbound-mime";
 
@@ -18,6 +19,7 @@ const internalDraftEditableContentInputSchema = draftEditableContentInputSchema.
 });
 type SendSource = {
   edit_mode: "lock" | "shared";
+  doc_seeded: boolean;
   doc_cursor: string | null;
   doc_seq: string | number | null;
   doc_history_complete: boolean;
@@ -85,7 +87,7 @@ export const loadSendContent = async (params: {
   const accountId = params.actor.kind === "service_account" ? params.actor.serviceAccountId : null;
   const [draft] = await params.db<SendSource[]>`
     SELECT
-      d.conversation_id, d.edit_mode, d.doc_cursor, d.doc_seq, d.doc_history_complete,
+      d.conversation_id, d.edit_mode, (d.doc_state IS NOT NULL) AS doc_seeded, d.doc_cursor, d.doc_seq, d.doc_history_complete,
       signature.body_template AS signature, COALESCE(style.custom_css, '') AS custom_css,
       m.name AS mailbox_name, m.description AS mailbox_description,
       u.display_name AS actor_name, u.uid AS actor_uid, u.mail AS actor_mail, account.name AS account_name,
@@ -162,6 +164,29 @@ export const loadSendContent = async (params: {
     if (!(await draftDocumentHistoryChecked(params.db))) return fail(sendContentChanged());
     // Command creation owns the distributed freeze/drain and checks this
     // reviewed revision against its flushed state before the SQL commit.
+  }
+  // First shared admission canonicalizes legacy signature storage without a
+  // content revision. Review the same representation before that admission,
+  // so an unchanged message does not invalidate its own approved send hash.
+  if (draft.edit_mode === "shared" && !draft.doc_seeded && params.context) {
+    const signature = await resolveDraftSignature({
+      db: params.db,
+      context: params.context,
+      mailboxId: params.mailboxId,
+      stored: { body: draft.body_markdown, signatureTemplateId: draft.signature_template_id },
+      body: removeOrphanComposeSegmentMarks(draft.body_markdown),
+      requested: undefined,
+    });
+    if (!signature.ok) return signature;
+    draft.body_markdown = signature.data.body;
+    if (signature.data.signatureTemplateId !== draft.signature_template_id) {
+      const [selected] = await params.db<{ body_template: string }[]>`
+        SELECT body_template FROM mail.compose_templates
+        WHERE id = ${signature.data.signatureTemplateId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
+          AND kind = 'signature' AND archived_at IS NULL`;
+      draft.signature = selected?.body_template ?? null;
+      draft.signature_template_id = signature.data.signatureTemplateId;
+    }
   }
   if (actorUserId && !draft.actor_uid) return fail(err.badInput("The delegated compose user is no longer available"));
   const content = internalDraftEditableContentInputSchema.safeParse({

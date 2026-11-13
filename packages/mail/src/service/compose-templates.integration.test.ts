@@ -95,7 +95,7 @@ const delegatedContext = (context: MailRequestContext, serviceAccountId: string)
   };
 };
 
-suite("mail compose templates", () => {
+const draftModeTests = (draftEditMode: "shared" | "lock") => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   const accessIds: string[] = [];
@@ -129,8 +129,11 @@ suite("mail compose templates", () => {
     const mailbox = await createMailbox(owner, { name: `Compose ${suffix}`, description: "Compose template test" });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxId = mailbox.data.id;
-    const locked = await updateMailbox({ context: owner, mailboxId, draftEditMode: "lock" });
-    if (!locked.ok) throw new Error(locked.error.message);
+    expect(mailbox.data.draftEditMode).toBe("shared");
+    if (draftEditMode === "lock") {
+      const mode = await updateMailbox({ context: owner, mailboxId, draftEditMode });
+      if (!mode.ok) throw new Error(mode.error.message);
+    }
     const granted = await grantMailboxAccess({
       context: owner,
       mailboxId,
@@ -1354,7 +1357,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     });
   });
 
-  test("legacy drafts migrate on open without a write and persist the migrated view on save", async () => {
+  test("legacy drafts keep their effective signature across open and save", async () => {
     const chosen = await signature("migratedchoice");
     const body = `Answer\n\n${markComposeTemplateSegment(chosen.body)}\n\nAda wrote:\n> History`;
     const created = await createDraft({ context: owner, mailboxId, input: { ...newContent(), body, signatureTemplateId: null } });
@@ -1368,7 +1371,12 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     const [stored] = await sql<
       { body_markdown: string; signature_template_id: string | null }[]
     >`SELECT body_markdown, signature_template_id FROM mail.drafts WHERE id = ${created.data.id}::uuid`;
-    expect(stored).toEqual({ body_markdown: body, signature_template_id: null });
+    // Shared open seeds a canonical document; lock open only projects the view.
+    expect(stored).toEqual(
+      draftEditMode === "shared"
+        ? { body_markdown: opened.data.body, signature_template_id: chosen.id }
+        : { body_markdown: body, signature_template_id: null },
+    );
     const saved = await updateDraft({
       context: owner,
       mailboxId,
@@ -1438,12 +1446,14 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     });
     if (!current.ok) throw new Error(current.error.message);
     const { signatureTemplateId: _, ...oldContent } = content(current.data);
+    // Authenticated stale shared edits merge. An unavailable base requests recovery.
+    const recoveryRevision = draftEditMode === "shared" ? current.data.revision + 1 : created.data.revision;
     for (const choice of [{ signatureTemplateId: second.id }, {}, { signatureTemplateId: null }]) {
       const conflict = await updateDraft({
         context: owner,
         mailboxId,
         draftId: created.data.id,
-        expectedRevision: created.data.revision,
+        expectedRevision: recoveryRevision,
         input: { ...oldContent, subject: "Stale edited subject", ...choice },
       });
       expect(conflict).toMatchObject({ ok: false, error: { status: 409 } });
@@ -1585,7 +1595,8 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
         context: owner,
         mailboxId,
         draftId: current.data.id,
-        expectedRevision: created.data.revision,
+        // Shared stale bases merge; an unavailable base retains the submitted recovery body.
+        expectedRevision: draftEditMode === "shared" ? current.data.revision + 1 : created.data.revision,
         input: { ...oldContent, body: `${expectedBody}\n\n${markComposeTemplateSegment(chosen.body)}` },
       }),
     ).toMatchObject({ ok: false, error: { status: 409 } });
@@ -1653,4 +1664,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     expect(preview.data.text).toBe("Answer\n\nRegards previewlegacy Ada Owner");
     expect(preview.data.html.match(/Regards previewlegacy/g)).toHaveLength(1);
   });
-});
+};
+
+for (const draftEditMode of ["shared", "lock"] as const)
+  suite(`mail compose templates (${draftEditMode})`, () => draftModeTests(draftEditMode));

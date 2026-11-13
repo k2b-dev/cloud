@@ -114,6 +114,14 @@ export queue. These are queueing bounds, not a guarantee that an unavailable
 provider finishes within thirty seconds. Startup and hourly reconciliation
 recover work that outlived a process.
 
+Edits saved in another client's Drafts folder update the shared draft and its
+attachments when they replace Mail's current copy and no newer Mail input
+exists. Open editors reconnect to the imported version. If either client
+changed an older copy, or room input is still awaiting its SQL snapshot, Mail
+keeps the external edit as a recovery copy instead of overwriting newer work.
+Restoring a recovery copy also retains the version it replaces, including its
+attachments.
+
 The document log retains accepted input until all replayable drafts have
 covering SQL snapshots. Mail then prunes the covered prefix. A full log
 rejects new edits; browsers keep unacknowledged input for retry. Incomplete
@@ -132,6 +140,12 @@ submitting a send. Mail freezes the draft across nodes, drains accepted input
 and flushes the exact state. It commits the send command, immutable content
 snapshot and scheduled draft state in one SQL transaction, then releases the
 freeze. Cancellation or rollback releases it too.
+
+Legacy drafts with an in-body signature can be sent before their first save.
+The send review and first shared-document admission use the same normalized
+signature, so that admission does not invalidate an unchanged approval. Broken
+signature marks are removed while complete segments still render once. Scheduled
+sends retain their reviewed inline logo bytes after logo replacement or removal.
 
 Undoable and scheduled sends hold no long-lived freeze. New joins check the
 draft state. Existing editors lose access when the committed revocation event

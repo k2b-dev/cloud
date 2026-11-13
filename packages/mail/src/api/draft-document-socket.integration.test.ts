@@ -33,7 +33,7 @@ import {
 } from "../service/draft-document-snapshots";
 import * as draftDocumentService from "../service/draft-documents";
 import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
-import { mailLive } from "../service/live";
+import { enqueueMailInvalidation, mailLive } from "../service/live";
 import { createMailbox } from "../service/mailboxes";
 import { cancelScheduledSend } from "../service/scheduled-sends";
 import { stopMailDraftConnections, upgradeMailDraftDocumentSocket } from "./draft-document-socket";
@@ -525,14 +525,27 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         await sql`INSERT INTO mail.conversation_assignees(conversation_id, user_id) VALUES (${conversation}::uuid, ${other.id}::uuid)`;
         const allowed = await connect(`session_token=${token}`, other.id);
         await allowed.ready();
-        if (change === "assignment removed")
-          await sql`DELETE FROM mail.conversation_assignees WHERE conversation_id = ${conversation}::uuid`;
-        else await sql`UPDATE mail.drafts SET conversation_id = ${targetConversation}::uuid WHERE id = ${currentDraft.id}::uuid`;
-        mailLive.wake();
-        expect(await allowed.wait((packet) => packet.type === "error")).toMatchObject({
-          type: "error",
-          payload: { code: "ACCESS_DENIED" },
-        });
+        const readBeforeMove = draftDocumentService.readDraftDocument;
+        // Move between the room's initial access check and its transaction-bound read.
+        const moveDuringRead =
+          change === "draft moved"
+            ? spyOn(draftDocumentService, "readDraftDocument").mockImplementationOnce(async (params) => {
+                await sql`UPDATE mail.drafts SET conversation_id = ${targetConversation}::uuid WHERE id = ${currentDraft.id}::uuid`;
+                return readBeforeMove(params);
+              })
+            : null;
+        try {
+          if (change === "assignment removed")
+            await sql`DELETE FROM mail.conversation_assignees WHERE conversation_id = ${conversation}::uuid`;
+          else await sql.begin((db) => enqueueMailInvalidation(db, { mailboxId }));
+          mailLive.wake();
+          expect(await allowed.wait((packet) => packet.type === "error")).toMatchObject({
+            type: "error",
+            payload: { code: "ACCESS_DENIED" },
+          });
+        } finally {
+          moveDuringRead?.mockRestore();
+        }
       } finally {
         activeSession = previous;
         requestContext = context;

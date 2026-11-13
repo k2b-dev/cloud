@@ -46,7 +46,7 @@ const userContext = (id: string, uid: string, displayName: string, mail: string)
     requestId: `draft-limit-test-${id}`,
   }) as never;
 
-suite("mail draft limits", () => {
+const draftModeTests = (draftEditMode: "shared" | "lock") => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   const accessIds: string[] = [];
@@ -71,8 +71,11 @@ suite("mail draft limits", () => {
     const mailbox = await createMailbox(owner, { name: `Draft limits ${suffix}`, description: "Draft limit test" });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxId = mailbox.data.id;
-    const locked = await updateMailbox({ context: owner, mailboxId, draftEditMode: "lock" });
-    if (!locked.ok) throw new Error(locked.error.message);
+    expect(mailbox.data.draftEditMode).toBe("shared");
+    if (draftEditMode === "lock") {
+      const mode = await updateMailbox({ context: owner, mailboxId, draftEditMode });
+      if (!mode.ok) throw new Error(mode.error.message);
+    }
     const granted = await grantMailboxAccess({
       context: owner,
       mailboxId,
@@ -314,216 +317,225 @@ suite("mail draft limits", () => {
     expect(draft.data.cc).toEqual([{ name: "Ops", address: "Ops@Example.com" }]);
   });
 
-  test("lease answers distinguish live holders, stale tokens, and state mutex contention", async () => {
-    const [grace] = await sql<{ id: string; uid: string; display_name: string; mail: string }[]>`
+  // This test exercises exclusive writer leases, which only lock mode uses.
+  if (draftEditMode === "lock")
+    test("lease answers distinguish live holders, stale tokens, and state mutex contention", async () => {
+      const [grace] = await sql<{ id: string; uid: string; display_name: string; mail: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, mail)
       VALUES (${`lease-codes-${suffix}`}, 'local', 'user', 'Grace Example', ${`lease-codes-${suffix}@example.test`})
       RETURNING id, uid, display_name, mail
     `;
-    if (!grace) throw new Error("Lease codes collaborator was not created");
-    userIds.push(grace.id);
-    const collaborator = userContext(grace.id, grace.uid, grace.display_name, grace.mail);
-    const granted = await grantMailboxAccess({
-      context: owner,
-      mailboxId,
-      principal: { type: "user", userId: grace.id },
-      permission: "write",
-    });
-    expect(granted.ok).toBe(true);
-    if (granted.ok) accessIds.push(granted.data.id);
-    const created = await createDraft({
-      context: owner,
-      mailboxId,
-      input: {
-        quoteSource: null,
-        senderIdentityId: identityId,
-        to: [{ name: "Ada Example", address: "ada@example.test" }],
-        cc: [],
-        bcc: [],
-        subject: "Lease codes",
-        body: "Local text",
-        format: "plain",
-      },
-    });
-    expect(created.ok).toBe(true);
-    if (!created.ok) return;
-    const target = { mailboxId, draftId: created.data.id };
-    const acquired = await acquireDraftLease({ ...target, context: owner });
-    expect(acquired.ok).toBe(true);
-    if (!acquired.ok) return;
-    try {
-      expect(await acquireDraftLease({ ...target, context: collaborator })).toMatchObject({
-        ok: false,
-        error: { code: DRAFT_LEASE_ERROR_CODES.HELD, status: 409 },
+      if (!grace) throw new Error("Lease codes collaborator was not created");
+      userIds.push(grace.id);
+      const collaborator = userContext(grace.id, grace.uid, grace.display_name, grace.mail);
+      const granted = await grantMailboxAccess({
+        context: owner,
+        mailboxId,
+        principal: { type: "user", userId: grace.id },
+        permission: "write",
       });
-      const stale = { ...target, context: owner, token: crypto.randomUUID() };
-      expect(await heartbeatDraftLease(stale)).toMatchObject({
-        ok: false,
-        error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED, status: 409 },
+      expect(granted.ok).toBe(true);
+      if (granted.ok) accessIds.push(granted.data.id);
+      const created = await createDraft({
+        context: owner,
+        mailboxId,
+        input: {
+          quoteSource: null,
+          senderIdentityId: identityId,
+          to: [{ name: "Ada Example", address: "ada@example.test" }],
+          cc: [],
+          bcc: [],
+          subject: "Lease codes",
+          body: "Local text",
+          format: "plain",
+        },
       });
-      expect(await releaseDraftLease(stale)).toMatchObject({ ok: false, error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED, status: 409 } });
-      let ran = false;
-      expect(
-        await withOwnedDraftLease({
-          ...stale,
-          operation: async () => {
-            ran = true;
-            return ok();
-          },
-        }),
-      ).toMatchObject({ ok: false, error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED, status: 409 } });
-      expect(ran).toBe(false);
-      const mutex = lazySync((sync) => sync.mutex({ id: "mail:draft-lease-state", ttlMs: 30_000, retry: { maxAttempts: 4, delayMs: 25 } }));
-      const lock = await mutex().acquire({ resource: created.data.id, ttlMs: 30_000 });
-      expect(lock).not.toBeNull();
-      if (lock) {
-        try {
-          expect(await heartbeatDraftLease({ ...target, context: owner, token: acquired.data.token })).toMatchObject({
-            ok: false,
-            error: { code: DRAFT_LEASE_ERROR_CODES.BUSY, status: 409 },
-          });
-        } finally {
-          await mutex().release(lock);
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      const target = { mailboxId, draftId: created.data.id };
+      const acquired = await acquireDraftLease({ ...target, context: owner });
+      expect(acquired.ok).toBe(true);
+      if (!acquired.ok) return;
+      try {
+        expect(await acquireDraftLease({ ...target, context: collaborator })).toMatchObject({
+          ok: false,
+          error: { code: DRAFT_LEASE_ERROR_CODES.HELD, status: 409 },
+        });
+        const stale = { ...target, context: owner, token: crypto.randomUUID() };
+        expect(await heartbeatDraftLease(stale)).toMatchObject({
+          ok: false,
+          error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED, status: 409 },
+        });
+        expect(await releaseDraftLease(stale)).toMatchObject({
+          ok: false,
+          error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED, status: 409 },
+        });
+        let ran = false;
+        expect(
+          await withOwnedDraftLease({
+            ...stale,
+            operation: async () => {
+              ran = true;
+              return ok();
+            },
+          }),
+        ).toMatchObject({ ok: false, error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED, status: 409 } });
+        expect(ran).toBe(false);
+        const mutex = lazySync((sync) =>
+          sync.mutex({ id: "mail:draft-lease-state", ttlMs: 30_000, retry: { maxAttempts: 4, delayMs: 25 } }),
+        );
+        const lock = await mutex().acquire({ resource: created.data.id, ttlMs: 30_000 });
+        expect(lock).not.toBeNull();
+        if (lock) {
+          try {
+            expect(await heartbeatDraftLease({ ...target, context: owner, token: acquired.data.token })).toMatchObject({
+              ok: false,
+              error: { code: DRAFT_LEASE_ERROR_CODES.BUSY, status: 409 },
+            });
+          } finally {
+            await mutex().release(lock);
+          }
         }
+      } finally {
+        await releaseDraftLease({ ...target, context: owner, token: acquired.data.token });
       }
-    } finally {
-      await releaseDraftLease({ ...target, context: owner, token: acquired.data.token });
-    }
 
-    // A repeated acquire from the same editor instance, e.g. after its answer was lost, returns its own lease.
-    const editorId = crypto.randomUUID();
-    const first = await acquireDraftLease({ ...target, context: owner, editorId });
-    expect(first.ok).toBe(true);
-    if (!first.ok) return;
-    try {
-      const renewed = await acquireDraftLease({ ...target, context: owner, editorId });
-      expect(renewed).toMatchObject({
-        ok: true,
-        data: { token: first.data.token },
-      });
-      if (renewed.ok) expect(Date.parse(renewed.data.expiresAt)).toBeGreaterThan(Date.parse(first.data.expiresAt));
-      for (const retry of [{ context: owner, editorId: crypto.randomUUID() }, { context: owner }]) {
-        expect(await acquireDraftLease({ ...target, ...retry })).toMatchObject({ ok: true, data: { token: first.data.token } });
+      // A repeated acquire from the same editor instance, e.g. after its answer was lost, returns its own lease.
+      const editorId = crypto.randomUUID();
+      const first = await acquireDraftLease({ ...target, context: owner, editorId });
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      try {
+        const renewed = await acquireDraftLease({ ...target, context: owner, editorId });
+        expect(renewed).toMatchObject({
+          ok: true,
+          data: { token: first.data.token },
+        });
+        if (renewed.ok) expect(Date.parse(renewed.data.expiresAt)).toBeGreaterThan(Date.parse(first.data.expiresAt));
+        for (const retry of [{ context: owner, editorId: crypto.randomUUID() }, { context: owner }]) {
+          expect(await acquireDraftLease({ ...target, ...retry })).toMatchObject({ ok: true, data: { token: first.data.token } });
+        }
+        // A cancelled acquire or a closing own tab must not release another own writer.
+        expect(await heartbeatDraftLease({ ...target, context: owner, token: first.data.token })).toMatchObject({ ok: true });
+        expect(await releaseDraftLease({ ...target, context: owner, token: first.data.token })).toMatchObject({ ok: true });
+        expect(await acquireDraftLease({ ...target, context: collaborator, editorId })).toMatchObject({
+          ok: false,
+          error: { code: DRAFT_LEASE_ERROR_CODES.HELD, status: 409 },
+        });
+      } finally {
+        await releaseDraftLease({ ...target, context: owner, token: first.data.token });
       }
-      // A cancelled acquire or a closing own tab must not release another own writer.
-      expect(await heartbeatDraftLease({ ...target, context: owner, token: first.data.token })).toMatchObject({ ok: true });
-      expect(await releaseDraftLease({ ...target, context: owner, token: first.data.token })).toMatchObject({ ok: true });
-      expect(await acquireDraftLease({ ...target, context: collaborator, editorId })).toMatchObject({
-        ok: false,
-        error: { code: DRAFT_LEASE_ERROR_CODES.HELD, status: 409 },
-      });
-    } finally {
-      await releaseDraftLease({ ...target, context: owner, token: first.data.token });
-    }
-  });
+    });
 
-  test("protects the writer and preserves an offline proposal after takeover", async () => {
-    const [collaboratorRow] = await sql<{ id: string; uid: string; display_name: string; mail: string }[]>`
+  // This test exercises exclusive writer leases, which only lock mode uses.
+  if (draftEditMode === "lock")
+    test("protects the writer and preserves an offline proposal after takeover", async () => {
+      const [collaboratorRow] = await sql<{ id: string; uid: string; display_name: string; mail: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, mail)
       VALUES (${`draft-lease-mate-${suffix}`}, 'local', 'user', 'Bea Mate', ${`draft-lease-mate-${suffix}@example.test`})
       RETURNING id, uid, display_name, mail
     `;
-    if (!collaboratorRow) throw new Error("Draft lease test collaborator was not created");
-    userIds.push(collaboratorRow.id);
-    const collaborator = userContext(collaboratorRow.id, collaboratorRow.uid, collaboratorRow.display_name, collaboratorRow.mail);
-    const granted = await grantMailboxAccess({
-      context: owner,
-      mailboxId,
-      principal: { type: "user", userId: collaboratorRow.id },
-      permission: "write",
-    });
-    if (granted.ok) accessIds.push(granted.data.id);
+      if (!collaboratorRow) throw new Error("Draft lease test collaborator was not created");
+      userIds.push(collaboratorRow.id);
+      const collaborator = userContext(collaboratorRow.id, collaboratorRow.uid, collaboratorRow.display_name, collaboratorRow.mail);
+      const granted = await grantMailboxAccess({
+        context: owner,
+        mailboxId,
+        principal: { type: "user", userId: collaboratorRow.id },
+        permission: "write",
+      });
+      if (granted.ok) accessIds.push(granted.data.id);
 
-    const draft = await createDraft({
-      context: owner,
-      mailboxId,
-      input: {
-        quoteSource: null,
+      const draft = await createDraft({
+        context: owner,
+        mailboxId,
+        input: {
+          quoteSource: null,
+          senderIdentityId: identityId,
+          to: [{ name: "Customer", address: "customer@example.com" }],
+          cc: [],
+          bcc: [],
+          subject: "Shared draft",
+          body: "Body",
+          format: "plain",
+        },
+      });
+      expect(draft.ok).toBe(true);
+      if (!draft.ok) return;
+      const content = {
         senderIdentityId: identityId,
-        to: [{ name: "Customer", address: "customer@example.com" }],
+        to: draft.data.to,
         cc: [],
         bcc: [],
         subject: "Shared draft",
-        body: "Body",
-        format: "plain",
-      },
-    });
-    expect(draft.ok).toBe(true);
-    if (!draft.ok) return;
-    const content = {
-      senderIdentityId: identityId,
-      to: draft.data.to,
-      cc: [],
-      bcc: [],
-      subject: "Shared draft",
-      format: "plain" as const,
-    };
+        format: "plain" as const,
+      };
 
-    const lease = await acquireDraftLease({ context: owner, mailboxId, draftId: draft.data.id });
-    expect(lease.ok).toBe(true);
-    if (!lease.ok) return;
+      const lease = await acquireDraftLease({ context: owner, mailboxId, draftId: draft.data.id });
+      expect(lease.ok).toBe(true);
+      if (!lease.ok) return;
 
-    const blocked = await updateDraft({
-      context: collaborator,
-      mailboxId,
-      draftId: draft.data.id,
-      expectedRevision: draft.data.revision,
-      input: { ...content, body: "Collaborator body" },
-    });
-    expect(blocked.ok).toBe(false);
-    if (!blocked.ok) {
-      expect(blocked.error.code).toBe("DRAFT_LEASE_HELD");
-      expect(blocked.error.status).toBe(409);
-      expect(blocked.error.message).toContain("Ada Owner");
-    }
-    const [copies] = await sql<{ count: string | number }[]>`
+      const blocked = await updateDraft({
+        context: collaborator,
+        mailboxId,
+        draftId: draft.data.id,
+        expectedRevision: draft.data.revision,
+        input: { ...content, body: "Collaborator body" },
+      });
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) {
+        expect(blocked.error.code).toBe("DRAFT_LEASE_HELD");
+        expect(blocked.error.status).toBe(409);
+        expect(blocked.error.message).toContain("Ada Owner");
+      }
+      const [copies] = await sql<{ count: string | number }[]>`
       SELECT count(*) AS count FROM mail.draft_recovery_copies WHERE draft_id = ${draft.data.id}::uuid
     `;
-    expect(Number(copies!.count)).toBe(0);
+      expect(Number(copies!.count)).toBe(0);
 
-    const holderSave = await updateDraft({
-      context: owner,
-      mailboxId,
-      draftId: draft.data.id,
-      expectedRevision: draft.data.revision,
-      input: { ...content, body: "Holder body" },
-    });
-    expect(holderSave.ok && holderSave.data.body).toBe("Holder body");
-    if (!holderSave.ok) return;
+      const holderSave = await updateDraft({
+        context: owner,
+        mailboxId,
+        draftId: draft.data.id,
+        expectedRevision: draft.data.revision,
+        input: { ...content, body: "Holder body" },
+      });
+      expect(holderSave.ok && holderSave.data.body).toBe("Holder body");
+      if (!holderSave.ok) return;
 
-    const takeover = await acquireDraftLease({ context: collaborator, mailboxId, draftId: draft.data.id, takeover: true });
-    expect(takeover.ok).toBe(true);
-    if (!takeover.ok) return;
-    expect(await heartbeatDraftLease({ context: owner, mailboxId, draftId: draft.data.id, token: lease.data.token })).toMatchObject({
-      ok: false,
-      error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED },
-    });
+      const takeover = await acquireDraftLease({ context: collaborator, mailboxId, draftId: draft.data.id, takeover: true });
+      expect(takeover.ok).toBe(true);
+      if (!takeover.ok) return;
+      expect(await heartbeatDraftLease({ context: owner, mailboxId, draftId: draft.data.id, token: lease.data.token })).toMatchObject({
+        ok: false,
+        error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED },
+      });
 
-    const afterTakeover = await updateDraft({
-      context: collaborator,
-      mailboxId,
-      draftId: draft.data.id,
-      expectedRevision: holderSave.data.revision,
-      input: { ...content, body: "Collaborator body" },
+      const afterTakeover = await updateDraft({
+        context: collaborator,
+        mailboxId,
+        draftId: draft.data.id,
+        expectedRevision: holderSave.data.revision,
+        input: { ...content, body: "Collaborator body" },
+      });
+      expect(afterTakeover.ok && afterTakeover.data.body).toBe("Collaborator body");
+      if (!afterTakeover.ok) return;
+      expect(
+        await releaseDraftLease({ context: collaborator, mailboxId, draftId: draft.data.id, token: takeover.data.token }),
+      ).toMatchObject({ ok: true });
+      const offlineInput = await updateDraft({
+        context: owner,
+        mailboxId,
+        draftId: draft.data.id,
+        expectedRevision: holderSave.data.revision,
+        input: { ...content, body: "Offline owner proposal" },
+      });
+      expect(offlineInput).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+      const recovery = await listDraftRecoveryCopies({ context: owner, mailboxId, draftId: draft.data.id });
+      expect(recovery.ok && recovery.data.some((copy) => copy.content.body === "Offline owner proposal")).toBe(true);
+      const [retained] = await sql<{ body_markdown: string }[]>`SELECT body_markdown FROM mail.drafts WHERE id = ${draft.data.id}::uuid`;
+      expect(retained?.body_markdown).toBe("Collaborator body");
     });
-    expect(afterTakeover.ok && afterTakeover.data.body).toBe("Collaborator body");
-    if (!afterTakeover.ok) return;
-    expect(await releaseDraftLease({ context: collaborator, mailboxId, draftId: draft.data.id, token: takeover.data.token })).toMatchObject(
-      { ok: true },
-    );
-    const offlineInput = await updateDraft({
-      context: owner,
-      mailboxId,
-      draftId: draft.data.id,
-      expectedRevision: holderSave.data.revision,
-      input: { ...content, body: "Offline owner proposal" },
-    });
-    expect(offlineInput).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
-    const recovery = await listDraftRecoveryCopies({ context: owner, mailboxId, draftId: draft.data.id });
-    expect(recovery.ok && recovery.data.some((copy) => copy.content.body === "Offline owner proposal")).toBe(true);
-    const [retained] = await sql<{ body_markdown: string }[]>`SELECT body_markdown FROM mail.drafts WHERE id = ${draft.data.id}::uuid`;
-    expect(retained?.body_markdown).toBe("Collaborator body");
-  });
 
   test("refuses an unapproved send when template text would leave the mailbox verbatim", async () => {
     const draft = await createDraft({
@@ -650,122 +662,183 @@ suite("mail draft limits", () => {
     if (!draft.ok) return;
     expect(draft.data.attachments.map(({ filename, position }) => ({ filename, position }))).toEqual(expected);
   });
-  test("lock draft no-op saves and a lost-response retry keep the confirmed revision", async () => {
-    const created = await createDraft({
-      context: owner,
-      mailboxId,
-      input: {
-        quoteSource: null,
+  if (draftEditMode === "shared")
+    test("shared editors preserve offline text and lost-response retries without an exclusive writer", async () => {
+      const [collaboratorRow] = await sql<{ id: string; uid: string; display_name: string; mail: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, mail)
+      VALUES (${`draft-shared-mate-${suffix}`}, 'local', 'user', 'Bea Mate', ${`shared-mate-${suffix}@example.test`})
+      RETURNING id, uid, display_name, mail`;
+      if (!collaboratorRow) throw new Error("Shared draft collaborator was not created");
+      userIds.push(collaboratorRow.id);
+      const collaborator = userContext(collaboratorRow.id, collaboratorRow.uid, collaboratorRow.display_name, collaboratorRow.mail);
+      const granted = await grantMailboxAccess({
+        context: owner,
+        mailboxId,
+        principal: { type: "user", userId: collaboratorRow.id },
+        permission: "write",
+      });
+      if (!granted.ok) throw new Error(granted.error.message);
+      accessIds.push(granted.data.id);
+      const input = {
         senderIdentityId: identityId,
+        signatureTemplateId: null,
+        quoteSource: null,
         to: [],
         cc: [],
         bcc: [],
-        subject: "Autosave",
-        body: "Initial",
-        format: "plain",
-      },
+        subject: "Offline shared editing",
+        body: "One\nTwo\nThree",
+        format: "plain" as const,
+      };
+      const created = await createDraft({ context: owner, mailboxId, input });
+      if (!created.ok) throw new Error(created.error.message);
+      const target = { mailboxId, draftId: created.data.id };
+      const unchanged = await updateDraft({ ...target, context: owner, expectedRevision: created.data.revision, input });
+      expect(unchanged).toMatchObject({ ok: true, data: { body: input.body } });
+      if (!unchanged.ok) throw new Error(unchanged.error.message);
+      const baseRevision = unchanged.data.revision;
+      const lease = await acquireDraftLease({ ...target, context: owner });
+      if (!lease.ok) throw new Error(lease.error.message);
+      try {
+        const current = await updateDraft({
+          ...target,
+          context: owner,
+          expectedRevision: baseRevision,
+          input: { ...input, body: "One owner\nTwo\nThree" },
+        });
+        if (!current.ok) throw new Error(current.error.message);
+        // The second editor reconnects with the old revision while the first still has a legacy lease.
+        const offline = { ...input, body: "One\nTwo\nThree offline" };
+        const merged = await updateDraft({ ...target, context: collaborator, expectedRevision: baseRevision, input: offline });
+        if (!merged.ok) throw new Error(merged.error.message);
+        expect(merged.data.body).toBe("One owner\nTwo\nThree offline");
+        const retry = await updateDraft({ ...target, context: collaborator, expectedRevision: baseRevision, input: offline });
+        expect(retry).toMatchObject({ ok: true, data: { body: merged.data.body, revision: merged.data.revision, recoveryCopyCount: 0 } });
+      } finally {
+        await releaseDraftLease({ ...target, context: owner, token: lease.data.token });
+      }
     });
-    if (!created.ok) throw new Error(created.error.message);
-    const target = { context: owner, mailboxId, draftId: created.data.id };
-    const {
-      senderIdentityId,
-      signatureTemplateId,
-      to,
-      cc,
-      bcc,
-      subject,
-      body,
-      format,
-      priority,
-      requestDeliveryReceipt,
-      requestReadReceipt,
-    } = created.data;
-    const initialContent = {
-      quoteSource: null,
-      senderIdentityId,
-      signatureTemplateId,
-      to,
-      cc,
-      bcc,
-      subject,
-      body,
-      format,
-      priority,
-      requestDeliveryReceipt,
-      requestReadReceipt,
-    };
-    const unchanged = await updateDraft({ ...target, expectedRevision: created.data.revision, input: initialContent });
-    if (!unchanged.ok) throw new Error(JSON.stringify(unchanged.error));
-    expect(unchanged.ok).toBe(true);
-    expect(unchanged.data.revision).toBe(created.data.revision);
-    const input = { ...initialContent, body: "Saved before timeout" };
-    const saved = await updateDraft({ ...target, expectedRevision: created.data.revision, input });
-    if (!saved.ok) throw new Error(saved.error.message);
-    const retried = await updateDraft({ ...target, expectedRevision: created.data.revision, input });
-    expect(retried.ok).toBe(true);
-    if (!retried.ok) throw new Error(retried.error.message);
-    expect(retried.data.revision).toBe(saved.data.revision);
-    expect(retried.data.recoveryCopyCount).toBe(0);
-    const later = await updateDraft({ ...target, expectedRevision: retried.data.revision, input: { ...input, body: "Latest typing" } });
-    expect(later.ok).toBe(true);
-    if (!later.ok) throw new Error(later.error.message);
-    expect(later.data.body).toBe("Latest typing");
-    const stale = await updateDraft({ ...target, expectedRevision: created.data.revision, input });
-    expect(stale.ok).toBe(false);
-    expect(!stale.ok && stale.error.code).toBe("CONFLICT");
-    const copies = await listDraftRecoveryCopies(target);
-    if (!copies.ok || !copies.data[0]) throw new Error("Missing conflicting input copy");
-    const bytes = Buffer.from(`Recovery attachment ${suffix}`);
-    const blob = await storeReadableBlob(Readable.from([bytes]), bytes.length);
-    blobIds.push(blob.id);
-    await sql`
+
+  // This test exercises exclusive writer leases, which only lock mode uses.
+  if (draftEditMode === "lock")
+    test("lock draft no-op saves and a lost-response retry keep the confirmed revision", async () => {
+      const created = await createDraft({
+        context: owner,
+        mailboxId,
+        input: {
+          quoteSource: null,
+          senderIdentityId: identityId,
+          to: [],
+          cc: [],
+          bcc: [],
+          subject: "Autosave",
+          body: "Initial",
+          format: "plain",
+        },
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      const target = { context: owner, mailboxId, draftId: created.data.id };
+      const {
+        senderIdentityId,
+        signatureTemplateId,
+        to,
+        cc,
+        bcc,
+        subject,
+        body,
+        format,
+        priority,
+        requestDeliveryReceipt,
+        requestReadReceipt,
+      } = created.data;
+      const initialContent = {
+        quoteSource: null,
+        senderIdentityId,
+        signatureTemplateId,
+        to,
+        cc,
+        bcc,
+        subject,
+        body,
+        format,
+        priority,
+        requestDeliveryReceipt,
+        requestReadReceipt,
+      };
+      const unchanged = await updateDraft({ ...target, expectedRevision: created.data.revision, input: initialContent });
+      if (!unchanged.ok) throw new Error(JSON.stringify(unchanged.error));
+      expect(unchanged.ok).toBe(true);
+      expect(unchanged.data.revision).toBe(created.data.revision);
+      const input = { ...initialContent, body: "Saved before timeout" };
+      const saved = await updateDraft({ ...target, expectedRevision: created.data.revision, input });
+      if (!saved.ok) throw new Error(saved.error.message);
+      const retried = await updateDraft({ ...target, expectedRevision: created.data.revision, input });
+      expect(retried.ok).toBe(true);
+      if (!retried.ok) throw new Error(retried.error.message);
+      expect(retried.data.revision).toBe(saved.data.revision);
+      expect(retried.data.recoveryCopyCount).toBe(0);
+      const later = await updateDraft({ ...target, expectedRevision: retried.data.revision, input: { ...input, body: "Latest typing" } });
+      expect(later.ok).toBe(true);
+      if (!later.ok) throw new Error(later.error.message);
+      expect(later.data.body).toBe("Latest typing");
+      const stale = await updateDraft({ ...target, expectedRevision: created.data.revision, input });
+      expect(stale.ok).toBe(false);
+      expect(!stale.ok && stale.error.code).toBe("CONFLICT");
+      const copies = await listDraftRecoveryCopies(target);
+      if (!copies.ok || !copies.data[0]) throw new Error("Missing conflicting input copy");
+      const bytes = Buffer.from(`Recovery attachment ${suffix}`);
+      const blob = await storeReadableBlob(Readable.from([bytes]), bytes.length);
+      blobIds.push(blob.id);
+      await sql`
       INSERT INTO mail.draft_attachments (short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position)
       VALUES (${newShortId()}, ${created.data.id}::uuid, ${blob.id}::uuid, 'peer.txt', 'text/plain', ${bytes.length}, ${blob.contentHash}, 0)
     `;
-    // A prior rejected write can have retained this exact version without an
-    // attachment snapshot. Restore must upgrade that copy instead of skipping it.
-    const peerContent = { ...initialContent, body: "Latest typing" };
-    if (owner.actor.kind !== "user") throw new Error("Expected a user actor");
-    await sql`
+      // A prior rejected write can have retained this exact version without an
+      // attachment snapshot. Restore must upgrade that copy instead of skipping it.
+      const peerContent = { ...initialContent, body: "Latest typing" };
+      if (owner.actor.kind !== "user") throw new Error("Expected a user actor");
+      await sql`
       INSERT INTO mail.draft_recovery_copies (draft_id, base_revision, content, content_hash, creator_kind, creator_id)
       VALUES (${created.data.id}::uuid, ${later.data.revision}, ${peerContent}::jsonb, ${sha256Json(peerContent)}, 'user', ${owner.actor.user.id}::uuid)
     `;
-    const lease = await acquireDraftLease(target);
-    if (!lease.ok) throw new Error(lease.error.message);
-    try {
-      const restored = await restoreDraftRecoveryCopy({
-        ...target,
-        recoveryCopyId: copies.data[0].id,
-        expectedRevision: later.data.revision,
-        leaseToken: lease.data.token,
-      });
-      if (!restored.ok) throw new Error(restored.error.message);
-      expect(restored.data.body).toBe("Saved before timeout");
-      const retained = await listDraftRecoveryCopies(target);
-      if (!retained.ok) throw new Error(retained.error.message);
-      const previous = retained.data.find((copy) => !copy.restoredAt && copy.content.body === "Latest typing");
-      expect(previous).toBeDefined();
-      const [snapshot] = await sql<
-        { has_attachment_snapshot: boolean }[]
-      >`SELECT has_attachment_snapshot FROM mail.draft_recovery_copies WHERE id = ${previous!.id}::uuid`;
-      expect(snapshot?.has_attachment_snapshot).toBe(true);
-      const removed = await removeDraftAttachment({
-        ...target,
-        attachmentId: restored.data.attachments[0]!.id,
-        expectedRevision: restored.data.revision,
-      });
-      if (!removed.ok) throw new Error(removed.error.message);
-      const recoveredPeer = await restoreDraftRecoveryCopy({
-        ...target,
-        recoveryCopyId: previous!.id,
-        expectedRevision: removed.data.revision,
-        leaseToken: lease.data.token,
-      });
-      if (!recoveredPeer.ok) throw new Error(recoveredPeer.error.message);
-      expect(recoveredPeer.data.body).toBe("Latest typing");
-      expect(recoveredPeer.data.attachments.map((attachment) => attachment.filename)).toEqual(["peer.txt"]);
-    } finally {
-      await releaseDraftLease({ ...target, token: lease.data.token });
-    }
-  });
-});
+      const lease = await acquireDraftLease(target);
+      if (!lease.ok) throw new Error(lease.error.message);
+      try {
+        const restored = await restoreDraftRecoveryCopy({
+          ...target,
+          recoveryCopyId: copies.data[0].id,
+          expectedRevision: later.data.revision,
+          leaseToken: lease.data.token,
+        });
+        if (!restored.ok) throw new Error(restored.error.message);
+        expect(restored.data.body).toBe("Saved before timeout");
+        const retained = await listDraftRecoveryCopies(target);
+        if (!retained.ok) throw new Error(retained.error.message);
+        const previous = retained.data.find((copy) => !copy.restoredAt && copy.content.body === "Latest typing");
+        expect(previous).toBeDefined();
+        const [snapshot] = await sql<
+          { has_attachment_snapshot: boolean }[]
+        >`SELECT has_attachment_snapshot FROM mail.draft_recovery_copies WHERE id = ${previous!.id}::uuid`;
+        expect(snapshot?.has_attachment_snapshot).toBe(true);
+        const removed = await removeDraftAttachment({
+          ...target,
+          attachmentId: restored.data.attachments[0]!.id,
+          expectedRevision: restored.data.revision,
+        });
+        if (!removed.ok) throw new Error(removed.error.message);
+        const recoveredPeer = await restoreDraftRecoveryCopy({
+          ...target,
+          recoveryCopyId: previous!.id,
+          expectedRevision: removed.data.revision,
+          leaseToken: lease.data.token,
+        });
+        if (!recoveredPeer.ok) throw new Error(recoveredPeer.error.message);
+        expect(recoveredPeer.data.body).toBe("Latest typing");
+        expect(recoveredPeer.data.attachments.map((attachment) => attachment.filename)).toEqual(["peer.txt"]);
+      } finally {
+        await releaseDraftLease({ ...target, token: lease.data.token });
+      }
+    });
+};
+
+for (const draftEditMode of ["shared", "lock"] as const) suite(`mail draft limits (${draftEditMode})`, () => draftModeTests(draftEditMode));
