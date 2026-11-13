@@ -1,6 +1,6 @@
 import { ConflictError } from "@k2b/sync";
 import * as Y from "yjs";
-import { checkSharedTextBoundary, SharedTextBoundaryError } from "./boundary";
+import { checkSharedTextBoundary, SHARED_TEXT_FREEZE_SAFETY_MS, SharedTextBoundaryError } from "./boundary";
 import { createDoc } from "./documents";
 import { SHARED_TEXT_NAME, sharedTextNodeId } from "./events";
 import type { sharedText } from "./log";
@@ -51,7 +51,12 @@ export const createRoomLifecycle = (config: {
       const { topic, target, stored, tail } = current;
       if (tail?.restoreRevision !== undefined && tail.restoreRevision !== stored.restoreRevision)
         throw new SharedTextBoundaryError("GENERATION_CHANGED");
-      if (options.freezeCursor && (target !== options.freezeCursor || tail?.room?.state !== "frozen" || tail.room.expiresAt <= Date.now()))
+      if (
+        options.freezeCursor &&
+        (target !== options.freezeCursor ||
+          tail?.room?.state !== "frozen" ||
+          tail.room.expiresAt <= Date.now() + SHARED_TEXT_FREEZE_SAFETY_MS)
+      )
         throw new ConflictError("The shared text freeze lease is no longer owned");
       if (tail?.room?.state === "closed") {
         if (state === "closed") return target;
@@ -89,9 +94,10 @@ export const createRoomLifecycle = (config: {
           if (target)
             await config.log.replay({ docId, after: stored.cursor, until: target, doc, restoreRevision: stored.restoreRevision, signal });
           if (doc.store.pendingStructs || doc.store.pendingDs) throw new Error("Cannot freeze unresolved shared text dependencies");
-          const state = Y.encodeStateAsUpdate(doc);
+          const version = Y.snapshot(doc);
           const text = doc.getText(SHARED_TEXT_NAME).toString();
-          const expiresAt = Date.now() + LEASE_MS;
+          const leaseExpiresAt = Date.now() + LEASE_MS;
+          const expiresAt = leaseExpiresAt - SHARED_TEXT_FREEZE_SAFETY_MS;
           signal.throwIfAborted();
           const marker = await topic.publish({
             tenantId: docId,
@@ -102,20 +108,28 @@ export const createRoomLifecycle = (config: {
               restoreRevision: stored.restoreRevision,
               originNodeId: sharedTextNodeId,
               originPeerId: null,
-              room: { state: "frozen", expiresAt },
+              room: { state: "frozen", expiresAt: leaseExpiresAt },
             },
           });
-          return { state, text, marker, expiresAt, stored, topic };
+          return { version, text, marker, expiresAt, stored, topic };
         } finally {
           doc.destroy();
         }
       });
       if (!drained) return null;
-      const { state, text, marker, expiresAt, stored, topic } = drained;
+      const { version, text, marker, expiresAt, stored, topic } = drained;
       const persisted = await config.flushNow(docId, { signal, restoreRevision: stored.restoreRevision, targetCursor: marker.cursor });
       signal.throwIfAborted();
-      if (!persisted?.state || persisted.text !== text || !Buffer.from(persisted.state).equals(Buffer.from(state)))
-        throw new Error("Shared text flush differs from the drained freeze state");
+      if (!persisted?.state || persisted.text !== text) throw new Error("Shared text flush differs from the drained freeze state");
+      const saved = createDoc(persisted);
+      try {
+        // GC and update merging can encode the same state differently. Compare
+        // causal coverage and deletions as well as the canonical visible text.
+        if (saved.getText(SHARED_TEXT_NAME).toString() !== text || !Y.equalSnapshots(version, Y.snapshot(saved)))
+          throw new Error("Shared text flush differs from the drained freeze state");
+      } finally {
+        saved.destroy();
+      }
       if (Date.now() >= expiresAt || (await topic.latestCursor({ tenantId: docId })) !== marker.cursor)
         throw new ConflictError("The shared text freeze lease expired or was released during flush");
       return { state: persisted.state, text, cursor: marker.cursor, restoreRevision: stored.restoreRevision, expiresAt };

@@ -1,5 +1,8 @@
 import type { SharedTextSyncEvent } from "./types";
 
+/** Freeze owners stop before a faster peer may expire the retained lease. */
+export const SHARED_TEXT_FREEZE_SAFETY_MS = 5_000;
+
 /** A broker-ordered lifecycle rejection never acknowledges the input update. */
 export class SharedTextBoundaryError extends Error {
   constructor(readonly code: "DOCUMENT_FROZEN" | "DOCUMENT_CLOSED" | "GENERATION_CHANGED") {
