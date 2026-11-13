@@ -1,7 +1,7 @@
 import type { sql } from "@k2b/cloud";
 import { revokeMandate } from "@k2b/cloud/services/mandates";
 
-export const MAIL_RULE_RETIREMENT_VERSION = 3;
+export const MAIL_RULE_RETIREMENT_VERSION = 5;
 export const MAIL_RULE_RETIREMENT_NAME = "rules_retired";
 
 /**

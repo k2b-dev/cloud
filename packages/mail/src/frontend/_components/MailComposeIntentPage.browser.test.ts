@@ -112,7 +112,8 @@ describe("Mail compose link with one mailbox and one sender", () => {
         expect(await tab.locator("section").isVisible()).toBe(false);
 
         await tab.evaluate(() => window.answerSeed());
-        await tab.waitForURL(/\/app\/mail\/mail01\/compose\/local\/20000000-0000-4000-8000-000000000002\?return=%2Forigin$/);
+        // The draft exists now; Mail opens it as a window. The intent page left no history entry behind.
+        await tab.waitForURL(/\/app\/mail\/mail01\?draft=Drf0New1$/);
 
         await settled(tab);
         await tab.goBack();

@@ -1,71 +1,59 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS } from "./mail-conversation-toolbar";
 import { mailWorkspaceCookie, readMailWorkspacePreferences, updateMailWorkspacePreferences } from "./mail-workspace-preferences";
 
 describe("Mail workspace preferences", () => {
-  test("reads the list layout preference", () => {
+  test("reads the workspace preferences", () => {
     const value = encodeURIComponent(
-      JSON.stringify({ listCollapsed: true, detailsOpen: true, draftFullscreen: true, toolbarActions: ["tags", "reply", "archive"] }),
+      JSON.stringify({ detailsOpen: true, draftFullscreen: true, toolbarActions: ["tags", "reply", "archive"] }),
     );
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`)).toEqual({
-      listCollapsed: true,
-      detailsOpen: true,
       draftFullscreen: true,
-      toolbarActions: ["reply", "archive", "tags"],
+      toolbarCustomized: true,
       listMode: "conversations",
       lastMailboxId: null,
-      searchDiscovered: false,
-      searchHintDismissed: false,
       eventsDiscovered: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
   });
 
-  test("keeps an intentionally empty toolbar", () => {
-    const value = encodeURIComponent(JSON.stringify({ toolbarActions: [] }));
-    expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`).toolbarActions).toEqual([]);
+  test("knows who arranged their own toolbar before Mail v5, and keeps that through every later write", () => {
+    const read = (stored: unknown) => readMailWorkspacePreferences(`cloud_mail_workspace=${encodeURIComponent(JSON.stringify(stored))}`);
+    expect(read({ toolbarActions: [] }).toolbarCustomized).toBe(true);
+    expect(read({ toolbarActions: ["reply", "reply_all", "forward", "done", "spam", "trash"] }).toolbarCustomized).toBe(false);
+    expect(read({ toolbarActions: ["reply", "reply_all", "forward", "archive", "spam", "trash"] }).toolbarCustomized).toBe(false);
+    expect(read({}).toolbarCustomized).toBe(false);
+    const rewritten = readMailWorkspacePreferences(mailWorkspaceCookie({ ...read({ toolbarActions: ["trash"] }), draftFullscreen: true }));
+    expect(rewritten.toolbarCustomized).toBe(true);
   });
 
   test("ignores invalid and removed preferences", () => {
-    const value = encodeURIComponent(JSON.stringify({ listCollapsed: false, shortcutOverrides: { archive: "e" } }));
+    const value = encodeURIComponent(JSON.stringify({ listCollapsed: true, searchDiscovered: true, shortcutOverrides: { archive: "e" } }));
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`)).toEqual({
-      listCollapsed: false,
-      detailsOpen: false,
       draftFullscreen: false,
-      toolbarActions: DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS,
+      toolbarCustomized: false,
       listMode: "conversations",
       lastMailboxId: null,
-      searchDiscovered: false,
-      searchHintDismissed: false,
       eventsDiscovered: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
     expect(readMailWorkspacePreferences("cloud_mail_workspace=%7Bbroken")).toEqual({
-      listCollapsed: false,
-      detailsOpen: false,
       draftFullscreen: false,
-      toolbarActions: DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS,
+      toolbarCustomized: false,
       listMode: "conversations",
       lastMailboxId: null,
-      searchDiscovered: false,
-      searchHintDismissed: false,
       eventsDiscovered: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
   });
 
-  test("keeps search discovery and hint dismissal independently of the details preference", () => {
+  test("keeps the Events visit independently of other preferences", () => {
     const original = readMailWorkspacePreferences(null);
-    const used = readMailWorkspacePreferences(mailWorkspaceCookie({ ...original, detailsOpen: true, searchDiscovered: true }));
-    expect(used).toMatchObject({ detailsOpen: true, searchDiscovered: true, searchHintDismissed: false });
-    const dismissed = readMailWorkspacePreferences(mailWorkspaceCookie({ ...original, searchHintDismissed: true }));
-    expect(dismissed).toMatchObject({ detailsOpen: false, searchDiscovered: false, searchHintDismissed: true });
     // A visit to Events is stored once and survives every other write.
     const visited = readMailWorkspacePreferences(mailWorkspaceCookie({ ...original, eventsDiscovered: true }));
-    expect(readMailWorkspacePreferences(mailWorkspaceCookie({ ...visited, detailsOpen: true })).eventsDiscovered).toBe(true);
+    expect(readMailWorkspacePreferences(mailWorkspaceCookie({ ...visited, draftFullscreen: true })).eventsDiscovered).toBe(true);
   });
 
   test("reads the optional message list mode", () => {

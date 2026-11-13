@@ -123,36 +123,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Shell frame: owned by shell-soft-white-canvas.",
   },
   {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: "@utility rail-item-active { border }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: "@utility rail-item-active { color }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: ".rail-item-active:hover { color }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: ".dark .rail-item-active { border-color }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: ".dark .rail-item-active { color }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: ".dark .rail-item-active:hover { color }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
     file: "packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx",
     subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"',
     reason: "Status: custom value-source badge.",
@@ -189,13 +159,13 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
   },
   {
     file: "packages/mail/src/styles/app.css",
-    subject: ".mail-compose-action, .mail-compose-action + .k2b-split-button__menu-trigger { --k2b-action-solid }",
-    reason: "Primary action: the one filled action in the app color (workspace R5).",
+    subject: ".mail-compose-action { --k2b-action-solid }",
+    reason: "Primary action: the one filled action in the app color (workspace R5); the class sits on the whole split button.",
   },
   {
     file: "packages/mail/src/styles/app.css",
-    subject: ".mail-compose-action, .mail-compose-action + .k2b-split-button__menu-trigger { --k2b-action-solid-hover }",
-    reason: "Primary action: the one filled action in the app color (workspace R5).",
+    subject: ".mail-compose-action { --k2b-action-solid-hover }",
+    reason: "Primary action: the one filled action in the app color (workspace R5); the class sits on the whole split button.",
   },
   {
     file: "packages/mail/src/styles/app.css",
@@ -206,11 +176,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     file: "packages/mail/src/frontend/_components/MailSidebar.tsx",
     subject: 'class={dropFolderId() === folder.id ? "bg-[var(--ui-selected)]" : undefined}',
     reason: "Control: drop target under a dragged message.",
-  },
-  {
-    file: "packages/mail/src/styles/app.css",
-    subject: '.k2b-ui .mail-reader-toolbar .mail-reader-details[aria-expanded="true"] { background }',
-    reason: "Control: expanded disclosure.",
   },
   {
     file: "packages/grids/src/frontend/_components/fields/FormulaReferenceWindow.island.tsx",

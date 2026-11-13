@@ -50,6 +50,7 @@ const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
+  workspacePreference: { listShare: null, seenHints: [] },
   viewPreference: { large: "auto", phone: "compact" },
   doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
@@ -524,19 +525,13 @@ describe("Mail list actions", () => {
     const hold = deferred<Response>();
     actionResponse = () => hold.promise;
     mount();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Select conversations"]')!.click();
     for (const checkbox of dom.root.querySelectorAll<HTMLInputElement>('.mail-list-entry input[type="checkbox"]')) checkbox.click();
-    const trigger = dom.root.querySelector<HTMLButtonElement>('button[aria-label="More selected conversation actions"]');
-    if (!trigger) throw new Error("No bulk menu");
-    trigger.click();
-    await Bun.sleep(0);
-    const item = [...trigger.closest(".k2b-dropdown")!.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-      (item) => item.textContent?.trim() === "Move to Trash",
-    );
+    // Delete stands in the bar itself, first group.
+    const item = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Delete 3 selected conversations"]');
     if (!item) throw new Error("No bulk Delete");
     item.click();
     expect(dom.root.querySelectorAll('[data-leaving="true"]')).toHaveLength(3);
-    expect(dom.root.querySelector('.mail-list-entry input[type="checkbox"]')).toBeNull();
+    expect(dom.root.querySelector("[data-mail-head-selection]")).toBeNull();
     expect(dom.document.querySelectorAll(".k2b-toast__action")).toHaveLength(1);
     await Bun.sleep(MAIL_ROW_LEAVE_MS + 20);
     expect(rowIds()).toEqual([]);
@@ -551,13 +546,9 @@ describe("Mail list actions", () => {
     actionResponse = () => hold.promise;
     const rows = Array.from({ length: MAIL_BULK_CONCURRENCY + 2 }, (_, index) => mailTestRow(`row-${index}`));
     mount({ listItems: rows });
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Select conversations"]')!.click();
     for (const checkbox of dom.root.querySelectorAll<HTMLInputElement>('.mail-list-entry input[type="checkbox"]')) checkbox.click();
-    const trigger = dom.root.querySelector<HTMLButtonElement>('button[aria-label="More selected conversation actions"]')!;
-    trigger.click();
-    await Bun.sleep(0);
-    const item = [...trigger.closest(".k2b-dropdown")!.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-      (item) => item.textContent?.trim() === "Move to Trash",
+    const item = dom.root.querySelector<HTMLButtonElement>(
+      'button.k2b-button[aria-label^="Delete "][aria-label$=" selected conversations"]',
     );
     if (!item) throw new Error("No bulk Delete");
     item.click();
@@ -670,7 +661,7 @@ describe("Mail list actions", () => {
       detailMessages: [readerMessage],
       listItems: data.listItems.map((item) => ({ ...item, unread: false, unreadFolderIds: [] })),
     });
-    const button = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Move to Trash"]');
+    const button = dom.root.querySelector<HTMLButtonElement>('button[data-mail-toolbar-action="trash"]');
     if (!button) throw new Error("No reader Delete");
     button.click();
     expect(row("one")?.dataset.leaving).toBe("true");

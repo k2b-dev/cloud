@@ -34,7 +34,7 @@ const previousMailStartup = (previousLiveFunction: string) =>
  * to lose when the baseline is regenerated.
  */
 suite("mail baseline schema", () => {
-  test("records the baseline, principal-assignee, retirement and suggestion markers once and preserves their timestamps on rerun", async () => {
+  test("records the baseline and compatibility markers once and preserves their timestamps on rerun", async () => {
     await migrate();
     const first = await sql<{ version: number; name: string; applied_at: Date }[]>`
       SELECT version, name, applied_at FROM mail.schema_migrations ORDER BY version
@@ -42,8 +42,9 @@ suite("mail baseline schema", () => {
     expect(first.map(({ version, name }) => ({ version, name }))).toEqual([
       { version: 1, name: "baseline" },
       { version: 2, name: "principal_assignees" },
-      { version: 3, name: "rules_retired" },
-      { version: 4, name: "suggestions_per_author" },
+      { version: 3, name: "suggestions_per_author" },
+      { version: 4, name: "one_reply_draft" },
+      { version: 5, name: "rules_retired" },
     ]);
     await migrate();
     expect(
@@ -51,6 +52,14 @@ suite("mail baseline schema", () => {
         { version: number; name: string; applied_at: Date }[]
       >`SELECT version, name, applied_at FROM mail.schema_migrations ORDER BY version`,
     ).toEqual(first);
+  });
+
+  test("validates the consolidation count after upgrading metadata-only columns", async () => {
+    await sql`ALTER TABLE mail.drafts DROP COLUMN consolidated_count`.simple();
+    await migrate();
+    const [constraint] = await sql<{ validated: boolean }[]>`SELECT convalidated AS validated FROM pg_constraint
+      WHERE conrelid = 'mail.drafts'::regclass AND conname = 'drafts_consolidated_count_check'`;
+    expect(constraint).toEqual({ validated: true });
   });
 
   test("upgrades list link provenance once without changing existing conversation links", async () => {
@@ -122,166 +131,47 @@ suite("mail baseline schema", () => {
     }
   });
 
-  test("replaces the one-suggestion-per-conversation index with one per conversation and author", async () => {
-    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
-      VALUES (${newShortId()}, 'Suggestion index upgrade') RETURNING id`;
-    const mailboxId = mailbox!.id;
-    try {
-      const [sender] = await sql<{ id: string }[]>`INSERT INTO mail.sender_identities
-        (short_id, mailbox_id, label, from_address, automation_policy, status)
-        VALUES (${newShortId()}, ${mailboxId}::uuid, 'Sender', 'index@example.test', 'disabled', 'verified') RETURNING id`;
-      const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations
-        (short_id, mailbox_id, subject, participant_summary, latest_message_at)
-        VALUES (${newShortId()}, ${mailboxId}::uuid, 'Question', 'customer@example.test', now()) RETURNING id`;
-      const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
-        (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, plain_text)
-        VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<${crypto.randomUUID()}@example.test>`}, 'Question', now(),
-          1, ${"c5".padEnd(64, "0")}, 'complete', 'Question') RETURNING id`;
-      // The index an earlier release created.
-      await sql`DROP INDEX IF EXISTS mail.drafts_untouched_suggestion_author_idx`.simple();
-      await sql`CREATE UNIQUE INDEX drafts_untouched_suggestion_idx ON mail.drafts (mailbox_id, conversation_id)
-        WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL
-          AND conversation_id IS NOT NULL`.simple();
-      await migrate();
-      const indexes = await sql<{ indexname: string }[]>`SELECT indexname FROM pg_indexes
-        WHERE schemaname = 'mail' AND indexname LIKE 'drafts_untouched_suggestion%' ORDER BY indexname`;
-      expect(indexes.map((row) => row.indexname)).toEqual(["drafts_untouched_suggestion_author_idx"]);
-      // The marker that makes older images, which would recreate the old index, refuse to start.
-      expect(await sql`SELECT 1 FROM mail.schema_migrations WHERE version = 4 AND name = 'suggestions_per_author'`).toHaveLength(1);
-      const suggest = (author: string) => sql`INSERT INTO mail.drafts
-        (short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id, author_kind, author_id,
-          last_editor_kind, last_editor_id)
-        VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversation!.id}::uuid, 'reply', ${message!.id}::uuid,
-          ${sender!.id}::uuid, 'service_account', ${author}::uuid, 'service_account', ${author}::uuid)`;
-      const [first, second] = [crypto.randomUUID(), crypto.randomUUID()];
-      await suggest(first);
-      await suggest(second);
-      const duplicate = await suggest(first).then(
-        () => null,
-        (error: unknown) => (error instanceof Error ? error.message : String(error)),
-      );
-      expect(duplicate).toContain("drafts_untouched_suggestion_author_idx");
-    } finally {
-      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
-    }
-  });
-
-  test("the documented suggestion rollback refuses a retired database without changing its markers or index", async () => {
-    const note = await Bun.file(new URL("../../../docs-site/docs/en/operations/deployment-requirements.md", import.meta.url)).text();
-    const rollback = /To roll Mail back to 0\.71[\s\S]*?```sql\n([\s\S]*?)```/.exec(note)?.[1];
-    if (!rollback) throw new Error("The operations note lost its rollback SQL");
+  test("F6 replaces per-author suggestion slots with one reply slot and forbids older startup", async () => {
     await migrate();
-    const before = await sql`SELECT * FROM mail.schema_migrations ORDER BY version`;
-    const operator = await sql.reserve();
-    try {
-      await expect(operator.unsafe(rollback).simple()).rejects.toThrow("Restore the pre-upgrade backups");
-    } finally {
-      await operator`ROLLBACK`;
-      operator.release();
-    }
-    expect(await sql`SELECT * FROM mail.schema_migrations ORDER BY version`).toEqual(before);
+    const [index] = await sql<{ definition: string }[]>`SELECT indexdef AS definition FROM pg_indexes
+      WHERE schemaname = 'mail' AND indexname = 'drafts_one_open_reply_idx'`;
+    expect(index?.definition).toContain("UNIQUE");
+    expect(index?.definition).toContain("conversation_id");
+    expect(index?.definition).toContain("sending");
+    expect(index?.definition).toContain("origin = 'user'");
     expect(
-      await sql`SELECT 1 FROM pg_indexes WHERE schemaname = 'mail'
-      AND indexname = 'drafts_untouched_suggestion_author_idx'`,
-    ).toHaveLength(1);
-    await expect(previousMailStartup(await liveFunctionDefinition())).rejects.toThrow("Previous Mail refuses non-baseline schema history");
+      await sql`SELECT indexname FROM pg_indexes WHERE schemaname = 'mail'
+        AND indexname IN ('drafts_untouched_suggestion_idx', 'drafts_untouched_suggestion_author_idx')`,
+    ).toHaveLength(0);
+    const before = await liveFunctionDefinition();
+    await expect(previousMailStartup(before)).rejects.toThrow("Previous Mail refuses");
+    expect(await liveFunctionDefinition()).toBe(before);
   });
 
-  test("the documented pre-retirement rollback permits 0.71 drafts and re-upgrading restores per-author suggestions", async () => {
-    // The SQL an operator runs, read from the operations note so the two cannot drift apart.
-    const note = await Bun.file(new URL("../../../docs-site/docs/en/operations/deployment-requirements.md", import.meta.url)).text();
-    const rollback = /To roll Mail back to 0\.71[\s\S]*?```sql\n([\s\S]*?)```/.exec(note)?.[1];
-    if (!rollback) throw new Error("The operations note lost its rollback SQL");
-    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
-      VALUES (${newShortId()}, 'Suggestion rollback') RETURNING id`;
-    const mailboxId = mailbox!.id;
-    try {
-      const [sender] = await sql<{ id: string }[]>`INSERT INTO mail.sender_identities
-        (short_id, mailbox_id, label, from_address, automation_policy, status)
-        VALUES (${newShortId()}, ${mailboxId}::uuid, 'Sender', 'rollback@example.test', 'disabled', 'verified') RETURNING id`;
-      const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations
-        (short_id, mailbox_id, subject, participant_summary, latest_message_at)
-        VALUES (${newShortId()}, ${mailboxId}::uuid, 'Question', 'customer@example.test', now()) RETURNING id`;
-      const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
-        (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, plain_text)
-        VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<${crypto.randomUUID()}@example.test>`}, 'Question', now(),
-          1, ${"c6".padEnd(64, "0")}, 'complete', 'Question') RETURNING id`;
-      await migrate();
-      // Main's shipped pre-retirement history has suggestions at version 3.
-      await sql`DELETE FROM mail.schema_migrations WHERE version IN (3, 4)`;
-      await sql`INSERT INTO mail.schema_migrations(version, name) VALUES (3, 'suggestions_per_author')`;
-      // One session, as an operator's psql runs it.
-      const operator = await sql.reserve();
-      try {
-        await operator.unsafe(rollback).simple();
-      } finally {
-        operator.release();
-      }
-      // 0.71's startup gate accepts exactly these markers.
-      expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM mail.schema_migrations ORDER BY version`).toEqual([
-        { version: 1, name: "baseline" },
-        { version: 2, name: "principal_assignees" },
-      ]);
-      expect(
-        await sql`SELECT 1 FROM pg_indexes WHERE schemaname = 'mail' AND indexname = 'drafts_untouched_suggestion_author_idx'`,
-      ).toHaveLength(0);
-      // 0.71 knows no suggestions: one account stores two open drafts in a conversation, without adoption.
-      const author = crypto.randomUUID();
-      for (const [body, createdAt] of [
-        ["Older automated draft", "2026-11-01T00:00:00Z"],
-        ["Newer automated draft", "2026-11-02T00:00:00Z"],
-      ] as const)
-        await sql`INSERT INTO mail.drafts
-          (short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id, author_kind, author_id,
-            last_editor_kind, last_editor_id, body_markdown, created_at, updated_at)
-          VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversation!.id}::uuid, 'reply', ${message!.id}::uuid,
-            ${sender!.id}::uuid, 'service_account', ${author}::uuid, 'service_account', ${author}::uuid, ${body},
-            ${createdAt}, ${createdAt})`;
-      // Upgrading again restores the marker and the index; the newest stays the suggestion, no content changes.
-      await migrate();
-      expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM mail.schema_migrations ORDER BY version`).toEqual([
-        { version: 1, name: "baseline" },
-        { version: 2, name: "principal_assignees" },
-        { version: 3, name: "rules_retired" },
-        { version: 4, name: "suggestions_per_author" },
-      ]);
-      expect(
-        await sql`SELECT 1 FROM pg_indexes WHERE schemaname = 'mail' AND indexname = 'drafts_untouched_suggestion_author_idx'`,
-      ).toHaveLength(1);
-      expect(
-        await sql<{ body_markdown: string; suggestion: boolean }[]>`SELECT body_markdown, adopted_at IS NULL AS suggestion
-          FROM mail.drafts WHERE mailbox_id = ${mailboxId}::uuid ORDER BY created_at`,
-      ).toEqual([
-        { body_markdown: "Older automated draft", suggestion: false },
-        { body_markdown: "Newer automated draft", suggestion: true },
-      ]);
-    } finally {
-      await migrate();
-      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
-    }
-  });
-
-  test("upgrades main's suggestion marker without losing the retirement marker or its original timestamp", async () => {
+  test("moves earlier Code-branch markers to the released numbering and keeps their timestamps", async () => {
     await migrate();
     const original = await sql<
-      { version: number; name: string; applied_at: Date }[]
+      { version: number; name: string; applied_at: Date; details: unknown }[]
     >`SELECT * FROM mail.schema_migrations ORDER BY version`;
-    const stamp = new Date("2026-11-01T12:00:00Z");
+    const retiredAt = new Date("2026-11-01T12:00:00Z");
+    const suggestionsAt = new Date("2026-11-02T12:00:00Z");
     try {
-      // Main's shipped history before Code retirement: marker 3 belongs to per-author suggestions.
-      await sql`DELETE FROM mail.schema_migrations WHERE version IN (3, 4)`;
+      // Earlier Code-branch history: retirement at 3, suggestions at 4, F6 not yet run.
+      await sql`DELETE FROM mail.schema_migrations WHERE version IN (3, 4, 5)`;
       await sql`INSERT INTO mail.schema_migrations(version, name, applied_at)
-        VALUES (3, 'suggestions_per_author', ${stamp})`;
+        VALUES (3, 'rules_retired', ${retiredAt}), (4, 'suggestions_per_author', ${suggestionsAt})`;
       await migrate();
       const after = await sql<{ version: number; name: string; applied_at: Date }[]>`
         SELECT version, name, applied_at FROM mail.schema_migrations ORDER BY version`;
       expect(after.map(({ version, name }) => ({ version, name }))).toEqual([
         { version: 1, name: "baseline" },
         { version: 2, name: "principal_assignees" },
-        { version: 3, name: "rules_retired" },
-        { version: 4, name: "suggestions_per_author" },
+        { version: 3, name: "suggestions_per_author" },
+        { version: 4, name: "one_reply_draft" },
+        { version: 5, name: "rules_retired" },
       ]);
-      expect(after.find((row) => row.name === "suggestions_per_author")!.applied_at).toEqual(stamp);
+      expect(after.find((row) => row.name === "suggestions_per_author")!.applied_at).toEqual(suggestionsAt);
+      expect(after.find((row) => row.name === "rules_retired")!.applied_at).toEqual(retiredAt);
       await migrate();
       expect(
         await sql<
@@ -291,14 +181,15 @@ suite("mail baseline schema", () => {
     } finally {
       await sql`DELETE FROM mail.schema_migrations`;
       for (const row of original)
-        await sql`INSERT INTO mail.schema_migrations(version, name, applied_at) VALUES (${row.version}, ${row.name}, ${row.applied_at})`;
+        await sql`INSERT INTO mail.schema_migrations(version, name, applied_at, details)
+          VALUES (${row.version}, ${row.name}, ${row.applied_at}, ${row.details}::jsonb)`;
     }
   });
 
   test("serializes concurrent runs behind a transaction-scoped guard", async () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations ORDER BY version`;
-    expect(rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
+    expect(rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }]);
     // pg_locks spans the whole server; other databases on it may hold advisory locks of their own.
     const [locks] = await sql<{ held: number }[]>`
       SELECT count(*)::int AS held
@@ -325,7 +216,7 @@ suite("mail baseline schema", () => {
     const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
       VALUES (${newShortId()}, 'Newer schema data') RETURNING id`;
     if (!mailbox) throw new Error("Newer schema fixture missing");
-    await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (5, 'future_schema')`;
+    await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (6, 'future_schema')`;
     try {
       const before = await sql`SELECT * FROM mail.schema_migrations ORDER BY version`;
       const live = await liveFunctionDefinition();
@@ -334,7 +225,7 @@ suite("mail baseline schema", () => {
         (error: unknown) => error,
       );
       expect(failure).toBeInstanceOf(Error);
-      expect(String(failure)).toContain("5 (future_schema)");
+      expect(String(failure)).toContain("6 (future_schema)");
       expect(String(failure)).toContain("Use an image compatible with this schema");
       expect(String(failure)).not.toContain("DROP SCHEMA");
       expect(await liveFunctionDefinition()).toBe(live);
@@ -343,7 +234,7 @@ suite("mail baseline schema", () => {
         { name: "Newer schema data" },
       ]);
     } finally {
-      await sql`DELETE FROM mail.schema_migrations WHERE version = 5`;
+      await sql`DELETE FROM mail.schema_migrations WHERE version = 6`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
     }
     await migrate();
@@ -428,7 +319,7 @@ suite("mail baseline schema", () => {
       receipt_pending: "false",
       signature_template_id: true,
       signature_template_fk: true,
-      versions: 4,
+      versions: 5,
     });
   });
 
@@ -474,13 +365,14 @@ suite("mail baseline schema", () => {
         { user_id: string; assigned_at: Date }[]
       >`SELECT user_id, assigned_at FROM mail.conversation_assignees WHERE conversation_id = ${conversation.id}::uuid`;
       expect(rows).toEqual([{ user_id: user.id, assigned_at: conversation.updated_at }]);
-      // Simulate the existing user-only baseline, before either incompatible marker.
+      // Simulate the existing user-only relation, not just a missing post-baseline table.
       // Keep previousMailStartup frozen: a real retirement marker must still refuse old startup.
       await sql`ALTER TABLE mail.conversation_assignees DROP COLUMN principal_id`;
       await sql`ALTER TABLE mail.conversation_assignees DROP COLUMN service_account_id`;
       await sql`ALTER TABLE mail.conversation_assignees ALTER COLUMN user_id SET NOT NULL`;
       await sql`ALTER TABLE mail.conversation_assignees ADD PRIMARY KEY (conversation_id, user_id)`;
-      await sql`DELETE FROM mail.schema_migrations WHERE version IN (2, 3, 4)`;
+      // The schema before both compatibility markers.
+      await sql`DELETE FROM mail.schema_migrations WHERE version IN (2, 3, 4, 5)`;
       // This is the preceding function body: only people receive assignment updates.
       const previousLive = (await liveFunctionDefinition()).replaceAll("assignee.principal_id", "assignee.user_id");
       expect(previousLive).toContain("assignee.user_id");
@@ -496,8 +388,9 @@ suite("mail baseline schema", () => {
       expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM mail.schema_migrations ORDER BY version`).toEqual([
         { version: 1, name: "baseline" },
         { version: 2, name: "principal_assignees" },
-        { version: 3, name: "rules_retired" },
-        { version: 4, name: "suggestions_per_author" },
+        { version: 3, name: "suggestions_per_author" },
+        { version: 4, name: "one_reply_draft" },
+        { version: 5, name: "rules_retired" },
       ]);
       // The marker excludes the predecessor even before the first account assignment.
       await expect(previousMailStartup(previousLive)).rejects.toThrow("Previous Mail refuses non-baseline schema history");
@@ -877,7 +770,7 @@ suite("mail baseline schema", () => {
       expect((await displays())[older]).toBe("everywhere");
 
       const [shape] = await sql<{ versions: number }[]>`SELECT count(*)::int AS versions FROM mail.schema_migrations`;
-      expect(shape).toEqual({ versions: 4 });
+      expect(shape).toEqual({ versions: 5 });
       const invalid = await sql`UPDATE mail.folders SET display = 'sidebar' WHERE id = ${shown}::uuid`.then(
         () => null,
         (error: unknown) => error,
@@ -1051,7 +944,7 @@ suite("mail baseline schema", () => {
         to_regclass('ai.workflow_task') IS NOT NULL AS workflow_ai_table
     `;
     // Retained domain/retention functions plus permanent retirement fences replace the old Undo invalidation hooks.
-    expect(shape).toEqual({ extensions: 3, functions: 14, triggers: 35, workflow_ai_table: true });
+    expect(shape).toEqual({ extensions: 3, functions: 14, triggers: 37, workflow_ai_table: true });
     const [retention] = await sql<{ definition: string; enabled: string }[]>`
       SELECT pg_get_triggerdef(oid) AS definition, tgenabled AS enabled FROM pg_trigger
       WHERE tgrelid = 'mail.draft_document_revisions'::regclass

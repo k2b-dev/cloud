@@ -294,6 +294,7 @@ export default function Layout(props: LayoutProps) {
     legalLinks,
     theme,
     accent: currentApp?.appearance?.accent,
+    ...(currentApp?.appearance ? { appearance: currentApp.appearance } : {}),
     searchLinks,
     appId: currentApp?.id,
   };

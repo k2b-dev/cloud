@@ -6765,21 +6765,61 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 1rem;
 }
 
+/* Title and status share the free space; the title gives way first and ends with an ellipsis. */
+.k2b-ui .k2b-floating-window__heading {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  align-self: stretch;
+  gap: 0.625rem;
+}
+
 .k2b-ui .k2b-floating-window__title {
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
   overflow: hidden;
   padding: 0;
   border: 0;
   border-radius: var(--k2b-radius-control);
   color: inherit;
   background: transparent;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 650;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: move;
+}
+
+.k2b-ui .k2b-floating-window[data-state="maximized"] .k2b-floating-window__title {
+  cursor: default;
+}
+
+.k2b-ui .k2b-floating-window__status {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.3125rem;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-floating-window__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-floating-window__controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.125rem;
 }
 
 .k2b-ui .k2b-floating-window__title > span {
@@ -12269,16 +12309,49 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: var(--k2b-shadow-float);
 }
 
+/* The title bar is the one tinted band of the window, as tall as the bar a minimized window becomes. */
 .k2b-ui .k2b-floating-window > header {
   display: flex;
-  height: 3.5rem;
+  height: 2.625rem;
   flex-shrink: 0;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0 1rem;
+  gap: 0.5rem;
+  padding: 0 0.3125rem 0 0.875rem;
+  background: var(--k2b-surface-muted);
   cursor: move;
   touch-action: none;
   user-select: none;
+}
+
+.k2b-ui .k2b-floating-window[data-state="maximized"] > header {
+  cursor: default;
+}
+
+/* A minimized window is its title bar: the whole bar restores it. */
+.k2b-ui .k2b-floating-window[data-state="minimized"] {
+  box-shadow: var(--k2b-shadow-toast);
+}
+
+.k2b-ui .k2b-floating-window[data-state="minimized"] > header {
+  height: 100%;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-floating-window[data-state="minimized"] .k2b-floating-window__title {
+  flex: 1 1 auto;
+  align-self: stretch;
+  cursor: pointer;
+}
+
+/* The content stays mounted while minimized, so a draft or an editor keeps its state. */
+.k2b-ui .k2b-floating-window[data-state="minimized"] > .k2b-floating-window__body {
+  display: none;
+}
+
+/* A maximized window dims the rest of its area. */
+.k2b-ui .k2b-floating-window-scrim {
+  position: fixed;
+  background: var(--k2b-feedback-backdrop);
 }
 
 .k2b-ui .k2b-floating-window__body {
@@ -16265,6 +16338,210 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-feedback-backdrop);
 }
 
+/* PersonPopover: a card about one person. Rows share one rhythm, so a placeholder takes the size of the row that
+   replaces it and nothing moves when the details arrive. */
+.k2b-ui .k2b-person-popover__content {
+  display: grid;
+  outline: none;
+  gap: 0.75rem;
+  padding: 1rem 0.375rem 0.375rem;
+  font-size: 0.8125rem;
+  /* Fixed line heights keep a loaded row exactly as tall as its placeholder in every engine and font. */
+  line-height: 1.125rem;
+}
+
+.k2b-ui .k2b-person-popover__head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  padding-inline: 0.625rem;
+}
+
+.k2b-ui .k2b-person-popover__identity {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.125rem;
+}
+
+.k2b-ui .k2b-person-popover__title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-person-popover__name {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 650;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-person-popover__detail {
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  line-height: 1.125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-person-popover__line {
+  width: 60%;
+  height: 1.125rem;
+}
+
+.k2b-ui .k2b-person-popover__contacts,
+.k2b-ui .k2b-person-popover__placeholders,
+.k2b-ui .k2b-person-popover__list ul,
+.k2b-ui .k2b-person-popover__actions {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-person-popover__contact {
+  display: grid;
+  min-height: 1.75rem;
+  grid-template-columns: 1rem minmax(0, auto) auto 1fr;
+  align-items: center;
+  column-gap: 0.625rem;
+  padding-inline: 0.625rem;
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-person-popover__contact > i,
+.k2b-ui .k2b-person-popover__action > i {
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+}
+
+.k2b-ui .k2b-person-popover__value {
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui a.k2b-person-popover__value {
+  text-decoration: none;
+}
+
+.k2b-ui a.k2b-person-popover__value:hover {
+  color: var(--k2b-action);
+  text-decoration: underline;
+}
+
+.k2b-ui .k2b-person-popover__contact-placeholder {
+  height: 1.25rem;
+  margin: 0.25rem 0.625rem;
+}
+
+.k2b-ui .k2b-person-popover__meta {
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-person-popover__list {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-person-popover__list-title {
+  margin: 0;
+  padding-inline: 0.625rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+}
+
+.k2b-ui :is(.k2b-person-popover__link, .k2b-person-popover__action) {
+  display: grid;
+  width: 100%;
+  min-height: 2rem;
+  align-items: center;
+  padding: 0.375rem 0.625rem;
+  border: 0;
+  border-radius: 0.375rem;
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-person-popover__link {
+  min-height: 3rem;
+  gap: 0.125rem;
+}
+
+.k2b-ui .k2b-person-popover__link-label {
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-person-popover__link-placeholder {
+  height: 2.5rem;
+  margin: 0.25rem 0.625rem;
+}
+
+.k2b-ui .k2b-person-popover__action {
+  grid-template-columns: 1rem minmax(0, 1fr);
+  column-gap: 0.625rem;
+}
+
+.k2b-ui :is(.k2b-person-popover__link, .k2b-person-popover__action):is(:hover, :focus-visible) {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+  outline: none;
+}
+
+.k2b-ui .k2b-person-popover__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Actions are their own group after the person and the list. */
+.k2b-ui .k2b-person-popover__actions {
+  padding-top: 0.375rem;
+  border-top: 1px solid var(--k2b-border);
+}
+
+.k2b-ui .k2b-person-popover__error,
+.k2b-ui .k2b-person-popover__empty {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding-inline: 0.625rem;
+  color: var(--k2b-text-muted);
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-person-popover__action {
+    min-height: 2.75rem;
+  }
+}
+
 /* Dictation: the microphone, the bar that stands in for the host's controls, and its notice cards. */
 .k2b-ui .k2b-dictation-button[aria-pressed="true"] {
   color: var(--k2b-danger-600);
@@ -16634,17 +16911,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @media (max-width: 40rem) {
-  .k2b-ui .k2b-floating-window {
-    inset: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom))
-      max(0.5rem, env(safe-area-inset-left));
-    width: auto;
-    min-width: 0;
-    max-width: none;
-    max-height: none;
-    transform: none !important;
-    resize: none;
-  }
-
   .k2b-ui .k2b-chat-timeline__content {
     gap: 0.875rem;
     padding-inline: 0.75rem;

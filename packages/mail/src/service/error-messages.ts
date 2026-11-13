@@ -59,6 +59,8 @@ const genericGermanMessage = (error: HumanFacingError): string => {
 
 /** Localizes a final API or capability error while preserving its stable code and status. */
 export const localizeMailError = <T extends HumanFacingError>(error: T, locale?: string | null): T => {
+  if (error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in error && typeof error.draftId === "string")
+    return { ...error, message: draftAdoptionMessages.resolve([locale ?? "en"]).t.replyOccupied({ draftId: error.draftId }) };
   if (error.code === "DRAFT_ADOPTED") return { ...error, message: draftAdoptionMessages.resolve([locale ?? "en"]).t.adopted };
   if (error.code === "DRAFT_SUGGESTION_CONFLICT")
     return { ...error, message: draftAdoptionMessages.resolve([locale ?? "en"]).t.mergeConflict };

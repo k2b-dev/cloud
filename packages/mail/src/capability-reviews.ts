@@ -362,6 +362,8 @@ export const mailActionReviews = {
   "draft.create": reviewBuilder<"draft">("draft.create"),
   "draft.patch": reviewBuilder<"draft">("draft.patch"),
   "draft.update": reviewBuilder<"draft">("draft.update"),
+  "draft.intent": reviewBuilder<"draft">("draft.intent"),
+  "draft.consolidation.acknowledge": reviewBuilder<"draft">("draft.consolidation.acknowledge"),
   "draft.discard": reviewBuilder<"draft">("draft.discard"),
   "draft.attachment.add": reviewBuilder<"file" | "draft">("draft.attachment.add"),
   "draft.attachment.import.v1": reviewBuilder<"file" | "draft">("draft.attachment.add"),

@@ -6,13 +6,13 @@ description: Arbeit zuweisen, Antworten abstimmen, intern kommentieren und Zugri
 order: 40
 ---
 
-Die Zusammenarbeit in Cloud bleibt an einer Unterhaltung, während die E-Mail selbst normale E-Mail beim Anbieter bleibt. Öffne die **Unterhaltungsdetails**, um den gemeinsamen Status der Nachverfolgung getrennt von deiner privaten persönlichen Erinnerung zu sehen.
+Die Zusammenarbeit in Cloud bleibt an einer Unterhaltung, während die E-Mail selbst normale E-Mail beim Anbieter bleibt. Der Kopf einer offenen Unterhaltung zeigt den gemeinsamen Status der Nachverfolgung: **Erledigt**, **Archivieren**, **Löschen**, **Später** und **Zuweisen**, und unter dem Betreff eine Zeile mit Chips, etwa **Wartet auf Antwort**, **Später bis …**, deine **Erinnerung …**, **Aufbewahrt**, die Tags und verknüpfte Einträge. Wähle einen Chip, um seinen Wert zu ändern. Alles andere steht unter **…**.
 
-Der Lesebereich ordnet aussagekräftige Änderungen an Zusammenarbeit und Workflows ruhig zwischen den Nachrichten ein, in zeitlicher Reihenfolge. Er aktualisiert sie, solange die Unterhaltung offen ist. Jede Zeile nennt die Person oder den Workflow, die die Änderung vorgenommen haben. Die längere Liste der letzten Aktivitäten bleibt in den **Unterhaltungsdetails**. Technische Verarbeitungsvorgänge unterbrechen den Nachrichtenverlauf nicht.
+Die Unterhaltung liest sich von der ältesten Nachricht bis zur neuesten unten. Interne Notizen stehen zwischen den Nachrichten, zu der Zeit, zu der sie geschrieben wurden. Was Personen und Workflows geändert haben, zeigt **… → Aktivität anzeigen**. Technische Verarbeitungsvorgänge stehen dort nicht.
 
 ## Zuständigkeit und Nachverfolgung einheitlich nutzen {icon="route"}
 
-- **Zugewiesen an** zeigt die Personen oder Agenten, die für die Unterhaltung zuständig sind. Eine Unterhaltung kann bis zu 20 Zuständige haben. Füge sie in den **Unterhaltungsdetails** hinzu oder entferne sie dort. Weist dir jemand anderes eine Unterhaltung zu, bekommst du eine Cloud-Benachrichtigung, die sie öffnet.
+- **Zugewiesen an** zeigt die Personen oder Agenten, die für die Unterhaltung zuständig sind. Eine Unterhaltung kann bis zu 20 Zuständige haben. Wähle **Zuweisen** im Kopf der Unterhaltung, um sie hinzuzufügen oder zu entfernen. Weist dir jemand anderes eine Unterhaltung zu, bekommst du eine Cloud-Benachrichtigung, die sie öffnet.
 - Um eine Person oder ein Konto mehreren Unterhaltungen zuzuweisen, wähle die Unterhaltungen in der Liste aus und wähle **Zuweisen**. Wähle dann die Person oder das Konto. Die anderen zugewiesenen Personen bleiben zugewiesen. Personen bekommen eine einzige Benachrichtigung für die ganze Auswahl; Agenten und Dienstkonten erhalten keine Benutzerbenachrichtigung.
 - Dasselbe Menü bietet **Mir zuweisen**, **Mich entfernen** und **Alle Zuweisungen entfernen**. Weist du dir selbst zu oder entfernst du jemanden, sendet Mail keine Benachrichtigung.
 - In einem geteilten Postfach bieten das Menü **…** einer Unterhaltung und ihr Rechtsklick-Menü **Mir zuweisen** direkt unter den Antworten. Es fügt dich hinzu; alle, die schon zugewiesen sind, bleiben zugewiesen.
@@ -42,17 +42,17 @@ Wähle ein Ereignis, um seine Unterhaltung neben der Liste zu öffnen. **Art**, 
 
 Ein Sendefehler nennt seinen Grund. Was du als Nächstes tun kannst, zeigt die Nachricht in der Unterhaltung.
 
-Alle, die das ganze Postfach ansehen können, sehen den Tab. Personen mit Zugriff nur auf zugewiesene Unterhaltungen sehen ihn nicht; ihnen zeigen die **Unterhaltungsdetails** die Aktivität ihrer Unterhaltungen.
+Alle, die das ganze Postfach ansehen können, sehen den Tab. Personen mit Zugriff nur auf zugewiesene Unterhaltungen sehen ihn nicht; ihnen zeigt **… → Aktivität anzeigen** in einer Unterhaltung deren Aktivität.
 
-## Interne Kommentare hinzufügen {icon="point"}
+## Interne Notizen hinzufügen {icon="point"}
 
-Interne Kommentare sehen alle, die das Postfach lesen können. Sie werden nie an E-Mail-Empfänger gesendet. Nutze sie für Übergaben, Entscheidungen und gemeinsamen Kontext. Mail benachrichtigt einzelne Personen nicht über Kommentare. Ist eine Person für den nächsten Schritt zuständig, weise ihr die Unterhaltung zu.
+Interne Notizen sehen alle, die das Postfach lesen können. Sie werden nie an E-Mail-Empfänger gesendet. Nutze sie für Übergaben, Entscheidungen und gemeinsamen Kontext. Jede Notiz steht zu ihrer Zeit in der Unterhaltung, als gelbe Kachel mit Schloss und **intern**. Notizen, die eine Automatisierung schreibt, sehen genauso aus. Zum Schreiben wähle **Interne Notiz** im Pfeil der Antwortbox; die Box wird gelb, und **Notiz speichern** sendet nie etwas. Mail benachrichtigt einzelne Personen nicht über Notizen. Ist eine Person für den nächsten Schritt zuständig, weise ihr die Unterhaltung zu.
 
-Du kannst eigene Kommentare 10 Minuten lang nach dem Veröffentlichen bearbeiten oder löschen. Kommentare von Workflows und anderen Personen lassen sich nicht ändern, auch nicht mit Zugriff **Verwalten**. Ein gelöschter Kommentar hinterlässt eine Markierung im Verlauf, damit das Ereignis nicht still aus dem Verlauf des Teams verschwindet.
+Du kannst eigene Notizen 10 Minuten lang nach dem Veröffentlichen bearbeiten oder löschen: Wähle **…** an der Notiz. Notizen von Workflows und anderen Personen lassen sich nicht ändern, auch nicht mit Zugriff **Verwalten**. Eine gelöschte Notiz hinterlässt an ihrer Stelle die Zeile **Notiz gelöscht**, damit das Ereignis nicht still aus dem Verlauf des Teams verschwindet.
 
 ## Persönliche Erinnerungen und Anwesenheit nutzen {icon="route"}
 
-Die **Erinnerung** in den Unterhaltungsdetails ist nur für dich. Löschst oder änderst du sie, bleiben die Erinnerungen anderer Personen unverändert. Ist die Erinnerung fällig, erstellt Mail eine Cloud-Benachrichtigung, sofern du noch Zugriff auf das Postfach hast.
+Die **Erinnerung** unter **Später** im Kopf der Unterhaltung ist nur für dich. Löschst oder änderst du sie, bleiben die Erinnerungen anderer Personen unverändert. Ist die Erinnerung fällig, erstellt Mail eine Cloud-Benachrichtigung, sofern du noch Zugriff auf das Postfach hast.
 
 Ist die Live-Anwesenheit verfügbar, zeigt **Aktive Mitwirkende** die Personen, die die Unterhaltung gerade ansehen oder darin schreiben. Anwesenheit ist nur ein Hinweis. Die gemeinsame Bearbeitungssperre des Entwurfs entscheidet, wer einen Entwurf bearbeiten kann. Solange jemand sie hält, lehnt Mail Änderungen am Entwurf von allen anderen ab, bis jemand die Bearbeitung übernimmt.
 
@@ -85,19 +85,19 @@ Nur aktive Konten mit geeignetem Zugriff auf das Postfach stehen zur Auswahl. En
 
 ## Kontext aus Contacts nutzen {icon="address-book"}
 
-Öffne die **Unterhaltungsdetails**, um Kontakte zu sehen, deren E-Mail-Adressen genau zu sichtbaren Beteiligten der Unterhaltung passen. Mehrere Kontakte können zur selben Adresse passen. Mail zeigt jeden Treffer, den du gerade lesen kannst, und wählt nicht zwischen ihnen und führt sie nicht zusammen.
+Wähle den Absender einer Nachricht, um den passenden Kontakt, die früheren Unterhaltungen mit diesem Absender und die Aktionen zum Absender zu sehen. Der Kontakt muss genau die E-Mail-Adresse des Absenders haben. Passt kein Kontakt, zeigt die Karte die Adresse und **In Kontakte aufnehmen**, wo das Kontaktverzeichnis das erlaubt.
 
-Die Aktion **Zugehörige E-Mails** auf einer Kontaktkarte öffnet in einem neuen Tab eine exakte Suche mit eigener URL nach dieser beteiligten Person. Der separate Abschnitt **Verwandte E-Mails** der Unterhaltung nutzt gemeinsame Beteiligte und normalisierte Betreffzeilen und erklärt jeden Treffer.
+**Alle Nachrichten dieses Absenders** auf der Karte öffnet eine exakte Suche nach dieser Adresse.
 
-Hat eine externe beteiligte Person keinen passenden Kontakt, wähle **Neuer Kontakt** und wähle ein Adressbuch, in das du schreiben kannst. Mail legt den Kontakt dort mit dem angezeigten Namen und der E-Mail-Adresse an. Für eine Adresse, die schon zu einem Kontakt passt, den du lesen kannst, zeigt Mail keine Schaltfläche. Das gilt auch für Treffer, die nicht auf der ersten Ergebnisseite stehen.
+Hat der Absender keinen passenden Kontakt, wähle **In Kontakte aufnehmen** und wähle ein Adressbuch, in das du schreiben kannst. Mail legt den Kontakt dort mit dem angezeigten Namen und der E-Mail-Adresse an. Für eine Adresse, die schon zu einem Kontakt passt, den du lesen kannst, zeigt Mail diesen Eintrag nicht.
 
-Mail speichert keine Eigentumsangaben, Notizen, Bankdaten, Zugriffseinträge oder andere privaten Felder von Kontakten. Jedes Mal, wenn du den Detailbereich öffnest, fragt Mail bei Contacts eine begrenzte Auswahl an Daten der Beteiligten ab. Die Cloud-Administration kann diesen Abschnitt auf eine andere Kontaktverzeichnis-App umstellen; siehe **Kontaktverzeichnis wählen**. **Neuer Kontakt** erscheint nur, wenn diese App das Anlegen von Kontakten unterstützt.
+Mail speichert keine Eigentumsangaben, Notizen, Bankdaten, Zugriffseinträge oder andere privaten Felder von Kontakten. Jedes Mal, wenn du die Karte eines Absenders öffnest, fragt Mail bei Contacts eine begrenzte Auswahl an Daten zu diesem Absender ab. Die Cloud-Administration kann diesen Abschnitt auf eine andere Kontaktverzeichnis-App umstellen; siehe **Kontaktverzeichnis wählen**. **In Kontakte aufnehmen** erscheint nur, wenn diese App das Anlegen von Kontakten unterstützt.
 
 Die CLI zeigt Treffer zur Unterhaltung über `cld mail conversation related` und Kontext aus Contacts über `cld mail conversation context`. Den kontaktbezogenen Verlauf zeigt sie über `cld mail conversation contact-history`.
 
 ## Unterhaltungen mit Spaces verknüpfen {icon="link"}
 
-Öffne die **Unterhaltungsdetails**, um die Unterhaltung mit einer vorhandenen Aufgabe oder einem Termin in einem Space zu verknüpfen, in dem du Zugriff **Bearbeiten** hast. Du kannst auch direkt eine verknüpfte Aufgabe oder einen Termin erstellen. Der Eintrag im Space besitzt die Verknüpfung. Die Verknüpfung bleibt deshalb erhalten, wenn eine Gruppe Zugriff auf Postfach oder Space hat und eine Person das Team verlässt.
+Wähle **… → Verknüpfen** in der Unterhaltung, um sie mit einer vorhandenen Aufgabe oder einem Termin in einem Space zu verknüpfen, in dem du Zugriff **Bearbeiten** hast. Der Chip **n verknüpft** im Kopf listet die verknüpften Einträge und öffnet sie. Du kannst auch direkt eine verknüpfte Aufgabe oder einen Termin erstellen. Der Eintrag im Space besitzt die Verknüpfung. Die Verknüpfung bleibt deshalb erhalten, wenn eine Gruppe Zugriff auf Postfach oder Space hat und eine Person das Team verlässt.
 
 Mail zeigt nur Einträge aus Spaces, die du gerade ansehen kannst. Als Ziel einer Verknüpfung bietet Mail nur Einträge an, für die du Zugriff **Bearbeiten** hast. Öffnest du eine verknüpfte Mail-Unterhaltung oder einen Eintrag in Spaces, prüft die jeweilige App deinen aktuellen Zugriff erneut. Ein entferntes oder nicht zugängliches Ziel kann deshalb als nicht verfügbare Bezeichnung bleiben, bis jemand mit Zugriff **Bearbeiten** auf den Space die Verknüpfung entfernt.
 

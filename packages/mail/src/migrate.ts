@@ -14,12 +14,19 @@ import { migrateWorkflowAi } from "@k2b/cloud/ai/tasks";
 import { logger } from "@k2b/cloud/services";
 import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
+import {
+  migrateReplyDrafts,
+  REPLY_DRAFT_MIGRATION_NAME,
+  REPLY_DRAFT_MIGRATION_VERSION,
+  type ReplyDraftMigrationResult,
+} from "./migrate-reply-drafts";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 import { MAIL_RULE_RETIREMENT_NAME, MAIL_RULE_RETIREMENT_VERSION, retireMailRules } from "./service/rule-retirement-migrate";
 import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
+import { migrateWorkspacePreferences } from "./service/workspace-preferences-migrate";
 
 type SqlClient = typeof sql;
 
@@ -29,10 +36,12 @@ const BASELINE_NAME = "baseline";
 const PRINCIPAL_ASSIGNEES_VERSION = 2;
 const PRINCIPAL_ASSIGNEES_NAME = "principal_assignees";
 // Older images would recreate the one-suggestion-per-conversation index and fail on per-author suggestions.
-const SUGGESTIONS_PER_AUTHOR_VERSION = 4;
-// Main used 3 before the retirement branch landed; preserve its timestamp while moving that marker.
-const PRE_RETIREMENT_SUGGESTIONS_VERSION = 3;
+const SUGGESTIONS_PER_AUTHOR_VERSION = 3;
 const SUGGESTIONS_PER_AUTHOR_NAME = "suggestions_per_author";
+// Earlier Code-branch images recorded rules_retired at 3 and suggestions_per_author at 4, which F6 owns.
+// Accept that history and move both markers to the released numbering without changing applied_at.
+const LEGACY_RULE_RETIREMENT_VERSION = 3;
+const LEGACY_SUGGESTIONS_PER_AUTHOR_VERSION = 4;
 
 const MIGRATION_LOCK_KEY = "cloud.mail.migrations";
 const log = logger("mail:migrate");
@@ -45,9 +54,11 @@ const assertSupportedSchema = (applied: readonly { version: number; name: string
     (row) =>
       !(row.version === BASELINE_VERSION && row.name === BASELINE_NAME) &&
       !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME) &&
-      !(row.version === MAIL_RULE_RETIREMENT_VERSION && row.name === MAIL_RULE_RETIREMENT_NAME) &&
       !(row.version === SUGGESTIONS_PER_AUTHOR_VERSION && row.name === SUGGESTIONS_PER_AUTHOR_NAME) &&
-      !(row.version === PRE_RETIREMENT_SUGGESTIONS_VERSION && row.name === SUGGESTIONS_PER_AUTHOR_NAME),
+      !(row.version === REPLY_DRAFT_MIGRATION_VERSION && row.name === REPLY_DRAFT_MIGRATION_NAME) &&
+      !(row.version === MAIL_RULE_RETIREMENT_VERSION && row.name === MAIL_RULE_RETIREMENT_NAME) &&
+      !(row.version === LEGACY_RULE_RETIREMENT_VERSION && row.name === MAIL_RULE_RETIREMENT_NAME) &&
+      !(row.version === LEGACY_SUGGESTIONS_PER_AUTHOR_VERSION && row.name === SUGGESTIONS_PER_AUTHOR_NAME),
   );
   if (baseline && foreign.length === 0) return;
   const versions = applied.map((row) => `${row.version} (${row.name})`).join(", ");
@@ -71,10 +82,12 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
     SELECT version, name FROM mail.schema_migrations ORDER BY version
   `;
   assertSupportedSchema(applied);
-  // The two branches independently allocated marker 3. Accept only the known main history,
-  // move its suggestions marker without changing applied_at, and retain retirement at 3.
+  // Vacate 3 first; names are unique, so each move touches at most the one legacy row. Both
+  // moves finish before F6 reads marker 4.
+  await tx`UPDATE mail.schema_migrations SET version = ${MAIL_RULE_RETIREMENT_VERSION}
+    WHERE version = ${LEGACY_RULE_RETIREMENT_VERSION} AND name = ${MAIL_RULE_RETIREMENT_NAME}`;
   await tx`UPDATE mail.schema_migrations SET version = ${SUGGESTIONS_PER_AUTHOR_VERSION}
-    WHERE version = ${PRE_RETIREMENT_SUGGESTIONS_VERSION} AND name = ${SUGGESTIONS_PER_AUTHOR_NAME}`;
+    WHERE version = ${LEGACY_SUGGESTIONS_PER_AUTHOR_VERSION} AND name = ${SUGGESTIONS_PER_AUTHOR_NAME}`;
   if (applied.length > 0) return;
   await tx.unsafe(baselineSchema).simple();
   await tx`
@@ -89,6 +102,34 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`ALTER TABLE mail.schema_migrations ADD COLUMN IF NOT EXISTS details jsonb NOT NULL DEFAULT '{}'`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS consolidated_count integer NOT NULL DEFAULT 0`.simple();
+  // Avoid validating a new CHECK while the column-addition transaction holds ACCESS EXCLUSIVE.
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.drafts'::regclass AND conname = 'drafts_consolidated_count_check') THEN
+      ALTER TABLE mail.drafts ADD CONSTRAINT drafts_consolidated_count_check CHECK (consolidated_count >= 0) NOT VALID;
+    END IF;
+  END $$`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS content_edited_at timestamptz`.simple();
+  await tx`ALTER TABLE mail.draft_attachments ADD COLUMN IF NOT EXISTS forwarded_source_message_id uuid`.simple();
+  await tx`ALTER TABLE mail.draft_attachments ADD COLUMN IF NOT EXISTS copied_source_message_id uuid`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.reply_draft_retirements (
+    draft_id uuid PRIMARY KEY REFERENCES mail.drafts(id) ON DELETE CASCADE)`.simple();
+  await tx`CREATE OR REPLACE FUNCTION mail.touch_draft_attachment_edit() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      UPDATE mail.drafts SET content_edited_at = now() WHERE id = NEW.draft_id;
+      RETURN NEW;
+    END; $$`.simple();
+  await tx`CREATE OR REPLACE TRIGGER draft_attachments_content_edit AFTER INSERT OR UPDATE OF removed_at ON mail.draft_attachments
+    FOR EACH ROW EXECUTE FUNCTION mail.touch_draft_attachment_edit()`.simple();
+  await tx`CREATE OR REPLACE FUNCTION mail.touch_draft_content_edited_at() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF ROW(NEW.intent, NEW.sender_identity_id, NEW.signature_template_id, NEW.to_addresses, NEW.cc_addresses, NEW.bcc_addresses, NEW.subject, NEW.body_markdown, NEW.body_format, NEW.priority, NEW.request_delivery_receipt, NEW.request_read_receipt, NEW.quote_source, NEW.quote_locale, NEW.quote_time_zone) IS DISTINCT FROM
+        ROW(OLD.intent, OLD.sender_identity_id, OLD.signature_template_id, OLD.to_addresses, OLD.cc_addresses, OLD.bcc_addresses, OLD.subject, OLD.body_markdown, OLD.body_format, OLD.priority, OLD.request_delivery_receipt, OLD.request_read_receipt, OLD.quote_source, OLD.quote_locale, OLD.quote_time_zone) THEN NEW.content_edited_at = now(); END IF;
+      RETURN NEW;
+    END; $$`.simple();
+  await tx`CREATE OR REPLACE TRIGGER drafts_touch_content_edited_at BEFORE UPDATE ON mail.drafts
+    FOR EACH ROW EXECUTE FUNCTION mail.touch_draft_content_edited_at()`.simple();
   await tx`ALTER TABLE mail.draft_attachment_uploads ADD COLUMN IF NOT EXISTS capability_revision bigint`;
   await tx`ALTER TABLE mail.draft_attachment_uploads ADD COLUMN IF NOT EXISTS capability_write_started boolean NOT NULL DEFAULT false`;
   // One checkpoint per folder lets waiting sync commands finish without retaining empty runs.
@@ -102,26 +143,7 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       ALTER TABLE mail.drafts ALTER COLUMN adopted_at DROP DEFAULT;
     END IF;
   END $$`.simple();
-  // One untouched suggestion per conversation and author. The earlier index allowed one per conversation, so a
-  // second automated author received the first author's suggestion; every row it allowed also fits this one.
-  // An image without suggestions (after the documented rollback) can leave several untouched drafts of one account
-  // in a conversation. The newest stays the suggestion; the others become ordinary drafts with their content kept.
-  await tx`DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'mail' AND indexname = 'drafts_untouched_suggestion_author_idx') THEN
-      UPDATE mail.drafts d SET adopted_at = now()
-      WHERE d.author_kind = 'service_account' AND d.adopted_at IS NULL AND d.conversation_id IS NOT NULL
-        AND d.state IN ('draft', 'scheduled', 'sending')
-        AND EXISTS (SELECT 1 FROM mail.drafts newer
-          WHERE newer.mailbox_id = d.mailbox_id AND newer.conversation_id = d.conversation_id
-            AND newer.author_kind = 'service_account' AND newer.author_id = d.author_id AND newer.adopted_at IS NULL
-            AND newer.state IN ('draft', 'scheduled', 'sending') AND (newer.created_at, newer.id) > (d.created_at, d.id));
-    END IF;
-  END $$`.simple();
-  await tx`CREATE UNIQUE INDEX IF NOT EXISTS drafts_untouched_suggestion_author_idx
-    ON mail.drafts (mailbox_id, conversation_id, author_id)
-    WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL`.simple();
-  await tx`DROP INDEX IF EXISTS mail.drafts_untouched_suggestion_idx`.simple();
-  // Older images refuse this marker, so none of them recreates the old index. Stop older processes first.
+  // Retain the historical compatibility marker; F6 replaces the per-author slot index.
   await tx`INSERT INTO mail.schema_migrations (version, name)
     VALUES (${SUGGESTIONS_PER_AUTHOR_VERSION}, ${SUGGESTIONS_PER_AUTHOR_NAME}) ON CONFLICT (version) DO NOTHING`;
   await tx`CREATE TABLE IF NOT EXISTS mail.draft_suggestion_requests (
@@ -753,12 +775,13 @@ const migrationErrorCode = (error: unknown): string | null => {
 };
 
 /**
- * The whole migration runs in one transaction under a transaction-scoped
- * advisory lock, so the guard also holds behind a transaction pooler. A run
+ * Schema additions and each F6 batch run under the transaction-scoped
+ * advisory guard, which also holds behind a transaction pooler. The final
+ * concurrent index build runs outside a transaction. A run
  * that waits longer than `lock_timeout` for the guard or for DDL locks fails
  * with `55P03` and is retried with backoff; deadlock victims (`40P01`) retry too.
  */
-export const migrate = async (): Promise<void> => {
+export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await sql.begin(async (tx) => {
@@ -770,15 +793,17 @@ export const migrate = async (): Promise<void> => {
         await migrateAiDailyBudget(tx);
         await migrateSourceNames(tx);
         await migrateConversationSummaries(tx);
+        await migrateWorkspacePreferences(tx);
         await migrateWorkflowAi(tx);
         await retireMailRules(tx);
       });
-      return;
+      return await migrateReplyDrafts();
     } catch (error) {
       if (!["55P03", "40P01"].includes(migrationErrorCode(error) ?? "") || attempt === 2) throw error;
       await Bun.sleep(250 * 2 ** attempt);
     }
   }
+  throw new Error("Mail migration retries exhausted");
 };
 
 /**

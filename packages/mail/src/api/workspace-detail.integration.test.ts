@@ -3,16 +3,29 @@ import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { unwrap } from "@k2b/stdlib";
+import type { InferResponseType } from "hono/client";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { MAIL_WORKSPACE_HINT_IDS, type MailWorkspacePreference, type SenderConversationsPage } from "../contracts";
 import { messageForwardTextOf } from "../forward-text";
 import { newShortId } from "../lib/short-id";
 import * as access from "../service/access";
 import type { MailRequestContext } from "../service/auth";
+import * as collaboration from "../service/collaboration";
+import { listSenderConversations } from "../service/conversation-context";
+import { mailLive } from "../service/live";
+import * as mailboxPreferences from "../service/mailbox-preferences";
 import * as mailboxes from "../service/mailboxes";
 import * as messages from "../service/messages";
 import { loadMailboxConversationDetail, type MailboxPageData, type MailConversationDetailData } from "../service/workspace";
 import app from ".";
+import type { apiClient } from "./client";
+
+// The inferred browser client must expose these exact response contracts.
+type SenderResponse = InferResponseType<(typeof apiClient.mailboxes)[":mailboxId"]["sender-conversations"]["$get"], 200>;
+type PreferenceResponse = InferResponseType<(typeof apiClient.mailboxes)[":mailboxId"]["workspace-preference"]["$patch"], 200>;
+const senderPage = (data: SenderResponse): SenderConversationsPage => data;
+const workspacePreference = (data: PreferenceResponse): MailWorkspacePreference => data;
 
 const suite = suiteFor("database", "nats", "valkey");
 const anchor = new Date("2026-10-01T12:00:00.000Z");
@@ -223,6 +236,228 @@ suite("Mail workspace conversation detail", () => {
       for (const user of users) await sql`DELETE FROM auth.users WHERE id = ${user.id}::uuid`;
     } finally {
       setSystemTime();
+    }
+  });
+
+  test("workspace preferences validate, persist separately per person, and arrive in the first snapshot", async () => {
+    const mutate = (path: string, method: string, value: unknown) =>
+      app.request(`/mailboxes/${mailboxShortId}/${path}`, {
+        method,
+        headers: { authorization: "Bearer owner-write", "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
+        body: JSON.stringify(value),
+      });
+    const prefPath = "workspace-preference";
+    expect(await (await request(prefPath)).json()).toEqual({ listShare: null, seenHints: [] });
+    for (const listShare of [-0.01, 1.01, "0.4"]) expect((await mutate(prefPath, "PATCH", { listShare })).status).toBe(400);
+    expect((await mutate(prefPath, "PATCH", {})).status).toBe(400);
+    expect((await mutate(`${prefPath}/seen-hints`, "PUT", { hintId: "unknown" })).status).toBe(400);
+    const shared = await mutate(prefPath, "PATCH", { listShare: 0.55 });
+    expect(shared.status).toBe(200);
+    expect(workspacePreference(await shared.json())).toEqual({ listShare: 0.55, seenHints: [] });
+    await Promise.all(MAIL_WORKSPACE_HINT_IDS.map((hintId) => mutate(`${prefPath}/seen-hints`, "PUT", { hintId })));
+    const repeated = await mutate(`${prefPath}/seen-hints`, "PUT", { hintId: "filters-moved" });
+    expect(await repeated.json()).toEqual({ listShare: 0.55, seenHints: [...MAIL_WORKSPACE_HINT_IDS] });
+    const snapshot: MailboxPageData = await (await routeRequest(folderA)).json();
+    expect(snapshot.workspacePreference).toEqual({ listShare: 0.55, seenHints: [...MAIL_WORKSPACE_HINT_IDS] });
+    expect(await (await request(prefPath, "reader")).json()).toEqual({ listShare: null, seenHints: [] });
+    // Pin cleanup must not remove a saved width or seen hint.
+    unwrap(await mailboxPreferences.setMailboxPreference(contextFor(owner), mailboxId, { pinned: false }));
+    expect(unwrap(await mailboxPreferences.getMailboxWorkspacePreference(contextFor(owner), mailboxId))).toEqual(
+      snapshot.workspacePreference,
+    );
+    unwrap(await mailboxPreferences.setMailboxWorkspacePreference(contextFor(reader), mailboxId, { listShare: 0 }));
+    expect((await (await routeRequest(folderA, "reader")).json()).workspacePreference.listShare).toBe(0);
+    const restored = await mutate(prefPath, "PATCH", { listShare: null });
+    expect(await restored.json()).toEqual({ listShare: null, seenHints: [...MAIL_WORKSPACE_HINT_IDS] });
+    expect((await mutate(prefPath, "PATCH", { listShare: 1 })).status).toBe(200);
+    // Avoid changing later fixture assertions.
+    await sql`DELETE FROM mail.personal_mailbox_preferences WHERE mailbox_id = ${mailboxId}::uuid`;
+  });
+
+  test("sender history filters From, mailbox, active messages, and assigned visibility before its count and limit", async () => {
+    const created: Conversation[] = [];
+    const email = `sender-${suffix}@example.test`;
+    const source = await createConversation("Sender current", 1, 2000);
+    created.push(source);
+    try {
+      const addAddress = async (conversation: Conversation, role: "from" | "to" = "from") => {
+        await sql`INSERT INTO mail.message_addresses (message_id, role, position, email, normalized_email)
+          SELECT message_id, ${role}, 0, ${email}, ${email} FROM mail.conversation_messages
+          WHERE conversation_id = ${conversation.id}::uuid`;
+      };
+      await addAddress(source);
+      const expected: Conversation[] = [];
+      for (let index = 0; index < 7; index++) {
+        const conversation = await createConversation(`Sender history ${index}`, 1, 2010 + index);
+        created.push(conversation);
+        expected.unshift(conversation);
+        await addAddress(conversation);
+        await sql`UPDATE mail.conversations SET latest_message_at = ${new Date(anchor.getTime() + index * 60_000)}
+          WHERE id = ${conversation.id}::uuid`;
+      }
+      // Two assigned matches, including one outside the mailbox-wide first five.
+      for (const conversation of [expected[0]!, expected[6]!]) {
+        await sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id)
+          VALUES (${conversation.id}::uuid, ${reader.id}::uuid)`;
+      }
+      const recipientOnly = await createConversation("Only a recipient", 1, 2030);
+      created.push(recipientOnly);
+      await addAddress(recipientOnly, "to");
+      const removed = await createConversation("Deleted sender message", 1, 2031);
+      created.push(removed);
+      await addAddress(removed);
+      await sql`UPDATE mail.message_placements SET deleted_at = ${anchor} WHERE message_id IN
+        (SELECT message_id FROM mail.conversation_messages WHERE conversation_id = ${removed.id}::uuid)`;
+      const foreign = await createConversation("Other mailbox", 1, 2032);
+      created.push(foreign);
+      await addAddress(foreign);
+      await sql`UPDATE mail.conversations SET mailbox_id = ${mailboxIds[1]!}::uuid WHERE id = ${foreign.id}::uuid`;
+      const query = new URLSearchParams({ email: email.toUpperCase(), excludeConversationId: source.shortId });
+      const response = await request(`sender-conversations?${query}`);
+      expect(response.status).toBe(200);
+      const page = senderPage(await response.json());
+      expect(page.total).toBe(7);
+      expect(page.items.map((item) => item.id)).toEqual(expected.slice(0, 5).map((item) => item.shortId));
+      expect(page.items.every((item) => item.preview && item.latestMessageAt)).toBe(true);
+      const restricted: SenderConversationsPage = await (
+        await request(`sender-conversations?${new URLSearchParams({ email })}`, "reader")
+      ).json();
+      expect(restricted.total).toBe(2);
+      expect(restricted.items.map((item) => item.id)).toEqual([expected[0]!.shortId, expected[6]!.shortId]);
+      expect((await request(`sender-conversations?${query}`, "reader")).status).toBe(404);
+      expect((await request(`sender-conversations?${new URLSearchParams({ email, limit: "6" })}`)).status).toBe(400);
+      expect((await request("sender-conversations?email=invalid")).status).toBe(400);
+      const none = unwrap(await listSenderConversations({ context: contextFor(owner), mailboxId, email: "missing@example.test" }));
+      expect(none).toEqual({ items: [], total: 0 });
+    } finally {
+      for (const conversation of created) {
+        await sql`DELETE FROM mail.message_contents WHERE id IN
+          (SELECT message_id FROM mail.conversation_messages WHERE conversation_id = ${conversation.id}::uuid)`;
+        await sql`DELETE FROM mail.conversations WHERE id = ${conversation.id}::uuid`;
+      }
+    }
+  });
+
+  test("internal notes reload in the reader with permissions, tombstones, cursors, and live invalidations, without outgoing mail", async () => {
+    const readerContext = contextFor(reader);
+    const base = { mailboxId, conversationId: visible.id };
+    const outgoing = async () => {
+      const [row] = await sql`SELECT
+        (SELECT count(*)::int FROM mail.drafts WHERE mailbox_id = ${mailboxId}::uuid) AS drafts,
+        (SELECT count(*)::int FROM mail.outbox_submissions WHERE mailbox_id = ${mailboxId}::uuid) AS outgoing,
+        (SELECT count(*)::int FROM mail.message_contents WHERE mailbox_id = ${mailboxId}::uuid) AS messages,
+        (SELECT count(*)::int FROM mail.commands WHERE mailbox_id = ${mailboxId}::uuid AND kind = 'send') AS sends`;
+      return row;
+    };
+    const initialOutgoing = await outgoing();
+    const wake = spyOn(mailLive, "wake");
+    const comments: string[] = [];
+    const assertInvalidation = async (mutate: () => Promise<void>) => {
+      const [before] = await sql<{ seq: string }[]>`SELECT COALESCE(MAX(seq), 0)::text AS seq FROM events.outbox`;
+      await mutate();
+      for (const key of [mailboxId, `${mailboxId}:${reader.id}`]) {
+        const rows = await sql<{ payload: { d: { conversationId: string } } }[]>`SELECT payload FROM events.outbox
+          WHERE app_id = 'mail' AND kind = 'live' AND ordering_key = ${key} AND seq > ${before!.seq}::bigint`;
+        expect(rows.map((row) => row.payload.d.conversationId)).toContain(visible.shortId);
+      }
+    };
+    try {
+      let note: collaboration.ConversationComment | undefined;
+      await assertInvalidation(async () => {
+        note = unwrap(
+          await collaboration.createConversationComment({
+            context: readerContext,
+            ...base,
+            input: { body: "Internal only: <b>plain text</b> @someone" },
+          }),
+        );
+        comments.push(note.id);
+      });
+      if (!note) throw new Error("Note missing");
+      const noteId = note.id;
+      const snapshot: MailboxPageData = await (await routeRequest(folderA, "reader")).json();
+      const initialNote = snapshot.comments.find((item) => item.author.id === reader.id)!;
+      expect(initialNote).toMatchObject({
+        body: "Internal only: <b>plain text</b> @someone",
+        canEdit: true,
+        canDelete: true,
+        author: { displayName: "reader", avatarHash: null },
+        editedAt: null,
+        deletedAt: null,
+        createdAt: note.createdAt,
+      });
+      expect(
+        (await (await detailRequest(visible, folderA, "owner")).json()).comments.find(
+          (item: collaboration.ConversationComment) => item.id === initialNote.id,
+        ),
+      ).toMatchObject({ canEdit: false, canDelete: false });
+      await assertInvalidation(async () => {
+        unwrap(
+          await collaboration.updateConversationComment({
+            context: readerContext,
+            ...base,
+            commentId: noteId,
+            input: { expectedRevision: 1, body: "Edited internal note" },
+          }),
+        );
+      });
+      const edited: MailConversationDetailData = await (await detailRequest(visible, folderA, "reader")).json();
+      expect(edited.comments.find((item) => item.id === initialNote.id)).toMatchObject({
+        body: "Edited internal note",
+        editedAt: expect.any(String),
+      });
+      setSystemTime(new Date(new Date(note.createdAt).getTime() + collaboration.COMMENT_MUTATION_WINDOW_MS + 1));
+      const expired: MailConversationDetailData = await (await detailRequest(visible, folderA, "reader")).json();
+      expect(expired.comments.find((item) => item.id === initialNote.id)).toMatchObject({ canEdit: false, canDelete: false });
+      setSystemTime(anchor);
+      await assertInvalidation(async () => {
+        unwrap(
+          await collaboration.deleteConversationComment({
+            context: readerContext,
+            ...base,
+            commentId: noteId,
+            input: { expectedRevision: 2 },
+          }),
+        );
+      });
+      const deleted: MailConversationDetailData = await (await detailRequest(visible, folderA, "reader")).json();
+      expect(deleted.comments.find((item) => item.id === initialNote.id)).toMatchObject({
+        body: null,
+        deletedAt: expect.any(String),
+        canEdit: false,
+        canDelete: false,
+      });
+      expect(wake).toHaveBeenCalledTimes(3);
+      expect(await outgoing()).toEqual(initialOutgoing);
+      // Exercise the reader's real 100-note budget, not just the comment service's configurable limit.
+      const olderNotes = await sql<{ id: string }[]>`INSERT INTO mail.conversation_comments
+        (short_id, conversation_id, body_markdown, author_kind, author_id, created_at)
+        SELECT lpad(to_hex(item), 6, '0'), ${visible.id}::uuid, 'Earlier internal note', 'user', ${owner.id}::uuid,
+          ${anchor}::timestamptz + item * interval '1 millisecond'
+        FROM generate_series(1, 101) AS item RETURNING id`;
+      comments.push(...olderNotes.map((item) => item.id));
+      const bounded: MailConversationDetailData = await (await detailRequest(visible, folderA, "reader")).json();
+      expect(bounded.comments).toHaveLength(100);
+      expect(bounded.commentsCursor).not.toBeNull();
+      const times = bounded.comments.map((item) => item.createdAt);
+      expect(times).toEqual([...times].sort());
+      const olderResponse = await request(
+        `conversations/${visible.shortId}/comments?${new URLSearchParams({
+          order: "newest",
+          limit: "100",
+          cursor: bounded.commentsCursor!,
+        })}`,
+        "reader",
+      );
+      expect(olderResponse.status).toBe(200);
+      const older: { items: collaboration.ConversationComment[]; nextCursor: string | null } = await olderResponse.json();
+      expect(older.items).toHaveLength(3);
+      expect(older.nextCursor).toBeNull();
+      expect(older.items.every((item) => !bounded.comments.some((shown) => shown.id === item.id))).toBe(true);
+    } finally {
+      wake.mockRestore();
+      setSystemTime(anchor);
+      for (const id of comments) await sql`DELETE FROM mail.conversation_comments WHERE id = ${id}::uuid`;
     }
   });
 

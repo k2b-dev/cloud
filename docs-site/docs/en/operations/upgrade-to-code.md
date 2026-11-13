@@ -293,7 +293,7 @@ or data must never run old rules or routines beside active Code.
 - Every application is ready and the
   [health checks](/en/docs/operations/observability) are green; configured
   health webhooks still reach their destination.
-- Check that routine mandates are retired, the `version = 3`, `name = 'rules_retired'` row exists in
+- Check that routine mandates are retired, the `version = 5`, `name = 'rules_retired'` row exists in
   `mail.schema_migrations`, and `assistant.studio_retirement.completed` is true.
   For routine mandates, the following read-only SQL must return `0`:
   ```sql

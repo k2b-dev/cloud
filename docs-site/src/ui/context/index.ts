@@ -93,6 +93,7 @@ import contentPagination from "./layout/pagination.md" with { type: "text" };
 import layoutPanelDialog from "./layout/panel-dialog.md" with { type: "text" };
 import layoutPanes from "./layout/panes.md" with { type: "text" };
 import layoutPermissions from "./layout/permissions.md" with { type: "text" };
+import layoutPersonPopover from "./layout/person-popover.md" with { type: "text" };
 import layoutPrint from "./layout/print.md" with { type: "text" };
 import layoutPullToRefresh from "./layout/pull-to-refresh.md" with { type: "text" };
 import layoutResizeSeparator from "./layout/resize-separator.md" with { type: "text" };
@@ -187,6 +188,7 @@ const catalogContextSources = {
   "layout/panel-dialog": { file: "layout/panel-dialog.md", content: layoutPanelDialog },
   "layout/floating-window": { file: "layout/floating-window.md", content: layoutFloatingWindow },
   "layout/anchored-popover": { file: "layout/anchored-popover.md", content: layoutAnchoredPopover },
+  "layout/person-popover": { file: "layout/person-popover.md", content: layoutPersonPopover },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
   "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
   "surfaces/elevation": { file: "surfaces/elevation.md", content: surfaceElevation },

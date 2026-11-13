@@ -8,7 +8,6 @@ describe("Mail primary actions", () => {
     ]);
 
     expect(composer).toContain('<SplitButton\n          class="mail-compose-action"');
-    expect(styles).toContain(".mail-compose-action + .k2b-split-button__menu-trigger");
     expect(styles).toContain("--k2b-action-solid: color-mix(in srgb, var(--app-accent) 80%, black)");
   });
 });

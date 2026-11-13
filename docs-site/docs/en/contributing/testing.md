@@ -1119,6 +1119,33 @@ Never cut a random UUID or `Math.random()` to short-ID length: the small space
 repeats and fails a unique index at random. `bun run check` flags this with the
 `test-short-ids` rule.
 
+### Statement budgets for hot paths
+
+A path that runs per message, keystroke, delivery, or ordinary request gets
+a test that pins its number of SQL statements (DATA-13). `meterSql()` from
+`scripts/fixtures/sql-meter` puts a loopback proxy in front of the test
+database and rebinds the platform's `sql` handle through it. `during(run)`
+returns the statements the process ran while `run` was pending, as SQL text
+without parameters:
+
+```ts
+const meter = await meterSql();
+try {
+  const statements = await meter.during(() => editTenTimes());
+  expect({ perEdit: statements.length / 10, statements }).toEqual({ perEdit: 0, statements: expect.any(Array) });
+} finally {
+  await meter.close();
+}
+```
+
+Warm the caches with one event before the measured window. Keep the window to
+the events under test, because timers that fire inside it count too. Pin the
+number you measured, and name the issue when it is above the target. A fix
+lowers the number in the same pull request. Current budgets:
+`packages/cloud/src/server/middleware/request-budget.integration.test.ts`
+(2 per signed-in request) and
+`packages/notebooks/src/ws-edit-budget.integration.test.ts` (8 per edit, target 0).
+
 ## Measure the public-site example
 
 `bun scripts/lighthouse-public-site.ts` builds

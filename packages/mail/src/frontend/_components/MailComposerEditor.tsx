@@ -14,6 +14,12 @@ import { reconcileMailComposerPanes } from "./mail-composer-panes";
 const PREVIEW_POLICY =
   "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\">";
 
+let loadedEditor: typeof import("./MailTextEditor") | undefined;
+/** Loads the editor before a composer mounts, so the text appears with the draft instead of a moment later. */
+export const preloadMailComposerEditor = async (): Promise<void> => {
+  loadedEditor ??= await import("./MailTextEditor");
+};
+
 export default function MailComposerEditor(props: {
   shared?: Accessor<MailDraftDocumentClient | null>;
   sharedState?: Accessor<MailSharedDraftState | null>;
@@ -40,21 +46,25 @@ export default function MailComposerEditor(props: {
    * The draft inside its conversation: one surface without panes. `preview` shows the mail as it arrives in place of
    * the text; `formatting` shows the editor's formatting bar.
    */
-  inline?: { preview: Accessor<boolean>; formatting: Accessor<boolean> };
+  inline?: { preview: Accessor<boolean>; formatting: Accessor<boolean>; placeholder?: Accessor<string> };
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const hasHistory = () => props.history !== undefined;
   const usesPanes = () => props.format() === "markdown" || hasHistory();
-  const [editorModule, setEditorModule] = createSignal<typeof import("./MailTextEditor")>();
+  const [editorModule, setEditorModule] = createSignal<typeof import("./MailTextEditor") | undefined>(loadedEditor);
   const [editorFailed, setEditorFailed] = createSignal(false);
   const loadEditor = async () => {
     setEditorFailed(false);
     const loaded = await importOnDemand(() => import("./MailTextEditor"));
-    if (loaded) setEditorModule(loaded);
-    else setEditorFailed(true);
+    if (loaded) {
+      loadedEditor = loaded;
+      setEditorModule(loaded);
+    } else setEditorFailed(true);
   };
-  onMount(() => void loadEditor());
+  onMount(() => {
+    if (!editorModule()) void loadEditor();
+  });
   const writeSurface = () => (
     <Show
       when={editorModule()}
@@ -62,7 +72,7 @@ export default function MailComposerEditor(props: {
         <Placeholder
           state={editorFailed() ? "error" : "loading"}
           variant="panel"
-          class="h-full min-h-72"
+          class={props.inline ? "min-h-12" : "h-full min-h-72"}
           title={editorFailed() ? t().editorFailed : t().preparingDraft}
           action={
             editorFailed() ? (
@@ -92,6 +102,7 @@ export default function MailComposerEditor(props: {
                 liveDictation={props.liveDictation}
                 toolbar={props.inline ? props.inline.formatting : undefined}
                 inline={Boolean(props.inline)}
+                placeholder={props.inline?.placeholder?.()}
                 onEditorReady={props.onEditorReady}
                 onAttachImages={props.onAttachImages}
                 onDroppedImages={props.onDroppedImages}

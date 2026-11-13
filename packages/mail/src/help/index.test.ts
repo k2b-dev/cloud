@@ -69,9 +69,9 @@ describe("mailHelp", () => {
 
     const expectedContent = new Map([
       ["mail-start", "Mail organizes email around **mailboxes**"],
-      ["mail-work", "Open the magnifier in the head or press `/` to **Search mailbox**"],
+      ["mail-work", "Type in the search field at the top of the mailbox, or press `/` to go to it"],
       ["mail-compose", "Your own tabs, separate compose windows, and devices share that reservation"],
-      ["mail-collaboration", "Internal comments are visible to people who can read the mailbox"],
+      ["mail-collaboration", "Internal notes are visible to people who can read the mailbox"],
       ["mail-security", "Mail keeps uncertain signals quiet"],
       ["mail-admin", "Pause mailbox** stops incoming synchronization"],
       ["mail-troubleshooting", 'Sending says "Mailbox transport is paused"'],
@@ -82,7 +82,7 @@ describe("mailHelp", () => {
     }
     expect(mailHelp.getMarkdown("mail-compose")).toContain("Choose **Write with AI**");
     expect(mailHelp.getMarkdown("mail-compose")).toContain("does not gain additional mailbox access");
-    expect(mailHelp.getMarkdown("mail-work")).toContain("section for the conversation as a whole");
+    expect(mailHelp.getMarkdown("mail-work")).toContain("An optional conversation summary stands as one line above the messages");
     expect(mailHelp.getMarkdown("mail-work")).toContain("**Everything** is selected by default");
     expect(mailHelp.getMarkdown("mail-work")).toContain("default broad search includes that extracted attachment text");
     expect(mailHelp.getMarkdown("mail-work")).toContain("opens the exact message that owns it");
@@ -156,8 +156,8 @@ describe("mailHelp", () => {
     const admin = mailHelp.getMarkdown("mail-admin");
     const work = mailHelp.getMarkdown("mail-work");
 
-    expect(start).toContain("**… → Choose list view** switches between conversations and individual messages");
-    expect(start).toContain("The menu also contains mailbox details, synchronization, health, Code");
+    expect(start).toContain("**…** with **Retired rule history**, **Sync mailbox**, **Mailbox health**, and **Settings** first");
+    expect(start).toContain("the choice between conversations and individual messages follow");
     expect(start).not.toContain("- **Automations** for");
     expect(admin).toContain("**Retired rule history**");
     expect(work).not.toContain("List help");
@@ -278,8 +278,8 @@ describe("mailHelp", () => {
 
   test("documents permission-scoped Contacts context", () => {
     const collaboration = mailHelp.getMarkdown("mail-collaboration");
-    expect(collaboration).toContain("Multiple Contacts can match the same address");
-    expect(collaboration).toContain("New contact");
+    expect(collaboration).toContain("The contact must have exactly the sender's email address");
+    expect(collaboration).toContain("Add to contacts");
     expect(collaboration).toContain("choose a writable contact book");
     expect(collaboration).toContain("Mail creates the Contact there");
     expect(collaboration).not.toContain("opens in a new tab");

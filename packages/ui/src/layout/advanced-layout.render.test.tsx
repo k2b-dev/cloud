@@ -17,7 +17,7 @@ import {
   serializeAppWorkspaceLayoutState,
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
-import { fitFloatingWindowRect } from "./floating-window-geometry";
+import { fitFloatingWindowRect, layoutFloatingWindowDock, maximizedFloatingWindowRect } from "./floating-window-geometry";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-advanced-layout-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -360,6 +360,25 @@ describe("@k2b/ui complete advanced layout migrations", () => {
         height: 768,
       }),
     ).toEqual({ x: 508, y: 16, width: 500, height: 700 });
+    // Inside an area that does not start at the corner.
+    expect(fitFloatingWindowRect({ x: 0, y: 0, width: 400, height: 300 }, 360, 320, { x: 100, y: 50, width: 800, height: 600 })).toEqual({
+      x: 116,
+      y: 66,
+      width: 400,
+      height: 320,
+    });
+  });
+
+  test("docks windows in rows from the end of the area and maximizes over it", () => {
+    const bar = { width: 252, height: 42 };
+    const rects = layoutFloatingWindowDock([{ width: 520, height: 420 }, bar, bar], { x: 0, y: 0, width: 900, height: 700 });
+    // The first sits at the end; a bar that no longer fits starts a row above the tallest one.
+    expect(rects).toEqual([
+      { x: 364, y: 268, width: 520, height: 420 },
+      { x: 104, y: 646, width: 252, height: 42 },
+      { x: 632, y: 218, width: 252, height: 42 },
+    ]);
+    expect(maximizedFloatingWindowRect({ x: 80, y: 20, width: 1340, height: 860 })).toEqual({ x: 147, y: 44, width: 1206, height: 812 });
   });
 
   test("keeps utility window resize controlled by component state", async () => {

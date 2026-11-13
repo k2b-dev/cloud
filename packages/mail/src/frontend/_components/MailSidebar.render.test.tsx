@@ -104,8 +104,6 @@ describe("Mail sidebar", () => {
       "Support",
       "Inbox",
       "Drafts",
-      "Outbox",
-      "Send problems",
       "Sent",
       "More",
       "Archive",
@@ -115,6 +113,35 @@ describe("Mail sidebar", () => {
       "New mailbox",
       "Deleted mailboxes",
     ]);
+  });
+
+  test("Outbox and Send problems show only while they hold something or are open, in the sidebar and the phone navigation", async () => {
+    const places = (html: string) => {
+      type Entry = { id: string; children?: Entry[] };
+      const snapshot = JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)![1]!) as {
+        items: Entry[];
+      };
+      const flatten = (items: Entry[]): Entry[] => items.flatMap((item) => [item, ...flatten(item.children ?? [])]);
+      return flatten(snapshot.items)
+        .map((item) => item.id)
+        .filter((id) => id === "scheduled" || id === "view:send_problems");
+    };
+    const links = async (html: string) =>
+      (await selectHtml(html, 'a[href="/app/mail/Box001?scheduled=1"], a[href="/app/mail/Box001?view=send_problems"]')).length;
+    const viewCounts = openMailboxFixture().viewCounts;
+    const empty = renderSidebar({ open: openMailboxFixture() });
+    expect(places(empty)).toEqual([]);
+    expect(await links(empty)).toBe(0);
+    for (const open of [
+      openMailboxFixture({ scheduledCount: 2, viewCounts: { ...viewCounts, send_problems: 1 } }),
+      openMailboxFixture({ scheduledMode: true }),
+    ]) {
+      const html = renderSidebar({ open });
+      expect(places(html)).toEqual(open.scheduledMode ? ["scheduled"] : ["scheduled", "view:send_problems"]);
+      expect(await links(html)).toBe(open.scheduledMode ? 1 : 2);
+    }
+    const problemsOpen = renderSidebar({ open: openMailboxFixture({ activeView: "send_problems" }) });
+    expect(places(problemsOpen)).toEqual(["view:send_problems"]);
   });
 
   test("the notice that Focus is gone renders on the server above the mailboxes until the person closed it", async () => {

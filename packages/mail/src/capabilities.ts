@@ -60,6 +60,7 @@ import {
   type MailSubscriptionSummary,
   ResourceShortIdSchema,
 } from "./contracts";
+import { draftAdoptionMessages } from "./draft-adoption-messages";
 import { mailFolderPaths } from "./folder-tree";
 import {
   MailCodePreviewInputSchema,
@@ -111,25 +112,32 @@ const requestContext = (context: CapabilityExecutionContext): MailRequestContext
   requestId: context.requestId,
 });
 
+const localizeCapabilityError = <T extends { code: string; status: number; message: string }>(error: T, locale: string | undefined): T => {
+  const localized = localizeMailError(error, locale);
+  return error.code === "DRAFT_REPLY_BOX_OCCUPIED"
+    ? { ...localized, message: `${localized.message} ${draftAdoptionMessages.resolve([locale ?? "en"]).t.occupiedCapabilityHint}` }
+    : localized;
+};
+
 const localizeCapabilityErrors = <T extends CapabilityDefinitions>(definitions: T): T => {
   for (const definition of Object.values(definitions.queries ?? {})) {
     const run = definition.run;
     definition.run = async (input, context) => {
       const result = await run(input, context);
-      return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+      return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
     };
   }
   for (const definition of Object.values(definitions.actions ?? {})) {
     const run = definition.run;
     definition.run = async (input, context) => {
       const result = await run(input, context);
-      return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+      return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
     };
     if (definition.review) {
       const review = definition.review;
       definition.review = async (input, context) => {
         const result = await review(input, context);
-        return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+        return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
       };
     }
   }
@@ -629,6 +637,7 @@ const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
     })),
     attachmentsTruncated: draft.attachments.length > 50,
     suggestion: draft.suggestion,
+    consolidatedCount: draft.consolidatedCount ?? 0,
     revision: draft.revision,
     state: draft.state,
     createdAt: draft.createdAt,
@@ -653,6 +662,7 @@ const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds, locale?: string)
     recipientsTruncated: recipients.truncated,
     attachmentCount: draft.attachments.length,
     suggestion: draft.suggestion,
+    consolidatedCount: draft.consolidatedCount ?? 0,
     revision: draft.revision,
     state: draft.state,
     updatedAt: draft.updatedAt,
@@ -660,6 +670,7 @@ const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds, locale?: string)
 };
 
 const mapDraftMutation = (draft: MailDraft, ids: DraftPublicIds) => ({
+  creationOutcome: draft.creationOutcome,
   signatureTemplateId: draft.signatureTemplateId ? requirePublicId(ids.composeTemplates, draft.signatureTemplateId) : null,
   quoteSource: draft.quoteSource,
   id: requirePublicId(ids.drafts, draft.id),
@@ -672,6 +683,7 @@ const mapDraftMutation = (draft: MailDraft, ids: DraftPublicIds) => ({
   })),
   attachmentsTruncated: draft.attachments.length > 50,
   suggestion: draft.suggestion,
+  consolidatedCount: draft.consolidatedCount ?? 0,
   revision: draft.revision,
   state: draft.state,
   ...(draft.formattingWarnings ? { formattingWarnings: draft.formattingWarnings } : {}),
@@ -1536,6 +1548,55 @@ const queryDefinitions = {
         refs: [{ type: "mail.mailbox" as const, id: scope.data.shortId }],
         links: [openLink(mailboxHref(scope.data.shortId))],
         page: capabilityPage(result.data.nextCursor),
+      });
+    },
+  },
+  "conversation.by_sender": {
+    title: "Find conversations from a sender",
+    description:
+      "Find up to five newest conversations where an exact From address sent mail in a known mailbox, with a visible total. Optionally leave out the open conversation. Open returned refs with conversation.read.",
+    target: "mailbox",
+    input: c.ConversationBySenderInputSchema,
+    data: c.ConversationBySenderDataSchema,
+    openWorld: true,
+    run: async (input: z.output<typeof c.ConversationBySenderInputSchema>, context: CapabilityExecutionContext) => {
+      const target = requireMailboxTarget(context);
+      if (!target.ok) return target;
+      const scope = await resolveMailboxScope(target.data, context);
+      if (!scope.ok) return scope;
+      const excluded = input.excludeConversationId
+        ? await resolveConversationScope(target.data, input.excludeConversationId, context)
+        : null;
+      if (excluded && !excluded.ok) return excluded;
+      const result = await conversationContext.listSenderConversations({
+        context: requestContext(context),
+        mailboxId: scope.data.id,
+        email: input.email,
+        limit: input.limit,
+        excludeConversationId: excluded?.data.conversationId,
+      });
+      if (!result.ok) return result;
+      const ids = await publicResources.publicIds(
+        "conversations",
+        result.data.items.map((item) => item.id),
+      );
+      const t = mailCapabilityMessages(context.locale);
+      return ok({
+        data: {
+          total: result.data.total,
+          items: result.data.items.map((item) => {
+            const id = requirePublicId(ids, item.id);
+            const preview = boundedText(item.preview, 240).text;
+            return {
+              ref: { type: "mail.conversation" as const, id },
+              title: truncateText(item.subject || t.noSubject, 500).text,
+              participants: truncateText(item.participantSummary, 240).text,
+              latestMessageAt: item.latestMessageAt,
+              ...(preview ? { preview } : {}),
+              links: [openLink(conversationHref(scope.data.shortId, id))],
+            };
+          }),
+        },
       });
     },
   },
@@ -3132,7 +3193,7 @@ const actionDefinitions = {
   "draft.create": {
     title: "Create draft",
     description:
-      "Create an idempotent editable mail draft with an optional small inline attachment. For Gustav and other service accounts, this is a suggestion people see in the conversation, labelled with the account's name. After a person edits it, the account can change it only at a person’s request. A conversation has at most one untouched suggestion per account; another create by the same account returns that account's suggestion, never another account's. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
+      "Create an idempotent editable mail draft with an optional small inline attachment. For Gustav and other service accounts, this is a suggestion people see in the conversation, labelled with the account's name. After a person edits it, the account can change it only at a person’s request. Each conversation has one open user-origin reply draft across all authors and modes. Content-free creation returns that draft unchanged, with creationOutcome suggestion_skipped for an autonomous request against a human, adopted, or another author's draft. Supplied body, subject, recipients or attachments return DRAFT_REPLY_BOX_OCCUPIED (409), naming the existing draft; update it explicitly instead. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
     target: "mailbox",
     input: c.DraftCreateInputSchema,
     data: c.DraftMutationDataSchema,
@@ -3261,6 +3322,7 @@ const actionDefinitions = {
         context: requestContext(context),
         mailboxId: scope.data.id,
         input: { idempotencyKey: stableUuid(key.data), origin, draft: draftContent },
+        rejectOccupiedContent: drafts.hasDraftCreationContent(input),
       });
       if (!result.ok) return result;
       // Attachment uploads return the draft again, without the warnings about its body.
@@ -3275,7 +3337,11 @@ const actionDefinitions = {
             })
           : ok(true);
       if (!original.ok) return original;
-      for (const attachment of original.data ? input.attachments : []) {
+      for (const attachment of original.data &&
+      result.data.creationOutcome !== "existing" &&
+      result.data.creationOutcome !== "suggestion_skipped"
+        ? input.attachments
+        : []) {
         const bytes = Buffer.from(attachment.base64, "base64");
         const hash = createHash("sha256").update(bytes).digest("hex");
         if (result.data.attachments.some((existing) => existing.filename === attachment.filename && existing.contentHash === hash))
@@ -3299,7 +3365,13 @@ const actionDefinitions = {
       return ok({
         data,
         receipt: mailReceipt("draft.create", context.locale, { draft: draftSlot(publicDraftId, result.data.subject, context.locale) }),
-        summary: capabilitySummary(t.createdDraft({ subject: reviewSubject(result.data.subject, context) })),
+        summary: capabilitySummary(
+          (result.data.creationOutcome === "suggestion_skipped"
+            ? t.skippedReplySuggestion
+            : result.data.creationOutcome === "existing"
+              ? t.existingReplyDraft
+              : t.createdDraft)({ subject: reviewSubject(result.data.subject, context) }),
+        ),
         ...draftMetadata(scope.data.shortId, publicDraftId, result.data.subject),
       });
     },
@@ -3365,6 +3437,116 @@ const actionDefinitions = {
         data,
         receipt: mailReceipt("draft.update", context.locale, { draft: draftSlot(input.draftId, result.data.subject, context.locale) }),
         summary: capabilitySummary(t.updatedDraft({ subject: reviewSubject(result.data.subject, context) })),
+        ...draftMetadata(mailboxId, input.draftId, result.data.subject),
+      });
+    },
+  },
+  "draft.intent": {
+    title: "Switch reply mode",
+    description:
+      "Switch the conversation's reply draft between reply, reply_all and forward. Rebuild To/Cc and source attachments; preserve body, personal attachments, manual Bcc and custom subjects. Add default Bcc; swap Re:/Fwd: only for the unchanged derived subject. Requires the current revision; scheduled/sending drafts cannot switch.",
+    target: "mailbox",
+    input: c.DraftSwitchIntentInputSchema,
+    data: c.DraftMutationDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    policy: { silent: "shared" },
+    review: async (input: z.output<typeof c.DraftSwitchIntentInputSchema>, context: CapabilityExecutionContext) => {
+      const target = requireMailboxTarget(context);
+      if (!target.ok) return target;
+      const mailboxId = target.data;
+      const current = await requireDraftForReview(mailboxId, input.draftId, context);
+      if (!current.ok) return current;
+      if (current.data.revision !== input.expectedRevision) return fail(err.conflict("Draft changed before review"));
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
+      if (!scope.ok) return scope;
+      const proposed = await drafts.previewDraftIntent({
+        context: requestContext(context),
+        mailboxId: scope.data.mailbox.id,
+        draftId: scope.data.draftId,
+        intent: input.intent,
+        expectedRevision: input.expectedRevision,
+      });
+      if (!proposed.ok) return proposed;
+      return ok(
+        mailActionReviews["draft.intent"](
+          context.locale,
+          { draft: draftSlot(input.draftId, proposed.data.subject, context.locale) },
+          {
+            ...(await draftAudienceOptions(current.data.mailboxId, mailboxId, context)),
+            preview: draftPreview(proposed.data, context.locale),
+            content: draftReviewContent(proposed.data),
+            links: [openLink(`${draftReadHref(mailboxId, input.draftId)}?revision=${input.expectedRevision}`)],
+          },
+        ),
+      );
+    },
+    run: async (input: z.output<typeof c.DraftSwitchIntentInputSchema>, context: CapabilityExecutionContext) => {
+      const target = requireMailboxTarget(context);
+      if (!target.ok) return target;
+      const mailboxId = target.data;
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
+      if (!scope.ok) return scope;
+      const result = await drafts.switchDraftIntent({
+        context: requestContext(context),
+        mailboxId: scope.data.mailbox.id,
+        draftId: scope.data.draftId,
+        intent: input.intent,
+        expectedRevision: input.expectedRevision,
+      });
+      if (!result.ok) return result;
+      return ok({
+        data: mapDraftMutation(result.data, await draftPublicIds([result.data])),
+        receipt: mailReceipt("draft.intent", context.locale, { draft: draftSlot(input.draftId, result.data.subject, context.locale) }),
+        summary: capabilitySummary(mailCapabilityMessages(context.locale).updatedDraft({ subject: result.data.subject })),
+        ...draftMetadata(mailboxId, input.draftId, result.data.subject),
+      });
+    },
+  },
+  "draft.consolidation.acknowledge": {
+    title: "Acknowledge draft consolidation",
+    description:
+      "A person with write access can clear consolidatedCount on an open draft after showing the notice. Service accounts cannot acknowledge it. Does not change content or revision.",
+    target: "mailbox",
+    input: c.DraftAcknowledgeConsolidationInputSchema,
+    data: c.DraftMutationDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    policy: { silent: "shared" },
+    review: async (input: z.output<typeof c.DraftAcknowledgeConsolidationInputSchema>, context: CapabilityExecutionContext) => {
+      const target = requireMailboxTarget(context);
+      if (!target.ok) return target;
+      const mailboxId = target.data;
+      const current = await requireDraftForReview(mailboxId, input.draftId, context);
+      if (!current.ok) return current;
+      return ok(
+        mailActionReviews["draft.consolidation.acknowledge"](
+          context.locale,
+          { draft: draftSlot(input.draftId, current.data.subject, context.locale) },
+          { ...(await draftAudienceOptions(current.data.mailboxId, mailboxId, context)) },
+        ),
+      );
+    },
+    run: async (input: z.output<typeof c.DraftAcknowledgeConsolidationInputSchema>, context: CapabilityExecutionContext) => {
+      const target = requireMailboxTarget(context);
+      if (!target.ok) return target;
+      const mailboxId = target.data;
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
+      if (!scope.ok) return scope;
+      const result = await drafts.acknowledgeDraftConsolidation({
+        context: requestContext(context),
+        mailboxId: scope.data.mailbox.id,
+        draftId: scope.data.draftId,
+      });
+      if (!result.ok) return result;
+      return ok({
+        data: mapDraftMutation(result.data, await draftPublicIds([result.data])),
+        receipt: mailReceipt("draft.consolidation.acknowledge", context.locale, {
+          draft: draftSlot(input.draftId, result.data.subject, context.locale),
+        }),
+        summary: capabilitySummary(mailCapabilityMessages(context.locale).acknowledgedDraftConsolidation({ subject: result.data.subject })),
         ...draftMetadata(mailboxId, input.draftId, result.data.subject),
       });
     },

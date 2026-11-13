@@ -42,6 +42,8 @@ export default function MailTextEditor(props: {
   toolbar?: Accessor<boolean>;
   /** Inside a conversation the text grows with its content and the conversation scrolls, not the editor. */
   inline?: boolean;
+  /** What the empty text says, such as the reply box's "Write a reply …". */
+  placeholder?: string;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -206,7 +208,7 @@ export default function MailTextEditor(props: {
           class={props.inline ? undefined : "min-h-full"}
           toolbar={props.toolbar ? props.toolbar() : undefined}
           label={t().messageBody}
-          placeholder={t().writeMessage}
+          placeholder={props.placeholder ?? t().writeMessage}
           initialValue={binding ? binding.doc.getText("codemirror").toString() : untrack(props.body)}
           onTableCheck={props.onTableCheck}
           status={

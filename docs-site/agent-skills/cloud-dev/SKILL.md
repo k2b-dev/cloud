@@ -68,7 +68,7 @@ An app has no permissions of its own on objects: alone, it reaches objects only 
 - Store durable state explicitly, never in process memory or container files.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
   and Cloud rate limits. Commit state before retryable effects with stable keys; an effect
-  that must survive a crash is an outbox row in the same transaction (`defineLive`, `createPgOutbox`).
+  that must survive a crash is an outbox row in the same transaction (`defineLive`, `createPgOutbox`). Keep the database out of live paths: check access when a socket opens and on access changes, fan out over NATS, and save lazily in batches. Run no SQL, row lock, or stored-document load per message, keystroke, or delivery. Use `defineLive()` and `@k2b/cloud/shared-text`, never a second socket, presence, or Yjs path. Read **Live updates** (`/en/docs/automation/live-updates#keep-the-database-out-of-the-live-path`).
   A settings write over an unreadable stored value fails with `setting_unreadable`; merge only over `settings.read()` with `stored !== "unreadable"`.
 
 ## Reuse public building blocks

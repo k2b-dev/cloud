@@ -42,7 +42,7 @@ describe("Mail sender message actions", () => {
     return;
   }
 
-  test("heads each section like the other action menus", async () => {
+  test("heads each section like the other action menus; the sender's actions live in the sender card", async () => {
     const dom = createDomTestHarness();
     const [{ default: MailSenderMessageActions }, { LocaleProvider }] = await Promise.all([
       import("./MailSenderMessageActions"),
@@ -73,7 +73,11 @@ describe("Mail sender message actions", () => {
     try {
       dom.document.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger")?.click();
       const sections = Array.from(dom.document.querySelectorAll("[role='group']")).map((group) => group.getAttribute("aria-label"));
-      expect(sections).toEqual(["Sender", "Conversation"]);
+      expect(sections).toEqual(["Conversation", "Other"]);
+      const items = Array.from(dom.document.querySelectorAll("[role='menuitem']")).map((item) => item.textContent?.trim());
+      expect(items).toContain("Report phishing");
+      expect(items).toContain("Technical details");
+      expect(items).not.toContain("Block sender");
     } finally {
       dispose();
       dom.cleanup();

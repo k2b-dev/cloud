@@ -445,6 +445,20 @@ export const ConversationRelatedDataSchema = z
   )
   .max(10);
 
+export const ConversationBySenderInputSchema = z
+  .object({
+    email: z.email().max(320).describe("Exact sender From address."),
+    excludeConversationId: ConversationIdInputSchema.optional().describe("Open conversation to leave out of the preview and total."),
+    limit: z.number().int().min(1).max(5).default(5).describe("Maximum number of sender conversations to return, at most five."),
+  })
+  .strict();
+export const ConversationBySenderDataSchema = z
+  .object({
+    items: z.array(ConversationRelatedDataSchema.element.omit({ reasons: true })).max(5),
+    total: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const AddressDataSchema = z.object({ name: z.string().max(200).nullable(), address: z.email() }).strict();
 export const AttachmentDataSchema = z
   .object({
@@ -673,6 +687,7 @@ export const DraftDataSchema = z
     attachments: z.array(DraftAttachmentDataSchema).max(50),
     attachmentsTruncated: z.boolean(),
     suggestion: z.boolean(),
+    consolidatedCount: z.number().int().nonnegative(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     createdAt: TimestampSchema,
@@ -688,6 +703,7 @@ export const DraftSummaryDataSchema = compactResourceViewSchema("mail.draft")
     recipientsTruncated: z.boolean(),
     attachmentCount: z.number().int().nonnegative(),
     suggestion: z.boolean(),
+    consolidatedCount: z.number().int().nonnegative(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     updatedAt: TimestampSchema,
@@ -696,6 +712,7 @@ export const DraftSummaryDataSchema = compactResourceViewSchema("mail.draft")
 export const DraftListDataSchema = z.array(DraftSummaryDataSchema).max(100);
 export const DraftMutationDataSchema = z
   .object({
+    creationOutcome: z.enum(["created", "existing", "suggestion_skipped"]).optional(),
     id: ResourceShortIdSchema,
     signatureTemplateId: ResourceShortIdSchema.nullable(),
     quoteSource: draftEditableContentInputSchema.shape.quoteSource,
@@ -714,6 +731,7 @@ export const DraftMutationDataSchema = z
       .max(50),
     attachmentsTruncated: z.boolean(),
     suggestion: z.boolean(),
+    consolidatedCount: z.number().int().nonnegative(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     formattingWarnings: composeFormattingWarningsSchema
@@ -772,6 +790,14 @@ export const DraftUpdateInputSchema = z
     draft: draftEditableContentInputSchema.describe("Complete editable draft content replacing the current content."),
   })
   .strict();
+export const DraftSwitchIntentInputSchema = z
+  .object({
+    draftId: DraftIdInputSchema,
+    expectedRevision: ExpectedRevisionInputSchema,
+    intent: z.enum(["reply", "reply_all", "forward"]).describe("Reply mode to derive from the source message, preserving body text."),
+  })
+  .strict();
+export const DraftAcknowledgeConsolidationInputSchema = z.object({ draftId: DraftIdInputSchema }).strict();
 export const DraftPatchInputSchema = z
   .object({
     draftId: DraftIdInputSchema,

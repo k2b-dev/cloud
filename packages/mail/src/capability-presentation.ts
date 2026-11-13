@@ -212,6 +212,16 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             id: "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche oder einem Fokusergebnis oder einer typisierten Ressource ref zurückgegeben wird.",
           },
         },
+        "conversation.by_sender": {
+          title: "Unterhaltungen eines Absenders finden",
+          description:
+            "Findet bis zu fünf neueste Unterhaltungen mit Nachrichten von genau dieser Absenderadresse und zählt die sichtbaren Treffer. Die offene Unterhaltung kann ausgeschlossen werden. Zurückgegebene Referenzen lassen sich mit conversation.read öffnen.",
+          input: {
+            email: "Genaue E-Mail-Adresse im Von-Feld.",
+            excludeConversationId: "Offene Unterhaltung, die bei Vorschau und Anzahl ausgelassen wird.",
+            limit: "Maximale Anzahl der Unterhaltungen, höchstens fünf.",
+          },
+        },
         "conversation.related": {
           title: "Verwandte E-Mails finden",
           description:
@@ -719,6 +729,24 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             "attachments[].filename": "Der Dateiname des Anhangs wird den Empfängern angezeigt.",
             "attachments[].contentType": "MIME-Typ des Anhangs.",
             "attachments[].base64": "Base64-codierter Inhalt; Der dekodierte Inhalt ist auf 105 KiB begrenzt.",
+          },
+        },
+        "draft.intent": {
+          title: "Antwortart wechseln",
+          description:
+            "Wechselt den Antwortentwurf einer Unterhaltung zwischen Antworten, Allen antworten und Weiterleiten. Text, eigene Anhänge, manuelles Bcc und ein geänderter Betreff bleiben erhalten.",
+          input: {
+            draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
+            expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
+            intent: "Neue Antwortart: reply, reply_all oder forward.",
+          },
+        },
+        "draft.consolidation.acknowledge": {
+          title: "Zusammenführung der Entwürfe bestätigen",
+          description:
+            "Eine Person mit Schreibzugriff blendet den Hinweis auf zusammengeführte Antwortentwürfe aus. Inhalt und Revision bleiben unverändert.",
+          input: {
+            draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
           },
         },
         "draft.discard": {

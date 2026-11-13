@@ -1,4 +1,4 @@
-export const tabsSelector = ".k2b-app-workspace__head-views";
+export const tabsSelector = ".mail-list-bar";
 export const measurements = [
   ".mail-sidebar",
   ".k2b-app-workspace__head",
@@ -14,10 +14,12 @@ export const measurements = [
   ".mail-list-entry",
   ".mail-row-draft-tag",
   "[data-mail-queue-count]",
-  ".k2b-app-workspace__main-pane",
-  ".k2b-app-workspace__main-primary",
-  ".mail-reader-toolbar",
-  "[data-mail-details-trigger]",
+  ".mail-list-bar",
+  ".mail-split-list",
+  ".mail-split-reader",
+  ".mail-list-handle",
+  ".mail-reader-head",
+  ".mail-reader-chips",
   "[data-app-workspace-detail-toggle]",
   ".mail-reading-column",
   ".k2b-app-workspace__detail",

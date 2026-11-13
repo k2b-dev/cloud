@@ -18,20 +18,23 @@ Mailbox-scoped tools take `mailbox`: reuse its public ID. All resources and batc
 ## Choose the shortest useful path
 
 - For "what needs my attention?", start with `mail.conversation.focus`. No mailbox lookup is needed. Its previews help select conversations; a preview is not a complete message.
-- Across mailboxes, use `mail.search`. Within a mailbox use `mail.conversation.list` or the structured filters of `mail.conversation.search`. `mail.conversation.list` without `view` or `workStatus` lists open work only; pass `includeDone` to include done or snoozed conversations.
-- To choose a mailbox, use `mail.mailbox.browse`. Unread and needs-action counts count conversations, not individual messages. Report a returned problem when interpreting freshness. Use `mail.mailbox.read` for configuration or connection diagnosis, not before every mail task.
-- Use `mail.conversation.read` for collaboration context and the latest message window. Shared summary text may lag behind the messages. Paginate `mail.message.list` only when the whole thread is needed.
-- For plain message content use `mail.message.content.read`; follow nextOffset until null when full content matters. Use `mail.message.read` for the exact reply envelope and attachment metadata. Attachment text is available through `mail.attachment.text.read`, including status and continuation; a separate metadata read is unnecessary when text is already the goal.
-- Reuse current revisions and target IDs from a list for a specific requested status or assignment change. Read again when context is insufficient or a revision conflicts. Provider mark/move operations need the actual source folder; never guess it from a folder name.
+- Search mailboxes with `mail.search`, or use `mail.conversation.list` and `mail.conversation.search` within one. Lists default to open work; pass `includeDone` for done or snoozed conversations.
+- Choose a mailbox with `mail.mailbox.browse`. Unread/needs-action counts are conversations; report freshness problems. Use `mail.mailbox.read` for configuration or connection diagnosis.
+- Use `mail.conversation.read` for collaboration context and the latest message window. Shared summary text may lag behind the messages. Follow `mail.message.list` pagination when the task needs the whole thread.
+- For plain content use `mail.message.content.read`; follow nextOffset until null for the whole message. Use `mail.message.read` for the reply envelope and attachment metadata, or `mail.attachment.text.read` directly for attachment text and continuation.
+- Reuse list IDs and revisions for status or assignment changes; reread on missing context or revision conflicts. Mark/move needs the actual source folder, never a guessed name.
 - Discover tag, member, reminder, comment, activity, delivery or unsubscribe capabilities only when the task needs them. An unsubscribe request or queued send is not confirmed delivery.
 
 ## Draft, reply and send
 
 - Choose a verified sender with `mail.mailbox.identity.list`. For ambiguous recipient addresses, consider Contacts and its Skill rather than guessing an address.
 - For reply, Reply all or forward, read the exact source message; let Mail derive reply recipients and threading. Pass its returned conversation and message IDs and the chosen intent to `mail.draft.create`.
+- Each conversation has one reply draft across reply, reply-all and forward. Content-free creation returns it unchanged. With supplied content, an occupied box returns `DRAFT_REPLY_BOX_OCCUPIED` (409) with its draft ID: preserve unsaved text and update explicitly. On `creationOutcome: suggestion_skipped`, stop the automatic suggestion.
+- Use `mail.draft.intent` with the current revision to switch modes, preserving body, custom subject and manual Bcc. Inspect derived recipients and attachments before sending.
+- Retry mutations with their original idempotency key. Preserve unsaved text on conflicts; automatic cleanup requires `creationOutcome: created`.
 - For an existing draft prefer `mail.draft.patch`: omitted fields stay unchanged. A supplied recipient array replaces that array; read and preserve its existing members when adding one recipient.
 - Write Markdown bodies in plain Markdown. If a draft result lists `formattingWarnings`, email removed that HTML or image, such as `class`, `style`, `<small>` or `<img>`; rewrite those parts in Markdown and link to images instead of embedding them.
-- Preview or `compose style get` may report `ignored_mailbox_css`: Mail leaves out unsafe parts of the stored mailbox design and still sends; saving CSS stays strict. Without `property`, this warning also appears when a long message sends with the built-in design.
+- Preview and sending may report `ignored_mailbox_css` when unsafe mailbox CSS is omitted or a long message uses the built-in design; saving CSS stays strict.
 - `mail.draft.update` replaces the complete editable draft. Never build that replacement from a truncated body or recipient list. Use a focused patch instead; if the requested replacement requires unavailable content, stop and explain the limitation.
 - Before sending, inspect the current `mail.draft.read` result, check recipients and content, run `mail.draft.send.review`, address warnings, then pass the exact current revision and safety approval to `mail.draft.send`. Do not send an incompletely inspected draft. Review approval never authorizes unrelated work.
 - Return the draft link unless the user also requested sending. Never retry an uncertain mutation blindly.

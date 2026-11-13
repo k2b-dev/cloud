@@ -32,15 +32,16 @@ for (const permission of ["writer", "reader", "admin", "assigned-only"] as const
       expect(menu.sections().flatMap((section) => section.items.map((item) => item.id))).toEqual(
         permission === "assigned-only"
           ? []
-          : [
-              "details",
-              ...(permission === "admin" ? ["sync", "health"] : []),
+          : // Mail v5: Retired rule history, Sync, Mailbox status and Settings first; the rest stays one step further.
+            [
               "automations",
+              ...(permission === "admin" ? ["sync", "health"] : []),
+              "settings",
+              "details",
               "mailing-lists",
               "remote-images",
               ...(permission === "admin" ? ["shared-links"] : []),
               "email-links",
-              "settings",
             ],
       );
       return createComponent(m.MailboxMenuButton, { menu, label: "Options for Support" });

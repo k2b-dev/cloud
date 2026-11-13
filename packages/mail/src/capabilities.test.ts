@@ -20,6 +20,7 @@ import {
   AttachmentContentReadDataSchema,
   AttachmentReadDataSchema,
   CommentListDataSchema,
+  ConversationBySenderDataSchema,
   ConversationFocusListDataSchema,
   ConversationGetDataSchema,
   ConversationListDataSchema,
@@ -625,6 +626,36 @@ describe("mail capabilities", () => {
 
   test("adoption refusals are ordinary localized capability errors", async () => {
     spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    spyOn(drafts, "previewDraftIntent").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
+    spyOn(drafts, "switchDraftIntent").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
+    spyOn(drafts, "acknowledgeDraftConsolidation").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
     spyOn(drafts, "updateDraft").mockResolvedValue(
       fail({ code: "DRAFT_ADOPTED", status: 409, message: "A person has edited this draft. Ask them to initiate further changes." }),
     );
@@ -1007,7 +1038,9 @@ describe("mail capabilities", () => {
       "conversation.tag.update",
       "draft.attachment.add",
       "draft.attachment.import.v1",
+      "draft.consolidation.acknowledge",
       "draft.create",
+      "draft.intent",
       "draft.patch",
       "draft.update",
       "folder.display.set",
@@ -1037,6 +1070,7 @@ describe("mail capabilities", () => {
       "attachment.text.read",
       "comment.read",
       "conversation.activity.list",
+      "conversation.by_sender",
       "conversation.comment.list",
       "conversation.focus",
       "conversation.list",
@@ -1092,8 +1126,10 @@ describe("mail capabilities", () => {
       "draft.attachment.add",
       "draft.attachment.import.v1",
       "draft.attachment.remove",
+      "draft.consolidation.acknowledge",
       "draft.create",
       "draft.discard",
+      "draft.intent",
       "draft.patch",
       "draft.send",
       "draft.update",
@@ -1132,8 +1168,10 @@ describe("mail capabilities", () => {
       "draft.attachment.add",
       "draft.attachment.import.v1",
       "draft.attachment.remove",
+      "draft.consolidation.acknowledge",
       "draft.create",
       "draft.discard",
+      "draft.intent",
       "draft.patch",
       "draft.send",
       "draft.update",
@@ -1795,6 +1833,16 @@ describe("mail capabilities", () => {
         },
       ],
     });
+    spyOn(drafts, "previewDraftIntent").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
     const results = [
       await mailCapabilities.actions["conversation.summary.write"].review(
         { conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared summary" },
@@ -1802,6 +1850,8 @@ describe("mail capabilities", () => {
       ),
       await mailCapabilities.actions["conversation.reference.ensure"].review({ conversationId }, context),
 
+      await mailCapabilities.actions["draft.consolidation.acknowledge"].review({ draftId }, context),
+      await mailCapabilities.actions["draft.intent"].review({ draftId, expectedRevision: 2, intent: "forward" }, context),
       await mailCapabilities.actions["draft.patch"].review({ draftId, expectedRevision: 2, patch: { subject: "Changed" } }, context),
       await mailCapabilities.actions["draft.create"].review(
         DraftCreateInputSchema.parse({ senderIdentityId, subject: "Release follow-up" }),
@@ -1920,6 +1970,36 @@ describe("mail capabilities", () => {
       data: { items: [{ subject: "Planning session" }], nextCursor: null },
     } as never);
     spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: draftFixture } as never);
+    spyOn(drafts, "previewDraftIntent").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
+    spyOn(drafts, "switchDraftIntent").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
+    spyOn(drafts, "acknowledgeDraftConsolidation").mockResolvedValue({
+      ok: true,
+      data: {
+        ...draftFixture,
+        to: [...draftFixture.to],
+        cc: [...draftFixture.cc],
+        bcc: [...draftFixture.bcc],
+        attachments: [...draftFixture.attachments],
+      },
+    });
     spyOn(drafts, "updateDraft").mockResolvedValue({ ok: true, data: draftFixture } as never);
     spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: draftFixture } as never);
     spyOn(drafts, "discardDraft").mockResolvedValue({ ok: true, data: undefined } as never);
@@ -2074,6 +2154,17 @@ describe("mail capabilities", () => {
             DraftCreateInputSchema.parse({ senderIdentityId, subject: "Release follow-up" }),
             idempotentContext,
           ),
+      },
+      {
+        localId: "draft.intent",
+        action: mailCapabilities.actions["draft.intent"],
+        run: () =>
+          mailCapabilities.actions["draft.intent"].run({ draftId, expectedRevision: 2, intent: "forward" }, idempotentContext),
+      },
+      {
+        localId: "draft.consolidation.acknowledge",
+        action: mailCapabilities.actions["draft.consolidation.acknowledge"],
+        run: () => mailCapabilities.actions["draft.consolidation.acknowledge"].run({ draftId }, idempotentContext),
       },
       {
         localId: "draft.update",
@@ -2622,6 +2713,45 @@ describe("mail capabilities", () => {
     });
     expect(JSON.stringify(result)).not.toContain(internalAttachmentId);
     expect(JSON.stringify(result)).not.toContain(internalMessageId);
+  });
+
+  test("sender history keeps the service's visible total and publishes bounded refs and links", async () => {
+    const history = spyOn(conversationContext, "listSenderConversations").mockResolvedValue({
+      ok: true,
+      data: {
+        total: 9,
+        items: [
+          {
+            id: internalRelatedConversationId,
+            subject: "Previous conversation",
+            participantSummary: "Ada",
+            latestMessageAt: "2026-08-04T10:00:00.000Z",
+            preview: "Previous message",
+          },
+        ],
+      },
+    });
+    const query = mailCapabilities.queries["conversation.by_sender"];
+    expect(() => query.input.parse({ email: "ada@example.test", limit: 6 })).toThrow();
+    const result = await query.run(
+      query.input.parse({ email: "ada@example.test", excludeConversationId: conversationId }),
+      context,
+    );
+    expect(history.mock.calls[0]?.[0]).toMatchObject({
+      mailboxId: internalMailboxId,
+      email: "ada@example.test",
+      excludeConversationId: internalConversationId,
+      limit: 5,
+    });
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    const data = ConversationBySenderDataSchema.parse(result.data.data);
+    expect(data.total).toBe(9);
+    expect(data.items[0]).toMatchObject({
+      ref: { type: "mail.conversation", id: relatedConversationId },
+      links: [{ rel: "open", href: `/app/mail/${mailboxId}?conversation=${relatedConversationId}` }],
+    });
+    expect(JSON.stringify(result)).not.toContain(internalRelatedConversationId);
   });
 
   test("returns bounded related conversations with explainable reasons, refs, and links", async () => {
@@ -3605,6 +3735,7 @@ describe("mail capabilities", () => {
       recipientsTruncated: true,
       attachmentCount: 1000,
       suggestion: false,
+      consolidatedCount: 0,
       revision: 1,
       state: "draft" as const,
       updatedAt: timestamp,

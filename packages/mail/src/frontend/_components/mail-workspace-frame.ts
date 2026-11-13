@@ -10,6 +10,7 @@ export type MailWorkspaceFrame = Pick<
   MailboxPageData,
   | "codeAttention"
   | "viewPreference"
+  | "workspacePreference"
   | "doneTodayCounts"
   | "receivingAddress"
   | "initialLiveCursor"
@@ -24,6 +25,7 @@ export type MailWorkspaceFrame = Pick<
 export const pickMailWorkspaceFrame = (data: MailboxPageData): MailWorkspaceFrame => ({
   codeAttention: data.codeAttention,
   viewPreference: data.viewPreference,
+  workspacePreference: data.workspacePreference,
   doneTodayCounts: data.doneTodayCounts,
   receivingAddress: data.receivingAddress,
   initialLiveCursor: data.initialLiveCursor,

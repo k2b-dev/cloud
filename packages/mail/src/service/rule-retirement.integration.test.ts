@@ -12,7 +12,7 @@ import { retireMailRules } from "./rule-retirement-migrate";
 
 const suite = suiteFor("database", "nats");
 const restorePreCutAdmission = async (db: typeof sql) => {
-  await db`DELETE FROM mail.schema_migrations WHERE version = 3 AND name = 'rules_retired'`;
+  await db`DELETE FROM mail.schema_migrations WHERE version = 5 AND name = 'rules_retired'`;
   await db`DROP TRIGGER mail_rules_retired_event ON workflows.event`;
   await db`DROP TRIGGER mail_rules_retired_run ON workflows.run`;
   await db`DROP TRIGGER mail_rules_retired_replay ON workflows.run`;

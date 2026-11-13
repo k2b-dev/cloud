@@ -1,6 +1,6 @@
 import type { KeyboardPlatform } from "@k2b/ui";
 import { createContext, type JSX, useContext } from "solid-js";
-import type { AppSearchLink } from "../contracts/app";
+import type { AppAppearance, AppSearchLink } from "../contracts/app";
 import type { PanelConsentSnapshot, PanelPageContext } from "../contracts/panel-context";
 import type { PrivacyTimerSeconds } from "../contracts/privacy-timer";
 import type { RailSnapshot } from "../contracts/rail-preferences";
@@ -34,6 +34,8 @@ export type ShellData = {
   theme: CloudThemePreference;
   /** The current app's accent, for the Help dialog and the phone menu, which open outside the app canvas. */
   accent?: string;
+  /** The current app's appearance: the app bar colours each app's icon for the canvas it paints. */
+  appearance?: AppAppearance;
   /** The search destinations of each app in `apps`, by app id in registry order; the search host expands them into rows. */
   searchLinks: Record<string, readonly AppSearchLink[]>;
   /** The current app, for links inside its Help. */

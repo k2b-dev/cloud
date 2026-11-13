@@ -22,6 +22,7 @@ import { applicationAiRuntime } from "./service/application-ai-runtime";
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
 import { stopDraftDocumentPruning } from "./service/draft-document-log";
 import { startDraftDocumentLogPolicy, stopDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
+import { finishReplyDraftRetirements } from "./service/draft-retirement";
 import { retireMailRuleBroker } from "./service/retired-rule-broker";
 import { stopConversationViewCountCache } from "./service/view-count-cache";
 
@@ -63,6 +64,7 @@ const result = await app.start({
     start: async () => {
       try {
         await retireMailRuleBroker();
+        await finishReplyDraftRetirements();
         await mailNotifications.start();
         await mailRuntime.start();
         await commandRuntime.start();

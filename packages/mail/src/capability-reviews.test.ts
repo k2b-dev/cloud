@@ -72,6 +72,8 @@ const silent = [
   "draft.create",
   "draft.patch",
   "draft.update",
+  "draft.intent",
+  "draft.consolidation.acknowledge",
   "draft.attachment.add",
   // FileRef import changes the same editable draft as inline attachment.add; it never sends.
   "draft.attachment.import.v1",
@@ -100,7 +102,7 @@ describe("Mail review contract", () => {
       capabilityActionPolicy(manifest, "draft.attachment.add"),
     );
   });
-  test("all 33 policies compile exactly as decided, without legacy approval declarations", () => {
+  test("all 35 policies compile exactly as decided, without legacy approval declarations", () => {
     const expected: Record<string, import("@k2b/cloud/contracts").CapabilityActionPolicy> = {
       ...Object.fromEntries(silent.map((id) => [id, { silent: "shared" }])),
       ...Object.fromEntries(Object.entries(askPolicies).map(([id, ask]) => [id, { ask }])),
@@ -108,7 +110,7 @@ describe("Mail review contract", () => {
       "conversation.reminder.cancel": { silent: "you" },
       "folder.display.set": { silent: "shared", routines: false },
     };
-    expect(Object.keys(expected)).toHaveLength(33);
+    expect(Object.keys(expected)).toHaveLength(35);
     expect(Object.keys(mailActionReviews).sort()).toEqual(Object.keys(expected).sort());
     expect(Object.keys(mailCapabilities.actions).sort()).toEqual(Object.keys(expected).sort());
     for (const [id, policy] of Object.entries(expected)) expect(capabilityActionPolicy(manifest, id)).toEqual(policy);
