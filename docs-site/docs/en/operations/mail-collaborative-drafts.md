@@ -272,3 +272,18 @@ The 200-draft result has limited latency headroom and does not establish a
 production concurrency guarantee. Measure with the operator's document sizes,
 hardware and traffic before increasing concurrent editing. The shared mailbox
 default does not increase these measured capacity limits.
+
+## Sending without a subject
+
+Mail adds `missing_subject` to its existing saved-draft safety review when the
+subject is empty or contains only whitespace, including edited replies and
+forwards. Clients must accept this warning ID and include it in the approval
+for the exact reviewed revision and fingerprint. The browser and Mail CLI
+handle it through their existing confirmation flow.
+
+Upgrade consumers together with Mail: the warning enum gains `missing_subject`
+and `safetyApproval.warningIds.maxItems` increases from 6 to 7. Closed output
+enum validators need an updated schema, and send callers must be able to
+confirm this warning. Follow the [Mail safety review migration](/en/docs/reference/deprecations-and-migrations#mail-safety-review-adds-a-missing-subject-warning)
+for the existing revision, fingerprint and warning-ID approval flow. No database
+migration or new setting is required.

@@ -50,6 +50,8 @@ const BLOCK_INSET = 12 + 56;
 const NEAR_MARGIN = "150% 0px";
 /** At most this many drawn pages stay in memory; the ones out of view are released first. */
 const KEPT_IMAGES = 24;
+/** The longest a page waits for an idle moment before its text layer is built anyway. */
+const IDLE_TEXT_MS = 200;
 
 /** The next zoom step above or below `percent`; at either end it stays there. */
 export const nextPdfZoomStep = (percent: number, direction: 1 | -1): number =>
@@ -90,8 +92,10 @@ export const commonPageWidth = (pages: readonly PdfPageSize[]): number => {
 
 /**
  * The pages behind `PdfViewer`, loaded only once a document shows. A PDF drawn by pdf.js in every browser: pages as
- * images in one scroll area, an invisible text layer over each page to select, copy, and find text, and a small pill. Only pages near the view are drawn and carry text; the others
- * keep their size, so the scroll bar is right from the start. Printing and forms stay with the browser's own viewer.
+ * images in one scroll area, an invisible text layer over each page to select, copy, and find text, and a small pill.
+ * Only pages near the view are drawn; the others keep their size, so the scroll bar is right from the start. Every page
+ * gets its text, near pages first, so the browser's find reaches the whole document. Printing and forms stay with the
+ * browser's own viewer.
  */
 export default function PdfPages(props: PdfPagesProps): JSX.Element {
   const messages = usePdfMessages();
@@ -108,6 +112,34 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
   const [current, setCurrent] = createSignal(0);
   createEffect(on(current, (index) => props.onPage?.(index)));
   const [ready, setReady] = createSignal(false);
+  // Pages with a text layer. Near pages get theirs at once; once the first page is drawn, the others follow one after
+  // another while the browser is idle, so its find reaches the whole document. A layer, once built, stays; together they
+  // hold the document's own text, which `PDF_LIMITS` bounds.
+  const [texted, setTexted] = createSignal<ReadonlySet<number>>(new Set());
+  createEffect(on(near, (pagesNear) => setTexted((previous) => new Set([...previous, ...pagesNear])), { defer: true }));
+  let idleText: (() => void) | undefined;
+  /** Adds the next page without text, unless one is already waiting; each settled layer asks for the next. */
+  const textNext = () => {
+    if (idleText || !ready() || gone) return;
+    const next = shown().find((index) => !texted().has(index));
+    if (next === undefined) return;
+    const add = () => {
+      idleText = undefined;
+      if (gone) return;
+      // Came near meanwhile: its layer is already on its way, so go on with the next page.
+      if (texted().has(next)) return textNext();
+      setTexted((previous) => new Set(previous).add(next));
+    };
+    if (typeof requestIdleCallback === "function") {
+      const handle = requestIdleCallback(add, { timeout: IDLE_TEXT_MS });
+      idleText = () => cancelIdleCallback(handle);
+    } else {
+      // Without idle callbacks (Safari), yielding one task lets input and drawing go first.
+      const handle = setTimeout(add, 0);
+      idleText = () => clearTimeout(handle);
+    }
+  };
+  createEffect(on([ready, doc], () => textNext()));
   let area: HTMLDivElement | undefined;
   let drawRun: AbortController | undefined;
   let drawTimer: ReturnType<typeof setTimeout> | undefined;
@@ -218,9 +250,11 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
             adopted = true;
             drawRun?.abort();
             const replaced = images();
+            // The new document's text starts again from the pages near the view, in the same step as its pages.
             batch(() => {
               setDoc(handle);
               setImages(drawn);
+              setTexted(new Set(near()));
             });
             shownTitle = title;
             release(replaced);
@@ -241,6 +275,7 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
   );
   onCleanup(() => {
     gone = true;
+    idleText?.();
     clearTimeout(drawTimer);
     drawRun?.abort();
     release(images());
@@ -367,7 +402,7 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
     measureArea();
     const resize = new ResizeObserver(measureArea);
     resize.observe(scroller);
-    // Pages near the view draw and carry their text; the observer follows every page box as it appears. Without an
+    // Pages near the view draw and get their text first; the observer follows every page box as it appears. Without an
     // IntersectionObserver every page counts as near, as MapView does.
     const nearPages =
       typeof IntersectionObserver === "undefined"
@@ -533,8 +568,8 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
                       />
                     )}
                   </Show>
-                  <Show when={near().has(index) && doc()} keyed>
-                    {(handle) => <PdfTextLayer document={handle} index={index} />}
+                  <Show when={texted().has(index) && doc()} keyed>
+                    {(handle) => <PdfTextLayer document={handle} index={index} onSettled={textNext} />}
                   </Show>
                 </div>
               );
@@ -579,7 +614,7 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
 }
 
 /** One page's text layer; pdf.js builds it once, and zoom changes only `--total-scale-factor` on the page. */
-function PdfTextLayer(props: { document: PdfDocumentHandle; index: number }): JSX.Element {
+function PdfTextLayer(props: { document: PdfDocumentHandle; index: number; onSettled: () => void }): JSX.Element {
   let layer: HTMLDivElement | undefined;
   onMount(() => {
     if (!layer) return;
@@ -592,8 +627,11 @@ function PdfTextLayer(props: { document: PdfDocumentHandle; index: number }): JS
         const end = document.createElement("div");
         end.className = "k2b-pdf-viewer__text-end";
         container.append(end);
+        props.onSettled();
       },
-      () => undefined,
+      () => {
+        if (!abort.signal.aborted) props.onSettled();
+      },
     );
   });
   return <div ref={layer} class="k2b-pdf-viewer__text" onPointerDown={() => layer?.setAttribute("data-selecting", "")} />;

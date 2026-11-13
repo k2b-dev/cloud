@@ -3119,7 +3119,9 @@ const composeServer = (bodies: Array<{ path: string; body: unknown }>, draftOver
       const warnings =
         draftOverrides.subject === "Attachment"
           ? [{ id: "missing_attachment", title: "Attachment may be missing", description: "No attachment is included." }]
-          : [];
+          : draftOverrides.subject === ""
+            ? [{ id: "missing_subject", title: "No subject", description: "The message has no subject. Send anyway?" }]
+            : [];
       return api({
         draftId: DRAFT_ID,
         revision: draftOverrides.revision ?? 1,
@@ -3256,6 +3258,25 @@ test("send requires explicit approval for the exact safety review", async () => 
     expectedDraftRevision: 3,
     expectedContentHash: "c".repeat(64),
     safetyApproval: { revision: 3, fingerprint: "b".repeat(64), warningIds: ["missing_attachment"] },
+  });
+});
+
+test("send without a subject shows the warning and accepts explicit safety approval", async () => {
+  const bodies: Array<{ path: string; body: unknown }> = [];
+  const server = composeServer(bodies, { subject: "", revision: 3 });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const base = ["--json", "mail", "send", DRAFT_ID, "--mailbox", MAILBOX_ID];
+  const rejected = await runCli(origin, base);
+  expect(rejected.exitCode).toBe(1);
+  expect(rejected.stderr).toContain("No subject: The message has no subject. Send anyway?");
+  expect(rejected.stderr).toContain("Pass --approve-safety");
+  expect(bodies).toHaveLength(0);
+  const approved = await runCli(origin, [...base, "--approve-safety"]);
+  expect(approved.exitCode, approved.stderr).toBe(0);
+  expect(bodies[0]!.body).toMatchObject({
+    expectedDraftRevision: 3,
+    safetyApproval: { revision: 3, fingerprint: "b".repeat(64), warningIds: ["missing_subject"] },
   });
 });
 
