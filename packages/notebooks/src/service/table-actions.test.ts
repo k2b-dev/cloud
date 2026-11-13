@@ -89,7 +89,16 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_SERVICE_TEST !== "1") {
 
   test("ordinary socket admission enforces the approved merged document limit", async () => {
     const update = Y.encodeStateAsUpdate(doc);
-    const request = { noteId, actor, update, baseCursor: null, restoreRevision: "0", originNodeId: "test", originPeerId: "peer" };
+    const request = {
+      snapshot: null,
+      noteId,
+      actor,
+      update,
+      baseCursor: null,
+      restoreRevision: "0",
+      originNodeId: "test",
+      originPeerId: "peer",
+    };
     expect(await notes.acceptYjsUpdate(request)).toEqual({ status: "recoveryRequired" });
     expect(accept).toHaveBeenCalledWith(noteId, { ...request, maxLength: 2_097_152 });
   });

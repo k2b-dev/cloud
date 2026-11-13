@@ -126,9 +126,9 @@ if (process.env.NOTEBOOKS_EDIT_BUDGET_CHILD !== "1") {
         for (let index = 1; index <= edits; index++) await edit(index);
       });
       expect(messages.filter((m) => m.type === "notes.yjs.error")).toEqual([]);
-      // Today: two snapshot reads, three access queries and a row-locked delivery per edit.
-      // The target is none (#3231, #3232): a fix lowers this number, and nothing may raise it.
-      expect({ perEdit: statements.length / edits, statements }).toEqual({ perEdit: 8, statements: expect.any(Array) });
+      // Access is checked at join. Ordinary edits and their receiving deliveries
+      // must stay free of SQL (#3231, #3232).
+      expect({ perEdit: statements.length / edits, statements }).toEqual({ perEdit: 0, statements: [] });
     } finally {
       doc.destroy();
       socket.close();

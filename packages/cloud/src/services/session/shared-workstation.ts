@@ -1,4 +1,4 @@
-import type { SQLQuery } from "bun";
+import type { SQL, SQLQuery } from "bun";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { env } from "../../config/env";
@@ -6,6 +6,7 @@ import { sql } from "../../runtime/clients";
 import { readCookie } from "../../server/request-cookies";
 import { LOGIN_MEMORY_COOKIES } from "../../shared/login-method";
 import * as settings from "../settings";
+import { readKeyState } from "../settings/store";
 
 /**
  * A browser marked as a shared workstation, such as a PC at a counter. The mark belongs to the browser, not to a
@@ -48,9 +49,15 @@ export const forgetSignInMemory = (c: Context): void => {
 };
 
 /** The administrator's idle limit in seconds. */
-export const sharedWorkstationIdleSeconds = async (): Promise<number> => {
-  const minutes = await settings.get<number>(SHARED_WORKSTATION_IDLE_SETTING);
-  if (!Number.isFinite(minutes) || minutes < 1) throw new Error(`${SHARED_WORKSTATION_IDLE_SETTING} must be a positive number`);
+export const sharedWorkstationIdleSeconds = async (tx?: SQL): Promise<number> => {
+  // Input and policy changes must agree on the same durable policy: a request
+  // started under the old policy must not overwrite the newly scheduled deadline.
+  if (tx) await tx`SELECT pg_advisory_xact_lock_shared(hashtextextended(${`settings.change:${SHARED_WORKSTATION_IDLE_SETTING}`}, 0))`;
+  const minutes = tx
+    ? (await readKeyState(SHARED_WORKSTATION_IDLE_SETTING, tx)).value
+    : await settings.get<number>(SHARED_WORKSTATION_IDLE_SETTING);
+  if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes < 1)
+    throw new Error(`${SHARED_WORKSTATION_IDLE_SETTING} must be a positive number`);
   return Math.floor(minutes * 60);
 };
 

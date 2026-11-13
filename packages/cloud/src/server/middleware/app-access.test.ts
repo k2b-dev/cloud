@@ -273,3 +273,41 @@ test("resource entry allows a probe beyond the discovery budget and distinguishe
     denied.mockRestore();
   }
 });
+
+test("event-only access watches have no initial recheck or idle timer", async () => {
+  let changed = () => {};
+  let queries = 0,
+    closed = 0,
+    released = 0;
+  const interval = spyOn(globalThis, "setInterval");
+  const stop = watchAppAccess({
+    intervalMs: false,
+    checkInitially: false,
+    check: async () => {
+      queries++;
+      return false;
+    },
+    denied: () => {
+      closed++;
+    },
+    subscribe: (callback) => {
+      changed = callback;
+      return () => {
+        released++;
+      };
+    },
+  });
+  try {
+    await Promise.resolve();
+    expect(queries).toBe(0);
+    expect(interval).not.toHaveBeenCalled();
+    changed();
+    await Bun.sleep(0);
+    expect(queries).toBe(1);
+    expect(closed).toBe(1);
+    expect(released).toBe(1);
+  } finally {
+    stop();
+    interval.mockRestore();
+  }
+});

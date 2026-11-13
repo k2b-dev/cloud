@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, jest, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import { encoding } from "@k2b/stdlib";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -490,3 +490,166 @@ for (const readyGeneration of [GENERATION, "replacement"]) {
     expect(failures).toEqual(readyGeneration === GENERATION ? [] : ["RESYNC_REQUIRED"]);
   });
 }
+
+test("a frozen document retains journal input and resends it after thaw; close is terminal", () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-12T12:00:00Z"));
+  try {
+    const fatal: string[] = [];
+    const { provider, socket, local } = fixture({ onFatal: (error) => fatal.push(error.code) });
+    socket.ready();
+    local.getText("codemirror").insert(0, "own unsent text");
+    const publication = publishes(socket)[0]!;
+    const journal = provider.pendingState();
+    socket.message({ type: "error", payload: { code: "DOCUMENT_FROZEN", message: "Frozen" } });
+    socket.onclose?.({ code: 1013, reason: "DOCUMENT_FROZEN" });
+    expect(provider.hasUnsentChanges()).toBe(true);
+    expect(provider.pendingState()).toEqual(journal);
+    expect(fatal).toEqual([]);
+    jest.advanceTimersByTime(2_000);
+    const next = Socket.instances.at(-1)!;
+    next.open();
+    next.ready();
+    expect(publishes(next)).toEqual([publication]);
+    next.sync(publication.payload.payload);
+    expect(provider.hasUnsentChanges()).toBe(false);
+    next.message({ type: "error", payload: { code: "DOCUMENT_CLOSED", message: "Closed" } });
+    expect(fatal).toEqual(["DOCUMENT_CLOSED"]);
+    jest.advanceTimersByTime(10_000);
+    expect(Socket.instances).toHaveLength(2);
+  } finally {
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});
+
+test("BUSY retries pending input on the same socket after backoff and retains the journal", () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-12T12:00:00Z"));
+  const random = spyOn(Math, "random").mockReturnValue(0.5);
+  try {
+    const { provider, socket, local } = fixture();
+    socket.ready();
+    local.getText("codemirror").insert(0, "own pending text");
+    const first = publishes(socket)[0]!;
+    const journal = provider.pendingState();
+    socket.message({ type: "error", payload: { code: "BUSY", message: "Retry" } });
+    socket.message({ type: "error", payload: { code: "BUSY", message: "Retry" } });
+    expect(provider.pendingState()).toEqual(journal);
+    expect(socket.readyState).toBe(Socket.OPEN);
+    jest.advanceTimersByTime(1_999);
+    expect(publishes(socket)).toHaveLength(1);
+    jest.advanceTimersByTime(1);
+    expect(publishes(socket)).toEqual([first, { ...first, payload: { ...first.payload, retry: true } }]);
+    expect(Socket.instances).toHaveLength(1);
+    socket.sync(first.payload.payload);
+    expect(provider.hasUnsentChanges()).toBe(false);
+    provider.dispose();
+    jest.advanceTimersByTime(10_000);
+    expect(Socket.instances).toHaveLength(1);
+  } finally {
+    random.mockRestore();
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});
+
+test("typing during BUSY remains recoverable and is included in the same-socket retry", () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-12T12:00:00Z"));
+  const random = spyOn(Math, "random").mockReturnValue(0.5);
+  try {
+    const { provider, socket, local } = fixture();
+    socket.ready();
+    local.getText("codemirror").insert(0, "first");
+    socket.message({ type: "error", payload: { code: "BUSY", message: "Retry" } });
+    local.getText("codemirror").insert(5, " and second");
+    expect(publishes(socket)).toHaveLength(1);
+    expect(provider.hasUnsentChanges()).toBe(true);
+    jest.advanceTimersByTime(2_000);
+    const retried = publishes(socket).at(-1)!;
+    const received = doc(202);
+    Y.applyUpdate(received, encoding.fromBase64(retried.payload.payload));
+    expect(received.getText("codemirror").toString()).toBe("first and second");
+    socket.sync(retried.payload.payload);
+    expect(provider.hasUnsentChanges()).toBe(false);
+    expect(Socket.instances).toHaveLength(1);
+  } finally {
+    random.mockRestore();
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});
+
+test("BUSY retries the full state after dependent edits were already published", () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-12T12:00:00Z"));
+  const random = spyOn(Math, "random").mockReturnValue(0.5);
+  try {
+    const { provider, socket, local } = fixture();
+    socket.ready();
+    local.getText("codemirror").insert(0, "first");
+    local.getText("codemirror").insert(5, " and second");
+    expect(publishes(socket)).toHaveLength(2);
+    const journal = provider.pendingState();
+    socket.message({ type: "error", payload: { code: "BUSY", message: "Retry" } });
+    socket.message({ type: "error", payload: { code: "BUSY", message: "Retry" } });
+    expect(provider.pendingState()).toEqual(journal);
+    jest.advanceTimersByTime(2_000);
+    const retry = publishes(socket).at(-1)!;
+    expect(retry.payload.retry).toBe(true);
+    expect(retry.payload.baseCursor).toBe("s6t.test.1");
+    const received = doc(202);
+    Y.applyUpdate(received, encoding.fromBase64(retry.payload.payload));
+    expect(received.getText("codemirror").toString()).toBe("first and second");
+    expect(received.store.pendingStructs).toBeNull();
+    socket.sync(retry.payload.payload);
+    expect(provider.hasUnsentChanges()).toBe(false);
+    local.getText("codemirror").insert(16, " third");
+    expect(publishes(socket).at(-1)!.payload.retry).toBeUndefined();
+    expect(Socket.instances).toHaveLength(1);
+  } finally {
+    random.mockRestore();
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});
+
+test("a hub gap retries and acknowledges pending input covered by the reconnect snapshot without SYNC_TIMEOUT", () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-13T04:00:00Z"));
+  try {
+    const errors: SharedTextProviderError[] = [];
+    const { provider, socket, local } = fixture({ onError: (error) => errors.push(error) });
+    socket.ready();
+    local.getText("codemirror").insert(0, "accepted but not echoed");
+    expect(publishes(socket)).toHaveLength(1);
+    const server = doc(202);
+    Y.applyUpdate(server, Y.encodeStateAsUpdate(local));
+    server.getText("codemirror").insert(server.getText("codemirror").length, " + remote");
+    const covered = encoding.toBase64(Y.encodeStateAsUpdate(server));
+    socket.message({ type: "error", payload: { code: "STREAM_FAILED", message: "Retry stream" } });
+    socket.close();
+    socket.onclose?.({ code: 1012, reason: "STREAM_FAILED" });
+    jest.advanceTimersByTime(2_000);
+    const reconnect = Socket.instances.at(-1)!;
+    expect(reconnect).not.toBe(socket);
+    reconnect.open();
+    reconnect.sync(covered, "s6t.test.3", true);
+    expect(publishes(reconnect)).toHaveLength(0);
+    reconnect.message({
+      type: "replayReady",
+      payload: { docId: DOC_ID, generation: GENERATION, cursor: "s6t.test.3", peerId: "own-peer" },
+    });
+    expect(publishes(reconnect)).toHaveLength(1);
+    reconnect.sync(publishes(reconnect)[0]!.payload.payload, "s6t.test.4");
+    expect(provider.hasUnsentChanges()).toBe(false);
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS * 2);
+    expect(errors.some((error) => error.code === "SYNC_TIMEOUT")).toBe(false);
+    expect(reconnect.readyState).toBe(Socket.OPEN);
+    expect(local.getText("codemirror").toString()).toBe("accepted but not echoed + remote");
+  } finally {
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});

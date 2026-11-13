@@ -217,6 +217,7 @@ export const notebooksService = {
     save: notes.save,
     isLocked: notes.isLocked,
     lock: notes.lock,
+    getRoomAccessState: notes.getRoomAccessState,
     getYjsStateWithCursor: notes.getYjsStateWithCursor,
     deliverAtRestoreRevision: notes.deliverAtRestoreRevision,
     getAnchoredYjsState: notes.getAnchoredYjsState,

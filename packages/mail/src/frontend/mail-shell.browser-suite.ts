@@ -2807,7 +2807,14 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
 
         test("sender: a click opens the card with the address, earlier conversations, and the sender's actions", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 1440, 900);
+          const contactRequested = Promise.withResolvers<void>();
+          const finishContact = Promise.withResolvers<void>();
           try {
+            await page.route("**/api/capabilities/v1/queries/contacts/contact.resolve", async (route) => {
+              contactRequested.resolve();
+              await finishContact.promise;
+              await route.continue();
+            });
             await page.route("**/api/mail/mailboxes/Box001/sender-conversations?*", (route) =>
               route.fulfill({
                 json: {
@@ -2829,7 +2836,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const card = page.getByRole("dialog", { name: "About Example sender" });
             await card.waitFor();
             await card.getByText("Invented earlier request").waitFor();
+            await contactRequested.promise;
+            // History and contact details load independently. Complete history
+            // first to guard against using it as proof that contact rows exist.
+            finishContact.resolve();
             // The fixture has no contact app behind the directory: the card says so, keeps the address, and offers Retry.
+            await card.getByText("The contact could not be loaded").waitFor();
             expect(await card.getByText("sender@example.test").isVisible()).toBe(true);
             expect(await card.getByText("The contact could not be loaded").isVisible()).toBe(true);
             expect(await card.getByRole("button", { name: "Retry" }).isVisible()).toBe(true);
@@ -2839,6 +2851,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await card.waitFor({ state: "hidden" });
             expect(await trigger.evaluate((element) => element === document.activeElement)).toBe(true);
           } finally {
+            finishContact.resolve();
             await close(page);
           }
         });

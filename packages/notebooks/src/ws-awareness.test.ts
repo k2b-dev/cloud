@@ -5,6 +5,7 @@ import type { Context } from "hono";
 import { WSContext, type WSEvents } from "hono/ws";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { createWsInvalidations } from "../test/ws-invalidations";
 import { notebooksYjs } from "./lib/yjs";
 
 // Isolate module mocks from the real service suites, as in ws-lineage.test.ts.
@@ -19,6 +20,7 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
     expect({ code, output: code === 0 ? "passed" : `${stdout}\n${stderr}` }).toEqual({ code: 0, output: "passed" });
   }, 15_000);
 } else {
+  const invalidations = createWsInvalidations();
   let events: WSEvents | undefined;
   let sequence = 0;
   let permission = "write";
@@ -34,6 +36,7 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
     if (!config.signal?.aborted)
       await new Promise<void>((resolve) => config.signal?.addEventListener("abort", () => resolve(), { once: true }));
   };
+  mock.module("@k2b/cloud/events", () => ({ subscribeIdentityAccessChanged: () => () => {} }));
   mock.module("@k2b/cloud/server", () => ({
     guardAppAccessSocket: async (_c: Context, _appId: string, events: WSEvents) => events,
     getLocale: () => "en",
@@ -61,11 +64,15 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       note: {
         getByShortId: async () => note,
         get: async () => note,
+        getRoomAccessState: async () => ({ ...note, restoreRevision: "0" }),
         getAnchoredYjsState: async () => ({ yjsState: null, streamCursor: null, restoreRevision: "0", contentMd: null }),
         getYjsStateWithCursor: async () => ({ restoreRevision: "0" }),
         acceptYjsUpdate: async (input: { update: Uint8Array; validate: () => Promise<boolean> }) => {
           if (!(await input.validate())) return { status: "recoveryRequired" };
-          processed.push(`sync:${new TextDecoder().decode(input.update)}`);
+          const doc = new Y.Doc();
+          Y.applyUpdate(doc, input.update);
+          processed.push(`sync:${doc.getText("codemirror").toString()}`);
+          doc.destroy();
           return { status: "accepted", cursor: `s6t.fixture.${++sequence}` };
         },
         deliverAtRestoreRevision: async (input: { deliver: () => void }) => {
@@ -81,63 +88,79 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
           },
         },
       },
-      workspaceEvents: { live: waitUntilAborted },
+      workspaceEvents: { live: invalidations.live, latestCursor: async () => "s6t.events.0" },
       presence: { snapshot: async () => ({ participants: [] }), watch: waitUntilAborted, join: async () => {}, leave: async () => {} },
     },
   }));
   mock.module("./service/yjs-snapshot-worker", () => ({ yjsSnapshotWorker: { queueSnapshotSave: async () => {} } }));
-  mock.module("./service/yjs-sync", () => ({
-    NODE_ID: "fixture",
-    toBase64: encoding.toBase64,
-    isStorageExhausted: () => false,
-    isValidYjsUpdate: () => true,
-    maxStreamCursor: (_old: string | null, next: string) => next,
-    createYjsTopic: () => ({
+  mock.module("./service/yjs-sync", () => {
+    const topic = () => ({
       latestCursor: async () => null,
       cursorAt: () => "s6t.fixture.0",
       hub: () => ({ subscribe: waitUntilAborted, close() {} }),
       replay: async function* () {},
-    }),
-    createYjsAwarenessTopic: () => ({
-      live: async function* (config: { signal: AbortSignal }) {
-        const pending: Array<{ payload: string; originPeerId: string }> = [];
-        let wake = () => {};
-        const listener = (data: { payload: string; originPeerId: string }) => {
-          pending.push(data);
-          wake();
-        };
-        listeners.add(listener);
-        config.signal.addEventListener("abort", () => wake(), { once: true });
-        try {
-          while (!config.signal.aborted) {
-            if (!pending.length)
-              await new Promise<void>((resolve) => {
-                wake = resolve;
-              });
-            while (pending.length) yield { data: pending.shift()!, tenantId: "note" };
+    });
+    return {
+      notebooksTextLog: {
+        topic,
+        withStore: () => ({
+          accept: async (
+            docId: string,
+            input: Omit<Parameters<typeof import("./service")["notebooksService"]["note"]["acceptYjsUpdate"]>[0], "noteId">,
+          ) => {
+            const { notebooksService } = await import("./service");
+            return notebooksService.note.acceptYjsUpdate({ ...input, noteId: docId });
+          },
+        }),
+      },
+      NODE_ID: "fixture",
+      toBase64: encoding.toBase64,
+      isStorageExhausted: () => false,
+      isValidYjsUpdate: () => true,
+      maxStreamCursor: (_old: string | null, next: string) => next,
+      createYjsTopic: topic,
+      createYjsAwarenessTopic: () => ({
+        live: async function* (config: { signal: AbortSignal }) {
+          const pending: Array<{ payload: string; originPeerId: string }> = [];
+          let wake = () => {};
+          const listener = (data: { payload: string; originPeerId: string }) => {
+            pending.push(data);
+            wake();
+          };
+          listeners.add(listener);
+          config.signal.addEventListener("abort", () => wake(), { once: true });
+          try {
+            while (!config.signal.aborted) {
+              if (!pending.length)
+                await new Promise<void>((resolve) => {
+                  wake = resolve;
+                });
+              while (pending.length) yield { data: pending.shift()!, tenantId: "note" };
+            }
+          } finally {
+            listeners.delete(listener);
           }
-        } finally {
-          listeners.delete(listener);
-        }
-      },
-      publish: async (input: { data: { payload: string; originPeerId: string } }) => {
-        if (reservationFailure) throw reservationFailure;
-        published.push(input.data);
-        if (input.data.payload !== "AA==") {
-          const doc = new Y.Doc();
-          const state = new Awareness(doc);
-          state.setLocalState(null);
-          applyAwarenessUpdate(state, encoding.fromBase64(input.data.payload), "remote");
-          const cursor = [...state.getStates().values()][0]?.cursor as { anchor?: { item?: { clock?: number } } } | undefined;
-          processed.push(`cursor:${cursor?.anchor?.item?.clock ?? "none"}`);
-          state.destroy();
-          doc.destroy();
-        }
-        for (const listener of listeners) listener(input.data);
-        return { streamSequence: ++sequence, cursor: `s6t.fixture.${sequence}` };
-      },
-    }),
-  }));
+        },
+        publish: async (input: { data: { payload: string; originPeerId: string } }) => {
+          if (accessDelayMs) await Bun.sleep(accessDelayMs);
+          if (reservationFailure) throw reservationFailure;
+          published.push(input.data);
+          if (input.data.payload !== "AA==") {
+            const doc = new Y.Doc();
+            const state = new Awareness(doc);
+            state.setLocalState(null);
+            applyAwarenessUpdate(state, encoding.fromBase64(input.data.payload), "remote");
+            const cursor = [...state.getStates().values()][0]?.cursor as { anchor?: { item?: { clock?: number } } } | undefined;
+            processed.push(`cursor:${cursor?.anchor?.item?.clock ?? "none"}`);
+            state.destroy();
+            doc.destroy();
+          }
+          for (const listener of listeners) listener(input.data);
+          return { streamSequence: ++sequence, cursor: `s6t.fixture.${sequence}` };
+        },
+      }),
+    };
+  });
   const { default: app } = await import("./ws");
   type Wire = { type: string; payload: { peerId?: string; code?: string; updates?: Array<{ payload: string; originPeerId: string }> } };
   const waitFor = async (predicate: () => boolean) => {
@@ -172,12 +195,13 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       sent,
       closed,
       publish: (payload: string) => message(notebooksYjs.wsType.awarenessPublish, { payload }),
-      edit: (text: string) =>
-        message(notebooksYjs.wsType.syncPublish, {
-          payload: encoding.toBase64(new TextEncoder().encode(text)),
-          restoreRevision: "0",
-          baseCursor: null,
-        }),
+      edit: (text: string) => {
+        const doc = new Y.Doc();
+        doc.getText("codemirror").insert(0, text);
+        const payload = encoding.toBase64(Y.encodeStateAsUpdate(doc));
+        doc.destroy();
+        return message(notebooksYjs.wsType.syncPublish, { payload, restoreRevision: "0", baseCursor: null });
+      },
       close: async () => handlers.onClose?.(new CloseEvent("close"), socket),
     };
   };
@@ -256,6 +280,8 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       applyPublished();
       expect([...observer.getStates().keys()]).toEqual([2 ** 32 + 8]);
       permission = "none";
+      invalidations.emit();
+      await waitFor(() => reconnect.closed.length > 0);
       await reconnect.publish(payload({}));
       await waitFor(() => reconnect.closed.length > 0);
       expect(reconnect.sent.some((entry) => entry.payload.code === "ACCESS_REVOKED")).toBe(true);
@@ -294,6 +320,8 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       expect(published.slice(initialPublications).map((entry) => entry.payload)).toEqual(["AA=="]);
       const before = published.length;
       authenticated = false;
+      invalidations.emit();
+      await waitFor(() => socket.closed.length > 0);
       await socket.publish(payload({}));
       await waitFor(() => socket.closed.length > 0);
       expect(published).toHaveLength(before);
@@ -303,7 +331,7 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       await socket.close();
     }
   });
-  test("a cursor flood with a slow access check keeps the connection, and edits arrive in order", async () => {
+  test("a cursor flood with slow broker publication keeps the connection, and edits arrive in order", async () => {
     const socket = await open();
     try {
       accessDelayMs = 3;

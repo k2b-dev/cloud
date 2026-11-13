@@ -457,6 +457,7 @@ export const lockDraftDocumentInTransaction = async (
     let invalid: string | null = null;
     const admitted = await bound
       .accept(draftId, {
+        snapshot: await store.load(draftId, { signal: input.signal ?? params.signal }),
         actor: documentActor,
         update: input.update,
         baseCursor: input.baseCursor,

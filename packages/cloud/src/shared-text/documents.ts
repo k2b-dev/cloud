@@ -1,8 +1,11 @@
-import type { Topic } from "@k2b/sync";
+import { ConflictError, RetentionGapError, type Topic } from "@k2b/sync";
 import * as Y from "yjs";
+import type { SharedTextAdmission } from "./admission";
+import { checkSharedTextBoundary, SharedTextBoundaryError } from "./boundary";
 import { validateChanges } from "./changes";
 import { compareStreamCursor, maxStreamCursor } from "./cursor";
-import { SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
+import { createSharedTextEventCache } from "./event-cache";
+import { applySharedTextEvent, SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
 import {
   createStructuralIngressValidation,
   planStructuralInverse,
@@ -28,6 +31,9 @@ import type {
 type PlannedEdit = string | readonly SharedTextChange[] | { update: Uint8Array };
 
 type DocumentLog = {
+  checkLifecycle?(docId: string): Promise<() => Promise<void>>;
+  /** Ordered custom transports may supply their own admission owner. */
+  admit?: SharedTextAdmission;
   /** Omitted logs use Sync’s default message payload limit (128 KiB) for diffs and skip the event size check. */
   maxPayloadBytes?: number;
   events?(
@@ -72,10 +78,45 @@ export const createDoc = (stored: SharedTextStoredState): Y.Doc => {
 };
 
 export const bindDocuments = <Saved, Context>(
-  { topic, replay, events, maxPayloadBytes }: DocumentLog,
+  {
+    topic,
+    replay,
+    events,
+    maxPayloadBytes,
+    checkLifecycle,
+    admit = async (_id, signal, run) => run(signal ?? new AbortController().signal),
+  }: DocumentLog,
   store: SharedTextStore<Saved, Context>,
 ) => {
-  const write = async (
+  const historyCache = events ? createSharedTextEventCache(events, maxPayloadBytes ?? 128 * 1024) : undefined;
+  let acceptedBase: { docId: string; snapshot: SharedTextStoredState } | undefined;
+  let cachedTail: { docId: string; cursor: string; event: SharedTextSyncEvent } | undefined;
+  const boundary = async (
+    docId: string,
+    target: string | null,
+    revision: string,
+    signal?: AbortSignal,
+    observed?: { cursor: string; data: SharedTextSyncEvent },
+  ) => {
+    const confirm = await checkLifecycle?.(docId);
+    if (!target || !events) return confirm;
+    // Caches are hints: another document may replace them across an await/yield.
+    // Keep this operation's chosen head local until validation has completed.
+    let tail =
+      observed?.cursor === target
+        ? observed.data
+        : cachedTail?.docId === docId && cachedTail.cursor === target
+          ? cachedTail.event
+          : undefined;
+    if (!tail) {
+      for await (const entry of historyCache!.events(docId, target, target, signal)) if (entry.cursor === target) tail = entry.data;
+      if (!tail) throw new Error("Document admission head is unavailable");
+    }
+    cachedTail = { docId, cursor: target, event: tail };
+    checkSharedTextBoundary(tail, revision);
+    return confirm;
+  };
+  const writeUnowned = async (
     docId: string,
     options: {
       actor: SharedTextActor | null;
@@ -97,6 +138,10 @@ export const bindDocuments = <Saved, Context>(
   ): Promise<SharedTextEditResult<Saved>> => {
     if (maxLength !== undefined && (!Number.isSafeInteger(maxLength) || maxLength < 0))
       throw new RangeError("maxLength must be a nonnegative safe integer");
+    options = {
+      ...options,
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
+    };
     const requestedAt = Date.now();
     const stored = await store.load(docId, { signal: options.signal });
     if (!stored) return { status: "notFound" };
@@ -105,7 +150,9 @@ export const bindDocuments = <Saved, Context>(
     const doc = createDoc(stored);
     try {
       let contributors: SharedTextContributor[] = [];
+      let confirm: (() => Promise<void>) | undefined;
       try {
+        confirm = await boundary(docId, target, stored.restoreRevision, options.signal);
         if (target)
           contributors = await replay({
             docId,
@@ -187,11 +234,26 @@ export const bindDocuments = <Saved, Context>(
         throw new RangeError("The structural receipt exceeds the document log payload budget");
       await options.validate?.();
       options.signal?.throwIfAborted();
-      const published = await handle.publish({
-        tenantId: docId,
-        ...(maxLength !== undefined ? { expectedAfter: target } : {}),
-        data: event,
-      });
+      let publishAfter = target;
+      const publish = async (attempt = 1): Promise<Awaited<ReturnType<typeof handle.publish>>> => {
+        try {
+          return await handle.publish({ tenantId: docId, expectedAfter: publishAfter, data: event });
+        } catch (error) {
+          if (!(error instanceof ConflictError) || maxLength !== undefined || attempt >= 3) throw error;
+          // Ordinary Yjs edits commute with concurrent input. Keep their item
+          // identities, but recheck lifecycle/restore authority at the new head.
+          const latest = await handle.latestCursor({ tenantId: docId });
+          confirm = await boundary(docId, latest, stored.restoreRevision, options.signal);
+          if (latest === publishAfter) throw error;
+          publishAfter = latest;
+          options.signal?.throwIfAborted();
+          await new Promise<void>((resolve) => setTimeout(resolve, 25 * 2 ** (attempt - 1)));
+          options.signal?.throwIfAborted();
+          return publish(attempt + 1);
+        }
+      };
+      const published = await publish();
+      await confirm?.();
       let persistedDoc: Y.Doc | undefined;
       try {
         persistedDoc = createDoc(stored);
@@ -229,6 +291,8 @@ export const bindDocuments = <Saved, Context>(
       doc.destroy();
     }
   };
+  const write: typeof writeUnowned = (docId, options, update, maxLength) =>
+    admit(docId, options.signal, (signal) => writeUnowned(docId, { ...options, signal }, update, maxLength));
   return {
     /** A retained cursor is authority only after document, actor and lineage checks. */
     async inverse(
@@ -299,6 +363,8 @@ export const bindDocuments = <Saved, Context>(
     async accept(
       docId: string,
       options: {
+        /** Authorized join/resync state, or a lazy in-memory base read after admission; never a store load. */
+        snapshot: SharedTextStoredState | null | (() => SharedTextStoredState | null);
         actor: SharedTextActor;
         update: Uint8Array;
         baseCursor: string | null;
@@ -311,89 +377,98 @@ export const bindDocuments = <Saved, Context>(
         maxLength?: number;
         /** Validate application-owned fields in the fully merged encoded state. */
         validateState?: (state: Uint8Array) => boolean | Promise<boolean>;
+        /** Advance a transport-owned accepted base without waiting for live fan-out. */
+        applied?: (snapshot: SharedTextStoredState, previousCursor: string | null) => void;
+        /** Server-observed broker head; a newer head still requires an exact retained lookup. */
+        observedHead?: { cursor: string; data: SharedTextSyncEvent };
       },
-    ): Promise<{ status: "accepted"; cursor: string } | { status: "recoveryRequired" | "notFound" }> {
-      if (options.maxLength !== undefined && (!Number.isSafeInteger(options.maxLength) || options.maxLength < 0))
-        throw new RangeError("maxLength must be a nonnegative safe integer");
-      Y.decodeUpdate(options.update);
-      if (!events) throw new Error("This document log cannot validate ingress");
-      const stored = await store.load(docId, { signal: options.signal });
-      if (!stored) return { status: "notFound" };
-      if (stored.restoreRevision !== options.restoreRevision) return { status: "recoveryRequired" };
-      const handle = topic();
-      const target = await handle.latestCursor({ tenantId: docId });
-      // Idle notes use a shared-topic watermark, which may be ahead of their
-      // own last retained event (or have no retained event at all). CAS still
-      // targets the tenant head; browser coverage belongs to the snapshot too.
-      const covered = maxStreamCursor(stored.cursor, target);
-      if (options.baseCursor) {
-        try {
-          if (!covered || compareStreamCursor(options.baseCursor, covered) > 0) return { status: "recoveryRequired" };
-        } catch {
-          return { status: "recoveryRequired" };
-        }
-      }
-      if (!target && stored.cursor !== options.baseCursor) return { status: "recoveryRequired" };
-      const doc = createDoc(stored);
-      try {
-        if (target)
-          await replay({
-            docId,
-            after: stored.cursor,
-            until: target,
-            doc,
-            restoreRevision: stored.restoreRevision,
-            signal: options.signal,
-          });
-        const validation = createStructuralIngressValidation(doc, options.update);
-        try {
-          if (target && (!options.baseCursor || compareStreamCursor(options.baseCursor, target) < 0)) {
-            try {
-              for await (const event of events(docId, options.baseCursor, target, options.signal)) {
-                options.signal?.throwIfAborted();
-                if (event.data.restoreRevision !== undefined && event.data.restoreRevision !== options.restoreRevision) continue;
-                // An unreferenced send marker has no domain or text effect.
-                // It must not make an otherwise valid pending edit unrecoverable.
-                if (event.data.kind === "freeze") continue;
-                // Old/unclassified retained events cannot prove that an edit's
-                // original table/row targets survived. Do not guess at ingress.
-                const history = event.data.history;
-                if (!history) return { status: "recoveryRequired" };
-                let inverseSource: SharedTextStructuralHistory | undefined;
-                if (history.inverseOf && history.patches.some((patch) => patch.inserted.length > 0)) {
-                  // A pure removal can be recreated by a LATER inverse receipt.
-                  // Its old IDs must not be acknowledged as a removal of the
-                  // new target. Exact retained lookup keeps this proof bounded.
-                  for await (const original of events(docId, history.inverseOf, history.inverseOf, options.signal)) {
-                    if (original.data.restoreRevision === options.restoreRevision) inverseSource = original.data.history;
-                  }
-                }
-                if (!validation.check(history, inverseSource)) return { status: "recoveryRequired" };
-              }
-            } catch {
-              options.signal?.throwIfAborted();
-              return { status: "recoveryRequired" };
-            }
+    ): Promise<
+      { status: "accepted"; cursor: string } | { status: "recoveryRequired" | "notFound" | "frozen" | "closed"; reason?: "dependencies" }
+    > {
+      return admit(docId, options.signal, async (signal) => {
+        options = { ...options, signal };
+        if (options.maxLength !== undefined && (!Number.isSafeInteger(options.maxLength) || options.maxLength < 0))
+          throw new RangeError("maxLength must be a nonnegative safe integer");
+        Y.decodeUpdate(options.update);
+        if (!events) throw new Error("This document log cannot validate ingress");
+        const joined = typeof options.snapshot === "function" ? options.snapshot() : options.snapshot;
+        if (!joined) return { status: "notFound" };
+        const cached = acceptedBase?.docId === docId ? acceptedBase.snapshot : undefined;
+        const stored =
+          cached &&
+          cached.restoreRevision === joined.restoreRevision &&
+          cached.cursor &&
+          (!joined.cursor || compareStreamCursor(cached.cursor, joined.cursor) >= 0)
+            ? cached
+            : joined;
+        if (stored.restoreRevision !== options.restoreRevision) return { status: "recoveryRequired" };
+        const handle = topic();
+        const target = await handle.latestCursor({ tenantId: docId });
+        // Idle notes use a shared-topic watermark, which may be ahead of their
+        // own last retained event (or have no retained event at all). CAS still
+        // targets the tenant head; browser coverage belongs to the snapshot too.
+        const covered = maxStreamCursor(stored.cursor, target);
+        if (options.baseCursor) {
+          try {
+            if (!covered || compareStreamCursor(options.baseCursor, covered) > 0) return { status: "recoveryRequired" };
+          } catch {
+            return { status: "recoveryRequired" };
           }
-        } finally {
-          validation.dispose();
         }
-        // A retained echo confirms input, not a promise that missing causal
-        // predecessors might arrive later. Never strand confirmed bytes behind
-        // a predecessor which was rejected for requiring recovery.
-        const finishHistory = prepareIngressHistory(doc.getText(SHARED_TEXT_NAME));
-        Y.applyUpdate(doc, options.update, "ingress-probe");
-        if (doc.store.pendingStructs || doc.store.pendingDs) return { status: "recoveryRequired" };
-        if (options.maxLength !== undefined && doc.getText(SHARED_TEXT_NAME).length > options.maxLength)
-          return { status: "recoveryRequired" };
-        if (options.validateState && !(await options.validateState(Y.encodeStateAsUpdate(doc)))) return { status: "recoveryRequired" };
-        options.signal?.throwIfAborted();
-        if (options.validate && !(await options.validate())) return { status: "recoveryRequired" };
-        options.signal?.throwIfAborted();
-        const published = await handle.publish({
-          tenantId: docId,
-          expectedAfter: target,
-          data: {
+        if (!target && stored.cursor !== options.baseCursor) return { status: "recoveryRequired" };
+        const doc = createDoc(stored);
+        try {
+          const confirm = await boundary(docId, target, stored.restoreRevision, options.signal, options.observedHead);
+          if (target && (!stored.cursor || compareStreamCursor(stored.cursor, target) < 0))
+            for await (const event of historyCache!.events(docId, stored.cursor, target, options.signal))
+              applySharedTextEvent(doc, event, docId, stored.restoreRevision);
+          const validation = createStructuralIngressValidation(doc, options.update);
+          try {
+            if (target && (!options.baseCursor || compareStreamCursor(options.baseCursor, target) < 0)) {
+              try {
+                for await (const event of historyCache!.events(docId, options.baseCursor, target, options.signal)) {
+                  options.signal?.throwIfAborted();
+                  if (event.data.restoreRevision !== undefined && event.data.restoreRevision !== options.restoreRevision) continue;
+                  // An unreferenced send marker has no domain or text effect.
+                  // It must not make an otherwise valid pending edit unrecoverable.
+                  if (event.data.kind === "freeze") continue;
+                  // Old/unclassified retained events cannot prove that an edit's
+                  // original table/row targets survived. Do not guess at ingress.
+                  const history = event.data.history;
+                  if (!history) return { status: "recoveryRequired" };
+                  let inverseSource: SharedTextStructuralHistory | undefined;
+                  if (history.inverseOf && history.patches.some((patch) => patch.inserted.length > 0)) {
+                    // A pure removal can be recreated by a LATER inverse receipt.
+                    // Its old IDs must not be acknowledged as a removal of the
+                    // new target. Exact retained lookup keeps this proof bounded.
+                    for await (const original of historyCache!.events(docId, history.inverseOf, history.inverseOf, options.signal)) {
+                      if (original.data.restoreRevision === options.restoreRevision) inverseSource = original.data.history;
+                    }
+                  }
+                  if (!validation.check(history, inverseSource)) return { status: "recoveryRequired" };
+                }
+              } catch {
+                options.signal?.throwIfAborted();
+                return { status: "recoveryRequired" };
+              }
+            }
+          } finally {
+            validation.dispose();
+          }
+          // A retained echo confirms input, not a promise that missing causal
+          // predecessors might arrive later. Never strand confirmed bytes behind
+          // a predecessor which was rejected for requiring recovery.
+          const finishHistory = prepareIngressHistory(doc.getText(SHARED_TEXT_NAME));
+          Y.applyUpdate(doc, options.update, "ingress-probe");
+          if (doc.store.pendingStructs || doc.store.pendingDs) return { status: "recoveryRequired", reason: "dependencies" };
+          if (options.maxLength !== undefined && doc.getText(SHARED_TEXT_NAME).length > options.maxLength)
+            return { status: "recoveryRequired" };
+          const encoded = options.validateState ? Y.encodeStateAsUpdate(doc) : undefined;
+          if (encoded && options.validateState && !(await options.validateState(encoded))) return { status: "recoveryRequired" };
+          options.signal?.throwIfAborted();
+          if (options.validate && !(await options.validate())) return { status: "recoveryRequired" };
+          options.signal?.throwIfAborted();
+          const event: SharedTextSyncEvent = {
             kind: "sync",
             payload: toBase64(options.update),
             history: finishHistory(),
@@ -401,12 +476,37 @@ export const bindDocuments = <Saved, Context>(
             restoreRevision: options.restoreRevision,
             originNodeId: options.originNodeId,
             originPeerId: options.originPeerId,
-          },
-        });
-        return { status: "accepted", cursor: published.cursor };
-      } finally {
-        doc.destroy();
-      }
+          };
+          const published = await handle.publish({ tenantId: docId, expectedAfter: target, data: event });
+          await confirm?.();
+          historyCache!.remember(docId, target, { cursor: published.cursor, data: event });
+          const snapshot = {
+            state: encoded ?? Y.encodeStateAsUpdate(doc),
+            text: doc.getText(SHARED_TEXT_NAME).toString(),
+            cursor: published.cursor,
+            restoreRevision: stored.restoreRevision,
+          };
+          acceptedBase = { docId, snapshot };
+          options.applied?.(snapshot, target);
+          return { status: "accepted", cursor: published.cursor };
+        } catch (error) {
+          if (error instanceof ConflictError) {
+            try {
+              await boundary(docId, await handle.latestCursor({ tenantId: docId }), stored.restoreRevision, options.signal);
+            } catch (boundaryError) {
+              error = boundaryError;
+            }
+          }
+          if (error instanceof SharedTextBoundaryError)
+            return {
+              status: error.code === "DOCUMENT_FROZEN" ? "frozen" : error.code === "DOCUMENT_CLOSED" ? "closed" : "recoveryRequired",
+            };
+          if (error instanceof RetentionGapError) return { status: "recoveryRequired" };
+          throw error;
+        } finally {
+          doc.destroy();
+        }
+      });
     },
     /**
      * Capture an exact ordered boundary. The application commits this cursor,
@@ -422,44 +522,54 @@ export const bindDocuments = <Saved, Context>(
         validate: (state: Uint8Array) => Promise<void>;
       },
     ): Promise<{ state: Uint8Array; text: string; cursor: string; restoreRevision: string } | null> {
-      options.signal?.throwIfAborted();
-      const stored = await store.load(docId, { signal: options.signal });
-      if (!stored) return null;
-      if (stored.restoreRevision !== options.restoreRevision) throw new Error("Document generation changed before freeze");
-      const handle = topic();
-      const target = await handle.latestCursor({ tenantId: docId });
-      const doc = createDoc(stored);
-      try {
-        if (target)
-          await replay({
-            docId,
-            after: stored.cursor,
-            until: target,
-            doc,
-            restoreRevision: stored.restoreRevision,
-            signal: options.signal,
-          });
-        if (doc.store.pendingStructs || doc.store.pendingDs) throw new Error("Document has unresolved dependencies before freeze");
-        const state = Y.encodeStateAsUpdate(doc);
-        // Give validation a copy: it cannot alter the state returned for sending.
-        await options.validate(state.slice());
+      return admit(docId, options.signal, async (signal) => {
+        options = { ...options, signal };
         options.signal?.throwIfAborted();
-        const published = await handle.publish({
-          tenantId: docId,
-          expectedAfter: target,
-          data: {
-            kind: "freeze",
-            payload: "",
+        const stored = await store.load(docId, { signal: options.signal });
+        if (!stored) return null;
+        if (stored.restoreRevision !== options.restoreRevision) throw new Error("Document generation changed before freeze");
+        const handle = topic();
+        const target = await handle.latestCursor({ tenantId: docId });
+        const doc = createDoc(stored);
+        try {
+          const confirm = await boundary(docId, target, stored.restoreRevision, options.signal);
+          if (target)
+            await replay({
+              docId,
+              after: stored.cursor,
+              until: target,
+              doc,
+              restoreRevision: stored.restoreRevision,
+              signal: options.signal,
+            });
+          if (doc.store.pendingStructs || doc.store.pendingDs) throw new Error("Document has unresolved dependencies before freeze");
+          const state = Y.encodeStateAsUpdate(doc);
+          // Give validation a copy: it cannot alter the state returned for sending.
+          await options.validate(state.slice());
+          options.signal?.throwIfAborted();
+          const published = await handle.publish({
+            tenantId: docId,
+            expectedAfter: target,
+            data: {
+              kind: "freeze",
+              payload: "",
+              restoreRevision: stored.restoreRevision,
+              actor: options.actor,
+              originNodeId: sharedTextNodeId,
+              originPeerId: null,
+            },
+          });
+          await confirm?.();
+          return {
+            state,
+            text: doc.getText(SHARED_TEXT_NAME).toString(),
+            cursor: published.cursor,
             restoreRevision: stored.restoreRevision,
-            actor: options.actor,
-            originNodeId: sharedTextNodeId,
-            originPeerId: null,
-          },
-        });
-        return { state, text: doc.getText(SHARED_TEXT_NAME).toString(), cursor: published.cursor, restoreRevision: stored.restoreRevision };
-      } finally {
-        doc.destroy();
-      }
+          };
+        } finally {
+          doc.destroy();
+        }
+      });
     },
     async read(docId: string, options: { signal?: AbortSignal } = {}): Promise<SharedTextSnapshot | null> {
       const stored = await store.load(docId, options);

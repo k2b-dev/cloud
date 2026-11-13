@@ -698,6 +698,7 @@ class ScheduleCase {
       if ((replica !== undefined && packet.replica !== replica) || !this.online[packet.replica]) continue;
       const beforeEvents = this.events.length;
       const admitted = await this.documents.accept(DOC, {
+        snapshot: this.stored,
         actor: { kind: "user", id: `replica-${packet.replica}` },
         update: packet.update,
         baseCursor: packet.baseCursor,
