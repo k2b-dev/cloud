@@ -90,7 +90,7 @@ export const bindDocuments = <Saved, Context>(
 ) => {
   const historyCache = events ? createSharedTextEventCache(events, maxPayloadBytes ?? 128 * 1024) : undefined;
   let acceptedBase: { docId: string; snapshot: SharedTextStoredState } | undefined;
-  let cachedTail: { cursor: string; event: SharedTextSyncEvent } | undefined;
+  let cachedTail: { docId: string; cursor: string; event: SharedTextSyncEvent } | undefined;
   const boundary = async (
     docId: string,
     target: string | null,
@@ -100,13 +100,20 @@ export const bindDocuments = <Saved, Context>(
   ) => {
     const confirm = await checkLifecycle?.(docId);
     if (!target || !events) return confirm;
-    if (observed?.cursor === target) cachedTail = { cursor: target, event: observed.data };
-    if (cachedTail?.cursor !== target) {
-      for await (const entry of historyCache!.events(docId, target, target, signal))
-        cachedTail = { cursor: entry.cursor, event: entry.data };
-      if (cachedTail?.cursor !== target) throw new Error("Document admission head is unavailable");
+    // Caches are hints: another document may replace them across an await/yield.
+    // Keep this operation's chosen head local until validation has completed.
+    let tail =
+      observed?.cursor === target
+        ? observed.data
+        : cachedTail?.docId === docId && cachedTail.cursor === target
+          ? cachedTail.event
+          : undefined;
+    if (!tail) {
+      for await (const entry of historyCache!.events(docId, target, target, signal)) if (entry.cursor === target) tail = entry.data;
+      if (!tail) throw new Error("Document admission head is unavailable");
     }
-    checkSharedTextBoundary(cachedTail.event, revision);
+    cachedTail = { docId, cursor: target, event: tail };
+    checkSharedTextBoundary(tail, revision);
     return confirm;
   };
   const writeUnowned = async (
