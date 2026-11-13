@@ -747,9 +747,12 @@ for (const abandoned of [false, true])
     30_000,
   );
 
-testFor("database", "nats")(
-  "a publish finishing after admission timeout cannot replace another document's base with the same generation",
-  async () => {
+testFor("database", "nats").each([
+  ["a publish finishing after admission timeout confirms its unchanged room owner", false],
+  ["a publish finishing after admission timeout cannot replace another document's base with the same generation", true],
+] as const)(
+  "%s",
+  async (_name, switchDocument) => {
     setSystemTime(NOW);
     const connection = await connectTestNats();
     const namespace = testSyncNamespace("text-late-publish-owner");
@@ -757,7 +760,9 @@ testFor("database", "nats")(
     const publishing = Promise.withResolvers<void>();
     const resume = Promise.withResolvers<void>();
     const finished = Promise.withResolvers<void>();
+    const deadline = Promise.withResolvers<void>();
     let operationA: Promise<unknown> | undefined;
+    let stalled = false;
     const measured: Sync = {
       ...sync,
       mutex(config) {
@@ -767,16 +772,19 @@ testFor("database", "nats")(
           async withLock(input, run) {
             const operation = mutex.withLock(input, run);
             if (!config.id.endsWith(":admission") || input.resource !== "A") return operation;
-            // Retain the real lock/publication, but detach the waiting caller
-            // when its real admission deadline expires, as in the stalled-owner harness.
+            // Keep the unchanged owner on the real mutex. The switch case
+            // models an abandoned waiting caller while its lock/publication continues.
             operationA = operation;
             const signal = input.signal!;
             const abandoned = Promise.withResolvers<never>();
-            const abort = () => abandoned.reject(signal.reason);
+            const abort = () => {
+              deadline.resolve();
+              if (switchDocument) abandoned.reject(signal.reason);
+            };
             signal.addEventListener("abort", abort, { once: true });
             void operation.finally(() => finished.resolve()).catch(() => {});
             try {
-              return await Promise.race([operation, abandoned.promise]);
+              return switchDocument ? await Promise.race([operation, abandoned.promise]) : await operation;
             } finally {
               signal.removeEventListener("abort", abort);
             }
@@ -789,12 +797,14 @@ testFor("database", "nats")(
           ...topic,
           async publish(input: Parameters<typeof topic.publish>[0]) {
             if (
+              !stalled &&
               input.tenantId === "A" &&
               input.data &&
               typeof input.data === "object" &&
               "kind" in input.data &&
               input.data.kind === "sync"
             ) {
+              stalled = true;
               publishing.resolve();
               await resume.promise;
             }
@@ -804,7 +814,13 @@ testFor("database", "nats")(
       },
     };
     bindProcessSync(measured, connection);
-    const log = sharedText.define({ id: "text", whenFull: "reject", retention: { maxBytes: 1_048_576 }, maxPayloadBytes: 8192 });
+    const log = sharedText.define({
+      id: "text",
+      lifecycle: { maxBytes: 65536 },
+      whenFull: "reject",
+      retention: { maxBytes: 1_048_576 },
+      maxPayloadBytes: 8192,
+    });
     const empty: SharedTextRoomSnapshot = {
       state: new Uint8Array([0, 0]),
       text: "",
@@ -846,6 +862,7 @@ testFor("database", "nats")(
     });
     let ready = Promise.withResolvers<void>();
     let pushed = Promise.withResolvers<void>();
+    const trackedDoc = switchDocument ? "B" : "A";
     const packets: Array<{ type: string; payload?: { code?: string; docId?: string } }> = [];
     const ctx = createSharedTextRoomContext<{ id: string }, SharedTextRoomMessages>(
       {
@@ -853,7 +870,7 @@ testFor("database", "nats")(
           const packet = JSON.parse(raw);
           packets.push(packet);
           if (packet.type === "ready") ready.resolve();
-          if (packet.type === "push" && packet.payload?.docId === "B") pushed.resolve();
+          if (packet.type === "push" && packet.payload?.docId === trackedDoc) pushed.resolve();
         },
         close() {},
       },
@@ -861,10 +878,11 @@ testFor("database", "nats")(
       messages,
     );
     const peer = room.connect(ctx);
-    let baseB: RoomWriterBase | undefined;
+    let writerBase: RoomWriterBase | undefined;
+    const commits = spyOn(RoomWriterBase.prototype, "commit");
     const snapshot = RoomWriterBase.prototype.snapshot;
     const snapshots = spyOn(RoomWriterBase.prototype, "snapshot").mockImplementation(function (this: RoomWriterBase) {
-      if (ctx.docId === "B") baseB = this;
+      if (ctx.docId === trackedDoc) writerBase = this;
       return snapshot.call(this);
     });
     const a = new Y.Doc(),
@@ -886,7 +904,23 @@ testFor("database", "nats")(
       await ready.promise;
       pending = edit("A", a, "late A", empty.cursor);
       await publishing.promise;
-      await pending; // The real five-second admission timeout leaves the publish in flight.
+      await deadline.promise; // The real five-second deadline aborts admission while publication remains in flight.
+      if (!switchDocument) {
+        expect(writerBase).toBeDefined();
+        pushed = Promise.withResolvers<void>();
+        resume.resolve();
+        await pending;
+        await finished.promise;
+        // The admission deadline ended, but the original caller and room are
+        // still active: the durable receipt must advance its base and echo.
+        expect(commits).toHaveBeenCalledTimes(1);
+        expect(writerBase!.snapshot().text).toBe("late A");
+        expect(writerBase!.snapshot().cursor).toBe(await log.topic().latestCursor({ tenantId: "A" }));
+        await pushed.promise;
+        expect(packets.filter((packet) => packet.type === "push" && packet.payload?.docId === "A")).toHaveLength(2);
+        return;
+      }
+      await pending;
       expect(packets.some((packet) => packet.payload?.code === "BUSY")).toBe(true);
       ready = Promise.withResolvers<void>();
       await room.handle(ctx, { type: "replay", payload: { docId: "B", restoreRevision: "0" } });
@@ -894,23 +928,24 @@ testFor("database", "nats")(
       pushed = Promise.withResolvers<void>();
       expect(await meter.during(() => edit("B", b, "B", empty.cursor))).toHaveLength(0);
       await pushed.promise;
-      expect(baseB).toBeDefined();
-      const before = baseB!.snapshot();
+      expect(writerBase).toBeDefined();
+      const before = writerBase!.snapshot();
       expect(before.text).toBe("B");
       resume.resolve();
       await finished.promise;
       expect(await log.topic().latestCursor({ tenantId: "A" })).not.toBeNull();
-      expect(baseB!.snapshot()).toEqual(before);
+      expect(writerBase!.snapshot()).toEqual(before);
       // B can continue using its own cursor and state after the late A receipt.
       pushed = Promise.withResolvers<void>();
       expect(await meter.during(() => edit("B", b, " continues", before.cursor))).toHaveLength(0);
       await pushed.promise;
-      expect(baseB!.snapshot().text).toBe("B continues");
+      expect(writerBase!.snapshot().text).toBe("B continues");
     } finally {
       resume.resolve();
       await pending?.catch(() => {});
       await operationA?.catch(() => {});
       snapshots.mockRestore();
+      commits.mockRestore();
       await peer.close();
       await room.drain();
       a.destroy();

@@ -1030,10 +1030,10 @@ test("two documents interleaved after their head yield retain independent admiss
   }
 });
 
-test("cancellation after publication skips the transport applied callback", async () => {
-  const abort = new AbortController();
+test("caller cancellation after publication skips the transport applied callback", async () => {
+  const caller = new AbortController();
   const f = fixture(async () => async () => {
-    abort.abort(new Error("cancelled"));
+    caller.abort(new Error("caller cancelled"));
   });
   const source = new Y.Doc();
   let applied = false;
@@ -1043,7 +1043,7 @@ test("cancellation after publication skips the transport applied callback", asyn
     await f.documents.accept("doc", {
       snapshot: f.stored(),
       actor: { kind: "user", id: "author" },
-      signal: abort.signal,
+      signal: caller.signal,
       update: Y.encodeStateAsUpdate(source),
       baseCursor: null,
       restoreRevision: "revision",

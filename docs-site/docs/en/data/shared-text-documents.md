@@ -990,8 +990,10 @@ A room adopts an accepted update only while it still owns the same document,
 live stream and writer base. If admission was cancelled or timed out while a
 publication was in flight, its eventual receipt cannot advance a room that
 has since opened another document, even when both use the same restore revision.
-The broker may retain that update; replay and snapshot persistence still own
-its durable result.
+An admission timeout alone still permits confirmation of a retained update
+while its caller and room owner remain active. Cancelling the caller prevents
+that confirmation. The broker may retain the update; replay and snapshot
+persistence still own its durable result.
 
 ### Scale and flush before a durable action
 
