@@ -60,7 +60,16 @@ const unexpectedErrors: Record<string, number> = {};
 const expectedStops = new WeakSet<NativeSocket>();
 const closes: Record<string, number> = {};
 let revoking = false;
-const scenarios = { nodeFailures: 0, revocations: 0, reconnects: 0, abruptDisconnects: 0, requestAborts: 0, slowConsumers: 0 };
+const scenarios = {
+  nodeFailures: 0,
+  revocations: 0,
+  reconnects: 0,
+  abruptDisconnects: 0,
+  requestAborts: 0,
+  slowConsumers: 0,
+  exactSends: 0,
+  undos: 0,
+};
 const error = (code: string) => {
   errors[code] = (errors[code] ?? 0) + 1;
 };
@@ -201,7 +210,8 @@ try {
             return;
           }
           const planned =
-            (packet.payload.code === "STREAM_FAILED" && expectedStops.has(socket)) || (revoking && packet.payload.code === "ACCESS_DENIED");
+            (packet.payload.code === "STREAM_FAILED" && expectedStops.has(socket)) ||
+            ((revoking || expectedStops.has(socket)) && ["ACCESS_DENIED", "RESYNC_REQUIRED"].includes(packet.payload.code));
           trace("client_error", { peerId: c.peerId, code: packet.payload.code, planned });
           error(packet.payload.code);
           if (!planned) unexpectedErrors[packet.payload.code] = (unexpectedErrors[packet.payload.code] ?? 0) + 1;
@@ -540,6 +550,86 @@ try {
     (options.failover && !scenarios.nodeFailures)
   )
     throw new Error("A disruption scenario did not run");
+  // Real send command on the OTHER process immediately after the final typing ack.
+  // The app review/command services freeze and drain the same canonical room.
+  if (first && !options.failover) {
+    const editor = first.clients.find((client) => client.node === 1)!;
+    const before = Y.encodeStateVector(editor.doc);
+    const marker = " [type-fast-send-immediately]";
+    editor.doc.getText("codemirror").insert(editor.doc.getText("codemirror").length, marker);
+    const payload = toBase64(Y.encodeStateAsUpdate(editor.doc, before));
+    editor.pending = marker;
+    editor.pendingId = draftUpdateId(payload);
+    editor.pendingBase = editor.cursor;
+    editor.sentAt = performance.now();
+    send(editor, {
+      type: "syncPublish",
+      payload: { docId: first.short_id, generation: editor.generation, baseCursor: editor.cursor, payload },
+    });
+    const accepted = performance.now() + ackBudgetMs;
+    while (editor.pending) {
+      check();
+      if (performance.now() > accepted) throw new Error("Fast-send typing ack timed out");
+      await Bun.sleep(1);
+    }
+    for (const client of first.clients) if (client.socket) expectedStops.add(client.socket);
+    const visible = editor.doc.getText("codemirror").toString();
+    const sent = await fetch(`${baseUrl}/__load/send`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draftId: first.id, visible }),
+    });
+    if (!sent.ok) throw new Error(`Fast-send command failed: ${await sent.text()}`);
+    const command = z.object({ body: z.string(), scheduledSendId: z.string() }).parse(await sent.json());
+    if (command.body !== visible) throw new Error("Fast-send exact content mismatch");
+    scenarios.exactSends++;
+    // Wait for both nodes to enforce the scheduled-state invalidation before undo.
+    const stopped = performance.now() + 10000;
+    while (first.clients.some((client) => client.socket?.readyState !== 3)) {
+      check();
+      if (performance.now() > stopped) throw new Error("Scheduled send did not revoke both nodes");
+      await Bun.sleep(10);
+    }
+    const undone = await fetch(`${baseUrl}/__load/undo`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scheduledSendId: command.scheduledSendId }),
+    });
+    if (!undone.ok) throw new Error(`Fast-send undo failed: ${await undone.text()}`);
+    const restored = z.object({ generation: z.string(), cursor: z.string().nullable(), state: z.string() }).parse(await undone.json());
+    for (const client of first.clients) {
+      client.generation = restored.generation;
+      client.cursor = restored.cursor;
+      client.ready = false;
+      Y.applyUpdate(client.doc, fromBase64(restored.state));
+      await connect(first, client);
+    }
+    const rejoined = performance.now() + ackBudgetMs;
+    while (first.clients.some((client) => !client.ready)) {
+      check();
+      if (performance.now() > rejoined) throw new Error("Undo did not restore both editors");
+      await Bun.sleep(10);
+    }
+    const resumed = " [editing-after-undo]";
+    const resumedVector = Y.encodeStateVector(editor.doc);
+    editor.doc.getText("codemirror").insert(editor.doc.getText("codemirror").length, resumed);
+    const resumedPayload = toBase64(Y.encodeStateAsUpdate(editor.doc, resumedVector));
+    editor.pending = resumed;
+    editor.pendingId = draftUpdateId(resumedPayload);
+    editor.pendingBase = editor.cursor;
+    editor.sentAt = performance.now();
+    send(editor, {
+      type: "syncPublish",
+      payload: { docId: first.short_id, generation: editor.generation, baseCursor: editor.cursor, payload: resumedPayload },
+    });
+    const editable = performance.now() + ackBudgetMs;
+    while (editor.pending || first.clients.some((client) => !client.doc.getText("codemirror").toString().includes(resumed))) {
+      check();
+      if (performance.now() > editable) throw new Error("Undo did not restore editing across both nodes");
+      await Bun.sleep(10);
+    }
+    scenarios.undos++;
+  }
   revoking = true;
   const revoke = await fetch(`${baseUrl}/__load/revoke`, { method: "POST" });
   if (!revoke.ok) throw new Error("Grant revocation failed");

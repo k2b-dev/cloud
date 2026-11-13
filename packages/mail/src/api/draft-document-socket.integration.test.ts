@@ -22,6 +22,7 @@ import { type MailDraftDocumentMessage, mailDraftDocumentMessageSchema } from ".
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
+import { mailDraftRoom } from "../service/draft-document-room";
 import {
   draftDocumentSnapshotStore,
   draftDocumentSnapshots,
@@ -161,6 +162,12 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     await stopLive?.();
     await server?.stop(true);
     authentication?.mockRestore();
+    // A cancelled join must finish rollback before fixture deletion/pool close.
+    // Report a leaked transaction here, instead of timing out in a later hook.
+    expect(
+      await sql`SELECT pid, state, left(query, 160) AS query FROM pg_stat_activity
+      WHERE datname = current_database() AND state LIKE 'idle in transaction%'`,
+    ).toHaveLength(0);
     if (mailboxId) {
       const access = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
@@ -806,5 +813,36 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     } finally {
       missing.destroy();
     }
+  });
+  test("freeze survives pruning and a second live editor receives no edit ack", async () => {
+    await draft();
+    const base = await read();
+    const publisher = await connect();
+    await publisher.ready();
+    const other = await connect();
+    await other.ready();
+    const frozen = await mailDraftRoom.freeze(currentDraft.id);
+    if (!frozen) throw new Error("Missing frozen draft");
+    await mailDraftDocumentLog.topic().prune({ through: frozen.cursor });
+    const update = await createDraftRevisionUpdate(
+      base.fresh.state,
+      { ...base.fresh.content, body: "Must not be acknowledged" },
+      { deadline: Date.now() + 10000 },
+    );
+    publish(other, base, update);
+    const refused = await other.wait((packet) => packet.type === "error");
+    expect(refused.type).toBe("error");
+    if (refused.type !== "error") throw new Error("Missing refusal");
+    expect(["DOCUMENT_FROZEN", "RESYNC_REQUIRED"]).toContain(refused.payload.code);
+    expect((await mailDraftDocumentLog.lifecycle!.get(currentDraft.id))?.value.state).toBe("frozen");
+    for (const client of [publisher, other])
+      expect(
+        client.messages.some(
+          (packet) => packet.type === "syncPush" && packet.payload.updates.some((entry) => entry.payload === toBase64(update)),
+        ),
+      ).toBe(false);
+    const persisted = await draftDocumentSnapshotStore.load(currentDraft.id, {});
+    expect(decode(persisted!.state!).body).toBe("Original");
+    await mailDraftRoom.thaw(currentDraft.id, { freezeCursor: frozen.cursor });
   });
 });

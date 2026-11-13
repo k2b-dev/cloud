@@ -172,6 +172,10 @@ try {
       VALUES (${newShortId()}, ${mailboxId}::uuid, 'Load', 'Load', 'load@example.test', 'disabled', 'verified') RETURNING id`
     )[0];
   if (!identity) throw new Error("Missing sender");
+  if (!shared) {
+    const { prepareDraftSendBinding } = await import("../../test/fixtures/draft-send");
+    await prepareDraftSendBinding(mailboxId, identity.id);
+  }
 
   const sync = (await import("@k2b/cloud")).getProcessSync();
   const originalMutex = sync.mutex.bind(sync);
@@ -321,6 +325,44 @@ try {
       const [row] = await meter<{ calls: string }[]>`SELECT COALESCE(sum(calls), 0)::text AS calls FROM pg_stat_statements
         WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database()) AND query NOT LIKE '%pg_stat_statements%'`;
       return c.json({ calls: Number(row?.calls ?? 0) });
+    })
+    .post("/__load/send", async (c) => {
+      const { draftId, visible } = await c.req.json<{ draftId: string; visible: string }>();
+      if (![...drafts.values()].some((row) => row.id === draftId)) return c.notFound();
+      await flushDraftDocumentSnapshot(draftId);
+      const current = value(await readDraftDocument({ context, mailboxId, draftId }));
+      if (current.durable.content.body !== visible) throw new Error("Fast send does not cover the visible input");
+      const { reviewDraftComposeSafety } = await import("../../src/service/compose-safety");
+      const checked = value(await reviewDraftComposeSafety({ context, mailboxId, draftId, expectedRevision: current.revision }));
+      const { createActorCommand } = await import("../../src/service/commands");
+      const command = value(
+        await createActorCommand({
+          context,
+          mailboxId,
+          enqueue: false,
+          input: {
+            kind: "send",
+            draftId,
+            senderIdentityId: identity.id,
+            expectedDraftRevision: current.revision,
+            expectedContentHash: checked.contentHash,
+            undoSeconds: 60,
+            idempotencyKey: crypto.randomUUID(),
+            safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
+          },
+        }),
+      );
+      const [outbox] = await sql<{ id: string; draft_snapshot: { body: string } }[]>`SELECT id, draft_snapshot
+        FROM mail.outbox_submissions WHERE command_id = ${command.id}::uuid`;
+      if (!outbox || outbox.draft_snapshot.body !== visible) throw new Error("Fast send snapshot differs from visible text");
+      return c.json({ scheduledSendId: outbox.id, body: outbox.draft_snapshot.body });
+    })
+    .post("/__load/undo", async (c) => {
+      const { scheduledSendId } = await c.req.json<{ scheduledSendId: string }>();
+      const { cancelScheduledSend } = await import("../../src/service/scheduled-sends");
+      const cancelled = value(await cancelScheduledSend({ context, mailboxId, scheduledSendId, input: { disposition: "draft" } }));
+      const current = value(await readDraftDocument({ context, mailboxId, draftId: cancelled.draftId }));
+      return c.json({ generation: current.generation, cursor: current.durable.cursor, state: toBase64(current.durable.state) });
     })
     .post("/__load/revoke", async (c) => {
       await sql`DELETE FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid`;
