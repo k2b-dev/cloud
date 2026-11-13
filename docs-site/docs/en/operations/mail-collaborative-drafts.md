@@ -229,3 +229,12 @@ The 200-draft result has limited latency headroom and does not establish a
 production concurrency guarantee. Measure with the operator's document sizes,
 hardware and traffic before increasing concurrent editing. The shared mailbox
 default does not increase these measured capacity limits.
+
+## Sending without a subject
+
+Mail adds `missing_subject` to its existing saved-draft safety review when the
+subject is empty or contains only whitespace, including edited replies and
+forwards. Clients must accept this warning ID and include it in the approval
+for the exact reviewed revision and fingerprint. The browser and Mail CLI
+handle it through their existing confirmation flow. No schema migration or
+new setting is required.
