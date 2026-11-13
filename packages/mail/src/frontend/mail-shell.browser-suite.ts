@@ -2882,7 +2882,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               .evaluateAll((elements) =>
                 elements.map((element) => element.getAttribute("data-mail-note") ?? element.getAttribute("data-mail-message-id")),
               );
-            expect(order).toEqual(["Note01", "Note02", "Msg001"]);
+            // The reply box stands on top, so the newest item comes first and the notes follow at their time.
+            expect(order).toEqual(["Msg001", "Note02", "Note01"]);
             expect(await page.getByText("Note from Nora Example deleted").isVisible()).toBe(true);
             const [tile, column] = await Promise.all([note.boundingBox(), page.locator("[data-mail-conversation-messages]").boundingBox()]);
             expect(Math.abs(tile!.x - column!.x - (column!.x + column!.width - tile!.x - tile!.width))).toBeLessThanOrEqual(1);
