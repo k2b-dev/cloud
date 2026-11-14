@@ -101,16 +101,22 @@ the focus ring; on a coarse pointer its hit area grows to 2.75rem.
   a tap, Enter, or Space opens the card and moves the focus into it; Tab
   reaches its links and buttons.
 - Escape, another press of the trigger, or a press outside closes it, and the
-  focus returns to the trigger when it was inside. Moving the focus on to the
-  page closes it too. Moving the pointer away keeps it open.
-- The card is a `dialog` named by its `title`; the trigger reports
+  focus returns to the trigger when it was inside or got lost, as when an
+  action replaces itself with "Reported"; the ring returns only for the
+  keyboard. Moving the focus on to the page, from the card or from the trigger,
+  closes it too. Moving the pointer away keeps it open. A control inside that
+  handles Escape itself, such as an open menu, keeps the card open.
+- The card is a `dialog` named by its `title`, or by the trigger's
+  `aria-label` without a title; the trigger reports
   `aria-haspopup="dialog"`, `aria-controls`, and `aria-expanded` instead of a
   description.
 - The last line holds the actions at its start and `hint` at its end, in the
   12px meta step. Controls in the body, such as "Try again" after a failed
   load, count as actions as well; the card must then have `actions`.
 
-A card without `actions` behaves exactly as before.
+A card without `actions` keeps the hint behaviour above; like every card it is
+capped to the room on its side. Its body cannot take the focus, so keep such a
+card short enough for the room it usually has.
 
 ## Placement
 

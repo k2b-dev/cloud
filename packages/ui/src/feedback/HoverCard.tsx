@@ -1,5 +1,18 @@
-import { createEffect, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
+import {
+  type ChildrenReturn,
+  children,
+  createEffect,
+  createSignal,
+  createUniqueId,
+  type JSX,
+  onCleanup,
+  onMount,
+  Show,
+  splitProps,
+  untrack,
+} from "solid-js";
 import { placeAtAnchor, SHEET_QUERY } from "../internal/anchor-placement";
+import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { createScrollFade } from "../layout/scroll-fade";
 import { AnchorContext } from "./Tooltip";
 
@@ -54,16 +67,19 @@ type Mode = "anchor" | "trigger";
  * open while the pointer is on the control or the card. A trigger also opens it with a press, which pins it open; on a
  * phone a tap opens it as a bottom sheet.
  */
-function useHoverCard(options: HoverCardOptions & { actions?: JSX.Element }, mode: Mode, target: () => HTMLElement | undefined) {
+function useHoverCard(
+  options: HoverCardOptions,
+  mode: Mode,
+  target: () => HTMLElement | undefined,
+  dialog?: { actions: ChildrenReturn; label: () => string | undefined },
+) {
   const id = `k2b-hover-card-${createUniqueId()}`;
   const titleId = `${id}-title`;
   /** A card with actions is a dialog the person opens on purpose, not a hint. */
-  const interactive = () => mode === "trigger" && options.actions != null;
+  const interactive = () => mode === "trigger" && Boolean(dialog?.actions.toArray().length);
+  /** Whether the keyboard opened the dialog, so the focus returns with its ring. */
+  let ring = false;
   let body: HTMLDivElement | undefined;
-  createScrollFade(
-    () => body,
-    () => true,
-  );
   const [open, setOpen] = createSignal(false);
   const [sheet, setSheet] = createSignal(false);
   let surface: HTMLDivElement | undefined;
@@ -110,7 +126,8 @@ function useHoverCard(options: HoverCardOptions & { actions?: JSX.Element }, mod
   };
 
   const keyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || !open()) return;
+    // A control inside the card that used Escape itself, such as an open menu, keeps the card open.
+    if (event.key !== "Escape" || !open() || event.defaultPrevented) return;
     event.preventDefault();
     dismiss();
   };
@@ -170,10 +187,14 @@ function useHoverCard(options: HoverCardOptions & { actions?: JSX.Element }, mod
     // Placed in the same task as it opens, so it never paints at a wrong place first.
     place();
     listen(true);
-    if (interactive()) queueMicrotask(() => surface?.focus({ preventScroll: true }));
+    if (interactive()) {
+      ring = ringOnReturn(document.activeElement ?? target());
+      queueMicrotask(() => surface?.focus({ preventScroll: true }));
+    }
   };
 
-  const hide = () => {
+  /** `restore` false: the focus is moving on to the page, so it is not taken back. */
+  const hide = (restore = true) => {
     clearTimers();
     pinned = false;
     // A hidden card is under no pointer; the control still is until it reports the pointer leaving.
@@ -181,8 +202,12 @@ function useHoverCard(options: HoverCardOptions & { actions?: JSX.Element }, mod
     if (!open()) return;
     setOpen(false);
     listen(false);
-    // A dialog gives the focus back to its trigger when the focus was inside it.
-    if (interactive() && surface?.contains(document.activeElement)) target()?.focus({ preventScroll: true });
+    // A dialog gives the focus back to its trigger when the focus was inside it or got lost, as with an action that
+    // replaced itself; focus the person moved elsewhere stays there.
+    const focusedNow = document.activeElement;
+    const trigger = target();
+    if (restore && interactive() && trigger?.isConnected && (!focusedNow || focusedNow === document.body || surface?.contains(focusedNow)))
+      returnFocus(trigger, ring);
     try {
       if (surface?.matches(":popover-open")) surface.hidePopover();
     } catch {
@@ -240,7 +265,7 @@ function useHoverCard(options: HoverCardOptions & { actions?: JSX.Element }, mod
     if (!interactive()) return;
     const next = event.relatedTarget;
     if (!(next instanceof Node) || surface?.contains(next) || target()?.contains(next)) return;
-    hide();
+    hide(false);
   };
 
   const focusIn = (event: FocusEvent) => {
@@ -253,6 +278,11 @@ function useHoverCard(options: HoverCardOptions & { actions?: JSX.Element }, mod
   const focusOut = (event: FocusEvent) => {
     const next = event.relatedTarget;
     if (next instanceof Node && (target()?.contains(next) || surface?.contains(next))) return;
+    // A dialog closes once the focus moves on to the page, also from its trigger.
+    if (interactive()) {
+      if (next instanceof Node) hide(false);
+      return;
+    }
     focused = false;
     if (!onControl && !onCard) dismissed = false;
     if (open() && !pinned && !onControl && !onCard) hide();
@@ -342,7 +372,14 @@ function useHoverCard(options: HoverCardOptions & { actions?: JSX.Element }, mod
         surface = element;
       }}
       id={id}
-      {...(interactive() ? { role: "dialog", "aria-labelledby": options.title ? titleId : undefined, tabIndex: -1 } : { role: "tooltip" })}
+      {...(interactive()
+        ? {
+            role: "dialog",
+            "aria-labelledby": options.title ? titleId : undefined,
+            "aria-label": options.title ? undefined : dialog?.label(),
+            tabIndex: -1,
+          }
+        : { role: "tooltip" })}
       popover="manual"
       class={options.class ? `k2b-hover-card ${options.class}` : "k2b-hover-card"}
       data-sheet={sheet() ? "" : undefined}
@@ -381,7 +418,7 @@ function useHoverCard(options: HoverCardOptions & { actions?: JSX.Element }, mod
         }
       >
         <div class="k2b-hover-card__foot">
-          <div class="k2b-hover-card__actions">{options.actions}</div>
+          <div class="k2b-hover-card__actions">{dialog?.actions()}</div>
           <Show when={options.hint}>
             <p class="k2b-hover-card__hint">{options.hint}</p>
           </Show>
@@ -389,6 +426,9 @@ function useHoverCard(options: HoverCardOptions & { actions?: JSX.Element }, mod
       </Show>
     </div>
   );
+
+  // Only an open card watches its body for the fade.
+  createScrollFade(() => body, open);
 
   return { id, open, interactive, Card };
 }
@@ -418,9 +458,11 @@ function HoverCardAnchor(props: HoverCardProps): JSX.Element {
  * keyboard focus open the card, a press pins it open, and a tap on a phone opens it as a bottom sheet.
  */
 function HoverCardTrigger(props: HoverCardTriggerProps): JSX.Element {
-  const [options, local, rest] = splitProps(props, [...OPTION_KEYS, "actions"], ["children", "triggerClass", "ref"]);
+  const [options, local, rest] = splitProps(props, OPTION_KEYS, ["children", "triggerClass", "ref", "actions"]);
   let button: HTMLButtonElement | undefined;
-  const card = useHoverCard(options, "trigger", () => button);
+  // Resolved once, so reading whether the card has actions never builds them again.
+  const actions = children(() => local.actions);
+  const card = useHoverCard(options, "trigger", () => button, { actions, label: () => props["aria-label"] });
   const register = (element: HTMLButtonElement) => {
     button = element;
     if (typeof local.ref === "function") local.ref(element);

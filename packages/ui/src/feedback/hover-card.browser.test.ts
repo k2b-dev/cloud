@@ -192,8 +192,11 @@ describe("HoverCard", () => {
       await page.clock.runFor(400);
       expect(await open(page, "tall")).toBe(true);
       const card = (await box(page, cardOf("tall")))!;
+      const anchor = (await box(page, "#tall"))!;
       expect(card.top).toBeGreaterThanOrEqual(8);
       expect(card.bottom).toBeLessThanOrEqual(480 - 8);
+      // Capped to the room on its side, it never covers its own control.
+      expect(card.top).toBe(anchor.bottom + 6);
       // settled: the card's geometry never animates; the paused clock's exact moment is the subject.
       const body = await page.evaluate((selector) => {
         const element = document.querySelector<HTMLElement>(`${selector} .k2b-hover-card__body`)!;

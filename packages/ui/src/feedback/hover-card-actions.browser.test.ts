@@ -38,12 +38,19 @@ const facts = () => {
   list.append(open);
   return list;
 };
+// Reporting replaces the link with a word, so the focused action leaves the card.
 const report = () => {
+  const wrap = document.createElement("span");
   const link = document.createElement("a");
   link.href = "#report";
   link.id = "report";
   link.textContent = "Report page";
-  return link;
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    wrap.textContent = "Reported";
+  });
+  wrap.append(link);
+  return wrap;
 };
 render(
   () => [
@@ -84,7 +91,7 @@ const html =
     #pill { height: 28px; padding: 0 12px; border-radius: 999px; background: var(--k2b-surface-muted); font-size: 12px; }
     #plain { height: 28px; }
     .fact { margin: 0 0 8px; }
-  </style></head><body class="k2b-ui" data-theme="light"><main>Page</main><div id='footer'></div></body></html>`;
+  </style></head><body class="k2b-ui" data-theme="light"><main><a id="top" href="#top">Page</a></main><div id='footer'></div></body></html>`;
 
 setDefaultTimeout(30_000);
 let browser: Browser;
@@ -233,6 +240,62 @@ describe("HoverCard with actions", () => {
       // A press outside closes it.
       await page.mouse.click(300, 300);
       expect(await isOpen(page)).toBe(false);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("keyboard: focus on the pill opens nothing, Space opens, a second press closes, Tab beyond the card closes it", async () => {
+    const page = await load({ viewport: { width: 1440, height: 900 } });
+    try {
+      const trigger = page.locator("#pill");
+      await page.locator("#top").focus();
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("pill");
+      await page.waitForTimeout(500);
+      expect(await isOpen(page)).toBe(false);
+      await page.keyboard.press("Space");
+      await settled(page);
+      expect(await isOpen(page)).toBe(true);
+      await trigger.click();
+      expect(await isOpen(page)).toBe(false);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("pill");
+      // Tab past the last action moves on to the page and closes the card.
+      await page.keyboard.press("Enter");
+      await settled(page);
+      for (const step of ["open-automation", "report"]) {
+        await page.keyboard.press("Tab");
+        expect(await page.evaluate(() => document.activeElement?.id)).toBe(step);
+      }
+      await page.keyboard.press("Tab");
+      expect(await isOpen(page)).toBe(false);
+      // Back over the trigger to the page closes it as well.
+      await trigger.focus();
+      await page.keyboard.press("Enter");
+      await settled(page);
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("pill");
+      expect(await isOpen(page)).toBe(true);
+      await page.keyboard.press("Shift+Tab");
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("top");
+      expect(await isOpen(page)).toBe(false);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("an action that replaces itself loses no focus: Escape still returns it to the pill", async () => {
+    const page = await load({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.locator("#pill").click();
+      await settled(page);
+      await page.locator("#report").click();
+      expect(await page.locator(`${card} .k2b-hover-card__actions`).textContent()).toBe("Reported");
+      expect(await isOpen(page)).toBe(true);
+      await page.keyboard.press("Escape");
+      expect(await isOpen(page)).toBe(false);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("pill");
     } finally {
       await page.context().close();
     }
