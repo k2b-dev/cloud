@@ -118,6 +118,7 @@ for (const width of [1440, 390])
       expect(icons.button).toBe(32);
       expect(icons.offset).toBeLessThan(2);
       await answer.getByRole("button", { name: "Mehr" }).click();
+      await settled(page);
       expect(await page.getByRole("menuitem").allTextContents()).toEqual([
         "Ausführlicher",
         "Kürzer",
