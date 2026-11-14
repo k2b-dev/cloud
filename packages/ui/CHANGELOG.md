@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.59.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.58.0...npm-ui-v0.59.0) (2026-11-14)
+
+
+### Features
+
+* **ui:** a hover card shows rich details beside its control ([#3317](https://github.com/k2b-dev/cloud/issues/3317)) ([241866e](https://github.com/k2b-dev/cloud/commit/241866e07599ac98068840c72c05b2a0d2677fdd))
+
+
+### Bug Fixes
+
+* **ui:** a toast's single message reads calmly instead of bold ([#3347](https://github.com/k2b-dev/cloud/issues/3347)) ([fc48720](https://github.com/k2b-dev/cloud/commit/fc48720f8ef026d0555894ce2eebf1102d3ddfaa))
+* **ui:** collapsible section headings and text actions hover in a darker blue without a fill ([#3334](https://github.com/k2b-dev/cloud/issues/3334)) ([85d65c9](https://github.com/k2b-dev/cloud/commit/85d65c93f1f1ab6141a2c3018e413470bea880ff))
+* **ui:** floating tool pills share one compact size with even inner spacing ([#3337](https://github.com/k2b-dev/cloud/issues/3337)) ([7ed54d6](https://github.com/k2b-dev/cloud/commit/7ed54d6c8c4ce3b26b05970dc5b1baf02ed096a5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.21.2 to 0.21.3
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 || ^0.21.0 to ^0.21.3
+
 ## [0.58.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.57.1...npm-ui-v0.58.0) (2026-11-14)
 
 
