@@ -12,7 +12,7 @@ type Entry = { id: string; name: string; initials: string; role?: string; time: 
 
 const entry = (item: Entry) => (
   <Discussion.Item
-    avatar={<Avatar name={item.name} initials={item.initials} size="sm" />}
+    avatar={<Avatar name={item.name} size="sm" />}
     author={item.name}
     meta={item.role}
     timestamp={item.time}
@@ -59,7 +59,14 @@ render(
         id="many"
         placeholder="Reply …"
         initial={[
-          { id: "a", name: "Ben Schulz", initials: "BS", role: "Cloud admin", time: "20 min ago", text: "Every unread mail gets a task, not only a callback request." },
+          {
+            id: "a",
+            name: "Ben Schulz",
+            initials: "BS",
+            role: "Cloud admin",
+            time: "20 min ago",
+            text: "Every unread mail gets a task, not only a callback request.",
+          },
           { id: "b", name: "Jana Probe", initials: "JP", time: "5 min ago", text: "I see it the same way. I will ask for changes." },
           { id: "c", name: "Ben Schulz", initials: "BS", time: "2 min ago", text: "Thanks." },
         ]}

@@ -54,7 +54,10 @@ afterAll(async () => {
 const open = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: width === 1440 ? 900 : 780 } });
   await page.route(`${assets}**`, (route) =>
-    route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)), headers: { "access-control-allow-origin": "*" } }),
+    route.fulfill({
+      path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)),
+      headers: { "access-control-allow-origin": "*" },
+    }),
   );
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style><style>${fonts}</style><style>${icons}</style>
@@ -68,10 +71,13 @@ const open = async (width: number) => {
   return page;
 };
 const box = (page: Page, selector: string) =>
-  page.locator(selector).first().evaluate((node) => {
-    const { x, y, width, height } = node.getBoundingClientRect();
-    return { x, y, width, height };
-  });
+  page
+    .locator(selector)
+    .first()
+    .evaluate((node) => {
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x, y, width, height };
+    });
 const lefts = (page: Page, selector: string) =>
   page.locator(selector).evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().left));
 
@@ -111,7 +117,9 @@ for (const width of [1440, 390]) {
         expect(await field.evaluate((node) => node === document.activeElement)).toBe(true);
         expect((await box(page, "#one .k2b-discussion-thread__field")).x).toBe(reply.x);
         expect(await box(page, "#one .k2b-discussion__content")).toEqual(entryText);
-        expect(await page.locator("#one .k2b-discussion-thread").evaluate((node) => getComputedStyle(node).boxShadow)).toMatch(/^rgb\(29, 78, 216\) 2px 0px 0px 0px inset$/);
+        expect(await page.locator("#one .k2b-discussion-thread").evaluate((node) => getComputedStyle(node).boxShadow)).toMatch(
+          /^rgb\(29, 78, 216\) 2px 0px 0px 0px inset$/,
+        );
         // An empty comment cannot be posted.
         expect(await page.locator("#one .k2b-discussion-thread__actions button[type=submit]").isDisabled()).toBe(true);
         expect(await page.locator("#one .k2b-discussion-thread__status").textContent()).toBe("Visible with your decision");
@@ -168,6 +176,7 @@ for (const width of [1440, 390]) {
           window.__failNext = true;
         });
         await page.locator("#new .k2b-discussion-thread__field").fill("Check the folder name.");
+        await settled(page);
         const thread = await box(page, "#new .k2b-discussion-thread");
         await page.locator("#new .k2b-discussion-thread__actions button[type=submit]").click();
         await settled(page);
