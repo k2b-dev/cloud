@@ -115,6 +115,16 @@ Cloud-admin approval. The active version keeps running. Both send the local
 overwrite. The new version uses each [secret's](/en/docs/platform/code-secrets)
 current destination.
 
+The JSON result also supplies `nextStep: { next, who }`, using the same live
+approval check as the version card. `admin_approval` means a `cloud_admin`
+must approve first. `switch_on` names the `personal_owner` or `owner_manager`
+who can activate it. `revise` asks a `code_editor` to revise the version;
+`check_status` asks an editor to read the live card because the follow-up
+check was unavailable. That still means the version was saved: do not
+resubmit it. Older responses may omit `nextStep`; read the live card then.
+Gustav explains that returned step in plain words, without source code,
+file names or diagnostic codes.
+
 A concurrent save returns `code_version_conflict`, “Neuere Version vorhanden”
 in German, and the complete difference. The failed command leaves local files
 and base unchanged. JSON contains the latest version ID and all diff rows in
@@ -280,7 +290,7 @@ returns a durable receipt, not completion of background work.
 | sdk pull | `{version:1, files}` |
 | check | `{version:1, result, manifest, permissions}` |
 | test, simulate | C17 `{version:1, mode, ok, error, diagnostics, cases, trace?}` |
-| submit | `{version:1, submission, runningVersion?}` (`runningVersion`: the version that keeps running, or null when none runs; absent when it could not be read) |
+| submit | `{version:1, submission, runningVersion?, nextStep?}` (`runningVersion`: the version that keeps running, or null when none runs; absent when it could not be read; `nextStep`: the required human step and role) |
 | diff | `{version:1, diff}` |
 | activate | `{version:1, activation}` |
 | run | `{version:1, run:{runId, duplicate}}` |

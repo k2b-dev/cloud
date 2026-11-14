@@ -36,7 +36,7 @@ export const codeCheckerMessages = i18n.define({
       import_forbidden2: "Use named ESM imports from @sdk or your own source files.",
       import_forbidden3: "Dynamic imports are not allowed.",
       unresolved_call2: "The called function has no identifiable type. Use typed SDK objects.",
-      unresolved_call3: "The operation on this object cannot be identified.",
+      unknown_method: ({ path }: { path: string }) => `Unknown SDK method ${path}. Read code_sdk for the correct receiver and input`,
       static_middleware: "Declare app.use at module level with an optional constant path prefix.",
       route_before_middleware: ({ file, line }: { file: string; line: number }) =>
         `This route precedes app.use in ${file}:${line} and runs without that middleware. Register it afterwards.`,
@@ -96,7 +96,7 @@ export const codeCheckerMessages = i18n.define({
       import_forbidden2: "Verwende benannte ESM-Importe aus @sdk oder eigenen Quelldateien.",
       import_forbidden3: "Dynamische Importe sind nicht erlaubt.",
       unresolved_call2: "Der aufgerufenen Funktion fehlt ein erkennbarer Typ. Verwende typisierte SDK-Objekte.",
-      unresolved_call3: "Die Operation am Objekt ist nicht erkennbar.",
+      unknown_method: ({ path }) => `Unbekannte SDK-Methode ${path}. Lies code_sdk für das richtige Objekt und die Eingabe`,
       static_middleware: "Deklariere app.use auf Modulebene mit optionalem konstantem Pfadpräfix.",
       route_before_middleware: ({ file, line }) =>
         `Diese Route steht vor app.use in ${file}:${line} und läuft ohne diese Middleware. Registriere sie danach.`,

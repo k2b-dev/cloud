@@ -16,6 +16,7 @@ import {
 import { type Accessor, createSignal } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantMessages } from "./messages";
+import { assistantSkillPresentation, needsAssistantSkillTranslation } from "./skill-presentation";
 import { type AssistantCopy, assistantCopyFor } from "./ui-copy";
 
 export const assistantCommandSections = (copy: AssistantCopy, pending = false): ChatCommandSection[] => [
@@ -318,10 +319,27 @@ export function createAssistantRecentResources(
       let pending = recentLoads.get(locale);
       if (!pending) {
         // The server reads under one Capability query budget; the same bound ends a request that never answers.
-        const started: Promise<readonly AiRecentResource[]> = load(AbortSignal.timeout(RECENT_LOAD_TIMEOUT_MS)).catch((error: unknown) => {
-          if (recentLoads.get(locale) === started) recentLoads.delete(locale);
-          throw error;
-        });
+        const signal = AbortSignal.timeout(RECENT_LOAD_TIMEOUT_MS);
+        const started: Promise<readonly AiRecentResource[]> = load(signal)
+          .then((items) =>
+            Promise.all(
+              items.map(async (item) => {
+                if (item.ref.type !== SKILL_TYPE || !needsAssistantSkillTranslation(item.title, locale)) return item;
+                // The recent endpoint bounds the page to eight refs. Resolve only its built-in Skill
+                // names once per page/locale, preserving app ownership even for same-named user Skills.
+                const skill = (await assistantApi.findSkillsByName(item.title, signal)).find((skill) => skill.shortId === item.ref.id);
+                if (!skill) return item;
+                const presentation = assistantSkillPresentation(skill, locale);
+                return presentation.description === skill.description
+                  ? item
+                  : { ...item, title: presentation.title, preview: presentation.description };
+              }),
+            ),
+          )
+          .catch((error: unknown) => {
+            if (recentLoads.get(locale) === started) recentLoads.delete(locale);
+            throw error;
+          });
         pending = started;
         recentLoads.set(locale, pending);
       }
@@ -569,10 +587,20 @@ export async function assistantComposerCommands(input: {
       icon: "ti ti-alert-circle",
       searchAgain: true,
     });
-  for (const skill of overview ? overviewSkills(allSkills ?? [], shownRecentSkills) : fullSkillScope ? (allSkills ?? []) : searchedSkills) {
+  // Source search keeps its relevance and typo matching. The opening's authorized catalog adds
+  // matches in translated menu copy, without changing what the model searches or loads.
+  const localizedMatches = (allSkills ?? []).filter((skill) => {
+    const presentation = assistantSkillPresentation(skill, input.locale);
+    const text = `${presentation.title} ${presentation.description}`.toLowerCase();
+    const terms = query.match(/[\p{L}\p{N}]+/gu) ?? [];
+    return terms.length > 0 && terms.every((term) => text.includes(term));
+  });
+  const matchingSkills = [...new Map([...searchedSkills, ...localizedMatches].map((skill) => [skill.id, skill])).values()];
+  for (const skill of overview ? overviewSkills(allSkills ?? [], shownRecentSkills) : fullSkillScope ? (allSkills ?? []) : matchingSkills) {
     if (!skill.enabled) continue;
+    const presentation = assistantSkillPresentation(skill, input.locale);
     const row = {
-      ...reference("skills", skill.name, `Skill · ${skill.description}`, {
+      ...reference("skills", presentation.title, `Skill · ${presentation.description}`, {
         kind: "resource",
         id: `skill:${skill.id}`,
         name: skill.name,
@@ -580,6 +608,7 @@ export async function assistantComposerCommands(input: {
         icon: "ti ti-sparkles",
       }),
       id: skillRowId(skill.shortId),
+      keywords: [skill.name],
     };
     results.push(!overview && recentSkills.has(skill.shortId) ? { ...row, recent: true } : row);
   }
