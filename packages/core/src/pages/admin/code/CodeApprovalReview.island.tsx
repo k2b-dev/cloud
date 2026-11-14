@@ -35,6 +35,8 @@ export type CodeApprovalCheck = {
 
 export type CodeApprovalReviewProps = {
   versionId: string;
+  /** Self-approval recovery signs out only the version's author, never a newer browser account. */
+  authorUserId: string | null;
   explanation: string | null;
   check: CodeApprovalCheck | null;
   number: number;
@@ -68,6 +70,7 @@ const short = (hash: string | null) => (hash ? `${hash.slice(0, 4)}…${hash.sli
 /** Survives the reload after a decision, so the reloaded page moves focus to the result once. */
 const DECIDED_KEY = "k2b-code-decided";
 const RESULT_ID = "code-review-result";
+const FAILURE_ID = "code-review-failure";
 
 /**
  * The detail level of one version: why it needs you, what changes in permissions, the full Code difference and the
@@ -79,6 +82,9 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const [mark, setMark] = createSignal<CodeDiffLocation>();
   const [busy, setBusy] = createSignal<"approve" | "reject" | null>(null);
   const [failure, setFailure] = createSignal<string | null>(null);
+  const [failureCode, setFailureCode] = createSignal<string>();
+  const [signingOut, setSigningOut] = createSignal(false);
+  const [signOutFailed, setSignOutFailed] = createSignal(false);
   const [explanation, setExplanation] = createSignal(props.explanation);
   // An open approval asks once by itself; the first render reserves the place, so the page does not shift.
   const [explaining, setExplaining] = createSignal(props.explanation === null && props.status === "pending");
@@ -100,6 +106,11 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     }
   };
   onMount(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("reauthenticate")) {
+      url.searchParams.delete("reauthenticate");
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    }
     if (explaining()) void explain();
     // The decision was made in the footer; after the reload its result is at the top, so focus and screen readers go there.
     try {
@@ -115,6 +126,29 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const blocked = () => (props.newer ? t().outdated({ n: props.number }) : props.files ? null : t().notLoaded);
   const mayDecide = () => pending() && props.canApprove && !props.staleComparison;
 
+  const signInHref = (admin = false) => {
+    const target = new URL(window.location.href);
+    target.searchParams.delete("reauthenticate");
+    if (!admin) target.searchParams.set("reauthenticate", "1");
+    const query = new URLSearchParams({ redirectTo: `${target.pathname}${target.search}` });
+    if (admin) query.set("method", "admin");
+    return `/auth/login?${query}`;
+  };
+
+  const signInAdmin = async () => {
+    if (signingOut() || !props.authorUserId) return;
+    setSigningOut(true);
+    setSignOutFailed(false);
+    try {
+      const { signOutBrowserSession } = await import("@k2b/cloud/browser/session");
+      await signOutBrowserSession(props.authorUserId, t().signOutFailed);
+      window.location.assign(signInHref(true));
+    } catch {
+      setSignOutFailed(true);
+      setSigningOut(false);
+    }
+  };
+
   const decide = async (approved: boolean) => {
     if (!approved) {
       const confirmed = await prompts.confirm(t().rejectBody, {
@@ -127,6 +161,8 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     }
     setBusy(approved ? "approve" : "reject");
     setFailure(null);
+    setFailureCode(undefined);
+    setSignOutFailed(false);
     try {
       await postCodeAdmin("decide", { binding: props.binding, approved }, codeVersionContracts.decide.data);
       try {
@@ -139,16 +175,29 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       reloadCodeArea();
     } catch (error) {
       setBusy(null);
+      const code = error instanceof CodeAdminRequestError ? error.code : undefined;
+      setFailureCode(code);
+      const reason =
+        code === "SELF_APPROVAL"
+          ? t().decideSelfApproval
+          : code === "REAUTHENTICATE"
+            ? t().decideReauthenticate
+            : code === "REJECT_ONLY"
+              ? t().decideRejectOnly
+              : code === "NOT_FOUND"
+                ? t().decideNotFound
+                : code === "BUSY"
+                  ? t().decideBusy
+                  : code === "UNAVAILABLE"
+                    ? t().decideUnavailable
+                    : null;
       // Only a refusal proves nothing changed; a lost answer may follow a committed decision.
       setFailure(
         !(error instanceof CodeAdminRequestError) || error.status < 400 || error.status >= 500
           ? `${t().unknownTitle} ${t().unknownDecideSub}`
-          : error.status === 409
-            ? t().decideConflict
-            : error.status === 403
-              ? t().decideForbidden
-              : t().decideFailed,
+          : (reason ?? (error.status === 409 ? t().decideConflict : error.status === 403 ? t().decideForbidden : t().decideFailed)),
       );
+      queueMicrotask(() => document.getElementById(FAILURE_ID)?.focus());
     }
   };
 
@@ -266,14 +315,39 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         <Show when={failure()}>
           {(message) => (
             <NoticeCard
+              id={FAILURE_ID}
+              tabIndex={-1}
               tone="danger"
               title={message()}
-              detail={
-                <div class="mt-1">
-                  <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
-                    <i class="ti ti-refresh" aria-hidden="true" />
-                    {t().reload}
-                  </Button>
+              detail={signOutFailed() ? <p role="alert">{t().signOutFailed}</p> : undefined}
+              actions={
+                <div class="flex flex-wrap gap-2">
+                  <Show when={failureCode() === "REAUTHENTICATE"}>
+                    <ButtonLink size="sm" href={signInHref()} navigation="document">
+                      {t().signInAgain}
+                    </ButtonLink>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      wrap
+                      loading={signingOut()}
+                      disabled={!props.authorUserId}
+                      onClick={() => void signInAdmin()}
+                    >
+                      {t().signInAdmin}
+                    </Button>
+                  </Show>
+                  <Show when={failureCode() === "NOT_FOUND"}>
+                    <ButtonLink size="sm" variant="secondary" href={props.listHref}>
+                      {t().backToList}
+                    </ButtonLink>
+                  </Show>
+                  <Show when={failureCode() !== "REAUTHENTICATE"}>
+                    <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
+                      <i class="ti ti-refresh" aria-hidden="true" />
+                      {t().reload}
+                    </Button>
+                  </Show>
                 </div>
               }
             />

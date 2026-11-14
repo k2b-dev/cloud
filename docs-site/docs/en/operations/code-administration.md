@@ -5,7 +5,7 @@ section: Operations
 order: 1256
 description: Approve Code versions, edit the Code policy, see all Code, waiting cleanup, limits and runner capacity.
 tags: [operations, code, policy, approvals, administration]
-updated: 2026-11-11
+updated: 2026-11-14
 ---
 
 # Administration › Code
@@ -67,7 +67,20 @@ under the current policy again.
 Authors do not approve their own versions. The one exception is an
 installation with exactly one active Cloud administrator: the review then
 shows that you are approving your own Code, and the version list labels the
-result "self-approved (only admin)".
+result "self-approved (only admin)". This requires a full browser sign-in with
+the same account from the last ten minutes, or a decision through Cloud Login.
+When confirmation is missing, **Sign in again** returns to this exact review
+after sign-in. Emergency administrators use **Sign out and use admin token**: Cloud first
+finishes signing this account out, then opens the token sign-in and returns to
+the review. A failed sign-out stays visible and can be retried.
+A phone app session, personal API key or OAuth credential cannot replace this
+browser confirmation.
+
+A refused decision explains the next step: ask another active admin when you
+authored the version, open the review in Cloud when the connection only permits
+rejection, or return to the approvals list when the request is unavailable to
+your account. The review shows these instructions in English and German without
+technical error codes.
 
 ## Read a version's Code
 
@@ -111,7 +124,12 @@ capabilities and `cld code`:
 | `POST /api/code/admin/policy/preview` | Paused Code for a complete replacement table, with owner names |
 | `POST /api/code/admin/policy/update` | Replace the table at the read revision |
 
-A stale revision, hash or comparison returns `409`.
+A stale revision, hash or comparison returns `409`. The decision route preserves
+the platform refusal in its stable `code`: `SELF_APPROVAL`, `REAUTHENTICATE` and
+`REJECT_ONLY` return `403`; `NOT_FOUND` returns `404`. Clients use the code to
+choose a recovery message rather than displaying transport diagnostics.
+`BUSY` and `UNAVAILABLE` keep their `409` status and their own stable codes, with
+instructions to retry rather than reporting a changed version.
 
 ## Pending Code deletion
 

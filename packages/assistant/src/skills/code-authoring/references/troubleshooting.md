@@ -51,6 +51,20 @@ edits and fixtures with `code_write({codeId, path, content})`.
 | `code_policy_never` | The installation's policy forbids a used class | Remove that call or ask a Cloud administrator about the policy |
 | `approval_pending` (switch-on readiness) | A Cloud administrator has not approved the version | Wait for the approval |
 
+## Version decision refusals
+
+Explain these refusals in plain language; never show the codes to the person.
+Do not retry a refused decision without resolving its cause.
+
+| Code | Cause | Next step |
+| --- | --- | --- |
+| `SELF_APPROVAL` | The author is not the only active Cloud administrator | Ask another admin to approve; the author can still reject |
+| `REAUTHENTICATE` | Sole-admin self-approval lacks a full browser sign-in from the last ten minutes | Use the review's sign-in link with the same account; emergency admins must sign out first, then sign in again with the admin token. Return to the review and approve, or decide through Cloud Login |
+| `REJECT_ONLY` | The connection permits rejection only | Open the review in Cloud in the browser to approve |
+| `NOT_FOUND` from a decision | The approval is unavailable to this account | Open the current approvals list or ask a Cloud admin to review |
+| `BUSY` | Another change is being handled | Wait briefly, then retry the decision |
+| `UNAVAILABLE` | Version decisions cannot be handled right now | Retry later; if this continues, ask the operator to check Code approvals |
+
 ## Run errors
 
 A run lists its calls in order with their results. A refused call rejects

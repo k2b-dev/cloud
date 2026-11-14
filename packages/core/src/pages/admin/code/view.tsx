@@ -169,6 +169,7 @@ export function approvalReviewProps(
   const next = (index >= 0 ? list.slice(index + 1).concat(list.slice(0, index)) : others)[0];
   return {
     versionId: detail.version.id,
+    authorUserId: detail.version.author.id,
     explanation: detail.explanation,
     check: approvalCheck(t, detail),
     number: detail.version.number,
