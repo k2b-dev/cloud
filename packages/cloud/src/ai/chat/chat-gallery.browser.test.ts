@@ -172,3 +172,23 @@ test("a delivered routine result offers no answer again, so a retry never target
     await close();
   }
 }, 60_000);
+
+test("what a message brings along stands above it: images as previews, files as tiles with name and size", async () => {
+  for (const width of [1440, 390]) {
+    const { page, close } = await open("anhaenge", width);
+    try {
+      const image = await box(page, '.k2b-chat-message__attachment[data-kind="image"]');
+      expect([image.width, image.height, image.radius]).toEqual([148, 110, "12px"]);
+      const file = page.locator('.k2b-chat-message__attachment[data-kind="file"]');
+      expect((await file.innerText()).replace(/\s+/g, " ").trim()).toMatch(/^Nachlass-Liste\.pdf 123(,|\.)\d KB$/);
+      const tile = await box(page, '.k2b-chat-message__attachment[data-kind="file"]');
+      // Grey tiles without an edge, on the bubble's right edge.
+      expect(tile.radius).toBe("12px");
+      expect(await file.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe("0px");
+      const bubble = await box(page, ".k2b-chat-message[data-role=user] .k2b-chat-message__bubble");
+      expect(Math.abs(tile.right - bubble.right)).toBeLessThan(1);
+    } finally {
+      await close();
+    }
+  }
+}, 60_000);
