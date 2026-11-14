@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { networkTransportFixture } from "../../../../scripts/fixtures/network-transport";
 import type { resolvePublicEndpoint } from "./connectors/endpoint-policy";
-import { __test, matchesRemoteImageSignature, normalizeRemoteContentRule } from "./remote-content";
+import { __test, matchesRemoteImageSignature, matchRemoteContentRules, normalizeRemoteContentRule } from "./remote-content";
 
 describe("remote content rules", () => {
   test("normalizes sender and internationalized domain rules", () => {
@@ -13,6 +13,21 @@ describe("remote content rules", () => {
       ok: true,
       data: { scope: "domain", value: "xn--exmple-cua.de" },
     });
+  });
+
+  test("returns the rules that allow a message, sender rules first, or none when a sender stays uncovered", () => {
+    const sender = { id: "rule-sender", scope: "sender" as const, value: "news@shop.test" };
+    const domain = { id: "rule-domain", scope: "domain" as const, value: "shop.test" };
+    const other = { id: "rule-other", scope: "sender" as const, value: "other@else.test" };
+    // Both rules match one sender: revoking must remove both, or the domain rule keeps loading the images.
+    expect(matchRemoteContentRules(["news@shop.test"], [domain, other, sender])).toEqual([sender, domain]);
+    expect(matchRemoteContentRules(["team@shop.test"], [sender, domain])).toEqual([domain]);
+    expect(matchRemoteContentRules(["news@shop.test"], [other])).toEqual([]);
+    expect(matchRemoteContentRules([], [sender, domain])).toEqual([]);
+    // Several senders: each needs a rule, and every covering rule is returned once.
+    expect(matchRemoteContentRules(["news@shop.test", "other@else.test"], [sender, other])).toEqual([sender, other]);
+    expect(matchRemoteContentRules(["news@shop.test", "a@shop.test"], [domain])).toEqual([domain]);
+    expect(matchRemoteContentRules(["news@shop.test", "x@else.test"], [sender, domain])).toEqual([]);
   });
 
   test("rejects malformed rules", () => {

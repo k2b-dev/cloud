@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-05
+updated: 2026-11-11
 ---
 
 # API surface
@@ -24,10 +24,11 @@ and such changes are not treated as breaking until then.
 
 | Entry point | Status | Use |
 | --- | --- | --- |
-| `@k2b/cloud` | Supported, server-only | Application declarations, notifications, native `sql` and `redis`, `createSql`, `createRedis`, `connections`, `lazySync`, and `storage` |
+| `@k2b/cloud` | Supported, server-only | Application declarations, notifications, native `sql` and `redis`, `createSql`, `createRedis`, `connections`, `lazySync`, and `storage` with `parseStorageBucketId`, `DEFAULT_STORAGE_BUCKET_ID` and the `StorageBucketId`, `StorageBucketSummary` and `ObjectStoreErrorCode` types |
 | `@k2b/cloud/start` | Supported, server-only | `startPlatform`, `initializePlatform`, and `PlatformStartOptions`; [startup contract](/en/docs/build/platform-start) |
 | `@k2b/cloud/server` | Supported, server-only | Hono middleware, validation, actors, results, and access |
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
+| `@k2b/cloud/shared` | Supported, portable | Shared helpers, including `previewSourceKind` and `PreviewVariant` for [file previews](/en/docs/platform/previews) |
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
@@ -86,6 +87,11 @@ application's provider page with its request locale and the embedded panel
 runtime. See [Panels](/en/docs/platform/panels).
 
 ## Handle server requests
+
+The [file preview service](/en/docs/platform/previews) exports `previews`,
+`PreviewSourceChanged`, `PreviewSource`, `PreviewReader`, `PreviewReadResult`,
+and `PreviewVariant` through `@k2b/cloud/services`. Applications authorize each
+read and retry before using the service.
 
 Import request APIs from `@k2b/cloud/server`:
 
@@ -246,8 +252,9 @@ projection and `provisioningIdentity` live check are documented under
 [application event operations](/en/docs/operations/app-events#check-files-home-provisioning).
 
 `readAccountCategoryPolicy` supplies server-side presentation settings;
-`isAccountCategoryAllowed` is for platform-owned credential eligibility checks,
-not application resource authorization. The browser-safe contracts barrel
+`isAccountCategoryAllowed` and the per-account `isAccountAllowed` are for
+platform-owned credential eligibility checks, not application resource
+authorization. The browser-safe contracts barrel
 exports `AccountCategory`, `AccountCategoryPolicySchema`, `accountCategory`
 and `accountCategoryLabel`. See
 [Account types](/en/docs/operations/account-categories) for their use.
@@ -446,10 +453,11 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `@k2b/cloud/descriptions` | Supported, SolidJS | `DescriptionPanel` draws a portable chart description or a Cloud block (`stats`, `table`, `details`, `budget`, `balance`, `flow`) in the `@k2b/ui` dashboard frame with every state; `DescriptionBlockPreview`, `resolveDescription`, `formatDescriptionNumber` | [Dashboards from descriptions](/en/docs/frontend/dashboards) |
 | `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap`, `CloudMapAttribution` and `CloudMapProps` for budgeted maps and browser snapshots; `AddressAutocomplete` for forms; `geoNavigationHref` and `geoNavigationPlatform` for navigation links | [Places and maps](/en/docs/platform/places-and-maps) |
 | `@k2b/cloud/geo/document` | Supported, browser and server | Validate and serialize saved maps, linked pins and complete routes | [Saved maps](/en/docs/platform/saved-map-documents) |
-| `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
-| `@k2b/cloud/browser/shared-text` | Supported, browser | Shared provider, offline storage, action history and anchored table transport | [Shared text documents](/en/docs/data/shared-text-documents) |
+| `@k2b/cloud/shared-text` | Supported, server-only | Retained text logs, `createSharedTextRoom`, `SharedTextRoomAdapter`, room `freeze`/`thaw`/`closeDocument` and snapshot `flushNow` | [Shared text documents](/en/docs/data/shared-text-documents) |
+| `@k2b/cloud/browser/shared-text` | Supported, browser | Shared provider, `openSharedTextDocument`, lazy rebase helpers, offline storage, action history and anchored table transport | [Shared text documents](/en/docs/data/shared-text-documents) |
 | `@k2b/cloud/browser/session` | Supported, browser | Sign out with cross-tab offline-document cleanup | [Offline documents](/en/docs/data/shared-text-documents#keep-unconfirmed-input-on-the-device) |
 | `@k2b/cloud/ai/browser` | Supported, client | Use `createLiveDictationSource` and its `DictationSource` / `DictationSession` / `DictationEvent` / `DictationDevice` / `DictationErrorCode` types for [live dictation](/en/docs/ai/live-dictation); launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input and output schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/solid` | Supported, browser | AI chat controller over the conversation SSE stream | [Chat interface](/en/docs/ai/chat-interface) |
@@ -486,6 +494,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/testing` | Supported, browser tests | Inspect mounted context actions and navigation, and capture search requests | [Universal search](/en/docs/platform/search#test-application-search-and-context-actions) |
 | `@k2b/cloud/browser/composer-insert` | Supported, SolidJS | Build insert rows with `cloudInsertMenu` and app-opening rows with `cloudCommandMenu` / `openComposerCommand`; read tags, `commands()` and `state()` from `createCloudComposerCatalog` | [Universal search](/en/docs/platform/search#insert-resources-from-a-composer) |
 | `@k2b/cloud/browser/resource-picker` | Supported, SolidJS | Choose a stable resource reference through Universal Search | [Universal search](/en/docs/platform/search) |
+| `@k2b/cloud/browser/storage-bucket-select` | Supported, SolidJS | `StorageBucketSelect`: choose the bucket a `storage_bucket` setting points to | [Object store](/en/docs/platform/object-store#show-the-choice-in-your-administration) |
 | `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap` with authenticated Core map styles and tiles | [Places and maps](/en/docs/platform/places-and-maps) |
 | `@k2b/cloud/browser/files` | Supported, SolidJS | `chooseFiles`: add files from this device or from Cloud apps that offer files, as `File` objects; `saveFiles`, `SaveFilesButton`, `saveFilesLabel`, `SAVE_FILES_ICON`: save copies into Cloud apps that store files | [File providers](/en/docs/platform/file-providers) |
 | `@k2b/cloud/clients/core` | Platform-owned, browser | Typed client for the Core platform API | — |
@@ -497,7 +506,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/workflows/testing` | Supported, tests | Workflow process fixtures | [Test workflows](/en/docs/automation/workflow-observability-and-testing) |
 | `@k2b/cloud/services/image-metadata` | Supported, server-only | Strip metadata from content image uploads without re-encoding | [Image upload privacy](/en/docs/platform/image-upload-privacy) |
 | `@k2b/cloud/services/document-extraction` | Supported, server-only | Convert authorized document bytes to bounded untrusted Markdown | [Document extraction](/en/docs/platform/document-extraction) |
-| `@k2b/cloud/services/pdf` | Supported, server-only | Prepare bounded map images for PDF and print exports | [Saved maps](/en/docs/platform/saved-map-documents) |
+| `@k2b/cloud/services/pdf` | Supported, server-only | Render PDFs; merge, extract, split, rotate and reorder pages; prepare print images | [PDF and templates](/en/docs/platform/pdf-and-templates), [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/services/outbox` | Supported, server-only | `createPgOutbox`: deliver the rows of an application's own outbox table after commit, in order per key | [Migrations and transactions](/en/docs/data/migrations-and-transactions#deliver-an-outbox) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |
@@ -679,3 +688,26 @@ and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-sn
 `parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
+
+
+## Workspace speedtest consumers
+
+The private `@k2b/speedtest` workspace shares one measurement contract between
+Tools, Cloud CLI and the standalone server's script. It has no Cloud dependency.
+Use its supported entries rather than importing source files:
+
+| Entry | Runtime and purpose |
+| --- | --- |
+| `@k2b/speedtest` | Browser/server: plans, engine, progress and result types |
+| `@k2b/speedtest/browser` | Browser: anonymous fetch and XHR upload progress |
+| `@k2b/speedtest/node` | Node/Bun: anonymous HTTP transport with socket backpressure |
+| `@k2b/speedtest/http` | Browser/server: shared HTTP response checks |
+| `@k2b/speedtest/udp-client` | Node/Bun: explicit UDP jitter/loss diagnostic |
+
+See [Run a speedtest server](/en/docs/operations/speedtest-server) for duration,
+statistics, anonymous budgets and migration from Cloud's legacy script URLs.
+
+Core's routine definition export uses the framework-owned `exportChatTasks`,
+`ChatTaskExportPageSchema`, `ChatTaskExportEntrySchema`, `ChatTaskExportQuerySchema`
+and `ChatTaskExportForbiddenError` exports from `@k2b/cloud/ai`. See
+[Export automation definitions](/en/docs/operations/automation-definition-export).

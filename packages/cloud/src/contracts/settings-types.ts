@@ -13,6 +13,7 @@
  * No runtime in this file — pure TypeScript.
  */
 import type { SettingOption } from "../services/settings/defaults";
+import type { StorageBucketId } from "./storage-buckets";
 
 // ── Setting definition shape (what users write inside defineApp.settings) ───
 
@@ -49,6 +50,7 @@ type CommonDef = {
 type StringLikeKind = "string" | "text" | "email" | "url" | "secret" | "image" | "cron" | "timezone" | "template";
 
 export type AppSettingDef =
+  | (CommonDef & { kind: "storage_bucket"; default?: StorageBucketId })
   | (CommonDef & { kind: StringLikeKind; default: string; placeholder?: string; templateVars?: readonly string[] })
   | (CommonDef & { kind: "boolean"; default: boolean })
   | (CommonDef & { kind: "number"; default: number; min?: number; max?: number; integer?: boolean; placeholder?: string })
@@ -62,15 +64,17 @@ export type AppSettingsMap = Record<string, AppSettingDef>;
 // ── Type-level transforms ───────────────────────────────────────────────────
 
 /** Map a setting `kind` literal to the runtime value type returned by reads. */
-export type KindToType<K extends string> = K extends "boolean"
-  ? boolean
-  : K extends "number"
-    ? number
-    : K extends "string_list"
-      ? string[]
-      : K extends "number_list"
-        ? number[]
-        : string;
+export type KindToType<K extends string> = K extends "storage_bucket"
+  ? StorageBucketId
+  : K extends "boolean"
+    ? boolean
+    : K extends "number"
+      ? number
+      : K extends "string_list"
+        ? string[]
+        : K extends "number_list"
+          ? number[]
+          : string;
 
 /**
  * Derive a flat `{ key: value }` map from a SettingsMap.

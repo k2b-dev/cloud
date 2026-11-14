@@ -190,10 +190,10 @@ export default function PasskeysSettings(props: Props) {
       }
     >
       <Show when={passkeys().length > 0} fallback={<Placeholder icon="ti ti-fingerprint" description={<>{t().noPasskeys}</>} />}>
-        <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
+        <div class="flex flex-col divide-y divide-(--ui-data-row-divider)">
           <For each={passkeys()}>
             {(passkey) => (
-              <div class="flex items-center gap-3 p-3">
+              <div class="flex items-center gap-3 py-3">
                 <div class="min-w-0 flex-1">
                   <div class="flex min-w-0 items-center gap-2">
                     <span class="truncate text-sm font-medium text-primary">{passkey.name}</span>

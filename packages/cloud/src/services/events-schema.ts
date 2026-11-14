@@ -25,7 +25,7 @@ export const migrateEventsSchema = async (tx: TransactionSQL): Promise<void> => 
     )
   `.simple();
   // Unreleased main images claimed through these two.
-  await tx`DROP INDEX IF EXISTS events.idx_events_outbox_claim, events.idx_events_outbox_order`.simple();
+  await tx`DROP INDEX IF EXISTS events.idx_events_outbox_claim, events.idx_events_outbox_order, events.idx_events_outbox_key, events.idx_events_outbox_due, events.idx_events_outbox_deadline`.simple();
   // A claim walks one application's rows in seq order and probes each key for a claimed row or
   // one waiting for a retry, so its cost follows the batch, not the backlog or its statistics.
   await tx`CREATE INDEX IF NOT EXISTS idx_events_outbox_sequence ON events.outbox (kind, app_id, seq)`.simple();
@@ -37,6 +37,11 @@ export const migrateEventsSchema = async (tx: TransactionSQL): Promise<void> => 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_events_outbox_coalesce
     ON events.outbox (app_id, coalesce_key) WHERE coalesce_key IS NOT NULL
   `.simple();
+  // Deadline invalidations are future-dated in this same outbox. Due rows must
+  // remain cheap to claim while many long-lived session expiries are pending.
+  // The composite expression is intentional: ordinary key probes cannot use
+  // this index's app/kind prefix and accidentally scan every future deadline.
+  await tx`CREATE INDEX IF NOT EXISTS idx_events_outbox_wake ON events.outbox ((ARRAY[app_id, kind]), (GREATEST(claimed_until, next_attempt_at)))`.simple();
   // The only write path, for the TypeScript API and for application SQL triggers.
   // A coalesce key joins live rows of one transaction: the last payload wins, the first seq stays.
   await tx`

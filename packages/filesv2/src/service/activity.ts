@@ -231,7 +231,7 @@ export async function filegateMutation<T>(
       !!intent.writeOptions &&
       sameUploadOptions(options.options, { ...intent.writeOptions, metadata: { ...intent.writeOptions.metadata, activity: scope.id } }) &&
       options.size === intent.size &&
-      (options.options.onConflict ?? "error") === (intent.action === "file.edit" ? "overwrite" : "error");
+      (options.options.onConflict ?? "error") === (intent.action === "file.edit" ? "overwrite" : (intent.onConflict ?? "error"));
     const matches = lifecycle
       ? lifecycleMatches
       : uploadMatches ||

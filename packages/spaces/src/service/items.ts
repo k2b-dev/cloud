@@ -29,7 +29,7 @@ import type {
   UpdateItem,
 } from "@/contracts";
 import { INACTIVE_ITEM_DAYS, ItemRequestKeySchema, validAssigneeDelta } from "@/contracts";
-import { publishItemEvent } from "../app-events";
+import { itemEventState, publishItemEvent, publishItemUpdated } from "../app-events";
 import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
 import { descriptionPreview } from "../presentation/description-preview";
 import { CompletionInputSchema, type TaskWork } from "../work-contracts";
@@ -240,6 +240,7 @@ export const persistCalendarEvent = async (params: {
   if (params.data.recurrenceRule && current.recurring_event_id) {
     return { ok: false, error: "Recurring series cannot also be an override", status: 400 };
   }
+  const eventBefore = await itemEventState(params.db, params.itemId);
   const seriesShiftMilliseconds =
     current.recurrence_rrule && params.data.recurrenceRule && !current.recurring_event_id && current.starts_at
       ? new Date(params.data.startsAt).getTime() - current.starts_at.getTime()
@@ -315,6 +316,7 @@ export const persistCalendarEvent = async (params: {
       WHERE item.id = ${params.itemId}::uuid
     `;
   }
+  await publishItemUpdated(params.db, params.itemId, eventBefore);
   if (params.completed && current.completed_at === null) {
     await publishItemEvent(params.db, "item.completed", params.itemId, params.spaceId);
   }
@@ -1966,6 +1968,7 @@ export const update = async (params: {
       return { ok: false, error: "Item moved to another Space", status: 409 };
     if (data.expectedTitle !== undefined && locked.title !== data.expectedTitle)
       return { ok: false, error: "Title changed; reload and review the current title", status: 409, code: "TITLE_CONFLICT" };
+    const eventBefore = await itemEventState(tx, id);
     const changingAssignees = data.assigneeIds !== undefined || data.addAssigneeIds !== undefined || data.removeAssigneeIds !== undefined;
     const currentAssignees = changingAssignees ? await readAssigneePrincipals(id, tx) : [];
     const assigneeIds =
@@ -2176,6 +2179,7 @@ export const update = async (params: {
       },
       tx,
     );
+    await publishItemUpdated(tx, id, eventBefore);
     await publishSpaceChange(tx, { type: "item.updated", spaceId: current.spaceId, itemId: id });
     return { ok: true, data: updated };
   });
@@ -2536,6 +2540,7 @@ export const move = async (params: {
     if (!column || column.space_id !== existing.space_id) {
       return { ok: false, error: "Column not found in space", status: 400 };
     }
+    const eventBefore = await itemEventState(tx, id);
     // Completion follows the target status unless the request sets it, so a client that saw an outdated state cannot
     // leave a completed task in an open status. Blockers guard a completion change, and a claim guards it and every
     // move that names a claim. A move that keeps the state keeps its completion time and needs no claim, so anyone can
@@ -2604,6 +2609,7 @@ export const move = async (params: {
       tx,
     );
     await publishSpaceChange(tx, { type: completes ? "item.completed" : "item.moved", spaceId: existing.space_id, itemId: id });
+    await publishItemUpdated(tx, id, eventBefore);
     if (completes && completed) await publishItemEvent(tx, "item.completed", id, existing.space_id);
     if (completes) await publishDependentsChange(tx, { spaceId: existing.space_id, blockerItemId: id });
     return { ok: true, data: row };
@@ -2653,6 +2659,7 @@ export const setCompleted = async (params: {
     if (!current) return { ok: false, error: "Item not found", status: 404 };
     if (current.space_id !== located.space_id || (params.expectedSpaceId && current.space_id !== params.expectedSpaceId))
       return { ok: false, error: "Task moved to another Space; read its current location", status: 409 };
+    const eventBefore = await itemEventState(tx, id);
     // A claim guards a completion change and every call that names a claim; repeating the state changes no ownership.
     let takenOver: Awaited<ReturnType<typeof taskWork.checkClaim>> | null = null;
     if (completed !== (current.completed_at !== null) || params.claimId) {
@@ -2737,6 +2744,7 @@ export const setCompleted = async (params: {
       tx,
     );
     await publishSpaceChange(tx, { type: "item.completed", spaceId: current.space_id, itemId: id });
+    await publishItemUpdated(tx, id, eventBefore);
     if (completed && current.completed_at === null) await publishItemEvent(tx, "item.completed", id, current.space_id);
     if (completed !== (current.completed_at !== null)) await publishDependentsChange(tx, { spaceId: current.space_id, blockerItemId: id });
     return { ok: true, data: row };
@@ -2775,6 +2783,7 @@ export const setAssignees = async (params: {
       SELECT space_id, title FROM spaces.items WHERE id = ${id} FOR UPDATE
     `;
     if (!current) return { ok: false, error: "Item not found", status: 404 };
+    const eventBefore = await itemEventState(tx, id);
     const currentAssignees = await readAssigneePrincipals(id, tx);
     const assigneeCheck = await validateAssigneeReplacementInSpace(current.space_id, currentAssignees, userIds, tx);
     if (!assigneeCheck.ok) return assigneeCheck;
@@ -2805,6 +2814,7 @@ export const setAssignees = async (params: {
       },
       tx,
     );
+    await publishItemUpdated(tx, id, eventBefore);
     await publishSpaceChange(tx, { type: "item.updated", spaceId: current.space_id, itemId: id });
     return { ok: true, data: undefined };
   });

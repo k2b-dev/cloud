@@ -3,11 +3,10 @@ import {
   escapeMailEditableMarkdownValue,
   escapeMailMarkdownValue,
   migrateReferenceTemplateToLiquid,
-  migrateWorkflowTextTemplateToLiquid,
   renderMailLiquidTemplate,
-  renderMailWorkflowTemplate,
   validateMailLiquidTemplate,
 } from "./template-rendering";
+import { migrateWorkflowTextTemplateToLiquid, renderMailWorkflowTemplate } from "./workflow-template-rendering";
 
 describe("Mail Liquid templates", () => {
   test("preserves typed output and memory limit reasons", () => {

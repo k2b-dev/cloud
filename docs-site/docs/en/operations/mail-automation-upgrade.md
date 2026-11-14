@@ -10,6 +10,8 @@ updated: 2026-10-27
 
 # Upgrade Mail automation ordering and assignments
 
+Before a release removes Mail rules or routines, [export their definitions](/en/docs/operations/automation-definition-export) while the old APIs are available.
+
 This upgrade changes existing Mail workflows and guided incoming automations:
 a rule no longer replaces an existing assignment. Any assignee prevents the
 assignment step, whether assigned by a person or another rule. Editing an

@@ -16,7 +16,7 @@ and `RichSelect` when each option needs more than one line or a preview.
 ## Import
 
 ```tsx
-import { ChoiceSlider } from "@k2b/ui";
+import { ChoiceSlider, ChoiceSliderIndicator } from "@k2b/ui";
 ```
 
 ## How it looks
@@ -63,6 +63,23 @@ surrounding card can name the stop live.
 
 `size="lg"` gives a 44 px track, a 28 px thumb, and larger stops for touch
 sheets. The default fits popovers.
+
+## Indicator
+
+`ChoiceSliderIndicator` draws the same rail, fill, and thumb in 24 px without
+interaction, for a trigger that opens the slider, such as the model trigger in
+a composer. Pass the number of stops as `count` and the chosen stop as
+`index`, or `null` (or a negative index) for a choice outside the stops. It is hidden from screen
+readers, so the trigger's own label must name the value. Place it at a fixed
+spot, flush left in a trigger of fixed width, so it never moves when the
+label changes.
+
+```tsx
+<button type="button" aria-label="Model, Thorough" class="w-[148px]">
+  <ChoiceSliderIndicator count={4} index={2} />
+  Thorough
+</button>
+```
 
 ## Accessibility
 

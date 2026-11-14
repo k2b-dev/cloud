@@ -15,7 +15,7 @@ let topic: Topic<unknown>;
 let connection: Awaited<ReturnType<typeof connectTestNats>>;
 let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
 
-// The file owns a private database: it asserts that the whole outbox is empty.
+// Core also publishes identity/deadline events; assertions are scoped to this application.
 beforeAll(async () => {
   if (!testInfra.database || !testInfra.nats) return;
   database = await useFreshDatabase("events_outbox");
@@ -35,7 +35,7 @@ afterAll(async () => {
 });
 
 const pending = async (): Promise<{ ordering_key: string; payload: unknown; attempts: number }[]> =>
-  sql`SELECT ordering_key, payload, attempts FROM events.outbox ORDER BY seq`;
+  sql`SELECT ordering_key, payload, attempts FROM events.outbox WHERE app_id = ${APP} ORDER BY seq`;
 
 const publishedAfter = async (after: string): Promise<unknown[]> => {
   const events: unknown[] = [];
@@ -55,7 +55,7 @@ const enqueueMany = (count: number, keys: number, prefix: string) => sql`
 `;
 
 const pendingCount = async (): Promise<number> => {
-  const [row] = await sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM events.outbox`;
+  const [row] = await sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM events.outbox WHERE app_id = ${APP}`;
   return row?.count ?? -1;
 };
 

@@ -11,13 +11,6 @@ import { buildEntries } from "./entries";
 const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) =>
   [
     {
-      id: "storage",
-      title: t.storageSettings,
-      description: t.storageSettingsDescription,
-      icon: "ti ti-database",
-      group: "storage" as const,
-    },
-    {
       id: "email-templates",
       title: t.emailTemplateSettings,
       description: t.emailTemplateSettingsDescription,
@@ -38,6 +31,8 @@ export default ssr<AuthContext>(async (c) => {
   const rawTab = c.req.query("tab");
   // SMTP delivery moved to sender profiles — keep old links working.
   if (rawTab === "mail") return c.redirect("/admin/outgoing-mail", 302);
+  // The storage settings moved into the Storage area beside the further buckets.
+  if (rawTab === "storage") return c.redirect("/admin/storage", 302);
   // The AI tabs moved into the AI area; old links land on the same section with their filters.
   const aiHref = aiSettingsRedirectHref(rawTab, c.req.query());
   if (aiHref) return c.redirect(aiHref, 302);
@@ -58,7 +53,6 @@ export default ssr<AuthContext>(async (c) => {
             subtitle={tab.description}
             icon={tab.icon}
             entries={entries}
-            showTestStorageAction={tab.id === "storage"}
           />
         ) : null}
       </div>

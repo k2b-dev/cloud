@@ -830,6 +830,28 @@ test("explorer infers and preserves reference columns shared with table conversi
   });
 });
 
+test("forecast and today coordinates normalize alongside their series", () => {
+  const instant = new Date("2026-10-02T04:00:00Z");
+  expect(
+    normalizeChartDates(
+      {
+        kind: "line",
+        series: [{ data: [{ x: instant, y: 1 }] }],
+        forecast: { from: instant, band: [[0, 2]] },
+        marker: { at: instant, label: "Today" },
+      },
+      "America/New_York",
+      "",
+      true,
+    ),
+  ).toEqual({
+    kind: "line",
+    series: [{ data: [{ x: "2026-10-02", y: 1 }] }],
+    forecast: { from: "2026-10-02", band: [[0, 2]] },
+    marker: { at: "2026-10-02", label: "Today" },
+  });
+});
+
 test("calendar pairs convert Date values to the run's day", () => {
   expect(
     normalizeChartDates({ kind: "heatmap", layout: "calendar", data: [[new Date("2026-01-01T23:30:00Z"), 5]] }, "Europe/Berlin"),

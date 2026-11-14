@@ -15,7 +15,7 @@ import { agentIdFromPath } from "./agent-id";
 /** One agent or standalone service account: its picture, which opens "Change profile picture", and its facts. */
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const id = agentIdFromPath(c.req.param("id"));
   const account = id ? await serviceAccounts.get({ id }) : null;
   if (!account || !isStandaloneServiceAccountKind(account.kind)) return c.notFound();

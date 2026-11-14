@@ -1,8 +1,7 @@
-import { DetailPanel, LocaleProvider } from "@k2b/ui";
+import { LocaleProvider } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY, type MailContactDirectory } from "../../contact-directory";
-import MailConversationContext from "./MailConversationContext";
 import MailRecipientInput from "./MailRecipientInput";
 import { MailContactDirectoryProvider } from "./mail-contact-directory-context";
 
@@ -20,13 +19,7 @@ declare global {
 
 const absentDirectory: MailContactDirectory = { suggest: null, resolve: null, read: null, listWritableBooks: null, create: null };
 
-/** Fixture text for the surrounding page, which the real pages take from their own catalogs. */
-const fixtureText = {
-  en: { subject: "Quarterly review", contextGroup: "Conversation context" },
-  de: { subject: "Quarterly review", contextGroup: "Unterhaltungskontext" },
-};
-
-/** The composer's To row beside the conversation's details panel, as the compose and mailbox pages arrange them. */
+/** The composer's To row, as the compose and mailbox pages arrange it. */
 window.mountMailRecipients = (options) => {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing harness root");
@@ -48,16 +41,6 @@ window.mountMailRecipients = (options) => {
                 />
               </div>
             </section>
-            <aside class="w-full shrink-0 md:w-[22rem]" data-testid="details">
-              <DetailPanel>
-                <DetailPanel.Header title={fixtureText[options.locale].subject} />
-                <DetailPanel.Body>
-                  <DetailPanel.Group label={fixtureText[options.locale].contextGroup}>
-                    <MailConversationContext mailboxId="Box001" conversationId="Conv01" requestUrl="/app/mail/Box001" active />
-                  </DetailPanel.Group>
-                </DetailPanel.Body>
-              </DetailPanel>
-            </aside>
           </div>
         </MailContactDirectoryProvider>
       </LocaleProvider>

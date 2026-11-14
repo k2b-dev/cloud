@@ -6,6 +6,7 @@
     "./src/types/**/*.d.ts",
     "./scripts/**/*.ts",
     "./test/integration/**/*.ts",
+    "./test/charts/**/*.tsx",
     "./test/island-errors/**/*.ts",
     "./test/island-errors/**/*.tsx",
     "./test/island-props-csp/**/*.ts",

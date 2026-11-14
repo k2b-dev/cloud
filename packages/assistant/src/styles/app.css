@@ -589,7 +589,9 @@
 
 /* A Studio app in the chat: one surface with a quiet header and the app below it, at a fixed height so nothing moves. */
 /* svh, not dvh: the height must not follow the phone's address bar while the chat scrolls. */
-.assistant-chat-presentation { display: flex; flex-direction: column; height: min(600px, 45vh); height: min(600px, 45svh); min-width: 0; overflow: hidden; border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-surface); background: var(--k2b-surface); }
+/* The card is an island (layers and shadows): lifted in the chat, flat in a side panel, and flat inside. */
+.assistant-chat-presentation { display: flex; flex-direction: column; height: min(600px, 45vh); height: min(600px, 45svh); min-width: 0; overflow: hidden; border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent); border-radius: var(--k2b-radius-surface); background: var(--k2b-island-surface); box-shadow: var(--k2b-island-shadow); }
+.assistant-chat-presentation > * { --k2b-island-shadow: 0 0 #0000; --k2b-surface-beneath: var(--k2b-island-surface); }
 .assistant-chat-presentation__header { display: flex; flex: none; align-items: center; gap: .5rem; min-height: 2.75rem; padding: .25rem .5rem 0 1.5rem; }
 .assistant-chat-presentation__header > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; font-weight: 600; }
 .assistant-chat-presentation__header > small { flex: none; color: var(--k2b-text-muted); font-size: .6875rem; }

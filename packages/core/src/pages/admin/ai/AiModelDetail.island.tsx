@@ -683,6 +683,7 @@ export default function AiModelDetail(props: {
               <Show when={draft().kind === "chat"}>
                 <NumberInput
                   label={t().maxOut}
+                  description={t().maxOutHelp}
                   value={() => draft().maxOutputTokens}
                   onValueChange={(maxOutputTokens) => update({ maxOutputTokens })}
                   min={1}

@@ -98,6 +98,17 @@ test("contact directory settings use Mail's validated setter", async () => {
   ]);
 });
 
+test("speedtest operator settings use Tools' owning setter", async () => {
+  for (const [key, value] of [
+    ["tools.speedtest_server", "https://speedtest.example.com"],
+    ["tools.speedtest_enabled", false],
+  ] as const) {
+    const result = await invoke(["set", key], { value: JSON.stringify(value), app: "tools", yes: true }, {});
+    expect(result.requests).toEqual([{ path: `/tools/api/admin/settings/${key}`, body: { value, replaceUnreadable: false } }]);
+    expect(result.output).toEqual([{ saved: true }]);
+  }
+});
+
 test("platform retention list, show and set omit --app and preserve the platform endpoint", async () => {
   const row = {
     key: "logs.trace_retention_days",

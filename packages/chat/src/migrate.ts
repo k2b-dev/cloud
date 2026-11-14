@@ -114,6 +114,8 @@ export const migrate = async (): Promise<void> => {
     );
     ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS thread_id uuid REFERENCES chat.threads(id) ON DELETE CASCADE;
     ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS reply_to_seq bigint;
+    -- New replies inherit a constant-size root ref. Legacy targets anchor new chains without a history scan.
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS reply_root_id text CHECK (reply_root_id ~ '^[0-9A-Za-z]{10}$');
     CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat.messages(conversation_id, thread_id, seq);
     CREATE TABLE IF NOT EXISTS chat.conversation_access (
       conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,

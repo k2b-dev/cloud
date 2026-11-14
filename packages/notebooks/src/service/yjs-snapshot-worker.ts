@@ -6,7 +6,7 @@ import { createYjsTopic, TOPIC_RETENTION_MS, YJS_TOPIC_ID } from "./yjs-sync";
 
 const log = logger("yjs-snapshot-worker");
 export const SNAPSHOT_JOB_ID = "notebooks.yjs.snapshot.ordered";
-type SnapshotReason = "periodic" | "unload" | "shutdown" | "reconcile" | "legacy";
+
 type SnapshotSaveJob = { noteId: string; targetCursor: string; reason: string };
 export const SNAPSHOT_JOB_CONFIG = sharedTextSnapshotJobConfig({
   id: SNAPSHOT_JOB_ID,
@@ -61,7 +61,7 @@ const pipeline = sharedText.snapshots({
   },
 });
 
-const queueSnapshotSave = ({ noteId, targetCursor, reason }: { noteId: string; targetCursor: string; reason: SnapshotReason }) =>
+const queueSnapshotSave = ({ noteId, targetCursor, reason }: { noteId: string; targetCursor: string; reason: string }) =>
   pipeline.queue({ docId: noteId, targetCursor, reason });
 export const yjsSnapshotWorker = {
   start: pipeline.start,

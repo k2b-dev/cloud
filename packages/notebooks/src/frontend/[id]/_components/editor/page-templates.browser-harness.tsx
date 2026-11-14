@@ -27,6 +27,8 @@ declare global {
       /** Where the title line and the editor's content end, to prove the offer moves nothing. */
       layout: () => { titleBottom: number; contentHeight: number; scrollHeight: number };
       selection: () => string;
+      caretBottom: () => number;
+      applyRemote: (from: number, to: number, insert: string) => void;
     };
     openedNotes: string[];
   }
@@ -71,6 +73,16 @@ window.mountTemplates = (ctx, locale, doc) => {
       if (!current) return "";
       const { from, to } = current.state.selection.main;
       return current.state.sliceDoc(from, to);
+    },
+    caretBottom: () => {
+      const current = view();
+      const caret = current?.coordsAtPos(current.state.selection.main.head);
+      if (!caret) throw new Error("Caret not drawn");
+      return Math.round(caret.bottom);
+    },
+    // A change that does not come from this person's keyboard, such as a collaborator's edit through Yjs.
+    applyRemote: (from, to, insert) => {
+      view()?.dispatch({ changes: { from, to, insert } });
     },
     layout: () => {
       const current = view();

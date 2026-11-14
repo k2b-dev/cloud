@@ -19,6 +19,11 @@ if (testInfra.database) {
     await closePlatformClients();
     await database.drop();
   });
+  const { sql } = await import("@k2b/cloud");
+  const { createAppEventTestHarness, installLiveOutbox } = await import("@k2b/cloud/events/testing");
+  const { filesCapabilities } = await import("../src/capabilities");
+  await installLiveOutbox(sql);
+  createAppEventTestHarness("filesv2", filesCapabilities);
   // Real effects also record audit and logging data in this isolated database.
   const { migrate: migrateAudit } = await import("../../core/src/migrate/core/audit");
   const { migrate: migrateLogging } = await import("../../core/src/migrate/core/logging");

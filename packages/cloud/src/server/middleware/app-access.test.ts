@@ -4,6 +4,7 @@ import { WSContext } from "hono/ws";
 import { person } from "../../_internal/define-app.test-fixture";
 import * as registry from "../../_internal/registry";
 import { appAccess } from "../../contracts/app-access";
+import * as accessEvents from "../../events/app-access";
 import { appAccessRevalidator, appPublicRouteMatcher, guardAppAccessSocket, requireAppAccess, watchAppAccess } from "./app-access";
 import type { AuthContext, RequestAuthority } from "./auth";
 import * as authMiddleware from "./auth";
@@ -272,4 +273,121 @@ test("resource entry allows a probe beyond the discovery budget and distinguishe
     timeout.mockRestore();
     denied.mockRestore();
   }
+});
+
+test("event-only access watches have no initial recheck or idle timer", async () => {
+  let changed = () => {};
+  let queries = 0,
+    closed = 0,
+    released = 0;
+  const interval = spyOn(globalThis, "setInterval");
+  const stop = watchAppAccess({
+    intervalMs: false,
+    checkInitially: false,
+    check: async () => {
+      queries++;
+      return false;
+    },
+    denied: () => {
+      closed++;
+    },
+    subscribe: (callback) => {
+      changed = callback;
+      return () => {
+        released++;
+      };
+    },
+  });
+  try {
+    await Promise.resolve();
+    expect(queries).toBe(0);
+    expect(interval).not.toHaveBeenCalled();
+    changed();
+    await Bun.sleep(0);
+    expect(queries).toBe(1);
+    expect(closed).toBe(1);
+    expect(released).toBe(1);
+  } finally {
+    stop();
+    interval.mockRestore();
+  }
+});
+
+test("SSE entry guards retain polling unless an event-complete fixed rule opts in", async () => {
+  const { bindResourceAppAccess } = await import("../../_internal/app-access-resources");
+  const { compileAppAccess } = await import("../../contracts/app-access");
+  authenticate(authority);
+  spies.push(spyOn(accessEvents, "subscribeAppAccessChanged").mockImplementation(() => () => {}));
+  for (const [resource, eventOnly] of [
+    [false, false],
+    [false, true],
+    [true, true],
+  ] as const) {
+    const declaration = resource
+      ? appAccess.resources({ adapters: { workspace: { hasAnyRight: async () => true } } })
+      : appAccess.signedIn();
+    const app = { id: "sse-default", access: compileAppAccess(declaration) };
+    const unbind = bindResourceAppAccess(app.id, declaration);
+    const intervals = spyOn(globalThis, "setInterval");
+    try {
+      const server = new Hono<AuthContext>().use(requireAppAccess(app, renderDenied)).get("/", (c) => {
+        if (eventOnly) c.set("appAccessGuard", { eventOnly: true });
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(": ready\n\n"));
+            },
+          }),
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        );
+      });
+      const response = await server.request("/");
+      expect(response.status).toBe(200);
+      expect(intervals.mock.calls.filter(([, ms]) => ms === 50_000)).toHaveLength(eventOnly && !resource ? 0 : 1);
+      await response.body!.cancel();
+    } finally {
+      intervals.mockRestore();
+      unbind();
+    }
+  }
+});
+
+test("an event-only socket checks credentials again between handshake and subscription", async () => {
+  let current: RequestAuthority | null = authority();
+  authenticate(() => current);
+  spies.push(
+    spyOn(registry, "getApp").mockResolvedValue({
+      id: "socket-race",
+      name: "Socket race",
+      description: "Fixture",
+      icon: "ti ti-test-pipe",
+      baseUrl: "http://socket-race:3000",
+      routes: ["/"],
+      access: appAccess.signedIn(),
+    }),
+  );
+  spies.push(spyOn(accessEvents, "subscribeAppAccessChanged").mockImplementation(() => () => {}));
+  let reason = "";
+  const closed = Promise.withResolvers<void>();
+  const server = new Hono<AuthContext>().use(auth.requireRole("*")).get("/", async (c) => {
+    const events = await guardAppAccessSocket(c, "socket-race", {}, { eventOnly: true });
+    current = null;
+    events.onOpen?.(
+      new Event("open"),
+      new WSContext({
+        readyState: 1,
+        send: () => {},
+        close: (_code, message) => {
+          reason = message ?? "";
+          closed.resolve();
+        },
+      }),
+    );
+    return c.text("opened");
+  });
+  await server.request("/");
+  await closed.promise;
+  expect(reason).toBe("app_access_denied");
 });

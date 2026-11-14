@@ -351,17 +351,18 @@ body.k2b-ui {
   gap: 0.5rem;
   height: 232px;
   padding: 1rem 1.1rem;
+  /* A note card is an island (@k2b/ui layers and shadows), like a note card in Notebooks:
+     the island surface, a light edge, and the island shadow; dark mode lifts with a lighter surface. */
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface-muted);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
   color: inherit;
   text-decoration: none;
   overflow: hidden;
 }
-[data-theme="dark"] .n-card {
-  background: var(--k2b-surface-elevated);
-}
 .n-card:hover {
-  background: color-mix(in srgb, var(--k2b-text) 7%, var(--k2b-surface));
+  background: var(--k2b-edge-hover-bg);
 }
 .n-card .n-t {
   font-weight: 600;
@@ -1346,7 +1347,8 @@ body.k2b-ui {
     background: var(--k2b-action-solid);
     color: #fff;
     font-size: 26px;
-    box-shadow: 0 8px 20px -8px rgb(29 78 216 / 0.6);
+    /* A floating action stays open over the list: the toolbar shadow of layer 3. */
+    box-shadow: var(--k2b-shadow-toolbar);
     cursor: pointer;
   }
   .n-foot {

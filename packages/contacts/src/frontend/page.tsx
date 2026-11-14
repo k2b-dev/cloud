@@ -16,11 +16,9 @@ import {
   resolvePublicId,
 } from "../service/public-resources";
 import ContactCreateLauncher from "./_components/ContactCreateLauncher.island";
-import ContactDetailPanel from "./_components/ContactDetailPanel.island";
 import ContactsLiveEvents from "./_components/ContactsLiveEvents.island";
 import ContactsSidebar from "./_components/ContactsSidebar";
-import ContactsWorkspaceMain from "./_components/ContactsWorkspaceMain";
-import DesktopDetailLayoutSync from "./_components/DesktopDetailLayoutSync.island";
+import ContactsWorkspace from "./_components/ContactsWorkspace.island";
 import {
   CONTACTS_PER_PAGE,
   loadContactBookPermissions,
@@ -121,7 +119,6 @@ export default ssr<AuthContext>(async (c) => {
   const resultHref = `${requestUrl.pathname}${requestUrl.search}`;
   const initialSelectedContactId = selectedPublicContact?.id ?? selectedContactIdFromUrl;
   const initialSelectedBookId = selectedPublicContact?.bookId ?? selectedBookIdFromUrl;
-  const hasDesktopDetailSelection = Boolean(selectedPublicContact);
   const geoAvailability = await geoAvailabilityRequest;
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbContacts }]}>
@@ -131,60 +128,51 @@ export default ssr<AuthContext>(async (c) => {
         <ContactsSidebar books={books} active={queryOptions.favorites ? "favorites" : "all"} adminBookIds={adminBookIds} />
 
         <AppWorkspace.Content>
-          <ContactsWorkspaceMain
-            scope={scope}
-            title={queryOptions.favorites ? t.favoritesTitle : t.allContactsTitle}
-            description={queryOptions.favorites ? t.favoritesDescription : t.allContactsDescription}
-            total={contactsResult.data.total}
-            search={search}
-            resultHref={resultHref}
-            perPage={perPage}
-            searchPlaceholder={t.searchPlaceholder}
-            contacts={contacts}
-            bookNames={bookNames}
-            showBookNames
-            initialSelectedContactId={initialSelectedContactId}
-            initialSelectedBookId={initialSelectedBookId}
-            writableBooks={writableBooks}
-            defaultCreateBookId={writableBooks[0]?.id ?? null}
-            chooseBookOnCreate
-            currentPage={contactsResult.data.page}
-            totalPages={totalPages}
-            tags={globalTags}
-            activeTagId={activeTagId}
-            filtersBasePath="/app/contacts"
-            initialFavoriteKeys={favoriteKeys}
+          <ContactsWorkspace
+            list={{
+              scope,
+              title: queryOptions.favorites ? t.favoritesTitle : t.allContactsTitle,
+              description: queryOptions.favorites ? t.favoritesDescription : t.allContactsDescription,
+              total: contactsResult.data.total,
+              search,
+              resultHref,
+              perPage,
+              searchPlaceholder: t.searchPlaceholder,
+              contacts,
+              bookNames,
+              showBookNames: true,
+              initialSelectedContactId,
+              initialSelectedBookId,
+              writableBooks,
+              defaultCreateBookId: writableBooks[0]?.id ?? null,
+              chooseBookOnCreate: true,
+              currentPage: contactsResult.data.page,
+              totalPages,
+              tags: globalTags,
+              activeTagId,
+              filtersBasePath: "/app/contacts",
+              initialFavoriteKeys: favoriteKeys,
+            }}
+            reader={{
+              initialContact: selectedPublicContact,
+              initialAddressId: c.req.query("address") ?? null,
+              initialContactId: initialSelectedContactId,
+              initialBookId: initialSelectedBookId,
+              initialNotesPage,
+              contacts,
+              bookNames,
+              writableBooks,
+              adminBookIds,
+              memberBookIds,
+              currentUserId: user.id,
+              showEmpty: false,
+              initialFavoriteKeys: favoriteKeys,
+              geoAvailability,
+              timeZone: getTimeZone(c),
+            }}
           />
-
-          <AppWorkspace.Detail
-            id="contacts-detail-panel"
-            open={hasDesktopDetailSelection}
-            width="lg"
-            maxWidth={760}
-            phone={c.req.query("address") ? "page" : "sheet"}
-            viewTransitionName="contacts-detail-panel-shell"
-          >
-            <ContactDetailPanel
-              initialContact={selectedPublicContact}
-              initialAddressId={c.req.query("address") ?? null}
-              initialContactId={initialSelectedContactId}
-              initialBookId={initialSelectedBookId}
-              initialNotesPage={initialNotesPage}
-              contacts={contacts}
-              bookNames={bookNames}
-              writableBooks={writableBooks}
-              adminBookIds={adminBookIds}
-              memberBookIds={memberBookIds}
-              currentUserId={user.id}
-              showEmpty={false}
-              initialFavoriteKeys={favoriteKeys}
-              geoAvailability={geoAvailability}
-              timeZone={getTimeZone(c)}
-            />
-          </AppWorkspace.Detail>
         </AppWorkspace.Content>
       </AppWorkspace>
-      <DesktopDetailLayoutSync detailPanelId="contacts-detail-panel" />
     </Layout>
   );
 });

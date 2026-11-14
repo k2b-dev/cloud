@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
+import { SHARED_TEXT_ACK_TIMEOUT_MS } from "@k2b/cloud/browser/shared-text";
 import { encoding } from "@k2b/stdlib";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -6,7 +7,7 @@ import { notebooksWorkspace } from "../../../lib/workspace-events";
 import { notebooksYjs } from "../../../lib/yjs";
 import { presencePeerId } from "../presence-peer";
 import { reconnectDelayMs } from "../reconnect";
-import { createYjsProvider } from "./provider";
+import { createYjsProvider, type YjsProviderError } from "./provider";
 
 const NOTE_ID = "Note01";
 const NOTEBOOK_ID = "Book01";
@@ -58,12 +59,14 @@ const workspaceSubscriptions = (socket: FakeWebSocket) =>
 let originalWebSocket: typeof WebSocket | undefined;
 
 beforeEach(() => {
+  setSystemTime(new Date("2026-11-09T12:00:00Z"));
   originalWebSocket = globalThis.WebSocket;
   FakeWebSocket.instances = [];
   Object.assign(globalThis, { WebSocket: FakeWebSocket });
 });
 
 afterEach(() => {
+  setSystemTime();
   if (originalWebSocket) Object.assign(globalThis, { WebSocket: originalWebSocket });
   else Reflect.deleteProperty(globalThis, "WebSocket");
 });
@@ -441,6 +444,7 @@ describe("Yjs provider storage exhaustion", () => {
     const random = spyOn(Math, "random").mockReturnValue(0);
     Object.assign(globalThis, {
       setTimeout: (fn: () => void, delay: number) => {
+        if (delay === SHARED_TEXT_ACK_TIMEOUT_MS) return originalSetTimeout(fn, delay);
         delays.push(delay);
         return timers.push(fn);
       },
@@ -590,7 +594,10 @@ describe("Yjs provider unconfirmed edits", () => {
     const merged = encoding.toBase64(Y.mergeUpdates(payloads.slice(1).map(encoding.fromBase64)));
     const timers: Array<() => void> = [];
     const originalSetTimeout = globalThis.setTimeout;
-    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    Object.assign(globalThis, {
+      setTimeout: (fn: () => void, delay: number) =>
+        delay === SHARED_TEXT_ACK_TIMEOUT_MS ? originalSetTimeout(fn, delay) : timers.push(fn),
+    });
     try {
       editor.socket.close();
       editor.socket.onclose?.({ code: 1006, reason: "" });
@@ -612,6 +619,57 @@ describe("Yjs provider unconfirmed edits", () => {
       expect(editor.provider.hasUnsentChanges()).toBe(false);
     } finally {
       Object.assign(globalThis, { setTimeout: originalSetTimeout });
+    }
+  });
+
+  test.each([
+    ["the note server", true, "BACKPRESSURE"],
+    ["the gateway", false, "proxy backpressure"],
+  ])("a busy %s reconnects and resends unsent text instead of ending the editor", (_source, serverError, reason) => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    const fatal: string[] = [];
+    const provider = createYjsProvider({
+      doc,
+      awareness,
+      noteId: NOTE_ID,
+      appUrl: "http://localhost",
+      onFatal: (error) => fatal.push(error.code),
+    });
+    const timers: Array<() => void> = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    Object.assign(globalThis, {
+      setTimeout: (fn: () => void, delay: number) =>
+        delay === SHARED_TEXT_ACK_TIMEOUT_MS ? originalSetTimeout(fn, delay) : timers.push(fn),
+    });
+    try {
+      provider.connect();
+      const socket = FakeWebSocket.instances.at(-1)!;
+      socket.open();
+      readyReplay(socket);
+      doc.getText("content").insert(0, "typed while the server is busy");
+      const [unsent] = syncPublishes(socket);
+      // Too many queued messages: the server (or gateway) asks to try again later.
+      if (serverError) socket.message({ type: notebooksYjs.wsType.error, payload: { code: "BACKPRESSURE", message: "Too many messages" } });
+      socket.close();
+      socket.onclose?.({ code: 1013, reason });
+
+      expect(fatal).toEqual([]);
+      expect(provider.hasUnsentChanges()).toBe(true);
+      timers.shift()!();
+      const next = FakeWebSocket.instances.at(-1)!;
+      expect(next).not.toBe(socket);
+      next.open();
+      readyReplay(next);
+      expect(syncPublishes(next)).toEqual([unsent!]);
+      echo(next, unsent!);
+      expect(provider.hasUnsentChanges()).toBe(false);
+      expect(fatal).toEqual([]);
+    } finally {
+      Object.assign(globalThis, { setTimeout: originalSetTimeout });
+      provider.dispose();
+      awareness.destroy();
+      doc.destroy();
     }
   });
 
@@ -795,7 +853,10 @@ describe("Yjs provider unconfirmed edits", () => {
     expect(syncPublishes(next)).toEqual(payloads);
     const timers: Array<() => void> = [];
     const originalSetTimeout = globalThis.setTimeout;
-    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    Object.assign(globalThis, {
+      setTimeout: (fn: () => void, delay: number) =>
+        delay === SHARED_TEXT_ACK_TIMEOUT_MS ? originalSetTimeout(fn, delay) : timers.push(fn),
+    });
     try {
       editor.socket.onclose?.({ code: 1006, reason: "" });
       editor.socket.onopen?.();
@@ -1422,6 +1483,9 @@ describe("trusted awareness transport", () => {
     const provider = createYjsProvider({ doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost" });
     const publishes = (socket: FakeWebSocket) =>
       socket.sent.map((value) => JSON.parse(value)).filter((value) => value.type === notebooksYjs.wsType.awarenessPublish);
+    const timers: Array<() => void> = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
     try {
       awareness.setLocalStateField("cursor", { anchor: { tname: "codemirror" }, head: { tname: "codemirror" } });
       provider.connect();
@@ -1461,11 +1525,15 @@ describe("trusted awareness transport", () => {
         observed.destroy();
         observedDoc.destroy();
       }
+      // Cursor frames are throttled: a change inside the interval waits for its end, then the latest state goes out.
       awareness.setLocalState(null);
+      expect(publishes(socket)).toHaveLength(2);
+      timers.shift()!();
       expect(publishes(socket)).toHaveLength(3);
       provider.dispose();
       expect(publishes(socket)).toHaveLength(3);
     } finally {
+      Object.assign(globalThis, { setTimeout: originalSetTimeout });
       provider.dispose();
       awareness.destroy();
       doc.destroy();
@@ -1563,5 +1631,48 @@ test("the shared provider adapter retains exact Notebook request packets and ser
     provider.dispose();
     awareness.destroy();
     doc.destroy();
+  }
+});
+
+test("BUSY has its own label and forwards a full-state retry without ending the editor", () => {
+  jest.useFakeTimers();
+  const random = spyOn(Math, "random").mockReturnValue(0.5);
+  const doc = new Y.Doc();
+  const awareness = new Awareness(doc);
+  const errors: YjsProviderError[] = [];
+  const fatal: string[] = [];
+  const provider = createYjsProvider({
+    doc,
+    awareness,
+    noteId: NOTE_ID,
+    appUrl: "http://localhost",
+    onError: (error) => errors.push(error),
+    onFatal: (error) => fatal.push(error.code),
+  });
+  try {
+    provider.connect();
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    readyReplay(socket);
+    doc.getText("content").insert(0, "first");
+    doc.getText("content").insert(5, " second");
+    socket.message({ type: notebooksYjs.wsType.error, payload: { code: "BUSY" } });
+    expect(errors).toEqual([{ code: "BUSY", message: "Document is busy; retrying", noteId: undefined }]);
+    expect(fatal).toEqual([]);
+    expect(provider.hasUnsentChanges()).toBe(true);
+    jest.advanceTimersByTime(10_000);
+    const retry = JSON.parse(socket.sent.filter((value) => JSON.parse(value).type === notebooksYjs.wsType.syncPublish).at(-1)!);
+    expect(retry.payload.retry).toBe(true);
+    expect(retry.payload.restoreRevision).toBe("0");
+    expect(retry.payload.payload).toBe(Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64"));
+    echo(socket, retry.payload.payload);
+    expect(provider.hasUnsentChanges()).toBe(false);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  } finally {
+    provider.dispose();
+    awareness.destroy();
+    doc.destroy();
+    random.mockRestore();
+    jest.useRealTimers();
   }
 });

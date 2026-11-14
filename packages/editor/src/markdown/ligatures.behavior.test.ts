@@ -8,7 +8,9 @@ import { createDomTestHarness } from "../../../ui/test/dom";
 // The notebook parsers share the info block grammar of @k2b/ui; its browser build needs the DOM globals before it loads.
 const loading = createDomTestHarness();
 const { directiveOptions } = await import("./markdown-options.fixture");
-const { pointerSelectionHeld, pointerSelectionHoldEffect, refreshMarkdownDecorationsEffect } = await import("./_lib/cursor-zone-field");
+const { markdownEditorFocused, pointerSelectionHeld, pointerSelectionHoldEffect, refreshMarkdownDecorationsEffect } = await import(
+  "./_lib/cursor-zone-field"
+);
 const { applyLigatures, ligaturesExtension } = await import("./ligatures");
 const { markdownExtension } = await import("./markdown");
 const { customLightInit } = await import("./theme");
@@ -21,7 +23,8 @@ const mount = (doc: string, anchor = doc.length) => {
     state: EditorState.create({
       doc,
       selection: { anchor },
-      extensions: [markdownExtension(), pointerSelectionHeld, ligaturesExtension(directiveOptions)],
+      // The person put the caret at `anchor`.
+      extensions: [markdownExtension(), pointerSelectionHeld, markdownEditorFocused.init(() => true), ligaturesExtension(directiveOptions)],
     }),
   });
   // Exclusions follow the syntax tree; finish the parse like the editor does after mount.

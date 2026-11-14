@@ -7,7 +7,14 @@ import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
-export default function LoginForm(props: { redirectTo?: string; showBanner?: boolean; defaultUsername?: string; appName?: string }) {
+export default function LoginForm(props: {
+  redirectTo?: string;
+  showBanner?: boolean;
+  defaultUsername?: string;
+  appName?: string;
+  /** A shared workstation: the page remembers neither the username nor the method. */
+  forget?: boolean;
+}) {
   const locale = useLocale();
   const t = () => authMessages.resolve([locale()]).t;
   const [username, setUsername] = createSignal(props.defaultUsername ?? "");
@@ -38,7 +45,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
       }
     },
     onSuccess: () => {
-      cookies.writeCookie("login_method", "ipa");
+      if (!props.forget) cookies.writeCookie("login_method", "ipa");
       cookies.deleteCookie(FREEIPA_APP_SIGN_IN_COOKIE);
       window.location.href = afterSignInHref(props.redirectTo);
     },
@@ -67,7 +74,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
         icon="ti ti-user"
         value={username}
         onValueChange={setUsername}
-        autocomplete="username"
+        autocomplete={props.forget ? "off" : "username"}
       />
       <div class="flex flex-col gap-1">
         <TextInput

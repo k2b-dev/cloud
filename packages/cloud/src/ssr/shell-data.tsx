@@ -1,7 +1,8 @@
 import type { KeyboardPlatform } from "@k2b/ui";
 import { createContext, type JSX, useContext } from "solid-js";
-import type { AppSearchLink } from "../contracts/app";
+import type { AppAppearance, AppSearchLink } from "../contracts/app";
 import type { PanelConsentSnapshot, PanelPageContext } from "../contracts/panel-context";
+import type { PrivacyTimerSeconds } from "../contracts/privacy-timer";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { CloudThemePreference } from "../shared/theme";
 import type { AppLaunchpadLegalLink } from "./app-launchpad";
@@ -16,14 +17,25 @@ export type ShellData = {
   apps: RailApp[];
   /** Signed-in pages: the person's rail preferences. */
   rail?: RailSnapshot;
+  /** Signed-in pages: the privacy screen's timer in seconds, 0 for off; the app bar reserves the countdown's place while it is on. */
+  privacyTimerSeconds?: PrivacyTimerSeconds;
   /** Signed-in pages: the start page that `/` opens, for the phone bar's Home. */
   home?: string;
   legalLinks: AppLaunchpadLegalLink[];
   /** Signed-in pages: the person, for the profile menu and the phone menu's profile actions. */
-  profile?: { userId?: string; name: string; avatarSrc?: string; appHref?: string };
+  profile?: {
+    userId?: string;
+    name: string;
+    avatarSrc?: string;
+    appHref?: string;
+    /** This browser is marked as a shared workstation; the profile menu shows its switch on. */
+    sharedWorkstation?: true;
+  };
   theme: CloudThemePreference;
   /** The current app's accent, for the Help dialog and the phone menu, which open outside the app canvas. */
   accent?: string;
+  /** The current app's appearance: the app bar colours each app's icon for the canvas it paints. */
+  appearance?: AppAppearance;
   /** The search destinations of each app in `apps`, by app id in registry order; the search host expands them into rows. */
   searchLinks: Record<string, readonly AppSearchLink[]>;
   /** The current app, for links inside its Help. */

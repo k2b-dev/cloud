@@ -1,6 +1,18 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Avatar, Button, Dropdown, FilterChip, FilterToggle, Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, onMount, Show, untrack } from "solid-js";
+import {
+  Avatar,
+  Button,
+  Dropdown,
+  FilterChip,
+  FilterToggle,
+  Placeholder,
+  ScrollArea,
+  Skeleton,
+  useLocale,
+  VirtualFeed,
+  type VirtualFeedController,
+} from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, on, Show, untrack } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { apiClient } from "../../api/client";
 import { isMailActivityKind, MAIL_ACTIVITY_KINDS, type MailActivityKind } from "../../mail-activity-kinds";
@@ -19,6 +31,9 @@ import { type MailEventPages, mergeMailEventPages, type PresentedMailEvent, pres
 
 const PAGE_SIZE = "50";
 const SKELETON_ROWS = 8;
+/** Row heights in px: the avatar row, and one with a detail line below it. Day headings come on top. */
+const EVENT_ESTIMATE = 50;
+const EVENT_WITH_DETAIL_ESTIMATE = 58;
 
 const cloudAvatarSource = (userId: string | null, avatarHash: string | null): string | undefined =>
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
@@ -51,8 +66,8 @@ export function createMailEventsFeed(input: { mailboxId: string; page: () => Mai
   const [loadMoreError, setLoadMoreError] = createSignal<string | null>(null);
   let loadedFilter = initial?.filter ?? EMPTY_MAIL_EVENTS_FILTER;
   let loadGeneration = 0;
-  // Opening a conversation moves the feed beside the reader; the new place continues where the person was.
-  let scrollTop = 0;
+  // Opening a conversation moves the feed beside the reader; the new place continues at the event the person was at.
+  let topKey: string | null = null;
   createEffect(
     on(
       snapshot,
@@ -66,7 +81,7 @@ export function createMailEventsFeed(input: { mailboxId: string; page: () => Mai
         const sameList = sameFilter(loadedFilter, page.filter);
         // "Concerns me" follows who is assigned now, so an older loaded page may no longer match; it starts over.
         setPages((shown) => (sameList && !page.filter.mine ? mergeMailEventPages(shown, first) : first));
-        if (!sameList) scrollTop = 0;
+        if (!sameList) topKey = null;
         loadedFilter = page.filter;
       },
       { defer: true },
@@ -100,9 +115,9 @@ export function createMailEventsFeed(input: { mailboxId: string; page: () => Mai
     loadingMore,
     loadMoreError,
     loadOlder,
-    scrollTop: () => scrollTop,
-    keepScrollTop: (value: number) => {
-      scrollTop = value;
+    topKey: () => topKey,
+    keepTopKey: (value: string | null) => {
+      topKey = value;
     },
   };
 }
@@ -134,17 +149,20 @@ export function MailEventsFeed(props: {
   const pages = () => props.feed.pages();
   const loadingMore = () => props.feed.loadingMore();
   const loadMoreError = () => props.feed.loadMoreError();
-  const loadOlder = () => props.feed.loadOlder();
-  let scroller: HTMLDivElement | undefined;
-  onMount(() => {
-    const top = props.feed.scrollTop();
-    if (!scroller || top <= 0) return;
-    scroller.scrollTop = top;
+  /** Loads the next older page; a failure reaches the list's end, which offers "Try again". */
+  const loadOlder = async () => {
+    await props.feed.loadOlder();
+    const failure = loadMoreError();
+    if (failure) throw new Error(`${t().loadMoreFailed} ${failure}`);
+  };
+  // The feed opens at the event the person was at when it moved; its first rows render on the server.
+  const continueAt = props.feed.topKey();
+  const resume = (controller: VirtualFeedController) => {
+    if (!continueAt) return;
+    controller.scrollToKey(continueAt, { align: "start" });
     // A pane that opens with the reader gets its height in the next frame.
-    requestAnimationFrame(() => {
-      if (scroller && scroller.scrollTop !== top) scroller.scrollTop = top;
-    });
-  });
+    requestAnimationFrame(() => controller.scrollToKey(continueAt, { align: "start" }));
+  };
 
   // A refresh presents every row again; an unchanged row keeps its object, so `For` keeps its element and the feed
   // keeps its scroll position and focus.
@@ -301,38 +319,37 @@ export function MailEventsFeed(props: {
           </Button>
         </Show>
       </div>
-      <ScrollArea
-        class="mail-events__scroll"
-        ref={(element: HTMLDivElement) => {
-          scroller = element;
-        }}
-        onScroll={(event) => props.feed.keepScrollTop(event.currentTarget.scrollTop)}
-      >
-        <Show
-          when={!props.loading}
-          fallback={
-            <div class="mail-events__skeleton" role="status" aria-live="polite">
-              <span class="sr-only">{t().loading}</span>
-              <For each={Array.from({ length: SKELETON_ROWS }, (_, index) => index)}>
-                {(index) => (
-                  <div class="mail-event mail-event--skeleton">
-                    <Skeleton class="mail-event__skeleton-avatar" />
-                    <Skeleton class={`mail-event__skeleton-line mail-event__skeleton-line--${index % 3}`} />
-                    <Skeleton class="mail-event__skeleton-time" />
-                  </div>
-                )}
-              </For>
-            </div>
-          }
-        >
-          <Show
-            when={pages()}
-            fallback={<Placeholder state="error" title={t().loadFailed} description={props.error ?? undefined} onRetry={props.onRetry} />}
-          >
+      <Show
+        when={!props.loading && pages() && rows().length > 0}
+        fallback={
+          <ScrollArea class="mail-events__scroll">
             <Show
-              when={rows().length > 0}
+              when={!props.loading}
               fallback={
-                mailEventsFiltered(props.filter) ? (
+                <div class="mail-events__skeleton" role="status" aria-live="polite">
+                  <span class="sr-only">{t().loading}</span>
+                  <For each={Array.from({ length: SKELETON_ROWS }, (_, index) => index)}>
+                    {(index) => (
+                      <div class="mail-event mail-event--skeleton">
+                        <Skeleton class="mail-event__skeleton-avatar" />
+                        <Skeleton class={`mail-event__skeleton-line mail-event__skeleton-line--${index % 3}`} />
+                        <Skeleton class="mail-event__skeleton-time" />
+                      </div>
+                    )}
+                  </For>
+                </div>
+              }
+            >
+              <Show
+                when={pages()}
+                fallback={
+                  <Placeholder state="error" title={t().loadFailed} description={props.error ?? undefined} onRetry={props.onRetry} />
+                }
+              >
+                <Show
+                  when={mailEventsFiltered(props.filter)}
+                  fallback={<Placeholder icon="ti ti-history" title={t().emptyTitle} description={t().emptyText} />}
+                >
                   <Placeholder
                     state="no-results"
                     icon="ti ti-filter-off"
@@ -348,69 +365,47 @@ export function MailEventsFeed(props: {
                       </Button>
                     }
                   />
-                ) : (
-                  <Placeholder icon="ti ti-history" title={t().emptyTitle} description={t().emptyText} />
-                )
-              }
-            >
-              <ol class="mail-events__list" data-mail-events-list>
-                <For each={rows()}>
-                  {(row, index) => (
-                    <>
-                      <Show when={index() === 0 || rows()[index() - 1]!.day !== row.day}>
-                        <li class="mail-day-group" aria-hidden="true">
-                          <span class="k2b-list-group-heading">{row.day}</span>
-                        </li>
-                      </Show>
-                      <li data-mail-event={row.event.id} data-tone={row.tone}>
-                        <Show when={row.event.conversationId} fallback={<div class="mail-event">{rowContent(row)}</div>}>
-                          {(conversationId) => (
-                            <a
-                              class="mail-event mail-event--link"
-                              href={eventHref(conversationId())}
-                              aria-current={conversationId() === props.selectedConversationId ? "true" : undefined}
-                              title={t().openConversation({ subject: row.subject ?? "" })}
-                              onClick={(event) => open(event, row)}
-                            >
-                              {rowContent(row)}
-                            </a>
-                          )}
-                        </Show>
-                      </li>
-                    </>
-                  )}
-                </For>
-              </ol>
-              <div class="mail-events__more">
-                <Show when={loadMoreError()}>
-                  {(message) => (
-                    <Placeholder
-                      variant="inline"
-                      state="error"
-                      title={t().loadMoreFailed}
-                      description={message()}
-                      onRetry={() => void loadOlder()}
-                    />
-                  )}
                 </Show>
-                <Show when={pages()?.nextCursor && !loadMoreError()}>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    loading={loadingMore()}
-                    onClick={() => void loadOlder()}
-                    data-mail-events-more
-                  >
-                    <i class="ti ti-chevron-down" aria-hidden="true" />
-                    {loadingMore() ? t().loadingOlder : t().loadOlder}
-                  </Button>
-                </Show>
-              </div>
+              </Show>
             </Show>
-          </Show>
-        </Show>
-      </ScrollArea>
+          </ScrollArea>
+        }
+      >
+        {/* Newest first: the list opens at the top, keeps its place when new events arrive there, keeps each day's
+            heading in view, and loads older days at its end. */}
+        <VirtualFeed
+          anchor="start"
+          class="mail-events__feed"
+          items={rows()}
+          getKey={(row) => row.event.id}
+          estimateSize={(row) => (row.detail ? EVENT_WITH_DETAIL_ESTIMATE : EVENT_ESTIMATE)}
+          label={t().feedLabel}
+          separator={(row, previous) => (previous?.day === row.day ? undefined : row.day)}
+          stickySeparators
+          hasMore={Boolean(pages()?.nextCursor)}
+          onLoadMore={loadOlder}
+          onVisibleChange={(visible) => props.feed.keepTopKey(visible?.first.event.id ?? null)}
+          controller={resume}
+        >
+          {(row) => (
+            <div data-mail-event={row.event.id} data-tone={row.tone}>
+              <Show when={row.event.conversationId} fallback={<div class="mail-event">{rowContent(row)}</div>}>
+                {(conversationId) => (
+                  <a
+                    class="mail-event mail-event--link"
+                    href={eventHref(conversationId())}
+                    aria-current={conversationId() === props.selectedConversationId ? "true" : undefined}
+                    title={t().openConversation({ subject: row.subject ?? "" })}
+                    onClick={(event) => open(event, row)}
+                  >
+                    {rowContent(row)}
+                  </a>
+                )}
+              </Show>
+            </div>
+          )}
+        </VirtualFeed>
+      </Show>
     </section>
   );
 }

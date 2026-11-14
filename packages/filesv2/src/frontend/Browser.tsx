@@ -1,5 +1,6 @@
 import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { PageTrail } from "@k2b/cloud/ssr/islands";
 import { downloadArchive } from "@k2b/filegate/utils";
 import { navigate as commitHistory, type LinkNavigateEvent } from "@k2b/ssr/nav";
@@ -13,17 +14,21 @@ import {
   ContextMenu,
   createCollectionSelection,
   Dropdown,
+  type DropdownItem,
   FileDropTarget,
   FileGrid,
   FilterChip,
   fileDropTarget,
   InlineGuidance,
+  Lightbox,
+  MovedHint,
   Placeholder,
   prompts,
   ScrollArea,
   SegmentedControl,
   Skeleton,
   TextInput,
+  Toolbar,
   toast,
   useLocale,
 } from "@k2b/ui";
@@ -58,18 +63,21 @@ import {
 } from "./browser-preferences";
 import { readDroppedEntries, uploadRelativePath } from "./dropped-files";
 import FileInspector from "./FileInspector";
-import FileList, { type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
+import FileList, { type FileOperationView, type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
 import FilePreview from "./FilePreview";
-import { openFilePreview } from "./FilePreviewDialog";
 import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
+import { fileLightboxItem } from "./file-lightbox";
 import { apiFailure, contentLease } from "./file-preview";
 import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploads";
+import { SELECTION_PILL_HINT } from "./hints";
 import type { HistoryActions, HistoryEnvironment } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
 import { openNewFolderDialog } from "./NewFolderDialog";
+import { openPdfExtractDialog, openPdfMergeDialog, PdfOperationError, type PdfOperationRequest, runPdfOperation } from "./pdf-actions";
+import { prefetchPreview, previewSource } from "./preview-client";
 import {
   defaultSort,
   effectiveSort,
@@ -120,6 +128,7 @@ export default function Browser(props: {
   error?: string;
   notice?: string;
   issues?: BasesResult["issues"];
+  onLoadMore?: () => Promise<void>;
   onSelectionSource?: (source: string) => void;
   onMarksChanged?: () => void;
   onBranchRefreshReady?: (refresh: ((signal: AbortSignal) => Promise<void>) | null) => void;
@@ -145,6 +154,8 @@ export default function Browser(props: {
   onNavigate: (event: LinkNavigateEvent) => Promise<void>;
   /** The workspace's upload queue; it outlives this view, so leaving the folder does not stop an upload. */
   uploads: FilesUploads;
+  /** The server shows, once, where the header's Actions menu went: to the selection pill at the bottom. */
+  selectionPillHint?: boolean;
 }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
@@ -390,7 +401,7 @@ export default function Browser(props: {
         push({ ...item, depth, expanded: !!open, loading: open?.loading });
         if (open) {
           walk(open.items, depth + 1);
-          if (open.next) push({ ...item, path: `${item.path} more`, name: "", more: true, depth: depth + 1 });
+          if (open.next && item.path !== folder()) push({ ...item, path: `${item.path} more`, name: "", more: true, depth: depth + 1 });
         }
       }
     };
@@ -412,13 +423,38 @@ export default function Browser(props: {
   });
   const entries = createMemo(() => rows().filter((row) => !row.more));
   const ids = () => [...new Set([...entries().map((row) => row.path), ...(externalPath() ? [externalPath()!] : [])])];
+  const [loadingMore, setLoadingMore] = createSignal(false);
+  const [moreError, setMoreError] = createSignal(false);
+  const loadMore = async () => {
+    if (loadingMore() || !props.onLoadMore) return;
+    const known = new Set(props.directory.items.map((item) => item.path));
+    const context = locationKey();
+    setLoadingMore(true);
+    try {
+      await props.onLoadMore();
+      if (locationKey() !== context) return;
+      setMoreError(false);
+      const first = props.directory.items.find((item) => !known.has(item.path));
+      if (first) requestAnimationFrame(() => selection.focus(first.path));
+    } catch {
+      if (locationKey() === context) setMoreError(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  createEffect(on(locationKey, () => setMoreError(false), { defer: true }));
   const selection = createCollectionSelection({
     ids,
     initial: requestedFile() ? [requestedFile()!] : [],
     onChange: (paths) => {
       if (!mounted || syncing || location !== locationKey()) return;
       if (externalPath() && !paths.includes(externalPath()!)) setExternalPath(null);
-      const source = filesUrl(baseId(), folder(), props.after, paths.length === 1 ? paths[0] : null, search(), activeBrowse());
+      const url = new URL(
+        filesUrl(baseId(), folder(), props.after, paths.length === 1 ? paths[0] : null, search(), activeBrowse()),
+        "https://files.invalid",
+      );
+      if ((props.directory.loadedPages ?? 1) > 1) url.searchParams.set("pages", String(props.directory.loadedPages));
+      const source = `${url.pathname}${url.search}`;
       commitHistory(source, { replace: true, scroll: "manual", viewTransition: false });
       props.onSelectionSource?.(source);
     },
@@ -586,7 +622,7 @@ export default function Browser(props: {
     }
     props.uploads.add(
       { baseId: base, root, folders: [...folders].sort(), policy, total: files.length },
-      { key: JSON.stringify([base, root]), label },
+      { key: JSON.stringify([base, root]), label, href: filesUrl(base, root) },
       files.map((file) => ({ file, path: relativeName(file) })),
     );
   };
@@ -1025,23 +1061,70 @@ export default function Browser(props: {
     }
     void preview(entry);
   };
-  /** The preview dialog; a Markdown file it shows also offers its editor, as a double-click would open it. */
-  const preview = (entry: FileEntry, onNotPdf?: () => void) =>
-    openFilePreview({
-      baseId: baseId(),
-      locationKey: props.directory.base.locationKey,
-      entry,
-      onDownload: () => startDownload([entry]),
-      onEdit: editable(entry) ? () => open(entry) : undefined,
-      readOnly: entry.actions?.write === false,
-      onNotPdf,
-    });
+  /*
+   * A file opens large in the Lightbox, with the folder's other files to step through; the highlight follows the
+   * shown file, so its details are ready when the Lightbox closes. A Markdown file offers its editor as Open.
+   */
+  const [viewing, setViewing] = createSignal<{ files: readonly FileEntry[]; base: string } | null>(null);
+  const [viewingIndex, setViewingIndex] = createSignal(0);
+  const preview = (entry: FileEntry) => {
+    const files = entries().filter((row) => !row.directory && !virtualOf(row));
+    const index = files.findIndex((row) => row.path === entry.path);
+    setViewing({ files: index >= 0 ? files : [entry], base: baseId() });
+    setViewingIndex(Math.max(0, index));
+  };
+  const lightboxItems = createMemo(() => {
+    const shown = viewing();
+    if (!shown) return [];
+    const messages = {
+      open: b().open,
+      openReadOnly: b().openReadOnly,
+      openInTab: b().openInTab,
+      copyText: b().copyText,
+      copied: b().copiedText,
+      share: b().shareSelection,
+      failed: b().previewFailed,
+    };
+    return shown.files.map((entry) =>
+      fileLightboxItem(
+        shown.base,
+        entry,
+        {
+          onDownload: (file) => startDownload([file]),
+          onOpen: editable(entry) ? (file) => open(file) : undefined,
+          readOnly: (file) => file.actions?.write === false,
+          onShare: props.onShare && shareable([entry]) ? (file) => props.onShare!([file.path]) : undefined,
+        },
+        messages,
+        locale(),
+      ),
+    );
+  });
+  const showInLightbox = (index: number) => {
+    setViewingIndex(index);
+    const entry = viewing()?.files[index];
+    if (entry && entries().some((row) => row.path === entry.path)) selection.select(entry.path);
+  };
+  let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(prefetchTimer));
+  /** Resting on a file loads its large preview into the cache, so its details show it without waiting. */
+  const hoverProps = (entry: FileEntry) => ({
+    onPointerEnter: (event: PointerEvent) => {
+      clearTimeout(prefetchTimer);
+      if (entry.directory || event.pointerType === "touch") return;
+      prefetchTimer = setTimeout(() => prefetchPreview(baseId(), entry), 180);
+    },
+    onPointerLeave: () => clearTimeout(prefetchTimer),
+  });
   // Entering or leaving select mode starts clean; outside it a click only highlights one entry for its details.
   const toggleSelecting = (on: boolean) => {
     selection.clear();
     setSelecting(on);
   };
   const rowClick = (row: FileRow, event: MouseEvent) => {
+    // Shift+click takes the range from the last chosen entry, Ctrl or ⌘+click adds or removes one; both start
+    // choosing several, as the Select button does, and keep what is already chosen.
+    if (!selecting() && (event.shiftKey || event.ctrlKey || event.metaKey)) setSelecting(true);
     if (selecting()) {
       if (event.shiftKey) selection.select(row.path, event);
       else selection.toggle(row.path);
@@ -1100,6 +1183,243 @@ export default function Browser(props: {
       },
     ];
   };
+  /*
+   * The selection pill at the bottom: the count, what fits the selection (such as Merge for several PDFs), then
+   * Download, Share and Move, and the rarer commands under More. It replaces the header's Actions menu.
+   */
+  const [pillHint, setPillHint] = createSignal(!!props.selectionPillHint);
+  const isPdf = (entry: FileEntry) => !entry.directory && previewSource(entry) === "pdf";
+  const pillKind = (items: readonly FileEntry[]) => (items.length && items.every(isPdf) ? "pdf" : "any");
+  const suggestions = () => {
+    const items = selected();
+    if (!items.length || searching() || !canCreate() || !items.every(isPdf)) return [];
+    return [
+      ...(items.length > 1 ? [{ label: b().pdfMerge, icon: "ti ti-stack-2", run: () => void mergePdfs(items) }] : []),
+      { label: b().pdfExtract, icon: "ti ti-files", run: () => void extractPages(items) },
+    ];
+  };
+  const pillMore = (): DropdownItem[] => {
+    const items = selected();
+    return [
+      ...(searching()
+        ? []
+        : [
+            {
+              disabled: !canCreate() || !movable(items),
+              label: b().moveToNewFolder,
+              icon: "ti ti-folder-plus",
+              action: () => void moveIntoNewFolder(items),
+            },
+            { label: b().copyTo, icon: "ti ti-copy", action: () => void moveOrCopy(items, true) },
+            ...(items.length === 1
+              ? [
+                  {
+                    disabled: items[0]!.actions?.move === false,
+                    label: b().rename,
+                    icon: "ti ti-pencil",
+                    action: () => void rename(items[0]!),
+                  },
+                ]
+              : []),
+          ]),
+      {
+        items: [
+          {
+            disabled: !movable(items),
+            label: b().trashSelection,
+            icon: "ti ti-trash",
+            variant: "danger" as const,
+            action: () => void trashItems(items),
+          },
+        ],
+      },
+    ];
+  };
+
+  /*
+   * PDF actions make a new file next to their sources. Until it exists, a row at that place shows the progress with
+   * Cancel; a failure stays there with its reason and a way out. The originals never change.
+   */
+  type Operation = {
+    id: string;
+    request: PdfOperationRequest;
+    verb: string;
+    summary: string;
+    location: string;
+    /** The storage the action runs in, fixed when it starts. */
+    base: string;
+    afterPath: string;
+    state: "running" | "failed";
+    percent: number;
+    error?: { code?: string; message: string; path?: string };
+    controller: AbortController;
+  };
+  const [operations, setOperations] = createSignal<readonly Operation[]>([]);
+  let operationCount = 0;
+  const [fresh, setFresh] = createSignal<ReadonlySet<string>>(new Set());
+  onCleanup(() => {
+    for (const operation of operations()) operation.controller.abort();
+  });
+  const patchOperation = (id: string, patch: Partial<Operation>) =>
+    setOperations((all) => all.map((operation) => (operation.id === id ? { ...operation, ...patch } : operation)));
+  const dropOperation = (id: string) => setOperations((all) => all.filter((operation) => operation.id !== id));
+  const markFresh = (path: string) => {
+    setFresh((all) => new Set(all).add(path));
+    setTimeout(
+      () =>
+        setFresh((all) => {
+          const next = new Set(all);
+          next.delete(path);
+          return next;
+        }),
+      10_000,
+    );
+  };
+  /** Undo targets the storage the file was made in, also after the person moved on to another one. */
+  const undoCreated = async (base: string, entry: FileEntry) => {
+    try {
+      const response = await apiClient.bases[":baseId"].delete.$post({ param: { baseId: base }, json: { paths: [entry.path] } });
+      if (!response.ok) await apiFailure(response, t().unavailable);
+      // The route answers per entry: a refused or unfinished move to the trash is a failure, not a success.
+      const failed = (await response.json()).results.find((result) => !result.ok);
+      if (failed) throw new Error(failed.error ?? t().unavailable);
+      toast.success(b().opUndone);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t().unavailable);
+    }
+    if (base === baseId()) await refresh();
+  };
+  const runOperation = (operation: Operation) => {
+    const controller = new AbortController();
+    patchOperation(operation.id, { controller, state: "running", percent: 0, error: undefined });
+    void runPdfOperation(
+      operation.base,
+      operation.request,
+      controller.signal,
+      (done, total) => patchOperation(operation.id, { percent: total ? Math.round((done / total) * 100) : 0 }),
+      t().unavailable,
+    ).then(
+      async (result) => {
+        dropOperation(operation.id);
+        if (operation.location === locationKey()) {
+          markFresh(result.entry.path);
+          await refresh();
+        }
+        // The new name leads; how it was made follows quietly, as "9 pages from 3 files". It also reaches a person who
+        // moved on to another folder meanwhile, and its Undo still targets the folder the file was made in.
+        toast.success([b().opCreated(result.entry.name), operation.summary].filter(Boolean).join(" · "), {
+          celebrate: true,
+          action: { label: b().opUndo, onClick: () => void undoCreated(operation.base, result.entry) },
+        });
+      },
+      (error: unknown) => {
+        if (controller.signal.aborted) return dropOperation(operation.id);
+        const code = error instanceof PdfOperationError ? error.code : undefined;
+        patchOperation(operation.id, {
+          state: "failed",
+          error: {
+            code,
+            message: error instanceof Error ? error.message : t().unavailable,
+            path: error instanceof PdfOperationError ? error.path : undefined,
+          },
+        });
+        // A file that changed meanwhile shows its current version, so choosing again starts from what is there now.
+        if (code === "pdf_changed" && operation.location === locationKey()) void refresh();
+      },
+    );
+  };
+  const startOperation = (request: PdfOperationRequest, verb: string, summary: string) => {
+    const order = entries().map((entry) => entry.path);
+    const afterPath = [...request.paths].sort((a, z) => order.indexOf(z) - order.indexOf(a))[0] ?? request.paths[0]!;
+    const operation: Operation = {
+      id: String(++operationCount),
+      request,
+      verb,
+      summary,
+      location: locationKey(),
+      base: baseId(),
+      afterPath,
+      state: "running",
+      percent: 0,
+      controller: new AbortController(),
+    };
+    selection.clear();
+    setSelecting(false);
+    setOperations((all) => [...all, operation]);
+    runOperation(operation);
+  };
+  const mergePdfs = async (items: readonly FileEntry[]) => {
+    const chosen = await openPdfMergeDialog({ baseId: baseId(), files: items, title: b().pdfMergeTitle(items.length) });
+    if (!chosen) return;
+    startOperation(chosen.request, b().opMerging, b().opMergeSummary({ pages: chosen.pages, files: chosen.request.paths.length }));
+  };
+  const extractPages = async (items: readonly FileEntry[]) => {
+    const chosen = await openPdfExtractDialog({ baseId: baseId(), files: items, title: b().pdfExtract });
+    if (!chosen) return;
+    startOperation(chosen.request, b().opExtracting, b().opExtractSummary(chosen.pages));
+  };
+  const operationView = (operation: Operation): FileOperationView => {
+    if (operation.state === "running")
+      return {
+        state: "running",
+        text: b().opProgress({ verb: operation.verb, percent: operation.percent }),
+        actions: [{ label: b().opCancel, onClick: () => operation.controller.abort() }],
+      };
+    const failedPath = operation.error?.path;
+    const remaining = operation.request.paths.filter((path) => path !== failedPath);
+    // A merge can go on without the file that failed while two files remain.
+    const without =
+      operation.request.operation === "merge" && failedPath && remaining.length >= 2
+        ? [
+            {
+              label: b().opWithout,
+              onClick: () => {
+                // The page count of the first plan no longer holds, so the result names only the file.
+                const next = { ...operation, summary: "", request: { ...operation.request, paths: remaining } };
+                setOperations((all) => all.map((item) => (item.id === operation.id ? next : item)));
+                runOperation(next);
+              },
+            },
+          ]
+        : // Pages chosen from an older version would not fit again; the person chooses anew from the refreshed list.
+          operation.error?.code === "pdf_changed"
+          ? []
+          : [{ label: b().retry, onClick: () => runOperation(operation) }];
+    return {
+      state: "failed",
+      text: operation.error?.message ?? t().unavailable,
+      actions: [...without, { label: b().opDiscard, onClick: () => dropOperation(operation.id) }],
+    };
+  };
+  /** The list's rows with the files in the making at their place and the files made a moment ago marked. */
+  /** The same files in the making and fresh marks in list, tree and grid, so every view shows progress and recovery. */
+  const withOperations = (source: readonly FileRow[]): FileRow[] => {
+    const here = operations().filter((operation) => operation.location === locationKey());
+    const marks = fresh();
+    if (!here.length && !marks.size) return [...source];
+    const out: FileRow[] = [];
+    const pending = (operation: Operation): FileRow => ({
+      name: operation.request.name,
+      path: `\u0001operation:${operation.id}`,
+      directory: false,
+      size: 0,
+      modified: "",
+      operation: operationView(operation),
+    });
+    const placed = new Set<string>();
+    for (const row of source) {
+      out.push(marks.has(row.path) ? { ...row, fresh: b().justCreated } : row);
+      for (const operation of here)
+        if (operation.afterPath === row.path) {
+          out.push(pending(operation));
+          placed.add(operation.id);
+        }
+    }
+    // A source no longer listed, such as after a sort, still shows its file in the making first.
+    return [...here.filter((operation) => !placed.has(operation.id)).map(pending), ...out];
+  };
+  const listRows = createMemo<FileRow[]>(() => withOperations(rows()));
+
   const cloudId = useCloudIdCopy();
   const entryRef = (item: FileEntry) => {
     const id = item.resourceId ?? entryRefId(baseId(), item.path);
@@ -1173,7 +1493,16 @@ export default function Browser(props: {
         ? b().searchTruncated(props.directory.total)
         : b().searchTotal(props.directory.total);
   const parentOf = (path: string) => parentPath(path) || baseLabel(props.directory.base, b(), locale());
-  const detailOpen = () => selectedPaths().length > 0;
+  // On a phone the details are a page of their own; while choosing several entries, the list and its pill stay.
+  const [narrow, setNarrow] = createSignal(false);
+  onMount(() => {
+    const query = window.matchMedia("(max-width: 47.999rem)");
+    const update = () => setNarrow(query.matches);
+    update();
+    query.addEventListener("change", update);
+    onCleanup(() => query.removeEventListener("change", update));
+  });
+  const detailOpen = () => selectedPaths().length > 0 && !(narrow() && selecting());
   const addItems = () =>
     !canCreate()
       ? []
@@ -1272,9 +1601,9 @@ export default function Browser(props: {
       : [];
   // Virtual rows join the tile grid as entries with a reserved path; they are never selectable.
   const virtualKey = (row: VirtualRow) => `\u0000${row.key}`;
-  const gridRows = createMemo<FileEntry[]>(() => [
+  const gridRows = createMemo<FileRow[]>(() => [
     ...virtualBefore().map((row) => ({ name: row.label, path: virtualKey(row), directory: true, size: 0, modified: "" })),
-    ...visibleItems(),
+    ...withOperations(visibleItems()),
     ...virtualAfter().map((row) => ({ name: row.label, path: virtualKey(row), directory: true, size: 0, modified: "" })),
   ]);
   const virtualOf = (row: FileEntry) => [...virtualBefore(), ...virtualAfter()].find((item) => virtualKey(item) === row.path);
@@ -1293,9 +1622,20 @@ export default function Browser(props: {
   // Ranges, toggles and select-all exist only with checkboxes; otherwise clicks and keys move the single highlight.
   const interactiveSelection = {
     ...selection,
-    select: (id: string, modifiers?: Parameters<typeof selection.select>[1]) =>
-      selecting() ? (modifiers?.shiftKey ? selection.select(id, modifiers) : selection.toggle(id)) : selection.select(id),
+    select: (id: string, modifiers?: Parameters<typeof selection.select>[1]) => {
+      // As in the list: Shift or Ctrl/⌘ on a tile starts choosing several and keeps what is already chosen.
+      if (!selecting() && (modifiers?.shiftKey || modifiers?.ctrlKey || modifiers?.metaKey)) setSelecting(true);
+      return selecting() ? (modifiers?.shiftKey ? selection.select(id, modifiers) : selection.toggle(id)) : selection.select(id);
+    },
     keyDown: (event: KeyboardEvent, id: string, columns?: number) => {
+      // Space shows the highlighted file large, as Quick Look does; Space in the Lightbox closes it again.
+      if (event.key === " " && !selecting() && !event.ctrlKey && !event.metaKey) {
+        const entry = entries().find((row) => row.path === id);
+        if (!entry || entry.directory) return false;
+        event.preventDefault();
+        void preview(entry);
+        return true;
+      }
       if (selecting()) return selection.keyDown(event, id, columns);
       const multi = event.key === " " || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a");
       if (multi) return false;
@@ -1630,15 +1970,22 @@ export default function Browser(props: {
                   </span>
                 }
               >
-                <span class="text-xs font-medium" role="status">
+                <span class="filesv2-selection-status text-xs font-medium" role="status">
                   {b().selectedActions(selectedPaths().length)}
                 </span>
-                <Dropdown.Root items={selectionItems()}>
-                  <Dropdown.Trigger size="sm" variant="secondary" disabled={busy() || !selectedPaths().length}>
-                    {b().actions}
-                    <i class="ti ti-chevron-down" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
+                {/* The Actions menu that stood here moved to the pill at the bottom; this says so once. */}
+                <MovedHint
+                  open={pillHint()}
+                  target={() => document.querySelector<HTMLElement>(".filesv2-selection-status") ?? undefined}
+                  placement="bottom"
+                  onDismiss={() => {
+                    setPillHint(false);
+                    markHintSeen(SELECTION_PILL_HINT);
+                  }}
+                  action={{ label: b().gotIt, onClick: () => {} }}
+                >
+                  <strong>{b().pillMovedTitle}</strong> {b().pillMovedText}
+                </MovedHint>
                 <Button size="xs" variant="text" onClick={() => toggleSelecting(false)}>
                   {b().endSelect}
                 </Button>
@@ -1682,7 +2029,7 @@ export default function Browser(props: {
                 </InlineGuidance>
               )}
             </For>
-            <Show when={props.error}>
+            <Show when={props.error && !loadingMore() && !moreError()}>
               <InlineGuidance tone="danger" role="alert">
                 {props.error}{" "}
                 <Button size="xs" variant="text" onClick={props.onRetry}>
@@ -1815,7 +2162,7 @@ export default function Browser(props: {
             >
               <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={contextItems()} label={t().actions} disabled={busy()}>
                 <ScrollArea
-                  class="h-full"
+                  class="filesv2-browser__scroll h-full"
                   scrollPreserveKey={`filesv2:${folderKey(baseIdentity(), folder())}:${props.after ?? ""}:${view().view}`}
                 >
                   <Show
@@ -1824,7 +2171,7 @@ export default function Browser(props: {
                       <>
                         <FileList
                           baseId={baseId()}
-                          rows={rows()}
+                          rows={listRows()}
                           selection={interactiveSelection}
                           label={t().files}
                           tree={view().view === "tree"}
@@ -1837,7 +2184,7 @@ export default function Browser(props: {
                           selecting={selecting()}
                           before={virtualBefore()}
                           after={virtualAfter()}
-                          rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row) })}
+                          rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row), ...hoverProps(row) })}
                           virtualProps={(row) => (row.key === "up" ? upDrop() : {})}
                           messages={listMessages()}
                           sort={listSort()}
@@ -1880,17 +2227,41 @@ export default function Browser(props: {
                         selection={interactiveSelection}
                         label={t().files}
                         size={view().size}
-                        onOpen={(row) => (virtualOf(row) ? virtualOf(row)!.onClick() : open(row))}
+                        onOpen={(row) => {
+                          if (row.operation) return;
+                          if (virtualOf(row)) virtualOf(row)!.onClick();
+                          else open(row);
+                        }}
                         itemProps={(row) =>
-                          virtualOf(row) ? (virtualOf(row)!.key === "up" ? upDrop() : {}) : { ...dragProps(row), ...folderDrop(row) }
+                          row.operation
+                            ? { "data-operation": row.operation.state }
+                            : virtualOf(row)
+                              ? virtualOf(row)!.key === "up"
+                                ? upDrop()
+                                : {}
+                              : { ...dragProps(row), ...folderDrop(row), ...hoverProps(row) }
                         }
-                        onContextMenu={(row) => !virtualOf(row) && focusContext(row)}
+                        onContextMenu={(row) => !virtualOf(row) && !row.operation && focusContext(row)}
                         onRowClick={(row) => {
+                          if (row.operation) return;
                           const virtual = virtualOf(row);
                           if (virtual) virtual.onClick();
                           else if (!selecting() && row.directory) open(row);
                         }}
                         renderPreview={(row) => {
+                          // A file in the making shows its progress or failure in the tile's place.
+                          if (row.operation)
+                            return (
+                              <span
+                                class="filesv2-thumbnail filesv2-thumbnail--large filesv2-thumbnail--virtual"
+                                data-state={row.operation.state}
+                              >
+                                <i
+                                  class={row.operation.state === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"}
+                                  aria-hidden="true"
+                                />
+                              </span>
+                            );
                           const virtual = virtualOf(row);
                           if (virtual)
                             return (
@@ -1911,6 +2282,34 @@ export default function Browser(props: {
                         }}
                         renderLabel={(row) => <span title={virtualOf(row) ? undefined : row.name}>{row.name}</span>}
                         renderMeta={(row) => {
+                          if (row.operation)
+                            return (
+                              <span class="filesv2-grid-operation" data-state={row.operation.state}>
+                                <span
+                                  class="filesv2-grid-operation__text"
+                                  role={row.operation.state === "failed" ? "alert" : "status"}
+                                  title={row.operation.text}
+                                >
+                                  {row.operation.text}
+                                </span>
+                                <span class="filesv2-grid-operation__actions">
+                                  <For each={row.operation.actions}>
+                                    {(action) => (
+                                      <Button size="xs" variant="link" onClick={action.onClick}>
+                                        {action.label}
+                                      </Button>
+                                    )}
+                                  </For>
+                                </span>
+                              </span>
+                            );
+                          if (row.fresh)
+                            return (
+                              <span class="filesv2-list__fresh">
+                                <i class="ti ti-circle-check" aria-hidden="true" />
+                                {row.fresh}
+                              </span>
+                            );
                           const virtual = virtualOf(row);
                           if (virtual) return virtual.detail ?? null;
                           return searching() ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null;
@@ -1924,39 +2323,93 @@ export default function Browser(props: {
                       </Show>
                     </div>
                   </Show>
+                  <Show when={props.directory.next}>
+                    <div class="filesv2-browser__pagination">
+                      <Button size="sm" variant="link" loading={loadingMore()} onClick={() => void loadMore()}>
+                        {moreError() ? b().retry : b().loadMore}
+                        <i class={moreError() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
+                      </Button>
+                      <Show when={moreError()}>
+                        <InlineGuidance role="alert">{b().loadMoreFailed}</InlineGuidance>
+                      </Show>
+                    </div>
+                  </Show>
+                  {/*
+                   * The selection's actions float at the bottom of the column; the list scrolls beneath and ends above.
+                   * The pill keeps its place while nothing is selected, only hidden, so showing or hiding it never moves a
+                   * row, also at the end of a long list.
+                   */}
+                  <Toolbar
+                    label={b().selectionActions}
+                    variant="floating"
+                    moreItems={selected().length ? pillMore() : undefined}
+                    class={selected().length ? "filesv2-selection-pill" : "filesv2-selection-pill filesv2-selection-pill--idle"}
+                  >
+                    <Show when={selected().length > 0}>
+                      <Toolbar.Action label={b().clear} icon="ti ti-x" onClick={() => toggleSelecting(false)} />
+                      <Toolbar.Label>{b().pillCount({ n: selected().length, kind: pillKind(selected()) })}</Toolbar.Label>
+                      <Toolbar.Separator />
+                      <For each={suggestions()}>
+                        {(suggestion, index) => (
+                          <Toolbar.Action
+                            label={suggestion.label}
+                            icon={suggestion.icon}
+                            text
+                            priority={2 + index()}
+                            disabled={busy()}
+                            onClick={suggestion.run}
+                          />
+                        )}
+                      </For>
+                      <Toolbar.Separator />
+                      <Toolbar.Action
+                        label={selected().length === 1 && !selected()[0]!.directory ? t().download : b().downloadZip}
+                        icon="ti ti-download"
+                        priority={5}
+                        disabled={busy()}
+                        onClick={() => startDownload(selected())}
+                      />
+                      <Show when={props.onShare && shareable(selected())}>
+                        <Toolbar.Action
+                          label={b().shareSelection}
+                          icon="ti ti-world-share"
+                          priority={6}
+                          onClick={() => props.onShare?.(selected().map((item) => item.path))}
+                        />
+                      </Show>
+                      <Show when={!searching()}>
+                        <Toolbar.Action
+                          label={b().moveTo}
+                          icon="ti ti-arrow-move-right"
+                          priority={7}
+                          disabled={busy() || !movable(selected())}
+                          onClick={() => void moveOrCopy(selected())}
+                        />
+                      </Show>
+                    </Show>
+                  </Toolbar>
                 </ScrollArea>
               </ContextMenu>
             </Show>
           </Show>
-          <nav class="filesv2-browser__pagination" aria-label={t().files}>
-            <Show when={props.after}>
+          <Show when={props.after}>
+            <div class="filesv2-browser__pagination">
               <ButtonLink
                 href={filesUrl(baseId(), folder(), null, null, search(), activeBrowse())}
                 navigation="enhanced"
                 onNavigate={props.onNavigate}
                 size="sm"
-                variant="secondary"
+                variant="text"
               >
                 {t().first}
               </ButtonLink>
-            </Show>
-            <Show when={props.directory.next}>
-              {(next) => (
-                <ButtonLink
-                  href={filesUrl(baseId(), folder(), next(), null, search(), activeBrowse())}
-                  navigation="enhanced"
-                  onNavigate={props.onNavigate}
-                  size="sm"
-                  variant="secondary"
-                >
-                  {t().next}
-                  <i class="ti ti-chevron-right" aria-hidden="true" />
-                </ButtonLink>
-              )}
-            </Show>
-          </nav>
+            </div>
+          </Show>
         </div>
       </AppWorkspace.Main>
+      <Show when={viewing()}>
+        <Lightbox items={lightboxItems()} index={viewingIndex()} onIndexChange={showInLightbox} onClose={() => setViewing(null)} />
+      </Show>
       <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md" phone="page">
         <Show when={detailOpen()}>
           <FileInspector

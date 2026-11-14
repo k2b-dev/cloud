@@ -6,7 +6,7 @@ import { oauthTokens } from "@k2b/cloud/services";
 import { generateSpecs } from "hono-openapi";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { requestContactDirectoryConfig, resolveMailContactDirectory } from "../contact-directory-settings";
-import { conversationContext, publicResources, recipientSuggestions } from "../service";
+import { conversationContext, mailboxAccess, publicResources, recipientSuggestions } from "../service";
 import * as directoryService from "../service/contact-directory";
 import app from ".";
 
@@ -37,6 +37,8 @@ afterEach(() => mock.restore());
 
 describe("Mail conversation context OpenAPI contract", () => {
   beforeEach(() => {
+    // The caller can read the mailbox; these routes test their own contract.
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "read" } });
     spyOn(directoryService, "requestContactDirectory").mockImplementation(async (c) =>
       resolveMailContactDirectory(requestContactDirectoryConfig(c)),
     );
@@ -157,6 +159,7 @@ describe("mailbox recipient suggestions route", () => {
   beforeEach(() => {
     spyOn(platformServices, "get").mockResolvedValue(100);
     spyOn(redis, "send").mockResolvedValue([1, 0, "1"]);
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "read" } });
   });
   test("requires authentication", async () => {
     const response = await app.request("/mailboxes/mbx123/recipient-suggestions?query=ad");

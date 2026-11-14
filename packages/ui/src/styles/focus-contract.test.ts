@@ -184,11 +184,11 @@ describe("@k2b/ui focus and color contract", () => {
         .map((rule) => rule.body)
         .join("\n");
       expect(body, selector).toMatch(/min-height:\s*2\.25rem/);
-      // White field, 2 px edge drawn inside: a 1 px border plus a 1 px inset in the same state colour.
+      // White field, one 2 px border in the state colour as the only edge.
       expect(body, selector).toMatch(/--k2b-edge-color:\s*var\(--k2b-edge\)/);
-      expect(body, selector).toMatch(/border:\s*1px solid var\(--k2b-edge-color\)/);
+      expect(body, selector).toMatch(/border:\s*var\(--k2b-edge-width\) solid var\(--k2b-edge-color\)/);
       expect(body, selector).toMatch(/background:\s*var\(--k2b-surface\)/);
-      expect(body, selector).toMatch(/box-shadow:\s*inset 0 0 0 calc\(var\(--k2b-edge-width\) - 1px\) var\(--k2b-edge-color\)/);
+      expect(body, selector).not.toMatch(/box-shadow/);
     }
     expect(css).not.toContain(".k2b-select-shell");
     expect(css).toMatch(
@@ -221,13 +221,20 @@ describe("@k2b/ui focus and color contract", () => {
 
   test("keeps AI theme tokens inside AI components and the explicit primary scope", () => {
     // The AI palette may only be spent where a selector says it is an AI
-    // surface: the `.k2b-ai-*` / `.k2b-chat-*` families, an AI variant,
-    // or the explicit primary scope. The latter opts a whole subtree in;
-    // ordinary UI roots must keep their blue defaults.
+    // surface: the `.k2b-ai-*` / `.k2b-chat-*` families, a component class
+    // whose own name opts in with an `-ai` suffix, an AI button, a section
+    // whose content the AI delivered (`tone="ai"`), or the explicit primary
+    // scope. The latter opts a whole subtree in; ordinary UI roots must keep
+    // their blue defaults.
     const leaked = rules
       .filter((rule) => rule.body.includes("var(--k2b-ai-"))
       .filter((rule) => !rule.selector.includes('[data-k2b-primary="ai"]'))
-      .filter((rule) => !/\.k2b-(?:ai|chat)-|\.k2b-[\w-]*-ai(?![\w-])|\.k2b-button\[data-variant=["']ai["']\]/.test(rule.selector))
+      .filter(
+        (rule) =>
+          !/\.k2b-(?:ai|chat)-|\.k2b-[\w-]*-ai(?![\w-])|\.k2b-button\[data-variant=["']ai["']\]|\.k2b-section\[data-tone=["']ai["']\]/.test(
+            rule.selector,
+          ),
+      )
       .map((rule) => `${rule.file}: ${rule.selector}`);
 
     expect(leaked).toEqual([]);
@@ -269,17 +276,15 @@ describe("@k2b/ui focus and color contract", () => {
     expect(focus?.body).toContain("background: var(--k2b-surface)");
   });
 
-  test("draws the TextInput edge above the autofill fill", () => {
-    const ring = rules.find((rule) => rule.selector === ".k2b-ui .k2b-text-input:has(> .k2b-input:autofill)::after");
-    const anchor = rules.find(
-      (rule) => rule.selector === ".k2b-ui .k2b-text-input:has(> .k2b-input:autofill)" && rule.body.includes("position"),
+  test("keeps the TextInput edge outside the autofill fill", () => {
+    // The input paints the autofill fill inside the shell's padding box; the
+    // edge is the shell's border, so no overlay has to redraw it.
+    const shell = rules.find(
+      (rule) => rule.selector.split(",").some((part) => part.trim() === ".k2b-ui .k2b-input-shell") && rule.body.includes("border:"),
     );
-
-    expect(anchor?.body).toContain("position: relative");
-    expect(ring?.body).toContain("position: absolute");
-    expect(ring?.body).toContain("inset: 0");
-    expect(ring?.body).toContain("box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color)");
-    expect(ring?.body).toContain("pointer-events: none");
+    expect(shell?.body).toContain("border: var(--k2b-edge-width) solid var(--k2b-edge-color)");
+    expect(shell?.body).not.toContain("box-shadow");
+    expect(rules.some((rule) => rule.selector.includes(":autofill)::after"))).toBe(false);
   });
 
   test("keeps the tags editor geometry stable while its markup changes on focus", () => {

@@ -1,6 +1,16 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { type Browser, errors } from "playwright";
-import { browserName, killProcessGroup, launchBrowser, pageErrors, recordTestServer, settled, viewTransitionEnded } from "../test/browser";
+import {
+  browserName,
+  hoverInPlace,
+  killProcessGroup,
+  launchBrowser,
+  pageErrors,
+  processGroupAlive,
+  recordTestServer,
+  settled,
+  viewTransitionEnded,
+} from "../test/browser";
 
 if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
   await import("./browser-recovery.browser-suite");
@@ -159,6 +169,99 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       await context.close();
     }
   }, 20_000);
+
+  test("a retried hover() scrolls the page, and hoverInPlace() never does", async () => {
+    const context = await browser.newContext({ viewport: { width: 400, height: 600 } });
+    try {
+      const page = await context.newPage();
+      // The target sits in view but on no edge or center line that hover()'s retry scrolls to. A cover takes the
+      // first attempt's pointer and goes away with the first scroll, as a transient cover does on a busy machine.
+      await page.setContent(`<!doctype html>
+        <style>body { margin: 0; height: 3000px; } #target, #cover { position: absolute; top: 1100px; left: 20px; width: 80px; height: 40px; }</style>
+        <div id="target"></div><div id="cover"></div>
+        <script>
+          // The page's own first scroll arms the removal; the next scroll, by hover()'s retry, removes the cover.
+          const remove = () => document.getElementById("cover")?.remove();
+          addEventListener("scroll", () => addEventListener("scroll", remove, { once: true }), { once: true });
+          scrollTo(0, 900);
+        </script>`);
+      const pageScroll = () => page.evaluate(() => window.scrollY);
+      await settled(page);
+      expect(await pageScroll()).toBe(900);
+
+      const covered = await hoverInPlace(page.locator("#target"), { x: 5, y: 5 }).then(
+        () => "hovered",
+        (error: Error) => error.message,
+      );
+      expect(covered).toBe("hoverInPlace: div#cover is at the point, not the target");
+      expect(await pageScroll()).toBe(900);
+
+      await page.locator("#target").hover({ position: { x: 5, y: 5 } });
+      expect(await pageScroll()).not.toBe(900);
+
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await settled(page);
+      const box = await page.locator("#target").boundingBox();
+      await hoverInPlace(page.locator("#target"), { x: 5, y: 5 });
+      await settled(page);
+      expect(await page.evaluate(() => document.querySelector("#target:hover") !== null)).toBe(true);
+      expect(await page.locator("#target").boundingBox()).toEqual(box);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("hoverInPlace() waits out a view transition, points at a wrapped link's first line, and moves in frames", async () => {
+    const context = await browser.newContext({ viewport: { width: 400, height: 600 } });
+    try {
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html>
+        <style>
+          body { margin: 0; font: 16px/20px sans-serif; }
+          p { margin: 20px; white-space: nowrap; }
+          ::view-transition-group(root) { animation-duration: 400ms; }
+          iframe { position: absolute; top: 200px; left: 100px; width: 200px; height: 100px; border: 0; }
+        </style>
+        <p>Some words before <a id="link" href="#">a<br>b</a></p>
+        <button id="target" style="position: absolute; top: 120px; left: 20px">Target</button>
+        <iframe srcdoc="<button id=inner style='margin: 30px'>Inner</button>"></iframe>`);
+      await page.frameLocator("iframe").locator("#inner").waitFor();
+      const hovered = (selector: string, frame = page.mainFrame()) =>
+        frame.waitForFunction((selector) => document.querySelector(`${selector}:hover`) !== null, selector);
+
+      // The link's box spans two lines whatever the font: "a" ends the first line, "b" starts the second, so the
+      // center of the whole box lies between the lines, beside the link's text.
+      expect(
+        await page.locator("#link").evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const center = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+          return center !== null && element.contains(center);
+        }),
+      ).toBe(false);
+      await hoverInPlace(page.locator("#link"));
+      await hovered("#link");
+
+      const started = await page.evaluate(() => {
+        const start = (document as Document & { startViewTransition?: (update: () => void) => unknown }).startViewTransition;
+        if (!start) return false;
+        start.call(document, () => undefined);
+        return true;
+      });
+      if (started)
+        expect(await page.evaluate(() => Boolean((document as Document & { activeViewTransition?: unknown }).activeViewTransition))).toBe(
+          true,
+        );
+      await hoverInPlace(page.locator("#target"));
+      await hovered("#target");
+
+      const frame = page.frame({ url: "about:srcdoc" });
+      if (!frame) throw new Error("Missing frame");
+      await hoverInPlace(page.frameLocator("iframe").locator("#inner"));
+      await hovered("#inner", frame);
+    } finally {
+      await context.close();
+    }
+  });
 
   test("settled() returns on a page with a scroll-driven and an infinite animation", async () => {
     const context = await browser.newContext();
@@ -501,7 +604,7 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     try {
       const killMs = await killProcessGroup({ pid: group.pid, kill: () => new Promise(() => {}) }, 0);
       await group.exited;
-      expect(() => process.kill(-group.pid, 0)).toThrow(/ESRCH/);
+      expect(processGroupAlive(group.pid)).toBe(false);
       // It waits a moment for the cleanup, never the whole kill budget, so the rest of the hook keeps its time.
       expect(killMs).toBeLessThan(1000);
       expect(performance.now() - started).toBeLessThan(1000);
@@ -549,7 +652,7 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
         // It waited the 2 s graceful budget, then killed, all inside Bun's 5 s hook timeout.
         expect(closeMs).toBeGreaterThanOrEqual(1990);
         expect(closeMs).toBeLessThan(5000);
-        expect(() => process.kill(-browserPid, 0)).toThrow(/ESRCH/);
+        expect(processGroupAlive(browserPid)).toBe(false);
         expect(lines).toHaveLength(1);
         expect(lines[0]).toMatch(
           new RegExp(

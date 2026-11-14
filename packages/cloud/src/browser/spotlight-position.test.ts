@@ -109,10 +109,16 @@ describe("desktop Spotlight placement", () => {
       const target = host.querySelector<HTMLElement>(".cloud-global-search__home")!;
       expect(target.dataset.ready).toBe("true");
       expect(target.textContent).toBe("Release to center");
+      // The chip above the search says what releasing does; the place itself stays under the search.
+      const chip = host.querySelector<HTMLElement>(".cloud-global-search__chip")!;
+      expect(chip.dataset.ready).toBe("true");
+      expect(chip.textContent).toBe("Release to center");
+      expect(chip.getAttribute("aria-hidden")).toBe("true");
       // Crossing the target does not snap; leaving it before release keeps the new point.
       pointer("pointermove", anchor.x + 100, anchor.y + 100);
       expect(target.dataset.ready).toBe("false");
       expect(target.textContent).toBe("Back to center");
+      expect(chip.dataset.ready).toBe("false");
       pointer("pointerup", anchor.x + 100, anchor.y + 100);
       expect(state.modal).toBe(false);
       pointer("pointerdown", anchor.x + 100, anchor.y + 100);

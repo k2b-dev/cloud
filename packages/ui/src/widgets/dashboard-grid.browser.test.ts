@@ -103,22 +103,29 @@ for (const theme of ["light", "dark"])
     const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
     try {
       await mount(page, 1200, theme);
-      const frames = await page.locator("[data-panel]").evaluateAll((panels) => [
-        ...new Set(
-          panels.map((panel) => {
-            const style = getComputedStyle(panel);
-            return [
-              style.borderTopWidth,
-              style.borderTopStyle,
-              style.borderTopLeftRadius,
-              style.paddingTop,
-              style.paddingLeft,
-              style.boxShadow,
-            ].join(" ");
-          }),
-        ),
-      ]);
-      expect(frames).toEqual(["1px solid 12px 14px 16px none"]);
+      const frames = await page.locator("[data-panel]").evaluateAll((panels) => {
+        // A panel is an island: its shadow is the island hook where it stands (raised in light, none in dark).
+        const probe = panels[0]!.parentElement!.appendChild(document.createElement("div"));
+        probe.style.boxShadow = "var(--k2b-island-shadow)";
+        const island = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        return [
+          ...new Set(
+            panels.map((panel) => {
+              const style = getComputedStyle(panel);
+              return [
+                style.borderTopWidth,
+                style.borderTopStyle,
+                style.borderTopLeftRadius,
+                style.paddingTop,
+                style.paddingLeft,
+                style.boxShadow === island ? "island" : style.boxShadow,
+              ].join(" ");
+            }),
+          ),
+        ];
+      });
+      expect(frames).toEqual(["1px solid 12px 14px 16px island"]);
       const header = await page
         .locator(".k2b-dashboard-section__header")
         .first()

@@ -95,7 +95,7 @@ describe("Capabilities workspace detail panel", () => {
     expect(html.slice(more)).toContain("Input schema · Data schema");
     expect(html).toContain('aria-label="Close capability details"');
     // No section icons in the outline.
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("k2b-section__icon");
     expect(html).not.toContain("Action policy");
     for (const className of legacyDetailClasses) expect(html).not.toContain(className);
   });
@@ -104,7 +104,8 @@ describe("Capabilities workspace detail panel", () => {
     const html = renderWorkspace(actionSelection);
 
     expect(html).not.toContain('class="k2b-detail-panel__summary"');
-    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"));
+    expect(html.indexOf("<h2>")).toBeLessThan(html.indexOf('class="k2b-detail-panel__kind"'));
+    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("</header>"));
     expect(kind).toContain("Action");
     expect(kind).toContain("Destructive");
     expect(html).toContain(">Effect<");

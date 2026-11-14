@@ -77,6 +77,14 @@ describe("MailAutomationTrace", () => {
     expect(html).toContain("Die Regel bleibt, wie sie ist.");
   });
 
+  test("a skipped reply draft names the occupied box without an assignment or failure claim", () => {
+    const html = render([{ ...byId(3), outcome: "skipped", effects: [], reasons: [{ kind: "reply_draft_occupied" }] }], "bottom");
+    expect(html).toContain("hat den Antwortentwurf übersprungen");
+    expect(html).toContain("bereits einen Antwortentwurf hat");
+    expect(html).not.toContain("hat Zuweisen übersprungen");
+    expect(html).not.toContain("fehlgeschlagen");
+  });
+
   test("a later skipped rule keeps the current assignment as the note; a manual change ends it", () => {
     expect(render([byId(3), byId(2)], "top")).toContain("„Mails nach Art verteilen“ hat Team Angebote zugewiesen.");
     expect(render([byId(8), byId(4)], "top")).not.toContain("data-mail-automation-note");

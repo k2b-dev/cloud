@@ -1,29 +1,44 @@
+import { Link } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
-import { Avatar, Button, InlineGuidance, prompts, Skeleton, StatusBadge, toast, useLocale } from "@k2b/ui";
+import { Avatar, Button, InlineGuidance, prompts, Skeleton, StatusBadge, Tag, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
+import type { MarkedEntry } from "../contracts";
 import {
   type ActorView,
   actorOf,
+  actorParts,
+  fill,
+  formatTime,
+  formatWhen,
   type HistoryActions,
   type HistoryEnvironment,
   type HistoryRowModel,
   isDirectory,
   type MetaPart,
   metaParts,
+  noteSentence,
   type Part,
+  plain,
   type RestoreOutcome,
   type RowAction,
   rowAction,
+  runDestination,
+  runSentence,
   type SentenceContext,
   sentence,
   subjectName,
+  viaLabel,
 } from "./history-actions";
 import { type HistoryMessages, useHistoryMessages } from "./history-messages";
+import { filesUrl } from "./urls";
 
 /* ------------------------------------------------------------------ shared row parts */
 
-export function PlacePath(props: { segments: readonly string[] }) {
+type Navigate = HistoryEnvironment["onNavigate"];
+
+/** A breadcrumb inside a sentence; segments with an address open that folder. */
+export function PlacePath(props: { segments: readonly string[]; hrefs?: readonly (string | null)[]; onNavigate?: Navigate }) {
   return (
     <span class="filesv2-history-path">
       <For each={props.segments}>
@@ -32,7 +47,13 @@ export function PlacePath(props: { segments: readonly string[] }) {
             <Show when={index() > 0}>
               <span class="filesv2-history-path__sep"> › </span>
             </Show>
-            {segment}
+            <Show when={props.hrefs?.[index()]} fallback={segment}>
+              {(href) => (
+                <Link class="filesv2-history-target" href={href()} onNavigate={props.onNavigate}>
+                  {segment}
+                </Link>
+              )}
+            </Show>
           </>
         )}
       </For>
@@ -40,28 +61,50 @@ export function PlacePath(props: { segments: readonly string[] }) {
   );
 }
 
-export function Sentence(props: { parts: readonly Part[] }) {
+/** Names are strong; a current item is a link, a vanished one says so quietly. Compact rows set actors in regular weight. */
+export function Sentence(props: { parts: readonly Part[]; compact?: boolean; onNavigate?: Navigate }) {
   return (
     <For each={props.parts}>
-      {(part) =>
-        part.kind === "name" ? <strong>{part.text}</strong> : part.kind === "place" ? <PlacePath segments={part.segments} /> : part.text
-      }
+      {(part) => (
+        <Switch fallback={part.kind === "text" ? part.text : null}>
+          <Match when={part.kind === "actor" && part}>
+            {(actor) => (props.compact ? <span class="filesv2-history-actor">{actor().text}</span> : <strong>{actor().text}</strong>)}
+          </Match>
+          <Match when={part.kind === "name" && part}>
+            {(item) => (
+              <>
+                <Show when={item().href} fallback={<strong>{item().text}</strong>}>
+                  {(href) => (
+                    <Link class="filesv2-history-target filesv2-history-target--name" href={href()} onNavigate={props.onNavigate}>
+                      {item().text}
+                    </Link>
+                  )}
+                </Show>
+                <Show when={item().hint}>{(hint) => <span class="filesv2-history-hint"> ({hint()})</span>}</Show>
+              </>
+            )}
+          </Match>
+          <Match when={part.kind === "place" && part}>
+            {(place) => <PlacePath segments={place().segments} hrefs={place().hrefs} onNavigate={props.onNavigate} />}
+          </Match>
+        </Switch>
+      )}
     </For>
   );
 }
 
-/** Approved avatar sizes: 30 px in lists, 26 px in the detail. The nearest public size only sets the type scale. */
-const AVATAR_PX = { xs: 26, sm: 30 } as const;
+/** Approved avatar sizes: 30 px in lists, 26 px in the detail, 20 px in compact rows. The public size sets the type scale. */
+const AVATAR_PX = { compact: 20, xs: 26, sm: 30 } as const;
 
 /** The actor's avatar is decorative: the sentence names the actor. A finding without a Cloud entry reads as a warning. */
-export function HistoryAvatar(props: { actor: ActorView; size: "xs" | "sm" }) {
+export function HistoryAvatar(props: { actor: ActorView; size: "compact" | "xs" | "sm" }) {
   const px = () => `${AVATAR_PX[props.size]}px`;
   return (
     <span class="filesv2-history-row__who" data-actor={props.actor.kind} aria-hidden="true">
       <Avatar
         name={props.actor.kind === "person" ? props.actor.label : (props.actor.agent ?? props.actor.label)}
         icon={props.actor.icon ?? undefined}
-        size={props.size}
+        size={props.size === "compact" ? "xs" : props.size}
         style={{
           width: px(),
           height: px(),
@@ -127,12 +170,73 @@ export function MetaLine(props: { parts: readonly MetaPart[] }) {
                   </a>
                 )}
               </Match>
-              <Match when={part.kind === "text" && part}>{(item) => <span>{item().text}</span>}</Match>
+              <Match when={(part.kind === "text" || part.kind === "via") && part}>{(item) => <span>{item().text}</span>}</Match>
             </Switch>
           </Show>
         )}
       </For>
     </p>
+  );
+}
+
+/**
+ * The facts of a compact row, at its end: state and quiet facts, then the channel as a small tag, then the time, so
+ * times line up down the list.
+ */
+export function CompactFacts(props: { parts: readonly MetaPart[] }) {
+  const facts = () => props.parts.filter((part) => part.kind !== "via" && part.kind !== "time");
+  const via = () => props.parts.find((part): part is Extract<MetaPart, { kind: "via" }> => part.kind === "via");
+  const time = () => props.parts.find((part): part is Extract<MetaPart, { kind: "time" }> => part.kind === "time");
+  return (
+    <span class="filesv2-history-row__facts">
+      <Show when={facts().length > 0}>
+        <span class="filesv2-history-row__facts-text">
+          <For each={facts()}>
+            {(part, index) => (
+              <>
+                <Show when={index() > 0}>
+                  <MetaDot />
+                </Show>
+                <Switch>
+                  <Match when={part.kind === "status" && part}>
+                    {(status) => (
+                      <StatusBadge
+                        class="filesv2-history-row__status"
+                        tone={status().tone === "running" ? "running" : status().tone}
+                        icon={status().icon}
+                        label={status().label}
+                      />
+                    )}
+                  </Match>
+                  <Match when={part.kind === "link" && part}>
+                    {(link) => (
+                      <a class="filesv2-history-link" href={link().href}>
+                        {link().label}
+                      </a>
+                    )}
+                  </Match>
+                  <Match when={part.kind === "text" && part}>{(item) => <span>{item().text}</span>}</Match>
+                </Switch>
+              </>
+            )}
+          </For>
+        </span>
+      </Show>
+      <Show when={via()}>
+        {(channel) => (
+          <Tag size="sm" class="filesv2-history-via">
+            {channel().text}
+          </Tag>
+        )}
+      </Show>
+      <Show when={time()}>
+        {(at) => (
+          <time class="filesv2-history-row__time" datetime={at().iso}>
+            {at().text}
+          </time>
+        )}
+      </Show>
+    </span>
   );
 }
 
@@ -197,8 +301,22 @@ export type HistoryRowProps = {
   context: SentenceContext;
   /** Rows under a day heading show the time alone. */
   dated: boolean;
-  /** List rows reveal their action on hover and focus; detail rows always show it below the sentence. */
-  variant: "list" | "detail";
+  /**
+   * List rows reveal their action on hover and focus; detail rows always show it below the sentence. Compact rows
+   * keep one line with the facts at the end, the way the activity list reads.
+   */
+  variant: "list" | "detail" | "compact";
+  /** Names and folders of current sides become links, and vanished items say so; only for the viewer's own reader. */
+  links?: boolean;
+  /** The previous line names the same actor, so this compact row leaves its avatar and name out. */
+  repeat?: boolean;
+  /**
+   * Compact rows only. `all` shows the actor in its own column before the change; `me` is the reader's own activity
+   * and shows no actor at all.
+   */
+  mode?: "me" | "all";
+  /** `short`: a line inside a run whose line names the destination, so a rename shows only its names. */
+  member?: "short";
   directory?: boolean;
   /** Replaces the sentence or meta for rows that describe a state instead of a change. */
   sentence?: readonly Part[];
@@ -238,9 +356,22 @@ export function HistoryRow(props: HistoryRowProps) {
         },
   );
   const actor = createMemo(() => actorOf(props.row.lead, h(), props.env));
-  const parts = createMemo(
-    () => props.sentence ?? sentence(props.row, h(), props.env, { context: props.context, directory: props.directory }),
+  const compact = () => props.variant === "compact";
+  // Compact rows read in note style, the item first; an action without a note form keeps its full sentence.
+  const note = createMemo(() =>
+    compact() && !props.sentence ? noteSentence(props.row, h(), props.env, { links: props.links, short: props.member === "short" }) : null,
   );
+  const parts = createMemo(
+    () =>
+      props.sentence ??
+      note() ??
+      sentence(props.row, h(), props.env, {
+        context: props.context,
+        directory: props.directory,
+        links: props.links,
+      }),
+  );
+  const showsActor = () => compact() && props.mode !== "me";
   const meta = createMemo(
     () =>
       props.meta ??
@@ -252,7 +383,7 @@ export function HistoryRow(props: HistoryRowProps) {
       }),
   );
   const action = createMemo(() => {
-    const chosen = props.action !== undefined ? props.action : rowAction(props.row, h(), actions() ?? {});
+    const chosen = props.action !== undefined ? props.action : rowAction(props.row, h(), actions() ?? {}, { links: props.links });
     const trashed = chosen?.restoresTrash;
     const restore = props.actions?.onRestoreTrash;
     return trashed && restore ? { ...chosen, run: () => restoreFromTrash(trashed, restore, h()) } : chosen;
@@ -263,13 +394,30 @@ export function HistoryRow(props: HistoryRowProps) {
   const members = () => (props.row.kind === "batch" ? props.row.entries : []);
   const shown = () => (expanded() ? members() : members().slice(0, 3));
   return (
-    <article class="filesv2-history-row" data-variant={props.variant} data-state={props.row.lead.state}>
-      <HistoryAvatar actor={actor()} size={props.variant === "detail" ? "xs" : "sm"} />
+    <article
+      class="filesv2-history-row"
+      data-variant={props.variant}
+      data-mode={compact() ? (props.mode ?? "all") : undefined}
+      data-state={props.row.lead.state}
+    >
+      <Show when={!compact() || showsActor()}>
+        <Show when={!(compact() && props.repeat)} fallback={<span class="filesv2-history-row__who" data-repeat="" aria-hidden="true" />}>
+          <HistoryAvatar actor={actor()} size={compact() ? "compact" : props.variant === "detail" ? "xs" : "sm"} />
+        </Show>
+      </Show>
+      <Show when={showsActor()}>
+        {/* A full sentence names its actor itself; a repeated actor stays in place for screen readers only. */}
+        <span class="filesv2-history-row__actor" data-repeat={props.repeat ? "" : undefined}>
+          {note() ? plain(actorParts(actor(), h())) : ""}
+        </span>
+      </Show>
       <div class="filesv2-history-row__text">
         <p class="filesv2-history-row__sentence">
-          <Sentence parts={parts()} />
+          <Sentence parts={parts()} compact={compact()} onNavigate={props.env.onNavigate} />
         </p>
-        <MetaLine parts={meta()} />
+        <Show when={!compact()}>
+          <MetaLine parts={meta()} />
+        </Show>
         <Show when={members().length > 0}>
           <ul id={membersId} class="filesv2-history-row__members">
             <For each={shown()}>
@@ -316,10 +464,18 @@ export function HistoryRow(props: HistoryRowProps) {
           )}
         </Show>
       </div>
+      <Show when={compact()}>
+        <CompactFacts parts={meta()} />
+      </Show>
       <div class="filesv2-history-row__action" data-keep={props.keep || runner.pending() || runner.error() ? "" : undefined}>
         <Show when={action()}>
           {(current) => (
-            <Button size="sm" variant="secondary" loading={runner.pending()} onClick={() => void runner.run(current())}>
+            <Button
+              size={compact() ? "xs" : "sm"}
+              variant="secondary"
+              loading={runner.pending()}
+              onClick={() => void runner.run(current())}
+            >
               <i class={current().icon} aria-hidden="true" />
               {current().label}
             </Button>
@@ -330,8 +486,151 @@ export function HistoryRow(props: HistoryRowProps) {
   );
 }
 
+export type HistoryRunRowProps = {
+  rows: readonly HistoryRowModel[];
+  env: HistoryEnvironment;
+  actions?: HistoryActions;
+  links?: boolean;
+  repeat?: boolean;
+  mode?: "me" | "all";
+  expanded: boolean;
+  onToggle: (expanded: boolean) => void;
+  onChanged?: () => void;
+};
+
+/**
+ * Many changes of one person at one time as one line that opens them. The toggle keeps its place and size; its
+ * rows follow below it, so opening moves nothing above. Grouping is presentation only.
+ */
+export function HistoryRunRow(props: HistoryRunRowProps) {
+  const h = useHistoryMessages();
+  const locale = useLocale();
+  const rowsId = `filesv2-history-run-${createUniqueId()}`;
+  const lead = () => props.rows[0]!.lead;
+  const actor = createMemo(() => actorOf(lead(), h(), props.env));
+  const facts = createMemo<MetaPart[]>(() => {
+    const newest = formatTime(lead().time, locale(), props.env);
+    const oldestTime = props.rows.at(-1)!.entries.at(-1)!.time;
+    const oldest = formatTime(oldestTime, locale(), props.env);
+    const via = viaLabel(lead(), h(), props.env);
+    return [
+      ...(via ? [{ kind: "via" as const, text: via }] : []),
+      { kind: "time", iso: lead().time, text: oldest === newest ? newest : `${oldest}–${newest}` },
+    ];
+  });
+  const showsActor = () => props.mode !== "me";
+  // Lines under a line that names the destination show only what changed besides it.
+  const short = () => (runDestination(props.rows, props.env) ? ("short" as const) : undefined);
+  return (
+    <div class="filesv2-history-run" data-expanded={props.expanded ? "" : undefined}>
+      <button
+        type="button"
+        class="filesv2-history-row filesv2-history-run__toggle"
+        data-variant="compact"
+        data-mode={props.mode ?? "all"}
+        aria-expanded={props.expanded}
+        aria-controls={rowsId}
+        onClick={() => props.onToggle(!props.expanded)}
+      >
+        <Show when={showsActor()}>
+          <Show when={!props.repeat} fallback={<span class="filesv2-history-row__who" data-repeat="" aria-hidden="true" />}>
+            <HistoryAvatar actor={actor()} size="compact" />
+          </Show>
+          <span class="filesv2-history-row__actor" data-repeat={props.repeat ? "" : undefined}>
+            {plain(actorParts(actor(), h()))}
+          </span>
+        </Show>
+        <span class="filesv2-history-row__text">
+          <span class="filesv2-history-row__sentence">
+            {/* Inside a button nothing else is interactive, so the destination is named without links. */}
+            <Sentence parts={runSentence(props.rows, h(), props.env, locale())} compact />
+          </span>
+        </span>
+        <span class="filesv2-history-row__facts">
+          <Show when={facts().find((part) => part.kind === "via")}>
+            {(via) => (
+              <Tag size="sm" class="filesv2-history-via">
+                {via().text}
+              </Tag>
+            )}
+          </Show>
+          <span class="filesv2-history-run__count">
+            {props.rows.length}
+            <i class="ti ti-chevron-down filesv2-history-run__chevron" aria-hidden="true" />
+          </span>
+          <time class="filesv2-history-row__time" datetime={lead().time}>
+            {facts().find((part) => part.kind === "time")?.text}
+          </time>
+        </span>
+      </button>
+      <ul id={rowsId} class="filesv2-history-run__rows" hidden={!props.expanded}>
+        <For each={props.rows}>
+          {(row) => (
+            <li>
+              <HistoryRow
+                row={row}
+                env={props.env}
+                actions={props.actions}
+                context="activity"
+                dated
+                variant="compact"
+                mode={props.mode}
+                links={props.links}
+                repeat
+                member={short()}
+                onChanged={props.onChanged}
+              />
+            </li>
+          )}
+        </For>
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * A file the person opened, in their own activity only. The recent list resolves each pointer against current access
+ * on every read, so its name and folders lead there directly.
+ */
+export function OpenedRow(props: {
+  item: MarkedEntry;
+  env: HistoryEnvironment;
+  bases: readonly { id: string; label: string }[];
+  /** `relative` for a list without day headings: "yesterday" or a date instead of the time. */
+  when?: "time" | "relative";
+}) {
+  const h = useHistoryMessages();
+  const locale = useLocale();
+  const parts = createMemo<Part[]>(() => {
+    const { base, entry } = props.item;
+    const folders = entry.path.split("/").filter(Boolean).slice(0, -1);
+    const href = entry.directory ? filesUrl(base.id, entry.path) : filesUrl(base.id, folders.join("/"), null, entry.path);
+    const label = props.bases.find((candidate) => candidate.id === base.id)?.label ?? base.name;
+    const segments = [label, ...folders];
+    return fill(h().memberOpened, {
+      object: [{ kind: "name", text: entry.name, href }],
+      at: [{ kind: "place", segments, hrefs: segments.map((_, index) => filesUrl(base.id, folders.slice(0, index).join("/"))) }],
+    });
+  });
+  // Under a day heading the time alone; in a list without headings the same "today, 14:32" as the change rows.
+  const time = () =>
+    props.when === "relative"
+      ? formatWhen(props.item.markedAt, locale(), h(), props.env)
+      : formatTime(props.item.markedAt, locale(), props.env);
+  return (
+    <article class="filesv2-history-row filesv2-history-row--opened" data-variant="compact" data-mode="me" data-state="done">
+      <div class="filesv2-history-row__text">
+        <p class="filesv2-history-row__sentence">
+          <Sentence parts={parts()} compact onNavigate={props.env.onNavigate} />
+        </p>
+      </div>
+      <CompactFacts parts={[{ kind: "time", iso: props.item.markedAt, text: time() }]} />
+    </article>
+  );
+}
+
 /** Placeholder rows with the height of real rows, so loading never shifts the list. */
-export function SkeletonRows(props: { count: number; variant: "list" | "detail" }) {
+export function SkeletonRows(props: { count: number; variant: "list" | "detail" | "compact" }) {
   return (
     <For each={Array.from({ length: props.count }, (_, index) => index)}>
       {() => (
@@ -339,8 +638,13 @@ export function SkeletonRows(props: { count: number; variant: "list" | "detail" 
           <Skeleton class="filesv2-history-skeleton__who" />
           <div class="filesv2-history-row__text">
             <Skeleton class="filesv2-history-skeleton__line" />
-            <Skeleton class="filesv2-history-skeleton__meta" />
+            <Show when={props.variant !== "compact"}>
+              <Skeleton class="filesv2-history-skeleton__meta" />
+            </Show>
           </div>
+          <Show when={props.variant === "compact"}>
+            <Skeleton class="filesv2-history-skeleton__facts" />
+          </Show>
         </div>
       )}
     </For>

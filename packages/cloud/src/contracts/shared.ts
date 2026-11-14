@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { StorageBucketSummary } from "./storage-buckets";
 
 export const RoleSchema = z.enum([
   "admin",
@@ -410,6 +411,7 @@ export type SettingKind =
   | "enum"
   | "string_list"
   | "number_list"
+  | "storage_bucket"
   | "cron"
   | "timezone"
   | "template";
@@ -440,6 +442,7 @@ export type SettingEntry = {
   unreadable: boolean;
   templateVars?: string[];
   options?: SettingOption[];
+  storageBuckets?: StorageBucketSummary[];
   min?: number;
   max?: number;
 };

@@ -1,5 +1,6 @@
 import { PayloadTooLargeError } from "@k2b/sync";
 import { lazySync } from "../_internal/process-sync";
+import { watchAppAccess, watchCredentialExpiry } from "../server/middleware/app-access";
 import { logger } from "../services/logging";
 import { latestTopicCursor } from "../services/topic-cursor";
 import type { AiConversationWatch } from "./conversation-watchers";
@@ -150,10 +151,12 @@ type AiStreamSnapshot = {
   activeTurnId: string | null;
 };
 
-export const loadAiStreamState = async (conversation: AiConversation): Promise<Extract<AiStreamEvent, { type: "state" }>> =>
-  (await loadStreamSnapshot(conversation)).state;
+export const loadAiStreamState = async (
+  conversation: AiConversation,
+  viewerUserId?: string | null,
+): Promise<Extract<AiStreamEvent, { type: "state" }>> => (await loadStreamSnapshot(conversation, viewerUserId)).state;
 
-const loadStreamSnapshot = async (conversation: AiConversation): Promise<AiStreamSnapshot> => {
+const loadStreamSnapshot = async (conversation: AiConversation, viewerUserId?: string | null): Promise<AiStreamSnapshot> => {
   const [page, active] = await Promise.all([
     aiConversations.listMessagesPage({ conversationId: conversation.id, limit: AI_STREAM_INITIAL_MESSAGE_LIMIT }),
     aiConversations.getActiveTurn({ conversationId: conversation.id }),
@@ -184,7 +187,7 @@ const loadStreamSnapshot = async (conversation: AiConversation): Promise<AiStrea
     state: {
       type: "state",
       conversation: { ...conversation, id: conversation.shortId },
-      messages: await publicAiStoredMessages(page.messages, conversation),
+      messages: await publicAiStoredMessages(page.messages, conversation, viewerUserId),
       hasMoreMessages: page.hasMore,
       activeTurn: snapshot,
     },
@@ -256,6 +259,7 @@ const loadStreamSnapshotWith = async (
   conversation: AiConversation,
   event: AiLiveTopicEvent,
   signal: AbortSignal,
+  viewerUserId?: string | null,
 ): Promise<AiStreamSnapshot | null> => {
   for (let read = 1; read < AI_STREAM_CATCH_UP_READS && !signal.aborted; read++) {
     const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
@@ -264,7 +268,7 @@ const loadStreamSnapshotWith = async (
   }
   const current = await aiConversations.getConversation({ conversationId: conversation.id });
   if (!current) return null;
-  const snapshot = await loadStreamSnapshot(current);
+  const snapshot = await loadStreamSnapshot(current, viewerUserId);
   if (!signal.aborted && !holdsEvent(positionOf(snapshot), event)) {
     // Readers miss this turn's events up to the event until it ends.
     log.warn("AI conversation stream continues without an event the saved state does not hold", {
@@ -295,6 +299,7 @@ const loadStreamSnapshotWith = async (
  */
 export async function* streamAiConversationEvents(input: {
   conversation: AiConversation;
+  viewerUserId?: string | null;
   signal: AbortSignal;
 }): AsyncGenerator<AiStreamEvent> {
   let current: StreamPosition | null = null;
@@ -302,7 +307,7 @@ export async function* streamAiConversationEvents(input: {
   const reloadedTurns = new Set<string>();
   for await (const item of streamSnapshotThenTail({
     captureCursor: () => latestTopicCursor({ topic: aiStreamTopic(), resourceId: "cloud-ai-stream", tenantId: input.conversation.id }),
-    loadSnapshot: () => loadStreamSnapshot(input.conversation),
+    loadSnapshot: () => loadStreamSnapshot(input.conversation, input.viewerUserId),
     tail: (after) => aiStreamTopic().hub({ tenantId: input.conversation.id }).subscribe({ after, signal: input.signal }),
   })) {
     if (item.kind === "snapshot") {
@@ -314,7 +319,7 @@ export async function* streamAiConversationEvents(input: {
     const event = item.value.data;
     if (needsSavedState(event, current, reloadedTurns)) {
       reloadedTurns.add(event.turnId);
-      const snapshot = await loadStreamSnapshotWith(input.conversation, event, input.signal);
+      const snapshot = await loadStreamSnapshotWith(input.conversation, event, input.signal, input.viewerUserId);
       // A conversation that was archived or deleted ends the stream; the reader's reconnect gets the route's answer.
       if (input.signal.aborted || !snapshot) return;
       yield snapshot.state;
@@ -358,7 +363,7 @@ export async function* streamAiConversationEvents(input: {
         ...event,
         conversationId: input.conversation.shortId,
         turnId: publicTurnId,
-        messages: projectPublicAiStoredMessages(messages, input.conversation.shortId, new Map([[event.turnId, publicTurnId]])),
+        messages: await publicAiStoredMessages(messages, input.conversation, input.viewerUserId),
       };
       continue;
     }
@@ -377,16 +382,15 @@ export const __aiStreamTest = { needsSavedState, streamSnapshotThenTail };
 /** Conversation-scoped SSE adapter for the shared event feed. */
 export const createAiConversationStreamResponse = (input: {
   conversation: AiConversation;
+  viewerUserId?: string | null;
   signal?: AbortSignal;
   heartbeatMs?: number;
-  /**
-   * Re-checked on every heartbeat. A stream can outlive the credential and the
-   * grant that opened it by hours, and authorizing once at connect time means
-   * a revoked session or withdrawn grant keeps delivering model output until
-   * the client happens to disconnect. Returning false closes the stream; the
-   * client's reconnect then meets the ordinary 401, 403, or 404.
-   */
+  /** Checked at admission and on access events, never by the heartbeat. */
   revalidate?: () => Promise<boolean>;
+  /** Existing identity and conversation access followers; failures end the stream. */
+  subscribeAccess?: (changed: () => void, failed: () => void) => () => void;
+  /** Earliest known account or credential expiry, enforced without SQL. */
+  expiresAt?: number;
   /** A signed-in tab's watch: refreshed with each heartbeat and released when the stream ends. */
   watch?: AiConversationWatch;
 }): Response => {
@@ -394,6 +398,8 @@ export const createAiConversationStreamResponse = (input: {
   const liveAbort = new AbortController();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let closed = false;
+  let stopAccess = () => {};
+  let stopExpiry = () => {};
 
   const abortLive = () => liveAbort.abort();
   if (input.signal?.aborted) abortLive();
@@ -428,6 +434,8 @@ export const createAiConversationStreamResponse = (input: {
           closed = true;
           if (heartbeat) clearInterval(heartbeat);
           heartbeat = undefined;
+          stopAccess();
+          stopExpiry();
           void input.watch?.release();
           input.signal?.removeEventListener("abort", abortLive);
           abortLive();
@@ -438,30 +446,50 @@ export const createAiConversationStreamResponse = (input: {
           }
         };
 
+        let pendingAccess: Promise<boolean> = Promise.resolve(true);
+        if (input.revalidate) {
+          const revalidate = input.revalidate;
+          stopAccess = watchAppAccess({
+            intervalMs: false,
+            check: () => {
+              pendingAccess = revalidate();
+              return pendingAccess;
+            },
+            subscribe: (changed) => input.subscribeAccess?.(changed, close) ?? (() => {}),
+            denied: close,
+          });
+        }
+        if (input.expiresAt !== undefined) stopExpiry = watchCredentialExpiry(input.expiresAt, close);
+        if (closed) {
+          stopAccess();
+          stopExpiry();
+          return;
+        }
+
         if (heartbeatMs > 0) {
           heartbeat = setInterval(() => {
             if (!enqueue(encodeSseHeartbeat())) return;
             input.watch?.refresh();
-            if (!input.revalidate) return;
-            // Fail closed: a revalidation that throws is not a pass.
-            void input
-              .revalidate()
-              .catch((error) => {
-                log.warn("AI conversation stream revalidation failed", {
-                  conversationId: input.conversation.id,
-                  error: error instanceof Error ? error.message : "revalidation failed",
-                });
-                return false;
-              })
-              .then((allowed) => {
-                if (!allowed) close();
-              });
           }, heartbeatMs);
         }
 
         try {
-          for await (const event of streamAiConversationEvents({ conversation: input.conversation, signal: liveAbort.signal })) {
-            if (!enqueue(encodeSseEvent(event))) return;
+          // Admission and each delivery wait for any access check that raced them.
+          const accessCurrent = async () => {
+            let checked: Promise<boolean>;
+            do {
+              checked = pendingAccess;
+              if (!(await checked)) return false;
+            } while (checked !== pendingAccess);
+            return !closed;
+          };
+          if (!(await accessCurrent())) return;
+          for await (const event of streamAiConversationEvents({
+            conversation: input.conversation,
+            viewerUserId: input.viewerUserId,
+            signal: liveAbort.signal,
+          })) {
+            if (!(await accessCurrent()) || !enqueue(encodeSseEvent(event))) return;
           }
         } catch (error) {
           if (!liveAbort.signal.aborted) {
@@ -476,6 +504,9 @@ export const createAiConversationStreamResponse = (input: {
       },
       cancel() {
         closed = true;
+        stopAccess();
+        stopExpiry();
+        input.signal?.removeEventListener("abort", abortLive);
         if (heartbeat) clearInterval(heartbeat);
         void input.watch?.release();
         abortLive();

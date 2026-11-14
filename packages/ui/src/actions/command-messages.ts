@@ -7,10 +7,22 @@ const commandMessages = i18n.define({
     en: {
       commands: "Commands",
       back: ({ label }: { label: string }) => `Back from ${label}`,
+      running: ({ label }: { label: string }) => `${label} is running`,
+      failed: "That did not work.",
+      loading: "Loading",
+      loadingChoice: "Loading, then the first match",
+      loadFailed: "The entries could not load.",
+      done: "Done.",
     },
     de: {
       commands: "Befehle",
       back: ({ label }: { label: string }) => `Zurück aus ${label}`,
+      running: ({ label }: { label: string }) => `${label} läuft`,
+      failed: "Das hat nicht geklappt.",
+      loading: "Wird geladen",
+      loadingChoice: "Lädt, dann der erste Treffer",
+      loadFailed: "Die Einträge konnten nicht geladen werden.",
+      done: "Erledigt.",
     },
   },
 });

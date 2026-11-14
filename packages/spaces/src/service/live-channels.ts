@@ -8,6 +8,7 @@ import { spacesPublicResources } from "./public-resources";
 /** `space` follows one Space; its readers are decided like the Spaces API, with one query for all of them. */
 export const spacesLiveChannels = {
   space: {
+    eventOnly: true as const,
     scope: z.object({ space: ResourceShortIdSchema }).strict(),
     keys: async ({ space }: { space: string }) => {
       const spaceId = await spacesPublicResources.resolvePublicId("spaces", space);

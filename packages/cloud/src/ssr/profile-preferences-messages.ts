@@ -5,7 +5,6 @@ export const profilePreferencesMessages = i18n.define({
   messages: {
     en: {
       menuLabel: "Profile and preferences",
-      preferencesMenuLabel: "Appearance and language",
       language: "Language",
       legalLinks: "Legal",
       profileSettings: "Profile settings",
@@ -22,7 +21,6 @@ export const profilePreferencesMessages = i18n.define({
     },
     de: {
       menuLabel: "Profil und Einstellungen",
-      preferencesMenuLabel: "Darstellung und Sprache",
       language: "Sprache",
       legalLinks: "Rechtliches",
       profileSettings: "Profileinstellungen",

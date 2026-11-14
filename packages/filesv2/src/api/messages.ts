@@ -1,4 +1,33 @@
 const messages: Record<string, [string, string]> = {
+  invalid_input: ["Check your selection and the values you entered.", "Prüfe deine Auswahl und die eingegebenen Werte."],
+  pdf_encrypted: [
+    "The PDF is password-protected. Choose a PDF without password protection.",
+    "Das PDF ist mit einem Kennwort geschützt. Wähle ein PDF ohne Kennwortschutz.",
+  ],
+  pdf_unreadable: [
+    "The PDF could not be read. Choose an undamaged PDF.",
+    "Das PDF konnte nicht gelesen werden. Wähle ein unbeschädigtes PDF.",
+  ],
+  pdf_too_large: [
+    "The PDF action exceeds the size, page or work limit. Choose fewer pages or smaller files.",
+    "Die PDF-Aktion überschreitet die Größen-, Seiten- oder Arbeitsgrenze. Wähle weniger Seiten oder kleinere Dateien.",
+  ],
+  pdf_not_configured: [
+    "PDF processing is not configured. Ask an administrator.",
+    "Die PDF-Verarbeitung ist nicht eingerichtet. Wende dich an eine Administratorin oder einen Administrator.",
+  ],
+  pdf_changed: [
+    "A file changed while you chose its pages. Choose the pages again.",
+    "Eine Datei hat sich geändert, während du ihre Seiten gewählt hast. Wähle die Seiten noch einmal.",
+  ],
+  pdf_busy: [
+    "PDF processing is busy with another action. Try again in a moment.",
+    "Die PDF-Verarbeitung ist gerade mit einer anderen Aktion beschäftigt. Versuche es gleich noch einmal.",
+  ],
+  pdf_failed: [
+    "The PDF action could not be completed. Try again.",
+    "Die PDF-Aktion konnte nicht abgeschlossen werden. Versuche es erneut.",
+  ],
   activity_export_range: ["Choose a date range of at most one year.", "Wähle einen Zeitraum von höchstens einem Jahr."],
   activity_export_limit: [
     "This export contains more than 100,000 entries. Narrow the date range or filters.",
@@ -164,6 +193,8 @@ const messages: Record<string, [string, string]> = {
     "Du hast die Höchstzahl an Favoriten erreicht. Entferne zuerst einen.",
   ],
   preview_too_large: ["The file is too large for a preview.", "Die Datei ist für eine Vorschau zu groß."],
+  preview_failed: ["The preview could not be created. Try again.", "Die Vorschau konnte nicht erstellt werden. Versuche es erneut."],
+  preview_unsupported: ["This file has no supported preview.", "Für diese Datei ist keine Vorschau verfügbar."],
   inbox_file_limit: ["This file exceeds the inbox's file-size limit.", "Diese Datei überschreitet die Dateigrößengrenze des Eingangs."],
   inbox_total_limit: ["The inbox's total upload budget is exhausted.", "Das gesamte Upload-Budget des Eingangs ist ausgeschöpft."],
   inbox_invalid_limits: [
@@ -171,8 +202,8 @@ const messages: Record<string, [string, string]> = {
     "Die Dateigrößengrenze darf die Gesamtgrenze nicht überschreiten.",
   ],
   receipt_unknown: [
-    "The upload receipt is unavailable. Its result is unconfirmed; do not start a duplicate transfer until its destination has been checked.",
-    "Der Upload-Beleg ist nicht verfügbar. Das Ergebnis ist unbestätigt; prüfe das Ziel, bevor du eine neue Übertragung startest.",
+    "The upload receipt is unavailable. Its result is unconfirmed. Try again to check the same upload.",
+    "Der Upload-Beleg ist nicht verfügbar. Das Ergebnis ist unbestätigt. Versuche es erneut, um denselben Upload zu prüfen.",
   ],
   upload_uncertain: [
     "The upload result cannot be confirmed yet. Its reserved space remains counted.",
@@ -257,6 +288,20 @@ export function errorMessage(code: string, locale: string): string {
     "Storage is currently unavailable. Try again after checking the connection.",
     "Die Ablage ist derzeit nicht verfügbar. Bitte Verbindung prüfen und erneut versuchen.",
   ])[locale.startsWith("de") ? 1 : 0]!;
+}
+
+/** Source names are plain text, never renderer diagnostics or markup. */
+export function pdfErrorMessage(code: string, locale: string, path: string): string {
+  const name = path.split("/").at(-1)!;
+  if (code === "pdf_encrypted")
+    return locale.startsWith("de") ? `„${name}“ ist mit einem Kennwort geschützt.` : `“${name}” is password-protected.`;
+  if (code === "pdf_unreadable")
+    return locale.startsWith("de") ? `„${name}“ konnte nicht als PDF gelesen werden.` : `“${name}” could not be read as a PDF.`;
+  if (code === "pdf_changed")
+    return locale.startsWith("de")
+      ? `„${name}“ hat sich geändert. Wähle die Seiten noch einmal.`
+      : `“${name}” changed. Choose the pages again.`;
+  return errorMessage(code, locale);
 }
 
 /** Public share failures offer recovery appropriate for a visitor. */

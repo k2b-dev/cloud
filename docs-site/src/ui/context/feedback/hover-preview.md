@@ -12,7 +12,8 @@ the start of a message, the facts of a record, or details of a navigation
 entry. The card supplements the item; it never replaces opening it. Hovering
 changes no state, so a preview must not mark anything as read or seen.
 
-Keep the card to facts and a short excerpt. Use a `Tooltip` for a one-line hint
+Keep the card to facts and a short excerpt. Use a `Tooltip` for a one-line hint,
+a [`HoverCard`](/en/ui/feedback/hover-card) for the details of one control,
 and a dialog or detail panel for work. Pointer and keyboard users must reach
 everything in the card some other way, usually by opening the item.
 
@@ -140,9 +141,11 @@ The card renders on the server as a closed native popover (`popover="auto"`),
 so outside clicks and other popovers dismiss it; it never dismisses another
 light-dismiss popover itself. Browser code registers the anchors
 and positions the card in the top layer; it never changes the layout of the
-anchors or anything around them. The card uses the elevated surface, a strong
-border, and inner depth only: no outer shadow and no divider lines. It fades in
-and out unless reduced motion is requested.
+anchors or anything around them. The card floats on layer 3 of
+[Layers and shadows](/en/ui/surfaces/elevation): the elevated surface, a light
+1 px edge, `--k2b-shadow-float` outside, and no divider lines. Content that
+does not fit fades out with a mask to the surface, never with a dark inner
+shadow. It fades in and out unless reduced motion is requested.
 
 ## Example
 

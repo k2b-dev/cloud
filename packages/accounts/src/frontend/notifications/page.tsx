@@ -60,7 +60,7 @@ export default ssr<AuthContext>(async (c) => {
       failed: t.failed,
       cancelled: t.cancelled,
     })[value];
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const page = parsePage(c.req.query("page"));
   const perPage = 50;
   const status = validStatus(c.req.query("status"));

@@ -3,46 +3,96 @@ import { i18n } from "@k2b/stdlib";
 import {
   type AreaOptions,
   autoBin,
+  type BalanceFlowOptions,
   type BarChartOptions,
+  type BubbleOptions,
+  balanceFlowDatums,
+  balanceFlowFields,
+  balanceFlowRenderOptions,
   barChartLayout,
   barGauge,
   boxplot,
   type ChartDatum,
+  type ChartRenderSettings,
   calendarWords,
+  chartNumberFormatters,
   type charts,
   computeDomain,
   donut,
   extendDomainToNice,
+  type FunnelOptions,
   gauge,
   type HeatmapChartOptions,
+  type HorizontalBarOptions,
+  hbarLayout,
   histogram,
   line,
+  lineDetailsEnabled,
   niceLogTicks,
   niceStep,
+  type ParetoOptions,
   pie,
+  type RadarOptions,
+  rankedBarLayout,
   renderAreaSvg,
+  renderBalanceFlowSvg,
   renderBarChartSvg,
+  renderBubbleSvg,
+  renderFunnelSvg,
+  renderHbarSvg,
   renderHeatmapSvg,
+  renderParetoSvg,
+  renderRadarSvg,
+  renderSankeySvg,
+  renderTreemapSvg,
+  renderWaterfallSvg,
+  type SankeyOptions,
+  sankeyGraph,
   scatter,
   sparkline,
   stat,
+  type TreemapOptions,
+  type WaterfallOptions,
 } from "@k2b/ui/charts/core";
 import { z } from "zod";
+
+export { balanceFlowRenderOptions, chartNumberFormatters } from "@k2b/ui/charts/core";
+
 import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTime, chartKinds } from "./chart-schema";
 
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "area"
-    ? AreaOptions
-    : K extends "heatmap"
-      ? HeatmapChartOptions
-      : K extends "bar"
-        ? BarChartOptions
-        : K extends keyof typeof charts
-          ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-          : never);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "funnel"
+    ? FunnelOptions
+    : K extends "balanceFlow"
+      ? BalanceFlowOptions
+      : K extends "hbar"
+        ? HorizontalBarOptions
+        : K extends "waterfall"
+          ? WaterfallOptions
+          : K extends "area"
+            ? AreaOptions
+            : K extends "treemap"
+              ? TreemapOptions
+              : K extends "pareto"
+                ? ParetoOptions
+                : K extends "bubble"
+                  ? BubbleOptions
+                  : K extends "radar"
+                    ? RadarOptions
+                    : K extends "sankey"
+                      ? SankeyOptions
+                      : K extends "heatmap"
+                        ? HeatmapChartOptions
+                        : K extends "bar"
+                          ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
+                          : K extends keyof typeof charts
+                            ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+                            : never);
 }[ChartInput["kind"]];
+type BalanceFlowInput = Extract<ChartInput, { kind: "balanceFlow" }>;
+type BaseChartInput = Exclude<ChartInput, BalanceFlowInput>;
 
 /**
  * Plain-data chart options become the options of the shared
@@ -56,8 +106,23 @@ const labels = /* @__PURE__ */ i18n.define({
   messages: {
     en: {
       category: "Category",
+      flow: "Flow",
+      size: "Size",
+      axis: "Axis",
       series: "Series",
+      group: "Group",
+      previous: "Previous",
+      change: "Change",
+      cumulative: "Cumulative",
+      incoming: "Incoming",
+      outgoing: "Outgoing",
+      balance: "Balance",
+      before: "Balance before",
+      inflow: "In",
+      outflow: "Out",
+      after: "Balance after",
       value: "Value",
+      total: "Total",
       share: "Share",
       position: "Position",
       from: "From",
@@ -70,12 +135,32 @@ const labels = /* @__PURE__ */ i18n.define({
       q3: "Q3",
       whiskerLow: "Whisker low",
       whiskerHigh: "Whisker high",
+      forecastLow: "Lower forecast bound",
+      forecastHigh: "Upper forecast bound",
       delta: "Change",
+      startShare: "Share of start",
+      previousShare: "Share of previous step",
+      rank: "Rank",
     },
     de: {
       category: "Kategorie",
+      flow: "Fluss",
+      size: "Größe",
+      axis: "Achse",
       series: "Datenreihe",
+      group: "Bereich",
+      previous: "Vorher",
+      change: "Änderung",
+      cumulative: "Kumuliert",
+      incoming: "Eingang",
+      outgoing: "Ausgang",
+      balance: "Stand",
+      before: "Stand davor",
+      inflow: "Rein",
+      outflow: "Raus",
+      after: "Stand danach",
       value: "Wert",
+      total: "Gesamt",
       share: "Anteil",
       position: "Position",
       from: "Von",
@@ -88,7 +173,12 @@ const labels = /* @__PURE__ */ i18n.define({
       q3: "Q3",
       whiskerLow: "Unterer Whisker",
       whiskerHigh: "Oberer Whisker",
+      forecastLow: "Untere Prognosegrenze",
+      forecastHigh: "Obere Prognosegrenze",
       delta: "Änderung",
+      startShare: "Anteil am Start",
+      previousShare: "Anteil am vorigen Schritt",
+      rank: "Rang",
     },
   },
 });
@@ -132,12 +222,37 @@ const axis = ({ domain, format: _format, ...value }: ChartAxisInput = {}, format
   format,
 });
 
-export const chartReferenceValues = (input: ChartInput, name: "x" | "y") =>
-  "references" in input ? (input.references ?? []).filter((ref) => (ref.axis ?? "y") === name).map((ref) => dateTime(ref.value)) : [];
+export const chartReferenceValues = (input: ChartInput, name: "x" | "y") => {
+  const values =
+    "references" in input ? (input.references ?? []).filter((ref) => (ref.axis ?? "y") === name).map((ref) => dateTime(ref.value)) : [];
+  if (input.kind === "line") {
+    if (name === "x") {
+      if (input.forecast) values.push(dateTime(input.forecast.from));
+      if (input.marker) values.push(dateTime(input.marker.at));
+    } else {
+      if (input.threshold) values.push(input.threshold.value);
+      if (input.zero) values.push(0);
+      for (const bounds of input.forecast?.band ?? []) values.push(...bounds);
+    }
+  }
+  return values;
+};
 
 /** The value axes of a chart with what they show: the data checks and the label room read them alike. */
 export const chartValueAxes = (input: ChartInput): { values: number[]; axis?: ChartAxisInput; zero?: boolean; name: "x" | "y" }[] => {
-  if (input.kind === "bar") return [{ values: input.data.map((item) => item.value), axis: input.yAxis, zero: true, name: "y" }];
+  if (input.kind === "bar")
+    return [
+      {
+        values: [
+          ...input.data.map((item) => item.value),
+          ...(input.series?.flatMap((s) => s.data.filter((v): v is number => v !== null)) ?? []),
+          ...(input.compare?.data.filter((v): v is number => v !== null) ?? []),
+        ],
+        axis: input.yAxis,
+        zero: true,
+        name: "y",
+      },
+    ];
   if (input.kind === "boxplot") return [{ values: input.data.flatMap((item) => item.values), axis: input.yAxis, name: "y" }];
   if (input.kind === "histogram") {
     if (!input.references?.length) return [{ values: input.data, name: "x" }];
@@ -206,53 +321,36 @@ type Formats = {
   x: { tick: (value: number) => string; value: (value: number) => string };
 };
 
-/**
- * Value precision and tick precision share the same style and units; ticks must remain distinct. A currency without
- * `decimals` or compact notation writes cents only when one of the formatted `values` has them: 418,000 € rather than
- * 418,000.00 €.
- */
-export const chartNumberFormatters = (format: ChartNumberFormat | undefined, locale: string, values?: readonly number[]) => {
-  const common: Intl.NumberFormatOptions = {
-    style: format?.style === "number" ? "decimal" : format?.style,
-    currency: format?.currency,
-  };
-  // Compact notation keeps its fraction: 1.2K and 1.4K must not both read 1K.
-  const decimals =
-    format?.decimals ??
-    (format?.style === "currency" && !format.compact && values?.length && values.every(Number.isInteger) ? 0 : undefined);
-  const value = new Intl.NumberFormat(
-    locale,
-    format
-      ? {
-          ...common,
-          ...(decimals === undefined ? {} : { minimumFractionDigits: decimals, maximumFractionDigits: decimals }),
-          ...(format.compact ? { notation: "compact" } : {}),
-        }
-      : { maximumSignificantDigits: 15 },
-  );
-  let tick: Intl.NumberFormat | undefined;
-  const tickValue = (v: number) => {
-    tick ??= new Intl.NumberFormat(locale, {
-      ...common,
-      notation: !format || format.compact ? "compact" : "standard",
-      maximumSignificantDigits: 15,
-    });
-    return tick.format(v);
-  };
-  const unit = format?.unit ? ` ${format.unit}` : "";
-  return { value: (v: number) => `${value.format(v)}${unit}`, tick: (v: number) => `${tickValue(v)}${unit}` };
-};
 const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in format) ? format : undefined);
 /** The values a chart writes with its value format, for whole-number currency. */
-const formattedValues = (input: ChartInput): number[] => {
+const formattedValues = (input: BaseChartInput): number[] => {
   switch (input.kind) {
+    case "sankey":
+      return input.links.map((link) => link.value);
+    case "bubble":
+      return input.data.flatMap((p) => (p.size === undefined ? [] : [p.size]));
+    case "radar":
+      return input.series.flatMap((s) => s.data);
+    case "waterfall":
+      return [input.start.value, ...input.steps.map((step) => step.value)];
     case "area":
       return input.series.flatMap((s) => s.data.filter((v): v is number => v !== null));
     case "line":
     case "scatter":
       return [...input.series.flatMap((series) => series.data.map((point) => point.y)), ...chartReferenceValues(input, "y")];
     case "bar":
-      return [...input.data.map((item) => item.value), ...chartReferenceValues(input, "y")];
+      return [
+        ...input.data.map((item) => item.value),
+        ...(input.series?.flatMap((s) => s.data.filter((v): v is number => v !== null)) ?? []),
+        ...(input.compare?.data.filter((v): v is number => v !== null) ?? []),
+        ...chartReferenceValues(input, "y"),
+      ];
+    case "hbar":
+      return input.rows.flatMap((r) => r.values.filter((v): v is number => v !== null));
+    case "funnel":
+      return input.data.flatMap((d) => (d.value === null ? [] : [d.value]));
+    case "treemap":
+    case "pareto":
     case "pie":
     case "donut":
       return input.data.map((item) => item.value);
@@ -275,16 +373,17 @@ const formattedValues = (input: ChartInput): number[] => {
       return [];
   }
 };
-const formats = (input: ChartInput, locale: string): Formats => {
-  const yFormat = "yAxis" in input ? numberFormat(input.yAxis?.format) : "format" in input ? input.format : undefined;
+const formats = (input: BaseChartInput, locale: string): Formats => {
+  const yFormat = ("yAxis" in input ? numberFormat(input.yAxis?.format) : undefined) ?? ("format" in input ? input.format : undefined);
   const y = chartNumberFormatters(yFormat, locale, formattedValues(input));
   const xFormat = "xAxis" in input && input.kind !== "bar" ? input.xAxis?.format : undefined;
   const x = chartNumberFormatters(numberFormat(xFormat), locale);
   // An unformatted x axis often counts years or steps, which compact notation would turn into 2.02K.
   const xTick = new Intl.NumberFormat(locale, { maximumSignificantDigits: 15, useGrouping: "min2" });
   const written = chartSeries(input).flatMap((series) => series.data.flatMap((point) => (typeof point.x === "string" ? [point.x] : [])));
-  if (!written.length) return { ...y, x: { tick: xFormat ? x.tick : (v) => xTick.format(v), value: x.value } };
   const dateFormat = xFormat && "date" in xFormat ? xFormat.date : undefined;
+  if (!written.length && !(input.kind === "line" && lineDetailsEnabled(input) && dateFormat))
+    return { ...y, x: { tick: xFormat ? x.tick : (v) => xTick.format(v), value: x.value } };
   const times = dateFormat ? dateFormat !== "day" : written.some((date) => date.length > 10);
   const seconds = dateFormat ? dateFormat === "second" : written.some((date) => date.length > 16);
   const clock: Intl.DateTimeFormatOptions = times ? { hour: "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) } : {};
@@ -298,7 +397,8 @@ const formats = (input: ChartInput, locale: string): Formats => {
 };
 
 /** The table's x formatter also titles the shared cursor. */
-export const chartXValueFormat = (input: ChartInput, locale: string): ((x: number) => string) => formats(input, locale).x.value;
+export const chartXValueFormat = (input: ChartInput, locale: string): ((x: number) => string) =>
+  input.kind === "balanceFlow" ? chartNumberFormatters(undefined, locale).value : formats(input, locale).x.value;
 
 /** Room for the longest y tick label, so values like 1.2M never run past the left edge on a phone. */
 const leftPadding = (values: number[], value: ChartAxisInput | undefined, tick: (value: number) => string, factor = NARROW) => {
@@ -322,7 +422,9 @@ const thinned = <T extends { label: string }>(data: T[], left: number, width = W
 export function chartLegend(
   input: ChartInput,
   locale: string,
-): { label: string; color: number; style?: "solid" | "dashed" | "dotted"; reference?: boolean }[] {
+): { label: string; color: number; style?: "solid" | "dashed" | "dotted"; reference?: boolean; seriesIndex?: number }[] {
+  // These category renderers own their live legends, including prepared snapshots.
+  if (input.kind === "hbar" || (input.kind === "bar" && input.series)) return [];
   if (input.kind === "bar")
     return input.colorByBar && input.legend ? input.data.map((entry, index) => ({ label: entry.label, color: index % 8 })) : [];
   if (input.kind === "area") return input.legend === false ? [] : input.series.map((s, i) => ({ label: s.label, color: i % 8 }));
@@ -332,6 +434,7 @@ export function chartLegend(
   return input.series.map((entry, index) => ({
     label: entry.label ?? `${t.series} ${index + 1}`,
     color: index % 8,
+    ...(input.kind === "line" && lineDetailsEnabled(input) ? { seriesIndex: index } : {}),
     ...(input.kind === "line" ? { style: input.series[index]?.style ?? (entry.role === "reference" ? "dashed" : "solid") } : {}),
     ...(entry.role === "reference" ? { reference: true } : {}),
   }));
@@ -345,16 +448,17 @@ export const chartReferenceMark = (input: ChartInput, datum: ChartDatum): boolea
   input.kind === "scatter" && input.series[datum.seriesIndex ?? 0]?.role === "reference";
 
 /** Options for the shared renderer; the chat block draws the title itself. */
-export function chartRenderOptions(
-  input: ChartInput,
+export function chartRenderOptions(input: ChartInput, locale: string, options: ChartRenderSettings = {}): RenderOptions {
+  return input.kind === "balanceFlow" ? balanceFlowRenderOptions(input, locale, options) : chartBaseRenderOptions(input, locale, options);
+}
+
+/** Plain-chart mapping; hosts that defer the self-contained BalanceFlow frame keep its formatter lazy. */
+export function chartBaseRenderOptions(
+  input: BaseChartInput,
   locale: string,
-  options: {
-    width?: number;
-    legend?: "svg" | "outside";
-    formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string };
-  } = {},
-): RenderOptions {
-  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
+  options: ChartRenderSettings = {},
+): Exclude<RenderOptions, { kind: "balanceFlow" }> {
+  if ("locale" in input && input.locale) locale = input.locale;
   const defaults = formats(input, locale);
   // Function formats must be measured with the same text the renderer will print.
   const format = {
@@ -367,6 +471,84 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "sankey":
+      return {
+        kind: "sankey",
+        nodes: input.nodes,
+        links: input.links,
+        legend: input.legend,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
+    case "treemap":
+      return {
+        kind: "treemap",
+        legend: input.legend,
+        groups: input.groups,
+        data: input.data,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
+    case "pareto":
+      return {
+        kind: "pareto",
+        labels: input.labels,
+        data: input.data,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
+    case "bubble":
+      return {
+        kind: "bubble",
+        groups: input.groups,
+        data: input.data,
+        xLabel: input.xLabel,
+        yLabel: input.yLabel,
+        sizeLabel: input.sizeLabel,
+        averages: input.averages,
+        legend: input.legend,
+        locale,
+        displayWidth: options.width,
+        xFormat: options.formats?.x ?? (input.xFormat ? chartNumberFormatters(input.xFormat, locale).value : undefined),
+        yFormat: options.formats?.y ?? (input.yFormat ? chartNumberFormatters(input.yFormat, locale).value : undefined),
+        sizeFormat: format.value,
+      };
+    case "radar":
+      return {
+        kind: "radar",
+        axes: input.axes,
+        max: input.max,
+        unit: input.unit,
+        series: input.series,
+        legend: input.legend,
+        locale,
+        displayWidth: options.width,
+        format: format.value,
+      };
+    case "funnel":
+      return { kind: "funnel", data: input.data, valueFormat: format.value, locale };
+    case "hbar":
+      return {
+        kind: "hbar",
+        locale,
+        series: input.series,
+        rows: input.rows,
+        legend: input.legend,
+        valueFormat: format.value,
+      };
+    case "waterfall":
+      return {
+        kind: "waterfall",
+        start: input.start,
+        steps: input.steps,
+        end: input.end,
+        displayWidth: options.width ?? 296,
+        locale,
+        format: format.value,
+      };
     case "area":
       return {
         kind: "area",
@@ -386,14 +568,31 @@ export function chartRenderOptions(
       if (input.kind === "bar")
         return {
           kind: "bar",
+          locale,
           data: input.data,
+          x: input.x,
+          series: input.series,
+          layout: input.layout,
+          normalize: input.normalize,
+          // Rates describe each category; summing percentages across periods has no meaning.
+          legendValues:
+            input.format?.style === "percent" || (yAxis?.format && "style" in yAxis.format && yAxis.format.style === "percent")
+              ? "latest"
+              : "total",
+          marks: input.marks,
+          total: input.total,
+          dots: input.dots,
+          share: input.share,
+          limit: input.limit,
+          tone: input.tone,
+          compare: input.compare,
           xAxis: input.xAxis,
           yAxis: axis(yAxis, options.formats?.y ?? format.tick),
           // A host's own function format writes printed values like its ticks and table cells.
           valueFormat: options.formats?.value ?? options.formats?.y ?? format.value,
           colorByBar: input.colorByBar,
           showValues: input.showValues,
-          legend: options.legend === "outside" ? false : input.legend,
+          legend: input.series ? input.legend : options.legend === "outside" ? false : input.legend,
           references,
           ...(options.width === undefined ? {} : { displayWidth: options.width }),
         };
@@ -420,7 +619,13 @@ export function chartRenderOptions(
         ...(input.kind === "line" ? { lineStyle: input.series[index]?.style ?? (entry.role === "reference" ? "dashed" : undefined) } : {}),
       }));
       const points = series.flatMap((entry) => entry.data);
-      const xAxis = referencedAxis(input, "x");
+      const calendarLine =
+        input.kind === "line" &&
+        lineDetailsEnabled(input) &&
+        (input.series.some((entry) => entry.data.some((point) => typeof point.x === "string")) ||
+          (input.xAxis?.format && "date" in input.xAxis.format));
+      // The detailed time renderer includes references without rounding their domain to decimal milliseconds.
+      const xAxis = calendarLine ? input.xAxis : referencedAxis(input, "x");
       const yAxis = referencedAxis(input, "y");
       const candidates = tickCandidates([...points.map((point) => point.x), ...chartReferenceValues(input, "x")], xAxis).filter(
         Number.isFinite,
@@ -438,7 +643,21 @@ export function chartRenderOptions(
           right: Math.max(16, Math.ceil(((format.x.tick(lastTick).length * CHAR) / 2 + 4) * factor)),
         },
       };
-      return input.kind === "line" ? { kind: "line", ...common, area: input.area, smooth: input.smooth } : { kind: "scatter", ...common };
+      return input.kind === "line"
+        ? {
+            kind: "line",
+            ...common,
+            area: input.area,
+            smooth: input.smooth,
+            step: input.step,
+            zero: input.zero,
+            legendValues: input.legendValues,
+            forecast: input.forecast ? { ...input.forecast, from: dateTime(input.forecast.from) } : undefined,
+            marker: input.marker ? { ...input.marker, at: dateTime(input.marker.at) } : undefined,
+            threshold: input.threshold,
+            ...(calendarLine ? { timeAxis: { timeZone: "UTC", locale } } : {}),
+          }
+        : { kind: "scatter", ...common };
     }
     case "pie":
     case "donut":
@@ -545,6 +764,24 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
+    case "treemap":
+      return renderTreemapSvg({ ...options, ...common });
+    case "pareto":
+      return renderParetoSvg({ ...options, ...common });
+    case "balanceFlow":
+      return renderBalanceFlowSvg({ ...options, ...common });
+    case "sankey":
+      return renderSankeySvg({ ...options, ...common });
+    case "bubble":
+      return renderBubbleSvg({ ...options, ...common });
+    case "radar":
+      return renderRadarSvg({ ...options, ...common });
+    case "funnel":
+      return renderFunnelSvg({ ...options, ...common });
+    case "hbar":
+      return renderHbarSvg({ ...options, ...common, height: hbarLayout(options).height });
+    case "waterfall":
+      return renderWaterfallSvg({ ...options, ...common });
     case "area":
       return renderAreaSvg({ ...options, ...common });
     case "bar":
@@ -594,16 +831,23 @@ export const chartMarkKey = (datum: Pick<ChartDatum, "index" | "seriesIndex"> & 
   `${datum.role === "outlier" ? "outlier:" : datum.role === "value" ? "value:" : ""}${datum.seriesIndex ?? 0}:${datum.index}`;
 
 export type ChartColumn = { id: string; label: string; numeric: boolean };
-export type ChartRow = { key: string; cells: Record<string, string>; values: Record<string, string | number> };
+export type ChartRow = {
+  key: string;
+  cells: Record<string, string>;
+  values: Record<string, string | number>;
+  tooltip?: { title?: string; rows: { label: string; value: string }[] };
+};
 export type ChartTable = { columns: ChartColumn[]; rows: ChartRow[] };
 
 /** The first text column titles the tooltip; the other columns become rows, matching the table in every host. */
 export function chartTooltip(
   columns: ChartColumn[],
   row: ChartRow,
-  kind?: ChartInput["kind"],
+  kind?: ChartInput["kind"] | ChartInput,
 ): { title?: string; rows: { label: string; value: string }[] } {
-  if (kind === "area")
+  if (row.tooltip) return row.tooltip;
+  const chartKind = typeof kind === "object" ? kind.kind : kind;
+  if (chartKind === "area")
     return {
       title: row.cells.x,
       rows: [{ label: row.cells.series ?? "", value: `${row.cells.percent ? `${row.cells.percent} · ` : ""}${row.cells.value ?? "—"}` }],
@@ -626,8 +870,51 @@ export function chartRows(
   input: ChartInput,
   locale: string,
   options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
+): ReturnType<typeof chartBaseRows> {
+  return input.kind === "balanceFlow" ? balanceFlowChartRows(input, locale) : chartBaseRows(input, locale, options);
+}
+
+function balanceFlowChartRows(input: BalanceFlowInput, locale: string): ReturnType<typeof chartBaseRows> {
+  const words = balanceFlowFields(input.locale ?? locale);
+  const columns = new Map<string, ChartColumn>();
+  const rows: ChartRow[] = [];
+  return {
+    add(datum) {
+      columns.set("label", { id: "label", label: words.chartFields({ key: "detail" }), numeric: false });
+      const cells: Record<string, string> = { label: datum.label ?? "" };
+      const values: Record<string, string | number> = { label: datum.label ?? "" };
+      for (const field of datum.values) {
+        if (!columns.has(field.key))
+          columns.set(field.key, {
+            id: field.key,
+            label:
+              field.label ??
+              (field.key === "period"
+                ? words.balancePeriod
+                : field.key === "direction"
+                  ? words.balanceDirection
+                  : words.chartFields({ key: field.key })),
+            numeric: typeof field.value === "number",
+          });
+        cells[field.key] = field.formatted ?? String(field.value);
+        values[field.key] = field.value;
+      }
+      const row = { key: chartMarkKey(datum), cells, values };
+      rows.push(row);
+      return row;
+    },
+    columns: () => [...columns.values()],
+    table: () => ({ columns: [...columns.values()], rows }),
+  };
+}
+
+/** Table builder for ordinary SVG charts; the BalanceFlow asset owns its complete table. */
+export function chartBaseRows(
+  input: BaseChartInput,
+  locale: string,
+  options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
 ) {
-  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
+  if ("locale" in input && input.locale) locale = input.locale;
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format
@@ -644,12 +931,23 @@ export function chartRows(
   const unit = "unit" in input && input.unit ? ` ${input.unit}` : "";
   const columns = new Map<string, ChartColumn>();
   const rows: ChartRow[] = [];
+  if (input.kind === "waterfall") {
+    for (const [id, label, numeric] of [
+      ["label", t.category, false],
+      ["before", t.before, true],
+      ["inflow", t.inflow, true],
+      ["outflow", t.outflow, true],
+      ["after", t.after, true],
+    ] as const)
+      columns.set(id, { id, label, numeric });
+  }
   const named = series.some((entry) => entry.label);
   const add = (datum: ChartDatum): ChartRow => {
+    const tooltip = input.kind === "waterfall" ? { title: datum.label, rows: [] as { label: string; value: string }[] } : undefined;
     const cells: Record<string, string> = {};
     const values: Record<string, string | number> = {};
-    const cell = (id: string, label: string, value: string | number, text: string) => {
-      if (!columns.has(id)) columns.set(id, { id, label, numeric: typeof value === "number" });
+    const cell = (id: string, label: string, value: string | number, text: string, numeric = typeof value === "number") => {
+      if (!columns.has(id)) columns.set(id, { id, label, numeric });
       cells[id] = text;
       values[id] = value;
     };
@@ -663,13 +961,42 @@ export function chartRows(
       // Bars may hide some axis labels; the table names every category.
       const label =
         input.kind === "bar" || input.kind === "pie" || input.kind === "donut" || input.kind === "boxplot" || input.kind === "barGauge"
-          ? input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label
+          ? ((input.kind === "bar" && input.series
+              ? undefined
+              : input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label) ?? datum.label)
           : datum.label;
       if (label)
-        cell("label", input.kind === "heatmap" && input.layout === "calendar" ? calendarWords(locale).day : t.category, label, label);
+        cell(
+          "label",
+          input.kind === "heatmap" && input.layout === "calendar"
+            ? calendarWords(locale).day
+            : input.kind === "sankey"
+              ? t.flow
+              : input.kind === "radar"
+                ? t.axis
+                : t.category,
+          label,
+          label,
+        );
     }
     for (const field of datum.values) {
       const value = field.value;
+      if (input.kind === "bubble") {
+        const label =
+          field.key === "x"
+            ? input.xLabel
+            : field.key === "y"
+              ? input.yLabel
+              : field.key === "size"
+                ? (input.sizeLabel ?? t.size)
+                : t.group;
+        cell(field.key, label, value, field.formatted ?? String(value));
+        continue;
+      }
+      if (input.kind === "radar" && field.key.startsWith("series:")) {
+        cell(field.key, input.series[Number(field.key.slice(7))]!.label, value, field.formatted ?? String(value));
+        continue;
+      }
       if (typeof value === "string" && input.kind === "area" && field.key === "x") {
         cell("x", t.position, value, field.formatted ?? value);
         continue;
@@ -678,8 +1005,79 @@ export function chartRows(
         cell(field.key, field.key.toUpperCase(), value, value);
         continue;
       }
+      if (input.kind === "treemap" && field.key === "group" && typeof value === "string") {
+        cell("group", t.group, value, value);
+        continue;
+      }
+      if (
+        input.kind === "pareto" &&
+        (field.key === "previous" || field.key === "change" || field.key === "cumulative") &&
+        typeof value === "number"
+      ) {
+        cell(field.key, field.key === "previous" ? input.labels[1] : t[field.key], value, field.formatted ?? valueFormat(value));
+        continue;
+      }
+      if (input.kind === "hbar" || (input.kind === "bar" && input.series)) {
+        const seriesIndex = field.key.startsWith("series:") ? Number(field.key.slice(7)) : undefined;
+        const label =
+          seriesIndex === undefined
+            ? field.key === "previous" && input.kind === "bar"
+              ? (input.compare?.label ?? field.key)
+              : field.key === "total"
+                ? t.total
+                : field.key === "delta"
+                  ? t.delta
+                  : field.key
+            : input.kind === "hbar"
+              ? input.series[seriesIndex]!
+              : input.series![seriesIndex]!.label;
+        cell(field.key, label, value, field.formatted ?? String(value), true);
+        continue;
+      }
+      if (
+        field.key === "startPercent" ||
+        field.key === "previousPercent" ||
+        field.key === "rank" ||
+        ((input.kind === "bar" || input.kind === "funnel") && typeof value === "string")
+      ) {
+        cell(
+          field.key,
+          field.key === "startPercent"
+            ? t.startShare
+            : field.key === "previousPercent"
+              ? t.previousShare
+              : field.key === "rank"
+                ? t.rank
+                : field.key === "percent"
+                  ? t.share
+                  : t.value,
+          value,
+          field.formatted ?? String(value),
+          true,
+        );
+        continue;
+      }
       if (typeof value !== "number" || field.key === "total") continue;
-      if (field.key === "x") {
+      if (input.kind === "waterfall" && ["balance", "before", "inflow", "outflow", "change", "after"].includes(field.key)) {
+        const label =
+          field.key === "balance"
+            ? t.balance
+            : field.key === "before"
+              ? t.before
+              : field.key === "inflow"
+                ? t.inflow
+                : field.key === "outflow"
+                  ? t.outflow
+                  : field.key === "after"
+                    ? t.after
+                    : t.delta;
+        const arrow = field.key === "inflow" ? "↙ " : field.key === "outflow" ? "↗ " : field.key === "change" ? "= " : "";
+        const text = `${arrow}${valueFormat(field.key === "inflow" || field.key === "outflow" ? Math.abs(value) : value)}`;
+        // Totals occupy the ending balance column; zero changes are neutral inflows.
+        const id = field.key === "balance" ? "after" : field.key === "change" ? "inflow" : field.key;
+        cell(id, label, value, text);
+        if (field.key !== "before") tooltip?.rows.push({ label, value: text });
+      } else if (field.key === "x") {
         const header =
           (input.kind === "line" || input.kind === "scatter" ? input.xAxis?.label : undefined) ??
           (input.kind === "area" ? t.position : "X");
@@ -703,17 +1101,21 @@ export function chartRows(
         cell(
           "value",
           input.tooltip?.label ??
-            (input.kind === "bar"
-              ? input.yAxis?.label
-              : input.kind === "heatmap" && input.layout === "calendar"
-                ? input.label
-                : undefined) ??
+            (input.kind === "pareto"
+              ? input.labels[0]
+              : input.kind === "bar"
+                ? input.yAxis?.label
+                : input.kind === "heatmap" && input.layout === "calendar"
+                  ? input.label
+                  : undefined) ??
             t.value,
           value,
           input.kind === "heatmap" && input.layout === "calendar"
             ? (field.formatted ?? valueFormat(value))
             : `${valueFormat(value)}${unit}`,
         );
+      else if (field.key === "incoming" || field.key === "outgoing") cell(field.key, t[field.key], value, valueFormat(value));
+      else if (field.key === "forecastLow" || field.key === "forecastHigh") cell(field.key, t[field.key], value, valueFormat(value));
       else if (field.key === "delta") cell("delta", t.delta, value, `${value > 0 ? "+" : ""}${valueFormat(value)}`);
       else if (field.key === "q1" || field.key === "q2" || field.key === "q3" || field.key === "whiskerLow" || field.key === "whiskerHigh")
         cell(field.key, t[field.key], value, valueFormat(value));
@@ -728,28 +1130,107 @@ export function chartRows(
         cell(field.key, t[field.key], value, `${fieldFormat(value)}${field.key === "min" || field.key === "max" ? unit : ""}`);
       }
     }
-    const row = { key: chartMarkKey(datum), cells, values };
+    const row = { key: chartMarkKey(datum), cells, values, ...(tooltip ? { tooltip } : {}) };
     rows.push(row);
     return row;
   };
-  return { add, columns: () => [...columns.values()], table: (): ChartTable => ({ columns: [...columns.values()], rows }) };
+  return {
+    add,
+    columns: () => [...columns.values()],
+    table: (): ChartTable => {
+      if (
+        input.kind === "bar" &&
+        input.layout === "rows" &&
+        input.limit !== undefined &&
+        rows.some((row) => row.values.rank !== undefined)
+      ) {
+        const source = { ...input, limit: undefined };
+        const all = chartBaseRows(source, locale, options);
+        const layout = rankedBarLayout({ data: source.data, title: source.title, subtitle: source.subtitle, valueFormat, locale });
+        for (const row of layout.rows) {
+          const value = Number.isFinite(row.value) ? row.value : null;
+          all.add({
+            role: "item",
+            index: row.index,
+            label: row.label,
+            anchor: [0, row.y],
+            values: [
+              { key: "value", value: value ?? "–", formatted: value === null ? "–" : valueFormat(value) },
+              {
+                key: "percent",
+                value: row.share === null ? "–" : row.share * 100,
+                formatted: row.share === null ? "–" : percent.format(row.share),
+              },
+              { key: "rank", value: row.rank },
+            ],
+          });
+        }
+        return all.table();
+      }
+      if (input.kind === "treemap") {
+        const total = input.data.reduce((sum, item) => sum + item.value, 0);
+        input.data.forEach((item, index) => {
+          if (item.value !== 0 || rows.some((row) => row.key === chartMarkKey({ index }))) return;
+          add({
+            role: "item",
+            index,
+            label: item.label,
+            anchor: [0, 0],
+            values: [
+              { key: "group", value: item.group },
+              { key: "value", value: 0 },
+              { key: "percent", value: 0, formatted: total ? percent.format(0) : "–" },
+            ],
+          });
+        });
+      }
+      return { columns: [...columns.values()], rows };
+    },
+  };
 }
 
 /** The data behind every mark of the chart as a table: the accessible alternative and what Copy data copies. */
 export function chartTable(input: ChartInput, locale: string): ChartTable {
   const rows = chartRows(input, locale);
-  for (const datum of chartSvgMarks(drawChart(chartRenderOptions(input, locale)))) rows.add(datum);
+  const drawing = chartRenderOptions(input, locale);
+  for (const datum of drawing.kind === "balanceFlow" ? balanceFlowDatums(drawing) : chartSvgMarks(drawChart(drawing))) rows.add(datum);
   return rows.table();
 }
 
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "pareto":
+      return input.data.length * 3;
+    case "balanceFlow":
+      return input.periods.reduce((total, p) => total + p.inflows.length + p.outflows.length + 3, 0);
+    case "sankey": {
+      const graph = sankeyGraph(input);
+      return (
+        input.nodes.length +
+        input.links.reduce(
+          (sum, link) => sum + graph.nodes[graph.ids.get(link.target)!]!.stage - graph.nodes[graph.ids.get(link.source)!]!.stage,
+          0,
+        )
+      );
+    }
+    case "radar":
+      return input.axes.length * input.series.length;
+    case "waterfall":
+      return input.steps.length + 2;
     case "area":
       return input.series.reduce((sum, s) => sum + s.data.length, 0);
     case "line":
     case "scatter":
       return input.series.reduce((sum, series) => sum + series.data.length, 0);
+    case "bar":
+      return input.marks === "dots"
+        ? (input.x?.length ?? 0) * (input.dots ?? 100)
+        : input.series
+          ? (input.x?.length ?? 0) * (input.series.length + (input.compare ? 1 : 0))
+          : input.data.length;
+    case "hbar":
+      return input.rows.length * input.series.length;
     case "boxplot":
       return input.data.reduce((sum, box) => sum + box.values.length, 0);
     case "gauge":

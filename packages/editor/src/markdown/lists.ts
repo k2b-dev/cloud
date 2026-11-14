@@ -1,7 +1,8 @@
 import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import { StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
-import { treeOrDocChanged } from "./_lib/cursor-zone-field";
+import { changedMarkdownBlocks, intersectsMarkdownSpans } from "./_lib/changed-blocks";
+import { markdownEditorFocused, revealedSelection, treeOrDocChanged } from "./_lib/cursor-zone-field";
 import {
   type ExcludedSpan,
   excludedSpans,
@@ -81,7 +82,9 @@ const decorated = (state: EditorState, item: ListItem): boolean =>
     : /[ \t]/.test(state.sliceDoc(item.markerTo, item.markerTo + 1));
 
 const selectionParent = (state: EditorState, structure: ListStructure): number => {
-  const index = listItemAtLine(structure, state.doc.lineAt(state.selection.main.head).number);
+  const cursor = revealedSelection(state)?.main;
+  if (!cursor) return -1;
+  const index = listItemAtLine(structure, state.doc.lineAt(cursor.head).number);
   return structure.items[index]?.parent ?? -1;
 };
 
@@ -106,13 +109,44 @@ type ListState = {
   parent: number;
 };
 
-const build = (state: EditorState, cached?: readonly ExcludedSpan[]): ListState => {
+const build = (state: EditorState, cached?: readonly ExcludedSpan[], incremental?: { value: ListState; tr: Transaction }): ListState => {
   let excluded = cached;
+  const spans = incremental ? changedMarkdownBlocks(incremental.tr) : undefined;
   // Notebook blocks are outside Markdown's grammar. Read their source only when lists exist.
-  const structure = listStructure(state, () => (excluded ??= excludedSpans(state)));
+  const readExcluded = () => (excluded ??= excludedSpans(state));
+  let structure: ListStructure;
+  if (incremental && spans) {
+    const map = (position: number) => incremental.tr.changes.mapPos(position);
+    const items: ListItem[] = incremental.value.structure.items
+      .filter((item) => !intersectsMarkdownSpans(spans, map(item.markerFrom), map(item.markerTo)))
+      .map((item) => ({
+        ...item,
+        from: map(item.from),
+        to: map(item.to),
+        line: state.doc.lineAt(map(item.from)).number,
+        markerFrom: map(item.markerFrom),
+        markerTo: map(item.markerTo),
+        contentFrom: map(item.contentFrom),
+        taskFrom: item.taskFrom === null ? null : map(item.taskFrom),
+        taskTo: item.taskTo === null ? null : map(item.taskTo),
+        listFrom: map(item.listFrom),
+      }));
+    for (const span of spans) items.push(...listStructure(state, readExcluded, span).items);
+    items.sort((a, b) => a.from - b.from);
+    const parents: number[] = [];
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index]!;
+      while (parents.length > item.depth) items[parents.pop()!]!.subtreeEnd = index;
+      item.parent = parents.at(-1) ?? -1;
+      parents.push(index);
+    }
+    for (const index of parents) items[index]!.subtreeEnd = items.length;
+    structure = { items };
+  } else structure = listStructure(state, readExcluded);
   const ranges: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
   for (const item of structure.items) {
+    if (spans && !intersectsMarkdownSpans(spans, item.from, item.contentFrom)) continue;
     if (!decorated(state, item)) continue;
     ranges.push(
       Decoration.line({
@@ -131,11 +165,21 @@ const build = (state: EditorState, cached?: readonly ExcludedSpan[]): ListState 
     atomic.push(gutter);
   }
   const parent = selectionParent(state, structure);
+  const update = (previous: DecorationSet, add: Range<Decoration>[]) => {
+    let result = previous.map(incremental!.tr.changes);
+    if (spans!.length)
+      result = result.update({
+        filterFrom: spans![0]!.from,
+        filterTo: spans!.at(-1)!.to,
+        filter: (from, to) => !intersectsMarkdownSpans(spans!, from, from === to ? from + 1 : to),
+      });
+    return result.update({ add, sort: true });
+  };
   return {
     excluded,
     structure,
-    decorations: Decoration.set(ranges, true),
-    atomicRanges: Decoration.set(atomic, true),
+    decorations: incremental ? update(incremental.value.decorations, ranges) : Decoration.set(ranges, true),
+    atomicRanges: incremental ? update(incremental.value.atomicRanges, atomic) : Decoration.set(atomic, true),
     active: activeGuides(state, structure, parent),
     parent,
   };
@@ -179,10 +223,10 @@ export const listStateField = StateField.define<ListState>({
         from: tr.changes.mapPos(span.from, -1),
         to: tr.changes.mapPos(span.to, 1),
       }));
-      return build(tr.state, exclusionsChanged(tr) ? undefined : excluded);
+      return exclusionsChanged(tr) ? build(tr.state) : build(tr.state, excluded, { value, tr });
     }
     // Parser progress changes the list tree, but not the source-scanned spans.
-    if (treeOrDocChanged(tr)) return build(tr.state, value.excluded);
+    if (treeOrDocChanged(tr)) return build(tr.state, value.excluded, { value, tr });
     const parent = selectionParent(tr.state, value.structure);
     return {
       ...value,
@@ -194,6 +238,7 @@ export const listStateField = StateField.define<ListState>({
   },
   provide(field) {
     return [
+      markdownEditorFocused,
       EditorView.decorations.from(field, (value) => value.decorations),
       EditorView.decorations.from(field, (value) => value.active),
       EditorView.atomicRanges.of((view) => view.state.field(field).atomicRanges),

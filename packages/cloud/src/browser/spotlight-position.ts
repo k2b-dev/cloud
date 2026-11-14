@@ -3,7 +3,13 @@ import { type DialogRender, suppressTextSelection } from "@k2b/ui";
 export type SpotlightPosition = { x: number; y: number };
 const STORAGE_KEY = "cloud.spotlight.position.v1";
 const MARGIN = 12;
-const SNAP_DISTANCE = 24;
+/**
+ * The search is ready to snap home well before it covers its place, so the blue edge of the place shows: within 15 %
+ * of the search's width, and at least 24 px. A threshold by overlap alone would make a large search snap home from
+ * almost anywhere in a normal window.
+ */
+const SNAP_SHARE = 0.15;
+const SNAP_MIN = 24;
 
 export const readSpotlightPosition = (value: string | null): SpotlightPosition | null => {
   try {
@@ -54,7 +60,15 @@ export const attachSpotlightPosition = (
   const content = document.createElement("div");
   content.append(icon, hint);
   home.append(content);
-  host.append(home);
+  // The release cue sits on the home place's top edge, above the search that now covers most of the place.
+  const chip = document.createElement("div");
+  chip.className = "cloud-global-search__chip";
+  chip.setAttribute("aria-hidden", "true");
+  const chipIcon = document.createElement("i");
+  chipIcon.className = "ti ti-check";
+  const chipText = document.createElement("span");
+  chip.append(chipIcon, chipText);
+  host.append(home, chip);
   const clamp = (point: SpotlightPosition) => {
     const rect = dialog.getBoundingClientRect();
     return {
@@ -71,10 +85,14 @@ export const attachSpotlightPosition = (
     home.style.top = `${anchor.y - rect.y - dialog.clientTop}px`;
     home.style.width = `${rect.width}px`;
     home.style.height = `${rect.height}px`;
-    const ready = Math.hypot(rect.x - anchor.x, rect.y - anchor.y) <= SNAP_DISTANCE;
+    const ready = Math.hypot(rect.x - anchor.x, rect.y - anchor.y) <= Math.max(SNAP_MIN, rect.width * SNAP_SHARE);
     home.dataset.ready = String(ready);
     icon.className = ready ? "ti ti-check" : "ti ti-search";
     hint.textContent = ready ? messages().releaseHint : messages().homeHint;
+    chip.dataset.ready = String(ready);
+    chip.style.left = `${anchor.x - rect.x - dialog.clientLeft + rect.width / 2}px`;
+    chip.style.top = `${anchor.y - rect.y - dialog.clientTop}px`;
+    chipText.textContent = messages().releaseHint;
   };
   const apply = (next: SpotlightPosition | null) => {
     position = next;
@@ -197,6 +215,7 @@ export const attachSpotlightPosition = (
     observer.disconnect();
     sizeObserver.disconnect();
     home.remove();
+    chip.remove();
     finish();
     host.removeEventListener("pointerdown", down);
     host.removeEventListener("dblclick", doubleClick);

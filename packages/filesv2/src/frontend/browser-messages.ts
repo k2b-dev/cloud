@@ -35,7 +35,6 @@ export const browserMessages = i18n.define({
       previewFailed: "The preview could not be loaded. Try again.",
       retry: "Try again",
       expand: "Open large preview",
-      fullscreen: "Full screen",
       loadingDetails: "Loading details…",
       detailsFailed: "This item is no longer available or you do not have access.",
       selection: "Selection",
@@ -43,7 +42,7 @@ export const browserMessages = i18n.define({
       folders: "Folders",
       knownBytes: "Selected file sizes",
       unknownFolders: "Folder contents are not included in this total.",
-      pageItems: (n: number) => `${n} ${n === 1 ? "item" : "items"} on this page`,
+      pageItems: (n: number) => `${n} ${n === 1 ? "item" : "items"} loaded`,
       folderHint: "Select an item for details. Double-click or press Enter to open it.",
       touchHint: "Tap an item to open it. Use Select items to choose entries or show details.",
       emptyTitle: "This folder is empty",
@@ -153,6 +152,51 @@ export const browserMessages = i18n.define({
       uploadFolder: "Upload folder",
       actions: "Actions",
       selectedActions: (n: number) => `${n} selected`,
+      selectionActions: "Actions for the selection",
+      pillCount: ({ n, kind }: { n: number; kind: "pdf" | "image" | "document" | "any" }) =>
+        kind === "pdf"
+          ? n === 1
+            ? "1 PDF"
+            : `${n} PDFs`
+          : kind === "image"
+            ? n === 1
+              ? "1 image"
+              : `${n} images`
+            : kind === "document"
+              ? n === 1
+                ? "1 document"
+                : `${n} documents`
+              : `${n} selected`,
+      pillMovedTitle: "Actions moved",
+      pillMovedText: "The actions for the selection are now in the bar at the bottom.",
+      gotIt: "Got it",
+      pdfMerge: "Merge",
+      pdfExtract: "Take out pages",
+      pdfMergeTitle: (n: number) => `Merge ${n} PDFs`,
+      pdfMergeHint: "Drag the files into the order they take in the new PDF.",
+      pdfNewName: "Name of the new PDF",
+      pdfNameInvalid: "Enter a file name that ends in .pdf.",
+      pdfOriginalsStay: "The originals stay as they are. The new PDF goes next to them.",
+      pdfPages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
+      pdfExtractHint: (several: boolean): string =>
+        several
+          ? "Choose the pages for a new PDF. The originals stay as they are."
+          : "Choose the pages for a new PDF. The original stays as it is.",
+      pdfPagesChosen: (n: number) => (n === 0 ? "No page chosen yet" : n === 1 ? "1 page chosen" : `${n} pages chosen`),
+      pdfExtractSave: "Save as new PDF",
+      pdfFileUnreadable: "This file cannot be shown here.",
+      opMerging: "Merging",
+      opExtracting: "Taking out pages",
+      opProgress: ({ verb, percent }: { verb: string; percent: number }) => `${verb} … ${percent} %`,
+      opCancel: "Cancel",
+      opDiscard: "Discard",
+      opWithout: "Without this file",
+      opCreated: (name: string) => `“${name}” created`,
+      opMergeSummary: ({ pages, files }: { pages: number; files: number }) => `${pages} pages from ${files} files`,
+      opExtractSummary: (pages: number) => (pages === 1 ? "1 page" : `${pages} pages`),
+      opUndo: "Undo",
+      opUndone: "The new file is in the trash.",
+      justCreated: "Just created",
       downloadZip: "Download as ZIP",
       moveToNewFolder: "Move into new folder",
       moveTo: "Move to…",
@@ -160,6 +204,8 @@ export const browserMessages = i18n.define({
       shareSelection: "Share publicly",
       trashSelection: "Move to trash",
       more: "Show more",
+      loadMore: "Load more",
+      loadMoreFailed: "More entries could not be loaded.",
       toggleFolder: (name: string) => `Expand or collapse ${name}`,
       detailsFor: (name: string) => `Details: ${name}`,
       loadFailed: "This folder could not be loaded.",
@@ -203,7 +249,6 @@ export const browserMessages = i18n.define({
       cloudArea: "Cloud storage",
       freeipaArea: "FreeIPA storage",
       kindFolder: "Folder",
-      kindFile: "File",
       globalSearch: "Search files",
       searchAllStorage: "Search all storage",
       sidebarSearch: "Search",
@@ -260,6 +305,8 @@ export const browserMessages = i18n.define({
       shareLink: "Link",
       copyLink: "Copy link",
       copiedLink: "Link copied",
+      copyText: "Copy text",
+      copiedText: "Text copied.",
       openLink: "Open link",
       shareCreateFailed: "The share could not be created.",
       sharesTitle: "Shares",
@@ -360,6 +407,20 @@ export const browserMessages = i18n.define({
       removeFavorite: "Remove from favorites",
       noRecent: "Files you open or download appear here.",
       noFavorites: "Mark files or folders as favorites from their details panel.",
+      noFavoritesTitle: "No favorites yet",
+      noFavoritesText: "Mark files or folders with the star in their details. They appear here and at the top of “All storage”.",
+      noFavoritesInline: "No favorites yet. Mark files or folders with the star in their details.",
+      favoritesFailed: "Favorites could not be loaded.",
+      showAllFavorites: "Show all",
+      storageSection: "Storage",
+      recentByYou: "Recently by you",
+      noRecentByYou: "No activity of yours yet. What you upload, change or open appears here.",
+      recentFailed: "Your recent activity could not be loaded.",
+      showAllActivity: "Show all",
+      openActivity: "Open Activity",
+      recentMovedTitle: "“Recent” is here now.",
+      recentMovedText: "Activity shows with the filter “Me” what you recently opened and changed.",
+      activityOfStorage: "Activity of this storage",
       openedAt: "Opened",
       dropHint: (n: number) => (n === 1 ? "Move 1 entry here" : `Move ${n} entries here`),
       favoriteAdded: "Added to favorites.",
@@ -414,7 +475,6 @@ export const browserMessages = i18n.define({
       previewFailed: "Die Vorschau konnte nicht geladen werden. Bitte erneut versuchen.",
       retry: "Erneut versuchen",
       expand: "Große Vorschau öffnen",
-      fullscreen: "Vollbild",
       loadingDetails: "Details werden geladen…",
       detailsFailed: "Dieser Eintrag ist nicht mehr verfügbar oder du hast keinen Zugriff.",
       selection: "Auswahl",
@@ -422,7 +482,7 @@ export const browserMessages = i18n.define({
       folders: "Ordner",
       knownBytes: "Größe der ausgewählten Dateien",
       unknownFolders: "Ordnerinhalte sind in dieser Summe nicht enthalten.",
-      pageItems: (n: number) => `${n} ${n === 1 ? "Eintrag" : "Einträge"} auf dieser Seite`,
+      pageItems: (n: number) => `${n} ${n === 1 ? "Eintrag" : "Einträge"} geladen`,
       folderHint: "Auswählen zeigt Details. Doppelklick oder Enter öffnet den Eintrag.",
       touchHint: "Tippen öffnet den Eintrag. Mit „Einträge auswählen“ wählst du Einträge aus oder zeigst Details.",
       emptyTitle: "Dieser Ordner ist leer",
@@ -532,6 +592,51 @@ export const browserMessages = i18n.define({
       uploadFolder: "Ordner hochladen",
       actions: "Aktionen",
       selectedActions: (n: number) => `${n} ausgewählt`,
+      selectionActions: "Aktionen für die Auswahl",
+      pillCount: ({ n, kind }: { n: number; kind: "pdf" | "image" | "document" | "any" }) =>
+        kind === "pdf"
+          ? n === 1
+            ? "1 PDF"
+            : `${n} PDFs`
+          : kind === "image"
+            ? n === 1
+              ? "1 Bild"
+              : `${n} Bilder`
+            : kind === "document"
+              ? n === 1
+                ? "1 Dokument"
+                : `${n} Dokumente`
+              : `${n} ausgewählt`,
+      pillMovedTitle: "Aktionen umgezogen",
+      pillMovedText: "Die Aktionen für die Auswahl stehen jetzt in der Leiste unten.",
+      gotIt: "Verstanden",
+      pdfMerge: "Zusammenfügen",
+      pdfExtract: "Seiten herausnehmen",
+      pdfMergeTitle: (n: number) => `${n} PDFs zusammenfügen`,
+      pdfMergeHint: "Zieh die Dateien in die Reihenfolge, in der sie im neuen PDF stehen.",
+      pdfNewName: "Name des neuen PDFs",
+      pdfNameInvalid: "Gib einen Dateinamen ein, der auf .pdf endet.",
+      pdfOriginalsStay: "Die Originale bleiben erhalten. Das neue PDF liegt daneben.",
+      pdfPages: (n: number) => (n === 1 ? "1 Seite" : `${n} Seiten`),
+      pdfExtractHint: (several: boolean) =>
+        several
+          ? "Wähle die Seiten für ein neues PDF. Die Originale bleiben, wie sie sind."
+          : "Wähle die Seiten für ein neues PDF. Das Original bleibt, wie es ist.",
+      pdfPagesChosen: (n: number) => (n === 0 ? "Noch keine Seite gewählt" : n === 1 ? "1 Seite gewählt" : `${n} Seiten gewählt`),
+      pdfExtractSave: "Als neues PDF speichern",
+      pdfFileUnreadable: "Diese Datei kann hier nicht gezeigt werden.",
+      opMerging: "Wird zusammengefügt",
+      opExtracting: "Seiten werden herausgenommen",
+      opProgress: ({ verb, percent }: { verb: string; percent: number }) => `${verb} … ${percent} %`,
+      opCancel: "Abbrechen",
+      opDiscard: "Verwerfen",
+      opWithout: "Ohne diese Datei",
+      opCreated: (name: string) => `„${name}“ erstellt`,
+      opMergeSummary: ({ pages, files }: { pages: number; files: number }) => `${pages} Seiten aus ${files} Dateien`,
+      opExtractSummary: (pages: number) => (pages === 1 ? "1 Seite" : `${pages} Seiten`),
+      opUndo: "Rückgängig",
+      opUndone: "Die neue Datei liegt im Papierkorb.",
+      justCreated: "Gerade erstellt",
       downloadZip: "Als ZIP herunterladen",
       moveToNewFolder: "In neuen Ordner verschieben",
       moveTo: "Verschieben nach …",
@@ -539,6 +644,8 @@ export const browserMessages = i18n.define({
       shareSelection: "Öffentlich teilen",
       trashSelection: "In den Papierkorb",
       more: "Mehr anzeigen",
+      loadMore: "Mehr laden",
+      loadMoreFailed: "Weitere Einträge konnten nicht geladen werden.",
       toggleFolder: (name: string) => `${name} auf- oder zuklappen`,
       detailsFor: (name: string) => `Details: ${name}`,
       loadFailed: "Dieser Ordner konnte nicht geladen werden.",
@@ -582,7 +689,6 @@ export const browserMessages = i18n.define({
       cloudArea: "Cloud-Ablage",
       freeipaArea: "FreeIPA-Ablage",
       kindFolder: "Ordner",
-      kindFile: "Datei",
       globalSearch: "Dateien suchen",
       searchAllStorage: "In allen Ablagen suchen",
       sidebarSearch: "Suchen",
@@ -641,6 +747,8 @@ export const browserMessages = i18n.define({
       shareLink: "Link",
       copyLink: "Link kopieren",
       copiedLink: "Link kopiert",
+      copyText: "Text kopieren",
+      copiedText: "Text kopiert.",
       openLink: "Link öffnen",
       shareCreateFailed: "Die Freigabe konnte nicht erstellt werden.",
       sharesTitle: "Freigaben",
@@ -743,6 +851,20 @@ export const browserMessages = i18n.define({
       removeFavorite: "Aus Favoriten entfernen",
       noRecent: "Dateien, die du öffnest oder herunterlädst, erscheinen hier.",
       noFavorites: "Markiere Dateien oder Ordner im Detailpanel als Favoriten.",
+      noFavoritesTitle: "Noch keine Favoriten",
+      noFavoritesText: "Markiere Dateien oder Ordner in ihren Details mit dem Stern. Sie stehen dann hier und oben in „Alle Ablagen“.",
+      noFavoritesInline: "Noch keine Favoriten. Markiere Dateien oder Ordner in ihren Details mit dem Stern.",
+      favoritesFailed: "Favoriten konnten nicht geladen werden.",
+      showAllFavorites: "Alle anzeigen",
+      storageSection: "Ablagen",
+      recentByYou: "Zuletzt von dir",
+      noRecentByYou: "Noch keine Aktivität von dir. Was du hochlädst, änderst oder öffnest, steht hier.",
+      recentFailed: "Deine letzte Aktivität konnte nicht geladen werden.",
+      showAllActivity: "Alle anzeigen",
+      openActivity: "Aktivität öffnen",
+      recentMovedTitle: "„Zuletzt“ ist jetzt hier.",
+      recentMovedText: "Aktivität zeigt mit dem Filter „Ich“, was du zuletzt geöffnet und geändert hast.",
+      activityOfStorage: "Aktivität dieser Ablage",
       openedAt: "Geöffnet",
       dropHint: (n: number) => (n === 1 ? "1 Eintrag hierher verschieben" : `${n} Einträge hierher verschieben`),
       favoriteAdded: "Zu Favoriten hinzugefügt.",

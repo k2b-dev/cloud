@@ -6,6 +6,7 @@ import {
   DetailPanel,
   IconButton,
   type IntentTone,
+  Section,
   StatusBadge,
   type StatusTone,
   useLocale,
@@ -169,17 +170,17 @@ function useShiftDetail(props: ShiftDetailProps) {
         when={props.selection.kind === "slot" ? props.selection.slot : null}
         fallback={
           // A sign-up outside every shift: free time, or a shift that was paused or moved since.
-          <DetailPanel.Section title={t().aboutSignUp}>
+          <Section title={t().aboutSignUp}>
             <p class="text-sm text-secondary">
               {props.selection.kind === "assignment" && props.selection.assignment.templateId
                 ? t().unscheduledShiftDescription
                 : t().freeTimeDescription}
             </p>
-          </DetailPanel.Section>
+          </Section>
         }
       >
         {(slot) => (
-          <DetailPanel.Section title={t().properties}>
+          <Section title={t().properties}>
             <DescriptionList
               layout="rows"
               size="sm"
@@ -195,10 +196,10 @@ function useShiftDetail(props: ShiftDetailProps) {
                 },
               ]}
             />
-          </DetailPanel.Section>
+          </Section>
         )}
       </Show>
-      <DetailPanel.Section title={t().people} count={shiftPeople(props.selection).length}>
+      <Section title={t().people} count={shiftPeople(props.selection).length}>
         <Show when={shiftPeople(props.selection).length > 0} fallback={<p class="text-sm text-dimmed">{t().noOneYet}</p>}>
           <ul class="grid gap-1" aria-label={t().people}>
             <For each={shiftPeople(props.selection)}>
@@ -231,13 +232,13 @@ function useShiftDetail(props: ShiftDetailProps) {
             </For>
           </ul>
         </Show>
-      </DetailPanel.Section>
+      </Section>
       <VenueTimeZoneNote timeZone={props.venue.timezone} times={times()} />
     </>
   );
 
   const state = () => (props.selection.kind === "slot" ? slotState(props.selection.slot, t()) : null);
-  /** The kind and its state, for the header's first row: "Shift · 1 missing · You're in". */
+  /** The kind and its state, for the line below the header's title: "Shift · 1 missing · You're in". */
   const kind = () => (
     <>
       <span>{props.selection.kind === "slot" ? t().shift : t().signUpKind}</span>

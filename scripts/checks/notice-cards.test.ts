@@ -29,10 +29,11 @@ test("reports decorative icons and size, opacity, or palette overrides inside no
         '    <code class="rounded bg-blue-100 dark:bg-blue-900">openid</code>',
         '    <h2 class="text-sm font-medium">Endpoints</h2>',
         "  </NoticeCard>",
+        '  <NoticeRow><i class="ti ti-photo" /><span class="text-xs">Row</span></NoticeRow>',
         ");",
       ].join("\n"),
     ),
-  ).toEqual([3, 4, 5, 6, 7].map((line) => `packages/demo/src/Panel.tsx:${line}`));
+  ).toEqual([3, 4, 5, 6, 7, 9, 9].map((line) => `packages/demo/src/Panel.tsx:${line}`));
 });
 
 test("accepts calm notice content, icons in controls, and overrides outside notices", async () => {
@@ -47,6 +48,9 @@ test("accepts calm notice content, icons in controls, and overrides outside noti
         '      <Button variant="secondary" size="xs"><i class="ti ti-photo text-lg" aria-hidden="true" />Load images</Button>',
         '      <IconButton label="Close"><i class="ti ti-x text-[18px]" /></IconButton>',
         "    </NoticeCard>",
+        '    <NoticeRow tile="ti ti-photo" action={<SplitButton menuLabel="More" items={[]}><i class="ti ti-photo" aria-hidden="true" />Load</SplitButton>}>',
+        '      <p class="truncate"><strong class="text-primary">Images blocked</strong></p>',
+        "    </NoticeRow>",
         '    <span class="text-xs opacity-70 bg-blue-100"><i class="ti ti-info-circle" /></span>',
         "  </div>",
         ");",

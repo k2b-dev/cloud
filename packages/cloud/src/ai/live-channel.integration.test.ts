@@ -127,15 +127,15 @@ suite("AI live channel", () => {
     benSocket.socket.close();
   });
 
-  test("an ended session closes the socket with 1008 within one sweep", async () => {
+  test("a session event closes the socket with 1008", async () => {
     const cleo = await person("Cleo Example");
     const socket = await open(0, cleo);
     socket.sub("s");
     await until(() => socket.of("s").length === 1);
     const endedAt = Date.now();
     await session.revokeAllForUser(cleo.id);
-    await until(() => socket.state.closed !== null, LIVE_LIMITS.sweepMs + 2_000);
-    expect(Date.now() - endedAt).toBeLessThanOrEqual(LIVE_LIMITS.sweepMs + 1_000);
+    await until(() => socket.state.closed !== null, 5_000);
+    expect(Date.now() - endedAt).toBeLessThanOrEqual(5_000);
     expect(socket.state.closed).toEqual({ code: 1008, reason: "session_expired" });
   });
 

@@ -5,6 +5,7 @@ import { AppOverview } from "@k2b/ui";
 import { ssr } from "../config";
 import ToolCatalog from "./ToolCatalog.island";
 import { ToolsWorkspace } from "./ToolsWorkspace";
+import { registryMessages } from "./tools/registry";
 
 export const toolsPageMessages = i18n.define({
   baseLocale: "en",
@@ -23,13 +24,16 @@ export const toolsPageMessages = i18n.define({
 });
 
 export default ssr<AuthContext>(async (c) => {
-  const { t } = toolsPageMessages.resolve([getLocale(c)]);
+  const locale = getLocale(c);
+  const { t } = toolsPageMessages.resolve([locale]);
+  const labels = registryMessages.resolve([locale]).t;
+  const initialQuery = c.req.query("q") ?? "";
   return () => (
-    <Layout c={c} fullPage workspaceSidebarCollapsible title={[{ title: "Start", href: "/" }, { title: "Tools" }]}>
+    <Layout c={c} fullPage workspaceSidebarCollapsible title={[{ title: labels.home, href: "/" }, { title: labels.appName }]}>
       <ToolsWorkspace>
-        <AppOverview title="Tools" subtitle={t.subtitle} icon="ti ti-tools">
+        <AppOverview title={labels.appName} subtitle={t.subtitle} icon="ti ti-tools">
           <AppOverview.Main title={t.findTitle} description={t.findDescription}>
-            <ToolCatalog />
+            <ToolCatalog initialQuery={initialQuery} />
           </AppOverview.Main>
         </AppOverview>
       </ToolsWorkspace>

@@ -45,3 +45,41 @@ test.each([
 ])("allows the existing workflow integration in %s", (file) => {
   expect(checkSource(resolve(root, file), 'import "@k2b/cloud/workflows/ai";', root)).toEqual([]);
 });
+
+for (const file of [
+  "commands",
+  "command-runtime",
+  "command-message-state",
+  "template-rendering",
+  "conversation-summary-ai",
+  "conversation-summary-jobs",
+  "conversation-summary-lifecycle",
+  "application-ai-runtime",
+]) {
+  test.each([
+    'import "../workflows/module";',
+    'import "./workflows";',
+    'import ".";',
+    'import "./index";',
+    'import "../service";',
+    'import { value } from "./workflow-data";',
+    'export * from "./workflow-message-preconditions";',
+    'const source = import("./workflow-send-policy");',
+    'type Source = import("./incoming-automations").Source;',
+    'import "@/service/automation-effect-state";',
+  ])(`retained Mail ${file} rejects private rule adapters: %s`, (source) => {
+    expect(checkSource(resolve(root, "packages/mail/src/service", `${file}.ts`), source, root)).toHaveLength(1);
+  });
+}
+
+test("only command services may enter the explicit legacy drain bridge", () => {
+  for (const file of ["commands", "command-runtime"])
+    expect(checkSource(resolve(root, "packages/mail/src/service", `${file}.ts`), 'import "./command-legacy-effects";', root)).toEqual([]);
+  expect(
+    checkSource(resolve(root, "packages/mail/src/service/template-rendering.ts"), 'import "./command-legacy-effects";', root),
+  ).toHaveLength(1);
+});
+
+test("Mail startup keeps the old effect-order schema until rule commands drain", () => {
+  expect(checkSource(resolve(root, "packages/mail/src/migrate.ts"), 'import "./service/workflow-effect-order-schema";', root)).toEqual([]);
+});

@@ -50,7 +50,10 @@ const examples: ChartShowcaseExample[] = [
     },
     useFor: ["Whether two measures move together.", "Finding outliers among many items.", "Comparing two groups on the same two measures."],
     avoidFor: ["Values over time; use a line chart.", "Only one measure; use a histogram or box plot."],
-    a11y: [...inspectA11y, "Arrow keys move from point to point in drawing order."],
+    a11y: [
+      "One tab stop: Tab focuses the chart, arrow keys move from point to point in drawing order, Home and End jump to the first and the last.",
+      ...inspectA11y.slice(1),
+    ],
     options: [
       ...commonOptions,
       {

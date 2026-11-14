@@ -6,7 +6,7 @@ export type { ContextMenuProps } from "./ContextMenu";
 export { ContextMenu } from "./ContextMenu";
 export type { CopyButtonProps, CopyButtonValue } from "./CopyButton";
 export { CopyButton } from "./CopyButton";
-export type { CommandItem, CommandSource, CommandStep } from "./command-items";
+export type { CommandContext, CommandItem, CommandSource, CommandStep } from "./command-items";
 export type { DisclosureProps } from "./Disclosure";
 export { Disclosure } from "./Disclosure";
 export type { DragPayload, DragSourceProps, DropTargetProps } from "./DragAndDrop";
@@ -35,6 +35,8 @@ export type { SegmentedControlProps, SegmentOption } from "./SegmentedControl";
 export { SegmentedControl } from "./SegmentedControl";
 export type { SelectionToolbarProps } from "./SelectionToolbar";
 export { SelectionToolbar } from "./SelectionToolbar";
+export type { SortableListProps } from "./SortableList";
+export { SortableList } from "./SortableList";
 export type { SplitButtonProps } from "./SplitButton";
 export { SplitButton } from "./SplitButton";
 export type {
@@ -49,7 +51,14 @@ export {
 } from "./SpotlightSearch";
 export type { TabOption, TabsItemProps, TabsProps } from "./Tabs";
 export { Tabs } from "./Tabs";
-export type { ToolbarActionProps, ToolbarGroupProps, ToolbarLabelProps, ToolbarProps, ToolbarSeparatorProps } from "./Toolbar";
-export { Toolbar } from "./Toolbar";
+export type {
+  ToolbarActionProps,
+  ToolbarDockProps,
+  ToolbarGroupProps,
+  ToolbarLabelProps,
+  ToolbarProps,
+  ToolbarSeparatorProps,
+} from "./Toolbar";
+export { Toolbar, ToolbarDock } from "./Toolbar";
 export type { ViewTab, ViewTabsProps } from "./ViewTabs";
 export { ViewTabs } from "./ViewTabs";

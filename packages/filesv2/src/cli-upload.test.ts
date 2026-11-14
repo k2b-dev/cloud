@@ -892,3 +892,40 @@ test.each(["en", "de"] as const)(
     }
   },
 );
+
+test.each(["en", "de"])("a changed CLI upload keeps its reservation and explains a separate-copy recovery (%s)", async (locale) => {
+  const local = await file("");
+  const keys: string[] = [];
+  let aborts = 0;
+  const caller = { ...ctx, options: { ...ctx.options, locale } };
+  const api = {
+    scope: "base/original.jpg",
+    open: async (_size: number, _signal: AbortSignal, key: string): Promise<UploadSession> => {
+      keys.push(key);
+      throw new UploadTransferError("Upload changed", "final", null, undefined, "cloud", "upload_changed");
+    },
+    renew: async () => {
+      throw new Error("must not renew");
+    },
+    commit: async () => result,
+    abort: async () => {
+      aborts++;
+    },
+  };
+  const hint = locale === "de" ? "Prüfe zuerst das Ziel" : "Check the destination first";
+  await expect(uploadFile(caller, local, api)).rejects.toThrow(hint);
+  await expect(uploadFile(caller, local, api)).rejects.toThrow(locale === "de" ? "anderen Zieldateinamen" : "different remote file name");
+  expect(keys[1]).toBe(keys[0]!);
+  // After inspecting the destination, choosing a different target creates a separate reservation.
+  await uploadFile(caller, local, {
+    ...api,
+    scope: "base/separate-copy.jpg",
+    open: async (_size, _signal, key) => {
+      keys.push(key);
+      return { ...session("", 0), state: "committed" };
+    },
+  });
+  expect(keys[2]).not.toBe(keys[0]!);
+  expect([...defaults.values()]).toEqual([keys[0]!]);
+  expect(aborts).toBe(0);
+});

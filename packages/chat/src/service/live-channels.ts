@@ -14,11 +14,15 @@ import {
 } from "./access";
 
 import { ShortIdSchema } from "./contracts";
-import { cachedResource, readerBatch } from "./resource-access";
+import { cachedResource, invalidateResource, readerBatch } from "./resource-access";
 
 // The platform's per-subscription key limit.
 const LIST_KEY_LIMIT = 1_000;
-const chatReaders = async (key: string, viewers: readonly LiveViewer[]): Promise<ReadonlySet<string>> => {
+const chatReaders = async (
+  key: string,
+  viewers: readonly LiveViewer[],
+  context?: { identityChanged: boolean },
+): Promise<ReadonlySet<string>> => {
   const [, shortId, threadId] = key.split(":");
   if (!shortId) return new Set();
   const [conversation] = await sql<
@@ -31,7 +35,15 @@ const chatReaders = async (key: string, viewers: readonly LiveViewer[]): Promise
       : [];
     if (threadId && !thread) return new Set();
     const decisions = await readerBatch(viewers, async (viewer) => {
-      const container = await cachedResource(viewer.id, { type: conversation.resource_type, id: conversation.resource_id });
+      const containerRef = { type: conversation.resource_type, id: conversation.resource_id };
+      if (context?.identityChanged) {
+        await invalidateResource(viewer.id, containerRef);
+        if (thread) await invalidateResource(viewer.id, { type: thread.resource_type, id: thread.resource_id });
+        // Retain the subscription, never a delivery decision. The engine clears its
+        // cache and checks the next actual frame (including replay) before sending.
+        return hasPermission(conversationPermission(shortId, "read", viewer.actor), "read") ? viewer.id : null;
+      }
+      const container = await cachedResource(viewer.id, containerRef);
       if (!container || !hasPermission(conversationPermission(shortId, container.permission, viewer.actor), "read")) return null;
       if (thread) {
         const item = await cachedResource(viewer.id, { type: thread.resource_type, id: thread.resource_id });
@@ -112,6 +124,7 @@ export const chatLiveChannels = {
     authorize: chatReaders,
   },
   me: {
+    eventOnly: true as const,
     scope: z.object({}).strict(),
     keys: async (_scope: unknown, viewer: LiveViewer) => (canReadPersonal(viewer) ? [personalChannelKey(viewer.accessSubject)] : []),
     authorize: async (key: string, viewers: readonly LiveViewer[]) =>

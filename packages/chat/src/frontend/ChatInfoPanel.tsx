@@ -6,6 +6,7 @@ import {
   IconButton,
   InlineGuidance,
   prompts,
+  Section,
   SelectChip,
   StatusBadge,
   TextInput,
@@ -211,7 +212,6 @@ export default function ChatInfoPanel(props: {
   return (
     <DetailPanel>
       <DetailPanel.Header
-        kind={<span>{props.conversation.channel ? t().channelChoice : t().chatChoice}</span>}
         title={props.conversation.title}
         subtitle={system() ? t().systemMembers : t().members({ count: props.conversation.memberCount })}
         menu={commands()}
@@ -232,14 +232,14 @@ export default function ChatInfoPanel(props: {
       />
       <DetailPanel.Body scrollPreserveKey={`chat-info-${props.conversation.id}`}>
         <Show when={!system()}>
-          <DetailPanel.Section title={t().purpose}>
+          <Section title={t().purpose}>
             <Show when={props.conversation.purpose} fallback={<p class="chat-info__none">{t().noPurpose}</p>}>
               {(purpose) => <p class="chat-info__purpose">{purpose()}</p>}
             </Show>
-          </DetailPanel.Section>
+          </Section>
           {/* Above the members, whose pages load and grow: the level stands in the first picture and never moves. */}
           {props.notificationProps && <ChatNotificationSettings {...props.notificationProps} />}
-          <DetailPanel.Section title={t().membersTitle}>
+          <Section title={t().membersTitle}>
             <div class="flex flex-col gap-2" aria-busy={status() === "loading"}>
               <TextInput
                 type="search"
@@ -304,7 +304,7 @@ export default function ChatInfoPanel(props: {
                 </Show>
               </Show>
             </div>
-          </DetailPanel.Section>
+          </Section>
         </Show>
         <Show when={system()}>
           <p class="chat-system-chats__membership">

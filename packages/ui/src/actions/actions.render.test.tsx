@@ -208,7 +208,8 @@ describe("@k2b/ui complete action migrations", () => {
     const inputRule = rule('.k2b-ui .k2b-button[data-variant="input"]');
     expect(inputRule).toContain("min-height: 2.25rem");
     expect(inputRule).toContain("background: var(--k2b-surface)");
-    expect(inputRule).toContain("box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color)");
+    expect(inputRule).toContain("border-width: var(--k2b-edge-width)");
+    expect(inputRule).not.toContain("box-shadow");
     expect(rule('.k2b-ui .k2b-icon-button[data-variant="input"]')).toContain("width: 2.25rem");
   });
 
@@ -315,7 +316,20 @@ describe("@k2b/ui complete action migrations", () => {
     expect(explicit.match(/data-variant="secondary"/g)).toHaveLength(2);
     expect(implicit.match(/data-variant="primary"/g)).toHaveLength(2);
     expect(explicit).toContain("Save as draft");
-    expect(rule(".k2b-ui .k2b-dropdown.k2b-split-button")).toContain("gap: 0");
+    const body = rule(".k2b-ui .k2b-dropdown.k2b-split-button");
+    expect(body).toContain("gap: 0");
+    // Each segment keeps its focus ring inside itself, so one ring never covers the other segment.
+    expect(body).toContain("--k2b-focus-offset: calc(-1 * var(--k2b-focus-width))");
+    expect(body).toContain("--k2b-focus-on-fill: currentColor");
+    // Filled segments meet at a fine line in their label colour; bordered ones share their light border.
+    expect(rule(".k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger")).toContain(
+      "box-shadow: inset 1px 0 0 color-mix(in srgb, currentColor 50%, transparent)",
+    );
+    expect(
+      rule(
+        '.k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger:is([data-variant="secondary"], [data-variant="subtle"], [data-variant="input"])',
+      ),
+    ).toContain("box-shadow: none");
   });
 
   test("renders separate file selection and file action menus", () => {
@@ -334,6 +348,21 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html.match(/aria-haspopup="menu"/g)).toHaveLength(2);
     expect(html).toContain("other.ts");
     expect(html).toContain("Rename file");
+  });
+
+  test("passes a menu note to the split button's secondary menu and describes the menu with it", () => {
+    const html = renderToString(() =>
+      createComponent(SplitButton, {
+        items: [{ label: "Save as draft", action: () => {} }],
+        menuLabel: "More send options",
+        menuNote: "Drafts stay in this mailbox.",
+        phone: "sheet",
+        children: "Send",
+      }),
+    );
+    expect(html).toContain('class="k2b-dropdown__note"');
+    expect(html).toContain("Drafts stay in this mailbox.");
+    expect(html).toMatch(/aria-describedby="[^"]+-note"/);
   });
 
   test("disables both split button actions while loading", () => {
@@ -974,7 +1003,9 @@ describe("@k2b/ui action geometry parity", () => {
 
   test("buttons use flat, layout-stable press feedback", () => {
     const button = rule(".k2b-ui .k2b-button");
-    const active = rule('.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):active');
+    // Popup placement reads the trigger's viewport box: scaling it on press moves
+    // the popup when scrolling later repositions it from the settled anchor (#3289).
+    const active = rule('.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"], [aria-haspopup]):active');
     const split = rule(".k2b-ui .k2b-dropdown.k2b-split-button");
     const splitSegmentActive = rule('.k2b-ui .k2b-split-button > .k2b-button:not(:disabled, [aria-disabled="true"]):active');
     const splitPrimaryActive = rule(".k2b-ui .k2b-dropdown.k2b-split-button:has(> .k2b-split-button__primary:not(:disabled):active)");
@@ -985,6 +1016,7 @@ describe("@k2b/ui action geometry parity", () => {
     expect(button).toContain("font-weight: 600");
     expect(active).toContain("scale: 0.98");
     expect(active).not.toContain("box-shadow");
+    expect(actionsCss).not.toContain('.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):active {');
     expect(split).toContain("transition: scale 100ms ease-out");
     expect(splitSegmentActive).toContain("scale: none");
     expect(splitPrimaryActive).toContain("scale: 0.98");
@@ -998,7 +1030,7 @@ describe("@k2b/ui action geometry parity", () => {
   });
 });
 
-test("floating Toolbar renders a space-keeping pending pill with every action and keyboard hint", () => {
+test("floating Toolbar renders a space-keeping pending pill with every action and its shortcuts in the tooltips", () => {
   const html = renderToString(() =>
     createComponent(Toolbar, {
       label: "Selection actions",
@@ -1016,13 +1048,14 @@ test("floating Toolbar renders a space-keeping pending pill with every action an
       },
     }),
   );
-  expect(html).toMatch(/<div class="k2b-toolbar-float"><div[^>]*class="k2b-toolbar selection-tools"[^>]*role="toolbar"/);
+  expect(html).toMatch(/<div class="k2b-toolbar-float"><div[^>]*class="k2b-toolbar k2b-pill selection-tools"[^>]*role="toolbar"/);
   expect(html).toContain('data-variant="floating"');
   expect(html).toContain("data-overflow-pending");
   expect(html).toContain('data-orientation="horizontal"');
   expect(html).not.toContain('data-wrap="true"');
   expect(html.match(/<button[^>]*k2b-toolbar__action/g)).toHaveLength(3);
-  expect(html).toContain('class="k2b-kbd k2b-kbd-hint k2b-toolbar__hint"');
+  // The pill's small controls leave no room for a hint below the icon.
+  expect(html).not.toContain("k2b-toolbar__hint");
   expect(html).toContain('aria-label="Archive"');
   expect(html).toContain('title="Archive (E)"');
   expect(html).toContain('aria-keyshortcuts="E"');
@@ -1143,7 +1176,7 @@ describe("workspace head navigation", () => {
       }),
     );
     expect(de).toContain('aria-label="Weitere Ansichten"');
-    expect(de).toContain(">Weitere<");
+    expect(de).toContain(">Mehr<");
   });
   test("with showValue, active chips name the first option in section order and show additional values", () => {
     const chip = (value: string[], isActive?: boolean, showValue = true) =>

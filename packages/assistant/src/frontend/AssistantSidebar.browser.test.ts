@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { AiConversation } from "@k2b/cloud/ai";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../../ui/test/browser";
 
 // Whether a status change or hover moves the chat list is a layout result of the shipped cascade, which happy-dom
 // does not model. A real engine lays out the sidebar before and after.
@@ -323,7 +323,7 @@ describe(`Assistant chat list in ${browserName}`, () => {
     try {
       const before = await rows(page);
       const target = page.locator(".assistant-chat-sidebar-item", { hasText: "Rechnungen Oktober" }).first();
-      await target.hover();
+      await hoverInPlace(target);
       await frames(page);
       const done = target.getByRole("button", { name: "Chat als fertig markieren" });
       expect(await done.isVisible()).toBe(true);

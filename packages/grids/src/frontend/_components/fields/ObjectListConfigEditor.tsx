@@ -1,5 +1,5 @@
 import { crypto } from "@k2b/stdlib";
-import { Button, CheckboxCard, DetailPanel, NoticeCard, NumberInput, Select, TextInput, useLocale } from "@k2b/ui";
+import { Button, CheckboxCard, NoticeCard, NumberInput, Section, Select, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Index, type JSX, Show } from "solid-js";
 import { z } from "zod";
 import { FormulaConfigSchema } from "../../../field-types/formula";
@@ -74,7 +74,7 @@ export function ObjectListConfigEditor(props: {
                   }}
                 />
               </div>
-              <DetailPanel.Section
+              <Section
                 collapsible
                 title={t().listColumnOptions}
                 icon="ti ti-adjustments"
@@ -181,7 +181,7 @@ export function ObjectListConfigEditor(props: {
                     </Button>
                   </div>
                 </div>
-              </DetailPanel.Section>
+              </Section>
             </div>
           )}
         </Index>
@@ -201,7 +201,7 @@ export function ObjectListConfigEditor(props: {
           </Button>
         </div>
       </Show>
-      <DetailPanel.Section collapsible title={t().listBounds} icon="ti ti-list-numbers">
+      <Section collapsible title={t().listBounds} icon="ti ti-list-numbers">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <NumberInput
             label={t().listMinRows}
@@ -218,7 +218,7 @@ export function ObjectListConfigEditor(props: {
             onValueChange={(maxItems) => props.onChange({ ...props.config(), maxItems: maxItems ?? 100 })}
           />
         </div>
-      </DetailPanel.Section>
+      </Section>
     </fieldset>
   );
 }

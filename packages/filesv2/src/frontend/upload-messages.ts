@@ -12,6 +12,7 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      name: "Upload",
       percent: (value: number) => `${value}%`,
       uploadingTo: (target: string) => `Uploading to “${target}”`,
       uploading: "Uploading",
@@ -25,6 +26,8 @@ const messages = i18n.define({
       failedTitle: (n: number) => `${enFiles(n)} failed`,
       cancelled: "Upload cancelled",
       count: ({ done, count }: { done: number; count: number }) => `${done} of ${enFiles(count)}`,
+      remainingTime: (seconds: number) =>
+        seconds < 60 ? "less than 1 min" : seconds < 3600 ? `about ${Math.ceil(seconds / 60)} min` : `about ${Math.ceil(seconds / 3600)} h`,
       errors: (n: number) => (n === 1 ? "1 error" : `${n} errors`),
       valueText: ({ percent, done, count }: { percent: number; done: number; count: number }) =>
         `${percent}%, ${done} of ${enFiles(count)} uploaded`,
@@ -32,9 +35,10 @@ const messages = i18n.define({
       list: "Files in this upload",
       showList: "Show file list",
       hideList: "Hide file list",
-      dismiss: "Dismiss notification",
-      cancel: "Cancel",
+      cancelAll: "Cancel all",
       cancelUpload: "Cancel upload",
+      view: "View",
+      viewFolder: (target: string) => `View “${target}”`,
       retry: "Try again",
       retryAll: (n: number) => `Upload ${enFiles(n)} again`,
       retryFile: (name: string) => `Try again: ${name}`,
@@ -93,6 +97,7 @@ const messages = i18n.define({
     },
     de: {
       percent: (value: number) => `${value} %`,
+      name: "Upload",
       uploadingTo: (target: string) => `Hochladen nach „${target}“`,
       uploading: "Hochladen",
       finishing: "Wird abgeschlossen…",
@@ -105,6 +110,8 @@ const messages = i18n.define({
       failedTitle: (n: number) => `${deFiles(n)} fehlgeschlagen`,
       cancelled: "Upload abgebrochen",
       count: ({ done, count }: { done: number; count: number }) => `${done} von ${deFiles(count)}`,
+      remainingTime: (seconds: number) =>
+        seconds < 60 ? "unter 1 Min." : seconds < 3600 ? `ca. ${Math.ceil(seconds / 60)} Min.` : `ca. ${Math.ceil(seconds / 3600)} Std.`,
       errors: (n: number) => `${n} Fehler`,
       valueText: ({ percent, done, count }: { percent: number; done: number; count: number }) =>
         `${percent} %, ${done} von ${deFiles(count)} hochgeladen`,
@@ -112,9 +119,10 @@ const messages = i18n.define({
       list: "Dateien in diesem Upload",
       showList: "Dateiliste anzeigen",
       hideList: "Dateiliste ausblenden",
-      dismiss: "Benachrichtigung schließen",
-      cancel: "Abbrechen",
+      cancelAll: "Alle abbrechen",
       cancelUpload: "Upload abbrechen",
+      view: "Ansehen",
+      viewFolder: (target: string) => `„${target}“ ansehen`,
       retry: "Erneut versuchen",
       retryAll: (n: number) => `${deFiles(n)} erneut hochladen`,
       retryFile: (name: string) => `Erneut versuchen: ${name}`,

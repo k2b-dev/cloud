@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { prepareChartSnapshot } from "@k2b/ui";
+import type { ChartDescription } from "@k2b/ui/charts";
 import { chartKinds, chartMarks, chartRenderOptions, chartTable, chartTooltip } from "./charts";
 import { notebookChartHeight, renderNotebookChartFigure } from "./markdown/lib/chart-blocks";
 
@@ -13,7 +14,7 @@ const spec = {
     { label: "Recurring", data: [30, 0, null] },
     { label: "One-off", data: [70, 0, 10] },
   ],
-};
+} satisfies ChartDescription;
 test("portable normalized area preserves amount and share in every table row", () => {
   const input = chartKinds().parse(spec),
     table = chartTable(input, "de");

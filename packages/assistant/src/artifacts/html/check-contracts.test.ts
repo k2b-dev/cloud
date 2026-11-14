@@ -239,8 +239,12 @@ test("shown text: code errors in the app's messages fail, quoted errors and brok
     expect(shown(prose)).toEqual([]);
 });
 
-test("frame assets require the offline chart module", () => {
+test("frame assets require shared and per-kind offline chart parts", () => {
   const assets = { prelude: "", preludeHash: "", baseCss: "" };
   expect(CheckStart.shape.assets.safeParse(assets).success).toBe(false);
-  expect(CheckStart.shape.assets.safeParse({ ...assets, chartModule: "bundled source" }).success).toBe(true);
+  expect(CheckStart.shape.assets.safeParse({ ...assets, chartParts: { shared: { code: "", hash: "" }, kinds: {} } }).success).toBe(true);
+  expect(CheckStart.shape.assets.safeParse({ ...assets, chartParts: { kinds: {} } }).success).toBe(false);
+  expect(
+    CheckStart.shape.assets.safeParse({ ...assets, chartParts: { shared: { code: "", hash: "" }, kinds: { area: "unhashed" } } }).success,
+  ).toBe(false);
 });

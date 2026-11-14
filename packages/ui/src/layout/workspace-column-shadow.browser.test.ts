@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 import { clientFixture, type FixtureOptions, workspaceCss, workspaceFrames } from "../../test/workspace-host-fixture";
 
 // Every column boundary of a workspace carries the same quiet shadow and no
@@ -268,7 +268,7 @@ for (const [width, options] of [
       }
       // Hover and focus paint only: every row keeps its place.
       const row = page.locator(".k2b-app-workspace__main .k2b-app-workspace__sidebar-item >> visible=true").nth(1);
-      await row.hover();
+      await hoverInPlace(row);
       await settled(page);
       expect(await insets(page)).toEqual(columns);
       await row.focus();

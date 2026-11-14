@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-11-02
+updated: 2026-11-12
 ---
 
 # Deployment requirements
@@ -256,6 +256,10 @@ that created personal API keys using OAuth tokens or API keys now receives
 `403 BROWSER_SIGN_IN_REQUIRED`; create those keys in `/me/developer` instead.
 An older browser sign-in receives `403 REAUTHENTICATE` and requires signing in
 again. Resource and standalone service-account keys are unchanged.
+SSH public key changes of FreeIPA accounts follow the same rule: OAuth tokens,
+personal API keys and the Cloud app receive `403` for them, and
+`cld account ssh-keys add` and `remove` point to the profile page. Personal API
+keys can no longer extend their account.
 
 New browser-confirmed OAuth access sends a **New access** notice with email and
 browser delivery recommended. Keep the installation timezone and outgoing mail
@@ -314,6 +318,11 @@ Without a key, paid Queries return `GEO_NOT_CONFIGURED`. Without healthy
 Valkey admission, paid calls are refused with `GEO_BUSY`; there is no
 unlimited fallback. Availability checks remain free. Cache failures alone do
 not fail a request that admission accepts.
+
+Assistant maps open as a map dialog from a still tile in the chat. Their
+**Save as Notebook** action and the browser route
+`GET /api/ai/conversations/:conversationId/maps/:mapId/export` behind it are
+removed. Maps saved to notes earlier stay in those notes and keep showing.
 
 ## Prepare application connection bootstrap
 
@@ -454,6 +463,34 @@ the pooler so that its server connections are recreated.
 There is no universal CPU, memory, disk or database-connection sizing guarantee.
 Size for your app set, data volume, replicas and workload, and verify headroom
 with representative traffic before production exposure.
+
+### File previews
+
+Cloud creates `platform._cloud_previews` idempotently when an application that
+registered a preview reader starts, under a transaction-scoped advisory lock. No per-application migration is
+needed. Include this reserved table in the platform database backup contract.
+Preview bytes live in the platform object store's default private bucket area,
+confined to the application's package. They can be regenerated from sources.
+
+Set `previews.max_bytes` in **Administration → Storage** beside the default
+bucket limits. The default budget is 2 GiB across packages in the platform
+database. Each running package removes at most 100 of its own previews every
+ten minutes using the installation-wide recency ordering. An inactive package
+cleans its objects after its runtime returns. Recency writes occur at most daily.
+
+Without a configured object store, reads generate inline without saving bytes;
+upload warmup does nothing. Failure memory still needs the database. Office
+previews require the full Gotenberg 8.36.0 image, including LibreOffice;
+`-chromium` images lack it and Office preview jobs end in `failed`. Conversion
+uses the existing Gotenberg settings, output limit, timeout and concurrency
+budget. Image and PDF decoding retain their isolated Linux workers.
+
+Every application reserves two preview work streams of 2 MiB and two
+dead-letter streams of 512 KiB before replication. Each work lane rejects new
+jobs after 64 pending messages or its byte limit, preserving accepted work.
+High and low lanes have one worker each, sharing a two-generator process limit.
+Generation has a three-minute deadline; queued work expires after four hours.
+See [File previews](/en/docs/platform/previews) for formats and source limits.
 
 ### Reserve JetStream storage
 
@@ -662,6 +699,13 @@ the memory occupied by files loaded for analysis. View files are ordinary chat
 files under `/views` and count toward the per-chat file budget; they need no
 configuration or migration.
 
+Notebooks PDF charts and browser print copies now use the eight-color UI
+palette, including violet for the fourth series. Notes share-image charts
+use the same palette. Previously exported PDFs and preview images may have
+different series colors; values, geometry and explicit semantic colors are
+unchanged. No configuration or data migration is required. Hosts that load
+the chart stylesheet retain their existing drawing markup.
+
 Assistant's `cloud.chart()` draws Studio app, chat app, script and PDF charts
 through the same options mapping as chat charts. Existing charts keep drawing:
 the chat's limits on series, points, labels and phone-width fit do not apply to
@@ -677,12 +721,17 @@ one-off HTML app charts show tooltips on hover, keyboard focus and tap without
 additional configuration. See
 [Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
 
-App-frame builds include `assistant-chart-module.js` alongside the prelude and
-base stylesheet. The app-assets response embeds that module with the frame;
-rare chart kinds parse it on first use through a local blob URL. No additional
-asset endpoint, external origin, CSP exception or operator configuration is
-needed. Include the new file when packaging Assistant outside its standard
-image. Scripts retain synchronous rendering for every kind.
+App-frame builds include `assistant-chart-parts.json` alongside the prelude and
+base stylesheet. After the host becomes interactive, it prepares chart parts
+at low priority through the runtime or runner's `/chart-parts` endpoint, with
+the same origin and access policy as `/app-assets`. An early app start waits
+for that preparation, preserving first use offline. A frame receives only the
+kinds it draws plus one shared helper part over its existing host channel; renderer
+source is absent from srcdoc. The host verifies each part's SHA-256 before
+delivery, and the frame pins its parts to that build's hashes. No external
+origin, CSP exception or operator configuration is needed. Include the file
+when packaging Assistant outside its standard image. Scripts retain synchronous
+rendering for every kind.
 
 ### Assistant Chromium isolation
 
@@ -754,7 +803,7 @@ or mutate real data without approval.
 | --- | --- | --- | --- |
 | [Hosts](/en/apps/ipa-hosts) (`ipa-hosts`) | Baseline; starts the host-sync scheduler | Useful host data and mutations require FreeIPA and host/hostgroup privileges. With FreeIPA disabled, synchronization skips; enabling incomplete configuration causes sync failure. | Run a controlled sync and inspect mirrored hosts and its completion status. |
 | [Assistant](/en/apps/assistant) (`assistant`) | Baseline; can serve its UI with AI disabled | Core owns AI execution. Configure AI profiles and access, then optional Firecrawl/PDF tools. Studio PDF generation/embedding needs Gotenberg with Factur-X and request-directory isolation support (development uses 8.36.0); local Finance APIs and PDF text extraction need no Gotenberg. Resource databases additionally need `assistant.rsql_url` and the secret `assistant.rsql_api_token`, configured in Studio administration. Cross-app tools require their provider apps and current user permissions; the Assistant container does not need the OAuth broker secret. | Send a short test prompt, observe streamed output and durable history; test one permitted read-only tool. Run a database-free script. If databases are configured, explicitly connect a test resource and query it. |
-| [Tools](/en/apps/tools) (`tools`) | Baseline | Browser utilities need no extra backend. Markdown-to-PDF needs Gotenberg. Document extraction uses the native dependency bundled in the app image, not a separate Gotenberg conversion service. Speed tests need sufficient proxy/body/streaming limits; webhook delivery needs approved egress. | Open `/tools`; check a browser utility and, if enabled, convert a small document or Markdown PDF. |
+| [Tools](/en/apps/tools) (`tools`) | Baseline | Browser utilities need no extra backend. Markdown-to-PDF and PDF page operations need Gotenberg; page operations require its PDF-engine and ExifTool metadata routes (8.36.0). Document extraction uses the native dependency bundled in the app image, not a separate Gotenberg conversion service. Speed tests need sufficient proxy/body/streaming limits; webhook delivery needs approved egress. | Open `/tools`; check a browser utility and, if enabled, convert a small document or Markdown PDF. |
 | [Quotes](/en/apps/quotes) (`quotes`) | Baseline | Fresh quotes require outbound HTTPS to `zenquotes.io`; no provider-key setting. This app has API/widget routes, not an `/app/quotes` page. | Read `/api/quotes` or its Dashboard widget and verify quote data. |
 | [Weather](/en/apps/weather) (`weather`) | Baseline; Core owns the weather schema migration | Forecasts need outbound HTTPS to `api.brightsky.dev`. City search additionally needs Core’s secret `geo.api_key` and available geo budget; optional `weather.default_lat` / `weather.default_lon` select a default location. | Search a German city and load its forecast; verify forecast and city-search dependencies separately. |
 
@@ -842,6 +891,39 @@ presigned PUT requests; object identities and paths stay the same. Redirects
 are refused.
 Transient storage failures (5xx, 429, 408, or connection loss) are retried up to
 three times per object.
+
+### PDF page operations
+
+Tools exposes `POST /tools/api/pdf` for authenticated, in-memory merge, extract,
+split, rotate and reorder operations. Use the same configured Gotenberg service;
+it needs the PDF-engine routes and ExifTool metadata support provided by
+Gotenberg 8.36.0. No new service or setting is required.
+
+With the default renderer settings, an operation accepts at most 99 files and
+98 total source pages, 10 MiB of input and 10 MiB of output. Renderer uploads
+and downloads each have a cumulative 20 MiB work budget. Reordering or splitting
+may hit that budget before the final output reaches 10 MiB. Larger operations
+fail with HTTP 413; use fewer pages or smaller files. The limits derive from
+the existing renderer size and timeout settings. See
+[PDF operation budgets](/en/docs/platform/pdf-and-templates#budget-a-whole-operation).
+
+Before enabling the API for users, check a small merge, selected-page extraction,
+split ZIP, rotation and reorder against the installed renderer. Uploaded files
+and results are not persisted by Tools. Each access subject can hold one of
+two local upload places; a second concurrent request from that subject returns
+HTTP 503. Unreadable or password-protected PDFs return HTTP 422. Keep Gotenberg
+private and offline as below.
+
+Files also uses this renderer for `POST /api/filesv2/bases/:baseId/pdf`.
+It creates a new PDF beside the first source, with conflict renaming, and
+leaves originals unchanged. Multi-source extraction merges first; both steps
+share the existing deadline and work allowance. Enable ExifTool metadata
+support so Files can identify encrypted sources. Check one merge, one
+cross-file page extraction and a password-protected source before enabling
+these actions. Cancellation stops pending reads, rendering and publication;
+a file already committed remains available and can be moved to trash.
+The API streams progress and a final result or localized error as NDJSON;
+proxies must forward those lines without buffering.
 
 ### Keep Gotenberg offline
 
@@ -982,6 +1064,14 @@ another calculation in the same interval. Dashboards share SQL admission and
 read profiles but do not consume the questions quota. Public links are checked
 on every read and can be revoked by a base writer. Clearing measurements keeps
 dashboard definitions and invalidates their cached results.
+
+Before rolling Pulse back, check whether anyone saved dashboards with newly
+introduced panel kinds. Dashboard reads validate the stored definition strictly;
+an older Pulse version cannot read a kind it does not recognize. Rolling back
+after saving those kinds can make the affected base's entire dashboard list
+unavailable. Keep the newer version, or replace those panels with kinds supported
+by the rollback target before downgrading. Include dashboard definitions in the
+pre-upgrade backup.
 
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
@@ -1221,6 +1311,27 @@ saved goes out without its signature. Rolling Mail back keeps the column and
 has the same effect for drafts saved after the update. After the rollout, open
 a new message in a mailbox with a default signature and check that the preview
 shows the signature below the text.
+
+### Mail reply drafts and suggestions
+
+Stop all older Mail replicas before upgrading. Mail now keeps one open reply
+draft for every conversation with `origin = 'user'`, including suggestions and
+workflow review replies. Private automatic replies remain outside this box.
+The irreversible F6 migration preserves committed sends (refusing two in one
+conversation), then prefers human/adopted drafts to untouched suggestions,
+then drafts with edit evidence before empty drafts, followed by edit time and
+creation time. It erases the other drafts, writes activity entries,
+records schema marker `4 (one_reply_draft)`, and logs counts.
+Back up before upgrading; there is no SQL downgrade. Follow
+[Mail reply draft consolidation](/en/docs/operations/mail-reply-draft-consolidation)
+for delivery prerequisites, cleanup, counts and restart behavior.
+
+Suggestions remain adopted after a person's first edit. Check that autonomous
+updates to an adopted suggestion return `DRAFT_ADOPTED` (409). A suggestion
+creation request without content can return `creationOutcome: suggestion_skipped`
+when the reply box is occupied. Supplied body, subject, recipients or attachments
+return `DRAFT_REPLY_BOX_OCCUPIED` (409) with the existing draft ID instead.
+Neither outcome changes the occupied draft.
 
 ### Mail mailbox logos
 
@@ -2416,3 +2527,50 @@ update; its files then load from the network. Worker updates remove entries abse
 storage is limited to 16 MiB; storage denial or eviction falls back to the network.
 Pages and API responses remain network-only. See
 [Offline and updates](/en/docs/frontend/mobile-app-pages#offline-and-updates).
+
+### Grids document captures
+
+Grids migrates independent immutable document captures on startup. Include
+`grids.document_data` with the existing document, issuance, artifact and export
+claim tables in the same database backup. These captures and their issued
+artifacts remain domain evidence even when an automation is retired. Existing
+workflow documents keep their original bindings; this upgrade does not rewrite
+or remove their provenance.
+
+## Collaboration room access events
+
+Shared text rooms check access at connect/join and reconnect. They no longer
+periodically query permissions. Complete the Core rollout, including its room-access migration and live
+outbox delivery, before applications adopt event-only rooms. Notebooks refuses
+startup until the scoped Core source function is installed. Deferred rows
+use the existing retry gate so older dispatchers also respect their due time;
+current dispatchers bound long deadline timers to the runtime timer range. Keep Core and
+application live delivery healthy: revocations, locks and expiry deadlines
+reach open connections through these existing retained topics. See
+[Shared text documents](/en/docs/data/shared-text-documents#check-access-at-connect-or-join-revoke-through-events)
+for the event sources and application adapter contract.
+
+Core's outbox holds one future expiry event per account/session and one idle
+event per shared-workstation session; renewal replaces the deadline. Future
+rows are not delivery backlog until due. No new environment setting or bus is
+required. Notebooks keeps its wire protocol, topic declarations and snapshot
+job IDs. Shared-text admission adds the Sync mutex `<log.id>:admission`
+with a 10-second lease and a 5-second admission budget; all nodes must use
+this admission owner before enabling freeze. Snapshot flushes add the Sync mutex `<log.id>:snapshot-writer` with
+a 120-second renewable lease; existing atomic snapshot guards remain required
+while older workers are present during a rollout.
+
+Deploy Cloud's pinned Sync 7.1.1 with the room update. It prevents an idle
+document consumer from reporting a false retention gap when another
+document's safely persisted prefix is pruned. Join gaps still use the stored
+snapshot coverage and adapter recovery contract.
+
+Shared-text applications that use `room.freeze` must keep non-expiring,
+reject-on-full document logs, declare a lifecycle byte budget and preserve
+the separate lifecycle stream in backups. Lifecycle authority survives
+pruning the document log, including its freeze and close markers.
+A freeze expires after 60 seconds plus inter-node clock skew; synchronize
+node clocks and finish durable publication within that lease. Known credential
+expiry is also enforced by one local socket timeout, so Core downtime cannot
+extend an already-known deadline. See the
+[freeze contract](/en/docs/data/shared-text-documents#freeze-submit-thaw-or-close).

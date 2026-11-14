@@ -1,7 +1,14 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
-import type { ConversationView, MailActivityKind } from "../contracts";
+import {
+  type ConversationDraftSummary,
+  type ConversationView,
+  MAIL_WORKSPACE_HINT_IDS,
+  type MailActivityKind,
+  type MailWorkspacePreference,
+  type SenderIdentity,
+} from "../contracts";
 import { mailFolderNames } from "../folder-names";
 import { readMailEventsFilter } from "../mail-events-route";
 import { resolveMailSearchRoute } from "../search-state";
@@ -9,7 +16,6 @@ import type { MailActivityEvent } from "../service/collaboration";
 import type { MessageDetail } from "../service/messages";
 import type { MailboxListView, MailboxPageData, MailListItem } from "../service/workspace";
 import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
-import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
@@ -17,6 +23,73 @@ import { readMailWorkspacePreferences } from "./_components/mail-workspace-prefe
 import MailWorkspace from "./MailWorkspace.island";
 
 export const MAIL_SHELL_NOW = "2026-10-14T10:00:00.000Z";
+/** `?identity=1`: the mailbox can send as its support address, so Reply opens a draft without asking for a sender. */
+const fixtureIdentity = (name: string): SenderIdentity => ({
+  id: "00000000-0000-4000-8000-0000000000a1",
+  mailboxId: "Box001",
+  label: name,
+  displayName: name,
+  fromAddress: "support@example.test",
+  replyTo: null,
+  defaultCc: [],
+  defaultBcc: [],
+  defaultFormat: "markdown",
+  defaultPriority: "normal",
+  defaultDeliveryReceipt: false,
+  defaultReadReceipt: false,
+  vcard: null,
+  envelopeSender: null,
+  defaultSignatureTemplateId: null,
+  transport: {
+    mode: "mailbox",
+    host: null,
+    port: null,
+    tlsMode: null,
+    username: null,
+    secret: { kind: null, isSet: false },
+    revision: 0,
+    status: "active",
+    capabilities: { dsn: false, size: false, maxMessageBytes: null },
+    lastVerifiedAt: null,
+    lastError: null,
+  },
+  authenticationPolicy: { automation: "mailbox" },
+  sentFolderId: null,
+  draftsFolderId: null,
+  isDefault: true,
+  status: "verified",
+  statusReason: null,
+  pendingVerificationCommandId: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+});
+/** `?drafts=1`: the open conversation already has a colleague's forward draft (invented). */
+const conversationDraftsFixture = (url: URL, selectedConversationId: string | null): ConversationDraftSummary[] =>
+  selectedConversationId && url.searchParams.has("suggestion")
+    ? [
+        {
+          id: "DrfSug",
+          intent: "reply",
+          subject: "Re: Example request 1",
+          updatedAt: "2026-10-14T09:58:00.000Z",
+          bodyPreview: "Saturday at 11 works. The chairs are ready in hall A.",
+          createdByDisplayName: "Gustav",
+          suggestion: true,
+        },
+      ]
+    : selectedConversationId && url.searchParams.has("drafts")
+      ? [
+          {
+            id: "Drf001",
+            intent: "forward",
+            subject: "Fwd: Example request 1",
+            updatedAt: "2026-10-14T09:55:00.000Z",
+            bodyPreview: "Hello Tom, here are the pickup details for Saturday.",
+            createdByDisplayName: "Jonas Example",
+            suggestion: false,
+          },
+        ]
+      : [];
 /** `?trace=` picks what rules did with the open conversation (fictional, from the approved mockup). */
 const traceFixture = (kind: string | null) => {
   const [sortUncertain, sortNora, sortAngebote, skippedCan, , , , manual] = [
@@ -37,6 +110,28 @@ const traceFixture = (kind: string | null) => {
 };
 const summaryRule = { id: "Wf001", name: "Lange Mails zusammenfassen" };
 /** `?summary=` picks the summary state the reader shows; without it the conversation has a person's short text. */
+/** `notes=1`: an invented internal note before the message, and a deleted one. */
+const notesFixture = (conversationId: string): MailboxPageData["comments"] => {
+  const note = (id: string, minutes: number, body: string | null) => {
+    const at = new Date(Date.parse(MAIL_SHELL_NOW) - minutes * 60_000).toISOString();
+    return {
+      id,
+      conversationId,
+      body,
+      author: { kind: "user" as const, id: "user-2", displayName: "Nora Example", avatarHash: null },
+      referencedMessageId: null,
+      revision: 1,
+      canEdit: true,
+      canDelete: true,
+      editedAt: null,
+      deletedAt: body === null ? at : null,
+      createdAt: at,
+      updatedAt: at,
+    };
+  };
+  return [note("Note01", 20, "Invented note: the customer called, the offer goes out on Friday."), note("Note02", 10, null)];
+};
+
 /** `photos=N`: the message carries an invented programme PDF and N invented photos. */
 const photosFixture = (count: string | null): MessageDetail["attachments"] => {
   const photos = Number(count ?? 0);
@@ -123,6 +218,7 @@ const mailbox = (id: string, name: string): MailboxPageData["mailbox"] => ({
   searchBackend: "auto",
   automaticReplyManagementPermission: "admin",
   accessScope: "mailbox",
+  draftEditMode: "shared",
   composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
   createdAt: MAIL_SHELL_NOW,
   updatedAt: MAIL_SHELL_NOW,
@@ -250,7 +346,7 @@ const longThread: MailboxPageData["detailMessages"] = Array.from({ length: 6 }, 
     selectedHeaders: {},
     sourceAvailable: true,
     mailingList: null,
-    remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.test", domain: "example.test" },
+    remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "sender@example.test", domain: "example.test" },
     delivery: null,
     attachments: [],
   };
@@ -390,8 +486,23 @@ const eventsFixture = (url: URL): Pick<MailboxPageData, "eventsMode" | "eventsPa
   };
 };
 
+/**
+ * The person's list share and seen hints: `?share=0.55` sets the share, `?hints=new` leaves every hint unseen and
+ * `?hints=filters-moved` only the ones named (by default the person saw them all, so no hint covers other cases). What
+ * the fixture server stored wins.
+ */
+export const fixtureWorkspacePreference = (url: URL, stored?: Partial<MailWorkspacePreference>): MailWorkspacePreference => ({
+  listShare: stored?.listShare !== undefined ? stored.listShare : Number(url.searchParams.get("share")) || null,
+  seenHints:
+    stored?.seenHints ??
+    MAIL_WORKSPACE_HINT_IDS.filter((id) => {
+      const unseen = url.searchParams.get("hints");
+      return unseen !== "new" && !unseen?.split(",").includes(id);
+    }),
+});
+
 /** URL state is resolved for every SSR request and every in-place workspace API read. */
-export function mailboxData(url: URL): MailboxPageData {
+export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>): MailboxPageData {
   const variant = fixturePermission(url);
   const permission = variant === "assigned-only" ? "write" : variant;
   const search = resolveMailSearchRoute(url);
@@ -411,11 +522,8 @@ export function mailboxData(url: URL): MailboxPageData {
   const selectedConversationId = url.searchParams.get("conversation");
   const selectedMailbox = mailboxes.find((box) => box.id === url.pathname.split("/").at(-1)) ?? mailboxes[0]!;
   return {
-    // Older shell tests pin "list and reader"; the columns view (F2) opts in with ?layout=auto|columns.
-    viewPreference: {
-      large: url.searchParams.get("layout") === "auto" ? "auto" : url.searchParams.get("layout") === "columns" ? "columns" : "split",
-      phone: "compact",
-    },
+    workspacePreference: fixtureWorkspacePreference(url, stored),
+    viewPreference: { large: "auto", phone: "compact" },
     // ?done=19,14 sets today's completed conversations and how many automations completed.
     doneTodayCounts: (() => {
       const [done = 0, automated = 0] = (url.searchParams.get("done") ?? "").split(",").map((value) => Number(value) || 0);
@@ -427,7 +535,7 @@ export function mailboxData(url: URL): MailboxPageData {
     access: { scope: variant === "assigned-only" ? "assigned" : "mailbox", permission },
     initialLiveCursor: "s6t.mail.4",
     folders,
-    identities: [],
+    identities: url.searchParams.has("identity") ? [fixtureIdentity(selectedMailbox.name)] : [],
     scheduledMode,
     scheduledCount: 2,
     scheduledPage: scheduledMode ? { items: [], nextCursor: null, total: 0 } : null,
@@ -448,6 +556,7 @@ export function mailboxData(url: URL): MailboxPageData {
                 revision: 3,
                 attachmentCount: index === 1 ? 1 : 0,
                 bodyPreview: "Invented draft text for the compact mailbox view.",
+                suggestion: false,
                 createdByDisplayName: "Example writer",
                 // Keep relative wording stable while the browser clock advances through hydration.
                 updatedAt: "2026-10-13T04:00:00.000Z",
@@ -495,7 +604,30 @@ export function mailboxData(url: URL): MailboxPageData {
                       ? { ...row, assigneeUserIds: [teamUsers[1]!.id, teamUsers[0]!.id] }
                       : row,
                 )
-              : listRows
+              : // ?drafts=1: a colleague's draft in the first conversation; ?suggestion=1: an untouched suggestion there,
+                // from Gustav or the account named by ?suggestionBy=.
+                url.searchParams.has("drafts") || url.searchParams.has("suggestion")
+                ? listRows.map((row, index) =>
+                    index === 0
+                      ? {
+                          ...row,
+                          drafts: {
+                            count: 1,
+                            editors: [
+                              url.searchParams.has("suggestion")
+                                ? {
+                                    kind: "service_account" as const,
+                                    id: "00000000-0000-4000-8000-0000000000e1",
+                                    displayName: url.searchParams.get("suggestionBy") ?? "Gustav",
+                                  }
+                                : { kind: "user" as const, id: "00000000-0000-4000-8000-0000000000e2", displayName: "Jonas Example" },
+                            ],
+                            suggestedBy: url.searchParams.has("suggestion") ? (url.searchParams.get("suggestionBy") ?? "Gustav") : null,
+                          },
+                        }
+                      : row,
+                  )
+                : listRows
             : listRows.map((row) => ({
                 ...row,
                 id: `${selectedMailbox.id}-${row.id}`,
@@ -579,22 +711,23 @@ export function mailboxData(url: URL): MailboxPageData {
               selectedHeaders: {},
               sourceAvailable: true,
               mailingList: null,
-              remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.test", domain: "example.test" },
+              remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "sender@example.test", domain: "example.test" },
               delivery: null,
               attachments: photosFixture(url.searchParams.get("photos")),
             },
           ]
       : [],
     conversationSummary: selectedConversationId ? summaryFixture(url.searchParams.get("summary")) : null,
-    conversationDrafts: [],
+    conversationDrafts: conversationDraftsFixture(url, selectedConversationId),
     automationTrace: selectedConversationId ? traceFixture(url.searchParams.get("trace")) : [],
     detailError: null,
     collaborationState: selectedConversationId
       ? {
           conversationId: selectedConversationId,
           assignees: url.searchParams.has("team") && selectedConversationId === "Conv01" ? [teamUsers[1]!] : [],
-          // ?work=done opens a conversation that is already done.
-          workStatus: url.searchParams.get("work") === "done" ? "done" : "needs_action",
+          // ?work=done opens a conversation that is already done, ?work=waiting one that waits for a reply.
+          workStatus:
+            url.searchParams.get("work") === "done" ? "done" : url.searchParams.get("work") === "waiting" ? "waiting" : "needs_action",
           snoozedUntil: null,
           revision: 1,
         }
@@ -603,7 +736,7 @@ export function mailboxData(url: URL): MailboxPageData {
     conversationLocalTags: selectedConversationId
       ? { conversationId: selectedConversationId, conversationRevision: 1, tags: localTags.slice(0, 1) }
       : null,
-    comments: [],
+    comments: selectedConversationId && url.searchParams.get("notes") === "1" ? notesFixture(selectedConversationId) : [],
     commentsCursor: null,
     assignableUsers: url.searchParams.has("team") ? teamUsers : [],
     activity: [],
@@ -693,13 +826,16 @@ export default function MailShellFixture(props: {
   source: string;
   locale?: "en" | "de";
   theme: "light" | "dark";
-  workspaceCookieHeader?: string | null;
+  /** The list share and seen hints the fixture server stored for this browser. */
+  storedWorkspace?: Partial<MailWorkspacePreference>;
   /** `?notice=1` until the fixture server stored the person's click on "Got it". */
   focusNoticeOpen?: boolean;
+  /** The request's cookies: Mail's browser preferences, such as the reply box's place, as Mail's SSR page reads them. */
+  cookieHeader?: string | null;
 }) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "en";
-  const data = mailboxData(url);
+  const data = mailboxData(url, props.storedWorkspace);
   return (
     <LocaleProvider locale={locale}>
       <MailWorkspace
@@ -711,15 +847,9 @@ export default function MailShellFixture(props: {
         cloudUrl="https://cloud.example"
         dateConfig={{ locale, timeZone: "UTC" }}
         initialPreferences={{
-          ...readMailWorkspacePreferences(""),
-          detailsOpen: url.searchParams.has("persist-details")
-            ? readMailWorkspacePreferences(props.workspaceCookieHeader).detailsOpen
-            : url.searchParams.get("details") === "1",
-          listCollapsed: url.searchParams.get("list") === "hidden",
-          // A person's own toolbar (`?toolbar=reply,archive`), as the preference cookie stores it.
-          ...(url.searchParams.has("toolbar")
-            ? { toolbarActions: normalizeMailConversationToolbarActions(url.searchParams.get("toolbar")!.split(",")) }
-            : {}),
+          ...readMailWorkspacePreferences(props.cookieHeader ?? ""),
+          // A person who had arranged their own toolbar before Mail v5 (`?toolbar=reply,archive`).
+          toolbarCustomized: url.searchParams.has("toolbar"),
         }}
         initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
         initialTheme={props.theme}

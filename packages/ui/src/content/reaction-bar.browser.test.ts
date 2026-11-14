@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -342,7 +342,7 @@ describe("ReactionBar in the browser", () => {
       );
     expect(await add.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
     const before = await boxes();
-    await chip(page).hover();
+    await hoverInPlace(chip(page));
     expect(await add.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
     expect(await boxes()).toEqual(before);
     await page.locator(".k2b-reaction-bar__add-button").evaluate((element) => element.setAttribute("aria-expanded", "true"));

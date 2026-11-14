@@ -728,7 +728,7 @@ CREATE TABLE mail.conversation_messages (
     "position" bigint NOT NULL,
     added_by text DEFAULT 'heuristic'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT conversation_messages_added_by_check CHECK ((added_by = ANY (ARRAY['provider'::text, 'headers'::text, 'heuristic'::text, 'manual'::text, 'outbox'::text]))),
+    CONSTRAINT conversation_messages_added_by_check CHECK ((added_by = ANY (ARRAY['provider'::text, 'headers'::text, 'heuristic'::text, 'manual'::text, 'outbox'::text, 'list'::text]))),
     CONSTRAINT conversation_messages_position_check CHECK (("position" >= 0))
 );
 
@@ -959,6 +959,8 @@ CREATE TABLE mail.draft_attachments (
     "position" integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     removed_at timestamp with time zone,
+    forwarded_source_message_id uuid,
+    copied_source_message_id uuid,
     CONSTRAINT draft_attachments_byte_length_check CHECK ((byte_length >= 0)),
     CONSTRAINT draft_attachments_content_hash_check CHECK ((char_length(content_hash) = 64)),
     CONSTRAINT draft_attachments_content_type_check CHECK (((char_length(content_type) >= 1) AND (char_length(content_type) <= 255))),
@@ -1102,6 +1104,11 @@ CREATE INDEX draft_recovery_copies_unresolved_idx ON mail.draft_recovery_copies 
 
 -- mail.drafts -------------------------------------------------------------
 
+CREATE TABLE mail.draft_document_log_policy (
+    log_id text PRIMARY KEY,
+    recovered_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE mail.drafts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     short_id text NOT NULL,
@@ -1110,12 +1117,17 @@ CREATE TABLE mail.drafts (
     sender_identity_id uuid NOT NULL,
     author_kind text NOT NULL,
     author_id uuid,
+    adopted_at timestamp with time zone,
+    consolidated_count integer NOT NULL DEFAULT 0 CHECK (consolidated_count >= 0),
+    content_edited_at timestamp with time zone,
     to_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     cc_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     bcc_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     subject text DEFAULT ''::text NOT NULL,
     body_markdown text DEFAULT ''::text NOT NULL,
     revision bigint DEFAULT 1 NOT NULL,
+    doc_idle_through bigint,
+    edit_mode text NOT NULL DEFAULT 'lock' CHECK (edit_mode IN ('lock', 'shared')),
     state text DEFAULT 'draft'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1135,6 +1147,9 @@ CREATE TABLE mail.drafts (
     derivation_request_hash text,
     materialization_key text,
     materialization_request_hash text,
+    quote_source boolean DEFAULT false NOT NULL,
+    quote_locale text DEFAULT 'en' NOT NULL,
+    quote_time_zone text DEFAULT 'UTC' NOT NULL,
     CONSTRAINT drafts_actor_shape_check CHECK ((((author_kind = 'system'::text) AND (author_id IS NULL)) OR ((author_kind <> 'system'::text) AND (author_id IS NOT NULL)))),
     CONSTRAINT drafts_author_kind_check CHECK ((author_kind = ANY (ARRAY['user'::text, 'service_account'::text, 'workflow'::text, 'system'::text]))),
     CONSTRAINT drafts_automatic_reply_origin_check CHECK (((delivery_class <> 'automatic_reply'::text) OR (origin = 'workflow'::text))),
@@ -1170,11 +1185,19 @@ CREATE INDEX drafts_mailbox_state_idx ON mail.drafts USING btree (mailbox_id, st
 
 CREATE UNIQUE INDEX drafts_materialization_idempotency_idx ON mail.drafts USING btree (mailbox_id, author_kind, author_id, materialization_key) WHERE (materialization_key IS NOT NULL);
 
+CREATE INDEX drafts_open_conversation_idx ON mail.drafts USING btree (mailbox_id, conversation_id) WHERE ((origin = 'user'::text) AND (state = 'draft'::text) AND (conversation_id IS NOT NULL));
+
+CREATE UNIQUE INDEX drafts_one_open_reply_idx ON mail.drafts (conversation_id)
+WHERE origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending');
+
 CREATE INDEX drafts_origin_state_idx ON mail.drafts USING btree (mailbox_id, origin, state, updated_at DESC);
 
 CREATE UNIQUE INDEX drafts_short_id_idx ON mail.drafts USING btree (short_id);
 
 CREATE INDEX drafts_source_message_idx ON mail.drafts USING btree (source_message_id) WHERE (source_message_id IS NOT NULL);
+
+CREATE INDEX drafts_shared_derived_message_idx ON mail.drafts (derived_from_message_id)
+WHERE edit_mode = 'shared' AND state = 'draft';
 
 CREATE TRIGGER drafts_touch_updated_at BEFORE UPDATE ON mail.drafts FOR EACH ROW EXECUTE FUNCTION mail.touch_updated_at();
 
@@ -1216,6 +1239,7 @@ CREATE TABLE mail.folders (
     body_cursor jsonb DEFAULT '{}'::jsonb NOT NULL,
     attachment_cursor jsonb DEFAULT '{}'::jsonb NOT NULL,
     last_reconciled_at timestamp with time zone,
+    last_sync_snapshot jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     discovery_state text DEFAULT 'active'::text NOT NULL,
@@ -1421,9 +1445,12 @@ CREATE TABLE mail.mailboxes (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     automatic_reply_management_permission text DEFAULT 'admin'::text NOT NULL,
     compose_safety jsonb DEFAULT '{"internalDomains": [], "largeRecipientThreshold": 20}'::jsonb NOT NULL,
+    draft_edit_mode text DEFAULT 'shared'::text NOT NULL,
+    draft_edit_mode_explicit boolean DEFAULT false NOT NULL,
     calendar_space_id uuid,
     CONSTRAINT mailboxes_automatic_reply_management_permission_check CHECK ((automatic_reply_management_permission = ANY (ARRAY['write'::text, 'admin'::text]))),
     CONSTRAINT mailboxes_compose_safety_check CHECK ((jsonb_typeof(compose_safety) = 'object'::text)),
+    CONSTRAINT mailboxes_draft_edit_mode_check CHECK (draft_edit_mode IN ('lock', 'shared')),
     CONSTRAINT mailboxes_description_check CHECK (((description IS NULL) OR (char_length(description) <= 2000))),
     CONSTRAINT mailboxes_health_check CHECK ((health = ANY (ARRAY['disconnected'::text, 'verifying'::text, 'bootstrapping'::text, 'active'::text, 'auth_required'::text, 'degraded'::text, 'reconnecting'::text, 'connection_required'::text, 'paused'::text]))),
     CONSTRAINT mailboxes_health_reason_check CHECK (((health_reason IS NULL) OR (char_length(health_reason) <= 1000))),
@@ -2363,7 +2390,8 @@ CREATE INDEX sync_runs_resource_idx ON mail.sync_runs USING btree (remote_resour
 
 CREATE INDEX sync_runs_running_idx ON mail.sync_runs USING btree (remote_resource_id, state) WHERE (state = 'running'::text);
 
-CREATE INDEX sync_runs_terminal_retention_idx ON mail.sync_runs USING btree (COALESCE(finished_at, started_at), id) WHERE (state <> 'running'::text);
+CREATE INDEX sync_runs_completed_retention_idx ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state = 'completed';
+CREATE INDEX sync_runs_error_retention_idx ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state NOT IN ('running', 'completed');
 
 -- mail.workflow_profile ---------------------------------------------------
 
@@ -2878,6 +2906,7 @@ CREATE TABLE IF NOT EXISTS mail.automation_log (
   UNIQUE (run_id, conversation_id)
 );
 CREATE INDEX IF NOT EXISTS automation_log_mailbox_date_idx ON mail.automation_log (mailbox_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS automation_log_retention_idx ON mail.automation_log (created_at, id);
 CREATE INDEX IF NOT EXISTS automation_log_conversation_date_idx ON mail.automation_log (conversation_id, created_at DESC, id DESC);
 -- A person changing assignment invalidates provenance even if they restore the same person later.
 CREATE TABLE IF NOT EXISTS mail.automation_assignment (
@@ -2918,6 +2947,7 @@ CREATE TABLE IF NOT EXISTS mail.workflow_effect_order (
 CREATE INDEX IF NOT EXISTS workflow_effect_order_message_position_idx
     ON mail.workflow_effect_order (remote_message_ref_id, position);
 CREATE INDEX IF NOT EXISTS workflow_effect_order_retention_idx ON mail.workflow_effect_order (created_at, event_id);
+CREATE INDEX IF NOT EXISTS workflow_effect_order_expiry_idx ON mail.workflow_effect_order (expires_at, event_id);
 
 CREATE TABLE IF NOT EXISTS mail.workflow_effect_claim (
     remote_message_ref_id uuid NOT NULL REFERENCES mail.remote_message_refs(id) ON DELETE CASCADE,
@@ -2995,3 +3025,12 @@ CREATE OR REPLACE TRIGGER placements_invalidate_automation_state
 AFTER UPDATE OF flags, keywords, deleted_at ON mail.message_placements FOR EACH ROW
 WHEN (OLD.flags IS DISTINCT FROM NEW.flags OR OLD.keywords IS DISTINCT FROM NEW.keywords OR OLD.deleted_at IS DISTINCT FROM NEW.deleted_at)
 EXECUTE FUNCTION mail.invalidate_automation_observed_state();
+
+CREATE TABLE mail.draft_suggestion_requests (
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    service_account_id uuid NOT NULL,
+    idempotency_key uuid NOT NULL,
+    request_hash text NOT NULL,
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    PRIMARY KEY (mailbox_id, service_account_id, idempotency_key)
+);

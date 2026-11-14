@@ -1107,10 +1107,10 @@ export const UpdateViewSchema = z.object({
 // ── Documents ─────────────────────────────────────────────────────────────
 export const DocumentHtmlContentSchema = z
   .object({
-    body: z.string().trim().min(1).max(200_000),
-    header: z.string().trim().min(1).max(50_000).optional(),
-    footer: z.string().trim().min(1).max(50_000).optional(),
-    css: z.string().trim().min(1).max(50_000).optional(),
+    body: z.string().trim().min(1).max(200_000).describe("Liquid HTML body from frozen rows."),
+    header: z.string().trim().min(1).max(50_000).optional().describe("Optional Liquid HTML header."),
+    footer: z.string().trim().min(1).max(50_000).optional().describe("Optional Liquid HTML footer."),
+    css: z.string().trim().min(1).max(50_000).optional().describe("Optional document CSS."),
   })
   .strict();
 const HtmlDocumentTemplateRendererSchema = DocumentHtmlContentSchema.extend({

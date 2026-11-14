@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type { AiWireEvent } from "../protocol";
 import type { AiStoredMessage } from "../types";
+import { truncatedAnswer } from "./stop-notice.test-fixture";
 
 // Whether the live turn moves while it reconnects depends on real layout, fonts and themes, so this
 // measures the real timeline in a browser.
@@ -83,6 +85,37 @@ afterAll(async () => {
 });
 
 const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+
+test("silent truncation survives history reload and offers continuation at desktop and phone widths", async () => {
+  mkdirSync("/tmp/ai-max-tokens-shots", { recursive: true });
+  for (const width of [1440, 390]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const page = await context.newPage();
+    const loadHistory = async () => {
+      await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "fictional-model", providerModel: "fictional-model", blocks: [] });
+      await emit(page, { ...base, seq: 2, type: "turn_finished", status: "completed", error: null, messages: [truncatedAnswer] });
+    };
+    try {
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await loadHistory();
+      await page.reload();
+      await loadHistory();
+      const notice = page.locator(".ai-turn__notice");
+      expect(await notice.textContent()).toContain("Die Antwort wurde abgeschnitten");
+      expect(await notice.textContent()).toContain("Das Nachdenken hat den größten Teil davon verbraucht.");
+      expect(await notice.locator("button").count()).toBe(1);
+      await page.screenshot({ path: `/tmp/ai-max-tokens-shots/truncated-answer-light-${width}.png`, fullPage: true });
+      await page.getByRole("button", { name: "Weiterschreiben" }).click();
+      expect(await page.evaluate(() => (window as unknown as { continued: string[] }).continued)).toEqual([
+        "Mach an der Stelle weiter, an der du aufgehört hast.",
+      ]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    } finally {
+      await context.close();
+    }
+  }
+}, 60_000);
 const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 /**
  * Waits until no transition runs in a subtree. Reduced motion shortens every transition to 0.01 ms rather than removing

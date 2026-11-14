@@ -1,5 +1,6 @@
 // Messages between a Cloud page that mounts an HTML app and the app frame's prelude.
 import type { RuntimeContext } from "../runtime/cloud";
+import type { ChartHashes } from "./chart-parts";
 
 /** Embedded by the composer as JSON and read once by the prelude. */
 export type FrameConfig = {
@@ -8,8 +9,8 @@ export type FrameConfig = {
   hash: string;
   /** App JavaScript modules by path; `entries` load in this order. */
   modules: Record<string, string>;
-  /** Bundled renderer source, loaded from a blob without opening the network. */
-  chartModule: string;
+  /** Pins host-held parts; renderer source never enters srcdoc. */
+  chartHashes: ChartHashes;
   entries: string[];
   /** Upper bound for waiting on pending `cloud.*` calls before `ready`. */
   readyBudgetMs: number;
@@ -42,6 +43,7 @@ export type HostToFrame =
 /** `cloud.*` methods an app frame may call. The host binds app, viewer and data scope from the mount, never from arguments. */
 export const FRAME_METHODS: ReadonlySet<string> = new Set([
   "runtime.chunk",
+  "runtime.chart",
   "storage",
   "database",
   "pdf",

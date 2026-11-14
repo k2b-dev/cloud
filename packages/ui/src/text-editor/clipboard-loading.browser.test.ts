@@ -82,6 +82,7 @@ for (const outcome of [
   "pending-selection",
   "apply",
   "peer-edit",
+  "typing",
   "selection-change",
   "programmatic-selection",
   "focus-change",
@@ -122,6 +123,7 @@ for (const outcome of [
       await request;
       expect(await page.evaluate(() => window.sharedEditorHarness.text())).not.toContain("pasted");
       if (outcome === "peer-edit") await page.evaluate(() => window.sharedEditorHarness.remote(0, "peer "));
+      if (outcome === "typing") await page.keyboard.type("later");
       if (outcome === "selection-change") await page.keyboard.press("Home");
       if (outcome === "programmatic-selection") await page.evaluate(() => window.sharedEditorHarness.selection(0));
       if (outcome === "focus-change")
@@ -134,7 +136,7 @@ for (const outcome of [
       if (outcome === "disposed") await page.evaluate(() => window.sharedEditorHarness.load("Replacement"));
       if (outcome === "read-only") await page.evaluate(() => window.sharedEditorHarness.readOnly(true));
       release();
-      if (outcome === "apply" || outcome === "pending-selection") {
+      if (outcome === "apply" || outcome === "pending-selection" || outcome === "peer-edit" || outcome === "typing") {
         await page.waitForFunction(
           () => window.sharedEditorHarness.text().includes("pasted") || window.sharedEditorHarness.errors().length > 0,
         );
@@ -154,11 +156,11 @@ for (const outcome of [
         expect(afterPaste.errors, JSON.stringify({ beforePaste, afterPaste })).toEqual([]);
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("Paper**pasted**");
         expect(await page.evaluate(() => window.sharedEditorHarness.errors())).toEqual([]);
+        if (outcome === "typing") expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("Paper**pasted**later");
       } else {
         await page.waitForFunction(() => window.sharedEditorHarness.errors().includes("recovery:pasted"));
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).not.toContain("pasted");
         if (outcome === "disposed") expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe("Replacement");
-        if (outcome === "peer-edit") expect(await page.evaluate(() => window.sharedEditorHarness.text())).toStartWith("peer ");
       }
       expect(errors).toEqual([]);
     } finally {
@@ -168,7 +170,7 @@ for (const outcome of [
   });
 }
 
-test("plain paste does not request the HTML sanitizer", async () => {
+test("focus preloads the HTML sanitizer before plain paste", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const requests: string[] = [];
@@ -179,7 +181,8 @@ test("plain paste does not request the HTML sanitizer", async () => {
     await page.keyboard.press("End");
     await paste(page, "");
     expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("Paperpasted");
-    expect(requests).not.toContain(sanitizerPath);
+    await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-ste-cell"));
+    expect(requests).toContain(sanitizerPath);
   } finally {
     await context.close();
   }

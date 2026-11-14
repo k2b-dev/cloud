@@ -6,6 +6,7 @@ import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
   cursorZoneStateField,
+  revealedSelection,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
 import { parseSizedMarkdownImage } from "./lib/markdown-image";
@@ -127,7 +128,7 @@ const findMarkdownImages = (state: EditorState, options: MarkdownUrlOptions): Cu
   const decorations: Range<Decoration>[] = [];
   const atomicDecorations: Range<Decoration>[] = [];
   const ranges: { from: number; to: number }[] = [];
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
 
   syntaxTree(state).iterate({
     enter: (node) => {

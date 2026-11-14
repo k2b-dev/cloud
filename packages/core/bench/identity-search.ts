@@ -2,7 +2,6 @@ import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { connect, createServer, type Socket } from "node:net";
 import { cpus, loadavg } from "node:os";
-import { redis, sql } from "@k2b/cloud";
 import { RedisClient, SQL } from "bun";
 import { Hono } from "hono";
 import { bindProcessApplicationId } from "../../cloud/src/_internal/process-identity";
@@ -99,6 +98,7 @@ meteredUrl.port = String(address.port);
 process.env.DATABASE_URL = metered ? meteredUrl.href : source.href;
 const { initializePlatform } = await import("@k2b/cloud/start");
 await initializePlatform({ appId: "core", source: "env" });
+const { redis, sql } = await import("@k2b/cloud");
 const telemetry = new RedisClient(process.env.REDIS_URL!);
 const redisSnapshot = async (): Promise<Counts> => {
   const raw = String(await telemetry.send("INFO", ["commandstats"]));

@@ -126,8 +126,6 @@ packages/ui/src/styles/editors-parity.css | literal | ease-out
 packages/ui/src/styles/editors-parity.css | literal | ease-out
 packages/ui/src/styles/editors-parity.css | literal | ease-out
 packages/ui/src/styles/feedback-parity.css | layout | height
-packages/ui/src/styles/feedback-parity.css | layout | width
-packages/ui/src/styles/feedback-parity.css | literal | 1.4s
 packages/ui/src/styles/feedback-parity.css | literal | 110ms
 packages/ui/src/styles/feedback-parity.css | literal | 110ms
 packages/ui/src/styles/feedback-parity.css | literal | 110ms
@@ -138,27 +136,18 @@ packages/ui/src/styles/feedback-parity.css | literal | 150ms
 packages/ui/src/styles/feedback-parity.css | literal | 150ms
 packages/ui/src/styles/feedback-parity.css | literal | 150ms
 packages/ui/src/styles/feedback-parity.css | literal | 150ms
-packages/ui/src/styles/feedback-parity.css | literal | 180ms
-packages/ui/src/styles/feedback-parity.css | literal | 180ms
-packages/ui/src/styles/feedback-parity.css | literal | 180ms
 packages/ui/src/styles/feedback-parity.css | literal | 2.4s
-packages/ui/src/styles/feedback-parity.css | literal | 200ms
 packages/ui/src/styles/feedback-parity.css | literal | 200ms
 packages/ui/src/styles/feedback-parity.css | literal | 200ms
 packages/ui/src/styles/feedback-parity.css | literal | 2s
 packages/ui/src/styles/feedback-parity.css | literal | 900ms
 packages/ui/src/styles/feedback-parity.css | literal | 900ms
-packages/ui/src/styles/feedback-parity.css | literal | ease-in-out
 packages/ui/src/styles/feedback-parity.css | literal | ease-out
 packages/ui/src/styles/feedback-parity.css | literal | ease-out
 packages/ui/src/styles/feedback-parity.css | literal | ease-out
 packages/ui/src/styles/feedback-parity.css | literal | ease-out
 packages/ui/src/styles/feedback-parity.css | literal | ease-out
 packages/ui/src/styles/feedback-parity.css | literal | ease-out
-packages/ui/src/styles/feedback-parity.css | literal | ease-out
-packages/ui/src/styles/feedback-parity.css | literal | ease-out
-packages/ui/src/styles/feedback-parity.css | literal | ease-out
-packages/ui/src/styles/feedback-parity.css | literal | linear
 packages/ui/src/styles/feedback-parity.css | literal | linear
 packages/ui/src/styles/feedback-parity.css | literal | linear
 packages/ui/src/styles/feedback-parity.css | literal | linear
@@ -166,9 +155,6 @@ packages/ui/src/styles/index.css | literal | .15s
 packages/ui/src/styles/index.css | literal | .2s
 packages/ui/src/styles/index.css | literal | 100ms
 packages/ui/src/styles/index.css | literal | 100ms
-packages/ui/src/styles/index.css | literal | 120ms
-packages/ui/src/styles/index.css | literal | 120ms
-packages/ui/src/styles/index.css | literal | 120ms
 packages/ui/src/styles/index.css | literal | 120ms
 packages/ui/src/styles/index.css | literal | 120ms
 packages/ui/src/styles/index.css | literal | 120ms
@@ -238,10 +224,6 @@ packages/ui/src/styles/index.css | literal | 360ms
 packages/ui/src/styles/index.css | literal | 600ms
 packages/ui/src/styles/index.css | literal | 900ms
 packages/ui/src/styles/index.css | literal | cubic-bezier(0.34, 1.56, 0.64, 1)
-packages/ui/src/styles/index.css | literal | ease
-packages/ui/src/styles/index.css | literal | ease
-packages/ui/src/styles/index.css | literal | ease
-packages/ui/src/styles/index.css | literal | ease
 packages/ui/src/styles/index.css | literal | ease
 packages/ui/src/styles/index.css | literal | ease
 packages/ui/src/styles/index.css | literal | ease

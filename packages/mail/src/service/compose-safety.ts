@@ -2,7 +2,7 @@ import { domainToASCII } from "node:url";
 import { sql } from "@k2b/cloud";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
-import type { DraftSendReview } from "../contracts";
+import type { DraftQuoteSource, DraftSendReview } from "../contracts";
 import {
   type ComposeSafetyApproval,
   type ComposeSafetyConfig,
@@ -27,7 +27,9 @@ type SafetyDraft = {
   to_addresses: MailAddress[] | string;
   cc_addresses: MailAddress[] | string;
   bcc_addresses: MailAddress[] | string;
+  subject: string;
   body_markdown: string;
+  quote_source: DraftQuoteSource | null;
   body_format: "plain" | "markdown";
   attachment_names: string[] | null;
   origin: "user" | "workflow";
@@ -37,6 +39,8 @@ const safetyMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      missingSubjectTitle: "No subject",
+      missingSubjectDescription: "The message has no subject. Send anyway?",
       missingAttachmentTitle: "No attachment added",
       missingAttachmentDescription: "The message mentions an attachment, but no file is attached.",
       recipientCount: ({ count }: { count: number }) => `${count} recipients`,
@@ -51,6 +55,8 @@ const safetyMessages = i18n.define({
       unrenderedTemplateDescription: "The message contains template placeholders such as {{ sender.email }} that are sent as literal text.",
     },
     de: {
+      missingSubjectTitle: "Kein Betreff",
+      missingSubjectDescription: "Die E-Mail hat keinen Betreff. Trotzdem senden?",
       missingAttachmentTitle: "Kein Anhang hinzugefügt",
       missingAttachmentDescription: "Die E-Mail erwähnt einen Anhang, enthält aber keine Datei.",
       recipientCount: ({ count }) => `${count} Empfänger`,
@@ -75,12 +81,14 @@ export type ComposeSafetySource = {
   to: MailAddress[];
   cc: MailAddress[];
   bcc: MailAddress[];
+  subject: string;
   body: string;
   format: "plain" | "markdown";
   attachmentNames: string[];
   config: ComposeSafetyConfig;
   /** Who wrote the draft. A workflow draft has no composer to review warnings. */
   origin: "user" | "workflow";
+  quoteSource?: DraftQuoteSource | null;
 };
 
 const parseAddresses = (value: MailAddress[] | string): MailAddress[] =>
@@ -153,6 +161,13 @@ export const evaluateComposeSafety = (source: ComposeSafetySource, locale = "en"
   const t = safetyMessages.resolve([locale]).t;
   const warnings: ComposeSafetyWarning[] = [];
   const recipients = uniqueRecipients(source);
+  if (!source.subject.trim()) {
+    warnings.push({
+      id: "missing_subject",
+      title: t.missingSubjectTitle,
+      description: t.missingSubjectDescription,
+    });
+  }
   if (source.attachmentNames.length === 0 && mentionsAttachment(source.body)) {
     warnings.push({
       id: "missing_attachment",
@@ -205,12 +220,14 @@ export const evaluateComposeSafety = (source: ComposeSafetySource, locale = "en"
   }
   const fingerprint = sha256Json({
     version: 1,
+    ...(source.quoteSource ? { quoteSource: source.quoteSource } : {}),
     draftId: source.draftId,
     revision: source.revision,
     intent: source.intent,
     to: source.to,
     cc: source.cc,
     bcc: source.bcc,
+    subject: source.subject,
     body: source.body,
     format: source.format,
     attachmentNames: [...source.attachmentNames].sort(),
@@ -229,7 +246,8 @@ const loadSafetySource = async (params: { db: SQL; mailboxId: string; draftId: s
       draft.to_addresses,
       draft.cc_addresses,
       draft.bcc_addresses,
-      draft.body_markdown,
+      draft.subject,
+      draft.body_markdown, CASE WHEN draft.quote_source THEN jsonb_build_object('locale', draft.quote_locale, 'timeZone', draft.quote_time_zone) ELSE NULL END AS quote_source,
       draft.body_format,
       draft.origin,
       COALESCE(
@@ -261,7 +279,9 @@ const loadSafetySource = async (params: { db: SQL; mailboxId: string; draftId: s
     to: parseAddresses(draft.to_addresses),
     cc: parseAddresses(draft.cc_addresses),
     bcc: parseAddresses(draft.bcc_addresses),
+    subject: draft.subject,
     body: draft.body_markdown,
+    quoteSource: draft.quote_source,
     format: draft.body_format,
     attachmentNames: draft.attachment_names ?? [],
     config,
@@ -288,6 +308,7 @@ export const reviewDraftComposeSafety = async (params: {
       draftId: params.draftId,
       expectedRevision: params.expectedRevision,
       actor: actorRefFromRequest(params.context),
+      context: params.context,
     });
     if (!content.ok) return content;
     return ok({ ...evaluateComposeSafety(source.data, params.locale), contentHash: content.data.contentHash });

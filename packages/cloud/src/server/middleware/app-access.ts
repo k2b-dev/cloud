@@ -9,6 +9,7 @@ import type { AppMeta } from "../../contracts/app";
 import { AppAccessUnavailableError, appAccessAuthority, canUseApp } from "../../services/app-access";
 import { recordAppAccessDenied } from "../../services/app-access-metrics";
 import { createLoginRedirectUrl } from "../../shared/redirect";
+import { userFromActor } from "../actor";
 import { type AuthContext, auth, loadAuthenticatedActor, type RequestAuthority } from "./auth";
 
 type AccessApp = Pick<AppMeta, "id" | "access"> & { name?: string };
@@ -100,7 +101,8 @@ type WatchOptions = {
   check: () => Promise<boolean>;
   denied: () => void;
   subscribe: (changed: () => void) => () => void;
-  intervalMs?: number;
+  intervalMs?: number | false;
+  checkInitially?: boolean;
   timeoutMs?: number;
 };
 
@@ -144,21 +146,73 @@ export const watchAppAccess = (options: WatchOptions): (() => void) => {
       }
     }
   };
-  const timer = setInterval(() => void check(), options.intervalMs ?? APP_ACCESS_RECHECK_MS);
-  timer.unref?.();
+  const timer = options.intervalMs === false ? undefined : setInterval(() => void check(), options.intervalMs ?? APP_ACCESS_RECHECK_MS);
+  timer?.unref?.();
   unsubscribe = options.subscribe(() => void check());
   // Close the race between the handshake's check and subscribing to changes.
-  void check();
+  if (options.checkInitially !== false) void check();
   return stop;
 };
 
-const subscribeApp = async (appId: string): Promise<(changed: () => void) => () => void> => {
+const subscribeApp = async (
+  appId: string,
+  subject?: import("../../events/app-access").IdentityAccessSubject,
+): Promise<(changed: () => void) => () => void> => {
   const { subscribeAppAccessChanged } = await import("../../events/app-access");
-  return (changed) => subscribeAppAccessChanged(appId, changed);
+  return (changed) => subscribeAppAccessChanged(appId, changed, subject);
 };
 
 /** Used by shared live updates and custom sockets; close always releases the watcher. */
-export const guardAppAccessSocket = async (c: Context<AuthContext>, appId: string, events: WSEvents): Promise<WSEvents> => {
+/** A known credential deadline is enforced locally even while Core cannot publish. */
+export const watchCredentialExpiry = (expiresAt: number, expired: () => void): (() => void) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  const arm = () => {
+    if (stopped) return;
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) {
+      expired();
+      return;
+    }
+    timer = setTimeout(arm, Math.min(remaining, 2_147_483_647));
+    timer.unref?.();
+  };
+  arm();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
+};
+/** Earliest known account or credential deadline; enforced locally without SQL. */
+export const credentialExpiresAt = (c: Context<AuthContext>): number | undefined => {
+  const proof = c.get("credentialProof");
+  const actor = c.get("actor");
+  const deadlines = [
+    proof?.kind === "session" ? proof.expiresAt : undefined,
+    actor?.kind === "service_account" ? actor.credentialExpiresAt : undefined,
+    userFromActor(actor)?.accountExpires,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map(Date.parse)
+    .concat(proof?.kind === "oauth" && typeof proof.payload.exp === "number" ? [proof.payload.exp * 1_000] : [])
+    .filter(Number.isFinite);
+  return deadlines.length ? Math.min(...deadlines) : undefined;
+};
+const identitySubject = (c: Context<AuthContext>) => {
+  const proof = c.get("credentialProof");
+  const actor = c.get("actor");
+  return {
+    userId: userFromActor(actor)?.id,
+    serviceAccountId: actor?.kind === "service_account" ? actor.serviceAccount.id : undefined,
+    sid: proof?.kind === "session" ? proof.sid : undefined,
+  };
+};
+export const guardAppAccessSocket = async (
+  c: Context<AuthContext>,
+  appId: string,
+  events: WSEvents,
+  options: { eventOnly?: boolean } = {},
+): Promise<WSEvents> => {
   let app: AccessApp | null;
   try {
     app = await getApp(appId);
@@ -172,8 +226,10 @@ export const guardAppAccessSocket = async (c: Context<AuthContext>, appId: strin
     return { onOpen: (_event, ws) => ws.close(1008, "app_access_denied") };
   }
   const revalidate = appAccessRevalidator(c, app);
-  const subscribe = await subscribeApp(appId);
+  const subscribe = await subscribeApp(appId, identitySubject(c));
   let stop: (() => void) | undefined;
+  let stopExpiry = () => {};
+  const expiresAt = credentialExpiresAt(c);
   let denied = false;
   let shutdown = () => {};
   return {
@@ -181,17 +237,28 @@ export const guardAppAccessSocket = async (c: Context<AuthContext>, appId: strin
     onOpen: (event, ws) => {
       shutdown = () => {
         stop?.();
+        stopExpiry();
         connections.delete(shutdown);
         denied = true;
         ws.close(1012, "server_restarting");
       };
       connections.add(shutdown);
+      if (expiresAt !== undefined)
+        stopExpiry = watchCredentialExpiry(expiresAt, () => {
+          denied = true;
+          stop?.();
+          connections.delete(shutdown);
+          ws.close(1008, "SESSION_EXPIRED");
+        });
+      if (denied) return;
       stop = watchAppAccess({
         check: revalidate,
+        ...(options.eventOnly && app.access?.kind !== "resources" ? { intervalMs: false as const } : {}),
         subscribe,
         denied: () => {
           connections.delete(shutdown);
           denied = true;
+          stopExpiry();
           ws.close(1008, "app_access_denied");
         },
       });
@@ -203,11 +270,13 @@ export const guardAppAccessSocket = async (c: Context<AuthContext>, appId: strin
     onClose: (event, ws) => {
       connections.delete(shutdown);
       stop?.();
+      stopExpiry();
       return events.onClose?.(event, ws);
     },
     onError: (event, ws) => {
       connections.delete(shutdown);
       stop?.();
+      stopExpiry();
       ws.close(1011, "app_access_check_failed");
       return events.onError?.(event, ws);
     },
@@ -216,10 +285,12 @@ export const guardAppAccessSocket = async (c: Context<AuthContext>, appId: strin
 
 const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Response): Promise<Response> => {
   if (!response.body) return response;
-  const subscribe = await subscribeApp(app.id);
+  const subscribe = await subscribeApp(app.id, identitySubject(c));
   const reader = response.body.getReader();
   let ended = false;
   let stop = () => {};
+  let stopExpiry = () => {};
+  const expiresAt = credentialExpiresAt(c);
   let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
   const abort = () => {
     if (!ended) streamController?.close();
@@ -229,6 +300,7 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
     if (ended) return;
     ended = true;
     stop();
+    stopExpiry();
     connections.delete(abort);
     c.req.raw.signal.removeEventListener("abort", abort);
     void reader.cancel().catch(() => {});
@@ -238,6 +310,7 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
       streamController = controller;
       connections.add(abort);
       stop = watchAppAccess({
+        ...(c.get("appAccessGuard")?.eventOnly && app.access?.kind !== "resources" ? { intervalMs: false as const } : {}),
         check: appAccessRevalidator(c, app),
         subscribe,
         denied: () => {
@@ -247,6 +320,8 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
           finish();
         },
       });
+      if (expiresAt !== undefined) stopExpiry = watchCredentialExpiry(expiresAt, abort);
+      if (ended) return;
       c.req.raw.signal.addEventListener("abort", abort, { once: true });
       if (c.req.raw.signal.aborted) {
         controller.close();

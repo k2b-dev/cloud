@@ -229,12 +229,15 @@ runtime("preparePdfImage", () => {
     ],
   ] as const)("handles worker %s without returning partial variants", async (_name, output, code) => {
     spawn.mockImplementationOnce((_worker, _name, input) =>
-      Bun.spawn([process.execPath, "--no-env-file", "-e", `process.stdout.write(${JSON.stringify(output)})`], {
-        stdin: new Blob([input]),
-        stdout: "pipe",
-        stderr: "ignore",
-        env: { PATH: process.env.PATH },
-      }),
+      Object.assign(
+        Bun.spawn([process.execPath, "--no-env-file", "-e", `process.stdout.write(${JSON.stringify(output)})`], {
+          stdin: new Blob([input]),
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { PATH: process.env.PATH },
+        }),
+        { diagnostics: Promise.resolve("") },
+      ),
     );
     expect(await preparePdfImage({ data: webp, boxes: [box], maxBytes: cap })).toEqual({ ok: false, code });
   });
@@ -504,7 +507,7 @@ describe("image input frame protocol", () => {
 
   test.each([1, 7, 4096])("fills the exact declared input length across reads of %i bytes", (size) => {
     const frame = readImageFrame(read(`${line(header)}abc`, size));
-    expect(frame.header).toEqual(header);
+    expect(frame.header).toEqual({ ...header, encoding: "auto" });
     expect(frame.body).toBeInstanceOf(Uint8Array);
     expect(frame.body.buffer.byteLength).toBe(3);
     expect(new TextDecoder().decode(frame.body)).toBe("abc");

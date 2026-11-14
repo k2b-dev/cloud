@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, expect } from "bun:test";
 import { redis, sql } from "@k2b/cloud";
+import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { accounts, serviceAccountCredentials, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
+import { chatCapabilities } from "../capabilities";
 import "../../../../scripts/fixtures/authorization-preload";
 import { migrate } from "../migrate";
 import type { ChatRequestContext } from "../request-context";
@@ -117,6 +119,9 @@ export const messageFixtures = () => {
     );
     if (keys.length) await redis.send("DEL", keys);
   };
+  beforeAll(() => {
+    createAppEventTestHarness("chat", chatCapabilities);
+  });
   beforeAll(migrate);
   afterAll(async () => {
     for (const shortId of chats) {
@@ -125,6 +130,7 @@ export const messageFixtures = () => {
       >`SELECT access_id FROM chat.conversation_access ca JOIN chat.conversations c ON c.id = ca.conversation_id WHERE c.short_id = ${shortId}`;
       accessIds.push(...rows.map((row) => row.access_id));
       await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND (ordering_key IN (${"c:" + shortId}, ${"l:" + shortId}) OR ordering_key LIKE ${"t:" + shortId + ":%"} OR ordering_key LIKE ${"s:" + shortId + ":%"})`;
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND kind = 'event' AND payload->'place'->>'id' = ${shortId}`;
       await sql`DELETE FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ${shortId}`;
       await sql`DELETE FROM chat.conversations WHERE short_id = ${shortId}`;
     }

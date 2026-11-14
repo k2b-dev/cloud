@@ -65,30 +65,65 @@ keep the provider's; see
 
 ## Presentation
 
-The chooser is a compact file dialog of one fixed size: 680 × 480 px on
-wider screens, a full-height sheet below 48 rem. Moving between sources,
-folders, and states never resizes or moves it.
+The chooser is a file dialog of one fixed size: 680 × 480 px from 48 rem,
+1040 × 640 px with a preview column from 75 rem, and a full-height sheet
+below 48 rem. Moving between sources, folders, and states never resizes or
+moves it.
 
 - **Sources on the left:** **This device** first, then every provider in
-  name order, as 36 px rows on the dialog surface. The open source carries
+  name order, as 36 px rows on the dialog surface. A provider shows the
+  source name and icon it declares, such as **Scanner**, or else its
+  application's name and icon. The open source carries
   the selected edge of the edge rule: a light app-blue fill with a 2 px edge.
   While the catalog loads, two grey loading rows hold the providers' place; a
   failed load leaves **Try again** in the same height. On phones the sources
   are a row of tabs under the title.
-- **This device opens first** with a drop zone that fills the content. A
-  click on the zone or on **This device** opens the device's dialog in the
-  same click; arrow keys in the sources only move focus.
-- **Inside a provider,** a toolbar row with **Up**, the path from the
-  provider's name, and the name filter sits on the first source's line. On
-  phones the filter hides behind a button. The list is a `FileGrid` in
-  `layout="list"` with `checks`: a check box (a circle for one file), a
-  neutral tile, the name with up to three provider tags, and below it
-  "1.2 MB · 28/10/2026" or "Folder · date". Folders show a chevron and open
-  with one click; a click on a file toggles it, a double click or Enter adds
-  it. Only icons, no thumbnails. Sorting follows the provider.
+- **It opens where the person was last:** in the provider folder of their
+  last choice, or on **This device**, on every device, because Cloud keeps
+  the place per person. The rows of that folder take focus once they show.
+  While the place loads, the content stays empty, with loading rows after
+  200 ms, so **This device** never flashes first. A folder that is gone
+  opens the provider's root without an error; a provider that is gone
+  leaves **This device** open. The chooser remembers the place the person
+  moved to as it closes, a provider folder or **This device**; closing where
+  it opened keeps the stored place, also when it could not be opened yet.
+- **This device** shows a drop zone that fills the content. A click on the
+  zone or on **This device** opens the device's dialog in the same click;
+  arrow keys in the sources only move focus.
+- **Inside a provider,** a toolbar row with the path and the name filter sits
+  on the first source's line. The path is a `Breadcrumbs`: the provider's
+  name and every folder above as blue text links, the open folder as text,
+  no Up arrow; a long path scrolls sideways under a fade. On phones the
+  filter hides behind a button. The list is a `FileGrid` in `layout="list"`
+  with `checks`: a check box (a circle for one file), a neutral tile, the
+  name with up to three provider tags, and below it "1.2 MB · 28/10/2026" or
+  "Folder · date". Folders show a chevron and open with one click; a click on
+  a file toggles it, a double click or Enter adds it. Sorting follows the
+  provider.
+- **Search:** a provider that supports it searches the open folder and every
+  folder below it; the filter then says **Search here and in subfolders**,
+  and each hit leads its facts with where it lies, for example "Intern /
+  Info sheets · 1.2 MB". Other providers say **Filter this folder** and
+  match names in the open folder only. When the provider could not search
+  some subfolders, such as unreadable ones in shared storage, the hits stay
+  and the status line says **Some subfolders could not be searched**, in its
+  fixed place and without an error. The filter asks the provider after
+  250 ms; typing again stops a request that is still running.
+- **Preview,** from 75 rem: the column right of the list shows the file in
+  focus once the person used the list. A PDF shows its whole first page in
+  `PdfViewer`, a PNG, JPEG, GIF, WebP, or AVIF image shows itself, both on a
+  grey, rounded ground; other files and files that do not fit show their
+  icon in the same frame, with the name and facts below. Only PDFs and
+  images are read, through the provider's read stream after the focus
+  rested 250 ms, and only when their first bytes prove the type; **Add**
+  reuses what a preview read while it still has the listed size. Below 75 rem there is no preview and nothing
+  is read for one.
 - **Pages:** 50 entries per page with **Load more**. Past 500 entries, a hint
-  to filter by name takes its place. The filter asks the provider after
-  250 ms and cancels the earlier request.
+  to filter by name takes its place.
+- **Loading** waits: grey rows appear only when a folder takes longer than
+  200 ms and then stay at least 300 ms (`createDelayedLoading`). A new filter
+  keeps the earlier results in place until the answer arrives; a new folder
+  keeps its area empty until then.
 - **Footer:** the status on the left, **Cancel** and **Add (n)** on the
   right. **Add** keeps one width for every count and is disabled on **This
   device** and without a selection. The status names the selection, the
@@ -96,8 +131,8 @@ folders, and states never resizes or moves it.
   phones the status sits above two 48 px buttons.
 
 States are grey loading rows of fixed height while a folder loads, empty
-folder, no matching files for the caller's `context`, no matches with
-**Clear filter**, no access and folder gone with **Up**, provider not
+folder, no matching files for the caller's `context`, no matches (the
+filter's own × clears it), no access and folder gone with **Up**, provider not
 available and offline with **Try again**, and files that do not fit, grey
 with the reason in place of size and date ("Over 25 MB" on phones). A
 provider whose root answers 403 or 404 leaves the sources, and the status
@@ -109,7 +144,8 @@ dialog are taken like files from this device.
 
 ## Accessibility
 
-Focus starts on **This device**. Arrow keys move between sources, and
+Focus starts on **This device**, or on the first row of the remembered
+folder once it shows. Arrow keys move between sources, and
 Enter, Space, or a click opens one. In the list, arrow keys move between
 rows, Enter opens a folder, Space toggles a file, and Enter on a file adds
 the selection. Files that cannot be chosen stay focus stops, marked
@@ -132,7 +168,7 @@ import { SAVE_FILES_ICON, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2
   `files`, an accessor of `{ name, content, mediaType?, size? }`, where
   `content` is a `Blob` or a same-origin URL such as the download route.
   With `all`, its label saves every file of a list.
-- In menus and in a `Lightbox` image's `actions`, use
+- In menus and in a `Lightbox` item's `actions`, use
   `saveFilesLabel(locale)` and `SAVE_FILES_ICON` and call `saveFiles()`.
 - The label names the application once the page knows that exactly one
   stores files, for example **Save report.pdf to Files**, and says

@@ -9,7 +9,9 @@ import { defaultRailPreferences, help, panelUrl, rail, server, settings, snapsho
 // measured 121,825 B with this helper. Context: the documented phone profile (200,000 B/s, WebKit sheet limit 1,000 ms)
 // puts a quarter of that limit at 50,000 B. The helper builds these islands alone; Core's served build measured 70,007 B,
 // because its shared chunks also carry code of other Core islands.
-export const PANEL_HELP_EAGER_BROTLI_BUDGET = 49 * 1024;
+// Measured 50,270 B on fbbe964a50 with the toast stack (#2979) and the sheet motion (#2981), plus about 10 %, rounded up
+// to the next KiB: 55 KiB (Valentin go 09.11.). This is above the quarter of the WebKit sheet limit named above.
+export const PANEL_HELP_EAGER_BROTLI_BUDGET = 55 * 1024;
 
 test("every island in the actual /panel HTML is inside the eager bundle budget", async () => {
   const spies = [

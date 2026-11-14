@@ -39,6 +39,12 @@ describe("app favicon", () => {
       const tableTarget = await writeAppFavicon({ publicDir, appId: "grids", icon: "ti ti-table" });
       expect(await readFile(tableTarget, "utf8")).toContain('d="M3 10h18"');
 
+      // A glyph that @k2b/ui adds to the set works as an app icon too, drawn from the preset in the same gradient.
+      const brand = await readFile(await writeAppFavicon({ publicDir, appId: "code", icon: "ti ti-feat-code" }), "utf8");
+      expect(brand).toContain('stroke="url(#cloud-icon)"');
+      expect(brand).toContain("<circle cx='8' cy='17' r='3.4'/>");
+      expect(brand).not.toMatch(/%3C|black/);
+
       await expect(writeAppFavicon({ publicDir, appId: "missing", icon: "ti ti-definitely-not-real" })).rejects.toThrow(
         'Unknown Tabler app icon "ti ti-definitely-not-real"',
       );

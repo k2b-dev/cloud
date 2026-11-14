@@ -32,7 +32,7 @@ const aiSummary = (overrides: Partial<ConversationContentSummary> = {}) =>
     ...overrides,
   });
 
-const render = (state: ConversationContentSummary, locale: "de" | "en" = "de", canEdit = true) =>
+const render = (state: ConversationContentSummary, locale: "de" | "en" = "de", canEdit = true, defaultExpanded = true) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -42,6 +42,7 @@ const render = (state: ConversationContentSummary, locale: "de" | "en" = "de", c
           canEdit,
           onEdit: () => undefined,
           onGenerate: () => undefined,
+          defaultExpanded,
           now: () => NOW,
         });
       },
@@ -49,12 +50,24 @@ const render = (state: ConversationContentSummary, locale: "de" | "en" = "de", c
   );
 
 describe("MailConversationSummaryCard", () => {
-  test("an AI summary sits on the AI surface with ✦, tools, its next step and where it came from", () => {
+  test("collapsed, the summary is one row: plum ✦ label, the text on one line, and a chevron that opens it", () => {
+    const html = render(aiSummary(), "de", true, false);
+    expect(html).toContain('class="mail-summary-row"');
+    expect(html).toContain("data-mail-summary-ai");
+    expect(html).toMatch(/class="mail-summary-row__label"><span aria-hidden="true">✦ <\/span>Kurz gesagt/);
+    expect(html).toContain('aria-expanded="false"');
+    // The line shows the text without Markdown marks; the tools and the next step wait until the row opens.
+    expect(html).toContain("Neues Angebot: 500 Visitenkarten auf 350 g Naturpapier für 214 € netto. Lieferung am 6.11.");
+    expect(html).not.toContain("<li>");
+    expect(html).not.toContain('aria-label="Neu schreiben"');
+    expect(html).not.toContain("Nächster Schritt");
+  });
+
+  test("an AI summary opened shows the AI tone and ✦, tools, its next step and where it came from", () => {
     const html = render(aiSummary());
     expect(html).toContain('data-mail-conversation-summary="text"');
     expect(html).toContain("data-mail-summary-ai");
-    expect(html).toContain("bg-[var(--k2b-ai-surface)]");
-    expect(html).toContain("ti-sparkles");
+    expect(html).toContain('aria-expanded="true"');
     expect(html).toContain("Kurz gesagt");
     expect(html).toContain('aria-label="Neu schreiben"');
     expect(html).toContain('aria-label="Zusammenfassung bearbeiten"');
@@ -63,7 +76,6 @@ describe("MailConversationSummaryCard", () => {
     expect(html).toContain("Nächster Schritt");
     expect(html).toContain("Freigabe bis Mi., 29.10.");
     expect(html).toContain("Aus 5 Nachrichten · Regel „Lange Mails zusammenfassen“ · vor 3 Min.");
-    expect(html).toContain("min-h-[12.25rem]");
   });
 
   test("a text a person wrote stays neutral: no ✦, no plum", () => {
@@ -76,8 +88,7 @@ describe("MailConversationSummaryCard", () => {
       }),
     );
     expect(html).not.toContain("data-mail-summary-ai");
-    expect(html).not.toContain("--k2b-ai");
-    expect(html).not.toContain("ti-sparkles");
+    expect(html).not.toContain("✦");
     expect(html).toContain("Von Lisa Brandt geschrieben · vor 2 Std.");
     expect(html).not.toContain('aria-label="Neu schreiben"');
   });
@@ -98,13 +109,10 @@ describe("MailConversationSummaryCard", () => {
     expect(render(aiSummary({ newMessagesSince: 3 }), "en")).toContain("3 new messages since this version");
   });
 
-  test("while the AI writes, the area keeps its height and announces it", () => {
-    const html = render(aiSummary({ summary: null, status: "writing" }));
+  test("while the AI writes, the row keeps its one line and announces it", () => {
+    const html = render(aiSummary({ summary: null, status: "writing" }), "de", true, false);
     expect(html).toContain('data-mail-conversation-summary="writing"');
-    expect(html).toContain('aria-busy="true"');
-    expect(html).toContain("wird geschrieben …");
-    expect(html).toContain("min-h-[12.25rem]");
-    expect(html.match(/k2b-skeleton/g)?.length).toBe(5);
+    expect(html).toMatch(/class="mail-summary-row__line" aria-live="polite">wird geschrieben …</);
     expect(html).not.toContain('aria-label="Neu schreiben"');
   });
 

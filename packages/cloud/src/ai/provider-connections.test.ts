@@ -12,6 +12,28 @@ test("connection failures expose stable status without provider messages", () =>
     message: "The provider request failed.",
   });
 });
+
+test("model discovery preserves reported context and output bounds for reasoning defaults", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async () =>
+      Response.json({
+        data: [
+          { id: "reasoner", context_length: 1_048_576, max_output_tokens: 1_048_576 },
+          { id: "router", context_length: 131_072, top_provider: { max_completion_tokens: 65_536 } },
+        ],
+      }),
+    { preconnect: original.preconnect },
+  );
+  try {
+    expect(await listProviderModels({ type: "openai-compatible", baseUrl: "https://example.invalid/v1" })).toEqual([
+      { providerModel: "reasoner", contextWindow: 1_048_576, outputTokenLimit: 1_048_576 },
+      { providerModel: "router", contextWindow: 131_072, outputTokenLimit: 65_536 },
+    ]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
 test("Anthropic discovery follows advancing cursors and keeps credentials in headers", async () => {
   const original = globalThis.fetch;
   const requests: { url: string; key: string | null }[] = [];

@@ -14,10 +14,19 @@ import { migrateWorkflowAi } from "@k2b/cloud/ai/tasks";
 import { logger } from "@k2b/cloud/services";
 import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
+import {
+  migrateReplyDrafts,
+  REPLY_DRAFT_MIGRATION_NAME,
+  REPLY_DRAFT_MIGRATION_VERSION,
+  type ReplyDraftMigrationResult,
+} from "./migrate-reply-drafts";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
+import { migrateRoomAccessEvents, migrateRoomAccessIndexes } from "./service/room-access-events";
+import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
+import { migrateWorkspacePreferences } from "./service/workspace-preferences-migrate";
 
 type SqlClient = typeof sql;
 
@@ -26,6 +35,9 @@ const BASELINE_NAME = "baseline";
 // Schema compatibility marker, independent of Cloud release/package versions.
 const PRINCIPAL_ASSIGNEES_VERSION = 2;
 const PRINCIPAL_ASSIGNEES_NAME = "principal_assignees";
+// Older images would recreate the one-suggestion-per-conversation index and fail on per-author suggestions.
+const SUGGESTIONS_PER_AUTHOR_VERSION = 3;
+const SUGGESTIONS_PER_AUTHOR_NAME = "suggestions_per_author";
 
 const MIGRATION_LOCK_KEY = "cloud.mail.migrations";
 const log = logger("mail:migrate");
@@ -37,7 +49,9 @@ const assertSupportedSchema = (applied: readonly { version: number; name: string
   const foreign = applied.filter(
     (row) =>
       !(row.version === BASELINE_VERSION && row.name === BASELINE_NAME) &&
-      !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME),
+      !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME) &&
+      !(row.version === SUGGESTIONS_PER_AUTHOR_VERSION && row.name === SUGGESTIONS_PER_AUTHOR_NAME) &&
+      !(row.version === REPLY_DRAFT_MIGRATION_VERSION && row.name === REPLY_DRAFT_MIGRATION_NAME),
   );
   if (baseline && foreign.length === 0) return;
   const versions = applied.map((row) => `${row.version} (${row.name})`).join(", ");
@@ -75,6 +89,60 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`ALTER TABLE mail.schema_migrations ADD COLUMN IF NOT EXISTS details jsonb NOT NULL DEFAULT '{}'`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS consolidated_count integer NOT NULL DEFAULT 0`.simple();
+  // Avoid validating a new CHECK while the column-addition transaction holds ACCESS EXCLUSIVE.
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.drafts'::regclass AND conname = 'drafts_consolidated_count_check') THEN
+      ALTER TABLE mail.drafts ADD CONSTRAINT drafts_consolidated_count_check CHECK (consolidated_count >= 0) NOT VALID;
+    END IF;
+  END $$`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS content_edited_at timestamptz`.simple();
+  await tx`ALTER TABLE mail.draft_attachments ADD COLUMN IF NOT EXISTS forwarded_source_message_id uuid`.simple();
+  await tx`ALTER TABLE mail.draft_attachments ADD COLUMN IF NOT EXISTS copied_source_message_id uuid`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.reply_draft_retirements (
+    draft_id uuid PRIMARY KEY REFERENCES mail.drafts(id) ON DELETE CASCADE)`.simple();
+  await tx`CREATE OR REPLACE FUNCTION mail.touch_draft_attachment_edit() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      UPDATE mail.drafts SET content_edited_at = now() WHERE id = NEW.draft_id;
+      RETURN NEW;
+    END; $$`.simple();
+  await tx`CREATE OR REPLACE TRIGGER draft_attachments_content_edit AFTER INSERT OR UPDATE OF removed_at ON mail.draft_attachments
+    FOR EACH ROW EXECUTE FUNCTION mail.touch_draft_attachment_edit()`.simple();
+  await tx`CREATE OR REPLACE FUNCTION mail.touch_draft_content_edited_at() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF ROW(NEW.intent, NEW.sender_identity_id, NEW.signature_template_id, NEW.to_addresses, NEW.cc_addresses, NEW.bcc_addresses, NEW.subject, NEW.body_markdown, NEW.body_format, NEW.priority, NEW.request_delivery_receipt, NEW.request_read_receipt, NEW.quote_source, NEW.quote_locale, NEW.quote_time_zone) IS DISTINCT FROM
+        ROW(OLD.intent, OLD.sender_identity_id, OLD.signature_template_id, OLD.to_addresses, OLD.cc_addresses, OLD.bcc_addresses, OLD.subject, OLD.body_markdown, OLD.body_format, OLD.priority, OLD.request_delivery_receipt, OLD.request_read_receipt, OLD.quote_source, OLD.quote_locale, OLD.quote_time_zone) THEN NEW.content_edited_at = now(); END IF;
+      RETURN NEW;
+    END; $$`.simple();
+  await tx`CREATE OR REPLACE TRIGGER drafts_touch_content_edited_at BEFORE UPDATE ON mail.drafts
+    FOR EACH ROW EXECUTE FUNCTION mail.touch_draft_content_edited_at()`.simple();
+  // One checkpoint per folder lets waiting sync commands finish without retaining empty runs.
+  await tx`ALTER TABLE mail.folders ADD COLUMN IF NOT EXISTS last_sync_snapshot jsonb`;
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'mail' AND table_name = 'drafts' AND column_name = 'adopted_at') THEN
+      -- Earlier editor attribution cannot prove that a draft has never been edited by a person.
+      -- A temporary default marks existing rows without rewriting content or firing edit triggers.
+      ALTER TABLE mail.drafts ADD COLUMN adopted_at timestamptz DEFAULT now();
+      ALTER TABLE mail.drafts ALTER COLUMN adopted_at DROP DEFAULT;
+    END IF;
+  END $$`.simple();
+  // Retain the historical compatibility marker; F6 replaces the per-author slot index.
+  await tx`INSERT INTO mail.schema_migrations (version, name)
+    VALUES (${SUGGESTIONS_PER_AUTHOR_VERSION}, ${SUGGESTIONS_PER_AUTHOR_NAME}) ON CONFLICT (version) DO NOTHING`;
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_suggestion_requests (
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    service_account_id uuid NOT NULL,
+    idempotency_key uuid NOT NULL,
+    request_hash text NOT NULL,
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    PRIMARY KEY (mailbox_id, service_account_id, idempotency_key)
+  )`.simple();
+  // Before suggestions were per author, a second account's creation key could map to another account's draft.
+  // Such a key now creates the caller's own suggestion; its stale mapping would block that.
+  await tx`DELETE FROM mail.draft_suggestion_requests request USING mail.drafts d
+    WHERE d.id = request.draft_id AND (d.author_kind <> 'service_account' OR d.author_id <> request.service_account_id)`.simple();
   // Scheduling state and the latest timing sample stay bounded to one row per mailbox.
   await tx`
     CREATE TABLE IF NOT EXISTS mail.hydration_work (
@@ -99,8 +167,15 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS hydration_work_unpublished_idx ON mail.hydration_work (queued_at, mailbox_id)
     WHERE job_id IS NOT NULL AND published_at IS NULL
   `.simple();
-  // Release N understands both modes; existing and newly created drafts stay
-  // in lock mode until the subsequent activation release. No body is rewritten.
+  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode text NOT NULL DEFAULT 'shared'
+    CHECK (draft_edit_mode IN ('lock', 'shared'))`.simple();
+  await tx`ALTER TABLE mail.mailboxes ALTER COLUMN draft_edit_mode SET DEFAULT 'shared'`.simple();
+  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode_explicit boolean NOT NULL DEFAULT false`.simple();
+  // Compatible rollout progress must not exclude older images via schema_migrations.
+  await tx`CREATE TABLE IF NOT EXISTS mail.shared_drafts_default_migration (
+    name text PRIMARY KEY CHECK (name = 'shared_drafts_default'), details jsonb NOT NULL
+  )`.simple();
+  // Existing drafts retain their mode; mailbox switches affect only new user drafts.
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
     CHECK (edit_mode IN ('lock', 'shared'))`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1
@@ -108,6 +183,13 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_state bytea`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_cursor text`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_seq bigint`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_idle_through bigint`.simple();
+  await tx`CREATE INDEX IF NOT EXISTS drafts_document_coverage_idx ON mail.drafts
+    (GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)), id)
+    WHERE state NOT IN ('sent', 'discarded') AND (doc_state IS NOT NULL OR edit_mode = 'shared')`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_log_policy (
+    log_id text PRIMARY KEY, recovered_at timestamptz NOT NULL DEFAULT now()
+  )`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_history_complete boolean NOT NULL DEFAULT true`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_cursor text`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_state bytea`.simple();
@@ -175,6 +257,18 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     state bytea NOT NULL,
     PRIMARY KEY (draft_id, generation)
   )`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_sends (
+    command_id uuid PRIMARY KEY REFERENCES mail.commands(id) ON DELETE CASCADE,
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    generation bigint NOT NULL,
+    state bytea NOT NULL,
+    close_pending boolean NOT NULL DEFAULT false,
+    close_freeze_cursor text,
+    close_cursor text,
+    last_error text
+  )`.simple();
+  await tx`CREATE INDEX IF NOT EXISTS draft_document_sends_pending_close_idx
+    ON mail.draft_document_sends(command_id) WHERE close_pending`.simple();
   await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_rests (
     source_draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
     generation bigint NOT NULL CHECK (generation > 0),
@@ -211,6 +305,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
 
   await tx`CREATE INDEX IF NOT EXISTS outbox_submissions_draft_idx ON mail.outbox_submissions (draft_id, created_at DESC)`.simple();
 
+  await addMailingListConversationLinks(tx);
+
   // NULL = no status decision since Mail linked the message; true = a decision covers it and its
   // hydration keeps the status; false = a later decision released it. Moving the message to another
   // conversation resets it to NULL.
@@ -230,6 +326,12 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS link_seq bigint`.simple();
   await tx`ALTER SEQUENCE mail.conversation_link_seq OWNED BY mail.conversation_messages.link_seq`.simple();
   await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN link_seq SET DEFAULT nextval('mail.conversation_link_seq')`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_source boolean NOT NULL DEFAULT false`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_locale text NOT NULL DEFAULT 'en'`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_time_zone text NOT NULL DEFAULT 'UTC'`.simple();
+  // List pages ask for the open drafts of a few conversations; this keeps that lookup independent of all other drafts.
+  await tx`CREATE INDEX IF NOT EXISTS drafts_open_conversation_idx ON mail.drafts (mailbox_id, conversation_id)
+    WHERE origin = 'user' AND state = 'draft' AND conversation_id IS NOT NULL`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`
@@ -350,8 +452,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   if (!receiptPending?.present) {
     await tx`ALTER TABLE mail.message_contents ADD COLUMN IF NOT EXISTS receipt_pending boolean DEFAULT false NOT NULL`.simple();
   }
-  // A mailbox completes thousands of sync runs a day and keeps them for 30 days. Listing its rare
-  // failed, cancelled, superseded, or running runs seeks here instead of reading every completed one.
+  // Changed batches and error recoveries remain for three days; other terminal runs for 30 days.
+  // Listing failed, cancelled, superseded, or running runs seeks here instead of reading completed work.
   // Building it reads the table once, on the first start after the update; later starts skip the
   // statement, so they do not wait for the table lock that the build takes.
   const [syncRunStateIndex] = await tx<{ present: boolean }[]>`
@@ -364,6 +466,21 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       WHERE state <> 'completed'
     `.simple();
   }
+};
+
+/** List-only membership keeps its provenance across copies, hydration and restarts. */
+const addMailingListConversationLinks = async (tx: SqlClient): Promise<void> => {
+  const [current] = await tx<{ allows: boolean }[]>`
+    SELECT pg_get_constraintdef(oid) LIKE '%''list''%' AS allows
+    FROM pg_constraint
+    WHERE conrelid = 'mail.conversation_messages'::regclass AND conname = 'conversation_messages_added_by_check'
+  `;
+  if (current?.allows) return;
+  await tx`ALTER TABLE mail.conversation_messages DROP CONSTRAINT IF EXISTS conversation_messages_added_by_check`.simple();
+  await tx`
+    ALTER TABLE mail.conversation_messages ADD CONSTRAINT conversation_messages_added_by_check
+    CHECK (added_by = ANY (ARRAY['provider', 'headers', 'heuristic', 'manual', 'outbox', 'list'])) NOT VALID
+  `.simple();
 };
 
 /** Accepted Undo requests survive the client and wait for the original move's destination copy. */
@@ -660,12 +777,13 @@ const migrationErrorCode = (error: unknown): string | null => {
 };
 
 /**
- * The whole migration runs in one transaction under a transaction-scoped
- * advisory lock, so the guard also holds behind a transaction pooler. A run
+ * Schema additions and each F6 batch run under the transaction-scoped
+ * advisory guard, which also holds behind a transaction pooler. The final
+ * concurrent index build runs outside a transaction. A run
  * that waits longer than `lock_timeout` for the guard or for DDL locks fails
- * with `55P03` and is retried with backoff.
+ * with `55P03` and is retried with backoff; deadlock victims (`40P01`) retry too.
  */
-export const migrate = async (): Promise<void> => {
+export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await sql.begin(async (tx) => {
@@ -673,17 +791,22 @@ export const migrate = async (): Promise<void> => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
         await applyBaseline(tx);
         await applyAdditions(tx);
+        await migrateRoomAccessEvents(tx);
         await migrateBackfillActivity(tx);
         await migrateAiDailyBudget(tx);
+        await migrateSourceNames(tx);
         await migrateConversationSummaries(tx);
+        await migrateWorkspacePreferences(tx);
         await migrateWorkflowAi(tx);
       });
-      return;
+      await migrateRoomAccessIndexes();
+      return await migrateReplyDrafts();
     } catch (error) {
-      if (migrationErrorCode(error) !== "55P03" || attempt === 2) throw error;
+      if (!["55P03", "40P01"].includes(migrationErrorCode(error) ?? "") || attempt === 2) throw error;
       await Bun.sleep(250 * 2 ** attempt);
     }
   }
+  throw new Error("Mail migration retries exhausted");
 };
 
 /**
@@ -695,6 +818,33 @@ const INDEX_BUILD_LEASE_MS = 60_000;
 const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", ttlMs: INDEX_BUILD_LEASE_MS, retry: { maxAttempts: 1 } }));
 
 type BackgroundIndex = { name: string; table: string; ddl: string };
+const runtimeHistoryIndexes: BackgroundIndex[] = [
+  // Build the smaller auxiliary indexes before the potentially large sync-history indexes.
+  {
+    name: "mail.automation_log_retention_idx",
+    table: "mail.automation_log",
+    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS automation_log_retention_idx
+      ON mail.automation_log (created_at, id)`,
+  },
+  {
+    name: "mail.workflow_effect_order_expiry_idx",
+    table: "mail.workflow_effect_order",
+    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS workflow_effect_order_expiry_idx
+      ON mail.workflow_effect_order (expires_at, event_id)`,
+  },
+  {
+    name: "mail.sync_runs_completed_retention_idx",
+    table: "mail.sync_runs",
+    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS sync_runs_completed_retention_idx
+      ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state = 'completed'`,
+  },
+  {
+    name: "mail.sync_runs_error_retention_idx",
+    table: "mail.sync_runs",
+    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS sync_runs_error_retention_idx
+      ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state NOT IN ('running', 'completed')`,
+  },
+];
 const backfillActivityIndex: BackgroundIndex = {
   name: "mail.activity_events_backfill_operation_idx",
   table: "mail.activity_events",
@@ -805,6 +955,21 @@ export const buildCommandTargetIndex = (pool: SqlClient = sql) => buildBackgroun
 export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
 export const buildOpenConversationIndex = (pool: SqlClient = sql) => buildBackgroundIndex(openConversationIndex, pool);
 export const buildActivityFeedIndex = (pool: SqlClient = sql) => buildBackgroundIndex(activityFeedIndex, pool);
+
+let runtimeHistoryBuild: Promise<void> | undefined;
+export const buildRuntimeHistoryIndexes = (pool: SqlClient = sql): Promise<void> => {
+  runtimeHistoryBuild ??= (async () => {
+    try {
+      for (const index of runtimeHistoryIndexes) {
+        const result = await buildBackgroundIndex(index, pool);
+        if (result === "busy" || result === "failed") return;
+      }
+    } finally {
+      runtimeHistoryBuild = undefined;
+    }
+  })();
+  return runtimeHistoryBuild;
+};
 
 /**
  * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and

@@ -1,14 +1,24 @@
+import type { EditorSelection } from "@codemirror/state";
 import { type EditorView, ViewPlugin } from "@codemirror/view";
 import { htmlClipboardReady, loadHtmlClipboard } from "./clipboard";
 import type { TableHost } from "./table";
 
-/** Load the HTML sanitizer only when needed, before either paste consumer runs.
- * A delayed paste never overwrites edits made while its parser was loading.
- */
+type PendingPaste = {
+  selection: EditorSelection;
+  valid: boolean;
+  edited: boolean;
+  replaying: boolean;
+  restore?: EditorSelection;
+};
+
+/** Preload on focus and map a delayed paste through edits at its original target. */
 export const clipboardLoading = (getHost: (view: EditorView) => TableHost | null, syncSelection?: (view: EditorView) => void) =>
   ViewPlugin.define((view) => {
     let disposed = false;
-    let pending = false;
+    let pending: PendingPaste | undefined;
+    const preload = () => {
+      void loadHtmlClipboard().catch(() => {});
+    };
     const paste = (event: ClipboardEvent) => {
       const host = getHost(view);
       const data = event.clipboardData;
@@ -21,28 +31,30 @@ export const clipboardLoading = (getHost: (view: EditorView) => TableHost | null
         host?.onError("textTooLarge");
         return;
       }
-      // Only one delayed paste is retained. Further attempts keep their input in
-      // the existing visible recovery surface instead of building an input queue.
       if (pending) {
         host?.onRecovery(text || html);
         return;
       }
-      // Native selectionchange may still be queued when paste arrives. Let the
-      // cell publish that same caret before capturing the delayed paste target.
       syncSelection?.(view);
       const clipboard = new DataTransfer();
       clipboard.setData("text/plain", text);
       clipboard.setData("text/html", html);
       for (const file of data.files) clipboard.items.add(file);
       const target = event.target;
-      const doc = view.state.doc;
-      const selection = view.state.selection;
       const focused = view.dom.ownerDocument.activeElement;
       const native = view.dom.ownerDocument.getSelection();
       const range = native?.rangeCount ? native.getRangeAt(0).cloneRange() : null;
-      pending = true;
+      const queued: PendingPaste = {
+        selection: view.state.selection,
+        valid: true,
+        edited: false,
+        replaying: false,
+      };
+      pending = queued;
       void loadHtmlClipboard()
         .then(() => {
+          // Publish a native cell selection before deciding if a newer gesture took over.
+          if (!disposed) syncSelection?.(view);
           const current = view.dom.ownerDocument.getSelection();
           const currentRange = current?.rangeCount ? current.getRangeAt(0) : null;
           const sameRange =
@@ -54,30 +66,51 @@ export const clipboardLoading = (getHost: (view: EditorView) => TableHost | null
               range.endOffset === currentRange.endOffset);
           if (
             disposed ||
+            !queued.valid ||
             view.state.readOnly ||
-            view.state.doc !== doc ||
-            !view.state.selection.eq(selection) ||
             view.dom.ownerDocument.activeElement !== focused ||
-            !sameRange ||
+            (!queued.edited && !sameRange) ||
             !(target instanceof HTMLElement) ||
             !target.isConnected
           ) {
             host?.onRecovery(text || html);
             return;
           }
-          // CodeMirror and the cell widget run their normal limit, conversion and
-          // selection logic. No untrusted HTML is mounted by this loader.
+          // Both prose and table cells follow an explicit mapped source selection.
+          // Keep later typing's caret by mapping it through the replay transaction.
+          if (!view.state.selection.eq(queued.selection)) queued.restore = view.state.selection;
+          queued.replaying = true;
+          if (queued.edited) view.dispatch({ selection: queued.selection });
           target.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: clipboard }));
+          if (queued.restore) view.dispatch({ selection: queued.restore });
         })
         .catch(() => host?.onRecovery(text || html))
         .finally(() => {
-          pending = false;
+          pending = undefined;
         });
     };
+    view.dom.addEventListener("focusin", preload);
     view.dom.addEventListener("paste", paste, true);
     return {
+      update(update) {
+        if (!pending) return;
+        if (pending.replaying) {
+          if (pending.restore) pending.restore = pending.restore.map(update.changes, 1);
+          return;
+        }
+        for (const tr of update.transactions) {
+          if (tr.docChanged) {
+            tr.changes.iterChangedRanges((from, to) => {
+              for (const range of pending!.selection.ranges) if (from < range.to && to > range.from) pending!.valid = false;
+            });
+            pending.selection = pending.selection.map(tr.changes, -1);
+            pending.edited = true;
+          } else if (tr.selection && !tr.state.selection.eq(pending.selection)) pending.valid = false;
+        }
+      },
       destroy() {
         disposed = true;
+        view.dom.removeEventListener("focusin", preload);
         view.dom.removeEventListener("paste", paste, true);
       },
     };

@@ -37,9 +37,13 @@ export const RailPreferencesSchema = z
     revision: z.number().int().nonnegative().max(2_147_483_647),
     visibility: z.record(id, z.boolean()),
     shortcuts: z.array(RailShortcutSchema),
+    /** On wide windows the app bar shows each entry's name beside its icon; off keeps the icon bar. */
+    showNames: z.boolean().default(true),
   })
   .strict()
-  .superRefine((value, ctx) => {
+  .superRefine(({ showNames: _fixedSize, ...value }, ctx) => {
+    // The budget measures what grows with the person's choices. The fixed-size names flag stays outside it, so settings
+    // saved at the budget before the flag existed still load.
     if (new TextEncoder().encode(JSON.stringify({ ...value, revision: 2_147_483_647 })).byteLength > RAIL_PREFERENCES_MAX_BYTES) {
       ctx.addIssue({ code: "custom", message: "App bar settings exceed the 16 KiB page budget" });
     }
@@ -50,7 +54,7 @@ export const RailPreferencesSchema = z
     if (new Set(apps).size !== apps.length) ctx.addIssue({ code: "custom", message: "An app can only be pinned once" });
   });
 export type RailPreferences = z.infer<typeof RailPreferencesSchema>;
-export const defaultRailPreferences = (): RailPreferences => ({ revision: 0, visibility: {}, shortcuts: [] });
+export const defaultRailPreferences = (): RailPreferences => ({ revision: 0, visibility: {}, shortcuts: [], showNames: true });
 
 /** Managed entries are separate from the writable personal API contract. */
 export type RailSnapshot = RailPreferences & { managedShortcuts?: RailShortcut[] };
@@ -59,6 +63,7 @@ export const RailSnapshotSchema = z
     revision: z.number(),
     visibility: z.record(z.string(), z.boolean()),
     shortcuts: z.array(RailShortcutSchema),
+    showNames: z.boolean().default(true),
     managedShortcuts: z.array(RailShortcutSchema).optional(),
   })
   .strict()

@@ -2,6 +2,31 @@ import { expect, spyOn, test } from "bun:test";
 import sharp, * as sharpModule from "sharp";
 import { prepareImageVariants } from "./image-variants";
 
+test("preview encoding flattens transparency, produces JPEG and never enlarges a fitting source", async () => {
+  const source = await sharp({ create: { width: 10, height: 5, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .png()
+    .toBuffer();
+  const result = await prepareImageVariants(
+    source,
+    {
+      boxes: [
+        { width: 320, height: 320 },
+        { width: 1280, height: 1280 },
+      ],
+      maxBytes: 100_000,
+      timeoutMs: 30_000,
+      encoding: "preview",
+    },
+    async (_index, header, bytes) => {
+      expect(header.type).toBe("image/jpeg");
+      expect([header.width, header.height]).toEqual([10, 5]);
+      const pixel = await sharp(bytes).raw().toBuffer();
+      expect([...pixel.subarray(0, 3)]).toEqual([255, 255, 255]);
+    },
+  );
+  expect(result.ok).toBe(true);
+});
+
 test("three boxes inspect metadata and decode the source once at the largest needed size", async () => {
   const source = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: "red" } })
     .png()

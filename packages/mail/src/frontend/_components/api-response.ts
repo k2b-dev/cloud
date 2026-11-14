@@ -11,11 +11,13 @@ export const readApiError = async (response: Pick<Response, "json">, fallback: s
 /** A failed Mail API call that keeps the server's stable error code for callers that react to it. */
 export class MailApiError extends Error {
   readonly code: string | null;
+  readonly draftId: string | null;
 
-  constructor(message: string, code: string | null) {
+  constructor(message: string, code: string | null, draftId: string | null = null) {
     super(message);
     this.name = "MailApiError";
     this.code = code;
+    this.draftId = draftId;
   }
 }
 
@@ -25,7 +27,8 @@ export const readApiFailure = async (response: Pick<Response, "json">, fallback:
     if (body && typeof body === "object") {
       const message = "message" in body && typeof body.message === "string" ? body.message : fallback;
       const code = "code" in body && typeof body.code === "string" ? body.code : null;
-      return new MailApiError(message, code);
+      const draftId = "draftId" in body && typeof body.draftId === "string" ? body.draftId : null;
+      return new MailApiError(message, code, draftId);
     }
   } catch {
     // Preserve the operation-specific fallback for non-JSON failures.

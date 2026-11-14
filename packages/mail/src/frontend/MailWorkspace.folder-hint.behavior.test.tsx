@@ -41,6 +41,7 @@ const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
+  workspacePreference: { listShare: null, seenHints: [] },
   viewPreference: { large: "auto", phone: "compact" },
   doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
@@ -54,6 +55,7 @@ const data: MailboxPageData = {
     searchBackend: "auto",
     automaticReplyManagementPermission: "admin",
     accessScope: "mailbox",
+    draftEditMode: "lock",
     composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
     createdAt: now,
     updatedAt: now,

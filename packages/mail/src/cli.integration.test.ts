@@ -24,11 +24,23 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
   testFor("database", "nats")(
     "cld mail lists, reads, assigns, archives, moves, and drafts replies by address",
     async () => {
-      const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-        env: { ...process.env, MAIL_CLI_CHILD: "1" },
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      // A subprocess needs the same isolated schema and Mail runtime as its parent.
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          "test",
+          "--preload",
+          new URL("../../../scripts/fixtures/test-infra.ts", import.meta.url).pathname,
+          "--preload",
+          new URL("../test/integration-preload.ts", import.meta.url).pathname,
+          import.meta.path,
+        ],
+        {
+          env: { ...process.env, MAIL_CLI_CHILD: "1" },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
       const [stdout, stderr, code] = await Promise.all([
         new Response(child.stdout).text(),
         new Response(child.stderr).text(),

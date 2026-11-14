@@ -13,9 +13,10 @@ import {
   formatFileViewSize,
   IconButton,
   Lightbox,
-  type LightboxImage,
+  type LightboxItem,
   Placeholder,
   prompts,
+  Section,
   TextInput,
   toast,
   useLocale,
@@ -39,8 +40,8 @@ import { assistantApi } from "../api/client";
 import type { AssistantChatContextSnapshot, AssistantChatResult } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import {
+  assistantFileLightboxItem,
   confirmOpenAssistantLink,
-  loadAssistantContextImages,
   openAssistantCloudReference,
   openAssistantKnowledgeSearch,
   openAssistantMarkdown,
@@ -321,6 +322,8 @@ function ResultCard(props: {
   actions: ChatSidebarActions;
   files: ConversationFileSource;
   onDelete?: () => void;
+  /** Shows a file result large in the Lightbox, beside the chat. */
+  onPreview?: () => void;
 }) {
   const copy = useSidebarCopy();
   const text = useAssistantText();
@@ -352,7 +355,7 @@ function ResultCard(props: {
         <p class="assistant-result__description">{props.result.description}</p>
       </Show>
       <div class="assistant-result__actions">
-        <ResultButtons result={props.result} actions={props.actions} files={props.files} />
+        <ResultButtons result={props.result} actions={props.actions} files={props.files} onPreview={props.onPreview} />
         <Show when={props.onDelete}>
           {(remove) => (
             <span class="assistant-result__more">
@@ -368,7 +371,12 @@ function ResultCard(props: {
   );
 }
 
-function ResultButtons(props: { result: AssistantChatResult; actions: ChatSidebarActions; files: ConversationFileSource }) {
+function ResultButtons(props: {
+  result: AssistantChatResult;
+  actions: ChatSidebarActions;
+  files: ConversationFileSource;
+  onPreview?: () => void;
+}) {
   const copy = useSidebarCopy();
   const copyLink = async (href: string) => {
     try {
@@ -392,6 +400,19 @@ function ResultButtons(props: { result: AssistantChatResult; actions: ChatSideba
               <i class="ti ti-external-link" aria-hidden="true" />
               {copy().open}
             </Button>
+            <Show when={props.onPreview}>
+              {(preview) => (
+                <IconButton
+                  size="xs"
+                  variant="ghost"
+                  label={copy().previewNamed({ title: props.result.title })}
+                  tooltip={copy().preview}
+                  onClick={() => preview()()}
+                >
+                  <i class="ti ti-arrows-maximize" aria-hidden="true" />
+                </IconButton>
+              )}
+            </Show>
             <Show when={resultSaveSource(props.files, file())}>{(source) => <SaveFilesButton size="xs" files={() => [source()]} />}</Show>
             <ButtonLink
               size="xs"
@@ -444,6 +465,7 @@ function ResultRow(props: {
   files: ConversationFileSource;
   when?: string;
   onDelete?: () => void;
+  onPreview?: () => void;
 }) {
   const text = useAssistantText();
   const copy = useSidebarCopy();
@@ -462,6 +484,7 @@ function ResultRow(props: {
     const target = resultJump(result);
     return [
       ...(result.file || result.app ? [{ label: copy().open, icon: "ti ti-external-link", action: open }] : []),
+      ...(result.file && props.onPreview ? [{ label: copy().preview, icon: "ti ti-arrows-maximize", action: props.onPreview }] : []),
       ...(result.file
         ? [
             {
@@ -617,35 +640,46 @@ export function AssistantChatSidebarContent(props: {
         const dayLabel = (iso: string) =>
           new Intl.DateTimeFormat(locale(), { timeZone: snapshot().timeZone, day: "numeric", month: "short" }).format(new Date(iso));
         const [workingOpen, setWorkingOpen] = createSignal(false);
-        const [lightbox, setLightbox] = createSignal<{ images: LightboxImage[]; index: number } | null>(null);
-        const openUpload = async (file: AiFileStat) => {
+        const [lightbox, setLightbox] = createSignal<{ items: LightboxItem[]; index: number } | null>(null);
+        /** A chat file in the Lightbox; its Open pill closes it and opens the file as a tab, as the row's Open does. */
+        const lightboxItem = (file: { path: string; mediaType: string; size: number }, title = fileName(file.path)) =>
+          assistantFileLightboxItem(
+            { id: file.path, path: file.path, mediaType: file.mediaType, size: file.size, scope: "chat", source: files() },
+            {
+              name: title,
+              open: () => {
+                setLightbox(null);
+                props.actions.onOpenFile({ path: file.path, title });
+              },
+            },
+          );
+        // Pictures you uploaded open together in the Lightbox; each reads itself when shown. Other files open as tabs.
+        const openUpload = (file: AiFileStat) => {
           if (!file.mediaType.startsWith("image/")) {
             props.actions.onOpenFile({ path: file.path, title: fileName(file.path) });
             return;
           }
           const images = snapshot().files.filter((entry) => entry.origin === "user" && entry.mediaType.startsWith("image/"));
-          try {
-            const loaded = await loadAssistantContextImages(
-              images.map((entry) => ({
-                id: entry.path,
-                path: entry.path,
-                mediaType: entry.mediaType,
-                size: entry.size,
-                scope: "chat" as const,
-                source: files(),
-              })),
-            );
-            setLightbox({
-              images: loaded.map((entry) => entry.image),
-              index: Math.max(
-                0,
-                loaded.findIndex((entry) => entry.file.path === file.path),
-              ),
-            });
-          } catch (error) {
-            void prompts.error(error instanceof Error ? error.message : String(error), { title: text("Could not open images") });
-          }
+          setLightbox({
+            items: images.map((entry) => lightboxItem(entry)),
+            index: Math.max(
+              0,
+              images.findIndex((entry) => entry.path === file.path),
+            ),
+          });
         };
+        /** ⤢ on a file result: every file result of the chat in the Lightbox, starting at this one. */
+        const previewResult = (result: AssistantChatResult) => {
+          const shown = snapshot().results.filter((entry) => entry.file);
+          setLightbox({
+            items: shown.map((entry) => lightboxItem(entry.file!, entry.title)),
+            index: Math.max(
+              0,
+              shown.findIndex((entry) => entry.key === result.key),
+            ),
+          });
+        };
+        const previewOf = (result: AssistantChatResult) => (result.file ? () => previewResult(result) : undefined);
         const deleting = new Set<string>();
         /**
          * Deletes a chat file after confirmation. The refreshed list renders every row anew, so keyboard focus moves
@@ -753,7 +787,7 @@ export function AssistantChatSidebarContent(props: {
             fallback={<SidebarSearchResults snapshot={snapshot()} search={props.search} actions={props.actions} files={files()} />}
           >
             <Show when={attention().length}>
-              <DetailPanel.Section title={copy().attention}>
+              <Section title={copy().attention}>
                 <For each={attention()}>
                   {(item) => (
                     <DetailPanel.Action
@@ -765,10 +799,10 @@ export function AssistantChatSidebarContent(props: {
                     />
                   )}
                 </For>
-              </DetailPanel.Section>
+              </Section>
             </Show>
 
-            <DetailPanel.Section
+            <Section
               title={copy().results}
               class="assistant-sidebar-results"
               // No count while empty: the body already says there are no results yet.
@@ -797,9 +831,23 @@ export function AssistantChatSidebarContent(props: {
                     {(result, index) => (
                       <Show
                         when={index() < Math.min(results().latestCount, RESULT_CARD_LIMIT)}
-                        fallback={<ResultRow result={result} actions={props.actions} files={files()} onDelete={deleteResult(result)} />}
+                        fallback={
+                          <ResultRow
+                            result={result}
+                            actions={props.actions}
+                            files={files()}
+                            onDelete={deleteResult(result)}
+                            onPreview={previewOf(result)}
+                          />
+                        }
                       >
-                        <ResultCard result={result} actions={props.actions} files={files()} onDelete={deleteResult(result)} />
+                        <ResultCard
+                          result={result}
+                          actions={props.actions}
+                          files={files()}
+                          onDelete={deleteResult(result)}
+                          onPreview={previewOf(result)}
+                        />
                       </Show>
                     )}
                   </For>
@@ -810,7 +858,15 @@ export function AssistantChatSidebarContent(props: {
                       onToggle={group("results:overflow").onToggle}
                     >
                       <For each={results().latestOverflow}>
-                        {(result) => <ResultRow result={result} actions={props.actions} files={files()} onDelete={deleteResult(result)} />}
+                        {(result) => (
+                          <ResultRow
+                            result={result}
+                            actions={props.actions}
+                            files={files()}
+                            onDelete={deleteResult(result)}
+                            onPreview={previewOf(result)}
+                          />
+                        )}
                       </For>
                     </Disclosure>
                   </Show>
@@ -833,6 +889,7 @@ export function AssistantChatSidebarContent(props: {
                               actions={props.actions}
                               files={files()}
                               onDelete={deleteResult(result)}
+                              onPreview={previewOf(result)}
                               when={older.kind === "month" ? dayLabel(result.deliveredAt) : undefined}
                             />
                           )}
@@ -842,10 +899,10 @@ export function AssistantChatSidebarContent(props: {
                   </For>
                 </div>
               </Show>
-            </DetailPanel.Section>
+            </Section>
 
             <Show when={yourFiles().count}>
-              <DetailPanel.Section title={copy().yourFiles} count={yourFiles().count}>
+              <Section title={copy().yourFiles} count={yourFiles().count}>
                 <For each={yourFiles().recent}>{(file) => <FileRow file={file} open={() => void openUpload(file)} />}</For>
                 <Show when={yourFiles().olderCount}>
                   <Disclosure
@@ -889,7 +946,7 @@ export function AssistantChatSidebarContent(props: {
                     </For>
                   </Disclosure>
                 </Show>
-              </DetailPanel.Section>
+              </Section>
             </Show>
 
             <Show when={snapshot().sourceCount}>
@@ -897,7 +954,7 @@ export function AssistantChatSidebarContent(props: {
             </Show>
 
             <Show when={working().count || props.runCount}>
-              <DetailPanel.Section
+              <Section
                 collapsible
                 open={workingOpen()}
                 onOpenChange={setWorkingOpen}
@@ -959,13 +1016,20 @@ export function AssistantChatSidebarContent(props: {
                     />
                   </Show>
                 </Show>
-              </DetailPanel.Section>
+              </Section>
             </Show>
 
             <ContextSection snapshot={snapshot()} project={props.project ?? null} state={props.state} actions={props.actions} />
 
             <Show when={lightbox()}>
-              {(state) => <Lightbox images={state().images} initialIndex={state().index} onClose={() => setLightbox(null)} />}
+              {(state) => (
+                <Lightbox
+                  items={state().items}
+                  index={state().index}
+                  onIndexChange={(index) => setLightbox({ ...state(), index })}
+                  onClose={() => setLightbox(null)}
+                />
+              )}
             </Show>
           </Show>
         );
@@ -1217,7 +1281,7 @@ function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions
   const entries = createMemo(() => buildSourceEntries(pages.sources()));
   const groups = createMemo(() => groupByTime(entries(), (entry) => entry.at, props.snapshot.now, props.snapshot.timeZone));
   return (
-    <DetailPanel.Section collapsible open={open()} onOpenChange={setOpen} title={copy().sources} count={props.snapshot.sourceCount}>
+    <Section collapsible open={open()} onOpenChange={setOpen} title={copy().sources} count={props.snapshot.sourceCount}>
       <Show when={open()}>
         <Show
           when={all()}
@@ -1250,7 +1314,7 @@ function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions
           </Show>
         </Show>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -1279,7 +1343,7 @@ function ContextSection(props: {
   const Heading = (headingProps: { children: JSX.Element }) => <p class="assistant-sidebar-timegroup__label">{headingProps.children}</p>;
   const [open, setOpen] = createSignal(false);
   return (
-    <DetailPanel.Section collapsible open={open()} onOpenChange={setOpen} title={copy().context} summary={summary()}>
+    <Section collapsible open={open()} onOpenChange={setOpen} title={copy().context} summary={summary()}>
       <Show when={open()}>
         <Show when={props.project}>
           {(project) => (
@@ -1388,7 +1452,7 @@ function ContextSection(props: {
           />
         </Show>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -1447,12 +1511,12 @@ function SidebarSearchResults(props: {
     <>
       <Show when={debounced().length >= SEARCH_MIN_CHARS}>
         <Show when={results().length}>
-          <DetailPanel.Section title={copy().results}>
+          <Section title={copy().results}>
             <For each={results()}>{(result) => <ResultRow result={result} actions={props.actions} files={props.files} />}</For>
-          </DetailPanel.Section>
+          </Section>
         </Show>
         <Show when={fileHits().length}>
-          <DetailPanel.Section title={copy().files}>
+          <Section title={copy().files}>
             <For each={fileHits()}>
               {(hit) => (
                 <DetailPanel.Action
@@ -1465,12 +1529,12 @@ function SidebarSearchResults(props: {
                 />
               )}
             </For>
-          </DetailPanel.Section>
+          </Section>
         </Show>
         <Show when={sourceHits().length}>
-          <DetailPanel.Section title={copy().sources}>
+          <Section title={copy().sources}>
             <For each={sourceHits()}>{(entry) => <SourceRow entry={entry} actions={props.actions} />}</For>
-          </DetailPanel.Section>
+          </Section>
         </Show>
         <Show when={hits.loading && !hits.latest}>
           <Placeholder state="loading" align="left" title={copy().loading} />

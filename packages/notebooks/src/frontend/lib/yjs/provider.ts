@@ -100,6 +100,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     throw new TypeError("An initial document requires initialRestoreRevision");
 
   const errorMessageByCode: Record<YjsErrorCode, string> = {
+    BUSY: "Document is busy; retrying",
     LOGIN_REQUIRED: "Login required",
     SESSION_EXPIRED: "Session expired",
     ACCESS_DENIED: "Access denied",
@@ -124,9 +125,10 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       };
     }
     const value = payload as { code?: unknown; message?: unknown; noteId?: unknown };
+    const code = typeof value.code === "string" ? (value.code as YjsErrorCode) : notebooksYjs.errorCode.internalError;
     return {
-      code: typeof value.code === "string" ? (value.code as YjsErrorCode) : notebooksYjs.errorCode.internalError,
-      message: typeof value.message === "string" ? value.message : "Unknown websocket error",
+      code,
+      message: typeof value.message === "string" ? value.message : (errorMessageByCode[code] ?? "Unknown websocket error"),
       noteId: typeof value.noteId === "string" ? value.noteId : undefined,
     };
   };
@@ -148,13 +150,6 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       return {
         code: notebooksYjs.errorCode.accessRevoked,
         message: "Access changed or note became unavailable",
-      };
-    }
-
-    if (code === 1013) {
-      return {
-        code: notebooksYjs.errorCode.backpressure,
-        message: "Websocket backpressure",
       };
     }
 
@@ -273,6 +268,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
             payload: request.payload.payload,
             restoreRevision: request.payload.generation,
             baseCursor: request.payload.baseCursor,
+            ...(request.payload.retry ? { retry: true } : {}),
           },
         };
       case "awarenessPublish":

@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as ai from "@k2b/cloud/ai";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import { type AuthContext, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
@@ -55,6 +56,7 @@ afterEach(() => {
 });
 beforeEach(() => {
   spies.push(stubRailSnapshot());
+  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "read" } }));
   spies.push(
     spyOn(sidebarData, "loadMailSidebarData").mockResolvedValue({
       mailboxes: [],
@@ -66,6 +68,8 @@ beforeEach(() => {
   spies.push(spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null));
   spies.push(spyOn(services.coreSettings, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
+  // The inline draft offers dictation; its availability reads AI settings, which these renders do not start.
+  spies.push(spyOn(ai, "getLiveDictationStatus").mockResolvedValue({ available: false, reason: "not_configured" }));
 });
 
 const request = (query = "", landingPage = false, env?: { timeout(request: Request, seconds: number): void }) => {
@@ -154,6 +158,7 @@ test("mailbox SSR keeps the count wait budget and restores the normal timeout on
 
 test("an active mailbox the caller may not read answers the shared no-store 404 page, as for an unknown address", async () => {
   const resolve = spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId);
+  const select = spyOn(workspace, "resolveWorkspaceRequest").mockRejectedValue(new Error("Unexpected workspace selection"));
   const load = spyOn(workspace, "loadMailboxPageData").mockResolvedValue({
     ok: false,
     error: { code: "FORBIDDEN", message: "Internal mailbox permission details", status: 403 },
@@ -164,27 +169,16 @@ test("an active mailbox the caller may not read answers the shared no-store 404 
     composer: false,
     context: false,
   });
-  spies.push(resolve, load, integration);
+  spies.push(resolve, select, load, integration);
 
   spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
 
   const response = await request();
 
   expect(resolve).toHaveBeenCalledWith(mailboxShortId);
-  expect(load).toHaveBeenCalledTimes(1);
-  expect(integration).toHaveBeenCalledWith({
-    actor: { kind: "user", user },
-    accessSubject: { type: "user", userId: user.id },
-    credentialKind: "oauth",
-    scopes: ["mail:read"],
-  });
-  expect(load.mock.calls[0]?.[0]).toMatchObject({
-    mailboxId,
-    context: {
-      actor: { kind: "user", user },
-      accessSubject: { type: "user", userId: user.id },
-    },
-  });
+  expect(select).not.toHaveBeenCalled();
+  expect(load).not.toHaveBeenCalled();
+  expect(integration).not.toHaveBeenCalled();
   expect(response.status).toBe(404);
   expect(response.headers.get("content-type")).toContain("text/html");
   expect(response.headers.get("cache-control")).toBe("private, no-store");
@@ -217,9 +211,9 @@ test.each([
       context: false,
     }),
   );
-  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
   const response = await request(query);
-  expect(response.status).toBe(404);
+  // A readable mailbox retains the snapshot loader's precise permission error.
+  expect(response.status).toBe(403);
   expect(load.mock.calls[0]?.[0].publicSearch).toEqual(
     resolveMailSearchRoute(new URL(`https://cloud.example.test/app/mail/${mailboxShortId}${query}`)),
   );
@@ -227,6 +221,7 @@ test.each([
 
 test("mailbox scope uses the public ID and Mail's page without a mailbox has no mailbox scope (#1471)", async () => {
   const snapshot: MailboxPageData = {
+    workspacePreference: { listShare: null, seenHints: [] },
     viewPreference: { large: "auto", phone: "compact" },
     doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
     receivingAddress: null,
@@ -240,6 +235,7 @@ test("mailbox scope uses the public ID and Mail's page without a mailbox has no 
       searchBackend: "postgres",
       automaticReplyManagementPermission: "admin",
       accessScope: "mailbox",
+      draftEditMode: "lock",
       composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
       createdAt: "2026-10-01T00:00:00.000Z",
       updatedAt: "2026-10-01T00:00:00.000Z",

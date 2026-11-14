@@ -6,7 +6,7 @@ import { oauthTokens } from "@k2b/cloud/services";
 import { hc } from "hono/client";
 import { generateSpecs } from "hono-openapi";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
-import { collaboration, publicResources } from "../service";
+import { collaboration, mailboxAccess, publicResources } from "../service";
 import app, { type ApiType } from ".";
 
 useUnitClients();
@@ -36,6 +36,8 @@ afterEach(() => mock.restore());
 
 describe("Mail batch conversation completion route", () => {
   beforeEach(() => {
+    // The caller can read the mailbox; these routes test their own contract.
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "read" } });
     spyOn(platformServices, "get").mockResolvedValue(100);
     spyOn(redis, "send").mockImplementation(async (command) => {
       if (command !== "EVAL") throw new Error(`Unexpected Redis command: ${command}`);

@@ -11,18 +11,60 @@ import * as settings from "../settings";
 import { buildEffectiveIpaGroupsByUid } from "./effective-groups";
 import { mirrorIpaPosix } from "./posix";
 import { calculateIpaProfileFromEffectiveProjection, getEffectiveUserGroups } from "./profile";
+import { ipaEntryId } from "./reactivation";
 import { createIpaRuntimeCheckpoint, type IpaSyncRuntime } from "./runtime";
-import { assessIpaDestructionGuard, formatIpaDestructionGuardFailure, readCompleteIpaList, selectStaleLocalIpaRows } from "./sync-planning";
+import {
+  assessIpaDestructionGuard,
+  createIpaIdentityMatcher,
+  formatIpaDestructionGuardFailure,
+  readCompleteIpaList,
+  selectStaleLocalIpaRows,
+} from "./sync-planning";
 
 type DbRow = Record<string, unknown>;
-type LocalIpaRow = DbRow & { uid: string; mail: string | null };
+type LocalIpaRow = DbRow & { id: string; uid: string; mail: string | null; entryId: string | null };
 
 const log = logger("auth:ipa:sync");
 
+/** Preserve database microseconds: a Date can reorder this read before a lock from the same millisecond. */
+const observationStart = async (): Promise<string> =>
+  (await sql<{ now: string }[]>`SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS now`)[0]!.now;
+
+/**
+ * Records that FreeIPA locks an account (nsaccountlock); true when the lock is new. `locked_at` is the latest lock
+ * observation, so a read that started before it never lifts the lock. A new lock signs the account out everywhere
+ * (sessions, user OAuth tokens, phones, sign-in devices) in the same transaction, so lifting it later revives nothing.
+ * Takes the account row first: lock records and transitions of one account run one after another.
+ */
+const recordIpaLock = async (db: typeof sql, userId: string): Promise<boolean> => {
+  await db`SELECT id FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE`;
+  const [previous] = await db<{ locked: boolean }[]>`
+    SELECT EXISTS (SELECT 1 FROM auth.user_ipa_data WHERE user_id = ${userId}::uuid AND locked_at IS NOT NULL) AS locked
+  `;
+  await db`
+    INSERT INTO auth.user_ipa_data (user_id, locked_at) VALUES (${userId}::uuid, clock_timestamp())
+    ON CONFLICT (user_id) DO UPDATE SET locked_at = EXCLUDED.locked_at
+  `;
+  if (previous?.locked) return false;
+  await session.revokeAllForUserInTransaction(db, userId);
+  return true;
+};
+
+/** True when a lock of the account was observed after `observedAt`: a transition based on that older read must wait. */
+const lockedSince = async (db: typeof sql, userId: string, observedAt: string): Promise<boolean> => {
+  await db`SELECT id FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE`;
+  const [row] = await db<{ locked: boolean }[]>`
+    SELECT EXISTS (SELECT 1 FROM auth.user_ipa_data WHERE user_id = ${userId}::uuid AND locked_at >= ${observedAt}::timestamptz) AS locked
+  `;
+  return row?.locked === true;
+};
+
+/** Upserts the IPA mirror; true when it records a new lock. An unlocked observation lifts only older locks. */
 const upsertUserIpaData = async (
   db: typeof sql,
   params: {
     userId: string;
+    entryId: string | null;
     uidNumber: number | null;
     primaryGidNumber: number | null;
     homeDirectory: string | null;
@@ -38,16 +80,19 @@ const upsertUserIpaData = async (
     mobile: string | null;
     sshPublicKeys: string[];
     sshFingerprints: string[];
+    locked: boolean;
+    observedAt: string;
   },
-) => {
+): Promise<boolean> => {
   await mirrorIpaPosix(db, params);
   await db`
     INSERT INTO auth.user_ipa_data (
-      user_id, uid_number, phone, employee_type, mobile, addr_street, addr_postal_code,
+      user_id, ipa_entry_id, uid_number, phone, employee_type, mobile, addr_street, addr_postal_code,
       addr_city, addr_state, ipa_password_expires, last_login_ipa, synced_at, ssh_public_keys, ssh_fingerprints
     )
     VALUES (
       ${params.userId},
+      ${params.entryId},
       ${params.uidNumber},
       ${params.phone},
       ${params.employeeType},
@@ -63,6 +108,7 @@ const upsertUserIpaData = async (
       ${freeipa.util.toPgTextArray(params.sshFingerprints)}::text[]
     )
     ON CONFLICT (user_id) DO UPDATE SET
+      ipa_entry_id = COALESCE(auth.user_ipa_data.ipa_entry_id, EXCLUDED.ipa_entry_id),
       uid_number = EXCLUDED.uid_number,
       phone = EXCLUDED.phone,
       employee_type = EXCLUDED.employee_type,
@@ -75,8 +121,51 @@ const upsertUserIpaData = async (
       last_login_ipa = EXCLUDED.last_login_ipa,
       synced_at = EXCLUDED.synced_at,
       ssh_public_keys = EXCLUDED.ssh_public_keys,
-      ssh_fingerprints = EXCLUDED.ssh_fingerprints
+      ssh_fingerprints = EXCLUDED.ssh_fingerprints,
+      locked_at = CASE
+        WHEN ${params.locked} OR auth.user_ipa_data.locked_at >= ${params.observedAt}::timestamptz THEN auth.user_ipa_data.locked_at
+        ELSE NULL
+      END
   `;
+  return params.locked && (await recordIpaLock(db, params.userId));
+};
+
+/**
+ * Locks the account row and returns its stored directory entry ID; undefined when the account no longer exists.
+ * A match from an earlier read must be checked again here: a concurrent sign-in may have bound the account meanwhile.
+ */
+const lockAccountIdentity = async (db: typeof sql, userId: string): Promise<{ entryId: string | null } | undefined> => {
+  const [account] = await db`SELECT id FROM auth.users WHERE id = ${userId}::uuid AND provider = 'ipa' FOR UPDATE`;
+  if (!account) return undefined;
+  // A separate statement after the lock: it sees a binding that the previous lock holder committed.
+  const [mirror] = await db<{ ipa_entry_id: string | null }[]>`
+    SELECT ipa_entry_id FROM auth.user_ipa_data WHERE user_id = ${userId}::uuid
+  `;
+  return { entryId: mirror?.ipa_entry_id ?? null };
+};
+
+/** Stores the directory entry ID of an account that has none yet, unless another account already holds it. */
+const bindIpaEntryId = async (db: typeof sql, userId: string, entryId: string | null): Promise<void> => {
+  if (!entryId) return;
+  await db`
+    UPDATE auth.user_ipa_data SET ipa_entry_id = ${entryId}
+    WHERE user_id = ${userId}::uuid AND ipa_entry_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM auth.user_ipa_data WHERE ipa_entry_id = ${entryId})
+  `;
+};
+
+/**
+ * True when another FreeIPA account in Cloud already uses this exact email. Email never identifies a directory
+ * user; a duplicate is a conflict for administrators, and the account keeps its previous email meanwhile.
+ */
+const ipaMailHeldByOther = async (db: typeof sql, mail: string | null, userId: string | null): Promise<boolean> => {
+  if (!mail) return false;
+  const rows = await db`
+    SELECT 1 FROM auth.users
+    WHERE provider = 'ipa' AND mail = ${mail} AND (${userId}::uuid IS NULL OR id <> ${userId}::uuid)
+    LIMIT 1
+  `;
+  return rows.length > 0;
 };
 
 // ==========================
@@ -85,6 +174,8 @@ const upsertUserIpaData = async (
 
 type SyncUser = {
   uid: string;
+  /** FreeIPA's immutable entry ID (ipaUniqueID); it survives a rename, a username does not identify a person. */
+  entryId: string | null;
   uidNumber: number | null;
   primaryGidNumber: number | null;
   homeDirectory: string | null;
@@ -106,6 +197,8 @@ type SyncUser = {
   mobile: string | null;
   sshPublicKeys: string[];
   sshFingerprints: string[];
+  /** FreeIPA's nsaccountlock: the directory refuses this account. */
+  locked: boolean;
 };
 
 type SyncGroup = {
@@ -131,6 +224,7 @@ const transformSyncUser = (raw: Record<string, unknown>): SyncUser => {
   const indirectGroups = (raw.memberofindirect_group as string[]) ?? [];
   return {
     uid: freeipa.util.str(raw.uid),
+    entryId: ipaEntryId(raw),
     uidNumber: freeipa.util.num(raw.uidnumber),
     primaryGidNumber: freeipa.util.num(raw.gidnumber),
     homeDirectory: freeipa.util.str(raw.homedirectory) || null,
@@ -155,6 +249,7 @@ const transformSyncUser = (raw: Record<string, unknown>): SyncUser => {
     mobile: freeipa.util.str(raw.mobile) || null,
     sshPublicKeys: Array.isArray(raw.ipasshpubkey) ? raw.ipasshpubkey : [],
     sshFingerprints: Array.isArray(raw.sshpubkeyfp) ? raw.sshpubkeyfp : [],
+    locked: freeipa.util.str(raw.nsaccountlock).toLowerCase() === "true",
   };
 };
 
@@ -218,6 +313,7 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
   });
   await runCheckpoint(true);
 
+  const observedAt = await observationStart();
   const snapshotFetchStartedAt = Date.now();
   const [usersRes, groupsRes] = await Promise.all([
     freeipa.client.call({
@@ -264,8 +360,11 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
   const matchMode = parseIpaMatchMode(await settings.get<string | null>("freeipa.user_match_mode"));
   const transitionPolicy = parseIpaAccountTransitionPolicy(await settings.get<string | null>("freeipa.account_transition_policy"));
 
-  let matchedExistingUsersByMail = 0;
-  let migratedLocalUsers = 0;
+  let renamedUsers = 0;
+  let boundDirectoryIdentities = 0;
+  let directoryIdentityConflicts = 0;
+  let mailConflicts = 0;
+  let proposedLocalMigrations = 0;
   let skippedLocalMailConflicts = 0;
   let skippedLocalUidConflicts = 0;
   let upsertedUsersByUid = 0;
@@ -273,12 +372,23 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
   let updatedUsersByUid = 0;
   let deletedGroups = 0;
 
-  const localIpaRows = await sql<DbRow[]>`
-    SELECT id, uid, mail, display_name, profile
-    FROM auth.users
-    WHERE provider = 'ipa'
-    ORDER BY uid
-  `;
+  const localIpaRows = (
+    await sql<DbRow[]>`
+      SELECT u.id, u.uid, u.mail, u.display_name, u.profile, ui.ipa_entry_id
+      FROM auth.users u
+      LEFT JOIN auth.user_ipa_data ui ON ui.user_id = u.id
+      WHERE u.provider = 'ipa'
+      ORDER BY u.uid
+    `
+  ).map(
+    (row): LocalIpaRow => ({
+      ...row,
+      id: row.id as string,
+      uid: row.uid as string,
+      mail: (row.mail as string | null) ?? null,
+      entryId: (row.ipa_entry_id as string | null) ?? null,
+    }),
+  );
   const localIpaGroupRows = await sql<DbRow[]>`
     SELECT name
     FROM auth.groups
@@ -287,21 +397,15 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
   `;
   const localIpaUsers = localIpaRows.length;
   const localGroups = localIpaGroupRows.length;
-  const currentRowByUid = new Map(localIpaRows.map((row) => [row.uid as string, row]));
-  const currentRowsByMail = new Map<string, DbRow[]>();
-  for (const row of localIpaRows) {
-    const mail = row.mail as string | null;
-    if (!mail) continue;
-    const matches = currentRowsByMail.get(mail);
-    if (matches) matches.push(row);
-    else currentRowsByMail.set(mail, [row]);
-  }
-  const currentRowForRemoteUser = (user: SyncUser): DbRow | undefined => {
-    const byUid = currentRowByUid.get(user.uid);
-    if (byUid) return byUid;
-    if (!user.mail) return undefined;
-    const byMail = currentRowsByMail.get(user.mail) ?? [];
-    return byMail.length === 1 ? byMail[0] : undefined;
+  const matchIdentity = createIpaIdentityMatcher(localIpaRows);
+  const currentRowForRemoteUser = (user: SyncUser): LocalIpaRow | undefined => {
+    const match = matchIdentity(user);
+    return match.kind === "matched" ? match.row : undefined;
+  };
+  // A lock is protective: a record without an entry ID still locks the account of its username.
+  const lockedRowForRemoteUser = (user: SyncUser): LocalIpaRow | undefined => {
+    const match = matchIdentity(user);
+    return match.kind === "matched" || match.kind === "unverified" ? match.row : undefined;
   };
   let profileDriftCount = 0;
   const profileDriftSamples: string[] = [];
@@ -321,22 +425,29 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
     if (previousProfile === "user" && graphProfile === "guest") profilesDemoted += 1;
   }
 
-  const localIpaIdentityRows: LocalIpaRow[] = localIpaRows.map((row) => ({
-    ...row,
-    uid: row.uid as string,
-    mail: (row.mail as string | null) ?? null,
-  }));
-  const staleLocalUsers = selectStaleLocalIpaRows({
-    localRows: localIpaIdentityRows,
-    activeRemoteUsers: activeUsers.map((user) => ({ uid: user.uid, mail: user.mail })),
+  // A locked account stays a locked FreeIPA account, also when it expired or left sync scope: a transition would
+  // turn it into a local account whose passkeys and API keys work again. It transitions once FreeIPA unlocks it.
+  const remoteLocked = allUsers.filter((user) => user.locked);
+  const lockedRemoteByRowId = new Map(
+    remoteLocked.flatMap((user) => {
+      const row = lockedRowForRemoteUser(user);
+      return row ? [[row.id, user] as const] : [];
+    }),
+  );
+  const outOfScopeLocked: LocalIpaRow[] = [];
+  const staleLocalUsers = selectStaleLocalIpaRows({ localRows: localIpaRows, activeRemoteUsers: activeUsers }).filter((row) => {
+    if (!lockedRemoteByRowId.has(row.id)) return true;
+    outOfScopeLocked.push(row);
+    return false;
   });
-  const affectedUserIds = new Set(staleLocalUsers.map((row) => row.id as string));
+  const newlyLocked = new Set<string>();
+  const affectedUserIds = new Set(staleLocalUsers.map((row) => row.id));
   for (const user of activeUsers) {
     const previousRow = currentRowForRemoteUser(user);
     const previousProfile = previousRow?.profile as "user" | "guest" | undefined;
     const nextProfile = calculateIpaProfileFromGroupNames(effectiveGroupsByUid.get(user.uid) ?? [], config.groupsBaseIpaRealm);
     if (previousRow && previousProfile === "user" && nextProfile === "guest") {
-      affectedUserIds.add(previousRow.id as string);
+      affectedUserIds.add(previousRow.id);
     }
   }
   const deletedGroupNames = localIpaGroupRows.map((row) => row.name as string).filter((name) => !groupCns.has(name));
@@ -373,100 +484,159 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
   await runCheckpoint(true);
   const transactionStartedAt = Date.now();
   await sql.begin(async (tx) => {
-    // 1. Upsert active IPA users
-    //    Match order: mail (existing IPA user, handles UID renames) → mail (guest promotion) → uid (new or unchanged)
+    // 1. Upsert active IPA users by directory identity (entry ID, else username for an unbound account).
+    //    Email never selects an account: a shared or reused address is reported as a conflict instead.
+    const claimedRowIds = new Set<string>();
+    const seenEntryIds = new Set<string>();
+    // Directory username -> account, only for identities verified here; memberships below follow this map.
+    const syncedUserIdByUid = new Map<string, string>();
     for (let userIndex = 0; userIndex < activeUsers.length; userIndex += 1) {
       await runCheckpoint();
       const u = activeUsers[userIndex]!;
       const effectiveGroups = effectiveGroupsByUid.get(u.uid) ?? [];
       const profile = calculateIpaProfileFromGroupNames(effectiveGroups, config.groupsBaseIpaRealm);
       const provider = "ipa";
+      const match = matchIdentity(u);
+      const duplicateEntry = u.entryId !== null && seenEntryIds.has(u.entryId);
+      if (u.entryId) seenEntryIds.add(u.entryId);
 
-      if (u.mail) {
-        // First: match existing IPA user by mail (handles UID renames)
-        const updated = await tx`
-          UPDATE auth.users SET
-            uid = ${u.uid}, provider = ${provider}, profile = ${profile}, admin = false,
-            given_name = ${u.givenname}, sn = ${u.sn},
-            display_name = ${u.displayName}, mail = ${u.mail},
-            account_expires = ${u.ipaAccountExpires}
-          WHERE mail = ${u.mail} AND provider = 'ipa'
-          RETURNING id`;
-        if (updated.length > 0) {
-          await upsertUserIpaData(tx, { userId: updated[0]!.id as string, ...u });
-          matchedExistingUsersByMail += 1;
+      if (match.kind === "unverified") {
+        directoryIdentityConflicts += 1;
+        log.warn("Skipping IPA sync user: the directory returned no entry ID for a bound account", { uid: u.uid, userId: match.row.id });
+        if (u.locked && (await recordIpaLock(tx, match.row.id))) newlyLocked.add(match.row.id);
+        continue;
+      }
+
+      if (duplicateEntry || match.kind === "conflict" || (match.kind === "matched" && claimedRowIds.has(match.row.id))) {
+        directoryIdentityConflicts += 1;
+        log.warn("Skipping IPA sync user: the username belongs to another directory entry", {
+          uid: u.uid,
+          userId: match.kind === "none" ? null : match.row.id,
+        });
+        // A duplicate record of the same identity still locks its account.
+        if (match.kind === "matched" && u.locked && (await recordIpaLock(tx, match.row.id))) newlyLocked.add(match.row.id);
+        continue;
+      }
+
+      if (match.kind === "matched") {
+        const row = match.row;
+        claimedRowIds.add(row.id);
+        const current = await lockAccountIdentity(tx, row.id);
+        if (!current || (current.entryId && current.entryId !== u.entryId)) {
+          directoryIdentityConflicts += 1;
+          log.warn("Skipping IPA sync user: its account changed during the sync", { uid: u.uid, userId: row.id });
           continue;
         }
-
-        // Second: optionally migrate a unique local account to IPA.
-        if (matchMode === "migrate") {
-          const localMatches = await tx<DbRow[]>`
-            SELECT id
-            FROM auth.users
-            WHERE mail = ${u.mail} AND provider = 'local'
-            ORDER BY profile = 'user' DESC, created_at ASC
-            LIMIT 2
-          `;
-
-          if (localMatches.length === 1) {
-            const migrated = await tx`
-              UPDATE auth.users SET
-                uid = ${u.uid}, provider = ${provider}, profile = ${profile}, admin = false,
-                given_name = ${u.givenname}, sn = ${u.sn},
-                display_name = ${u.displayName}, mail = ${u.mail},
-                account_expires = ${u.ipaAccountExpires}
-              WHERE id = ${localMatches[0]!.id as string}::uuid
-              RETURNING id`;
-            if (migrated.length > 0) {
-              await upsertUserIpaData(tx, { userId: migrated[0]!.id as string, ...u });
-              migratedLocalUsers += 1;
-              continue;
-            }
-          } else if (localMatches.length > 1) {
-            skippedLocalMailConflicts += 1;
-            log.warn("Skipping IPA provider migration because multiple local accounts matched by mail", {
-              mail: u.mail,
+        if (row.uid !== u.uid) {
+          const [holder] = await tx<DbRow[]>`SELECT id FROM auth.users WHERE uid = ${u.uid} AND id <> ${row.id}::uuid LIMIT 1`;
+          if (holder) {
+            directoryIdentityConflicts += 1;
+            log.warn("Skipping IPA sync rename: another account already uses the new username", {
               uid: u.uid,
+              previousUid: row.uid,
+              userId: row.id,
+              holderUserId: holder.id,
             });
+            // The account keeps its identity; a lock must still reach it.
+            if (u.locked && (await recordIpaLock(tx, row.id))) newlyLocked.add(row.id);
+            syncedUserIdByUid.set(u.uid, row.id);
             continue;
           }
         }
+        const keepMail = await ipaMailHeldByOther(tx, u.mail, row.id);
+        if (keepMail) {
+          mailConflicts += 1;
+          log.warn("IPA sync kept the previous email: another FreeIPA account uses the directory email", {
+            uid: u.uid,
+            userId: row.id,
+          });
+        }
+        await tx`
+          UPDATE auth.users SET
+            uid = ${u.uid}, provider = ${provider}, profile = ${profile}, admin = false,
+            given_name = ${u.givenname}, sn = ${u.sn}, display_name = ${u.displayName},
+            mail = ${keepMail ? row.mail : u.mail},
+            account_expires = ${u.ipaAccountExpires}
+          WHERE id = ${row.id}::uuid`;
+        if (await upsertUserIpaData(tx, { userId: row.id, ...u, observedAt })) newlyLocked.add(row.id);
+        syncedUserIdByUid.set(u.uid, row.id);
+        if (!current.entryId && u.entryId) boundDirectoryIdentities += 1;
+        if (row.uid !== u.uid) renamedUsers += 1;
+        upsertedUsersByUid += 1;
+        updatedUsersByUid += 1;
+        continue;
       }
 
       const uidConflictRows = await tx<DbRow[]>`
         SELECT id
         FROM auth.users
-        WHERE uid = ${u.uid} AND provider = 'local'
+        WHERE uid = ${u.uid}
         LIMIT 1
       `;
       if (uidConflictRows.length > 0) {
         skippedLocalUidConflicts += 1;
-        log.warn("Skipping IPA sync user upsert because a local account already uses the UID", {
+        log.warn("Skipping IPA sync user upsert because another account already uses the UID", {
           uid: u.uid,
-          mail: u.mail,
         });
         continue;
       }
 
-      // Third: insert new or update existing by uid
-      const upserted = await tx<DbRow[]>`
+      if (await ipaMailHeldByOther(tx, u.mail, null)) {
+        mailConflicts += 1;
+        log.warn("Skipping new IPA sync user: another FreeIPA account uses the directory email", { uid: u.uid });
+        continue;
+      }
+
+      // `migrate` proposes a link only. An administrator confirms it through the account's provider switch.
+      if (matchMode === "migrate" && u.mail) {
+        const localMatches = await tx<DbRow[]>`
+          SELECT id, uid
+          FROM auth.users
+          WHERE mail = ${u.mail} AND provider = 'local'
+          ORDER BY profile = 'user' DESC, created_at ASC
+          LIMIT 2
+        `;
+        if (localMatches.length === 1) {
+          proposedLocalMigrations += 1;
+          log.warn("IPA sync proposes linking a local account with the same email; not linked", {
+            uid: u.uid,
+            localUid: localMatches[0]!.uid,
+            localUserId: localMatches[0]!.id,
+          });
+          continue;
+        }
+        if (localMatches.length > 1) {
+          skippedLocalMailConflicts += 1;
+          log.warn("Skipping IPA provider migration because multiple local accounts matched by mail", { uid: u.uid });
+          continue;
+        }
+      }
+
+      // A concurrent write that took the username or email skips this user until the next sync.
+      const inserted = await tx<DbRow[]>`
         INSERT INTO auth.users (uid, provider, profile, admin, given_name, sn, display_name, mail, account_expires)
         VALUES (${u.uid}, ${provider}, ${profile}, false, ${u.givenname}, ${u.sn}, ${u.displayName}, ${u.mail}, ${u.ipaAccountExpires})
-        ON CONFLICT (uid) DO UPDATE SET
-          provider = ${provider},
-          profile = ${profile},
-          admin = false,
-          given_name = EXCLUDED.given_name, sn = EXCLUDED.sn,
-          display_name = EXCLUDED.display_name, mail = EXCLUDED.mail,
-          account_expires = EXCLUDED.account_expires
-        RETURNING id, (xmax = 0) AS inserted`;
-      await upsertUserIpaData(tx, { userId: upserted[0]!.id as string, ...u });
+        ON CONFLICT DO NOTHING
+        RETURNING id`;
+      const userId = inserted[0]?.id as string | undefined;
+      if (!userId) {
+        skippedLocalUidConflicts += 1;
+        log.warn("Skipping new IPA sync user: its username or email was taken concurrently", { uid: u.uid });
+        continue;
+      }
+      if (await upsertUserIpaData(tx, { userId, ...u, observedAt })) newlyLocked.add(userId);
+      syncedUserIdByUid.set(u.uid, userId);
       upsertedUsersByUid += 1;
-      if (Boolean(upserted[0]?.inserted)) {
-        insertedUsersByUid += 1;
-        const userId = upserted[0]!.id as string;
-        await coreUserEventPublisher().publish(tx, "user.created", { subject: userId, data: { userId, provider: "ipa" } });
-      } else updatedUsersByUid += 1;
+      insertedUsersByUid += 1;
+      await coreUserEventPublisher().publish(tx, "user.created", { subject: userId, data: { userId, provider: "ipa" } });
+    }
+
+    for (const row of outOfScopeLocked) {
+      await runCheckpoint();
+      // A locked account outside sync scope keeps no mirrored memberships; it only records the lock.
+      const remote = lockedRemoteByRowId.get(row.id)!;
+      if (await recordIpaLock(tx, row.id)) newlyLocked.add(row.id);
+      if (matchIdentity(remote).kind === "matched") await bindIpaEntryId(tx, row.id, remote.entryId);
     }
 
     for (let staleIndex = 0; staleIndex < staleLocalUsers.length; staleIndex += 1) {
@@ -475,6 +645,8 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
       const userId = stale.id as string;
       const uid = stale.uid as string;
       const previousProfile = (stale.profile as "user" | "guest" | null) ?? "guest";
+      // A lock seen after this snapshot keeps the account; the next sync decides with the newer state.
+      if (await lockedSince(tx, userId, observedAt)) continue;
 
       if (transitionPolicy === "delete") {
         await writeDeletedAccountAudit({
@@ -493,6 +665,23 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
         await tx`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
         scopeTransitions += 1;
         continue;
+      }
+
+      // A local account with the same email blocks the move to a local account: report it and keep the rest going.
+      // The account stays signed out and outside sync scope until an administrator resolves the duplicate.
+      if (stale.mail) {
+        const [localHolder] = await tx<DbRow[]>`
+          SELECT id FROM auth.users WHERE provider = 'local' AND mail = ${stale.mail} AND id <> ${userId}::uuid LIMIT 1
+        `;
+        if (localHolder) {
+          mailConflicts += 1;
+          log.warn("Deferring IPA account transition: a local account uses the same email", {
+            uid,
+            userId,
+            localUserId: localHolder.id,
+          });
+          continue;
+        }
       }
 
       const target = await applyIpaAccountTransitionPolicy({
@@ -567,8 +756,7 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
          OR manager_group_id IN (SELECT id FROM auth.groups WHERE provider = 'ipa')
     `;
 
-    const userIdRows: DbRow[] = await tx`SELECT id, uid FROM auth.users WHERE provider = 'ipa'`;
-    const uidToId = new Map<string, string>(userIdRows.map((r) => [r.uid as string, r.id as string]));
+    const uidToId = syncedUserIdByUid;
 
     await tx`
       DELETE FROM auth.ipa_user_effective_groups
@@ -651,9 +839,14 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
     remoteUsersFetched: allRawUsers.length,
     remoteUsersInScope: users.length,
     remoteExpiredUsers: expiredUsers,
+    remoteLockedUsers: remoteLocked.length,
+    newlyLockedUsers: newlyLocked.size,
     activeUsersSynced: activeUsers.length,
-    matchedExistingUsersByMail,
-    migratedLocalUsers,
+    renamedUsers,
+    boundDirectoryIdentities,
+    directoryIdentityConflicts,
+    mailConflicts,
+    proposedLocalMigrations,
     skippedLocalMailConflicts,
     skippedLocalUidConflicts,
     staleUsersDemoted: scopeTransitions,
@@ -687,6 +880,7 @@ export type SyncUserOutcome =
   | { status: "skipped_disabled" }
   | { status: "fetch_failed"; error: string }
   | { status: "expired"; userId: string | null }
+  | { status: "locked"; userId: string | null }
   | { status: "out_of_scope"; userId: string | null }
   | { status: "not_found_local" };
 
@@ -704,11 +898,14 @@ const reconcileOutOfScopeUser = async (params: {
   previousProfile: "user" | "guest";
   reason: "ipa_expired_demoted" | "ipa_expired_deleted" | "sync_out_of_scope_demoted" | "sync_out_of_scope_deleted";
   meta?: Record<string, unknown>;
+  observedAt: string;
 }): Promise<void> => {
   const transitionPolicy = parseIpaAccountTransitionPolicy(await settings.get<string | null>("freeipa.account_transition_policy"));
 
   await session.revokeAllForUser(params.userId);
   await sql.begin(async (tx) => {
+    // A lock seen after this read keeps the account as a locked FreeIPA account.
+    if (await lockedSince(tx, params.userId, params.observedAt)) return;
     if (transitionPolicy === "delete") {
       await writeDeletedAccountAudit({
         db: tx,
@@ -780,6 +977,7 @@ export const syncUser = async (username: string): Promise<SyncUserOutcome> => {
   });
 
   // Fetch user from FreeIPA
+  const observedAt = await observationStart();
   const userRes = await freeipa.client.call({
     url: config.url,
     ipaSession,
@@ -796,20 +994,50 @@ export const syncUser = async (username: string): Promise<SyncUserOutcome> => {
   const raw = userRes.result.result as Record<string, unknown>;
   const user = transformSyncUser(raw);
 
-  const existingRow: DbRow | undefined = (
+  const storedRow: DbRow | undefined = (
     await sql<DbRow[]>`
-      SELECT id, mail, display_name, profile
-      FROM auth.users
-      WHERE uid = ${user.uid} AND provider = 'ipa'
+      SELECT u.id, u.mail, u.display_name, u.profile, ui.ipa_entry_id,
+        EXISTS (
+          SELECT 1 FROM auth.user_ipa_data other WHERE other.ipa_entry_id = ${user.entryId} AND other.user_id <> u.id
+        ) AS entry_id_taken
+      FROM auth.users u
+      LEFT JOIN auth.user_ipa_data ui ON ui.user_id = u.id
+      WHERE u.uid = ${user.uid} AND u.provider = 'ipa'
     `
   )[0];
+  // The username alone does not identify the person: an account bound to another directory entry, or an unbound
+  // account whose directory entry already belongs to another account, is not this user's account.
+  const storedEntryId = (storedRow?.ipa_entry_id as string | null | undefined) ?? null;
+  // A record without an entry ID can neither confirm nor replace a stored one: only its lock is applied.
+  const unverified = Boolean(storedEntryId) && !user.entryId;
+  const identityMismatch =
+    Boolean(storedRow) && !unverified && (storedEntryId ? storedEntryId !== user.entryId : storedRow?.entry_id_taken === true);
+  if (identityMismatch) log.warn("Username belongs to another directory entry during single-user sync", { username });
+  const existingRow = identityMismatch ? undefined : storedRow;
   const existingUserId = (existingRow?.id as string | undefined) ?? null;
   const previousProfile: "user" | "guest" = (existingRow?.profile as "user" | "guest" | undefined) ?? "guest";
+
+  // A lock wins over expiry and scope: the account stays a locked FreeIPA account until FreeIPA unlocks it.
+  if (user.locked) {
+    log.warn("User locked in FreeIPA during single-user sync", { username });
+    if (existingUserId)
+      await sql.begin(async (tx) => {
+        await recordIpaLock(tx, existingUserId);
+        await bindIpaEntryId(tx, existingUserId, user.entryId);
+      });
+    return { status: "locked", userId: existingUserId };
+  }
+
+  if (unverified) {
+    log.warn("FreeIPA returned no entry ID for a bound account during single-user sync", { username });
+    return { status: "fetch_failed", error: "FreeIPA returned no directory entry ID" };
+  }
 
   if (isExpired(user)) {
     log.warn("User expired during single-user sync", { username });
     if (existingUserId) {
       await reconcileOutOfScopeUser({
+        observedAt,
         userId: existingUserId,
         uid: user.uid,
         mail: (existingRow?.mail as string | null) ?? user.mail,
@@ -849,18 +1077,30 @@ export const syncUser = async (username: string): Promise<SyncUserOutcome> => {
   const provider = "ipa";
 
   // Update user attributes only (no group sync!)
-  await sql`
-    UPDATE auth.users SET
-      provider = ${provider},
-      profile = ${profile},
-      admin = false,
-      given_name = ${user.givenname},
-      sn = ${user.sn},
-      display_name = ${user.displayName},
-      mail = ${user.mail},
-      account_expires = ${user.ipaAccountExpires}
-    WHERE uid = ${user.uid}
-  `;
-  await sql.begin((tx) => upsertUserIpaData(tx, { userId: existingUserId, ...user }));
+  const synced = await sql.begin(async (tx) => {
+    // Checked again under the row lock: a concurrent sync may have bound the account to another entry meanwhile.
+    const current = await lockAccountIdentity(tx, existingUserId);
+    if (!current || (current.entryId && current.entryId !== user.entryId)) return false;
+    const keepMail = await ipaMailHeldByOther(tx, user.mail, existingUserId);
+    if (keepMail) log.warn("Single-user sync kept the previous email: another FreeIPA account uses the directory email", { username });
+    await tx`
+      UPDATE auth.users SET
+        provider = ${provider},
+        profile = ${profile},
+        admin = false,
+        given_name = ${user.givenname},
+        sn = ${user.sn},
+        display_name = ${user.displayName},
+        mail = ${keepMail ? ((existingRow?.mail as string | null) ?? null) : user.mail},
+        account_expires = ${user.ipaAccountExpires}
+      WHERE id = ${existingUserId}::uuid
+    `;
+    await upsertUserIpaData(tx, { userId: existingUserId, ...user, observedAt });
+    return true;
+  });
+  if (!synced) {
+    log.warn("Account changed during single-user sync", { username });
+    return { status: "not_found_local" };
+  }
   return { status: "synced", userId: existingUserId };
 };

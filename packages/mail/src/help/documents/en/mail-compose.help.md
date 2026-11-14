@@ -3,20 +3,56 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
-updated: 2026-10-20
+updated: 2026-11-12
 order: 30
 kind: task
 ---
 
 ## Start a message {icon="square-plus"}
 
-Choose **Compose** for a new message. In a conversation, choose **Reply**, **Reply all**, **Forward**, or **Quote selection**. Mail first creates a shared draft and then opens its focused composer page. Mail keeps the purpose of the draft, so the final action button says **Send**, **Reply**, **Reply all**, or **Forward**.
+You answer in the reply box. It stands open in every conversation you can write in, at the top above the newest message. There it opens at a fixed height, so the messages below stay in place; it grows as soon as you start writing in it. Each conversation has exactly one reply draft. Opening a conversation creates no draft; Mail creates it when you type the first character.
+
+- **Mode:** the arrow at the left of the box offers **Reply**, **Reply all**, **Forward**, and **Internal note**. A change between the three mail modes keeps your text; Mail sets the recipients and the subject again. **Reply** on a message, **Quote selection**, the **R** key, and the conversation's **…** menu all write into the same box.
+- **Bar:** **Send ▾** sends, or **Send later** at **Tomorrow morning**, **Monday morning**, or a time you choose. Next to it are formatting, attachments, link, emoji, image, signature, **Assistant**, and **…** with **Preview (how the mail arrives)**, **Attach quote**, **Calendar invitation**, **Delivery options**, **Plain text only**, **Edit subject**, **Open in a window**, and **Recover changes**. At the right, the box quietly shows "Saved", "Saving …", or "Offline · kept here". The trash discards the reply after a question.
+- **States:** while a file uploads, the box shows "Uploading · n %", and **Send** waits. Offline you keep writing, and **Send** waits. A failed send turns the bar light red with the reason; your text is saved, and **Send again** stands where **Send** was. A scheduled reply shows "Send scheduled" with **Change time** and **Cancel and edit**.
+- **Place:** to have the box under the conversation, with the oldest message first and the newest one at the bottom, choose **…** › **Reply box** › **Bottom** in the conversation's head. **Top** puts it back. Mail keeps the choice in this browser.
+- **Undo:** after **Send**, the message stands at once next to the box as the newest message, with "Sending in n s" and **Undo**, and the box is empty again. What you type then stays in this browser and becomes the next draft once the message has left. If you choose **Undo**, the reply comes back into the box, and the box offers what you typed meanwhile with **Restore changes**.
+- **Window:** **…** › **Open in a window** moves the reply to a floating window. The box then says "Opened in a window" with **Bring back**.
+- **Write large:** the icon at the top right of the box opens the reply large over Mail. The draft stands on the left; on the right the conversation stands above the preview, which follows your typing. Your text, the caret, and the attachments come along. **Arrange** at the top right changes the layout: **Two**, **Three**, **Stacked**, or **Tabs**, or move one pane next to another; the menu of a pane's tab (right mouse button) offers the same. You can also drag a tab by its grip. Mail keeps your layout. **Attach to reply** next to a file in the conversation adds it to your reply. **Restore size** or **Esc** puts the reply back into the box. While a file uploads, **Write large** waits. On a phone the large reply fills the screen, with **Draft**, **History**, and **Preview** as tabs.
+- **One-time notice:** where a conversation had several drafts before Mail kept one reply draft, the box says once how many there were. The most recently edited one stands in the box; **Got it** removes the notice.
+
+**Internal note:** choose **Internal note** in the mode arrow. The box turns yellow and shows "Only for the team. … never sees it." It has no recipients, no signature, and no attachments. **Save note** (or **Ctrl+Enter**) saves the note into the conversation; it never sends anything. Your reply draft stays saved and comes back unchanged after the note. Unsaved note text stays in this tab when you open another conversation. If the note cannot be saved, the bar turns light red, your text stays, and **Save again** tries once more.
+
+Choose **New message** or press **Ctrl+Alt+N** (**⌘+⌥+N** on a Mac) for a new message. It opens as a floating window over the mailbox. The list and the open conversation behind it stay usable, and you can have several new messages open at once.
+
+- **Window head:** It shows the subject, until then "New message", and quietly where the draft stands: "Saved", "Saving …", or "Offline · kept here". Next to it are **Minimize**, **Maximize**, and **Close window**. Drag the head to move the window.
+- **Minimize** puts the window down as a bar at the bottom. Choose the bar to bring it back. The list leaves room so that its last row stays reachable.
+- **Maximize** enlarges the window over almost all of the app and dims the rest. Esc or **Restore size** makes it smaller again.
+- **Close** loses nothing: the draft waits in **Drafts**, and the notice "Draft is in “Drafts”" offers **Open**. Choosing a new message in **Drafts** opens it as a window again. A message you just started and did not change disappears when you close it.
+- **Send** closes the window. The notice "Sending in … s" offers **Undo** while that is still possible; the window then opens again with the draft. **Send later** closes the window too, and **Change** in the notice takes the message back for editing.
+- **Send failed:** The window stays open, its bottom bar turns red and names the reason. Your text is saved. **Send again** stands where **Send** was.
+- **Offline** you keep writing; Mail keeps the text in this browser, and **Send** waits until the connection is back. While a file uploads, the head shows "Uploading · n %", and **Send** waits too.
+- **Reload:** Mail remembers the open windows in this tab, per mailbox, with their size and state. After a reload or when you come back from another app, they open again. A draft that was sent or deleted in the meantime is left out without a message.
+- **On a phone** the window is a sheet over the whole screen. **Send** is at the top right and **Close** at the top left; closing keeps the draft.
+
+After you send it, the new message becomes a conversation.
+
+In the box and in a window:
+
+- **Signature:** the chosen signature follows the text as a fixed block, exactly as Mail adds it when it sends. Switch it with the signature button in the draft's tools.
+- **Quote:** a reply offers **Attach quote** for the message it answers. The quote is collapsed in the draft and goes out after the signature, with the date in your language and time zone.
+- **Preview:** shows the mail exactly as it arrives, with the mailbox's design. The editor itself keeps a calm Cloud style.
+- **Old links:** links to the compose page of a reply open the conversation with the draft in the box. Links to a new message and old links to its own window open Mail with the draft's window.
 
 Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** shows the additional recipient fields. Recipients never see the Bcc list. Your own copy in Sent keeps it, so any mail client shows whom you blind-copied.
 
 While you type in **To**, **Cc**, or **Bcc**, Mail suggests contacts from the contact directory first. Then it suggests addresses this mailbox wrote to or received mail from. Mailbox suggestions also work without the Contacts app. A mail icon marks them. Use the arrow keys to highlight a suggestion and Enter to add it. People who see only assigned conversations get no mailbox suggestions.
 
-The composer is separate from the mailbox workspace. **Back to mailbox** saves the latest changes, releases the editing lease, and returns to the mailbox. **Open in new window** moves the same draft to its own browser window. It never creates a second draft.
+To add several people at once, type or paste a list separated by commas, semicolons, or line breaks, also in the form `Name <address>`. Each address becomes its own recipient; a part that is not an address stays in the field, marked. Text that is still in a recipient field when you send goes with the message if it is a complete address. Otherwise Mail does not send, keeps the text, and puts the cursor in that field.
+
+**Ctrl+Enter** (**⌘+Enter** on a Mac) sends from any field of the draft, with the same checks as **Send**. While Mail saves or sends, the text keeps its cursor and toolbar; typing waits until the step ends. A draft in its own window closes that window after sending or discarding.
+
+When you open another conversation or mailbox while a draft is open, Mail saves the latest changes before it releases the editing lease. Back and reload open the conversation with the draft open again.
 
 ## Continue the draft with Assistant {icon="sparkles"}
 
@@ -50,7 +86,7 @@ A browser can remember an earlier rejection and not ask again. If no prompt appe
 4. Choose **Email link setup** again.
 :::
 
-An email link can fill To, Cc, Bcc, Subject, and a plain-text Body. Other Cloud apps open the same page, for example to write to a contact. When you have **Edit** access to exactly one mailbox and that mailbox has exactly one verified sender, the draft opens directly with that sender. Otherwise Cloud first shows the mailboxes where you have **Edit** access and their verified senders, and it starts with the sender you used last. If the only sender is not verified yet, the page says why. Links cannot choose a hidden sender, attach local files, or send automatically. **Back** returns to the page where you opened the link. In browsers without support for protocol handlers, you can still use **Compose** normally.
+An email link can fill To, Cc, Bcc, Subject, and a plain-text Body. Other Cloud apps open the same page, for example to write to a contact. When you have **Edit** access to exactly one mailbox and that mailbox has exactly one verified sender, the draft opens directly with that sender. Otherwise Cloud first shows the mailboxes where you have **Edit** access and their verified senders, and it starts with the sender you used last. If the only sender is not verified yet, the page says why. Links cannot choose a hidden sender, attach local files, or send automatically. **Back** returns to the page where you opened the link. In browsers without support for protocol handlers, you can still use **New message** normally.
 
 ## Choose Markdown or Plain text {icon="route"}
 
@@ -71,25 +107,31 @@ Your default format is in **… → Settings → Writing → Compose format**. C
 
 ## Resume an existing conversation draft {icon="pencil"}
 
-Drafts belong to the mailbox, not only to the browser that created them. When a conversation already has drafts, **Reply**, **Reply all**, or **Forward** opens **Continue a draft?**. The dialog shows who created each draft, when it changed, and a preview of its content. Continue the right draft or create a separate message.
+Drafts belong to the mailbox, not only to the browser that created them. A conversation has one reply draft, and it always stands in the reply box. **Reply**, **Reply all**, and **Forward** change its mode instead of starting a second one. In the list, a conversation with drafts shows **Draft** or the number of drafts with the people who write them.
+
+A suggestion from Gustav or another automated account is this one reply draft, in the reply box, in plum, with the account's name, for example **Suggestion from Gustav**, and **Type to take it over, or send it as it is**. It never sends by itself; **Send** sends it as it is. Once someone changes anything, recipients included, it is an ordinary draft, and the account never replaces it. Each account has at most one such suggestion in a conversation.
 
 Mail saves the shared draft while you work. It also keeps a recovery journal in the browser for changes that have not reached the server yet. After a reload or a broken connection, Mail can restore these browser changes.
 
-Only the session that currently holds the editing lease can change the draft. Mail refuses saves, attachment changes, and discards from every other session, tab, agent, or CLI call, and it names the current editor. If nobody holds the lease, the next editor can change the draft again. Your own expired session therefore never blocks you.
+The save status distinguishes **Changes pending**, **Saved on this device**, and **Saved on server**. A device copy can survive a short offline period; it does not confirm that the server has saved the latest text. Plaintext recovery journals expire 24 hours after their last update and are cleared when Mail authorizes a different account on this browser.
 
-If another tab or person edits the draft, Mail names that session when possible. You can continue read-only or move editing to this tab on purpose. After the dialog closes, the composer keeps a quiet reminder.
+If a body change cannot be applied safely, Mail keeps the proposal separately. In the editor notice, choose **Apply proposal** to try it again or **Discard proposal** to remove it. **Copy draft** copies the proposal while it is pending. Updates from other people and reloading do not discard it. Resolve the proposal before sending. If synchronization takes too long, saving stops waiting and leaves your input available for retry or copying.
 
-Mail resumes editing on its own after a hidden tab, sleep, or a slow response. It asks only when another tab, device, or person holds the draft.
+In the default editing mode, Mail reserves a draft for the person writing it. Opening or reading a draft takes no reservation. Your own tabs, separate compose windows, and devices share that reservation and never lock each other out. If you change different versions at once, Mail keeps the conflicting input for recovery.
+
+Mail stops renewing the reservation when you stop typing or put the tab in the background. It expires within 40 seconds of the last input, or within 30 seconds after the tab goes into the background. Gustav and Code suggestions never reserve the draft.
+
+You can keep writing offline. **Saved on this device** means that this browser holds your current text. When you reconnect, Mail saves automatically if nobody changed the draft. If another person took over or saved a different version, your input stays visible for **Copy text** or recovery; Mail never silently overwrites either version.
 
 :::warning Take over makes the other editor read-only
-Choose **Take over** only when you want the other editor to lose editing.
+If another person holds the reservation, Mail names them and offers **Take over**. Their editor then explains who took over and keeps unsaved input for recovery. For a reply, take over before choosing **Recover changes** to keep your current input in the same conversation. You can also keep reading without taking over.
 :::
 
-Mail shows a temporary connection problem separately and does not ask you to take over. Outdated saves within your own session can create recovery copies. Use the recovery action in the composer to inspect and restore them.
+Mail asks about takeover only when another person holds the reservation. Server-side changes, attachments, discards, agents, and CLI calls enforce the same ownership and access rules. Use the recovery action in the composer to inspect and restore conflicting versions.
 
 Drafts live in Cloud as shared drafts.
 
-- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer. The count is in the workspace head. Each draft looks like a conversation row: the recipients stand where the sender is, an orange **Draft** tag comes before the subject, and the row shows the preview, an attachment mark, and the edit time. In the columns view, the **Started by** column shows who started the draft.
+- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer. The count stands in the tab row. Each draft looks like a conversation row: the recipients stand where the sender is, **Draft** follows them in orange, and the row shows the subject, the preview, an attachment mark, who started the draft, and the edit time.
 - **Delete from the list:** Open the draft's **…** menu or right-click the row, then choose **Delete draft**. On a focused row, you can also press Delete or Backspace. Mail asks before it deletes the draft. The draft stays when somebody has it open in the composer or changed it in the meantime, and Mail tells you why. Drafts that are scheduled or being sent are not in this folder; cancel them in **Outbox** first.
 - **Reply indicator:** A conversation with drafts shows an indicator on Reply.
 - **CLI:** `cld mail draft list` lists these drafts, together with drafts that are scheduled or being sent.
@@ -193,6 +235,7 @@ Mail takes the organizer from the verified sender identity of the draft. **To** 
 
 Before an immediate, delayed, or scheduled send, Mail checks the exact saved draft for common mistakes. It can ask you to review:
 
+- a missing or whitespace-only subject;
 - a missing attachment;
 - an unusually large recipient list;
 - external recipients;
@@ -200,7 +243,7 @@ Before an immediate, delayed, or scheduled send, Mail checks the exact saved dra
 - a suspicious link;
 - template placeholders such as `{{ sender.email }}` that are no longer part of a signature or snippet and would be sent as literal text.
 
-The dialog explains each warning and lets you return to the draft. Choose **Send anyway** only after you have reviewed the current recipients, links, and attachments.
+The dialog explains each warning and lets you return to the draft. Choose **Send anyway** only after you have reviewed the current subject, recipients, links, and attachments.
 
 An approval applies only to that saved version of the draft. If you edit the draft after approval, Mail runs the checks again. Mail records the approved warning types for delivery auditing, but not a second copy of the message content.
 

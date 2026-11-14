@@ -29,8 +29,7 @@ const examples: ChartShowcaseExample[] = [
     useFor: ["Where things happen, when the place itself matters.", "A handful of places with a value each."],
     avoidFor: ["Ranking countries by a value; a sorted bar list is easier to read.", "Values per country area; use the country map."],
     a11y: [
-      ...inspectA11y.slice(0, 1),
-      "Arrow keys pan the map; Alt with arrow keys inspects the places; plus, minus and reset buttons zoom.",
+      "One tab stop: Tab focuses the map, arrow keys pan it and Alt with arrow keys moves from place to place; plus, minus and reset buttons zoom.",
       ...inspectA11y.slice(1),
     ],
     options: [

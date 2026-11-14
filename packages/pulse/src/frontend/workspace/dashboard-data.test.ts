@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { charts } from "@k2b/ui/charts/core";
 import { DashboardDefinitionSchema, DashboardSaveSchema } from "../../dashboard-contracts";
+import { dashboardChartDescription } from "../../dashboard-description";
 import { dashboardRangeSearch } from "./dashboard-client";
 import {
   dashboardCategories,
@@ -153,8 +154,8 @@ test("funnel and bar values use named columns with complete source order", () =>
   ]);
 });
 
-test("bar preserves every numeric output while funnel rejects ambiguous or invalid stages", () => {
-  const panel = { ...dashboardTestKinds.definition.panels[2]!, kind: "bar" as const, x: "stage" };
+test("the saved bar view preserves flattened values and duplicate pairs while funnel rejects ambiguous or invalid stages", () => {
+  const panel = { ...dashboardTestKinds.definition.panels[2]!, kind: "bar" as const, x: "stage", columns: ["stage", "first", "second"] };
   const data = {
     columns: [
       { name: "stage", type: "String" },
@@ -167,6 +168,33 @@ test("bar preserves every numeric output while funnel rejects ambiguous or inval
     { label: "Visit · first", value: 10 },
     { label: "Visit · second", value: 8 },
   ]);
+  // DashboardPanelView uses dashboardCategories for every legacy bar, just as the server does.
+  expect(dashboardChartDescription(panel, data, { locale: "en", timeZone: "UTC" })).toMatchObject({
+    kind: "bar",
+    data: dashboardCategories(panel, data, "en"),
+  });
+  const grouped = { ...panel, series: "host", columns: ["stage", "host", "value"] };
+  const duplicates = {
+    columns: grouped.columns.map((name) => ({ name, type: "String" })),
+    rows: [
+      ["Visit", "first", 10],
+      ["Visit", "first", 8],
+      ["Contact", "second", null],
+    ],
+  };
+  expect(dashboardCategories(grouped, duplicates, "en")).toEqual([
+    { label: "Visit · first", value: 10 },
+    { label: "Visit · first", value: 8 },
+    { label: "Contact · second", value: NaN },
+  ]);
+  expect(dashboardChartDescription(grouped, duplicates, { locale: "en", timeZone: "UTC" })).toMatchObject({
+    kind: "bar",
+    data: [
+      { label: "Visit · first", value: 10 },
+      { label: "Visit · first", value: 8 },
+      { label: "Contact · second", value: null },
+    ],
+  });
   expect(() => dashboardCategories({ ...panel, kind: "funnel" }, data, "en")).toThrow("PANEL_RESULT_INVALID");
   expect(() => dashboardCategories(panel, { ...data, rows: [["Visit", "invalid", 8]] }, "en")).toThrow("PANEL_RESULT_INVALID");
   expect(() =>

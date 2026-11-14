@@ -6,9 +6,12 @@ import { type AuditActor, type AuditRecordParams, audit } from "../services/audi
 import { toPgTextArray } from "../services/postgres";
 import type { AiToolApprovalPolicy, AiTurnRunConfig } from "./types";
 
-/** Background authority never inherits a user's interactive Always Allow preference. */
+/**
+ * Background authority never inherits a user's interactive Always Allow preference: neither a mandate-backed turn
+ * nor any background run, whether or not its configuration carries a mandate.
+ */
 export const aiTurnAllowsRememberedApprovals = (config: AiTurnRunConfig | null | undefined): boolean =>
-  config == null || config.kind === "compact" || config.mandate === undefined;
+  config == null || config.kind === "compact" || (config.mandate === undefined && config.background === undefined);
 
 /**
  * Reserved remembered-approval name for reading one website in one chat or one managed app. No capability or tool can

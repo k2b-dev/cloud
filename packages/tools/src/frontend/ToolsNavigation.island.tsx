@@ -1,7 +1,7 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { createNavigation, useLocale } from "@k2b/ui";
 import { createToolSearch, toolSearchMessages } from "./tool-search";
-import { categoryOrder, resolveRegistry } from "./tools/registry";
+import { categoryOrder, registryMessages, resolveRegistry } from "./tools/registry";
 
 export default function ToolsNavigation(props: { activeToolId?: string; overviewLabel: string }) {
   const locale = useLocale();
@@ -30,5 +30,5 @@ export default function ToolsNavigation(props: { activeToolId?: string; overview
       if (action === "search") return search();
     },
   });
-  return <WorkspaceNavigationProvider navigation={navigation} label="Tools" />;
+  return <WorkspaceNavigationProvider navigation={navigation} label={registryMessages.resolve([locale()]).t.appName} />;
 }

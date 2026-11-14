@@ -6,19 +6,18 @@ import { createEditor } from "@k2b/editor";
 import {
   basicExtensions,
   fadeScrollMarginsExtension,
-  fadeScrollPadding,
   listCommandsExtension,
   listsExtension,
   markdownExtension,
   noteScroller,
 } from "@k2b/editor/markdown";
-import { LocaleProvider, ScrollArea } from "@k2b/ui";
+import { AppWorkspace, LocaleProvider, ScrollArea } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { notebooksYjs } from "../../../../lib/yjs";
 import { notebookListOptions } from "../../../lib/editor/notebook-options";
 import { notebookWorkspaceMessages } from "../../messages";
-import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
+import EditorToolbar, { formattingKeymap, pillScrollPadding } from "./EditorToolbar";
 import { caretFormat, sameCaretFormat } from "./editor-actions";
 import { createSyncEnded, SyncEndedBar } from "./sync-ended";
 
@@ -32,6 +31,8 @@ function Harness() {
     if (current) editorState.attach(current);
   });
   const [toolbarMounted, setToolbarMounted] = createSignal(true);
+  // A device copy the pill offers to keep or discard, as after a reload with pending text.
+  const [deviceCopy, setDeviceCopy] = createSignal(false);
   const locale = new URLSearchParams(window.location.search).get("locale") ?? "en";
   let pending = false;
   const sync = createSyncEnded({
@@ -97,10 +98,11 @@ function Harness() {
       blur() {
         editor.contentDOM.blur();
       },
-      endSync(code: string, unsent: boolean) {
+      endSync(code: string, unsent: boolean, recovery = false) {
         const known = Object.values(notebooksYjs.errorCode).find((value) => value === code);
         if (!known) throw new Error(`Unknown sync error: ${code}`);
         pending = unsent;
+        setDeviceCopy(recovery);
         sync.end({ code: known, message: code });
       },
       resumeSync() {
@@ -121,45 +123,63 @@ function Harness() {
     window.toolbarHarness = harness;
   });
 
+  // `?shell=1` places the frame in a full note page: the workspace with its notebook sidebar and the main column.
+  const shell = new URLSearchParams(window.location.search).get("shell") === "1";
+  const frame = () => (
+    // The same frame as NoteEditor: the pills float over the note's bottom edge.
+    <div class="notebook-editor-frame relative flex flex-1 min-h-0 min-w-0 flex-col" data-notebook-pills="">
+      <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": pillScrollPadding }} class="flex-1 min-h-0" data-editor-scroller>
+        <div ref={host} />
+        <div class="notebook-editor-endgap" aria-hidden="true" />
+      </ScrollArea>
+      <Show when={toolbarMounted()}>
+        <Show
+          when={sync.ended()}
+          fallback={
+            <EditorToolbar
+              connected={true}
+              editor={editorState}
+              notebookId="Book01"
+              noteId="Note01"
+              format={format()}
+              onUndo={() => {
+                const editor = view();
+                if (editor) undo(editor);
+              }}
+              onRedo={() => {
+                const editor = view();
+                if (editor) redo(editor);
+              }}
+            />
+          }
+        >
+          {(ended) => (
+            <SyncEndedBar
+              notebookId="Book01"
+              ended={ended()}
+              sync={sync}
+              markdown={() => view()?.state.doc.toString() ?? ""}
+              noteHref={() => "/app/notebooks/Book01/Note01"}
+              recovery={deviceCopy() ? { kept: false, canKeep: true, keep: () => undefined, discard: () => undefined } : undefined}
+            />
+          )}
+        </Show>
+      </Show>
+    </div>
+  );
+
   return (
     <LocaleProvider locale={locale}>
-      <div class="flex flex-1 min-h-0 min-w-0 flex-col">
-        <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": fadeScrollPadding }} class="flex-1 min-h-0" data-editor-scroller>
-          <div ref={host} />
-        </ScrollArea>
-        <Show when={toolbarMounted()}>
-          <Show
-            when={sync.ended()}
-            fallback={
-              <EditorToolbar
-                connected={true}
-                editor={editorState}
-                notebookId="Book01"
-                noteId="Note01"
-                format={format()}
-                onUndo={() => {
-                  const editor = view();
-                  if (editor) undo(editor);
-                }}
-                onRedo={() => {
-                  const editor = view();
-                  if (editor) redo(editor);
-                }}
-              />
-            }
-          >
-            {(ended) => (
-              <SyncEndedBar
-                notebookId="Book01"
-                ended={ended()}
-                sync={sync}
-                markdown={() => view()?.state.doc.toString() ?? ""}
-                noteHref={() => "/app/notebooks/Book01/Note01"}
-              />
-            )}
-          </Show>
-        </Show>
-      </div>
+      <Show when={shell} fallback={frame()}>
+        <AppWorkspace mobileSurface="flush" class="h-full" resizable={false}>
+          <AppWorkspace.Sidebar id="notebook-navigation" defaultSize={256} label="Notizbuch">
+            <nav data-notebook-tree>Überblick · Wareneingang · Kühlkette Sommer 2026</nav>
+          </AppWorkspace.Sidebar>
+          <AppWorkspace.Content>
+            <AppWorkspace.Main scroll={false}>{frame()}</AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </Show>
     </LocaleProvider>
   );
 }
@@ -171,7 +191,7 @@ export type ToolbarHarness = {
   read: () => { doc: string; anchor: number; head: number; hasFocus: boolean };
   caretRect: () => { top: number; bottom: number } | null;
   blur: () => void;
-  endSync: (code: string, unsent: boolean) => void;
+  endSync: (code: string, unsent: boolean, recovery?: boolean) => void;
   resumeSync: () => void;
   remountToolbar: () => Promise<void>;
   settle: () => Promise<void>;

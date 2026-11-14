@@ -4,6 +4,7 @@
 import { LIMITS } from "../contracts";
 import { CloudError, type CloudErrorCode, cloudError } from "../runtime/errors";
 import { APPROVAL_METHODS, createServiceCalls, type RuntimeServices } from "../runtime/services";
+import type { ChartPart } from "./chart-parts";
 import { type AppFiles, type ComposeOptions, composeApp, type LintIssue } from "./compose";
 import { FRAME_METHODS, type FrameLogLevel, type FrameToHost, type HostToFrame } from "./protocol";
 import { sanitizeSnapshot } from "./snapshot";
@@ -109,6 +110,23 @@ const NOTICE_CODES = new Set<unknown>(["denied", "not_found", "invalid", "confli
 const isNoticeCode = (code: unknown): code is CloudErrorCode => NOTICE_CODES.has(code);
 const theme = () => (document.documentElement.classList.contains("dark") ? "dark" : "light");
 
+// The host verifies each immutable part once across mounts. Frames trust only
+// this window; their hash manifest also prevents mixing different builds.
+const verifiedChartParts = new WeakMap<ChartPart, Promise<void>>();
+function verifyChartPart(part: ChartPart): Promise<void> {
+  let pending = verifiedChartParts.get(part);
+  if (!pending) {
+    pending = (async () => {
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(part.code));
+      const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      if (hash !== part.hash)
+        throw new CloudError("unavailable", "The chart asset failed its integrity check. Reopen the app to reload its assets.");
+    })();
+    verifiedChartParts.set(part, pending);
+  }
+  return pending;
+}
+
 export function mountApp(container: HTMLElement, files: AppFiles, options: MountOptions) {
   const composed = composeApp(files, { ...options, theme: theme() });
   const frame = document.createElement("iframe");
@@ -179,7 +197,19 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
       if (args.length > 4 || !argumentsFit(args, FRAME_LIMITS.argBytes))
         throw new CloudError("limit", "The arguments of this call are too large.");
       let value: unknown;
-      if (method === "file.save") {
+      if (method === "runtime.chart") {
+        const [kind] = args;
+        if (args.length !== 1 || typeof kind !== "string") throw new CloudError("invalid", "Expected a chart kind.");
+        const part =
+          kind === "shared"
+            ? options.chartParts.shared
+            : Object.hasOwn(options.chartParts.kinds, kind)
+              ? options.chartParts.kinds[kind]
+              : undefined;
+        if (!part) throw new CloudError("invalid", "Unknown chart kind.");
+        await verifyChartPart(part);
+        value = part;
+      } else if (method === "file.save") {
         const [data, name] = args;
         if ((typeof data !== "string" && !(data instanceof Blob)) || typeof name !== "string" || !name || name.length > 180)
           throw new CloudError("invalid", "cloud.download(name, data) needs a file name of 1-180 characters and a Blob or string.");

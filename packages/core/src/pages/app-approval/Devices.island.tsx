@@ -197,10 +197,10 @@ export default function Devices(props: {
                 </Show>
               }
             >
-              <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
+              <div class="flex flex-col divide-y divide-(--ui-data-row-divider)">
                 <For each={activeDevices()}>
                   {(device) => (
-                    <div class="flex flex-wrap items-start justify-between gap-3 p-3">
+                    <div class="flex flex-wrap items-start justify-between gap-3 py-3">
                       <div class="min-w-0">
                         <p class="break-words font-medium">{device.name}</p>
                         <p class="text-xs text-dimmed">{device.assisted ? t().assisted : t().self}</p>

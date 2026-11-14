@@ -9,6 +9,8 @@ import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
   cursorZoneStateField,
+  placeMarkdownCaret,
+  revealedSelection,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
 import { codeFenceLanguage } from "./lib/markdown-fences";
@@ -80,7 +82,7 @@ class MermaidWidget extends WidgetType {
     container.className = "cm-mermaid-widget !m-0";
     container.setAttribute("contenteditable", "false");
     const edit = () => {
-      view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true });
+      view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true, effects: placeMarkdownCaret.of() });
       view.focus();
     };
     // At fit a press edits the source, as it always has. Zoomed in, a press
@@ -195,7 +197,7 @@ export const mermaidExtension = (options: MermaidOptions): Extension => {
     const decorations: Range<Decoration>[] = [];
     const atomicDecorations: Range<Decoration>[] = [];
     const ranges: { from: number; to: number }[] = [];
-    const cursor = state.selection.main;
+    const cursor = revealedSelection(state)?.main;
     let widgetId = 0;
 
     syntaxTree(state).iterate({

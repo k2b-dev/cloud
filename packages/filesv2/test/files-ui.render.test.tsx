@@ -287,11 +287,10 @@ test("the administration history renders its authorized first page as table and 
   expect(html).not.toContain("Aktivität wird geladen");
 });
 
-test("thumbnail fallbacks use file-type tiles at row, grid and hero sizes", () => {
+test("folders and files without a preview use file-type tiles at row, grid and hero sizes", () => {
   for (const [name, directory, type] of [
-    ["report.pdf", false, "pdf"],
-    ["photo.png", false, "image"],
     ["Projects", true, "folder"],
+    ["archive.zip", false, "archive"],
   ] as const) {
     for (const mode of ["row", "grid", "hero"] as const) {
       const html = renderToString(() => (
@@ -307,6 +306,26 @@ test("thumbnail fallbacks use file-type tiles at row, grid and hero sizes", () =
       expect(html).toContain(`data-file-type="${type}"`);
       expect(html).toContain(`data-size="${mode === "row" ? "md" : "lg"}"`);
       expect(html).not.toContain("<img");
+    }
+  }
+});
+
+test("a photo or PDF puts its versioned preview address into the first HTML, small in rows and tiles, large as the hero", () => {
+  for (const name of ["report.pdf", "photo.png"]) {
+    for (const mode of ["row", "grid", "hero"] as const) {
+      const html = renderToString(() => (
+        <FileThumbnail
+          baseId="demo"
+          entry={{ name, path: `Team/${name}`, directory: false, size: 12, modified: "2026-01-01T00:00:00Z", revision: "r7" }}
+          large={mode === "grid"}
+          hero={mode === "hero"}
+        />
+      ));
+      const size = mode === "hero" ? "large" : "small";
+      expect(html).toContain(`src="/api/filesv2/bases/demo/preview?path=Team%2F${name}&amp;rev=r7&amp;size=${size}"`);
+      expect(html).toContain('loading="lazy"');
+      // The box holds its place before the preview arrives: no icon first, so nothing swaps in a cached preview.
+      expect(html).not.toContain("k2b-file-type-icon");
     }
   }
 });

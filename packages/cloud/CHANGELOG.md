@@ -1,5 +1,256 @@
 # Changelog
 
+## [0.71.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.70.0...npm-cloud-v0.71.0) (2026-11-14)
+
+
+### Features
+
+* **mail:** warn before sending a message without a subject ([#3296](https://github.com/k2b-dev/cloud/issues/3296)) ([9d04e85](https://github.com/k2b-dev/cloud/commit/9d04e8536652f4984de538a46f6482d5751d9987))
+
+
+### Bug Fixes
+
+* **cloud:** late shared-text publishes no longer change another document's room state ([#3298](https://github.com/k2b-dev/cloud/issues/3298)) ([a68d610](https://github.com/k2b-dev/cloud/commit/a68d6103cac3deae64e094cda97fee9f0cc2190c))
+* **mail:** expand shared draft lifecycle capacity and warn before exhaustion ([#3295](https://github.com/k2b-dev/cloud/issues/3295)) ([e36d304](https://github.com/k2b-dev/cloud/commit/e36d3042f0848a3f1a1dec5e356dac94d5132e65))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.57.1 to 0.58.0
+    * @k2b/editor bumped from 0.11.4 to 0.11.5
+
+## [0.70.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.69.0...npm-cloud-v0.70.0) (2026-11-13)
+
+
+### Features
+
+* **cloud:** opt AI conversation streams into event-driven access checks ([#3280](https://github.com/k2b-dev/cloud/issues/3280)) ([77235a8](https://github.com/k2b-dev/cloud/commit/77235a8f14db8bd70c7e9d909daa40574e05abd2))
+* **cloud:** opt covered live channels into event-driven access checks ([#3279](https://github.com/k2b-dev/cloud/issues/3279)) ([4d52065](https://github.com/k2b-dev/cloud/commit/4d52065eb81151fe27127fd5963edc951c608f1f))
+
+
+### Bug Fixes
+
+* **cloud:** locked accounts no longer receive notifications or queued mail and no longer count as readers ([4d52065](https://github.com/k2b-dev/cloud/commit/4d52065eb81151fe27127fd5963edc951c608f1f))
+* **cloud:** the FreeIPA sync matches accounts by their directory identity instead of their e-mail address ([4d52065](https://github.com/k2b-dev/cloud/commit/4d52065eb81151fe27127fd5963edc951c608f1f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.57.0 to 0.57.1
+    * @k2b/editor bumped from 0.11.3 to 0.11.4
+
+## [0.69.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.68.0...npm-cloud-v0.69.0) (2026-11-13)
+
+
+### Features
+
+* **cloud:** shared text rooms for collaborative documents ([#3235](https://github.com/k2b-dev/cloud/issues/3235)) ([f2fea74](https://github.com/k2b-dev/cloud/commit/f2fea7422198e6f622304df6dd239214ca2147ed))
+* **mail:** collaborative drafts on the shared text room with zero SQL per edit ([#3258](https://github.com/k2b-dev/cloud/issues/3258)) ([ca45d88](https://github.com/k2b-dev/cloud/commit/ca45d883ef89790a79da1a0d63b36bca98ddfcf7))
+
+
+### Bug Fixes
+
+* **cloud:** session end reaches open live connections on every path ([#3273](https://github.com/k2b-dev/cloud/issues/3273)) ([7f2afa9](https://github.com/k2b-dev/cloud/commit/7f2afa940c989b19f881c36aaec5dae2ae8306ed))
+
+## [0.68.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.67.0...npm-cloud-v0.68.0) (2026-11-13)
+
+
+### Features
+
+* **cloud:** the app bar matches the sidebar and shows each app in its colour ([#3211](https://github.com/k2b-dev/cloud/issues/3211)) ([254f50f](https://github.com/k2b-dev/cloud/commit/254f50f966f582b6eb053775c63fbf042c87883c))
+
+
+### Bug Fixes
+
+* **cloud:** opening or loading a Cloud page lifts the privacy screen ([#3222](https://github.com/k2b-dev/cloud/issues/3222)) ([7429ccd](https://github.com/k2b-dev/cloud/commit/7429ccda995510012be44910fa3c62accba5f2d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.56.0 to 0.57.0
+    * @k2b/editor bumped from 0.11.2 to 0.11.3
+
+## [0.67.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.66.0...npm-cloud-v0.67.0) (2026-11-12)
+
+
+### Features
+
+* **cloud:** the platform SQL pool size is configurable and URL pool options no longer reach Postgres ([#3148](https://github.com/k2b-dev/cloud/issues/3148)) ([b4ae997](https://github.com/k2b-dev/cloud/commit/b4ae997ff0e9fa6ea078fb95fcbccc32ed5a06c2))
+* **files:** a selection pill offers what fits, and PDFs merge in place ([#3158](https://github.com/k2b-dev/cloud/issues/3158)) ([f8a16ad](https://github.com/k2b-dev/cloud/commit/f8a16adc0a4658b54af8ceea355ecd61ebbfe54b))
+* **files:** every file shows its preview in the list, grid and details ([#3155](https://github.com/k2b-dev/cloud/issues/3155)) ([b215752](https://github.com/k2b-dev/cloud/commit/b215752455b8b40ae43d547e92ba824a05e1ac0e))
+
+
+### Bug Fixes
+
+* **assistant:** a new chat keeps its open command list while its draft is saved ([#3163](https://github.com/k2b-dev/cloud/issues/3163)) ([6edb27b](https://github.com/k2b-dev/cloud/commit/6edb27bd4498954dd01d9ff29bb73b18df53157b)), closes [#2233](https://github.com/k2b-dev/cloud/issues/2233)
+* **build:** budget installable icon rendering by CPU work ([#3190](https://github.com/k2b-dev/cloud/issues/3190)) ([622c9ca](https://github.com/k2b-dev/cloud/commit/622c9ca9f6e5b8031e13c68ae8fd40feb8965134)), closes [#3184](https://github.com/k2b-dev/cloud/issues/3184)
+* **cloud:** an account that FreeIPA locks can no longer sign in or use its sessions, API keys or tokens until FreeIPA unlocks it ([b6291dd](https://github.com/k2b-dev/cloud/commit/b6291dd95091a65b5b22d2075ec13721d59cfdca))
+* **cloud:** restore FreeIPA sign-in after unlocking ([#3219](https://github.com/k2b-dev/cloud/issues/3219)) ([ede688d](https://github.com/k2b-dev/cloud/commit/ede688d77eff1dbf4a477120c6a8912f28111e5e))
+* **cloud:** SSH key changes need a confirmed browser sign-in, and API keys can no longer extend the account ([b6291dd](https://github.com/k2b-dev/cloud/commit/b6291dd95091a65b5b22d2075ec13721d59cfdca))
+* **cloud:** the privacy screen covers the whole screen, app bar included ([#3188](https://github.com/k2b-dev/cloud/issues/3188)) ([dff2cc9](https://github.com/k2b-dev/cloud/commit/dff2cc9fc0d17cbe01afcf9d36e00f059b92ef57))
+* **core:** GeoIP upload status reads the stored size and description again ([#3169](https://github.com/k2b-dev/cloud/issues/3169)) ([b95a6db](https://github.com/k2b-dev/cloud/commit/b95a6dbb7733e50ffcd507d3ab6a4ad732765240))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.21.1 to 0.21.2
+    * @k2b/ui bumped from 0.55.0 to 0.56.0
+    * @k2b/editor bumped from 0.11.1 to 0.11.2
+
+## [0.66.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.65.0...npm-cloud-v0.66.0) (2026-11-11)
+
+
+### Features
+
+* **cloud:** a privacy screen blurs content after two idle minutes ([#3138](https://github.com/k2b-dev/cloud/issues/3138)) ([cedd5d5](https://github.com/k2b-dev/cloud/commit/cedd5d5c1f944e8f0dbeba56751b840f3fbaeb97))
+* **cloud:** assistant maps carry a note, source and links per place ([#3142](https://github.com/k2b-dev/cloud/issues/3142)) ([84e3c48](https://github.com/k2b-dev/cloud/commit/84e3c481533b5c8a7a5f6147749c26f502b6ef60))
+* **cloud:** chat maps open in the map dialog with their route tools ([#3145](https://github.com/k2b-dev/cloud/issues/3145)) ([6c8348e](https://github.com/k2b-dev/cloud/commit/6c8348e36dda3bf32a777100ab57a0b6c5e1ca00))
+* **cloud:** the file chooser remembers where you were, previews files, and searches subfolders ([#3131](https://github.com/k2b-dev/cloud/issues/3131)) ([217df5b](https://github.com/k2b-dev/cloud/commit/217df5bfacf0f6005396e9635d0ad2e652d267cb))
+* **core:** a shared workstation signs people out after they stop working ([#3133](https://github.com/k2b-dev/cloud/issues/3133)) ([84c4994](https://github.com/k2b-dev/cloud/commit/84c49943bbb74efce2a0be072f1ee930903afd49))
+* **ui:** a map opens as a small map app in a dialog ([#3139](https://github.com/k2b-dev/cloud/issues/3139)) ([86c351e](https://github.com/k2b-dev/cloud/commit/86c351ee337a0b7706d5d24f81e963ec046fa749))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.54.0 to 0.55.0
+    * @k2b/editor bumped from 0.11.0 to 0.11.1
+
+## [0.65.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.64.0...npm-cloud-v0.65.0) (2026-11-10)
+
+
+### Features
+
+* **cloud:** apps store files in additional buckets the admin connects ([#3126](https://github.com/k2b-dev/cloud/issues/3126)) ([cec2624](https://github.com/k2b-dev/cloud/commit/cec2624f4185823e59648ce1dcf7dbc56b285bea))
+* **cloud:** the app bar editor saves each change in one ordered list ([#3073](https://github.com/k2b-dev/cloud/issues/3073)) ([487da82](https://github.com/k2b-dev/cloud/commit/487da823121c68c27e6bf1bf94d0b00f45938d85))
+* **cloud:** the app bar shows names beside icons on wide screens ([#3061](https://github.com/k2b-dev/cloud/issues/3061)) ([24f518d](https://github.com/k2b-dev/cloud/commit/24f518d1c21183416bd572f167f9ef8d7b9ea9e9))
+* **mail:** shared drafts keep every edit until a snapshot covers it ([#3008](https://github.com/k2b-dev/cloud/issues/3008)) ([a26d37a](https://github.com/k2b-dev/cloud/commit/a26d37aa3afd1eb893fabc1f1204c47dae10a8d3))
+* **ui:** balance flows carry each month's closing into the next ([#2824](https://github.com/k2b-dev/cloud/issues/2824)) ([3b4452e](https://github.com/k2b-dev/cloud/commit/3b4452e2551f40a8ea1705e76838cbde446c5b14))
+* **ui:** notice cards carry an icon and a call to action ([#3115](https://github.com/k2b-dev/cloud/issues/3115)) ([d3c60bd](https://github.com/k2b-dev/cloud/commit/d3c60bde3dfeafa249785019b733ab95f39652b3))
+* **ui:** settings and admin pages stay flat; only charts, dashboard frames, and key figures lift ([#3034](https://github.com/k2b-dev/cloud/issues/3034)) ([dfa954d](https://github.com/k2b-dev/cloud/commit/dfa954d8ae2d7c81f1537a7d132a6d133e09b6f0))
+* **ui:** the workspace head shows no separate title row while the sidebar is an overlay ([#3119](https://github.com/k2b-dev/cloud/issues/3119)) ([b1600b7](https://github.com/k2b-dev/cloud/commit/b1600b7be9e5109f951e511bd4b64cea1615faa8))
+
+
+### Bug Fixes
+
+* **ai:** reasoning models use their reported output limit when no context window is known ([#3107](https://github.com/k2b-dev/cloud/issues/3107)) ([ede53d5](https://github.com/k2b-dev/cloud/commit/ede53d55821f66904e8a228aacceb457fc9dc228))
+* **cloud:** pinned items open the app launcher as ordinary first tiles ([#3059](https://github.com/k2b-dev/cloud/issues/3059)) ([ef23139](https://github.com/k2b-dev/cloud/commit/ef231399dc8aced6e0d13c70c514dbc47ad726aa))
+* **cloud:** shared editing reconnects when the server is busy instead of stopping with "Connection closed" ([#3044](https://github.com/k2b-dev/cloud/issues/3044)) ([ea9192d](https://github.com/k2b-dev/cloud/commit/ea9192d14ee33d2f2b36c30aa9e774bd4ded521e))
+* **mail:** drafts retain every edit through closing and reconnects ([#3081](https://github.com/k2b-dev/cloud/issues/3081)) ([70d4c4f](https://github.com/k2b-dev/cloud/commit/70d4c4f05ddc8215e784ab9245743d5352704cf5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.53.0 to 0.54.0
+    * @k2b/editor bumped from 0.10.0 to 0.11.0
+
+## [0.64.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.63.0...npm-cloud-v0.64.0) (2026-11-09)
+
+
+### Features
+
+* **cloud:** moving the search shows a dashed drop place and a release chip ([#2977](https://github.com/k2b-dev/cloud/issues/2977)) ([63754a8](https://github.com/k2b-dev/cloud/commit/63754a8ca35e9d28a82e5ec1db40af4092890699))
+* **cloud:** support topic backpressure with Sync 7.1 ([#2996](https://github.com/k2b-dev/cloud/issues/2996)) ([9e7d26c](https://github.com/k2b-dev/cloud/commit/9e7d26cc26d21a6db311bde36a32d62b3d5c0a28))
+* **cloud:** tables in chat answers take the framed view-table look ([#2984](https://github.com/k2b-dev/cloud/issues/2984)) ([42d52b8](https://github.com/k2b-dev/cloud/commit/42d52b841c5495f456813828036be44d9dca8a79))
+* **cloud:** the search preview is a flat column, not a grey box ([#2992](https://github.com/k2b-dev/cloud/issues/2992)) ([6f6ab4c](https://github.com/k2b-dev/cloud/commit/6f6ab4c6a7ff8388775d639f8a29685d6f1292c2))
+* **cloud:** the signed-out header shows help, language, appearance, and sign-in at every width ([#2929](https://github.com/k2b-dev/cloud/issues/2929)) ([df06c4a](https://github.com/k2b-dev/cloud/commit/df06c4a299f91ea332dcc4f75d2b1167da3019e8))
+* **ui:** dot matrix bars for nested counts ([#2743](https://github.com/k2b-dev/cloud/issues/2743)) ([4afc36a](https://github.com/k2b-dev/cloud/commit/4afc36aed51747b16f6f472057dd83282255bd70))
+* **ui:** lines show forecasts, thresholds and today ([#2776](https://github.com/k2b-dev/cloud/issues/2776)) ([0a1b8c1](https://github.com/k2b-dev/cloud/commit/0a1b8c16df200c220abc88f6dda35a65b3b7e3b3))
+* **ui:** one Section for every topic, with Field rows, named tones, and a restricted marker ([#2962](https://github.com/k2b-dev/cloud/issues/2962)) ([1444360](https://github.com/k2b-dev/cloud/commit/1444360ab4f46cbc933f32943db566f581ccaf87))
+* **ui:** sankey charts ([#2772](https://github.com/k2b-dev/cloud/issues/2772)) ([088d8d7](https://github.com/k2b-dev/cloud/commit/088d8d72bfb61c0fe8c29142055964d51c1820fe))
+* **ui:** shadows follow one layer model in every app ([#2973](https://github.com/k2b-dev/cloud/issues/2973)) ([c32ab68](https://github.com/k2b-dev/cloud/commit/c32ab6810b6414a02be40fb651ad968ee0d78997))
+* **ui:** the feat/code sign joins the icon set as ti-feat-code ([#2943](https://github.com/k2b-dev/cloud/issues/2943)) ([3d3aacc](https://github.com/k2b-dev/cloud/commit/3d3aaccce857091e3f18d0677230aa96b629acde))
+
+
+### Bug Fixes
+
+* **ai:** budget reasoning output and explain truncated answers ([#2970](https://github.com/k2b-dev/cloud/issues/2970)) ([56ccaff](https://github.com/k2b-dev/cloud/commit/56ccaff6d28a930310ee86d816222c10138c745f)), closes [#2968](https://github.com/k2b-dev/cloud/issues/2968)
+* **ai:** older services keep reading the AI catalog after 0.71 ([#3032](https://github.com/k2b-dev/cloud/issues/3032)) ([6a481f1](https://github.com/k2b-dev/cloud/commit/6a481f16da9c3ffdda0fa0d882cd5b5f23309063))
+* **ui:** bar rows draw negative values again ([#2964](https://github.com/k2b-dev/cloud/issues/2964)) ([db822b5](https://github.com/k2b-dev/cloud/commit/db822b54bcc7ed94a5cbad4e859ebdbdf5c694c3))
+* **ui:** browser tests that measure around a hover use hoverInPlace ([#3020](https://github.com/k2b-dev/cloud/issues/3020)) ([7b5cf3c](https://github.com/k2b-dev/cloud/commit/7b5cf3ce897e2ffbedbfc5320475bb7fb2af2308))
+* **ui:** calendar heatmaps fill their panel ([#2794](https://github.com/k2b-dev/cloud/issues/2794)) ([757cf86](https://github.com/k2b-dev/cloud/commit/757cf86ea07a1cd4022f5a9b7be32ee4cfbab3ae))
+* **ui:** fit distribution labels and make remainders explicit ([#2784](https://github.com/k2b-dev/cloud/issues/2784)) ([7f2b4b2](https://github.com/k2b-dev/cloud/commit/7f2b4b2f033533df57d871c53d36ff1200ee04ee))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.52.0 to 0.53.0
+    * @k2b/editor bumped from 0.9.0 to 0.10.0
+
+## [0.63.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.62.0...npm-cloud-v0.63.0) (2026-11-08)
+
+
+### Features
+
+* **assistant:** the chart tool describes every chart kind with an example ([#2916](https://github.com/k2b-dev/cloud/issues/2916)) ([c6953b8](https://github.com/k2b-dev/cloud/commit/c6953b83ca082a47a768a2fd0e938f910452bbf9))
+* **ui:** funnels and ranked bar lists ([#2736](https://github.com/k2b-dev/cloud/issues/2736)) ([b2875ae](https://github.com/k2b-dev/cloud/commit/b2875ae2d34782a6bd013d598133570ef1457600))
+* **ui:** named bubbles with averages and radar charts ([#2779](https://github.com/k2b-dev/cloud/issues/2779)) ([334f441](https://github.com/k2b-dev/cloud/commit/334f4417ca4be015c9650b26a723f2c43ce15e90))
+* **ui:** treemaps and pareto charts ([#2777](https://github.com/k2b-dev/cloud/issues/2777)) ([6fefdbf](https://github.com/k2b-dev/cloud/commit/6fefdbf3f5f428d2f6aebc1464ff7190b127e1f4))
+
+
+### Bug Fixes
+
+* **cloud:** description panels sort and search tables by what they show, keep table heights, money tones and a named empty figure ([#2896](https://github.com/k2b-dev/cloud/issues/2896)) ([7b81f1c](https://github.com/k2b-dev/cloud/commit/7b81f1c347459a6335ac7aae9bfd5f5c16fecf43))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.21.0 to 0.21.1
+    * @k2b/ui bumped from 0.51.0 to 0.52.0
+    * @k2b/editor bumped from 0.8.0 to 0.9.0
+
+## [0.62.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.61.0...npm-cloud-v0.62.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tools:** Cloud no longer serves speedtest transfer data, JavaScript or Python measurement scripts. Download the shared Node/Bun CLI from the standalone speedtest server; see its operator guide.
+
+### Features
+
+* **automation:** export Mail rules and routine definitions ([#2816](https://github.com/k2b-dev/cloud/issues/2816)) ([d64f84d](https://github.com/k2b-dev/cloud/commit/d64f84d67ba7efb6fd220af5e83dbe6dac64ceeb))
+* **cloud:** Assistant suggests the next message when it helps ([#2796](https://github.com/k2b-dev/cloud/issues/2796)) ([8c09060](https://github.com/k2b-dev/cloud/commit/8c0906044b7a3f55aa4a1fde4bb6aa101084101f))
+* **cloud:** Chat and Notebooks share one chart description owned by @k2b/ui ([#2778](https://github.com/k2b-dev/cloud/issues/2778)) ([05299cb](https://github.com/k2b-dev/cloud/commit/05299cb9d7451df2c91e712407614a267435b589))
+* **cloud:** the model trigger shows its level ([#2837](https://github.com/k2b-dev/cloud/issues/2837)) ([b11c3f6](https://github.com/k2b-dev/cloud/commit/b11c3f6c41167bb788bfb6b93a3a7ad86db100a4))
+* **pulse:** SQL dashboards share portable chart descriptions ([#2781](https://github.com/k2b-dev/cloud/issues/2781)) ([0733391](https://github.com/k2b-dev/cloud/commit/07333918ae621a81bc7f0be787cf6bc07e6291cd))
+* **tools:** add bounded PDF page operations ([#2881](https://github.com/k2b-dev/cloud/issues/2881)) ([17879ae](https://github.com/k2b-dev/cloud/commit/17879aebbf8ea817974b3aeda39021d0ef834791))
+* **tools:** move speedtests to the shared standalone engine ([#2834](https://github.com/k2b-dev/cloud/issues/2834)) ([fc5b1e2](https://github.com/k2b-dev/cloud/commit/fc5b1e2836f75da65477e6a4ca3f400288271274))
+* **ui:** dashboard panels as one shared component family ([#2813](https://github.com/k2b-dev/cloud/issues/2813)) ([1f0f47a](https://github.com/k2b-dev/cloud/commit/1f0f47a07a4639470a107873f2a93c99a09ea00b))
+* **ui:** one glass surface for layers over pictures and maps ([#2870](https://github.com/k2b-dev/cloud/issues/2870)) ([d31c85d](https://github.com/k2b-dev/cloud/commit/d31c85d542b4aa25f48545ece445f802af672a13))
+* **ui:** stacked, grouped, compared and horizontal bars ([#2729](https://github.com/k2b-dev/cloud/issues/2729)) ([cbfea20](https://github.com/k2b-dev/cloud/commit/cbfea2061617aa5f24bef50aefd01f41d7d316e3))
+* **ui:** waterfall charts ([#2758](https://github.com/k2b-dev/cloud/issues/2758)) ([3b05ef2](https://github.com/k2b-dev/cloud/commit/3b05ef22952c7cb3b883f1d688ada671344db2c2))
+
+
+### Bug Fixes
+
+* **cloud:** background runs never use remembered approvals ([#2858](https://github.com/k2b-dev/cloud/issues/2858)) ([d588867](https://github.com/k2b-dev/cloud/commit/d588867971ef011028470878734236644143f43e))
+* **cloud:** Chat loads chart drawing on first use ([#2791](https://github.com/k2b-dev/cloud/issues/2791)) ([da1b8f5](https://github.com/k2b-dev/cloud/commit/da1b8f5b7e1c1cc6b408e0650a37dc6c82d979ee))
+* **cloud:** localize chart points and keep schema assertions internal ([#2783](https://github.com/k2b-dev/cloud/issues/2783)) ([b2e4a1a](https://github.com/k2b-dev/cloud/commit/b2e4a1a6a396b733dbb5778abecf210febf54228))
+* **filesv2:** append entries with quiet load-more actions ([#2829](https://github.com/k2b-dev/cloud/issues/2829)) ([851797f](https://github.com/k2b-dev/cloud/commit/851797f888b8492813d4c84493c6df8dd903740c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.50.0 to 0.51.0
+    * @k2b/editor bumped from 0.7.0 to 0.8.0
+
 ## [0.61.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.60.0...npm-cloud-v0.61.0) (2026-11-07)
 
 

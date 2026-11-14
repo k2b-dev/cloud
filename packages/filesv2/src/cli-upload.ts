@@ -189,10 +189,16 @@ export async function uploadFile(
         server: { en: "Filegate upload failed.", de: "Der Filegate-Upload ist fehlgeschlagen." },
         final: { en: "Filegate upload failed.", de: "Der Filegate-Upload ist fehlgeschlagen." },
       };
-      throw new Error(
-        error.origin === "cloud" && (error.kind === "final" || error.kind === "server") ? error.message : cliText(ctx, reasons[error.kind]),
-        { cause: error },
-      );
+      const message =
+        error.origin === "cloud" && (error.kind === "final" || error.kind === "server") ? error.message : cliText(ctx, reasons[error.kind]);
+      const recovery =
+        error.origin === "cloud" && error.code === "upload_changed"
+          ? cliText(ctx, {
+              en: "The result is unconfirmed. Check the destination first. To save a separate copy, run put with a different remote file name.",
+              de: "Das Ergebnis ist unbestätigt. Prüfe zuerst das Ziel. Um eine separate Kopie zu speichern, führe put mit einem anderen Zieldateinamen aus.",
+            })
+          : "";
+      throw new Error(recovery ? `${message} ${recovery}` : message, { cause: error });
     }
     throw error;
   } finally {

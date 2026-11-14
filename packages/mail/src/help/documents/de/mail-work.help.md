@@ -8,13 +8,15 @@ order: 20
 
 ## Die passende Unterhaltung finden {icon="search"}
 
-Öffne die Lupe im Kopf oder drücke `/`, um das Postfach zu durchsuchen. **Ort** steht zunächst auf **Ganzes Postfach**. Hast du in einem Ordner begonnen, kannst du die Suche dort auf diesen Ordner begrenzen. Wenn du die Suche mit der Lupe oder `/` geöffnet hast, bringt dich das X oder Löschen des Textes zur Ausgangsansicht zurück und lässt das Eingabefeld offen. **Zurücksetzen**, **Abbrechen** oder Escape bringt dich zur Ausgangsansicht zurück. Ist ein Optionsmenü offen, schließt das erste Escape nur dieses Menü.
+Tippe in das Suchfeld oben im Postfach, oder drücke `/`, um hineinzuspringen. Die Suche umfasst das aktuelle Postfach. Standardmäßig ist **Alles** ausgewählt. Das umfasst die synchronisierten Nachrichtenfelder und den aus Anhängen erkannten Text.
 
-Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardmäßig ist **Alles** ausgewählt. Das umfasst die synchronisierten Nachrichtenfelder und den aus Anhängen erkannten Text.
+Der Ort steht zunächst auf **Ganzes Postfach**. Hast du in einem Ordner begonnen, kannst du die Suche im Filter-Menü auf diesen Ordner begrenzen. Das X oder Löschen des Textes bringt dich zur Ausgangsansicht zurück. Escape im Suchfeld tut das auch.
 
-Um die Suche einzugrenzen, nutze die Schaltfläche für den Suchbereich. Wähle eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichteninhalt** und **Anhangsnamen**. Bei mehreren Wörtern passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
+Um die Suche einzugrenzen, öffne den Filter-Knopf neben dem Suchfeld. Wähle unter **Suchen in** eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichteninhalt** und **Anhangsnamen**. Bei mehreren Wörtern passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
 
-Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du **Weitere Filter**. Auf dem Smartphone stehen **Suchen in**, **Ort** und **Weitere Filter …** zusammen in einem Menü, dessen Knopf die aktuelle Wahl nennt, etwa **Alles · Ganzes Postfach**.
+Ohne Suche enthält der Filter-Knopf **Ungelesen**, **Markiert**, **Mit Anhang**, den Zeitraum und einen Tag. Links, die du mit diesen Filtern gespeichert hast, funktionieren weiter.
+
+Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du im Filter-Menü **Weitere Filter …**.
 
 Der Filterdialog zeigt die aktuelle Suche als Bedingungen, die du bearbeiten kannst. Wähle **Filter hinzufügen** für ein weiteres Feld. Sind mehrere Filter aktiv, legst du fest, ob alle oder mindestens einer zutreffen müssen. **Erweiterte Bedingungen** bleibt eingeklappt, bis du alternative oder verschachtelte Gruppen brauchst.
 
@@ -88,7 +90,7 @@ Verwende **Später anzeigen**, wenn die nächste Prüfung von einem Datum oder e
 
 So setzt Mail den nächsten Schritt:
 
-- Neue eingehende E-Mails setzen die Unterhaltung auf **Handlungsbedarf** und entfernen sie aus **Später**, sobald Mail sie geladen hat oder das Laden endgültig aufgibt. Gibt Mail auf, zeigt der Lesebereich bei dieser Nachricht **Der Nachrichteninhalt konnte nicht synchronisiert werden**. Wenn du eine Unterhaltung als **Erledigt** markierst oder eine Zeit für **Später anzeigen** setzt, gilt das auch für die Nachrichten, die Mail noch lädt. Eine Automatisierung, die **Erledigt** oder **Wartet auf Antwort** setzt, gilt nur für die Nachricht, die sie gestartet hat. Andere eingehende E-Mails setzen wieder **Handlungsbedarf**.
+- Neue eingehende E-Mails setzen die Unterhaltung normalerweise auf **Handlungsbedarf** und entfernen sie aus **Später**, sobald Mail sie geladen hat oder das Laden endgültig aufgibt. Gibt Mail auf, zeigt der Lesebereich bei dieser Nachricht **Der Nachrichteninhalt konnte nicht synchronisiert werden**. Wenn du eine Unterhaltung als **Erledigt** markierst oder eine Zeit für **Später anzeigen** setzt, gilt das auch für die Nachrichten, die Mail noch lädt. Eine Automatisierung, die **Erledigt** oder **Wartet auf Antwort** setzt, gilt nur für die Nachricht, die sie gestartet hat. Andere eingehende E-Mails setzen wieder **Handlungsbedarf**. Mailinglisten-Antworten von Personen, die noch nicht an der Unterhaltung beteiligt sind, behalten den Status und die Zeit für „Später anzeigen“ bei.
 - Eine menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**, aber erst, wenn Mail die Zustellung bestätigt.
 - Eine neue Nachricht, die du in Cloud schreibst, beginnt eine Unterhaltung in **Wartet auf Antwort**. Das gilt auch für eine Nachricht, die Mail aus einem anderen E-Mail-Programm in deinem Ordner Gesendet findet.
 - E-Mails von deiner eigenen Adresse, die im Posteingang ankommen, beginnen in **Handlungsbedarf**. Ein Beispiel ist ein Kontaktformular, das im Namen deines Postfachs sendet.
@@ -96,7 +98,7 @@ So setzt Mail den nächsten Schritt:
 
 Eine für später geplante Antwort zählt erst, wenn Mail sie sendet. Kommt vorher eine neue E-Mail an, wechselt die Unterhaltung zu **Handlungsbedarf** und bleibt nach der neuesten echten Nachricht einsortiert. Sie bleibt auch nach dem Versand der Antwort in **Handlungsbedarf**, weil du die Antwort vor dieser E-Mail geschrieben hast. Mail sendet die geplante Antwort trotzdem zu ihrem Zeitpunkt, außer du brichst sie unter **Geplant** ab.
 
-In den **Unterhaltungsdetails** entscheidest du nur, ob die Unterhaltung **Erledigt** ist. Entfernst du Erledigt, öffnet sich die Unterhaltung wieder, und Mail leitet den nächsten Schritt aus der letzten bestätigten Nachricht ab.
+Im Kopf der Unterhaltung entscheidest du nur, ob die Unterhaltung **Erledigt** ist. Entfernst du Erledigt, öffnet sich die Unterhaltung wieder, und Mail leitet den nächsten Schritt aus der letzten bestätigten Nachricht ab.
 
 Wähle **In Ordner verschieben** in den Unterhaltungsaktionen, um das Ziel per Tastatur, Zeigegerät oder Berührung zu wählen. Auf dem Desktop kannst du eine Unterhaltungszeile auch auf einen auswählbaren Ordner in der linken Navigation ziehen. Mail reiht die Verschiebung ein, und die Synchronisierung bestätigt das Ergebnis beim Anbieter.
 
@@ -138,17 +140,17 @@ Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und 
 
 ## Einen vollständigen Verlauf lesen {icon="route"}
 
-Der Betreff bleibt beim Scrollen über den Nachrichten stehen. Die Nachrichtenanzahl erscheint auf breiteren Bildschirmen. Steht keine Liste neben dem Leser, führen **×** am Ende seiner Werkzeugleiste und Esc zurück zur Liste. Die Liste steht dann wieder an derselben Stelle, und die zuletzt geöffnete Unterhaltung hat den Fokus. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
+Der Kopf des Lesebereichs bleibt beim Scrollen über den Nachrichten stehen: **×**, der Betreff in einer Zeile und die Aktionen **Erledigt**, **Archivieren**, **Löschen**, **Später**, **Zuweisen** und **…**. Auf einem schmalen Bildschirm stehen die Aktionen, die nicht passen, unter **…**. Unter dem Betreff stehen Absender und Anzahl der Nachrichten neben den Chips. **×** und Esc führen zurück zur Liste. Die Liste steht dann wieder an derselben Stelle, und die zuletzt geöffnete Unterhaltung hat den Fokus.
 
-Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst. Eine offene Nachricht zeigt ihre Anhänge über dem Text: die Anzahl, die ersten drei Dateien mit Vorschau oder Dateityp und **Alle anzeigen**. Eine zugeklappte Nachricht zeigt die Anzahl ihrer Anhänge neben dem Datum. Bilder, die der Text schon zeigt, stehen nicht in der Liste.
+Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Oben steht die Antwortbox, direkt darunter ist die neueste Nachricht geöffnet. Ältere Nachrichten folgen, je eine Zeile mit Absender, Textanfang, Anzahl der Anhänge und Datum. Wähle eine, um sie zu öffnen. Eine offene Nachricht zeigt ihre Anhänge als Kacheln nach dem Text, jede mit Name, Art und Größe. Ab zwei Anhängen packt **Alle herunterladen** sie in eine ZIP-Datei. Bilder, die der Text schon zeigt, sind keine Kacheln.
 
-Über den Nachrichten kann eine optionale Zusammenfassung der Unterhaltung in einer hervorgehobenen Karte erscheinen. Um sie mit Markdown-Formatierung aktuell zu halten, nutze **Zusammenfassung bearbeiten** oder **Weitere Unterhaltungsaktionen → Zusammenfassung erstellen**. Zusammenfassungen sind gemeinsamer Mail-Kontext, und auch eine Automatisierung kann sie aktualisieren.
+Über den Nachrichten kann eine optionale Zusammenfassung der Unterhaltung als eine Zeile stehen; wähle sie, um sie ganz zu lesen. Um sie mit Markdown-Formatierung aktuell zu halten, nutze **Weitere Unterhaltungsaktionen → Zusammenfassung bearbeiten** oder **Zusammenfassung erstellen**. Zusammenfassungen sind gemeinsamer Mail-Kontext, und auch eine Automatisierung kann sie aktualisieren.
 
-Enthält die Unterhaltung nicht abgeschlossene Entwürfe, zeigt die Antwortaktion einen Hinweis. Öffne die **Unterhaltungsdetails**, um zu sehen, wer den neuesten Entwurf erstellt hat und wann er sich geändert hat. Dort setzt du ihn fort.
+Eine nicht abgeschlossene Antwort steht in der Antwortbox, dort schreibst du weiter. Jede Unterhaltung hat einen Antwortentwurf.
 
-In einem Postfach, das mehrere Personen nutzen, zeigt **Gerade hier** oben in den Unterhaltungsdetails, wer die Unterhaltung offen hat und wer gerade eine Antwort schreibt. Mit Zugriff auf das ganze Postfach steht unter **Mehr zu dieser Unterhaltung** › **Zugriff**, wer Zugriff hat und mit welcher Rolle. Wer nur zugewiesene Unterhaltungen sieht, sieht diese Liste nicht.
+In einem Postfach, das mehrere Personen nutzen, zeigt das Ende der Chip-Zeile, wer die Unterhaltung noch offen hat, etwa **Tom liest mit**. Wer Zugriff auf das Postfach hat, steht unter **… → Postfachdetails** im Kopf des Postfachs.
 
-Die Unterhaltungsdetails zeigen außerdem einen kleinen Abschnitt **Verwandte E-Mails** für die gesamte Unterhaltung. Mail ordnet andere Unterhaltungen aus demselben Postfach, die eine externe beteiligte Person oder denselben normalisierten Betreff teilen. Jedes Ergebnis zeigt, warum es passt. Die Aktion **Zugehörige E-Mails** auf einer Kontaktkarte ist etwas anderes: Sie öffnet eine exakte Suche nach dieser einen beteiligten Person. Keine der beiden Funktionen findet ähnliche E-Mails über Nachrichtentexte, Anhänge oder Kalendertermine.
+Wähle den Absender einer Nachricht, um bis zu fünf **Frühere Unterhaltungen** mit diesem Absender in diesem Postfach zu sehen, und **Alle Nachrichten dieses Absenders** für eine exakte Suche.
 
 Öffnest du eine ungelesene Unterhaltung, markiert Mail sie als gelesen. Über **Weitere Unterhaltungsaktionen** markierst du sie wieder als ungelesen, fügst eine Fahne hinzu oder entfernst sie oder druckst die Unterhaltung. Eine Unterhaltung, die du als ungelesen markierst, bleibt in bereits geöffneten Tabs ungelesen, bis du ihre Zeile erneut öffnest. Eine Live-Aktualisierung allein markiert sie nicht als gelesen.
 
@@ -198,7 +200,7 @@ Eine andere Cloud-App kann einen Verweis auf eine Unterhaltung oder eine Nachric
 - In einer Unterhaltung öffnest du **Weitere Unterhaltungsaktionen** oder mit einem Rechtsklick das Menü der Unterhaltung. Wähle **Cloud-ID der Unterhaltung kopieren**.
 - Bei einer Nachricht öffnest du **Nachrichtenaktionen** oder mit einem Rechtsklick das Menü der Nachricht. Wähle **Cloud-ID der Nachricht kopieren**. Dasselbe Menü hat auch **Cloud-ID der Unterhaltung kopieren**.
 - In der Liste haben die Aktionen einer Zeile **Cloud-ID der Unterhaltung kopieren**.
-- In den **Unterhaltungsdetails** wählst du im Kopf **…** und dann **Cloud-ID der Unterhaltung kopieren**. Für die neueste Nachricht wählst du unter **Mehr zu dieser Unterhaltung** › **Technische Details** den Eintrag **Cloud-ID der Nachricht kopieren**.
+- In einer Unterhaltung wählst du in ihrem Kopf **…** und dann **Cloud-ID der Unterhaltung kopieren**. Für eine Nachricht wählst du **…** an dieser Nachricht und dann **Cloud-ID der Nachricht kopieren**.
 
 Mail bestätigt das Kopieren. Füge die Cloud-ID in der anderen App ein. Sie ist ein Link wie `https://cloud.example.com/open/mail.message/~Ab12Cd` und öffnet die Mail. Die Cloud-ID gibt keinen Zugriff: Die andere App zeigt die Mail nur Personen, die sie auch in Mail öffnen dürfen.
 
@@ -206,7 +208,7 @@ Ein Rechtsklick auf eine Unterhaltung in der Liste oder in die offene Unterhaltu
 
 ## Unterhaltungen aufbewahren, die nicht gelöscht werden dürfen {icon="lock"}
 
-Manche E-Mails sind ein Nachweis, etwa dafür, dass eine Kundin informiert wurde. Wähle **Weitere Unterhaltungsaktionen > Aufbewahren**, um die ganze Unterhaltung zu schützen. Alle, die im Postfach schreiben dürfen, können eine Unterhaltung aufbewahren. Ein Schloss in der Unterhaltungsliste und neben dem Betreff zeigt, dass sie aufbewahrt wird. Zeigst du auf das Schloss neben dem Betreff, siehst du, wer sie seit wann aufbewahrt. Um in einem Schritt aufzubewahren, füge **Aufbewahren** unter **Weitere Unterhaltungsaktionen > Werkzeugleiste anpassen** hinzu.
+Manche E-Mails sind ein Nachweis, etwa dafür, dass eine Kundin informiert wurde. Wähle **Weitere Unterhaltungsaktionen > Aufbewahren**, um die ganze Unterhaltung zu schützen. Alle, die im Postfach schreiben dürfen, können eine Unterhaltung aufbewahren. Ein Schloss in der Unterhaltungsliste und der Chip **Aufbewahrt** unter dem Betreff zeigen, dass sie aufbewahrt wird. Zeigst du auf den Chip, siehst du, wer sie seit wann aufbewahrt.
 
 Der Schutz wächst mit der Unterhaltung. Antworten, die später dazukommen, werden ebenfalls aufbewahrt, ebenso Nachrichten, die jemand abtrennt oder mit einer anderen Unterhaltung zusammenführt. Die Unterhaltung, die sie aufnimmt, wird dann auch aufbewahrt, und ihre Aktivität nennt, wer die Nachrichten dorthin verschoben hat.
 
@@ -220,7 +222,7 @@ Nur Cloud-Admins können den Schutz aufheben. Das gilt auch für Personen, die d
 
 ## Eine einzelne Nachricht untersuchen {icon="file-search"}
 
-Wenn du technische Angaben zu einer Nachricht brauchst, öffne die **Unterhaltungsdetails**. Klappe unter **Mehr zu dieser Unterhaltung** die **Technischen Details** auf und wähle **Header** oder **Quelltext**. Wähle bei einer Unterhaltung mit mehreren Nachrichten oben im Inspektor die genaue Nachricht aus.
+Wenn du technische Angaben zu einer Nachricht brauchst, wähle **…** an dieser Nachricht und dann **Technische Details**. Der Inspektor öffnet mit **Header**; **Quelltext** steht daneben. Wähle bei einer Unterhaltung mit mehreren Nachrichten oben im Inspektor eine andere Nachricht aus.
 
 - **Übersicht** zeigt Nachrichten-IDs, Ablage beim Anbieter, Standardmarkierungen, Anbieter-Schlüsselwörter, MIME-Teile, Anhänge, Synchronisierungsstatus und Warnungen beim Auswerten.
 - **Spamdiagnose** zeigt die Spam-Header des Anbieters, falls vorhanden. Cloud berechnet oder erschließt keinen eigenen Spamwert.
@@ -258,7 +260,7 @@ Mail öffnet nie einen Abmeldelink, nur weil du eine Nachricht in der Vorschau s
 
 Empfangene Anhänge bleiben bei der Nachricht, die sie gebracht hat. Wähle einen Anhang, um ihn in einem neuen Browser-Tab zu öffnen oder herunterzuladen.
 
-**Vorschau** öffnet Text, CSV, JSON, Bilder, PDFs, Audio und Video in einem Dialog. Ist eine Textdatei Markdown und beginnt mit einer Überschrift, wird diese Überschrift zum Titel, darunter stehen Dateiname und Größe. Der Kopf des Dialogs enthält **Anhang herunterladen**, bei Text, CSV und JSON auch **Kopieren**. Auf dem Smartphone füllt die Vorschau den Bildschirm.
+**Vorschau** öffnet Text, CSV, JSON, Bilder, PDFs, Audio und Video in einer Vollbild-Vorschau. Ist eine Textdatei Markdown und beginnt mit einer Überschrift, steht diese Überschrift oben links als Name, danach Dateiname und Größe. Oben rechts stehen **Speichern in**, **Herunterladen** und bei Text, CSV und JSON auch **Text kopieren**. Die Vorschau enthält alle Anhänge der Unterhaltung. Wechsle mit den Pfeiltasten, den Schaltflächen am Rand oder dem Streifen unten. Auf dem Smartphone wischst du zur Seite.
 
 Mit Zugriff **Verwalten** erstellst du auch einen öffentlichen Download-Link für einen Anhang. Mail zeigt die URL nur beim Erstellen des Links. Du kannst ihn mit einem Passwort, einem Ablaufzeitpunkt und einer Grenze für Download-Sitzungen schützen. Um vorhandene Links zu prüfen oder zu widerrufen, öffne **… → Freigabelinks**.
 
@@ -266,13 +268,15 @@ Mit Zugriff **Verwalten** erstellst du auch einen öffentlichen Download-Link f�
 
 Mail blockiert Bilder, die eine Nachricht von einem externen Server laden würde. Das Laden eines solchen Bildes kann dem Absender verraten, dass du die Nachricht geöffnet hast. Direkt in der Nachricht enthaltene Bilder bleiben sichtbar.
 
-Enthält eine Nachricht blockierte Bilder, wähle:
+Enthält eine Nachricht blockierte Bilder, steht über ihr die Zeile **Externe Bilder blockiert**. Wähle:
 
 - **Bilder laden**, um sie nur für diese geöffnete Nachricht zu laden.
-- **Für diesen Absender immer laden**, um Bilder in künftigen Nachrichten genau dieser Adresse zu erlauben.
-- **Für diese Domain immer laden**, um Bilder von jeder Adresse dieser Domain zu erlauben. Nutze diese breitere Option nur für eine Domain, der du vertraust.
+- den Pfeil neben **Bilder laden** und dann **Immer von …** mit der Adresse, um Bilder in künftigen Nachrichten genau dieser Adresse zu erlauben. Mail lädt die Bilder dann sofort.
+- den Pfeil und dann **Immer von allen bei …** mit der Domain, um Bilder von jeder Adresse dieser Domain zu erlauben. Nutze diese breitere Option nur für eine Domain, der du vertraust.
 
-Diese Einstellungen gelten nur für dich im aktuellen Postfach. Sie ändern nicht, was andere im Team sehen. Um gespeicherte Einstellungen zu prüfen oder zu entfernen, öffne **… → Externe Bilder**.
+Hat eine Nachricht mehrere Absender, gibt es nur **Bilder laden**. Nach dem Laden zeigt die Zeile **Bilder geladen**; über **Immer laden** kannst du den Absender oder die Domain auch dann noch erlauben. Lädt Mail Bilder durch eine deiner Einstellungen von selbst, sagt die Zeile **… werden immer geladen**. Wähle dort **Ändern → Nicht mehr automatisch laden**, um diese Einstellung wieder zu entfernen. Können Bilder nicht geladen werden, bleibt die Zeile mit **Erneut versuchen** stehen. Ist eine Nachricht größer als das sichere Limit, lädt Mail nur einen Teil der Bilder und sagt das in der Zeile.
+
+Diese Einstellungen gelten nur für dich im aktuellen Postfach. Sie ändern nicht, was andere im Team sehen. Um gespeicherte Einstellungen zu prüfen oder zu entfernen, öffne **… → Externe Bilder** oder in der Zeile **Regeln für externe Bilder …**.
 
 Mail lädt erlaubte Bilder über seinen geschützten Bilddienst, dein Browser bekommt die Bildadresse also nie. Der externe Server kann trotzdem erfahren, dass jemand sein Bild angefordert hat. Lass Bilder bei unbekannten oder verdächtigen Absendern blockiert.
 
@@ -302,7 +306,13 @@ Mail entfernt einen gelöschten lokalen Tag aus jeder Unterhaltung im Postfach. 
 
 ## Gruppierung von Unterhaltungen korrigieren {icon="arrows-split-2"}
 
-Mail ordnet eine Nachricht der Unterhaltung zu, auf die ihre Antwort-Header verweisen. Das funktioniert auch, wenn eine Antwort vor der Nachricht synchronisiert wurde, auf die sie antwortet. Antworten auf eine Nachricht, die das Postfach nicht enthält, bleiben zusammen.
+Mail sucht über Antwort-Header und Anbieter-Verläufe nach Unterhaltungen im selben Postfach. Eine neue Nachricht wird nur zugeordnet, wenn ihr Absender bereits in Von, An, Cc oder Reply-To einer früheren Nachricht steht, zur selben Mailingliste gehört oder eine eigene Postfachadresse beziehungsweise ein eingerichteter Absender-Alias ist. Bcc-Empfänger eigener gesendeter Nachrichten zählen ebenfalls. Antworten über Mailinglisten brauchen dieselbe Listenkennung und dieselbe Listenadresse in beiden Nachrichten. Diese Adresse muss außerhalb des Postfachs und seiner Aliase liegen. Beide Nachrichten müssen dieselbe E-Mail-Adresse in List-Post enthalten; An und Cc reichen dafür nicht. Mailinglisten-Antworten von Personen, die noch nicht an der Unterhaltung beteiligt sind, werden zugeordnet, öffnen sie aber nicht erneut. Sie behalten den aktuellen Status und die Zeit für „Später anzeigen“ bei. Das gilt auch für spätere Antworten, die nur über die Liste zugeordnet werden. Postfach-Automationen überspringen für diese Antworten Änderungen an Status, „Später anzeigen“ und Zuweisung. Das Automationsprotokoll nennt den Grund. Lesen und das Setzen von Tags bleiben möglich. Das gilt auch, wenn Antworten vor dem Original synchronisiert werden: Die bereits gespeicherten Nachrichten bestimmen die Beteiligten. Ein später eintreffendes Original kann ebenfalls zugeordnet werden, wenn eine gespeicherte eigene Antwort direkt auf seine Message-ID antwortet und ihr nicht leerer Betreff übereinstimmt.
+
+Bekannte Beteiligte können auf eine gespeicherte Nachricht mit einem geänderten oder leeren Betreff antworten und in der Unterhaltung bleiben. Eine Gruppierung allein über den Betreff braucht einen passenden, nicht leeren Betreff. Übliche Antwort- und Weiterleitungspräfixe wie `Re:`, `AW:`, `Fwd:`, `RV:`, `SV:` und `Antw:` sowie führende Listen- oder Gateway-Tags ändern diesen Vergleich nicht. Tags mit einer Ziffer oder `#` bleiben Teil des Betreffvergleichs.
+
+Bereits gespeicherte Betreffzeilen werden beim Upgrade nicht neu berechnet. Antworten, die nur über den Betreff zu älteren Unterhaltungen passen, können deshalb eine neue Unterhaltung beginnen. Antworten mit einem Verweis auf eine gespeicherte Nachricht sind davon nicht betroffen.
+
+Antworten neuer Personen, etwa einer Kollegin nach einer Weiterleitung, beginnen eine eigene Unterhaltung. Andere Nachrichten, die auf eine Unterhaltung verweisen, öffnen diese nicht mehr erneut und entfernen auch nicht „Später anzeigen“. Gehören die Unterhaltungen zusammen, kannst du sie wie unten beschrieben zusammenführen. Bestehende Unterhaltungen werden nicht neu gruppiert, auch nicht bei einer Reparatur.
 
 Eine Nachricht ohne Antwort-Header schließt sich einer früheren Unterhaltung nur an, wenn beides zutrifft:
 

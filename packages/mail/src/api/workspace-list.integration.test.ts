@@ -35,12 +35,14 @@ const inferredListView = (data: ListResponse): MailboxListView => data;
 // (the whole workspace and the open conversation's detail), workspace-list 4,145 bytes (the list plus the mailbox, the
 // reader's access and the saved views). The budget sits between them with room for row fields, and fails when a list
 // page carries the workspace or the selection again.
-const WORKSPACE_LIST_PAGE_TWO_MAX_BYTES = 5_000;
+const DRAFT_ROW_BYTES =
+  JSON.stringify({ drafts: { count: 1, editors: [{ kind: "user", id: "0".repeat(36), displayName: "owner" }] } }).length - 1;
+const WORKSPACE_LIST_PAGE_TWO_MAX_BYTES = 5_000 + 3 * DRAFT_ROW_BYTES;
 // Page 1 of the folder fixture on a folder switch, measured on 2026-10-19: workspace-route sends 48,069 bytes (the
 // list plus mailbox, folders, counts, identities and saved views), workspace-list 45,674 bytes (the list plus mailbox,
 // access and saved views). Fifty rows dominate this small mailbox; the budget sits between the two and fails when the
 // switch carries the folders, counts or identities again.
-const WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES = 46_500;
+const WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES = 46_500 + 50 * DRAFT_ROW_BYTES;
 const anchor = new Date("2026-10-01T12:00:00.000Z");
 const suite = suiteFor("database", "nats", "valkey");
 const contextFor = (user: User): MailRequestContext => ({
@@ -247,12 +249,36 @@ suite("Mail workspace list pages", () => {
         ids.add(shortId);
         ids.add(msgShortId);
         for (const state of ["draft", "scheduled"]) {
+          // A scheduled send occupies its own reply box. Its source has no folder placement,
+          // so folder/search/conversation pages retain the same 52 visible + one hidden rows.
+          let draftConversationId = conversation!.id;
+          let draftSourceMessageId = message!.id;
+          if (state === "scheduled") {
+            const scheduledConversationShortId = newShortId();
+            const scheduledMessageShortId = newShortId();
+            ids.add(scheduledConversationShortId);
+            ids.add(scheduledMessageShortId);
+            const [scheduledConversation] = await tx<{ id: string }[]>`INSERT INTO mail.conversations
+              (short_id, mailbox_id, subject, participant_summary, latest_message_at)
+              VALUES (${scheduledConversationShortId}, ${mailboxId}::uuid, ${`Scheduled ${i}`}, 'Customer', ${date}) RETURNING id`;
+            const [scheduledMessage] = await tx<{ id: string }[]>`INSERT INTO mail.message_contents
+              (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status)
+              VALUES (${scheduledMessageShortId}, ${mailboxId}::uuid, ${`<scheduled-${suffix}-${i}@example.test>`},
+                ${`Scheduled ${i}`}, ${date}, 0, ${(i + 53).toString(16).padStart(64, "0")}, 'complete') RETURNING id`;
+            draftConversationId = scheduledConversation!.id;
+            draftSourceMessageId = scheduledMessage!.id;
+            await tx`INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+              VALUES (${draftConversationId}::uuid, ${draftSourceMessageId}::uuid, 1, 'headers')`;
+            if (i < 52)
+              await tx`INSERT INTO mail.conversation_assignees (conversation_id, user_id, assigned_at)
+              VALUES (${draftConversationId}::uuid, ${reader.id}::uuid, ${anchor})`;
+          }
           const draftShortId = newShortId();
           ids.add(draftShortId);
           const [draft] = await tx<{ id: string }[]>`INSERT INTO mail.drafts
             (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id, author_kind, author_id,
               last_editor_kind, last_editor_id, subject, body_markdown, state, updated_at)
-            VALUES (${draftShortId}, ${mailboxId}::uuid, ${conversation!.id}::uuid, ${message!.id}::uuid, 'reply', ${identity!.id}::uuid,
+            VALUES (${draftShortId}, ${mailboxId}::uuid, ${draftConversationId}::uuid, ${draftSourceMessageId}::uuid, 'reply', ${identity!.id}::uuid,
               'user', ${owner.id}::uuid, 'user', ${owner.id}::uuid, ${`Draft ${i}`}, 'Draft body', ${state}, ${date}) RETURNING id`;
           if (state === "draft") continue;
           const key = crypto.randomUUID();
@@ -322,6 +348,21 @@ suite("Mail workspace list pages", () => {
       expect(list.listItems).toEqual([]);
       expect(list.eventsPage === null).toBe(list.eventsError !== null);
     });
+
+  test("conversation rows include visible draft counts and editor principals", async () => {
+    const scope = scopes()[0]!;
+    for (const token of ["owner", "reader"]) {
+      const list = await page("workspace-list", hrefFor(scope), token, scope);
+      expect(list.listItems.length).toBeGreaterThan(0);
+      for (const row of list.listItems)
+        expect(row.drafts).toEqual({
+          count: 1,
+          editors: [{ kind: "user", id: owner.id, displayName: owner.displayName }],
+          // A person's draft is no suggestion; the named case is covered by conversation-draft-summaries.
+          suggestedBy: null,
+        });
+    }
+  });
 
   test("work guard: list pages never rebuild the workspace or read the selection", async () => {
     const spies = [

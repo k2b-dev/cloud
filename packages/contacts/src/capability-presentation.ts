@@ -4,6 +4,10 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
     de: {
+      events: {
+        "contact.created": { title: "Kontakt erstellt", description: "Ein Kontakt wurde in einem Adressbuch erstellt." },
+        "contact.updated": { title: "Kontakt geändert", description: "Feldgruppen eines bestehenden Kontakts wurden geändert." },
+      },
       commands: { "contact.compose": { title: "Neuer Kontakt", description: "Adressbuch auswählen und einen Kontakt anlegen." } },
       types: {
         book: {

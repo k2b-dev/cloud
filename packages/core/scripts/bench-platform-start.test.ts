@@ -50,17 +50,20 @@ for (const [entry, appId] of [
       stderr: "pipe",
       ipc: (message) => observations.push(message),
     });
-    const timeout = setTimeout(() => child.kill(), 4_000);
     try {
-      const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()]);
+      // Drain both pipes and await exit; an early kill can truncate the startup observation under load.
+      const [code, stderr, stdout] = await Promise.all([
+        child.exited,
+        new Response(child.stderr).text(),
+        new Response(child.stdout).text(),
+      ]);
       expect(code).not.toBe(0);
-      expect(stderr).toContain("benchmark-startup-observed");
+      expect(`${stdout}\n${stderr}`).toContain("benchmark-startup-observed");
       expect(observations).toHaveLength(1);
       expect(observations[0]).toMatchObject({ appId, database: "/cloud_identity_bench_startup" });
       if (appId === "core") expect(observations[0]).not.toMatchObject({ port: "9" });
       else expect(observations[0]).toMatchObject({ port: "9" });
     } finally {
-      clearTimeout(timeout);
       if (child.exitCode === null) child.kill();
       await child.exited;
       await rm(directory, { recursive: true, force: true });

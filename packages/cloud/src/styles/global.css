@@ -34,6 +34,7 @@
 @import "./file-chooser.css";
 @import "./profile-picture.css";
 @import "./panel.css";
+@import "./privacy-screen.css";
 
 @theme {
   --color-dark: rgb(9 9 11);
@@ -392,14 +393,18 @@ solid-island {
      document's. From md, `main` bounds its height and it scrolls. */
   .cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated]) .layout-content-main > .k2b-scroll-area { scrollbar-gutter: auto; }
   .cloud-app-canvas > .layout-shell-content { gap: 0; }
+  /* The anonymous header floats as the same card as from md, with the shell
+     spacing that the canvas gives it there. */
   .cloud-app-canvas:not([data-layout-authenticated]) .layout-header {
-    border-radius: 0; border: 0; border-bottom: 1px solid var(--ui-border);
-    box-shadow: none !important;
+    margin: var(--ui-space-shell) var(--ui-space-shell) 0;
   }
   /* Toasts at the top edge of a phone start below the header instead of
      covering its menu and search buttons. */
   :root:has(> body > .cloud-app-canvas[data-layout-header]) {
     --k2b-toast-offset-top: 2.875rem;
+  }
+  :root:has(> body > .cloud-app-canvas[data-layout-header]:not([data-layout-authenticated])) {
+    --k2b-toast-offset-top: calc(2.875rem + var(--ui-space-shell));
   }
 
   /* Signed-in phones: the app gradient is the page. The title row sits on it
@@ -432,7 +437,7 @@ solid-island {
     border-top: 1px solid transparent;
     border-radius: 1.75rem 1.75rem 0 0;
     background: var(--k2b-surface);
-    box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
+    box-shadow: var(--k2b-shadow-frame);
   }
   /* Dark: a faint top edge keeps the card apart from the dark gradient. */
   .dark .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
@@ -480,7 +485,7 @@ solid-island {
         border-top: 1px solid transparent;
         border-radius: 1.75rem 1.75rem 0 0;
         background: var(--k2b-surface);
-        box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
+        box-shadow: var(--k2b-shadow-frame);
       }
 
       & > .k2b-app-workspace__head {
@@ -600,9 +605,6 @@ solid-island {
     .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item:hover {
       background: color-mix(in srgb, var(--k2b-surface) 45%, transparent);
     }
-    .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active {
-      box-shadow: 0 1px 2px rgb(9 9 11 / 0.06);
-    }
     .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active,
     .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active:hover {
       border-color: transparent;
@@ -659,6 +661,124 @@ solid-island {
   }
 }
 
+/* Names: from 1680 px the app bar shows each entry's name beside its icon and
+   grows from 56 to 208 px, still on the canvas without a surface, edge, or
+   shadow. The person's app bar setting allows it: the server renders
+   `data-rail-names` from it, so the first frame has the final width. Without
+   the setting, below 1680 px, or while the app bar is hidden, nothing
+   changes. Its rows take the measures of a @k2b/ui sidebar row: 32 px, a
+   15 px icon in a 16 px column 28 px from the edge, 13 px names in the
+   neutral ink, the sidebar's hover, and its quiet count at the row's end. A
+   name too long for the row ends in an ellipsis and shows in full in the
+   entry's hint. Search shows its shortcut there. */
+@media (min-width: 1680px) {
+  .cloud-app-canvas[data-layout-authenticated]:not([data-shell-focus]) > .layout-rail[data-rail-names] {
+    width: calc(13rem + env(safe-area-inset-left, 0px));
+
+    & > .layout-rail-logo {
+      justify-content: flex-start;
+      padding-inline: 0.6875rem 0.5rem;
+    }
+    & > .layout-rail-logo > a {
+      flex: 1;
+      min-width: 0;
+      height: 2rem;
+      gap: 0.5rem;
+      padding-inline: 0.4375rem 0.5625rem;
+      justify-content: flex-start;
+      border-radius: var(--k2b-radius-control);
+    }
+    & > .layout-rail-logo img {
+      flex: none;
+    }
+    & :is(.layout-rail-navigation, [data-cloud-rail-apps], .layout-rail-actions) {
+      align-items: stretch;
+    }
+    & :is(.layout-rail-navigation, [data-cloud-rail-apps], .layout-rail-actions) {
+      gap: 0.125rem;
+    }
+    & :is(.rail-item, .layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger) {
+      width: auto;
+      height: 2rem;
+      margin-inline: 0.6875rem 0.5rem;
+      padding-inline: 0.5625rem;
+      gap: 0.5rem;
+      justify-content: flex-start;
+      border-radius: var(--k2b-radius-control);
+    }
+    & :is(.rail-item:not(.rail-item-active), .layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger) {
+      color: var(--k2b-text);
+    }
+    & :is(.rail-item:not(.rail-item-active, [aria-expanded="true"]), .layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger):hover {
+      color: var(--k2b-text);
+      background: var(--k2b-app-workspace-hover);
+    }
+    & .rail-item > i {
+      flex: none;
+      width: 1rem;
+      font-size: 0.9375rem;
+      line-height: 1;
+      text-align: center;
+    }
+    & :is(.rail-item, .layout-rail-logo, .layout-profile-preferences) .rail-item-label {
+      position: static;
+      width: auto;
+      height: auto;
+      flex: 1;
+      min-width: 0;
+      clip-path: none;
+      text-overflow: ellipsis;
+      text-align: start;
+      color: inherit;
+      font-size: 0.8125rem;
+      font-weight: 400;
+      line-height: 1.125rem;
+    }
+    & .layout-rail-logo .rail-item-label,
+    & .rail-item-active .rail-item-label {
+      font-weight: 600;
+    }
+    /* The sidebar's count: a quiet number on a light ground. */
+    & .rail-item > .cloud-app-badge {
+      position: static;
+      flex: none;
+      min-width: 1rem;
+      height: 1rem;
+      padding-inline: 0.25rem;
+      color: var(--k2b-text);
+      background: color-mix(in srgb, var(--k2b-text) 10%, transparent);
+      font-size: 0.6875rem;
+      line-height: 1rem;
+    }
+    & .rail-item-keys {
+      display: inline-flex;
+      flex: none;
+    }
+    & [data-cloud-rail-apps] > [role="separator"] {
+      background: transparent !important;
+    }
+    & .layout-profile-preferences,
+    & .layout-profile-preferences > .layout-profile-preferences__dropdown {
+      flex: 1;
+      min-width: 0;
+    }
+    & .layout-profile-preferences {
+      display: flex;
+    }
+    & :is(.layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger) {
+      flex: 1;
+      min-width: 0;
+    }
+    & :is(.layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger) > .k2b-avatar[data-size] {
+      flex: none;
+      width: 1.25rem;
+      height: 1.25rem;
+      margin-inline: -0.125rem;
+      font-size: 0.5rem;
+    }
+  }
+}
+
 /* Focus: the app bar and the outermost workspace's navigation hide together
    (Cmd/Ctrl+\, the profile menu's first entry, or the command). The canvas
    carries the state from the `cloud_shell_focus` cookie, so the server renders
@@ -706,7 +826,8 @@ solid-island {
   }
   .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail
     :is(.layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger):focus-visible {
-    box-shadow: var(--ui-focus), var(--ui-shadow-float);
+    /* The app bar's shared focus ring (utilities-navigation.css) draws the focus; the float shadow stays. */
+    box-shadow: var(--ui-shadow-float);
   }
 }
 
@@ -729,6 +850,11 @@ solid-island {
       left: calc(env(safe-area-inset-left, 0px) + 1.25rem);
       bottom: calc(env(safe-area-inset-bottom, 0px) + 1.25rem);
     }
+    /* The privacy screen's countdown (privacy-screen.css) floats 0.5rem above the avatar. */
+    .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-rail-actions > .cloud-privacy-countdown[aria-hidden] {
+      left: calc(env(safe-area-inset-left, 0px) + 1.25rem);
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 4.5rem);
+    }
   }
 }
 
@@ -739,6 +865,10 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-profile-preferences {
     left: calc(max(var(--cloud-card-inset), env(safe-area-inset-left, 0px)) + 0.75rem);
     bottom: calc(var(--cloud-card-inset) + var(--cloud-card-inset-bottom) + 0.75rem);
+  }
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-rail-actions > .cloud-privacy-countdown[aria-hidden] {
+    left: calc(max(var(--cloud-card-inset), env(safe-area-inset-left, 0px)) + 0.75rem);
+    bottom: calc(var(--cloud-card-inset) + var(--cloud-card-inset-bottom) + 4rem);
   }
 }
 

@@ -47,8 +47,7 @@ const examples: ChartShowcaseExample[] = [
     useFor: ["Status history of jobs, services or machines.", "Where errors happened and how long they lasted."],
     avoidFor: ["Amounts; use a line or bar chart.", "Dozens of rows; filter to the ones that need attention."],
     a11y: [
-      ...inspectA11y.slice(0, 1),
-      "Arrow keys pan the time range; Alt with arrow keys inspects the stretches; a link on a stretch stays a link.",
+      "One tab stop: Tab focuses the chart, arrow keys pan the time range and Alt with arrow keys moves from stretch to stretch; a link on a stretch stays a link.",
       ...inspectA11y.slice(1),
     ],
     options: [

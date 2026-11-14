@@ -1,0 +1,26 @@
+@import "tailwindcss" source(none);
+@import "@k2b/ui/global.css";
+@import "../ui/styles.css";
+@source "../ui/**/*.{ts,tsx}";
+@source "./**/*.tsx";
+
+html { color-scheme: light dark; }
+body.k2b-ui { margin: 0; min-height: 100dvh; }
+.speedtest-site { max-width: 76rem; margin-inline: auto; padding: 2rem 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
+.speedtest-site-header { display: flex; justify-content: space-between; align-items: start; gap: 1.5rem; }
+.speedtest-site-header > div { max-width: 42rem; }
+.speedtest-site-header h1 { font-size: clamp(1.75rem, 3vw, 2.25rem); line-height: 1.2; font-weight: 650; margin-block: .25rem .5rem; }
+.speedtest-site-header p, .speedtest-site-footer p { margin: 0; }
+.speedtest-site-eyebrow { color: var(--k2b-text-muted); font-size: .875rem; }
+/* Limit, data allowance and privacy read as one quiet block right after the component's data notice. */
+.speedtest-site-footer { color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.5; }
+.speedtest-site-header nav { display: flex; gap: 1rem; flex-shrink: 0; }
+.speedtest-site a { color: var(--k2b-info-text); text-underline-offset: .2em; }
+.speedtest-site a:hover, .speedtest-site a[aria-current] { text-decoration: underline; }
+.speedtest-site a:focus-visible { outline: 2px solid var(--k2b-focus-ring); outline-offset: 4px; border-radius: var(--k2b-radius-control); }
+.speedtest-site-footer { display: flex; flex-direction: column; gap: .25rem; max-width: 58rem; margin-top: -.75rem; }
+.speedtest-site-footer p:last-child { margin-top: .75rem; }
+@media (max-width: 40rem) {
+  .speedtest-site { padding: 1.25rem 1rem; }
+  .speedtest-site-header { flex-direction: column-reverse; gap: 1rem; }
+}

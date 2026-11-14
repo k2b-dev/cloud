@@ -15,6 +15,7 @@ import {
   IconButton,
   Placeholder,
   prompts,
+  Section,
   StatusBadge,
   Tooltip,
   toast,
@@ -38,6 +39,7 @@ import { useHistoryMessages } from "./history-messages";
 import { itemHistoryRequest, itemHistorySource, sharePeriod } from "./history-requests";
 import ItemHistory from "./ItemHistory";
 import { useFilesMessages } from "./messages";
+import { previewRevision, previewSource } from "./preview-client";
 import ShareHistory, { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
 
 /** One entry in the shared details outline: header, preview, properties, versions or contents, then technical details; a summary for several. */
@@ -152,6 +154,10 @@ export default function FileInspector(props: {
   );
   const expand = (item: FileEntry) => props.onPreview(item, () => setNotPdf(revision(item)));
   const readOnly = (item: FileEntry) => item.actions?.write === false;
+  /** Photos, PDFs and Office documents show the preview service's picture of their first page. */
+  const pictured = (item: FileEntry) => ["image", "pdf", "office"].includes(previewSource(item) ?? "");
+  /** The file's preview stands in the panel; Collabora files keep Edit as their main action. */
+  const inlinePreview = (item: FileEntry) => !item.directory && !props.editable?.(item) && Boolean(previewKind(item));
   const metaLine = (item: FileEntry) =>
     item.directory ? t().kindFolder : `${fileKindLabel({ name: item.name }, locale())} · ${formatFileViewSize(item.size, locale())}`;
   // Rarer commands on the entry; Share and Download stay beside the main action.
@@ -249,14 +255,7 @@ export default function FileInspector(props: {
               return (
                 <>
                   <DetailPanel.Header
-                    kind={
-                      <>
-                        <span>{item().directory ? t().kindFolder : t().kindFile}</span>
-                        <Show when={readOnly(item())}>
-                          <StatusBadge tone="neutral" icon="ti ti-lock" label={t().readOnly} />
-                        </Show>
-                      </>
-                    }
+                    kind={readOnly(item()) ? <StatusBadge tone="neutral" icon="ti ti-lock" label={t().readOnly} /> : undefined}
                     title={<span class="break-all">{item().name}</span>}
                     subtitle={
                       <span>
@@ -270,26 +269,36 @@ export default function FileInspector(props: {
                     actions={close}
                     primaryActions={
                       <>
+                        {/* A file whose preview stands in the panel opens it large from the preview itself, so a second
+                            "Preview" here would only repeat it; Download then leads. */}
+                        <Show when={!inlinePreview(item())}>
+                          <Button
+                            size="sm"
+                            variant="subtle"
+                            class="filesv2-details-main"
+                            disabled={props.busy}
+                            onClick={() => props.onOpen(item())}
+                          >
+                            <i
+                              class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"}
+                              aria-hidden="true"
+                            />
+                            {item().directory
+                              ? t().open
+                              : props.editable?.(item())
+                                ? props.canEdit === false || readOnly(item())
+                                  ? t().openReadOnly
+                                  : t().edit
+                                : t().preview}
+                          </Button>
+                        </Show>
                         <Button
                           size="sm"
-                          variant="subtle"
-                          class="filesv2-details-main"
+                          variant={inlinePreview(item()) ? "subtle" : "secondary"}
+                          class={inlinePreview(item()) ? "filesv2-details-main" : undefined}
                           disabled={props.busy}
-                          onClick={() => props.onOpen(item())}
+                          onClick={() => props.onDownload([item()])}
                         >
-                          <i
-                            class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"}
-                            aria-hidden="true"
-                          />
-                          {item().directory
-                            ? t().open
-                            : props.editable?.(item())
-                              ? props.canEdit === false || readOnly(item())
-                                ? t().openReadOnly
-                                : t().edit
-                              : t().preview}
-                        </Button>
-                        <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onDownload([item()])}>
                           <i class="ti ti-download" aria-hidden="true" />
                           {f().download}
                         </Button>
@@ -320,21 +329,16 @@ export default function FileInspector(props: {
                     }
                   />
                   <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
-                    <Show when={!item().directory && previewKind(item())}>
-                      <DetailPanel.Section
-                        title={t().preview}
-                        icon="ti ti-eye"
-                        actions={
-                          <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
-                            <i class="ti ti-arrows-maximize" aria-hidden="true" />
-                          </IconButton>
-                        }
-                      >
+                    {/* The preview leads the body without a heading of its own: the icon in its corner, or a click on a
+                        picture, opens it large. Photos, PDFs and Office documents show the service's preview of their
+                        first page; texts, video and audio keep their own preview. */}
+                    <Show when={!item().directory && (pictured(item()) || previewKind(item()))}>
+                      <div class="filesv2-inspector-preview" data-preview={previewSource(item()) ?? previewKind(item()) ?? undefined}>
                         <Show
                           keyed
                           when={
-                            previewKind(item()) === "image"
-                              ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])
+                            pictured(item())
+                              ? JSON.stringify([props.base.id, props.base.locationKey, item().path, previewRevision(item())])
                               : null
                           }
                           fallback={
@@ -342,6 +346,7 @@ export default function FileInspector(props: {
                               {(key) => (
                                 <FilePreview
                                   variant="plain"
+                                  pdfFit="page"
                                   previewLines={5}
                                   onExpandPreview={() => void expand(item())}
                                   baseId={props.base.id}
@@ -358,9 +363,14 @@ export default function FileInspector(props: {
                             <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
                           </button>
                         </Show>
-                      </DetailPanel.Section>
+                        <div class="k2b-pill filesv2-inspector-preview__expand">
+                          <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
+                            <i class="ti ti-arrows-maximize" aria-hidden="true" />
+                          </IconButton>
+                        </div>
+                      </div>
                     </Show>
-                    <DetailPanel.Section title={t().properties} icon="ti ti-list-details" class="filesv2-inspector-info">
+                    <Section title={t().properties} icon="ti ti-list-details" class="filesv2-inspector-info">
                       <DescriptionList
                         layout="rows"
                         size="sm"
@@ -410,7 +420,7 @@ export default function FileInspector(props: {
                             : []),
                         ]}
                       />
-                    </DetailPanel.Section>
+                    </Section>
                     <Show when={item().directory}>
                       <FolderContents
                         base={props.base}
@@ -480,7 +490,6 @@ export default function FileInspector(props: {
         }
       >
         <DetailPanel.Header
-          kind={<span>{t().selection}</span>}
           title={t().selected(props.paths.length)}
           actions={close}
           primaryActions={
@@ -497,7 +506,7 @@ export default function FileInspector(props: {
           }
         />
         <DetailPanel.Body>
-          <DetailPanel.Section title={t().properties} icon="ti ti-list-details">
+          <Section title={t().properties} icon="ti ti-list-details">
             <DescriptionList
               layout="rows"
               size="sm"
@@ -515,7 +524,7 @@ export default function FileInspector(props: {
             <Show when={props.selected.some((entry) => entry.directory)}>
               <p class="filesv2-details-none">{t().unknownFolders}</p>
             </Show>
-          </DetailPanel.Section>
+          </Section>
         </DetailPanel.Body>
       </Show>
     </DetailPanel>
@@ -556,11 +565,7 @@ function FolderContents(props: {
   const meta = (entry: FileEntry) =>
     entry.directory ? t().kindFolder : `${fileKindLabel({ name: entry.name }, locale())} · ${formatFileViewSize(entry.size, locale())}`;
   return (
-    <DetailPanel.Section
-      title={t().contents}
-      icon="ti ti-folder"
-      count={page() && !page()?.next && rows().length > 0 ? rows().length : undefined}
-    >
+    <Section title={t().contents} icon="ti ti-folder" count={page() && !page()?.next && rows().length > 0 ? rows().length : undefined}>
       <Show
         when={!contents.error()}
         fallback={
@@ -610,7 +615,7 @@ function FolderContents(props: {
           </Show>
         </Show>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -733,6 +738,20 @@ function EntryHistory(props: {
       loadItemShares({ baseId: props.base.id, path: props.entry.path }, cursor ?? null, abortSignal, h().accessFailed),
     getNextCursor: (page: SharePage) => page.next,
   });
+  // The query clears its error as soon as a retry starts; keep this action's label and alert in place until it settles.
+  const [shareRetrySource, setShareRetrySource] = createSignal<string | null>(null);
+  const shareRetrying = () => shareRetrySource() === shareSource();
+  const shareFailed = () => !!shares.error() || shareRetrying();
+  const loadMoreShares = async () => {
+    if (shares.loading() || shares.loadingMore() || shareRetrying()) return;
+    const key = shareSource();
+    if (shares.error()) setShareRetrySource(key);
+    try {
+      await (shares.hasMore() ? shares.loadMore() : shares.refresh());
+    } finally {
+      if (shareRetrySource() === key) setShareRetrySource(null);
+    }
+  };
   const [revoked, setRevoked] = createSignal<{ source: string; items: Map<string, ShareView> } | null>(null);
   const itemShares = createMemo(() => {
     const unique = new Map(
@@ -751,7 +770,7 @@ function EntryHistory(props: {
   // One access query per loaded link feeds both its facts and the item's history.
   const links = createShareAccess({ shares: itemShares, period, load: loadAccess });
   const linksState = () =>
-    shares.pages().length === 0 && !shares.error() ? "loading" : shares.hasMore() || shares.error() ? "partial" : "complete";
+    shares.pages().length === 0 && !shareFailed() ? "loading" : shares.hasMore() || shareFailed() ? "partial" : "complete";
   const revoke = async (share: ShareView) => {
     const source = shareSource();
     const result = await revokeShare(share, t().revokeFailed);
@@ -767,24 +786,25 @@ function EntryHistory(props: {
         {(history) => (
           <>
             <ShareHistory env={history().env} shares={links()} period={period()} load={loadAccess} onRevoke={revoke} />
-            <Show when={shares.loading() || shares.error() || shares.hasMore()}>
+            <Show when={shares.loading() || shareFailed() || shares.hasMore()}>
               <div role="group" aria-label={h().publicLink}>
-                <Show when={shares.loading() && itemShares().length === 0}>
+                <Show when={shares.loading() && !shareRetrying() && itemShares().length === 0}>
                   <p role="status">{t().loadingDetails}</p>
                 </Show>
-                <Show when={shares.error()}>
+                <Show when={shareFailed()}>
                   <p class="filesv2-item-history__line" role="alert">
                     {h().accessFailed}
                   </p>
                 </Show>
-                <Show when={shares.hasMore() || shares.error()}>
+                <Show when={shares.hasMore() || shareFailed()}>
                   <Button
                     size="xs"
-                    variant="text"
-                    loading={shares.loadingMore() || shares.loading()}
-                    onClick={() => void (shares.hasMore() ? shares.loadMore() : shares.refresh())}
+                    variant="link"
+                    loading={shares.loadingMore() || shares.loading() || shareRetrying()}
+                    onClick={() => void loadMoreShares()}
                   >
-                    {shares.error() ? h().retry : t().moreShares}
+                    {shareFailed() ? h().retry : t().moreShares}
+                    <i class={shareFailed() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
                   </Button>
                 </Show>
               </div>
@@ -945,7 +965,7 @@ function VersionsSection(props: {
       : new Date(iso).toLocaleString(props.locale, { dateStyle: "medium", timeStyle: "short" });
   return (
     <DetailPanel.Group label={t().versions}>
-      <DetailPanel.Section
+      <Section
         title={t().versions}
         icon="ti ti-versions"
         actions={
@@ -1068,7 +1088,7 @@ function VersionsSection(props: {
             </Show>
           </Match>
         </Switch>
-      </DetailPanel.Section>
+      </Section>
     </DetailPanel.Group>
   );
 }

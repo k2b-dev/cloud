@@ -131,9 +131,8 @@ describe("@k2b/ui stylesheet hygiene", () => {
     for (const selector of [
       sidebarSelector!,
       ".k2b-ui .k2b-detail-panel__summary-header h3",
-      ".k2b-ui .k2b-detail-panel__section-header h3",
-      ".k2b-ui .k2b-detail-panel__section-title",
-      ".k2b-ui .k2b-discussion__header :is(h2, h3)",
+      ".k2b-ui .k2b-section__title",
+      ".k2b-ui .k2b-section__part-title",
       ".k2b-ui .k2b-content-structured-data__title",
     ]) {
       const label = declarations(selector);
@@ -145,7 +144,8 @@ describe("@k2b/ui stylesheet hygiene", () => {
 
   test("reveals workspace scrollbars for pointer and keyboard use without changing their geometry", () => {
     const rules = readShippedCssRules(stylesDir);
-    const scrollers = [".k2b-ui .k2b-app-workspace__sidebar-body", ".k2b-ui .k2b-chat-timeline__viewport"];
+    // `k2b-quiet-scrollbar` is the public class for an application's own scrollers.
+    const scrollers = [".k2b-ui .k2b-app-workspace__sidebar-body", ".k2b-ui .k2b-chat-timeline__viewport", ".k2b-ui .k2b-quiet-scrollbar"];
     const finePointer = "@media (hover: hover) and (pointer: fine)";
     const forcedColors = "@media (forced-colors: active)";
     const declarations = (selector: string, context: string) => {
@@ -163,6 +163,10 @@ describe("@k2b/ui stylesheet hygiene", () => {
       expect(declarations(`${selector}:is(:hover, :focus-within)::-webkit-scrollbar-thumb`, finePointer).get("background")?.[0]).not.toBe(
         "transparent",
       );
+      // WebKit repaints a styled track's thumb only when the scrollbar's own style changes.
+      const repaint = declarations(`${selector}:is(:hover, :focus-within)::-webkit-scrollbar`, finePointer);
+      expect([...repaint.keys()]).toEqual(["background"]);
+      expect(repaint.get("background")).toEqual(["transparent"]);
       expect(declarations(selector, forcedColors).get("scrollbar-color")).toEqual(["auto"]);
       expect(declarations(`${selector}::-webkit-scrollbar-thumb`, forcedColors).get("background")).toEqual(["revert"]);
     }

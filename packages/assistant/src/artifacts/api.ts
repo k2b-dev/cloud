@@ -34,7 +34,7 @@ import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
 import { databaseConfigLock } from "./database-lock";
 import { FlatDatabaseRequest } from "./database-runtime";
 import { studioFiles } from "./file-transfer";
-import { appFrameAssets, checkFrameAssets } from "./html/assets";
+import { appFrameAssets, checkFrameAssets, frameAssetPayload } from "./html/assets";
 import { CheckReport } from "./html/check-contracts";
 import { appChecks } from "./html/check-service";
 import { HttpPrepare, HttpScope, SecretSave } from "./http-contracts";
@@ -494,7 +494,13 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
         "Cache-Control": "no-cache",
       }),
     )
-    .get("/runtime/app-assets", etag(), async (c) => c.json(await appFrameAssets(), 200, { "Cache-Control": "no-cache" }))
+    .get("/runtime/chart-parts", etag(), async (c) =>
+      c.json({ chartParts: (await appFrameAssets()).chartParts }, 200, { "Cache-Control": "no-cache" }),
+    )
+    .get("/runtime/app-assets", etag(), async (c) => {
+      const assets = await appFrameAssets();
+      return c.json(c.req.query("charts") === "separate" ? frameAssetPayload(assets) : assets, 200, { "Cache-Control": "no-cache" });
+    })
     .get("/runtime/context", (c) => respond(c, ok(viewerContext(c))))
     .get("/runtime/host.js", async (c) => c.body(await cliHostBundle(), 200, { "Content-Type": "application/javascript; charset=utf-8" }))
     .post("/runtime/claim", v("json", ClientCall), async (c) => respond(c, ok(await clientCalls.claim(c.req.valid("json"), identity(c)))))

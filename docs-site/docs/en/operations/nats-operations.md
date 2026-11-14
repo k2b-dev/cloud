@@ -155,6 +155,13 @@ the page distinguishes that state from an unavailable broker.
 For development credentials and Compose setup, see
 [Monorepo development](/en/docs/operations/monorepo-development#configure-local-nats-accounts).
 
+When a shared-text document topic requires lifecycle storage that is absent or
+smaller than its declared budget, Health and health webhooks show `Shared text lifecycle
+<log-id> reservation is not ready`. Check the file-store and account reservation
+limits. Mail retries preparation with backoff capped at 30 seconds; a successful
+reservation clears the signal without restarting Mail. If the broker cannot be
+queried, the existing incomplete inventory signal remains visible.
+
 ## Inspect a failing deployment
 
 Start with the responding NATS nodes, then inspect the affected stream and its
@@ -175,6 +182,31 @@ Keep streams and application data when investigating errors. Removing a
 stream deletes retained work and can make unsnapshotted notebook edits
 unrecoverable. For `ResourceDriftError`, follow the release's specific recovery
 instructions rather than deleting a namespace to make readiness pass.
+
+### Topics that keep events until the application prunes them
+
+Some document logs, such as the shared Mail draft log, must keep every
+accepted event until the application has stored a covering snapshot. Their
+topic is declared to reject new events when full, and it has no age limit. An
+older stream for the same topic may still discard its oldest events and
+expire them after a few days. On the first use after the upgrade, Cloud
+changes that event stream **in place**: it stops discarding the oldest events
+and removes the age limit. The stream keeps its name, byte limit, events and
+sequences, so cursors that applications store stay valid. The application
+logs `Changed a Sync topic to keep its events until the application prunes
+them`. Any other difference still fails with `ResourceDriftError` and changes
+nothing. That includes a dead-letter stream that would still differ
+afterwards, for example one that holds more than its new byte limit.
+
+This is a runtime contract change. After the change, a process of an older
+release that still declares the old policy reports `ResourceDriftError` for
+that topic. Deploy the release to every instance of the application, and do
+not roll back to an older release, without first following that release's
+recovery notes. Events that the old policy already removed stay gone. Each
+application decides what that means for its documents; for Mail, see
+[Outgoing mail operations](/en/docs/operations/outgoing-mail). A log that is
+full rejects new writes until the application prunes covered events. Never
+purge or delete such a stream by hand to free space.
 
 ## Restart NATS and applications together
 
@@ -222,8 +254,12 @@ Failures without an identified application owner affect infrastructure health.
 Missing stream leadership or an offline replica raises an error; lagging or
 not-current replicas raise a warning. An incomplete or unavailable inventory
 raises a warning instead of reporting zero failures. Broker infrastructure
-signals also apply to webhooks scoped to particular applications. Leaving the
-optional system-account connection unconfigured is not itself an alert.
+signals also apply to webhooks scoped to particular applications. Shared-text
+lifecycle streams raise a shared broker warning at 80% of their installed byte
+limit. They also appear in the NATS **Problems only** filter, even without Sync
+owner metadata. Increase their budget before lifecycle transitions fail; see
+[Operate the lifecycle stream](/en/docs/data/shared-text-documents#operate-the-lifecycle-stream).
+Leaving the optional system-account connection unconfigured is not itself an alert.
 
 The checks and webhook delivery use NATS. During a complete broker outage,
 Cloud cannot guarantee delivery until the broker recovers. Run an external

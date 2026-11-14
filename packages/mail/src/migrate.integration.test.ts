@@ -3,6 +3,9 @@ import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { newShortId } from "./lib/short-id";
 import { buildBackfillActivityIndex, buildCommandTargetIndex, buildOptionalSearchIndex, migrate } from "./migrate";
+import { migrateSharedDrafts } from "./migrate-shared-drafts";
+import { stopDraftDocumentPruning } from "./service/draft-document-log";
+import { migrateDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
 
 const suite = suiteFor("database", "nats");
 
@@ -34,7 +37,7 @@ const previousMailStartup = (previousLiveFunction: string) =>
  * to lose when the baseline is regenerated.
  */
 suite("mail baseline schema", () => {
-  test("records the baseline and principal-assignee marker once and preserves their timestamps on rerun", async () => {
+  test("records the baseline and compatibility markers once and preserves their timestamps on rerun", async () => {
     await migrate();
     const first = await sql<{ version: number; name: string; applied_at: Date }[]>`
       SELECT version, name, applied_at FROM mail.schema_migrations ORDER BY version
@@ -42,6 +45,8 @@ suite("mail baseline schema", () => {
     expect(first.map(({ version, name }) => ({ version, name }))).toEqual([
       { version: 1, name: "baseline" },
       { version: 2, name: "principal_assignees" },
+      { version: 3, name: "suggestions_per_author" },
+      { version: 4, name: "one_reply_draft" },
     ]);
     await migrate();
     expect(
@@ -51,10 +56,143 @@ suite("mail baseline schema", () => {
     ).toEqual(first);
   });
 
+  test("installs the shared-draft derived index on upgrade and preserves valid builds on rerun", async () => {
+    const indexes = () => sql<{ name: string; valid: boolean; column_name: string; predicate: string; oid: number }[]>`
+      SELECT index_class.relname AS name, index_state.indisvalid AS valid, attribute.attname AS column_name,
+        pg_get_expr(index_state.indpred, index_state.indrelid) AS predicate, index_class.oid::int AS oid
+      FROM pg_index index_state JOIN pg_class index_class ON index_class.oid = index_state.indexrelid
+      JOIN pg_attribute attribute ON attribute.attrelid = index_state.indrelid AND attribute.attnum = index_state.indkey[0]
+      WHERE index_class.oid IN (to_regclass('mail.drafts_source_message_idx'),
+        to_regclass('mail.drafts_shared_derived_message_idx')) ORDER BY index_class.relname`;
+    await migrate();
+    const baseline = await indexes();
+    expect(baseline.map(({ oid: _oid, ...shape }) => shape)).toEqual([
+      {
+        name: "drafts_shared_derived_message_idx",
+        valid: true,
+        column_name: "derived_from_message_id",
+        predicate: "((edit_mode = 'shared'::text) AND (state = 'draft'::text))",
+      },
+      {
+        name: "drafts_source_message_idx",
+        valid: true,
+        column_name: "source_message_id",
+        predicate: "(source_message_id IS NOT NULL)",
+      },
+    ]);
+    expect(
+      await sql<{ redundant_index: string | null }[]>`SELECT to_regclass('mail.drafts_shared_source_message_idx') AS redundant_index`,
+    ).toEqual([{ redundant_index: null }]);
+    await sql`DROP INDEX mail.drafts_shared_derived_message_idx`.simple();
+    // CREATE INDEX CONCURRENTLY would fail here if migrate ran it inside its transaction.
+    await migrate();
+    const upgraded = await indexes();
+    expect(upgraded.find(({ name }) => name === "drafts_source_message_idx")?.oid).toBe(
+      baseline.find(({ name }) => name === "drafts_source_message_idx")?.oid,
+    );
+    expect(upgraded.map(({ oid: _oid, ...shape }) => shape)).toEqual(baseline.map(({ oid: _oid, ...shape }) => shape));
+    await migrate();
+    expect(await indexes()).toEqual(upgraded);
+  });
+
+  test("validates the consolidation count after upgrading metadata-only columns", async () => {
+    await sql`ALTER TABLE mail.drafts DROP COLUMN consolidated_count`.simple();
+    await migrate();
+    const [constraint] = await sql<{ validated: boolean }[]>`SELECT convalidated AS validated FROM pg_constraint
+      WHERE conrelid = 'mail.drafts'::regclass AND conname = 'drafts_consolidated_count_check'`;
+    expect(constraint).toEqual({ validated: true });
+  });
+
+  test("upgrades list link provenance once without changing existing conversation links", async () => {
+    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
+      VALUES (${newShortId()}, 'List link upgrade') RETURNING id`;
+    const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations (short_id, mailbox_id, latest_message_at)
+      VALUES (${newShortId()}, ${mailbox!.id}::uuid, '2026-11-01T10:00:00Z') RETURNING id`;
+    const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents (short_id, mailbox_id, content_hash, internal_date)
+      VALUES (${newShortId()}, ${mailbox!.id}::uuid, ${"c".repeat(64)}, '2026-11-01T10:00:00Z') RETURNING id`;
+    await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+      VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, 0, 'headers')`;
+    const before = await sql`SELECT * FROM mail.conversation_messages WHERE message_id = ${message!.id}::uuid`;
+    await sql`ALTER TABLE mail.conversation_messages DROP CONSTRAINT conversation_messages_added_by_check`.simple();
+    await sql`ALTER TABLE mail.conversation_messages ADD CONSTRAINT conversation_messages_added_by_check
+      CHECK (added_by = ANY (ARRAY['provider', 'headers', 'heuristic', 'manual', 'outbox'])) NOT VALID`.simple();
+    try {
+      await migrate();
+      const first = await sql`SELECT oid::text, pg_get_constraintdef(oid) AS definition FROM pg_constraint
+        WHERE conrelid = 'mail.conversation_messages'::regclass AND conname = 'conversation_messages_added_by_check'`;
+      expect(first[0]!.definition).toContain("'list'");
+      await migrate();
+      expect(
+        await sql`SELECT oid::text, pg_get_constraintdef(oid) AS definition FROM pg_constraint
+        WHERE conrelid = 'mail.conversation_messages'::regclass AND conname = 'conversation_messages_added_by_check'`,
+      ).toEqual(first);
+      expect(await sql`SELECT * FROM mail.conversation_messages WHERE message_id = ${message!.id}::uuid`).toEqual(before);
+    } finally {
+      await migrate();
+    }
+  });
+
+  test("adopts legacy drafts once, keeps their content and timestamps, and allows new untouched suggestions", async () => {
+    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
+      VALUES (${newShortId()}, 'Suggestion adoption upgrade') RETURNING id`;
+    const mailboxId = mailbox!.id;
+    try {
+      const [sender] = await sql<{ id: string }[]>`INSERT INTO mail.sender_identities
+        (short_id, mailbox_id, label, from_address, automation_policy, status)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, 'Sender', 'upgrade@example.test', 'disabled', 'verified') RETURNING id`;
+      await sql`ALTER TABLE mail.drafts DROP COLUMN adopted_at CASCADE`.simple();
+      const ids: string[] = [];
+      for (const author of ["user", "service_account"]) {
+        const [draft] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
+          (short_id, mailbox_id, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id,
+            subject, body_markdown, created_at, updated_at)
+          VALUES (${newShortId()}, ${mailboxId}::uuid, ${sender!.id}::uuid, ${author}, ${crypto.randomUUID()}::uuid,
+            'service_account', ${crypto.randomUUID()}::uuid, 'Legacy draft', 'Keep this content',
+            '2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z') RETURNING id`;
+        ids.push(draft!.id);
+      }
+      const before = await sql`SELECT id, subject, body_markdown, author_kind, author_id, updated_at
+        FROM mail.drafts WHERE id = ANY(${sql.array(ids, "UUID")}) ORDER BY id`;
+      await migrate();
+      expect(
+        await sql`SELECT id, subject, body_markdown, author_kind, author_id, updated_at
+        FROM mail.drafts WHERE id = ANY(${sql.array(ids, "UUID")}) ORDER BY id`,
+      ).toEqual(before);
+      expect((await sql`SELECT id FROM mail.drafts WHERE id = ANY(${sql.array(ids, "UUID")}) AND adopted_at IS NOT NULL`).length).toBe(2);
+      const [fresh] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
+        (short_id, mailbox_id, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, ${sender!.id}::uuid, 'service_account', ${crypto.randomUUID()}::uuid,
+          'service_account', ${crypto.randomUUID()}::uuid) RETURNING id`;
+      await migrate();
+      const [unchanged] = await sql<{ adopted_at: Date | null }[]>`SELECT adopted_at FROM mail.drafts WHERE id = ${fresh!.id}::uuid`;
+      expect(unchanged!.adopted_at).toBeNull();
+    } finally {
+      await migrate();
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    }
+  });
+
+  test("F6 replaces per-author suggestion slots with one reply slot and forbids older startup", async () => {
+    await migrate();
+    const [index] = await sql<{ definition: string }[]>`SELECT indexdef AS definition FROM pg_indexes
+      WHERE schemaname = 'mail' AND indexname = 'drafts_one_open_reply_idx'`;
+    expect(index?.definition).toContain("UNIQUE");
+    expect(index?.definition).toContain("conversation_id");
+    expect(index?.definition).toContain("sending");
+    expect(index?.definition).toContain("origin = 'user'");
+    expect(
+      await sql`SELECT indexname FROM pg_indexes WHERE schemaname = 'mail'
+        AND indexname IN ('drafts_untouched_suggestion_idx', 'drafts_untouched_suggestion_author_idx')`,
+    ).toHaveLength(0);
+    const before = await liveFunctionDefinition();
+    await expect(previousMailStartup(before)).rejects.toThrow("Previous Mail refuses");
+    expect(await liveFunctionDefinition()).toBe(before);
+  });
+
   test("serializes concurrent runs behind a transaction-scoped guard", async () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations ORDER BY version`;
-    expect(rows).toEqual([{ version: 1 }, { version: 2 }]);
+    expect(rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
     // pg_locks spans the whole server; other databases on it may hold advisory locks of their own.
     const [locks] = await sql<{ held: number }[]>`
       SELECT count(*)::int AS held
@@ -81,7 +219,7 @@ suite("mail baseline schema", () => {
     const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
       VALUES (${newShortId()}, 'Newer schema data') RETURNING id`;
     if (!mailbox) throw new Error("Newer schema fixture missing");
-    await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (3, 'future_schema')`;
+    await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (5, 'future_schema')`;
     try {
       const before = await sql`SELECT * FROM mail.schema_migrations ORDER BY version`;
       const live = await liveFunctionDefinition();
@@ -90,7 +228,7 @@ suite("mail baseline schema", () => {
         (error: unknown) => error,
       );
       expect(failure).toBeInstanceOf(Error);
-      expect(String(failure)).toContain("3 (future_schema)");
+      expect(String(failure)).toContain("5 (future_schema)");
       expect(String(failure)).toContain("Use an image compatible with this schema");
       expect(String(failure)).not.toContain("DROP SCHEMA");
       expect(await liveFunctionDefinition()).toBe(live);
@@ -99,10 +237,38 @@ suite("mail baseline schema", () => {
         { name: "Newer schema data" },
       ]);
     } finally {
-      await sql`DELETE FROM mail.schema_migrations WHERE version = 3`;
+      await sql`DELETE FROM mail.schema_migrations WHERE version = 5`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
     }
     await migrate();
+  });
+
+  test("upgrades a 0.76 mailbox without the explicit-mode flag and runs the shared-default migration", async () => {
+    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name, draft_edit_mode)
+      VALUES (${newShortId()}, 'Shared default upgrade', 'lock') RETURNING id`;
+    if (!mailbox) throw new Error("Shared default upgrade fixture missing");
+    try {
+      await sql`ALTER TABLE mail.mailboxes DROP COLUMN draft_edit_mode_explicit`.simple();
+      await migrate();
+      const [column] = await sql<{ not_null: boolean; default_value: string }[]>`
+        SELECT a.attnotnull AS not_null, pg_get_expr(d.adbin, d.adrelid) AS default_value
+        FROM pg_attribute a JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        WHERE a.attrelid = 'mail.mailboxes'::regclass AND a.attname = 'draft_edit_mode_explicit' AND NOT a.attisdropped
+      `;
+      expect(column).toEqual({ not_null: true, default_value: "false" });
+      expect(await migrateDraftDocumentLogPolicy()).toBe(true);
+      await stopDraftDocumentPruning();
+      expect(await migrateSharedDrafts()).toMatchObject({ completed: true });
+      expect(
+        await sql<
+          { draft_edit_mode: string; draft_edit_mode_explicit: boolean }[]
+        >`SELECT draft_edit_mode, draft_edit_mode_explicit FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`,
+      ).toEqual([{ draft_edit_mode: "shared", draft_edit_mode_explicit: false }]);
+    } finally {
+      await stopDraftDocumentPruning();
+      await migrate();
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
+    }
   });
 
   test("adds tables and indexes created after the baseline to a database installed before them", async () => {
@@ -167,7 +333,7 @@ suite("mail baseline schema", () => {
       receipt_pending: "false",
       signature_template_id: true,
       signature_template_fk: true,
-      versions: 2,
+      versions: 4,
     });
   });
 
@@ -218,7 +384,8 @@ suite("mail baseline schema", () => {
       await sql`ALTER TABLE mail.conversation_assignees DROP COLUMN service_account_id`;
       await sql`ALTER TABLE mail.conversation_assignees ALTER COLUMN user_id SET NOT NULL`;
       await sql`ALTER TABLE mail.conversation_assignees ADD PRIMARY KEY (conversation_id, user_id)`;
-      await sql`DELETE FROM mail.schema_migrations WHERE version = 2`;
+      // The schema before both compatibility markers.
+      await sql`DELETE FROM mail.schema_migrations WHERE version IN (2, 3, 4)`;
       // This is the preceding function body: only people receive assignment updates.
       const previousLive = (await liveFunctionDefinition()).replaceAll("assignee.principal_id", "assignee.user_id");
       expect(previousLive).toContain("assignee.user_id");
@@ -234,6 +401,8 @@ suite("mail baseline schema", () => {
       expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM mail.schema_migrations ORDER BY version`).toEqual([
         { version: 1, name: "baseline" },
         { version: 2, name: "principal_assignees" },
+        { version: 3, name: "suggestions_per_author" },
+        { version: 4, name: "one_reply_draft" },
       ]);
       // The marker excludes the predecessor even before the first account assignment.
       await expect(previousMailStartup(previousLive)).rejects.toThrow("Previous Mail refuses non-baseline schema history");
@@ -613,7 +782,7 @@ suite("mail baseline schema", () => {
       expect((await displays())[older]).toBe("everywhere");
 
       const [shape] = await sql<{ versions: number }[]>`SELECT count(*)::int AS versions FROM mail.schema_migrations`;
-      expect(shape).toEqual({ versions: 2 });
+      expect(shape).toEqual({ versions: 4 });
       const invalid = await sql`UPDATE mail.folders SET display = 'sidebar' WHERE id = ${shown}::uuid`.then(
         () => null,
         (error: unknown) => error,
@@ -774,7 +943,9 @@ suite("mail baseline schema", () => {
               'protect_conversation_reference_allocation', 'guard_outbox_requested_at',
               'enqueue_live_invalidation', 'enqueue_activity_live_invalidation',
               'search_reference_matches', 'touch_updated_at', 'carry_conversation_keep',
-              'invalidate_automation_observed_state'
+              'invalidate_automation_observed_state',
+              'enqueue_room_access_changed', 'enqueue_assignee_room_access_changed',
+              'enqueue_message_room_access_changed', 'enqueue_mailbox_room_access_changed'
             )
         ) AS functions,
         (
@@ -785,16 +956,43 @@ suite("mail baseline schema", () => {
         ) AS triggers,
         to_regclass('ai.workflow_task') IS NOT NULL AS workflow_ai_table
     `;
-    // Baseline/workflow effects, conversation/shared-draft retention, and deferred count-cache invalidation.
-    expect(shape).toEqual({ extensions: 3, functions: 10, triggers: 34, workflow_ai_table: true });
-    const [retention] = await sql<{ definition: string; enabled: string }[]>`
-      SELECT pg_get_triggerdef(oid) AS definition, tgenabled AS enabled FROM pg_trigger
+    // Existing baseline remains; four access-hint functions and twelve narrowly scoped
+    // triggers revoke room writers without per-edit authorization queries.
+    expect(shape).toEqual({ extensions: 3, functions: 14, triggers: 48, workflow_ai_table: true });
+    const accessTriggers = await sql<{ table_name: string; trigger_name: string; enabled: string }[]>`
+      SELECT pg_class.relname AS table_name, tgname AS trigger_name, tgenabled AS enabled
+      FROM pg_trigger JOIN pg_class ON pg_class.oid = tgrelid
+      JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+      WHERE pg_namespace.nspname = 'mail' AND tgname IN ('room_access_changed', 'room_access_updated')
+      ORDER BY pg_class.relname, tgname`;
+    expect(accessTriggers).toEqual(
+      (
+        [
+          ["compose_templates", "room_access_changed"],
+          ["compose_templates", "room_access_updated"],
+          ["conversation_assignees", "room_access_changed"],
+          ["conversation_messages", "room_access_changed"],
+          ["conversation_messages", "room_access_updated"],
+          ["conversations", "room_access_changed"],
+          ["drafts", "room_access_changed"],
+          ["mailbox_access", "room_access_changed"],
+          ["mailbox_assigned_access", "room_access_changed"],
+          ["mailboxes", "room_access_changed"],
+          ["sender_identities", "room_access_changed"],
+          ["sender_identities", "room_access_updated"],
+        ] as const
+      ).map(([table_name, trigger_name]) => ({ table_name, trigger_name, enabled: "O" })),
+    );
+    const [retention] = await sql<{ definition: string; enabled: string; correct_function: boolean }[]>`
+      SELECT pg_get_triggerdef(oid) AS definition, tgenabled AS enabled,
+        tgfoid = 'mail.trim_inserted_draft_document_revision()'::regprocedure AS correct_function FROM pg_trigger
       WHERE tgrelid = 'mail.draft_document_revisions'::regclass
         AND tgname = 'trim_draft_document_revisions' AND NOT tgisinternal
     `;
     expect(retention?.enabled).toBe("O");
     expect(retention?.definition).toContain("AFTER INSERT OR UPDATE OF state ON mail.draft_document_revisions");
-    expect(retention?.definition).toContain("FOR EACH ROW EXECUTE FUNCTION mail.trim_inserted_draft_document_revision()");
+    expect(retention?.definition).toContain("FOR EACH ROW EXECUTE FUNCTION");
+    expect(retention?.correct_function).toBe(true);
   });
 
   test("gives every public resource a stable short ID next to its UUID key", async () => {

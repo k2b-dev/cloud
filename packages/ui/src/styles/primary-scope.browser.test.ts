@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { auditPrimaryColors } from "../../test/primary-scope-audit";
 
 const ui = resolve(import.meta.dir, "../..");
@@ -192,12 +192,15 @@ for (const theme of ["light", "dark"] as const) {
       });
       beforeAll(async () => {
         page = await browser.newPage({ viewport: { width, height: 1000 } });
-        await page.route(`${assets}**`, (route) =>
-          route.fulfill({
-            path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)),
+        await page.route(`${assets}**`, (route) => {
+          const name = decodeURIComponent(new URL(route.request().url()).pathname.slice(1));
+          // A lazily loaded chunk was inlined as a data URL above and then resolved against the asset origin.
+          const inline = /^data:([^;,]+)[^,]*;base64,(.*)$/s.exec(name);
+          return route.fulfill({
+            ...(inline ? { body: Buffer.from(inline[2]!, "base64"), contentType: inline[1] } : { path: resolve(ui, "dist", name) }),
             headers: { "access-control-allow-origin": "*" },
-          }),
-        );
+          });
+        });
         await page.setContent(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${catalogCss}</style><style>${fonts}</style><style>${icons}</style>
           <style>*,*::before,*::after{transition:none!important;animation:none!important}body{margin:0}#evidence{padding:24px;max-width:1000px;margin:auto}#outside{margin-bottom:24px}#scope{padding:24px;border:1px solid var(--k2b-border);border-radius:12px}#catalog{padding:24px}#nested{margin-top:16px}</style></head>
           <body class="k2b-ui" data-theme="${theme}"><main id="evidence"><h1>Primary scope · ${theme}</h1><section id="outside"></section><section id="scope" data-k2b-primary="ai"><h2>AI primary</h2><div id="controls"></div><div class="k2b-ui" id="nested"></div></section></main><section id="catalog" data-k2b-primary="ai"></section></body></html>`);
@@ -315,7 +318,7 @@ for (const theme of ["light", "dark"] as const) {
         }));
         expect(primaryPaint).toEqual({ fill: theme === "light" ? "rgb(142, 27, 111)" : "rgb(183, 64, 143)", text: "rgb(255, 255, 255)" });
         const primaryBox = await primary.boundingBox();
-        await primary.hover();
+        await hoverInPlace(primary);
         await settled(page);
         expect(await primary.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
           theme === "light" ? "rgb(112, 21, 86)" : "rgb(142, 27, 111)",
@@ -323,7 +326,7 @@ for (const theme of ["light", "dark"] as const) {
         expect(await primary.boundingBox()).toEqual(primaryBox);
         const field = page.locator("#controls input").first();
         const initialBox = await field.boundingBox();
-        await field.hover();
+        await hoverInPlace(field);
         await field.focus();
         await settled(page);
         expect(await field.boundingBox()).toEqual(initialBox);
@@ -377,7 +380,10 @@ for (const theme of ["light", "dark"] as const) {
           expect(await page.evaluate(auditPrimaryColors, '.k2b-toast[data-k2b-primary="ai"], .k2b-toast[data-k2b-primary="ai"] *')).toEqual(
             [],
           );
-          for (const close of await page.locator(".k2b-toast button").all()) await close.click();
+          // The toasts lie on top of each other in the stack; only the front one is hit-testable.
+          await page.locator(".k2b-toast__close").evaluateAll((buttons) => {
+            for (const button of buttons) (button as HTMLButtonElement).click();
+          });
           await page.waitForFunction(() => !document.querySelector(".k2b-toast"));
         }
         await page.locator("#outside-action").focus();
@@ -433,22 +439,25 @@ for (const theme of ["light", "dark"] as const) {
         expect((await palette(page, "dialog[open]")).action).toBe(expectedAction);
         await page.keyboard.press("Escape");
         await settled(page);
-        const tab = page.locator("#panes [role='tab']").first();
-        await tab.scrollIntoViewIfNeeded();
-        await settled(page);
-        const tabBox = (await tab.boundingBox())!;
-        await page.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2);
-        await page.mouse.down();
-        await page.mouse.move(tabBox.x + tabBox.width / 2 + 30, tabBox.y + tabBox.height / 2 + 30, { steps: 5 });
-        const ghost = page.locator("body > .k2b-panes__drag-preview[aria-hidden='true']");
-        await ghost.waitFor();
-        const ghostPalette = await palette(page, "body > .k2b-panes__drag-preview[aria-hidden='true']");
-        expect(ghostPalette.action).toBe(expectedAction);
-        expect(ghostPalette["action-solid"]).toBe(inside["action-solid"]);
-        await page.keyboard.press("Escape");
-        await settled(page);
-        await page.mouse.up();
-        await ghost.waitFor({ state: "detached" });
+        // A narrow Panes container is one row of tabs without dragging, so the drag preview exists only when wide.
+        if (width === 1440) {
+          const tab = page.locator("#panes [role='tab']").first();
+          await tab.scrollIntoViewIfNeeded();
+          await settled(page);
+          const tabBox = (await tab.boundingBox())!;
+          await page.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(tabBox.x + tabBox.width / 2 + 30, tabBox.y + tabBox.height / 2 + 30, { steps: 5 });
+          const ghost = page.locator("body > .k2b-panes__drag-preview[aria-hidden='true']");
+          await ghost.waitFor();
+          const ghostPalette = await palette(page, "body > .k2b-panes__drag-preview[aria-hidden='true']");
+          expect(ghostPalette.action).toBe(expectedAction);
+          expect(ghostPalette["action-solid"]).toBe(inside["action-solid"]);
+          await page.keyboard.press("Escape");
+          await settled(page);
+          await page.mouse.up();
+          await ghost.waitFor({ state: "detached" });
+        }
         // The same attribute also works directly on a theme root (the docs demo).
         await page.locator("#scope").evaluate((node, theme) => {
           node.classList.add("k2b-ui");

@@ -18,7 +18,7 @@ const entry = resolve(import.meta.dir, "file-list.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent as c, render } from "solid-js/web";
-import { DetailPanel, FileGrid, FileTypeIcon, IconButton, createCollectionSelection, fileKindLabel } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { DetailPanel, FileGrid, FileTypeIcon, IconButton, Section, createCollectionSelection, fileKindLabel } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const pixel = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="3"><rect width="4" height="3" fill="#7c9cd6"/></svg>');
 const files = [
@@ -68,15 +68,15 @@ render(() => c(DetailPanel, { surface: "plain", get children() { return [c(Detai
   kind: "Conversation", title: "Brochure approval", subtitle: "Northern Light Print · 3 messages",
   get actions() { return c(IconButton, { size: "sm", variant: "ghost", label: "Close details", get children() { return icon("ti-x"); } }); },
 }), c(DetailPanel.Body, { scrollFade: false, get children() { return [
-  c(DetailPanel.Section, { title: "Attachments", count: files.length, get children() { return list(); } }),
-  c(DetailPanel.Section, { title: "Live", get children() { return live(); } }),
-  c(DetailPanel.Section, { title: "Sources", get children() { return picker(); } }),
-  c(DetailPanel.Section, { title: "Linked", get children() { return c(DetailPanel.Action, {
+  c(Section,{ title: "Attachments", count: files.length, get children() { return list(); } }),
+  c(Section,{ title: "Live", get children() { return live(); } }),
+  c(Section,{ title: "Sources", get children() { return picker(); } }),
+  c(Section,{ title: "Linked", get children() { return c(DetailPanel.Action, {
     title: "Brochure task", href: "#task", secondaryAction: { icon: "ti ti-unlink", label: "Unlink Brochure task", onClick() {} },
   }); } }),
   c(DetailPanel.Group, { title: "More about this conversation", get children() { return [
-    c(DetailPanel.Section, { title: "Activity", count: 4, collapsible: true, summary: "Lena Hoffmann assigned herself", children: "Assigned, tagged, received" }),
-    c(DetailPanel.Section, { title: "Technical details", collapsible: true, summary: "Sender, headers, original", children: "Message-ID" }),
+    c(Section,{ title: "Activity", count: 4, collapsible: true, summary: "Lena Hoffmann assigned herself", children: "Assigned, tagged, received" }),
+    c(Section,{ title: "Technical details", collapsible: true, summary: "Sender, headers, original", children: "Message-ID" }),
   ]; } }),
 ]; } })]; } }), document.getElementById("app"));
 `;
@@ -299,7 +299,7 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
     }
   }, 30_000);
 
-  test("the kind line shares the first row with the close button, above the title and subtitle", async () => {
+  test("the name shares the first row with the close button; the kind leads the line below it", async () => {
     const page = await load(1440, "light");
     try {
       const box = async (selector: string) => (await page.locator(selector).first().boundingBox())!;
@@ -307,10 +307,10 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       const close = await box('button[aria-label="Close details"]');
       const title = await box(".k2b-detail-panel__heading h2");
       const subtitle = await box(".k2b-detail-panel__supporting");
-      expect(Math.abs(kind.y + kind.height / 2 - (close.y + close.height / 2))).toBeLessThan(1);
-      expect(title.y).toBeGreaterThanOrEqual(kind.y + kind.height);
+      expect(Math.abs(title.y + title.height / 2 - (close.y + close.height / 2))).toBeLessThan(1);
       expect(subtitle.y).toBeGreaterThanOrEqual(title.y + title.height);
-      expect(title.x).toBe(kind.x);
+      expect(Math.abs(kind.y + kind.height / 2 - (subtitle.y + subtitle.height / 2))).toBeLessThan(1);
+      expect(kind.x).toBe(title.x);
     } finally {
       await page.close();
     }
@@ -331,9 +331,9 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       expect(Math.round(next.y - (closed.y + closed.height))).toBe(0);
       await toggle.click();
       await settled(page);
-      const header = page.locator('.k2b-detail-panel__section[data-open="true"] .k2b-detail-panel__section-header');
+      const header = page.locator('.k2b-section[data-open="true"] .k2b-section__header');
       expect(Math.round((await header.boundingBox())!.height)).toBe(44);
-      expect(await page.locator(".k2b-detail-panel__section-preview").first().isVisible()).toBe(false);
+      expect(await page.locator(".k2b-section__summary").first().isVisible()).toBe(false);
       await page.screenshot({ path: "/tmp/k2b-ui-detail-more-open.png", fullPage: true });
     } finally {
       await page.close();

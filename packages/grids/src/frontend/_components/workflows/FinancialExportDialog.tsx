@@ -4,12 +4,12 @@ import {
   DataTable,
   type DataTableColumn,
   DescriptionList,
-  DetailPanel,
   dialogCore,
   NoticeCard,
   PanelDialog,
   Placeholder,
   panelDialogWideOptions,
+  Section,
   useLocale,
 } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -141,7 +141,7 @@ export const openFinancialExportDialog = (args: { runId: string; receiptId: stri
                       <Show when={value().source.selectionLimit}>
                         {(limit) => <NoticeCard tone="warning" title={t().limited({ limit: limit() })} />}
                       </Show>
-                      <DetailPanel.Section title={t().configuration} icon="ti ti-adjustments">
+                      <Section title={t().configuration} icon="ti ti-adjustments">
                         <DescriptionList
                           columns={2}
                           size="sm"
@@ -150,7 +150,7 @@ export const openFinancialExportDialog = (args: { runId: string; receiptId: stri
                             description: <span class="break-words">{display(field, key)}</span>,
                           }))}
                         />
-                      </DetailPanel.Section>
+                      </Section>
                       <Show when={value().kind === "sepa-xml"}>
                         <Button
                           variant="secondary"
@@ -189,7 +189,7 @@ export const openFinancialExportDialog = (args: { runId: string; receiptId: stri
                           </div>
                         </div>
                       </section>
-                      <DetailPanel.Section title={t().technical} icon="ti ti-code" collapsible defaultOpen={false}>
+                      <Section title={t().technical} icon="ti ti-code" collapsible defaultOpen={false}>
                         <div class="flex flex-col gap-3">
                           <Show when={value().source.query}>
                             {(query) => <pre class="overflow-x-auto whitespace-pre-wrap break-words text-xs">{query()}</pre>}
@@ -199,7 +199,7 @@ export const openFinancialExportDialog = (args: { runId: string; receiptId: stri
                             <code class="break-all text-xs">{value().sha256}</code>
                           </div>
                         </div>
-                      </DetailPanel.Section>
+                      </Section>
                       <p class="text-xs text-dimmed">{t().scope}</p>
                     </>
                   );

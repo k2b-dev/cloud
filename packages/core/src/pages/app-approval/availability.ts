@@ -4,10 +4,9 @@ export type ApprovalAvailability = "disabled" | "setup-required" | "configured" 
 export const approvalAvailability = (config: { enabled: boolean; appOrigin: string } | null): ApprovalAvailability =>
   !config ? "unavailable" : !config.enabled ? "disabled" : !config.appOrigin ? "setup-required" : "configured";
 
-/** Set in this browser after a FreeIPA sign-in through the app; it names no account. */
-export const FREEIPA_APP_SIGN_IN_COOKIE = "login_freeipa_app";
+import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "@k2b/cloud/shared";
 
-export const LOGIN_EMAIL_SIGN_IN_COOKIE = "login_email";
+export { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE };
 
 const remembersFreeIpaApp = (cookieHeader: string | null | undefined) =>
   (cookieHeader ?? "").split(";").some((part) => part.trim() === `${FREEIPA_APP_SIGN_IN_COOKIE}=1`);

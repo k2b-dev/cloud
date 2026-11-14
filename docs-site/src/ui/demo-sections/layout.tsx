@@ -6,7 +6,9 @@ import {
   AppWorkspaceSidebarItemStatus,
   Avatar,
   addPanesItem,
+  applyPanesPreset,
   BottomSheet,
+  Breadcrumbs,
   Button,
   ButtonLink,
   bottomSheetAdaptiveOptions,
@@ -19,6 +21,7 @@ import {
   dialogCore,
   FilterChip,
   FloatingWindow,
+  type FloatingWindowState,
   IconButton,
   LinkCard,
   MarkdownView,
@@ -34,11 +37,13 @@ import {
   type PanesLayout,
   type PanesNode,
   Paper,
+  PersonPopover,
   Placeholder,
   PullToRefresh,
   removePanesItem,
   SaveStatus,
   ScrollArea,
+  Section,
   SegmentedControl,
   Select,
   SelectChip,
@@ -863,6 +868,62 @@ const addNextItem = (targetItemId: string | null) =>
   );
 };
 
+const arrangedPaneDefinitions = [
+  { id: "draft", title: "Draft", icon: "ti ti-pencil", tone: "blue" },
+  { id: "history", title: "History", icon: "ti ti-history", tone: "violet" },
+  { id: "preview", title: "Preview", icon: "ti ti-eye", tone: "emerald" },
+] as const;
+
+// The application's own arrangement: draft beside history above preview.
+const arrangedPanesDefault = applyPanesPreset(
+  "stacked",
+  arrangedPaneDefinitions.map((item) => item.id),
+)!;
+
+const PanesArrangeDemo = () => {
+  const [layout, setLayout] = createSignal<PanesLayout>(arrangedPanesDefault);
+  const [hintSeen, setHintSeen] = createSignal(false);
+  const items: readonly PanesItem[] = arrangedPaneDefinitions.map((item) => ({
+    id: item.id,
+    title: item.title,
+    icon: item.icon,
+    render: () => (
+      <div class="ui-pane-body" data-tone={item.tone}>
+        <span>{item.title}</span>
+      </div>
+    ),
+  }));
+  return (
+    <DemoCard
+      id="panes-arrange"
+      chip={{ kind: "component", name: "Panes", from: "@k2b/ui" }}
+      description="Arrange: a grip on each tab, the Arrange menu with presets and named places, the same menu on a right click, and the quiet column edge at every boundary. Double-click a boundary to reset its size."
+      code={`const defaultLayout = applyPanesPreset("stacked", ["draft", "history", "preview"])!;
+const [layout, setLayout] = createSignal<PanesLayout>(storedLayout ?? defaultLayout);
+
+<Panes
+  layout={layout()}
+  onLayoutChange={(next) => { setLayout(next); saveLayout(next); }}
+  defaultLayout={defaultLayout}
+  arrangeHint={{ open: !hintSeen, onDismiss: markHintSeen }}
+  items={items}
+  ariaLabel="Reply panes"
+/>`}
+    >
+      <div class="ui-panes-demo">
+        <Panes
+          layout={layout()}
+          onLayoutChange={setLayout}
+          defaultLayout={arrangedPanesDefault}
+          arrangeHint={{ open: !hintSeen(), onDismiss: () => setHintSeen(true) }}
+          items={items}
+          ariaLabel="Reply panes"
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
 const OverviewDemo = () => (
   <DemoCard
     id="overview"
@@ -1632,10 +1693,10 @@ const DetailPanelDemo = () => {
       ]}
       description="Two production-shaped inspectors demonstrate the final contract: padded identity headers, one stable scroll gutter absorbed by the trailing host inset, one flat frame for every summary, group, lone section and comment thread, and the same heading, icon and count columns in all of them."
       code={`<DetailPanel.Group label="Customer context">
-  <DetailPanel.Section title="Company" icon="ti ti-building" tone="accent">
+  <Section title="Company" icon="ti ti-building">
     <DescriptionList layout="rows" size="sm" items={companyItems} />
-  </DetailPanel.Section>
-  <DetailPanel.Section title="Contact" icon="ti ti-user" tone="warning">
+  </Section>
+  <Section title="Contact" icon="ti ti-user" tone="warning">
     <DetailPanel.Action
       href="/contacts/ada"
       target="_blank"
@@ -1644,11 +1705,11 @@ const DetailPanelDemo = () => {
       menuLabel="More actions for Ada Lovelace"
       menuItems={[{ label: "Related requests", href: "/requests?contact=ada" }]}
     />
-  </DetailPanel.Section>
-  <DetailPanel.Section title="Recent threads" icon="ti ti-history" tone="success">…</DetailPanel.Section>
+  </Section>
+  <Section title="Recent threads" icon="ti ti-history" tone="success">…</Section>
 </DetailPanel.Group>
 
-<DetailPanel.Section title="Subscription plan details" icon="ti ti-alert-triangle" tone="danger" actions={retry} />
+<Section title="Subscription plan details" icon="ti ti-alert-triangle" tone="danger" actions={retry} />
 
 <Discussion label="Comments" icon="ti ti-messages" count={1}>
   <Discussion.List>…</Discussion.List>
@@ -1684,7 +1745,7 @@ const DetailPanelDemo = () => {
               />
               <DetailPanel.Body>
                 <DetailPanel.Group label="Request context">
-                  <DetailPanel.Section title="Workflow" icon="ti ti-route" tone="accent">
+                  <Section title="Workflow" icon="ti ti-route">
                     <DescriptionList
                       layout="rows"
                       size="sm"
@@ -1756,9 +1817,9 @@ const DetailPanelDemo = () => {
                         { term: "Thread tier", description: "Growth" },
                       ]}
                     />
-                  </DetailPanel.Section>
+                  </Section>
 
-                  <DetailPanel.Section title="Links" icon="ti ti-link" tone="neutral" meta="0">
+                  <Section title="Links" icon="ti ti-link" tone="neutral" meta="0">
                     <div class="ui-detail-panel-grouped__empty-actions">
                       <Button variant="ghost" size="xs">
                         <i class="ti ti-message-circle" aria-hidden="true" /> Discussions
@@ -1767,14 +1828,13 @@ const DetailPanelDemo = () => {
                         <i class="ti ti-link-plus" aria-hidden="true" /> Thread links
                       </Button>
                     </div>
-                  </DetailPanel.Section>
+                  </Section>
                 </DetailPanel.Group>
 
                 <DetailPanel.Group label="Customer context">
-                  <DetailPanel.Section
+                  <Section
                     title="content-mobbin"
                     icon="ti ti-building"
-                    tone="accent"
                     actions={
                       <IconButton variant="ghost" size="xs" label="Company actions">
                         <i class="ti ti-dots" aria-hidden="true" />
@@ -1790,9 +1850,9 @@ const DetailPanelDemo = () => {
                         { term: "Domain", description: "content-mobbin.com" },
                       ]}
                     />
-                  </DetailPanel.Section>
+                  </Section>
 
-                  <DetailPanel.Section
+                  <Section
                     title="alexsmith"
                     icon="ti ti-user"
                     tone="warning"
@@ -1820,9 +1880,9 @@ const DetailPanelDemo = () => {
                       menuLabel="More actions for alexsmith"
                       menuItems={[{ label: "Related requests", icon: "ti ti-message-circle", action: () => {} }]}
                     />
-                  </DetailPanel.Section>
+                  </Section>
 
-                  <DetailPanel.Section title="Recent threads" icon="ti ti-history" tone="success">
+                  <Section title="Recent threads" icon="ti ti-history" tone="success">
                     <div class="ui-detail-panel-grouped__threads">
                       {[
                         ["Bug report", "1h ago"],
@@ -1836,10 +1896,10 @@ const DetailPanelDemo = () => {
                         </button>
                       ))}
                     </div>
-                  </DetailPanel.Section>
+                  </Section>
                 </DetailPanel.Group>
 
-                <DetailPanel.Section
+                <Section
                   title="Subscription plan details"
                   icon="ti ti-alert-triangle"
                   tone="danger"
@@ -1886,7 +1946,7 @@ const DetailPanelDemo = () => {
               />
               <DetailPanel.Body>
                 <DetailPanel.Group label="Document context">
-                  <DetailPanel.Section title="Contents" icon="ti ti-list-tree" tone="accent">
+                  <Section title="Contents" icon="ti ti-list-tree">
                     <ol class="ui-detail-panel-grouped__contents">
                       {[
                         ["H1", "Welcome!"],
@@ -1903,7 +1963,7 @@ const DetailPanelDemo = () => {
                         </li>
                       ))}
                     </ol>
-                  </DetailPanel.Section>
+                  </Section>
                 </DetailPanel.Group>
 
                 <Discussion label="Comments" icon="ti ti-messages" count={1}>
@@ -1931,14 +1991,14 @@ const DetailPanelDemo = () => {
                 </Discussion>
 
                 <DetailPanel.Group label="Collaboration context">
-                  <DetailPanel.Section title="Online" icon="ti ti-users" tone="success" meta="1">
+                  <Section title="Online" icon="ti ti-users" tone="success" meta="1">
                     <div class="ui-detail-panel-grouped__person">
                       <Avatar name="Valentin Kolb" size="xs" />
                       <span>Valentin Kolb</span>
                     </div>
-                  </DetailPanel.Section>
+                  </Section>
 
-                  <DetailPanel.Section title="Info" icon="ti ti-info-circle" tone="neutral" collapsible>
+                  <Section title="Info" icon="ti ti-info-circle" tone="neutral" collapsible>
                     <DescriptionList
                       layout="rows"
                       size="sm"
@@ -1947,9 +2007,9 @@ const DetailPanelDemo = () => {
                         { term: "Updated", description: "Jul 7, 2026" },
                       ]}
                     />
-                  </DetailPanel.Section>
+                  </Section>
 
-                  <DetailPanel.Section title="Versions" icon="ti ti-history" tone="warning" meta="12" />
+                  <Section title="Versions" icon="ti ti-history" tone="warning" meta="12" />
                 </DetailPanel.Group>
               </DetailPanel.Body>
             </DetailPanel>
@@ -2000,6 +2060,36 @@ const PageTitleDemo = () => (
     </div>
   </DemoCard>
 );
+
+const breadcrumbLevels = ["Files", "Office", "Scanner inbox at the entrance", "Info sheets for all sites", "Notice signs"];
+
+const BreadcrumbsDemo = () => {
+  const [depth, setDepth] = createSignal(breadcrumbLevels.length);
+  return (
+    <DemoCard
+      id="breadcrumbs"
+      chip={{ kind: "component", name: "Breadcrumbs", from: "@k2b/ui" }}
+      description="A folder path inside a dialog or panel: the levels above as blue links, the current level as text, no Up arrow. A long path stays on one line, scrolls to its end, and fades on the side where more levels follow. Choose a level to go up."
+      code={`<Breadcrumbs label="Folder path" items={levels.map((label) => ({ label }))} onSelect={(index) => open(index)} />`}
+    >
+      <div style={{ "max-width": "22rem" }}>
+        <Breadcrumbs
+          label="Folder path"
+          items={breadcrumbLevels.slice(0, depth()).map((label) => ({ label }))}
+          onSelect={(index) => setDepth(index + 1)}
+        />
+      </div>
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={depth() === breadcrumbLevels.length}
+        onClick={() => setDepth(breadcrumbLevels.length)}
+      >
+        Open the deepest folder
+      </Button>
+    </DemoCard>
+  );
+};
 
 const ScrollAreaDemo = () => (
   <DemoCard
@@ -2128,12 +2218,60 @@ const DetailsToggleDemo = () => {
   );
 };
 
+const DetailPanelTaskRows = () => {
+  // Each task keeps its own state, so a toggle updates its row in place and the focused checkbox stays focused.
+  const tasks = [
+    { title: "Call Mrs. Weber about the pickup", due: "Today", done: createSignal(false) },
+    { title: "Send photos of the oak chest", due: "Tomorrow", done: createSignal(true) },
+    { title: "Confirm the appraisal date", due: "Fri", done: createSignal(false) },
+  ];
+  return (
+    <article class="ui-detail-panel-pattern">
+      <header>
+        <strong>Tasks</strong>
+        <span>The checkbox marks a task done on its own; the row opens the task.</span>
+      </header>
+      <div class="ui-detail-panel-pattern__frame" style="height: 16rem">
+        <DetailPanel class="ui-detail-panel-grouped">
+          <DetailPanel.Body>
+            <DetailPanel.Group label="Customer tasks">
+              <Section
+                title="Tasks"
+                icon="ti ti-checkbox"
+                tone="neutral"
+                meta={`${tasks.filter((task) => task.done[0]()).length} of ${tasks.length} done`}
+              >
+                <For each={tasks}>
+                  {(task) => (
+                    <DetailPanel.Action
+                      onClick={() => {}}
+                      title={<span style={task.done[0]() ? { color: "var(--k2b-text-muted)" } : undefined}>{task.title}</span>}
+                      trailing={task.due}
+                      checkbox={{
+                        get checked() {
+                          return task.done[0]();
+                        },
+                        label: `Done: ${task.title}`,
+                        onChange: task.done[1],
+                      }}
+                    />
+                  )}
+                </For>
+              </Section>
+            </DetailPanel.Group>
+          </DetailPanel.Body>
+        </DetailPanel>
+      </div>
+    </article>
+  );
+};
+
 const DetailPanelActionDemo = () => (
   <DemoCard
     id="detail-panel-action"
     chip={{ kind: "component", name: "DetailPanel.Action", from: "@k2b/ui" }}
-    description="Full-width destinations keep navigation primary while a sibling overflow menu or one direct secondary action holds further commands. Disabled rows preserve unavailable resource context."
-    code={`<DetailPanel.Section title="Related resources" icon="ti ti-link">
+    description="Full-width destinations keep navigation primary while a sibling overflow menu or one direct secondary action holds further commands. A leading checkbox toggles a row's state, such as a task's done, without opening it. Disabled rows preserve unavailable resource context."
+    code={`<Section title="Related resources" icon="ti ti-link">
   <DetailPanel.Action
     href="/app/mail/inbox?conversation=Conv01"
     leading={<i class="ti ti-mail" aria-hidden="true" />}
@@ -2150,13 +2288,19 @@ const DetailPanelActionDemo = () => (
     secondaryAction={{ icon: "ti ti-trash", label: "Delete budget.xlsx", variant: "danger", onClick: confirmDelete }}
   />
   <DetailPanel.Action
+    onClick={openTask}
+    title="Call Mrs. Weber about the pickup"
+    trailing="Today"
+    checkbox={{ checked: task.done, label: "Done: Call Mrs. Weber about the pickup", onChange: setDone }}
+  />
+  <DetailPanel.Action
     type="button"
     disabled
     leading={<i class="ti ti-file-off" aria-hidden="true" />}
     title="Archived brief"
     description="Resource unavailable or no longer accessible"
   />
-</DetailPanel.Section>`}
+</Section>`}
   >
     <div class="ui-detail-panel-patterns">
       <article class="ui-detail-panel-pattern">
@@ -2168,7 +2312,7 @@ const DetailPanelActionDemo = () => (
           <DetailPanel class="ui-detail-panel-grouped">
             <DetailPanel.Body>
               <DetailPanel.Group label="Resource context">
-                <DetailPanel.Section title="Related resources" icon="ti ti-link" tone="neutral">
+                <Section title="Related resources" icon="ti ti-link" tone="neutral">
                   <DetailPanel.Action
                     href="#detail-panel-action"
                     leading={<i class="ti ti-mail" aria-hidden="true" />}
@@ -2198,12 +2342,13 @@ const DetailPanelActionDemo = () => (
                     title="Archived brief"
                     description="Resource unavailable or no longer accessible"
                   />
-                </DetailPanel.Section>
+                </Section>
               </DetailPanel.Group>
             </DetailPanel.Body>
           </DetailPanel>
         </div>
       </article>
+      <DetailPanelTaskRows />
     </div>
   </DemoCard>
 );
@@ -2243,40 +2388,55 @@ const AnchoredPopoverDemo = () => {
 };
 
 const FloatingDemo = () => {
-  const [open, setOpen] = createSignal(false);
+  const [inspector, setInspector] = createSignal(false);
+  const [draft, setDraft] = createSignal(false);
+  const [draftState, setDraftState] = createSignal<FloatingWindowState>("normal");
+  const [draftText, setDraftText] = createSignal("");
   let scope: HTMLDivElement | undefined;
   return (
     <DemoCard
       id="floating-window"
       chip={{ kind: "component", name: "FloatingWindow", from: "@k2b/ui" }}
-      description="A movable, resizable utility window that fits the viewport, uses an explicit portal scope, and becomes an inset surface on mobile."
-      code={`const [open, setOpen] = createSignal(false);
+      description="A movable, resizable window. Minimize turns it into a bar at the bottom edge with its content kept alive, Maximize covers the area above a scrim until Escape, and on a phone it is a full-screen sheet."
+      code={`const [state, setState] = createSignal<FloatingWindowState>("normal");
 
-<div ref={appShell}>
-  <Button variant="secondary" onClick={() => setOpen(true)}>Open inspector</Button>
-  <Show when={open()}>
-    <FloatingWindow
-      title="Inspector"
-      icon="ti ti-adjustments"
-      initialWidth={520}
-      initialHeight={380}
-      resolveScope={() => appShell}
-      onClose={() => setOpen(false)}
+<Show when={open()}>
+  <FloatingWindow
+    title="Workbench quote"
+    status={<><i class="ti ti-cloud-check" aria-hidden="true" /> Saved</>}
+    placement="dock"
+    state={state()}
+    onStateChange={setState}
+    initialWidth={540}
+    initialHeight={460}
+    resolveScope={() => appShell}
+    onClose={() => setOpen(false)}
+  >
+    …
+  </FloatingWindow>
+</Show>`}
     >
-      …
-    </FloatingWindow>
-  </Show>
-</div>`}
-    >
-      <div ref={scope}>
-        <Button variant="secondary" onClick={() => setOpen(true)}>
+      <div ref={scope} class="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" onClick={() => setInspector(true)}>
           Open inspector
         </Button>
-        <Show when={open()}>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setDraftState("normal");
+            setDraft(true);
+          }}
+        >
+          Open docked draft
+        </Button>
+        <Show when={draft()}>
+          <span class="text-sm text-dimmed">State: {draftState()}</span>
+        </Show>
+        <Show when={inspector()}>
           <FloatingWindow
             title="Inspector"
             icon="ti ti-adjustments"
-            onClose={() => setOpen(false)}
+            onClose={() => setInspector(false)}
             initialWidth={520}
             initialHeight={380}
             resolveScope={() => scope}
@@ -2284,6 +2444,100 @@ const FloatingDemo = () => {
             <div class="ui-demo-pane">Portable floating content</div>
           </FloatingWindow>
         </Show>
+        <Show when={draft()}>
+          <FloatingWindow
+            title="Workbench quote for oak planks, 52 mm"
+            status={
+              <>
+                <i class="ti ti-cloud-check" aria-hidden="true" /> Saved
+              </>
+            }
+            placement="dock"
+            state={draftState()}
+            onStateChange={setDraftState}
+            initialWidth={540}
+            initialHeight={460}
+            onClose={() => setDraft(false)}
+            resolveScope={() => scope}
+          >
+            <div class="grid h-full gap-2 p-4">
+              <TextInput multiline aria-label="Message" placeholder="Write a message…" value={draftText()} onValueChange={setDraftText} />
+            </div>
+          </FloatingWindow>
+        </Show>
+      </div>
+    </DemoCard>
+  );
+};
+
+const personActions = [
+  { label: "All messages from this sender", icon: "ti ti-search" },
+  { label: "Open contact", icon: "ti ti-address-book" },
+  { label: "Automation for this sender …", icon: "ti ti-robot" },
+  { label: "Block sender", icon: "ti ti-ban" },
+];
+
+const PersonPopoverDemo = () => {
+  const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
+  const [state, setState] = createSignal("loaded");
+  const toggle = (event: MouseEvent & { currentTarget: HTMLElement }) => setAnchor(anchor() ? null : event.currentTarget);
+  return (
+    <DemoCard
+      id="person-popover"
+      chip={{ kind: "component", name: "PersonPopover", from: "@k2b/ui" }}
+      description="A card about one person: contact rows with copy and phone links, a list such as earlier conversations, and actions. Loading keeps the final size, without contact data only the address and the actions show, and a failed load offers a retry."
+      code={`<PersonPopover
+  anchor={anchor()}
+  onClose={() => setAnchor(null)}
+  name="Mara Lindqvist"
+  email="mara@lindqvist-joinery.example"
+  detail="Lindqvist Joinery · Owner"
+  phones={[{ number: "0461 555 0142", label: "Office" }]}
+  list={{ title: "Earlier conversations", items: conversations }}
+  actions={[{ label: "All messages from this sender", icon: "ti ti-search", onSelect: search }]}
+/>`}
+    >
+      <div class="grid gap-3">
+        <SegmentedControl
+          ariaLabel="State"
+          size="sm"
+          value={state}
+          onValueChange={setState}
+          options={[
+            { value: "loaded", label: "Loaded" },
+            { value: "loading", label: "Loading" },
+            { value: "partial", label: "No contact" },
+            { value: "error", label: "Failed" },
+          ]}
+        />
+        <div>
+          <Button variant="ghost" aria-haspopup="dialog" aria-expanded={anchor() !== null} onClick={toggle}>
+            {state() === "partial" ? "info@sawmill-north.example" : "Mara Lindqvist"}
+          </Button>
+        </div>
+        <PersonPopover
+          anchor={anchor()}
+          onClose={() => setAnchor(null)}
+          name={state() === "partial" ? undefined : "Mara Lindqvist"}
+          email={state() === "partial" ? "info@sawmill-north.example" : "mara@lindqvist-joinery.example"}
+          detail="Lindqvist Joinery · Owner"
+          phones={state() === "partial" ? undefined : [{ number: "0461 555 0142", label: "Office" }]}
+          loading={state() === "loading"}
+          error={state() === "error" ? { message: "Contact details could not be loaded.", onRetry: () => setState("loaded") } : undefined}
+          list={
+            state() === "partial"
+              ? undefined
+              : {
+                  title: "Earlier conversations",
+                  loading: state() === "loading",
+                  items: [
+                    { label: "Plane repair", meta: "3 messages · 14.09.2026 · done", href: "#person-popover" },
+                    { label: "Dovetail course", meta: "2 messages · 02.06.2026 · done", href: "#person-popover" },
+                  ],
+                }
+          }
+          actions={personActions}
+        />
       </div>
     </DemoCard>
   );
@@ -2388,6 +2642,7 @@ const items = [
   "resize-separator": () => <ResizeSeparatorDemo />,
   panes: () => (
     <DemoGrid columns="one">
+      <PanesArrangeDemo />
       <PanesDemo />
     </DemoGrid>
   ),
@@ -2432,6 +2687,7 @@ const items = [
   "page-title": () => (
     <DemoGrid columns="one">
       <PageTitleDemo />
+      <BreadcrumbsDemo />
     </DemoGrid>
   ),
   "pull-to-refresh": () => <PullToRefreshDemo />,
@@ -2445,6 +2701,11 @@ const items = [
   "anchored-popover": () => (
     <DemoGrid columns="one">
       <AnchoredPopoverDemo />
+    </DemoGrid>
+  ),
+  "person-popover": () => (
+    <DemoGrid columns="one">
+      <PersonPopoverDemo />
     </DemoGrid>
   ),
 };

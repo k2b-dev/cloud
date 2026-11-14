@@ -183,6 +183,17 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             id: "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche oder einem Fokusergebnis oder einer typisierten Ressource ref zurückgegeben wird.",
           },
         },
+        "conversation.by_sender": {
+          title: "Unterhaltungen eines Absenders finden",
+          description:
+            "Findet bis zu fünf neueste Unterhaltungen mit Nachrichten von genau dieser Absenderadresse und zählt die sichtbaren Treffer. Die offene Unterhaltung kann ausgeschlossen werden. Zurückgegebene Referenzen lassen sich mit conversation.read öffnen.",
+          input: {
+            mailboxId: "Postfach-ID aus mailbox.list.",
+            email: "Genaue E-Mail-Adresse im Von-Feld.",
+            excludeConversationId: "Offene Unterhaltung, die bei Vorschau und Anzahl ausgelassen wird.",
+            limit: "Maximale Anzahl der Unterhaltungen, höchstens fünf.",
+          },
+        },
         "conversation.related": {
           title: "Verwandte E-Mails finden",
           description:
@@ -399,6 +410,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             expectedRevision: "Erwartete aktuelle Revision zum Schutz vor gleichzeitigen Änderungen.",
             patch: "Nur die zu ändernden Felder; nicht übergebene Felder bleiben erhalten.",
             "patch.senderIdentityId": "ID der gewünschten Absenderidentität.",
+            "patch.quoteSource": "Quellnachricht anhängen oder entfernen; weglassen behält die aktuelle Auswahl.",
             "patch.signatureTemplateId": "Signaturvorlage nach dem Text oder null für keine; weglassen behält die aktuelle Auswahl.",
             "patch.to": "Vollständige neue Empfängerliste; [] leert sie.",
             "patch.to[].name": "Optionaler Anzeigename des Empfängers.",
@@ -667,10 +679,12 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "draft.create": {
           title: "Entwurf erstellen",
-          description: "Erstellen Sie einen idempotenten, bearbeitbaren E-Mail-Entwurf mit einem optionalen kleinen Inline-Anhang.",
+          description:
+            "Erstellen Sie einen idempotenten, bearbeitbaren E-Mail-Entwurf mit einem optionalen kleinen Inline-Anhang. Für Gustav und andere Dienstkonten ist dies ein Vorschlag, den Personen in der Unterhaltung mit dem Namen des Kontos sehen. Nach der ersten Bearbeitung durch eine Person darf das Konto ihn nur noch auf deren Wunsch ändern. Pro Unterhaltung und Konto gibt es höchstens einen unberührten Vorschlag; ein weiterer Aufruf desselben Kontos gibt dessen Vorschlag zurück, nie den eines anderen Kontos.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             senderIdentityId: "Verifizierte Absenderidentität ID.",
+            quoteSource: "Lesbare Quellnachricht nach der Signatur anhängen; standardmäßig aus.",
             signatureTemplateId:
               "Signaturvorlage nach dem Text oder null für keine; weglassen verwendet die Standardsignatur des Absenders.",
             to: "Hauptempfänger.",
@@ -696,6 +710,26 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             "attachments[].filename": "Der Dateiname des Anhangs wird den Empfängern angezeigt.",
             "attachments[].contentType": "MIME-Typ des Anhangs.",
             "attachments[].base64": "Base64-codierter Inhalt; Der dekodierte Inhalt ist auf 105 KiB begrenzt.",
+          },
+        },
+        "draft.intent": {
+          title: "Antwortart wechseln",
+          description:
+            "Wechselt den Antwortentwurf einer Unterhaltung zwischen Antworten, Allen antworten und Weiterleiten. Text, eigene Anhänge, manuelles Bcc und ein geänderter Betreff bleiben erhalten.",
+          input: {
+            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
+            draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
+            expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
+            intent: "Neue Antwortart: reply, reply_all oder forward.",
+          },
+        },
+        "draft.consolidation.acknowledge": {
+          title: "Zusammenführung der Entwürfe bestätigen",
+          description:
+            "Eine Person mit Schreibzugriff blendet den Hinweis auf zusammengeführte Antwortentwürfe aus. Inhalt und Revision bleiben unverändert.",
+          input: {
+            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
+            draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
           },
         },
         "draft.discard": {
@@ -734,6 +768,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
             draft: "Vollständiger bearbeitbarer Entwurfsinhalt, der den aktuellen Inhalt ersetzt.",
             "draft.senderIdentityId": "Verifizierte Absenderidentität ID.",
+            "draft.quoteSource": "Lesbare Quellnachricht nach der Signatur anhängen; standardmäßig aus.",
             "draft.signatureTemplateId": "Signaturvorlage nach dem Text oder null für keine; weglassen behält die aktuelle Auswahl.",
             "draft.to": "Hauptempfänger.",
             "draft.to[].name": "Optionaler Anzeigename des Empfängers.",

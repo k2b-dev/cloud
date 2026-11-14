@@ -1,7 +1,7 @@
 import { createRemoteJWKSet, decodeProtectedHeader, errors, type JWTPayload, type JWTVerifyGetKey, jwtVerify } from "jose";
 import type { User } from "../contracts/shared";
 import { sql } from "../runtime/clients";
-import { isAccountCategoryAllowed } from "./account-category-policy";
+import { isAccountAllowed } from "./account-category-policy";
 import { isAccountExpired } from "./account-model";
 import { IDENTITY_JWKS_MAX_AGE_SECONDS } from "./identity/constants";
 import { getIdentityRuntimeConfig, readIdentityGroupsAdmin } from "./identity/runtime-config";
@@ -138,7 +138,7 @@ export const resolveOAuthTokenActor = async (
     const delegatedUser = serviceAccount.delegatedUserId ? buildProjectedUser(row) : null;
     if (serviceAccount.kind === "user_delegated" && !delegatedUser) return null;
     if (delegatedUser && isAccountExpired(delegatedUser.accountExpires)) return null;
-    if (delegatedUser && !(await isAccountCategoryAllowed(delegatedUser, query))) return null;
+    if (delegatedUser && !(await isAccountAllowed(delegatedUser, query))) return null;
     return { kind: "service_account", payload, serviceAccount, oauthClientId: clientId, delegatedUser, scopes };
   }
 
@@ -158,7 +158,7 @@ export const resolveOAuthTokenActor = async (
   if (!rows[0] || !isOAuthTokenEpochCurrent(payload, rows[0].auth_epoch)) return null;
   const user = buildProjectedUser(rows[0]);
   if (!user || isAccountExpired(user.accountExpires)) return null;
-  if (!(await isAccountCategoryAllowed(user, query))) return null;
+  if (!(await isAccountAllowed(user, query))) return null;
   return { kind: "user", payload, user, scopes };
 };
 

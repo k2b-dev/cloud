@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1083
 description: Connect a Cloud deployment to FreeIPA identity infrastructure.
 tags: [freeipa, identity, directory]
-updated: 2026-10-28
+updated: 2026-11-11
 ---
 
 # FreeIPA setup
@@ -114,16 +114,54 @@ no new unique database constraint or startup cleanup is installed.
 Existing duplicates remain valid stored identities. Saving their unchanged
 address preserves its spelling, and editing other profile fields remains
 possible. Explicit local-account promotion keeps its Cloud ID. Synchronization
-continues to mirror directory data under the existing matching policy below;
-it does not apply the new-address rejection to the directory inventory.
+mirrors directory data under the matching policy below; it does not apply the
+new-address rejection to the directory inventory.
 
 ## Account matching and transitions
 
-**User Match Mode** (`freeipa.user_match_mode`) defaults to **Ignore local match**.
-Set **Migrate matching local account** only when you intend a unique local
-account with the same email to become FreeIPA-managed. Migration keeps its
-Cloud ID but changes its username, provider, profile and directory-controlled
-data. Multiple local email matches are skipped. This is not an email-login fallback.
+Synchronization finds the Cloud account of a directory user by the directory
+entry ID, FreeIPA's unchanging `ipaUniqueID`. A renamed directory user keeps
+their Cloud account. An account that has no stored entry ID yet is matched
+once by username, and the next synchronization stores the entry ID. The
+`ipauniqueid` attribute must be readable by the Cloud service account. If
+FreeIPA returns no entry ID for an active directory user whose account already
+stores one, Cloud leaves that account unchanged and applies only a FreeIPA
+lock; the person cannot sign in until the attribute is readable again.
+
+Email never selects an account. If a directory user has the same email as a
+FreeIPA account of another directory user, Cloud does not link them:
+
+- a new directory user gets no account while the other account keeps the email;
+- an existing account keeps its previous email.
+
+A username whose account stores a different entry ID is another person: that
+directory user cannot sign in, and the previous account leaves synchronization
+scope under the transition policy below. Group memberships follow the matched
+directory user, not the username stored in Cloud. If the account cannot become a local
+account because a local account already uses its email, Cloud defers that
+transition and reports it; the account stays signed out. Cloud skips only the affected users,
+completes the rest of the synchronization and logs each conflict in
+`auth:ipa:sync`. The sync summary counts them in `directoryIdentityConflicts`
+and `mailConflicts`. Resolve a conflict in FreeIPA, for example by correcting
+the email; the next synchronization picks up the change.
+
+**User Match Mode** (`freeipa.user_match_mode`) defaults to **Ignore local match**:
+a directory user gets their own FreeIPA account, also if a local account has
+the same email. **Propose matching local account** never links an account by
+itself. If exactly one local account has the same email, Cloud logs the pair
+as a proposal, counts it in `proposedLocalMigrations`, and creates no second
+account for that directory user. Multiple local email matches are skipped.
+This is not an email-login fallback.
+
+To confirm a proposal, switch the local account to FreeIPA in Accounts
+(`cld accounts users set-provider <user> ipa --yes`). The switch keeps the
+Cloud ID and uses the local account's username. If no directory user has that
+username, Cloud creates one. If a directory user with that username exists,
+it must have the same email and be disabled or expired; Cloud then reactivates
+it as described below. To link an existing directory user under another
+username, rename it to the local account's username and disable it in FreeIPA
+before you switch the account. Switch the mode back to **Ignore local match**
+to give the directory user a separate account instead.
 
 **Account Transition Policy** (`freeipa.account_transition_policy`) controls
 what happens when an IPA-backed account expires or leaves synchronization scope:
@@ -138,6 +176,16 @@ what happens when an IPA-backed account expires or leaves synchronization scope:
 Review the destination category's allowed-access policy before changing this.
 Retaining an account does not guarantee it can sign in, and a provider transition
 is not a migration of workstation file ownership.
+
+A disabled FreeIPA account is not a transition: Cloud keeps it as a FreeIPA
+account and locks it at the next synchronization. The lock ends its sessions,
+paired phones and Cloud Login devices. While it holds, the account cannot sign
+in, including with a passkey, and its API keys, OAuth tokens and background
+authorizations stop working. This also applies when the account has expired or
+left synchronization scope: Cloud applies the transition policy only after
+FreeIPA enables the account again. When you enable it, the next synchronization
+lifts the lock; the person signs in again, and existing passkeys and API keys
+work again.
 
 When approving a local guest's FreeIPA request, Cloud checks the existing
 username before creating an account. An expired or disabled account with the

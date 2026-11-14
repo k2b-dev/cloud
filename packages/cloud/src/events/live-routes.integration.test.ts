@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { SignJWT } from "jose";
@@ -15,13 +15,14 @@ import { session } from "../services/session";
 import { createTestSession } from "../services/session/session.test-fixture";
 import * as settings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
+import { wakeAppAccessChanged } from "./app-access";
 import { defineLive, startLiveOutbox } from "./live";
+import { liveTopic, startLiveDelivery } from "./live-delivery";
 import { LIVE_LIMITS, type LiveChannel, type LiveViewer } from "./live-engine";
 
 // Two replicas of one application ("pods") in this process, each with its own
 // follower, ring, and socket server, over the real outbox, topic, sessions, and
-// OAuth verification. Access comes from `readers`, which changes without an
-// event, like a directory group.
+// OAuth verification. Domain access changes publish through the owning live topic.
 const suite = suiteFor("database", "nats", "valkey");
 const APP = "livetest";
 const readers = new Map<string, Set<string>>();
@@ -38,13 +39,24 @@ const recordedWebsocket = {
 /** Access here belongs to the person, whatever credential the socket uses. */
 const principal = ({ accessSubject }: LiveViewer) =>
   accessSubject.type === "user" ? `user:${accessSubject.userId}` : `service_account:${accessSubject.serviceAccountId}`;
+const capturedViewers: LiveViewer[] = [];
 const authorize = async (key: string, viewers: readonly LiveViewer[]) => {
+  if (key === "viewer-contract") capturedViewers.push(...viewers);
   if (failing.has(key)) throw new Error("reader unavailable");
-  return new Set(viewers.filter((viewer) => readers.get(key)?.has(principal(viewer))).map((viewer) => viewer.id));
+  return new Set(
+    viewers
+      .filter((viewer) =>
+        key.startsWith("group:")
+          ? viewer.actor.kind === "user" && viewer.actor.user.memberofGroupIds.includes(key.slice(6))
+          : readers.get(key)?.has(principal(viewer)),
+      )
+      .map((viewer) => viewer.id),
+  );
 };
 const channels = {
-  item: { scope: z.object({ key: z.string() }).strict(), keys: async ({ key }: { key: string }) => [key], authorize },
+  item: { eventOnly: true, scope: z.object({ key: z.string() }).strict(), keys: async ({ key }: { key: string }) => [key], authorize },
   list: {
+    eventOnly: true,
     scope: z.object({}).strict(),
     collection: true,
     keys: async (_scope: unknown, viewer: LiveViewer) => [...readers].filter(([, ids]) => ids.has(principal(viewer))).map(([key]) => key),
@@ -58,6 +70,7 @@ const pods = Array.from({ length: 2 }, () => ({ routes: live.routes(channels), s
 const url = (pod: number) => `ws://127.0.0.1:${pods[pod]?.server?.port}/live`;
 
 let origin = "";
+let stopCore: (() => Promise<void>) | null = null;
 let stopOutbox: (() => Promise<void>) | null = null;
 const users: string[] = [];
 
@@ -96,10 +109,10 @@ const open = async (pod: number, headers: Record<string, string>) => {
   };
 };
 
-const until = async (condition: () => boolean, timeoutMs = 5_000, message = "Condition not reached in time") => {
+const until = async (condition: () => boolean, timeoutMs = 5_000, message: string | (() => string) = "Condition not reached in time") => {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error(message);
+    if (Date.now() > deadline) throw new Error(typeof message === "function" ? message() : message);
     await Bun.sleep(20);
   }
 };
@@ -113,9 +126,8 @@ const allow = (key: string, ...people: Person[]) => readers.set(key, new Set(peo
 
 suite("live routes", () => {
   beforeAll(async () => {
-    // Shorter progress, and collection keys on every sweep instead of every sixth (60 s).
+    // Shorter progress for the cursor test.
     LIVE_LIMITS.progressMs = 300;
-    LIVE_LIMITS.keysEveryRounds = 1;
     origin = publicCloudOrigin(await settings.get<string>("app.url"));
     for (const pod of pods) {
       pod.server = Bun.serve({
@@ -126,88 +138,124 @@ suite("live routes", () => {
       });
     }
     stopOutbox = await startLiveOutbox(APP);
+    stopCore = await startLiveDelivery("core");
   });
 
   // Inside the suite, so Bun runs it before the authorization preload's file-level
   // teardown stops Sync: engines and the outbox stop while Sync still runs, as in `app.start()`.
   afterAll(async () => {
     await stopOutbox?.();
+    await stopCore?.();
     for (const pod of pods) await pod.server?.stop(true);
     if (users.length > 0) await sql`DELETE FROM auth.users WHERE id IN ${sql(users)}`;
   });
 
-  test("a reconnect to the other replica replays from its ring; old, foreign, and future cursors resync", async () => {
-    const ada = await person("Ada Example");
-    allow("ring", ada);
-    const first = await open(0, ada.headers);
-    first.sub("s", "item", { key: "ring" });
-    await until(() => first.of("s").length === 1);
-    await publish("ring", 1);
-    await publish("ring", 2);
-    await until(() => first.of("s").length === 3);
-    const applied = first.of("s")[2]?.cursor as string;
-    first.socket.close();
-    await publish("ring", 3);
+  for (const holdPublication of [false, true]) {
+    test(`a reconnect to the other replica replays from its ring; old, foreign, and future cursors resync (held publication: ${holdPublication})`, async () => {
+      const topic = liveTopic(APP);
+      const originalPublish = topic.publish.bind(topic);
+      const published = new Map<number, string>();
+      let releasePublication = () => {};
+      const publicationAllowed = new Promise<void>((resolve) => {
+        releasePublication = resolve;
+      });
+      const publishing = spyOn(topic, "publish").mockImplementation(async (input) => {
+        const parsed = z.object({ n: z.number() }).safeParse(input.data.d);
+        const n = parsed.success ? parsed.data.n : undefined;
+        if (holdPublication && input.data.k === "ring" && n === 3) await publicationAllowed;
+        const receipt = await originalPublish(input);
+        if (n !== undefined) published.set(n, receipt.cursor);
+        return receipt;
+      });
+      const sockets: Awaited<ReturnType<typeof open>>[] = [];
+      const ringEvents = LIVE_LIMITS.ringEvents;
+      try {
+        const ada = await person("Ada Example");
+        allow("ring", ada);
+        const first = await open(0, ada.headers);
+        sockets.push(first);
+        first.sub("s", "item", { key: "ring" });
+        await until(() => first.of("s").length === 1);
+        await publish("ring", 1);
+        await publish("ring", 2);
+        await until(() => first.of("s").length === 3);
+        const applied = first.of("s")[2]!.cursor!;
+        first.socket.close();
+        await publish("ring", 3);
 
-    const second = await open(1, ada.headers);
-    // Lets the second replica's follower read event 3, so it comes from the ring.
-    await Bun.sleep(500);
-    second.sub("s", "item", { key: "ring" }, applied);
-    await until(() => second.of("s").length === 2);
-    expect(second.of("s").map((frame) => [frame.t, frame.data?.n])).toEqual([
-      ["event", 3],
-      ["ready", undefined],
-    ]);
+        const second = await open(1, ada.headers);
+        sockets.push(second);
+        if (holdPublication) {
+          // The replica starts and reports its old head while event 3 still waits before NATS.
+          await until(() => second.progress().some((frame) => frame.cursor === applied));
+        }
+        releasePublication();
+        // An outbox commit does not mean publication, nor does publication mean applied.
+        // A progress frame proves this replica has applied event 3 to its ring.
+        await until(
+          () => published.has(3) && second.progress().some((frame) => frame.cursor === published.get(3)),
+          5_000,
+          () =>
+            `Replica did not apply event 3: ${JSON.stringify({ published: published.get(3), progress: second.progress(), closed: second.state.closed })}`,
+        );
+        second.sub("s", "item", { key: "ring" }, applied);
+        await until(
+          () => second.of("s").at(-1)?.t === "ready",
+          5_000,
+          () => `Replay did not become ready: ${JSON.stringify({ frames: second.of("s"), closed: second.state.closed })}`,
+        );
+        expect(second.of("s").map((frame) => [frame.t, frame.data?.n])).toEqual([
+          ["event", 3],
+          ["ready", undefined],
+        ]);
 
-    const head = second.of("s")[1]?.cursor as string;
-    const prefix = head.slice(0, head.lastIndexOf("."));
-    second.sub("foreign", "item", { key: "ring" }, "s6t.elsewhere.1");
-    second.sub("future", "item", { key: "ring" }, `${prefix}.999999`);
-    const ringEvents = LIVE_LIMITS.ringEvents;
-    LIVE_LIMITS.ringEvents = 2;
-    try {
-      for (let n = 4; n <= 6; n++) await publish("ring-other", n);
-      await Bun.sleep(500);
-      second.sub("old", "item", { key: "ring" }, applied);
-      await until(() => second.of("old").length === 1 && second.of("future").length === 1);
-    } finally {
-      LIVE_LIMITS.ringEvents = ringEvents;
-    }
-    for (const id of ["foreign", "future", "old"]) expect(second.of(id).map((frame) => frame.t)).toEqual(["resync"]);
-    second.socket.close();
-  });
+        const head = second.of("s")[1]!.cursor!;
+        const prefix = head.slice(0, head.lastIndexOf("."));
+        second.sub("foreign", "item", { key: "ring" }, "s6t.elsewhere.1");
+        second.sub("future", "item", { key: "ring" }, `${prefix}.999999`);
+        LIVE_LIMITS.ringEvents = 2;
+        for (let n = 4; n <= 6; n++) await publish("ring-other", n);
+        await until(
+          () => published.has(6) && second.progress().some((frame) => frame.cursor === published.get(6)),
+          5_000,
+          () =>
+            `Replica did not apply event 6: ${JSON.stringify({ published: published.get(6), progress: second.progress(), closed: second.state.closed })}`,
+        );
+        second.sub("old", "item", { key: "ring" }, applied);
+        await until(() => ["foreign", "future", "old"].every((id) => second.of(id).length > 0));
+        for (const id of ["foreign", "future", "old"]) expect(second.of(id).map((frame) => frame.t)).toEqual(["resync"]);
+      } finally {
+        releasePublication();
+        publishing.mockRestore();
+        LIVE_LIMITS.ringEvents = ringEvents;
+        for (const socket of sockets) socket.socket.close();
+      }
+    });
+  }
 
-  test("a revoked reader gets no content after the 2-second cache, on either replica", async () => {
+  test("an access event revokes a reader before later content on either replica", async () => {
     const ada = await person("Ada Example");
     const bob = await person("Bob Example");
     allow("revoke", ada, bob);
     const sockets = [await open(0, ada.headers), await open(0, bob.headers), await open(1, bob.headers)];
-    for (const socket of sockets) socket.sub("s", "item", { key: "revoke" });
-    await until(() => sockets.every((socket) => socket.of("s").length === 1));
-
-    allow("revoke", ada);
-    const revokedAt = Date.now();
-    const received = new Map<number, number>();
-    for (let n = 1; Date.now() - revokedAt < 3_000; n++) {
-      await publish("revoke", n);
-      received.set(n, Date.now());
-      await Bun.sleep(200);
+    try {
+      for (const socket of sockets) socket.sub("s", "item", { key: "revoke" });
+      await until(() => sockets.every((socket) => socket.of("s").length === 1));
+      allow("revoke", ada);
+      await publish("revoke", 1, { access: true });
+      await publish("revoke", 2);
+      await until(() => sockets.slice(1).every((socket) => socket.of("s").at(-1)?.t === "revoked"));
+      for (const socket of sockets.slice(1)) {
+        expect(socket.of("s")).toHaveLength(2);
+        expect(socket.of("s")[1]).toEqual({ t: "revoked", id: "s", code: "access_denied" });
+      }
+      await until(() => sockets[0]!.of("s").filter((frame) => frame.t === "event").length === 2);
+    } finally {
+      for (const socket of sockets) socket.socket.close();
     }
-    await until(() => sockets[1]!.of("s").at(-1)?.t === "revoked" && sockets[2]!.of("s").at(-1)?.t === "revoked");
-    for (const bobSocket of sockets.slice(1)) {
-      const lastEvent = bobSocket
-        .of("s")
-        .filter((frame) => frame.t === "event")
-        .at(-1);
-      // Published before the cache could expire; anything later never reaches Bob.
-      if (lastEvent) expect((received.get(lastEvent.data?.n as number) as number) - revokedAt).toBeLessThanOrEqual(LIVE_LIMITS.cacheMs);
-      expect(bobSocket.of("s").at(-1)).toEqual({ t: "revoked", id: "s", code: "access_denied" });
-    }
-    await until(() => sockets[0]!.of("s").filter((frame) => frame.t === "event").length === received.size);
-    for (const socket of sockets) socket.socket.close();
   });
 
-  test("within one sweep (10 s): a quiet reader loses access, an ended session closes with 1008, a collection gains a key", async () => {
+  test("events revoke a quiet reader, end a session, and refresh collection keys", async () => {
     const carol = await person("Carol Example");
     const dave = await person("Dave Example");
     allow("quiet", carol);
@@ -222,9 +270,10 @@ suite("live routes", () => {
     const changedAt = Date.now();
     readers.delete("quiet");
     allow("gained", carol);
+    await publish("quiet", 1, { access: true });
     await session.revokeAllForUser(dave.id);
     await until(() => quiet.of("one").length === 2 && expiring.state.closed !== null && quiet.of("all").length >= 2, 12_000);
-    expect(Date.now() - changedAt).toBeLessThanOrEqual(LIVE_LIMITS.sweepMs + 1_000);
+    expect(Date.now() - changedAt).toBeLessThanOrEqual(5_000);
     expect(quiet.of("one")[1]).toEqual({ t: "revoked", id: "one", code: "access_denied" });
     expect(expiring.state.closed).toEqual({ code: 1008, reason: "session_expired" });
 
@@ -232,6 +281,43 @@ suite("live routes", () => {
     await publish("gained", 1);
     await until(() => quiet.of("all").some((frame) => frame.t === "event"));
     quiet.socket.close();
+  });
+
+  test("removing group membership revokes subscriptions on both replicas without a domain event", async () => {
+    const member = await person("Group reader");
+    const groupId = crypto.randomUUID();
+    await sql`INSERT INTO auth.groups(id, cn, name, provider) VALUES(${groupId}::uuid, ${groupId}, ${groupId}, 'local')`;
+    await sql`INSERT INTO auth.user_groups_v2(user_id, group_id) VALUES(${member.id}::uuid, ${groupId}::uuid)`;
+    const sockets = [await open(0, member.headers), await open(1, member.headers)];
+    try {
+      for (const socket of sockets) socket.sub("s", "item", { key: `group:${groupId}` });
+      await until(() => sockets.every((socket) => socket.of("s")[0]?.t === "ready"));
+      await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${member.id}::uuid AND group_id = ${groupId}::uuid`;
+      wakeAppAccessChanged();
+      await until(() => sockets.every((socket) => socket.of("s")[1]?.t === "revoked"));
+      await publish(`group:${groupId}`, 1);
+      await Bun.sleep(100);
+      for (const socket of sockets) expect(socket.of("s").map((frame) => frame.t)).toEqual(["ready", "revoked"]);
+    } finally {
+      for (const socket of sockets) socket.socket.close();
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+    }
+  });
+
+  test("locking an account closes quiet sockets on both replicas without a delivery", async () => {
+    const member = await person("Locked reader");
+    allow("locked", member);
+    const sockets = [await open(0, member.headers), await open(1, member.headers)];
+    try {
+      for (const socket of sockets) socket.sub("s", "item", { key: "locked" });
+      await until(() => sockets.every((socket) => socket.of("s")[0]?.t === "ready"));
+      await sql`INSERT INTO auth.user_ipa_data(user_id, locked_at) VALUES(${member.id}::uuid, now())`;
+      wakeAppAccessChanged();
+      await until(() => sockets.every((socket) => socket.state.closed !== null));
+      for (const socket of sockets) expect(socket.state.closed).toEqual({ code: 1008, reason: "session_expired" });
+    } finally {
+      for (const socket of sockets) socket.socket.close();
+    }
   });
 
   test("an access update reaches collections at once; progress keeps a quiet subscription inside the ring", async () => {
@@ -247,7 +333,7 @@ suite("live routes", () => {
     const accessAt = Date.now();
     await publish("new-book", 1, { access: true });
     await until(() => socket.of("all").some((frame) => frame.t === "resync"));
-    expect(Date.now() - accessAt).toBeLessThan(LIVE_LIMITS.sweepMs);
+    expect(Date.now() - accessAt).toBeLessThan(5_000);
     // The collection reloads, which covers the update published with the access change; later ones arrive.
     await publish("new-book", 2);
     await until(() => socket.of("all").some((frame) => frame.data?.n === 2));
@@ -284,9 +370,8 @@ suite("live routes", () => {
     expect(first.of("big")[1]?.t).toBe("resync");
 
     const resumeAfter = first.of("flaky")[0]?.cursor as string;
-    await Bun.sleep(LIVE_LIMITS.cacheMs + 100);
     failing.add("flaky");
-    await publish("flaky", 7);
+    await publish("flaky", 7, { access: true });
     await until(() => first.state.closed !== null);
     expect(first.state.closed).toEqual({ code: 1011, reason: "unavailable" });
     failing.delete("flaky");
@@ -432,4 +517,21 @@ suite("live routes", () => {
     }
   });
   useRegisteredTestApp("livetest");
+  test("the public live viewer carries no caller credential or transport", async () => {
+    const who = await person("Viewer contract");
+    readers.set("viewer-contract", new Set([who.viewer]));
+    const client = await open(0, who.headers);
+    try {
+      client.sub("viewer", "item", { key: "viewer-contract" });
+      await until(() => client.of("viewer").some((frame) => frame.t === "ready"));
+      const viewer = capturedViewers.find((viewer) => viewer.id === who.viewer);
+      expect(viewer).toBeDefined();
+      expect(JSON.stringify(viewer)).not.toContain(who.headers.cookie);
+      expect(JSON.stringify(viewer)).not.toContain("session_token");
+      expect(viewer).not.toHaveProperty("caller");
+      expect(viewer).not.toHaveProperty("capabilityTransport");
+    } finally {
+      client.socket.close();
+    }
+  });
 });

@@ -9,23 +9,23 @@ const identity = z
   .refine((value) => value.trim() === value, "Identity must not have surrounding whitespace.");
 export const SepaTransferSchema = z
   .object({
-    businessId: identity,
-    endToEndId: z.string(),
-    amount: z.string(),
-    creditorName: z.string(),
-    creditorIban: z.string(),
-    creditorBic: z.string().optional(),
-    remittance: z.string(),
+    businessId: identity.describe("Stable business transaction identity for duplicate-export protection."),
+    endToEndId: z.string().describe("Stable payment identity."),
+    amount: z.string().describe("Exact positive decimal amount."),
+    creditorName: z.string().describe("Payee name."),
+    creditorIban: z.string().describe("Payee IBAN."),
+    creditorBic: z.string().optional().describe("Payee BIC, when needed."),
+    remittance: z.string().describe("Payment remittance text."),
   })
   .strict();
 
 export const SepaHeaderSchema = z
   .object({
-    destinationKey: identity,
-    debtorName: z.string(),
-    debtorIban: z.string(),
-    debtorBic: z.string().optional(),
-    executionDate: z.string(),
+    destinationKey: identity.describe("Stable accounting or bank destination identity."),
+    debtorName: z.string().describe("Account holder name."),
+    debtorIban: z.string().describe("Debtor IBAN."),
+    debtorBic: z.string().optional().describe("Debtor BIC, when needed."),
+    executionDate: z.string().describe("Requested execution date, YYYY-MM-DD."),
   })
   .strict()
   .superRefine((input, ctx) => {

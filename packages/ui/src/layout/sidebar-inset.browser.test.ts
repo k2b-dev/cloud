@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // Scrollbar gutters and row bounds depend on real layout, which happy-dom
 // does not model, so a real engine runs the shipped browser build.
@@ -115,6 +115,8 @@ const load = async (width: number, mode: Mode) => {
   if (width < 768) {
     await page.locator(".k2b-app-workspace__sidebar-all").click();
     await page.locator(".k2b-app-workspace__sidebar-sheet").waitFor();
+    // The sheet slides in with a Web Animation, which the stylesheet above does not stop.
+    await settled(page);
   }
   await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
   await page.mouse.move(width - 12, 780);

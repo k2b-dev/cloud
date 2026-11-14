@@ -8,7 +8,10 @@ import { render } from "solid-js/web";
 import {
   blockWidgetLineNavigationExtension,
   holdsDecorations,
-  refreshMarkdownDecorationsEffect,
+  markdownEditorFocused,
+  placeMarkdownCaret,
+  refreshesMarkdownDecorations,
+  revealedSelection,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
 import {
@@ -105,7 +108,7 @@ class SourceToggleWidget extends WidgetType {
           label={this.label}
           pressed
           onClick={() => {
-            view.dispatch({ selection: { anchor: this.exit } });
+            view.dispatch({ selection: { anchor: this.exit }, effects: placeMarkdownCaret.of() });
             view.focus();
           }}
         />
@@ -192,7 +195,9 @@ class QueryBlockWidget extends WidgetType {
       status.className = "notebook-book-chart__status text-sm text-dimmed";
       status.setAttribute("role", "status");
       status.textContent = this.snapshot.failed ? t.failed : this.staleReadOnly ? t.savedChanged : (this.diagnostic ?? t.loading);
-      content.innerHTML = notebookChartFrameHtml(this.chart, "");
+      content.innerHTML = notebookChartFrameHtml(this.chart, "", { locale: this.snapshot.locale });
+      const balanceStatus = content.querySelector(".k2b-balance-flow__status p");
+      if (balanceStatus) balanceStatus.textContent = status.textContent;
       content.querySelector(".notebook-book-chart__viewport")?.append(status);
     } else {
       content.className += " text-sm text-dimmed";
@@ -227,7 +232,8 @@ class QueryBlockWidget extends WidgetType {
       });
     }
     const reveal = () => {
-      view.dispatch({ selection: { anchor: this.block.from }, scrollIntoView: true });
+      // A read-only note cannot take focus; the press itself places the caret.
+      view.dispatch({ selection: { anchor: this.block.from }, scrollIntoView: true, effects: placeMarkdownCaret.of() });
       view.focus();
     };
     this.dispose = render(
@@ -389,7 +395,7 @@ export function createBlockPreviews(options: BlockPreviewOptions): { extension: 
         }),
       );
     // A placeholder reserves the height its drawing will take; the note's charts are read once, and only for one.
-    let heights: Map<number, number | undefined> | undefined;
+    let heights: Map<number, number | string | undefined> | undefined;
     const heightAt = (line: number) => {
       heights ??= new Map(
         parseNotebookChartBlocks(document, options.charts).blocks.map((entry) => [
@@ -401,7 +407,7 @@ export function createBlockPreviews(options: BlockPreviewOptions): { extension: 
     };
     const sourceToggles: Range<Decoration>[] = [];
     for (const block of blocks) {
-      if (selectionIntersectsRange(state.selection.main, block.from, block.to)) {
+      if (selectionIntersectsRange(revealedSelection(state)?.main, block.from, block.to)) {
         const exit = blockExit(block, blocks, state.doc.length);
         if (exit !== undefined) {
           const line = state.doc.lineAt(block.from);
@@ -453,20 +459,21 @@ export function createBlockPreviews(options: BlockPreviewOptions): { extension: 
     update(value, tr) {
       const effect = tr.effects.find((effect) => effect.is(previewEffect));
       if (effect?.is(previewEffect)) return build(tr.state, effect.value);
-      if (tr.docChanged || tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) return build(tr.state, value.snapshot);
+      if (tr.docChanged || refreshesMarkdownDecorations(tr)) return build(tr.state, value.snapshot);
       if (holdsDecorations(tr)) return value;
       if (
         tr.selection &&
         value.ranges.some(
           (range) =>
-            selectionIntersectsRange(tr.startState.selection.main, range.from, range.to) !==
-            selectionIntersectsRange(tr.state.selection.main, range.from, range.to),
+            selectionIntersectsRange(revealedSelection(tr.startState)?.main, range.from, range.to) !==
+            selectionIntersectsRange(revealedSelection(tr.state)?.main, range.from, range.to),
         )
       )
         return build(tr.state, value.snapshot);
       return value;
     },
     provide: (field) => [
+      markdownEditorFocused,
       EditorView.decorations.from(field, (value) => value.decorations),
       EditorView.decorations.from(field, (value) => value.sourceToggles),
       EditorView.atomicRanges.of((view) => view.state.field(field).decorations),

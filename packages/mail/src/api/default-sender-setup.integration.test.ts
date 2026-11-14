@@ -182,9 +182,13 @@ suite("Mail default sender setup through the API", () => {
   });
 
   test("keeps mailbox admin access required for sender setup", async () => {
-    for (const token of ["reader", "outsider"]) {
+    // A reader is refused; the mailbox answers an outsider like an unknown one.
+    for (const [token, status] of [
+      ["reader", 403],
+      ["outsider", 404],
+    ] as const) {
       const response = await setupSending(token);
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(status);
     }
     const [identities] = await sql<{ count: number }[]>`
       SELECT count(*)::int AS count FROM mail.sender_identities WHERE mailbox_id = ${mailboxId}::uuid

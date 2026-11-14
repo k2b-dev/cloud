@@ -1,7 +1,7 @@
 @reference "tailwindcss";
 
-.k2b-ui .k2b-content-lightbox button:focus-visible,
-.k2b-ui .k2b-content-lightbox a:focus-visible,
+.k2b-ui .k2b-lightbox button:focus-visible,
+.k2b-ui .k2b-lightbox a:focus-visible,
 .k2b-ui .k2b-content-file-tree [role="treeitem"]:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: min(var(--k2b-focus-offset), 0px);
@@ -3126,7 +3126,8 @@
   border-radius: 0.5rem;
   color: color-mix(in srgb, var(--k2b-calendar-accent) 60%, var(--k2b-text));
   background: color-mix(in srgb, var(--k2b-calendar-accent) 12%, var(--k2b-surface));
-  box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--k2b-calendar-accent) 60%, transparent);
+  /* A drag preview floats on layer 3; neutral, never in the app colour. */
+  box-shadow: var(--k2b-shadow-float);
   outline: 1.5px dashed color-mix(in srgb, var(--k2b-calendar-accent) 75%, transparent);
   outline-offset: -1.5px;
   font-size: 0.75rem;
@@ -4577,7 +4578,7 @@
 .k2b-ui .k2b-content-file-tree__actions:focus-visible,
 .k2b-ui .k2b-content-file-view__action:focus-visible,
 .k2b-ui .k2b-content-structured-data__action:focus-visible,
-.k2b-ui :is(.k2b-content-lightbox__button, .k2b-content-lightbox__nav, .k2b-content-lightbox__dot):focus-visible {
+.k2b-ui .k2b-lightbox__edge:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: min(var(--k2b-focus-offset), 0px);
 }
@@ -4679,22 +4680,36 @@
   @apply absolute right-2 top-2 z-10 flex items-center gap-1;
 }
 
-/* Cloud's `[box-shadow:var(--ui-control-bevel)]` is `0 0 0 transparent`, so the
-   floating action reads as a bordered chip, not a lifted one. Border drawn as
-   an inset ring — the preview panel clips outer shadows. */
+/* Over text, tables, and documents the floating action is a solid bordered
+   chip, not a lifted one: blurred text under it would read as a fault. Border
+   drawn as an inset ring — the preview panel clips outer shadows. */
 .k2b-ui .k2b-content-file-view__action {
   @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-sm transition-colors;
   border: 0;
   color: var(--k2b-text-secondary);
-  background: color-mix(in srgb, var(--k2b-surface) 85%, transparent);
+  background: var(--k2b-surface);
   box-shadow: inset 0 0 0 1px var(--k2b-border);
-  backdrop-filter: blur(4px);
   text-decoration: none;
   cursor: pointer;
 }
 
 .k2b-ui .k2b-content-file-view__action:hover {
   color: var(--k2b-text);
+}
+
+/* Over a picture or a video the cluster itself is the glass layer; its actions sit on it without a chip of their own. */
+.k2b-ui .k2b-content-file-view__overlay.k2b-overlay-surface {
+  padding: 0.125rem;
+  border-radius: 0.5rem;
+}
+
+.k2b-ui .k2b-content-file-view__overlay.k2b-overlay-surface .k2b-content-file-view__action {
+  background: transparent;
+  box-shadow: none;
+}
+
+.k2b-ui .k2b-content-file-view__overlay.k2b-overlay-surface .k2b-content-file-view__action:hover {
+  background: var(--k2b-overlay-surface-hover);
 }
 
 /* Editors: markdown files use the real MarkdownEditor, source files a plain
@@ -4796,22 +4811,14 @@
   @apply w-full max-w-2xl;
 }
 
+/* Another origin's inline PDF address stays with the browser's viewer. */
 .k2b-ui .k2b-content-file-view__pdf {
   @apply min-h-0 w-full flex-1 rounded-md;
 }
 
-/* A PDF from loaded bytes: the preview frame with its actions above the
-   document, without the standalone viewer's heading and toolbar line. */
+/* A PDF from loaded bytes or a same-origin inline address: the viewer fills the file view, its ground the only frame. */
 .k2b-ui .k2b-content-file-view__pdf-viewer {
-  @apply flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md;
-  box-sizing: border-box;
-  border: 1px solid var(--k2b-border);
-  background: var(--k2b-surface);
-}
-
-.k2b-ui .k2b-content-file-view__pdf-viewer > .k2b-content-pdf-preview__actions {
-  justify-content: flex-end;
-  padding: 0.5rem 0.75rem;
+  width: 100%;
 }
 
 .k2b-ui .k2b-content-file-view img {
@@ -4861,7 +4868,9 @@
 
 /* Lightbox */
 
-.k2b-ui .k2b-content-lightbox {
+/* The page stays visible behind a veil: light in the light theme, dark in the dark theme. Pills keep 7 px from every
+   edge; the stage keeps 84 px beside the file for the round edge buttons, so they never cover it. */
+.k2b-ui .k2b-lightbox {
   position: fixed;
   inset: 0;
   box-sizing: border-box;
@@ -4872,138 +4881,374 @@
   margin: 0;
   padding: 0;
   border: 0;
-  color: #fff;
-  background: rgb(0 0 0 / 0.92);
-}
-
-.k2b-ui .k2b-content-lightbox::backdrop {
+  color: var(--k2b-text);
   background: transparent;
+  outline: none;
+  --k2b-lightbox-pull: 0;
 }
-
-.k2b-ui .k2b-content-lightbox__bar {
-  @apply absolute inset-x-0 top-0 z-10 flex items-start justify-between p-4;
+.k2b-ui .k2b-lightbox[open] {
+  display: flex;
+  flex-direction: column;
 }
-
-.k2b-ui .k2b-content-lightbox__meta {
-  @apply flex min-w-0 flex-col gap-2;
+.k2b-ui .k2b-lightbox::backdrop {
+  background: color-mix(in srgb, var(--k2b-surface-muted) 94%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
-
-.k2b-ui .k2b-content-lightbox__counter {
-  @apply inline-flex w-fit items-center rounded-full px-3 py-1 text-xs;
-  border: 1px solid rgb(255 255 255 / 0.12);
-  color: rgb(255 255 255 / 0.8);
-  background: rgb(255 255 255 / 0.08);
-  backdrop-filter: blur(8px);
+.k2b-ui .k2b-lightbox[style*="--k2b-lightbox-pull"] {
+  opacity: calc(1 - var(--k2b-lightbox-pull) * 0.5);
 }
-
-.k2b-ui .k2b-content-lightbox__caption {
-  @apply rounded-2xl px-4 py-2;
-  max-width: min(70vw, 42rem);
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: rgb(0 0 0 / 0.3);
-  backdrop-filter: blur(4px);
+.k2b-ui .k2b-lightbox__head {
+  position: absolute;
+  z-index: 3;
+  top: 7px;
+  right: 7px;
+  left: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  pointer-events: none;
 }
-
-.k2b-ui .k2b-content-lightbox__caption-text {
-  @apply truncate text-sm font-medium;
-  color: #fff;
+.k2b-ui .k2b-lightbox__head > * {
+  pointer-events: auto;
 }
-
-.k2b-ui .k2b-content-lightbox__actions {
-  @apply flex items-center gap-2;
+/* The name pill has the height of the pills of small controls beside it and below (`k2b-pill`). */
+.k2b-ui .k2b-lightbox__name {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px);
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0 0.875rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  line-height: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px);
+  white-space: nowrap;
 }
-
-.k2b-ui .k2b-content-lightbox__button {
-  @apply inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm transition-colors;
-  border: 1px solid rgb(255 255 255 / 0.12);
-  color: #fff;
-  background: rgb(255 255 255 / 0.08);
-  text-decoration: none;
-  cursor: pointer;
+.k2b-ui .k2b-lightbox__name b {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
 }
-
-.k2b-ui .k2b-content-lightbox__button:hover {
-  background: rgb(255 255 255 / 0.14);
+.k2b-ui .k2b-lightbox__name span {
+  flex: none;
+  color: var(--k2b-text-muted);
 }
-
-.k2b-ui .k2b-content-lightbox__button-label {
+/* A pill of small controls (`k2b-pill`): the blue Open keeps the same space to the edge as the round icons. */
+.k2b-ui .k2b-lightbox__actions {
+  flex: none;
+}
+/* Open and the app's commands keep their width; the name pill gives way first. */
+.k2b-ui :is(.k2b-lightbox__open, .k2b-lightbox__action) {
+  flex: none;
+}
+.k2b-ui .k2b-lightbox__separator {
+  width: 1px;
+  height: 1.125rem;
+  margin: 0 3px;
+  background: var(--k2b-border);
+}
+.k2b-ui .k2b-lightbox__separator:first-child {
   display: none;
 }
-
-.k2b-ui .k2b-content-lightbox__stage {
-  @apply flex h-full w-full items-center justify-center px-6 pb-20 pt-24;
+.k2b-ui .k2b-lightbox__main {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.k2b-ui .k2b-lightbox__stage {
+  container-type: size;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  overflow: auto;
   box-sizing: border-box;
+  place-items: center;
+  padding: 3.5rem 84px 0.75rem;
+  outline: none;
 }
-
-.k2b-ui .k2b-content-lightbox__image {
-  @apply max-h-full max-w-full select-none;
-  object-fit: contain;
-}
-
-.k2b-ui .k2b-content-lightbox__nav {
-  @apply absolute top-1/2 z-10 flex h-12 w-12 items-center justify-center rounded-full text-2xl transition-colors;
-  border: 1px solid rgb(255 255 255 / 0.12);
-  color: #fff;
-  background: rgb(255 255 255 / 0.08);
+.k2b-ui .k2b-lightbox__edge {
+  position: absolute;
+  z-index: 2;
+  top: calc(50% + 22px);
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  font-size: 1.5rem;
   transform: translateY(-50%);
   cursor: pointer;
 }
-
-.k2b-ui .k2b-content-lightbox__nav:hover {
-  background: rgb(255 255 255 / 0.14);
+.k2b-ui .k2b-lightbox__edge:hover {
+  background: var(--k2b-overlay-surface-hover);
+}
+.k2b-ui .k2b-lightbox__edge[data-direction="previous"] {
+  left: 12px;
+}
+.k2b-ui .k2b-lightbox__edge[data-direction="next"] {
+  right: 12px;
+}
+.k2b-ui .k2b-lightbox__bar {
+  display: flex;
+  justify-content: center;
+  margin: 0 7px 7px;
+}
+.k2b-ui .k2b-lightbox__tools {
+  font-variant-numeric: tabular-nums;
+}
+.k2b-ui .k2b-lightbox__percent {
+  min-width: 3.25rem;
+  justify-content: center;
+}
+.k2b-ui .k2b-lightbox__page {
+  min-width: 5.75rem;
+  justify-content: center;
+}
+.k2b-ui .k2b-lightbox__strip {
+  align-self: center;
+  max-width: calc(100% - 3rem);
+  margin: 0 0 7px;
+}
+/* Every file sits in the same box, so a placeholder, a failure and the file share one place and nothing moves. */
+.k2b-ui .k2b-lightbox__content {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  place-items: center;
+}
+.k2b-ui .k2b-lightbox__content[data-state="loading"] > :not(.k2b-lightbox__placeholder) {
+  visibility: hidden;
+}
+.k2b-ui .k2b-lightbox__content > * {
+  grid-area: 1 / 1;
+}
+.k2b-ui .k2b-lightbox__placeholder {
+  display: grid;
+  width: min(100%, 38rem, calc((100cqh - 5rem) / 1.4142));
+  aspect-ratio: 1 / 1.4142;
+  place-items: end center;
+  padding-bottom: 1rem;
+  border-radius: var(--k2b-radius-control);
+}
+.k2b-ui .k2b-lightbox__placeholder:is([data-kind="image"], [data-kind="video"]) {
+  width: min(100%, 60rem, calc((100cqh - 5rem) * 4 / 3));
+  aspect-ratio: 4 / 3;
+}
+.k2b-ui .k2b-lightbox__placeholder[data-kind="audio"] {
+  width: min(100%, 28rem);
+  aspect-ratio: 4 / 1;
+}
+.k2b-ui .k2b-lightbox__converting {
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+.k2b-ui .k2b-lightbox__image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100cqh - 4.25rem);
+  border-radius: var(--k2b-radius-control);
+  object-fit: contain;
+  transition: transform 120ms ease;
+  user-select: none;
+}
+.k2b-ui .k2b-lightbox__stage[data-zoomed] .k2b-lightbox__image {
+  cursor: grab;
+}
+.k2b-ui .k2b-lightbox__image[data-dragging] {
+  cursor: grabbing;
+  transition: none;
+}
+.k2b-ui .k2b-lightbox__pdf {
+  width: min(100%, 56rem);
+  height: 100%;
+}
+/* The player keeps its 16:9 frame inside the stage's height. */
+.k2b-ui .k2b-lightbox__video {
+  width: min(100%, calc((100cqh - 4.25rem) * 16 / 9));
+}
+.k2b-ui .k2b-lightbox__audio {
+  display: grid;
+  width: min(100%, 28rem);
+  justify-items: center;
+  gap: 1.25rem;
+}
+.k2b-ui .k2b-lightbox__audio audio {
+  width: 100%;
+}
+.k2b-ui .k2b-lightbox__text {
+  align-self: start;
+  width: min(100%, 46rem);
+  box-sizing: border-box;
+  padding: 2rem 2.5rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+  --k2b-lightbox-text-scale: 1;
+}
+/* The renderers set their own sizes, so zoom scales what they draw: text, line height, tables and code alike. */
+.k2b-ui .k2b-lightbox__text > * {
+  zoom: var(--k2b-lightbox-text-scale);
+}
+.k2b-ui .k2b-lightbox__notice {
+  display: grid;
+  max-width: 28rem;
+  justify-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+  text-align: center;
+}
+.k2b-ui .k2b-lightbox__notice b {
+  color: var(--k2b-text);
+  font-size: 0.9375rem;
+}
+.k2b-ui .k2b-lightbox__notice-icon {
+  color: var(--k2b-text-muted);
+  font-size: 2.5rem;
+}
+.k2b-ui .k2b-lightbox__notice-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+/* A phone shows the file across the whole screen; a swipe steps, so the edge buttons step back. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-lightbox__stage {
+    padding: 3.5rem 0 0.5rem;
+  }
+  .k2b-ui .k2b-lightbox__edge {
+    display: none;
+  }
+  .k2b-ui :is(.k2b-lightbox__name span, .k2b-lightbox__action-label) {
+    display: none;
+  }
+  .k2b-ui .k2b-lightbox__text {
+    padding: 1.25rem;
+    border-radius: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui :is(.k2b-lightbox__image, .k2b-lightbox) {
+    transition: none;
+  }
 }
 
-.k2b-ui .k2b-content-lightbox__nav[data-direction="previous"] {
-  @apply left-4;
+/* ThumbnailStrip: 44 px high; it fades only on the side where more images follow (data-scroll-fade). */
+.k2b-ui .k2b-thumbnail-strip {
+  display: flex;
+  min-width: 0;
+  height: 2.75rem;
+  box-sizing: border-box;
+  padding: 0.25rem;
+  border-radius: 0.875rem;
 }
 
-.k2b-ui .k2b-content-lightbox__nav[data-direction="next"] {
-  @apply right-4;
-}
-
-.k2b-ui .k2b-content-lightbox__dots {
-  @apply absolute bottom-5 left-1/2 flex gap-2 rounded-full px-3 py-2;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: rgb(0 0 0 / 0.3);
-  backdrop-filter: blur(8px);
-  transform: translateX(-50%);
-}
-
-.k2b-ui .k2b-content-lightbox__dot {
-  @apply h-2.5 w-2.5 rounded-full transition-colors;
+.k2b-ui .k2b-thumbnail-strip > ul {
+  --scroll-fade-size: 2.75rem;
+  display: flex;
+  gap: 0.25rem;
+  min-width: 0;
+  height: 2.25rem;
+  margin: 0;
   padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+}
+
+.k2b-ui .k2b-thumbnail-strip > ul::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-thumbnail-strip > ul {
+    scroll-behavior: auto;
+  }
+}
+
+.k2b-ui .k2b-thumbnail-strip li {
+  flex: none;
+}
+
+.k2b-ui .k2b-thumbnail-strip__thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  overflow: hidden;
   border: 0;
-  background: rgb(255 255 255 / 0.4);
+  border-radius: 0.5rem;
+  background: var(--k2b-surface-muted);
   cursor: pointer;
 }
 
-.k2b-ui .k2b-content-lightbox__dot:hover {
-  background: rgb(255 255 255 / 0.6);
+.k2b-ui .k2b-thumbnail-strip__thumb img,
+.k2b-ui .k2b-thumbnail-strip__thumb > :only-child {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.k2b-ui .k2b-content-lightbox__dot[aria-current="true"] {
-  background: #fff;
+/* The edge keeps one width in every state: hover lightens the picture, the current image takes the action color. */
+.k2b-ui .k2b-thumbnail-strip__thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 0.5rem;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+  pointer-events: none;
 }
 
-@media (min-width: 40rem) {
-  .k2b-ui .k2b-content-lightbox__bar {
-    @apply p-6;
-  }
+.k2b-ui .k2b-thumbnail-strip__thumb:hover::after {
+  background: rgb(255 255 255 / 0.16);
+}
 
-  .k2b-ui .k2b-content-lightbox__button-label {
-    display: inline;
-  }
+.k2b-ui .k2b-thumbnail-strip__thumb[aria-current="true"]::after {
+  box-shadow: inset 0 0 0 2px var(--k2b-action), inset 0 0 0 3px rgb(255 255 255 / 0.9);
+}
 
-  .k2b-ui .k2b-content-lightbox__stage {
-    @apply px-12 pb-24 pt-28;
-  }
+.k2b-ui .k2b-thumbnail-strip__thumb:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
 
-  .k2b-ui .k2b-content-lightbox__nav[data-direction="previous"] {
-    @apply left-6;
-  }
+.k2b-ui .k2b-thumbnail-strip__dirty {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--k2b-action-solid);
+  box-shadow: 0 0 0 2px #fff;
+}
 
-  .k2b-ui .k2b-content-lightbox__nav[data-direction="next"] {
-    @apply right-6;
+.k2b-ui .k2b-thumbnail-strip__add.k2b-button {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  box-shadow: inset 0 0 0 2px var(--k2b-border-strong);
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-thumbnail-strip__thumb[aria-current="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
   }
 }
 
@@ -5377,74 +5622,370 @@
    the column's GFM alignment, which marked writes as `align` on every cell. */
 .k2b-ui .k2b-content-markdown th:not([align]) { text-align: start; }
 
-/* Cloud composes `paper flex min-h-0 flex-col overflow-hidden`; Cloud pins
-   `--ui-shadow-surface: none`, so the paper edge is the border alone. */
-.k2b-ui .k2b-content-pdf-preview {
-  @apply flex min-h-0 flex-col overflow-hidden;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface);
-}
-
-/* Spacing, not a divider line, separates the toolbar from the document. */
-.k2b-ui .k2b-content-pdf-preview__toolbar {
-  @apply flex items-center justify-between gap-2 px-3 py-2;
-}
-
-.k2b-ui .k2b-content-pdf-preview__heading {
-  @apply min-w-0;
-}
-
-.k2b-ui .k2b-content-pdf-preview__title {
-  @apply truncate text-sm font-semibold;
-  margin: 0;
-  color: var(--k2b-text);
-}
-
-.k2b-ui .k2b-content-pdf-preview__actions {
-  @apply flex shrink-0 flex-wrap items-center gap-2;
-}
-
-.k2b-ui .k2b-content-pdf-preview__notice {
-  @apply text-sm;
-  color: var(--k2b-danger-text);
-}
-
-/* Every state draws in one box: an iframe's default height where nothing
-   sizes the viewer, the remaining height of a sized column. */
-.k2b-ui .k2b-content-pdf-preview__viewer {
-  position: relative;
-  flex: 1 1 auto;
-  box-sizing: border-box;
-  width: 100%;
-  height: 150px;
+/* PdfViewer: one grey, rounded ground for every state. The drawn pages, the placeholder of the empty, loading, or
+   error state, and the pill all lie in it, so the area never moves. Without a size from its host it is 12.5rem tall,
+   enough for every state with its actions, and grows in a flex column; any host class or rule that sizes it wins,
+   also a smaller one, because this default has no specificity. */
+:where(.k2b-ui) :where(.k2b-pdf-viewer) {
+  height: 12.5rem;
   min-height: 0;
+  flex: 1 1 auto;
 }
 
-/* The placeholder lies over the frame until the frame has loaded its document. */
-.k2b-ui :is(.k2b-content-pdf-preview__placeholder, .k2b-content-pdf-preview__frame) {
+.k2b-ui .k2b-pdf-viewer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-pdf-viewer:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+/* The pages fill the ground; until the first page is drawn, the loading placeholder lies over them. */
+.k2b-ui .k2b-pdf-viewer__document {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-pdf-viewer__document:not([data-drawn]) {
+  opacity: 0;
+}
+
+/* A failed reload replaces the previous pages instead of leaving an outdated document beside its error. */
+.k2b-ui .k2b-pdf-viewer[data-state="error"] > .k2b-pdf-viewer__document {
+  visibility: hidden;
+}
+
+/* A new document is loading while the previous pages stay: a quiet line on the top edge, as the calendar shows a
+   pending period. It lies over the ground, so nothing moves. */
+.k2b-ui .k2b-pdf-viewer__progress {
+  position: absolute;
+  z-index: 1;
+  inset-inline: 0;
+  top: 0;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--k2b-action) 15%, transparent);
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-pdf-viewer__progress::after {
+  display: block;
+  width: 35%;
+  height: 100%;
+  background: var(--k2b-action-solid);
+  content: "";
+  animation: k2b-content-calendar-progress 900ms ease-in-out infinite;
+}
+
+/* A long error scrolls from its top instead of overflowing above the area. */
+.k2b-ui .k2b-pdf-viewer__placeholder {
   position: absolute;
   inset: 0;
   box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-}
-
-/* A long error scrolls from its top instead of overflowing above the box. */
-.k2b-ui .k2b-content-pdf-preview__placeholder {
   justify-content: safe center;
   overflow: auto;
 }
 
-.k2b-ui .k2b-content-pdf-preview__frame {
-  display: block;
-  border: 0;
-  background: #fff;
+/* A blocked tab: a short alert above the pages that keeps the document in view. */
+.k2b-ui .k2b-pdf-viewer__notice {
+  position: absolute;
+  z-index: 1;
+  inset-inline: 0.75rem;
+  top: 0.75rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-toolbar);
+  color: var(--k2b-danger-text);
+  font-size: 0.875rem;
 }
 
-/* Transparent and inert, not hidden: the frame still loads its document. */
-.k2b-ui .k2b-content-pdf-preview__frame:not([data-drawn]) {
+.k2b-ui .k2b-pdf-viewer__pages {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--k2b-text) 22%, transparent) transparent;
+  scrollbar-gutter: stable;
+  touch-action: pan-x pan-y;
+}
+
+.k2b-ui .k2b-pdf-viewer__pages[data-fit] {
+  overflow-x: hidden;
+}
+
+.k2b-ui .k2b-pdf-viewer__pages:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+/* Wider than the area the stack grows to the right; narrower, each page stands centred. Room below for the bar, so
+   the end of the last page and a whole fitted page stay clear of it (`BLOCK_INSET` in PdfViewer). */
+.k2b-ui .k2b-pdf-viewer__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: 0.75rem 0.75rem 3.5rem;
+}
+
+/* PdfThumbnails: small pages on a hairline, a strip (sm) or a grid to pick
+   from (md). Each tile keeps its page's proportions before it is drawn. */
+.k2b-ui .k2b-pdf-thumbnails {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-pdf-thumbnails[data-size="md"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.k2b-ui .k2b-pdf-thumbnails__page {
+  position: relative;
+  display: block;
+  width: 2.25rem;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--k2b-border);
+}
+
+.k2b-ui .k2b-pdf-thumbnails__page.k2b-skeleton {
+  height: 3.2rem;
+}
+
+.k2b-ui .k2b-pdf-thumbnails[data-size="md"] .k2b-pdf-thumbnails__page {
+  width: 100%;
+}
+
+.k2b-ui .k2b-pdf-thumbnails[data-size="md"] .k2b-pdf-thumbnails__page.k2b-skeleton {
+  height: auto;
+  aspect-ratio: 1 / 1.414;
+}
+
+.k2b-ui .k2b-pdf-thumbnails__page > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.k2b-ui .k2b-pdf-thumbnails__label {
+  display: block;
+  margin-top: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+/* A page to pick: the 2 px selection edge of every choice, with a check in
+   the corner once chosen. Only color and fill change, nothing moves. */
+.k2b-ui .k2b-pdf-thumbnails__toggle {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0.375rem;
+  border: 2px solid transparent;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-pdf-thumbnails__toggle:hover {
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-pdf-thumbnails__toggle:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-pdf-thumbnails__toggle[aria-pressed="true"] {
+  border-color: var(--k2b-accent-600);
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-pdf-thumbnails__check {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  border-radius: 9999px;
+  color: #fff;
+  background: var(--k2b-accent-600);
+  font-size: 0.75rem;
   opacity: 0;
+}
+
+.k2b-ui .k2b-pdf-thumbnails__toggle[aria-pressed="true"] .k2b-pdf-thumbnails__check {
+  opacity: 1;
+}
+
+.k2b-ui .k2b-pdf-thumbnails__more {
+  align-self: center;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .k2b-pdf-thumbnails__failed {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .k2b-pdf-viewer__page {
+  position: relative;
+  flex: none;
+  margin-inline: auto;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #fff;
+  /* A page is an island on the viewer's ground: a hairline and the island shadow. */
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), var(--k2b-shadow-raised);
+}
+
+.k2b-ui .k2b-pdf-viewer__page > img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+/* Text sits under it, so the bar is solid, not glass. */
+.k2b-ui .k2b-pdf-viewer__bar {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0.5rem;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* A pill of small controls (`k2b-pill`), icons only; a pressed fit shows its blue icon without a fill. */
+.k2b-ui .k2b-pdf-viewer__bar > .k2b-toolbar {
+  --k2b-selected: transparent;
+  pointer-events: auto;
+}
+
+.k2b-ui :is(.k2b-pdf-viewer__percent, .k2b-pdf-viewer__page-number) {
+  min-width: 2.75rem;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* Text layer: the rules of `.textLayer` in pdfjs-dist/web/pdf_viewer.css (same version as package.json). The spans lie
+   invisibly over the page image, positioned in percent of the page, sized by `--total-scale-factor` (CSS pixels per
+   point on the page). A selection shows only its color; the text stays transparent. Compare after a pdf.js update. */
+.k2b-ui .k2b-pdf-viewer__text {
+  color-scheme: only light;
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: clip;
+  text-align: initial;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+/* Rotated pages (/Rotate): the layer keeps the unrotated size and turns about its top left corner into place. */
+.k2b-ui .k2b-pdf-viewer__text[data-main-rotation="90"] {
+  transform: rotate(90deg) translateY(-100%);
+}
+
+.k2b-ui .k2b-pdf-viewer__text[data-main-rotation="180"] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+
+.k2b-ui .k2b-pdf-viewer__text[data-main-rotation="270"] {
+  transform: rotate(270deg) translateX(-100%);
+}
+
+.k2b-ui .k2b-pdf-viewer__text :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.k2b-ui .k2b-pdf-viewer__text > :not(.markedContent),
+.k2b-ui .k2b-pdf-viewer__text .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.k2b-ui .k2b-pdf-viewer__text .markedContent {
+  display: contents;
+}
+
+.k2b-ui .k2b-pdf-viewer__text ::selection {
+  background: rgb(0 0 255 / 0.25);
+  background: color-mix(in srgb, AccentColor, transparent 50%);
+  color: transparent;
+}
+
+.k2b-ui .k2b-pdf-viewer__text br::selection {
+  background: transparent;
+}
+
+/* `.endOfContent` in pdf.js. Its rule has the specificity of the span rule above and comes later, so it wins there too;
+   without the child combinator, the span rule would lift the marker above the spans and a drag would select nothing. */
+.k2b-ui .k2b-pdf-viewer__text > .k2b-pdf-viewer__text-end {
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  transform: none;
+  display: block;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.k2b-ui .k2b-pdf-viewer__text[data-selecting] > .k2b-pdf-viewer__text-end {
+  top: 0;
 }
 
 .k2b-ui .k2b-content-structured-data {
@@ -5569,14 +6110,6 @@
   .k2b-ui .k2b-content-doc-rows > article {
     grid-template-columns: 2rem 10rem minmax(0, 1fr);
   }
-
-  .k2b-ui .k2b-content-lightbox > div:first-child {
-    padding: 1.5rem;
-  }
-
-  .k2b-ui .k2b-content-lightbox > div:nth-of-type(2) {
-    padding: 7rem 3rem 6rem;
-  }
 }
 
 @media (max-width: 39.999rem) {
@@ -5584,10 +6117,6 @@
   .k2b-ui .k2b-content-calendar .k2b-segmented-control__option {
     padding-inline: 0.375rem;
     font-size: 0.75rem;
-  }
-
-  .k2b-ui .k2b-content-lightbox :is(a, button) span {
-    display: none;
   }
 }
 
@@ -5635,7 +6164,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .k2b-ui .k2b-calendar-header__progress::after {
+  .k2b-ui .k2b-calendar-header__progress::after,
+  .k2b-ui .k2b-pdf-viewer__progress::after {
     animation: none;
   }
 
@@ -5645,8 +6175,8 @@
 }
 
 @media (forced-colors: active) {
-  .k2b-ui .k2b-content-lightbox button:focus-visible,
-  .k2b-ui .k2b-content-lightbox a:focus-visible,
+  .k2b-ui .k2b-lightbox button:focus-visible,
+  .k2b-ui .k2b-lightbox a:focus-visible,
   .k2b-ui .k2b-content-file-tree [role="treeitem"]:focus-visible,
   .k2b-ui .k2b-content-calendar a:focus-visible,
   .k2b-ui .k2b-content-calendar button:focus-visible,
@@ -5656,7 +6186,7 @@
   .k2b-ui .k2b-content-file-tree__actions:focus-visible,
   .k2b-ui .k2b-content-file-view__action:focus-visible,
   .k2b-ui .k2b-content-structured-data__action:focus-visible,
-  .k2b-ui :is(.k2b-content-lightbox__button, .k2b-content-lightbox__nav, .k2b-content-lightbox__dot):focus-visible {
+  .k2b-ui .k2b-lightbox__edge:focus-visible {
     outline: var(--k2b-focus-width) solid CanvasText;
     outline-offset: calc(-1 * var(--k2b-focus-width));
   }
@@ -5745,14 +6275,6 @@
 }
 .k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__media {
   padding: 0;
-}
-.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__pdf-viewer {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__pdf-viewer > .k2b-content-pdf-preview__actions {
-  padding: 0 0 0.5rem;
 }
 .k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__document {
   padding: 0;
@@ -6491,7 +7013,7 @@
     .k2b-content-doc-code,
     .k2b-content-file-browser__tree,
     .k2b-content-file-view__preview,
-    .k2b-content-pdf-preview,
+    .k2b-pdf-viewer,
     .k2b-content-markdown__table,
     .k2b-content-markdown pre,
     .k2b-timeline__viewport
@@ -6507,7 +7029,7 @@
     .k2b-content-doc-code,
     .k2b-content-file-browser__tree,
     .k2b-content-file-view__preview,
-    .k2b-content-pdf-preview,
+    .k2b-pdf-viewer,
     .k2b-content-markdown__table,
     .k2b-content-markdown pre,
     .k2b-timeline__viewport
@@ -6592,6 +7114,123 @@
 .k2b-ui .k2b-content-markdown ol.k2b-steps { padding: 0; list-style: none; }
 .k2b-ui .k2b-steps > li { position: relative; min-height: 2rem; margin: 0; padding: 0.1875rem 0 0 2.875rem; counter-increment: k2b-step; }
 .k2b-ui .k2b-steps > li::before { content: counter(k2b-step); position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 999px; background: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 14%, transparent); color: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 70%, var(--k2b-text)); font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ProgressPath: the stages of one thing in order. Side by side in a wide
+   container, one below the other in a narrow one, such as a phone sheet. A done
+   step carries a check and a green line to the next step; its word says the same. */
+.k2b-ui .k2b-progress-path {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-progress-path__list {
+  display: grid;
+  grid-template-columns: repeat(var(--k2b-progress-path-count, 1), minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-progress-path__step {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  margin: 0;
+  padding-inline-end: 0.5rem;
+}
+
+.k2b-ui .k2b-progress-path__step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: calc(0.8125rem - 1px);
+  inset-inline: 2rem 0.25rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--k2b-border);
+}
+
+.k2b-ui .k2b-progress-path__step[data-done]:not(:last-child)::before {
+  background: color-mix(in srgb, var(--k2b-success-500) 55%, transparent);
+}
+
+.k2b-ui .k2b-progress-path__marker {
+  display: grid;
+  width: 1.625rem;
+  height: 1.625rem;
+  flex: none;
+  place-items: center;
+  margin-bottom: 0.375rem;
+  border: 2px solid var(--k2b-border-strong);
+  border-radius: 999px;
+  color: var(--k2b-text-muted);
+  background: var(--k2b-surface-elevated);
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-progress-path__step[data-done] .k2b-progress-path__marker {
+  border-color: var(--k2b-success-500);
+  color: var(--k2b-success-text);
+  background: var(--k2b-success-surface);
+}
+
+.k2b-ui .k2b-progress-path__label {
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .k2b-progress-path__step:not([data-done]) .k2b-progress-path__label {
+  color: var(--k2b-text-muted);
+  font-weight: 500;
+}
+
+.k2b-ui .k2b-progress-path__detail {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+@container (max-width: 25.999rem) {
+  .k2b-ui .k2b-progress-path__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .k2b-ui .k2b-progress-path__step {
+    display: grid;
+    grid-template-columns: 1.625rem minmax(0, 1fr);
+    column-gap: 0.625rem;
+    padding: 0 0 0.75rem;
+  }
+
+  .k2b-ui .k2b-progress-path__step:last-child {
+    padding-bottom: 0;
+  }
+
+  .k2b-ui .k2b-progress-path__marker {
+    grid-row: span 2;
+    margin: 0;
+  }
+
+  .k2b-ui .k2b-progress-path__label {
+    padding-top: 0.25rem;
+  }
+
+  .k2b-ui .k2b-progress-path__label,
+  .k2b-ui .k2b-progress-path__detail {
+    grid-column: 2;
+  }
+
+  .k2b-ui .k2b-progress-path__step:not(:last-child)::before {
+    top: 2rem;
+    bottom: 0.25rem;
+    inset-inline: calc(0.8125rem - 1px) auto;
+    width: 2px;
+    height: auto;
+  }
+}
 
 /* MapView: shared static geometry and the progressively loaded map image. */
 .k2b-ui .k2b-map-view {
@@ -6712,16 +7351,18 @@
 .k2b-ui button.k2b-map-view__pin:hover { filter: brightness(.94); }
 .k2b-ui span.k2b-map-view__pin { cursor: default; pointer-events: none; }
 .k2b-ui .k2b-map-view__pin:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
-.k2b-ui :is(.k2b-map-view__zoom, .k2b-map-view__locate, .k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)) { background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .14); border: 0; }
-/* Dark floating surfaces sit on a dark map: an inset ring gives them their edge instead of a shadow nobody sees. */
-:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui :is(.k2b-map-view__zoom, .k2b-map-view__locate, .k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
-.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) :is(.k2b-map-view__zoom, .k2b-map-view__locate, .k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
+/* Messages and the selected place carry text to read, so they stay solid. The zoom and locate groups are glass (`k2b-overlay-surface`). */
+.k2b-ui :is(.k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)) { background: var(--k2b-map-surface); box-shadow: var(--k2b-shadow-toolbar); border: 0; }
+/* Dark floating surfaces sit on a dark map: an inset ring gives them their edge as well. */
+:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui :is(.k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
+.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) :is(.k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
 :where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui .k2b-map-view__empty > span,
 .k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-view__empty > span {
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), 0 1px 4px rgb(0 0 0 / .4);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), var(--k2b-shadow-toolbar);
 }
 .k2b-ui .k2b-map-view__controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 8px; }
-.k2b-ui .k2b-map-view__zoom { display: flex; flex-direction: column; border-radius: 9px; }
+.k2b-ui .k2b-map-view__controls[hidden] { display: none; }
+.k2b-ui :is(.k2b-map-view__zoom, .k2b-map-view__locate-group) { display: flex; flex-direction: column; border-radius: 9px; }
 .k2b-ui .k2b-map-view__controls .k2b-icon-button { width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 9px; }
 .k2b-ui .k2b-map-view__controls .k2b-icon-button:hover { transform: none; }
 .k2b-ui .k2b-map-view__messages { position: absolute; top: 10px; left: 10px; max-width: calc(100% - 64px); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
@@ -6744,7 +7385,7 @@
 .k2b-ui .k2b-map-view__attribution:empty { display: none; }
 .k2b-ui .k2b-map-view__attribution a { text-decoration: underline; }
 .k2b-ui .k2b-map-view__empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 48px; text-align: center; pointer-events: none; }
-.k2b-ui .k2b-map-view__empty > span { max-width: 100%; padding: 7px 14px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .12); color: var(--k2b-text-secondary); font-size: 13px; }
+.k2b-ui .k2b-map-view__empty > span { max-width: 100%; padding: 7px 14px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: var(--k2b-shadow-toolbar); color: var(--k2b-text-secondary); font-size: 13px; }
 .k2b-ui .k2b-map-view :is(.maplibregl-canvas-container, .maplibregl-canvas) { position: absolute; left: 0; top: 0; }
 .k2b-ui .k2b-map-view .maplibregl-canvas-container { width: 100%; height: 100%; }
 /* The canvas takes arrow keys for panning; its focus shows as the token ring inset on the rounded map, never clipped. */
@@ -6756,7 +7397,7 @@
 .k2b-ui .k2b-map-view .maplibregl-interactive { cursor: grab; user-select: none; }
 .k2b-ui .k2b-map-view .maplibregl-interactive:active { cursor: grabbing; }
 .k2b-ui .k2b-map-view .maplibregl-cooperative-gestures { touch-action: pan-x pan-y; }
-.k2b-ui .k2b-map-view .maplibregl-cooperative-gesture-screen { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: max-content; max-width: calc(100% - 32px); padding: 8px 12px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .14); font-size: 12.5px; text-align: center; pointer-events: none; visibility: hidden; }
+.k2b-ui .k2b-map-view .maplibregl-cooperative-gesture-screen { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: max-content; max-width: calc(100% - 32px); padding: 8px 12px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: var(--k2b-shadow-toolbar); font-size: 12.5px; text-align: center; pointer-events: none; visibility: hidden; }
 .k2b-ui .k2b-map-view .maplibregl-cooperative-gesture-screen.maplibregl-show { visibility: visible; }
 .k2b-ui .k2b-map-view .maplibregl-mobile-message { display: none; }
 @media (hover: none), (pointer: coarse) {
@@ -6775,6 +7416,140 @@
   .k2b-ui .k2b-map-view__zoom > .k2b-icon-button:last-child::after { top: 0; bottom: calc(32px - 2.75rem); }
   /* Room above for the zoom-in hit area inside the map, and between the stack's and the locate button's hit areas. */
   .k2b-ui .k2b-map-view__controls { top: 12px; gap: 18px; }
+}
+
+/* MapTile: a still map that is one button. The summary is a solid pill on it; messages and credits stay above. */
+.k2b-ui .k2b-map-tile { position: relative; isolation: isolate; border-radius: var(--k2b-radius-surface); }
+/* The map joins the tile's stacking: its messages and credits rise above the button, its pins stay below. */
+.k2b-ui .k2b-map-tile .k2b-map-view { isolation: auto; border-radius: inherit; }
+.k2b-ui .k2b-map-tile :is(.k2b-map-view__messages, .k2b-map-view__foot) { z-index: 2; }
+.k2b-ui .k2b-map-tile .k2b-map-view__messages { top: 30px; max-width: calc(100% - 20px); }
+.k2b-ui .k2b-map-tile .k2b-map-view__foot { top: 0; bottom: auto; }
+.k2b-ui .k2b-map-tile .k2b-map-view__attribution { border-radius: 0 0 0 7px; }
+.k2b-ui .k2b-map-tile .k2b-map-view__scale { display: none; }
+.k2b-ui .k2b-map-tile__open { position: absolute; inset: 0; z-index: 1; display: block; margin: 0; padding: 0; border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.k2b-ui .k2b-map-tile__open:disabled { cursor: default; }
+.k2b-ui .k2b-map-tile__open:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+.k2b-ui .k2b-map-tile__summary { position: absolute; left: 10px; bottom: 10px; box-sizing: border-box; max-width: calc(100% - 20px); height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 12px; border-radius: 17px; background: var(--k2b-surface); color: var(--k2b-text); box-shadow: var(--k2b-shadow-toolbar); font-size: 13.5px; font-weight: 500; font-variant-numeric: tabular-nums; transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
+.k2b-ui .k2b-map-tile__summary > span { min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.k2b-ui .k2b-map-tile__summary > i { flex: none; font-size: 16px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-tile__open:not(:disabled):hover .k2b-map-tile__summary { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-map-tile__open:not(:disabled):hover .k2b-map-tile__summary > i { color: var(--k2b-action); }
+:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui .k2b-map-tile__summary,
+.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-tile__summary {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), var(--k2b-shadow-toolbar);
+}
+
+/* MapDialog: map and list side by side; below 48rem the map fills the screen and the list is a sheet. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-panel-dialog-frame.is-workspace.k2b-map-dialog-frame {
+    width: min(80rem, calc(100vw - 5rem), var(--k2b-dialog-available-width));
+    height: min(52.5rem, calc(100dvh - 3rem), var(--k2b-dialog-available-height));
+  }
+}
+.k2b-ui .k2b-map-dialog {
+  --k2b-map-dialog-tone: var(--k2b-action-solid);
+  --k2b-map-dialog-peek: 8.5rem;
+  --k2b-map-dialog-half: 52%;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 25.5rem;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--k2b-surface);
+  color: var(--k2b-text);
+}
+.k2b-ui .k2b-map-dialog__map { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.k2b-ui .k2b-map-dialog__map .k2b-map-view { border-radius: 0; }
+.k2b-ui .k2b-map-dialog__side { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.k2b-ui :is(.k2b-map-dialog__handle, .k2b-map-dialog__close-float) { display: none; }
+.k2b-ui .k2b-map-dialog__head { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 16px 12px 12px 20px; }
+.k2b-ui .k2b-map-dialog__title { display: flex; align-items: flex-start; gap: 4px; }
+.k2b-ui .k2b-map-dialog__title h2 { flex: 1; min-width: 0; margin: 4px 0 0; font-size: 18px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.k2b-ui .k2b-map-dialog__facts { display: flex; gap: 28px; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-map-dialog__facts > div { display: flex; flex-direction: column; }
+.k2b-ui .k2b-map-dialog__facts strong { font-size: 22px; font-weight: 600; line-height: 1.2; }
+.k2b-ui :is(.k2b-map-dialog__facts, .k2b-map-dialog__place-text, .k2b-map-dialog__trailing) small { font-size: 12.5px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__count { display: inline-flex; align-items: center; height: 26px; padding: 0 9px; border-radius: 7px; background: var(--k2b-surface-muted); font-size: 13px; }
+.k2b-ui .k2b-map-dialog__body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* Beside the map, the host zone and the details each keep within a share of the column, so the list always shows rows. */
+.k2b-ui .k2b-map-dialog__notice { flex: none; max-height: 40%; overflow: auto; margin: 0 20px 10px; }
+/* A host zone that currently shows nothing takes no room. */
+.k2b-ui .k2b-map-dialog__notice:has(> :only-child:empty) { display: none; }
+.k2b-ui .k2b-map-dialog__list { flex: 1; min-height: 0; overflow: auto; padding: 0 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+.k2b-ui .k2b-map-dialog__list:focus-visible { outline: 0; }
+.k2b-ui .k2b-map-dialog__list:focus-visible .k2b-map-dialog__place[aria-selected="true"] { box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring); }
+@media (forced-colors: active) {
+  .k2b-ui .k2b-map-dialog__list:focus-visible .k2b-map-dialog__place[aria-selected="true"] { outline: var(--k2b-focus-width) solid Highlight; outline-offset: calc(-1 * var(--k2b-focus-width)); }
+}
+.k2b-ui .k2b-map-dialog__group { flex: none; height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 12.5px; font-weight: 500; color: var(--k2b-map-dialog-tone); }
+.k2b-ui .k2b-map-dialog__group::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.k2b-ui .k2b-map-dialog__place { flex: none; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 54px; box-sizing: border-box; padding: 6px 10px; border-radius: 10px; cursor: pointer; }
+.k2b-ui :is(.k2b-map-dialog__place, .k2b-map-dialog__group)[data-tone="second"] { --k2b-map-dialog-tone: #0f766e; }
+:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui :is(.k2b-map-dialog__place, .k2b-map-dialog__group)[data-tone="second"],
+.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) :is(.k2b-map-dialog__place, .k2b-map-dialog__group)[data-tone="second"] { --k2b-map-dialog-tone: #14b8a6; }
+@media (hover: hover) {
+  .k2b-ui .k2b-map-dialog__place:hover { background: var(--k2b-surface-muted); }
+}
+.k2b-ui .k2b-map-dialog__place[aria-selected="true"] { background: color-mix(in srgb, var(--k2b-action-solid) 12%, transparent); }
+.k2b-ui .k2b-map-dialog__mark { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--k2b-map-dialog-tone); color: var(--k2b-map-dialog-tone); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-map-dialog__place[aria-selected="true"] .k2b-map-dialog__mark { background: var(--k2b-map-dialog-tone); color: #fff; box-shadow: none; }
+.k2b-ui .k2b-map-dialog__mark[data-empty] { width: 10px; height: 10px; margin-inline: 7px; background: var(--k2b-map-dialog-tone); box-shadow: none; }
+.k2b-ui .k2b-map-dialog__place-text { min-width: 0; display: flex; flex-direction: column; }
+.k2b-ui .k2b-map-dialog__place-text > * { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.k2b-ui .k2b-map-dialog__trailing { display: flex; flex-direction: column; align-items: flex-end; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k2b-ui .k2b-map-dialog__loading { margin: 0; padding: 6px 10px; font-size: 13px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__skeleton { flex: none; height: 38px; margin: 8px 10px; border-radius: 8px; background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-map-dialog__empty { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 28px 20px; }
+.k2b-ui .k2b-map-dialog__empty p { margin: 0; }
+.k2b-ui .k2b-map-dialog__empty-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); font-size: 18px; }
+/* A fixed height: choosing another place never moves the list above it. */
+.k2b-ui .k2b-map-dialog__detail { flex: none; height: min(19.5rem, 36%); box-sizing: border-box; margin: 0 20px; padding: 14px 0 16px; border-top: 1px solid var(--k2b-border); display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.k2b-ui .k2b-map-dialog[data-single] .k2b-map-dialog__detail { flex: 1; height: auto; border-top: 0; padding-top: 0; }
+.k2b-ui .k2b-map-dialog[data-single] .k2b-map-dialog__actions { margin-top: 10px; }
+.k2b-ui .k2b-map-dialog__place-name { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.k2b-ui .k2b-map-dialog__source { display: flex; align-items: center; gap: 6px; min-height: 18px; font-size: 12.5px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__source-ai { color: var(--k2b-ai-accent); }
+.k2b-ui .k2b-map-dialog__address { display: flex; align-items: center; gap: 4px; min-height: 32px; font-size: 14px; }
+.k2b-ui .k2b-map-dialog__address > span { min-width: 0; overflow-wrap: anywhere; }
+.k2b-ui .k2b-map-dialog__hours { display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
+.k2b-ui .k2b-map-dialog__hours > i { color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__note { margin: 0; font-size: 13.5px; color: var(--k2b-text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
+.k2b-ui .k2b-map-dialog__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 8px; }
+.k2b-ui .k2b-map-dialog__hint { margin: 0; font-size: 12.5px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__provenance { flex: none; padding: 0 20px 12px; font-size: 12px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__provenance a { color: inherit; text-decoration: underline; }
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-map-dialog { display: block; }
+  /* The map fills the screen above the resting sheet, so its fitted pins are never under the list. */
+  .k2b-ui .k2b-map-dialog__map { position: absolute; inset: 0 0 calc(var(--k2b-map-dialog-half) - 18px); }
+  .k2b-ui .k2b-map-dialog:has(.k2b-map-dialog__side[data-sheet-detent="peek"]) .k2b-map-dialog__map { bottom: calc(var(--k2b-map-dialog-peek) - 18px); }
+  .k2b-ui .k2b-map-dialog .k2b-map-view__messages { top: 60px; }
+  /* The sheet's rounded top overlaps the map; scale and credits stay above it. */
+  .k2b-ui .k2b-map-dialog .k2b-map-view__foot { bottom: 18px; }
+  .k2b-ui .k2b-map-dialog__close-float { display: grid; position: absolute; top: 10px; left: 10px; z-index: 3; width: 40px; height: 40px; min-height: 40px; border-radius: 50%; }
+  .k2b-ui .k2b-map-dialog__close { display: none; }
+  .k2b-ui .k2b-map-dialog__side { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; height: var(--k2b-map-dialog-half); border-radius: 18px 18px 0 0; background: var(--k2b-surface); box-shadow: var(--k2b-shadow-sheet); }
+  .k2b-ui .k2b-map-dialog__side[data-sheet-detent="peek"] { height: var(--k2b-map-dialog-peek); }
+  .k2b-ui .k2b-map-dialog__side[data-sheet-detent="full"] { height: calc(100% - 64px); }
+  .k2b-ui .k2b-map-dialog__handle { position: relative; display: grid; place-items: center; flex: none; width: 100%; height: 22px; margin: 0; padding: 0; border: 0; background: none; cursor: grab; }
+  .k2b-ui .k2b-map-dialog__handle::before { content: ""; width: 38px; height: 4px; border-radius: 2px; background: var(--k2b-border-strong); }
+  /* A 44 px target around the 22 px grip: it reaches above the sheet's edge and into the header's top padding. */
+  .k2b-ui .k2b-map-dialog__handle::after { content: ""; position: absolute; inset: -11px 0; }
+  .k2b-ui .k2b-map-dialog__handle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+  .k2b-ui .k2b-map-dialog__head { padding: 2px 8px 8px 16px; }
+  .k2b-ui .k2b-map-dialog__title h2 { font-size: 17px; }
+  .k2b-ui .k2b-map-dialog__facts strong { font-size: 19px; }
+  .k2b-ui .k2b-map-dialog__body { overflow-y: auto; overscroll-behavior: contain; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .k2b-ui .k2b-map-dialog__detail { order: 1; height: auto; margin: 0 16px; padding-top: 2px; border-top: 0; overflow: visible; }
+  .k2b-ui .k2b-map-dialog__list { order: 2; flex: none; overflow: visible; margin-top: 4px; padding: 8px 6px; border-top: 1px solid var(--k2b-border); }
+  .k2b-ui .k2b-map-dialog__provenance { order: 3; padding: 0 16px 14px; }
+  .k2b-ui .k2b-map-dialog__notice { max-height: none; overflow: visible; margin-inline: 16px; }
+  .k2b-ui .k2b-map-dialog__actions > .k2b-button { min-height: 44px; }
+  .k2b-ui .k2b-map-dialog__actions > .k2b-button:first-child { flex: 1 1 100%; }
+  .k2b-ui .k2b-map-dialog__place { min-height: 56px; }
 }
 
 /* ------------------------------------------------------------ FlowAmount --

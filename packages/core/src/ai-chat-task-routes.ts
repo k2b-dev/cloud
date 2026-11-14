@@ -2,11 +2,14 @@ import {
   AiChatTaskIdempotencyConflictError,
   AiConversationIdSchema,
   aiChatTasks,
+  ChatTaskExportForbiddenError,
+  ChatTaskExportQuerySchema,
   ChatTaskGrantsSchema,
   ChatTaskIdSchema,
   ChatTaskOccurrenceIdSchema,
   chatTaskCreateFingerprint,
   chatTaskNeedsNewTime,
+  exportChatTasks,
   getChatTaskTimezone,
   normalizeChatTaskSchedule,
   ChatTaskScheduleInputSchema as ScheduleInputSchema,
@@ -64,6 +67,30 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
   .use(rateLimit())
   .use("*", auth.requireRole("authenticated"))
   .use("*", auth.requireUser())
+  .get("/tasks/export", auth.requireOAuthScope("read", "admin"), v("query", ChatTaskExportQuerySchema), async (c) => {
+    c.header("Cache-Control", "no-store");
+    try {
+      return respond(c, ok(await exportChatTasks(c.get("actor"), c.req.valid("query"))));
+    } catch (error) {
+      if (error instanceof ChatTaskExportForbiddenError) return respond(c, fail(err.forbidden(error.message)));
+      throw error;
+    }
+  })
+  .get(
+    "/admin/tasks/export",
+    auth.requireRole("admin"),
+    auth.requireOAuthScope("read", "admin"),
+    v("query", ChatTaskExportQuerySchema),
+    async (c) => {
+      c.header("Cache-Control", "no-store");
+      try {
+        return respond(c, ok(await exportChatTasks(c.get("actor"), { ...c.req.valid("query"), all: true })));
+      } catch (error) {
+        if (error instanceof ChatTaskExportForbiddenError) return respond(c, fail(err.forbidden(error.message)));
+        throw error;
+      }
+    },
+  )
   .get("/tasks", v("query", ListSchema), async (c) => {
     const owner = userId(c);
     if (!owner) return respond(c, fail(err.forbidden("Scheduled tasks require a user-backed actor")));

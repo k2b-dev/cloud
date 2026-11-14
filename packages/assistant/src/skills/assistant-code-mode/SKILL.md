@@ -152,6 +152,7 @@ supported surface; links within references add related workflows when needed.
 | Show an app in this chat | [Chat apps](references/chat.md) |
 | Computed charts and tables | [Views in the chat](references/views.md) |
 | Chart types, series and axes | [Charts](references/charts.md) |
+| Every chart kind with an example | [Chart kinds](references/chart-kinds.md) |
 | Long processing, progress, cancellation | [Script context](references/runtime.md) |
 | Persist personal/shared JSON or shared files | [Storage](references/storage.md) |
 | Copy files between stores; list and download Filesv2 beside Grids documents | [File transfers](references/files.md) |
