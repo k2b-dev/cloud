@@ -4,6 +4,9 @@ import { type Accessor, createEffect, createSignal, For, onCleanup, Show } from 
 import { assistantMessages } from "./messages";
 import type { WaitingQuestionsView } from "./waiting-questions";
 
+/** Something of this chat that waits for the person beside the open questions. */
+export type WaitingAttention = { key: string; label: string; icon: string; onClick: () => void };
+
 /**
  * "Waiting for you" above the composer: every open question in its short form, those of other chats with the chat's
  * name. A press jumps to the question. There is deliberately no way to answer several questions at once: each answer
@@ -19,6 +22,8 @@ export function AssistantWaitingStrip(props: {
   quiet: boolean;
   onJump: (question: AiOpenQuestion) => void;
   onShowMore: () => void;
+  /** Things of this chat that stopped and wait for the person, such as a routine or a failed app run; same target as before. */
+  attention?: readonly WaitingAttention[];
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
@@ -46,6 +51,16 @@ export function AssistantWaitingStrip(props: {
                     {question.conversationTitle ? t().waitingInChat({ title: question.conversationTitle }) : t().waitingInOtherChat}
                   </small>
                 </Show>
+              </Button>
+            </li>
+          )}
+        </For>
+        <For each={props.attention ?? []}>
+          {(item) => (
+            <li>
+              <Button variant="ghost" class="assistant-waiting__entry" data-attention={item.key} onClick={() => item.onClick()}>
+                <i class={`assistant-waiting__icon ${item.icon}`} aria-hidden="true" />
+                <span class="assistant-waiting__short k2b-truncate-fade">{item.label}</span>
               </Button>
             </li>
           )}

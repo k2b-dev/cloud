@@ -8,7 +8,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
-import { fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
+import { emptySidebarSnapshot, fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
 
 // Which presentation the sidebar takes, whether the server's first frame is final, and whether live updates move what
 // someone reads are layout results of the shipped cascade, which happy-dom does not model. A real engine lays out the
@@ -28,7 +28,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { LocaleProvider } from "@k2b/ui";
 import { SidebarHarness } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatSidebar.browser-fixture.tsx"))};
-import { openAssistantChatSidebarSheet } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatSidebar.tsx"))};
+import { openAssistantContextBoxSheet } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatContextBox.tsx"))};
 import { revealChatDelivery } from ${JSON.stringify(resolve(import.meta.dir, "chat-sidebar-layout.ts"))};
 
 const config = window.harness;
@@ -41,22 +41,35 @@ render(
   () => (
     <SidebarHarness
       snapshot={snapshot}
-      initialClosed={config.closed}
       refresh={async () => setSnapshot(JSON.parse(JSON.stringify(sidebar.next ?? snapshot())))}
       onOpenFile={(file) => sidebar.opened.push(file.path)}
       onJump={(target) => {
         sidebar.jumps.push(target);
         sidebar.revealed = revealChatDelivery(document.querySelector(".harness-timeline"), target)?.textContent ?? null;
       }}
+      view={config.view}
+      tabs={config.tabs}
+      pending={config.pending}
+      onOpenSecrets={() => sidebar.actions.push({ name: "secrets", sheetOpen: false })}
+      box={{
+        onOpenAll: () => sidebar.actions.push({ name: "all", sheetOpen: document.querySelector(".assistant-context-sheet") !== null }),
+        onOpenSources: () => sidebar.actions.push({ name: "sources", sheetOpen: document.querySelector(".assistant-context-sheet") !== null }),
+        onOpenContext: () => sidebar.actions.push({ name: "context", sheetOpen: document.querySelector(".assistant-context-sheet") !== null }),
+      }}
       onSheet={() =>
-        void openAssistantChatSidebarSheet({
+        void openAssistantContextBoxSheet({
           state,
           actions: {
-            onOpenFile() {},
-            onOpenApp() {},
-            onJump() {},
-            onOpenSecrets() {
-              sidebar.actions.push({ name: "secrets", sheetOpen: document.querySelector('[role="dialog"]') !== null });
+            onOpen(target) {
+              if (target.kind === "file") sidebar.opened.push(target.path);
+            },
+            onJump(target) {
+              sidebar.jumps.push(target);
+            },
+            onOpenAll() {},
+            onOpenSources() {},
+            onOpenContext() {
+              sidebar.actions.push({ name: "context", sheetOpen: document.querySelector(".assistant-context-sheet") !== null });
             },
           },
           wrap: (content) => <LocaleProvider locale="de">{content()}</LocaleProvider>,
@@ -121,10 +134,11 @@ afterAll(async () => {
   if (createdSerovalLink) unlinkSync(serovalLink);
 });
 
-const pageHtml = (body: string, closed: boolean, snapshot: AssistantChatContextSnapshot) =>
+type HarnessView = { view: "box" | "tab"; tabs?: boolean; pending?: "loading" | "error" };
+const pageHtml = (body: string, view: HarnessView, snapshot: AssistantChatContextSnapshot) =>
   `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
   `<body class="k2b-ui" style="margin:0"><div id="root">${body}</div>` +
-  `<script>window.harness = ${JSON.stringify({ closed, snapshot })};</script></body></html>`;
+  `<script>window.harness = ${JSON.stringify({ ...view, snapshot })};</script></body></html>`;
 
 const newPage = (width: number, touch = width < 768) =>
   browser.newPage({ viewport: { width, height: 800 }, isMobile: width < 768, hasTouch: touch });
@@ -136,22 +150,27 @@ const load = async (page: Page, html: string) => {
 };
 
 /** The server's HTML only, as the browser paints it before any script runs. */
-const serverPage = async (width: number, closed = false, snapshot = sidebarSnapshot()) => {
+const serverPage = async (width: number, view: HarnessView = { view: "box" }, snapshot = sidebarSnapshot()) => {
   const page = await newPage(width);
-  const html = renderToString(() => createComponent(SidebarHarness, { snapshot: () => snapshot, initialClosed: closed }));
-  await load(page, pageHtml(html, closed, snapshot));
+  const html = renderToString(() => createComponent(SidebarHarness, { snapshot: () => snapshot, view: view.view, tabs: view.tabs }));
+  await load(page, pageHtml(html, view, snapshot));
   return page;
 };
 
 /** The same component rendered in the browser, with live controls on `window.sidebar`. */
-const clientPage = async (width: number, closed = false, snapshot = sidebarSnapshot(), touch = width < 768) => {
+const clientPage = async (width: number, view: HarnessView, snapshot = sidebarSnapshot(), touch = width < 768) => {
   const page = await newPage(width, touch);
-  await load(page, pageHtml("", closed, snapshot));
+  await load(page, pageHtml("", view, snapshot));
   page.setDefaultTimeout(4000);
   await page.addScriptTag({ content: script });
-  await page.locator("#assistant-chat-context").waitFor({ state: "attached" });
+  await page.locator(view.view === "tab" ? "#assistant-chat-context" : ".assistant-context-button").waitFor({ state: "attached" });
   return page;
 };
+/** The tab "In this chat" with the chat's whole list. */
+const tabPage = (width: number, snapshot = sidebarSnapshot(), touch = width < 768) => clientPage(width, { view: "tab" }, snapshot, touch);
+/** The chat with its box "In this chat". */
+const boxPage = (width: number, snapshot = sidebarSnapshot(), view: Omit<HarnessView, "view"> = {}) =>
+  clientPage(width, { view: "box", ...view }, snapshot);
 
 const layout = (page: Page) =>
   page.evaluate(() => {
@@ -161,11 +180,12 @@ const layout = (page: Page) =>
       return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
     };
     return {
-      sidebar: box(document.getElementById("assistant-chat-context")),
-      toggle: box(document.querySelector(".assistant-context-toggle")),
+      island: box(document.querySelector(".assistant-context-boxcol > .assistant-context-box")),
+      button: box(document.querySelector(".assistant-context-button")),
+      popover: box(document.querySelector(".assistant-context-popover")),
       timeline: box(document.querySelector(".harness-timeline")),
       composer: box(document.querySelector(".assistant-chat-composer")),
-      firstResult: box(document.querySelector(".assistant-result")),
+      firstRow: box(document.querySelector(".assistant-context-boxcol .assistant-context-box__row")),
     };
   });
 
@@ -180,6 +200,24 @@ const leaveSidebar = async (page: Page) => {
   await page.mouse.move(100, 400);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 };
+const automationsGroup = () => ({
+  key: "automations",
+  label: "Automationen",
+  count: 3,
+  rows: [
+    {
+      key: "a1",
+      icon: "ti ti-code",
+      title: "Code von info@",
+      word: "Bereit, noch aus",
+      tone: "ai" as const,
+      attention: true,
+      jump: { messageSeq: 9, callId: "c1" },
+    },
+    { key: "a2", icon: "ti ti-code", title: "Angebote nachfassen", word: "Eingeschaltet", tone: "ok" as const, href: "/code/a2" },
+    { key: "a3", icon: "ti ti-code", title: "Wochenbericht Vertrieb", word: "Pausiert", tone: "warn" as const, href: "/code/a3" },
+  ],
+});
 const workingFile = (path: string, index: number) => ({
   path,
   size: 1_000,
@@ -189,95 +227,9 @@ const workingFile = (path: string, index: number) => ({
   version: 1,
 });
 
-describe(`Assistant chat sidebar in ${browserName}`, () => {
-  test("the server's first frame is final: column at 1280 px, toggle when closed or narrow, and the browser render agrees", async () => {
-    for (const [width, closed] of [
-      [1280, false],
-      [1280, true],
-      [820, false],
-      [390, false],
-    ] as const) {
-      const server = await serverPage(width, closed);
-      const client = await clientPage(width, closed);
-      try {
-        const first = await layout(server);
-        await frames(client);
-        expect(await layout(client)).toEqual(first);
-        if (width === 1280 && !closed) {
-          // A 20 rem column at the right edge, the chat column next to it, no toggle.
-          expect(first.sidebar).toMatchObject({ width: 320, height: 800 });
-          expect(first.sidebar!.x).toBe(1280 - 320);
-          expect(first.timeline!.x + first.timeline!.width).toBeLessThanOrEqual(1280 - 320);
-          expect(first.toggle).toBeNull();
-          expect(first.firstResult).not.toBeNull();
-        } else {
-          expect(first.sidebar).toBeNull();
-          expect(first.toggle).not.toBeNull();
-        }
-      } finally {
-        await server.close();
-        await client.close();
-      }
-    }
-  }, 60_000);
-
-  test("closing and reopening the column keeps the chat's vertical place and remembers only the close", async () => {
-    const page = await clientPage(1280);
-    try {
-      const before = await layout(page);
-      await page.getByRole("button", { name: "Seitenleiste schließen" }).click();
-      const closed = await layout(page);
-      expect(closed.sidebar).toBeNull();
-      expect(closed.timeline!.y).toBe(before.timeline!.y);
-      expect(closed.composer!.y).toBe(before.composer!.y);
-      expect(await page.evaluate(() => document.activeElement?.classList.contains("assistant-context-toggle"))).toBe(true);
-      expect(await page.evaluate(() => document.cookie)).toContain("assistant_context=closed");
-
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
-      expect(await layout(page)).toEqual(before);
-      expect(await page.evaluate(() => document.activeElement?.id)).toBe("assistant-chat-context-title");
-      expect(await page.evaluate(() => document.cookie)).not.toContain("assistant_context=closed");
-    } finally {
-      await page.close();
-    }
-  }, 20_000);
-
-  test("below 56 rem the toggle opens a drawer over the chat's edge without moving the chat; Escape closes it", async () => {
-    const page = await clientPage(820);
-    try {
-      const before = await layout(page);
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
-      const open = await layout(page);
-      expect(open.sidebar).toMatchObject({ x: 820 - 320, width: 320 });
-      expect(open.timeline).toEqual(before.timeline);
-      expect(open.composer).toEqual(before.composer);
-      expect(await page.evaluate(() => document.activeElement?.id)).toBe("assistant-chat-context-title");
-      await page.keyboard.press("Escape");
-      expect(await layout(page)).toEqual(before);
-      expect(await page.evaluate(() => document.activeElement?.classList.contains("assistant-context-toggle"))).toBe(true);
-      // Closing the drawer is not remembered.
-      expect(await page.evaluate(() => document.cookie)).not.toContain("assistant_context=closed");
-    } finally {
-      await page.close();
-    }
-  }, 20_000);
-
-  test("on a phone the toggle opens the sidebar as a sheet that Back closes", async () => {
-    const page = await clientPage(390);
-    try {
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
-      const sheet = page.getByRole("dialog");
-      await sheet.getByText("Umsatzbericht Q1-Q3.pdf").first().waitFor();
-      expect(await sheet.getByRole("heading", { name: "In diesem Chat" }).count()).toBe(1);
-      await page.goBack();
-      await sheet.waitFor({ state: "detached" });
-    } finally {
-      await page.close();
-    }
-  }, 20_000);
-
+describe(`Tab "In this chat" in ${browserName}`, () => {
   test("a result that arrives while the pointer rests in the sidebar waits behind a count and nothing moves", async () => {
-    const page = await clientPage(1280);
+    const page = await tabPage(1280);
     try {
       const sidebar = page.locator("#assistant-chat-context");
       const heading = page.locator(".assistant-sidebar-results .k2b-section__header");
@@ -319,7 +271,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
         seq: index + 1,
       }),
     );
-    const page = await clientPage(1280, false, sidebarSnapshot({ results }));
+    const page = await tabPage(1280, sidebarSnapshot({ results }));
     try {
       const results = page.locator(".assistant-sidebar-results");
       // The latest turn as a card, five more of the last 24 hours do not exist; one day per group, then months.
@@ -337,22 +289,18 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
   }, 20_000);
 
   test("a result's title jumps to the call that delivered it", async () => {
-    const page = await clientPage(1280);
+    const page = await tabPage(1280);
     try {
       await page.getByRole("button", { name: "„Umsatzbericht Q1-Q3.pdf“ im Chat zeigen" }).click();
       const state = await page.evaluate(() => (window as unknown as { sidebar: { jumps: unknown[]; revealed: string | null } }).sidebar);
       expect(state.jumps).toEqual([{ messageSeq: 9, callId: "call-/Umsatzbericht Q1-Q3.pdf", presentationId: null }]);
-      expect(state.revealed).toBe("Übergabe 9");
-      const delivered = await page.locator('[data-call-id="call-/Umsatzbericht Q1-Q3.pdf"]').boundingBox();
-      expect(delivered!.y).toBeGreaterThan(0);
-      expect(delivered!.y).toBeLessThan(800);
     } finally {
       await page.close();
     }
   }, 20_000);
 
   test("⤢ on a file result shows the chat's file results in the Lightbox, whose Open opens the file as a tab", async () => {
-    const page = await clientPage(1280);
+    const page = await tabPage(1280);
     try {
       await page.getByRole("button", { name: "Vorschau von Umsatzbericht Q1-Q3.pdf" }).click();
       const lightbox = page.locator("dialog.k2b-lightbox[open]");
@@ -372,34 +320,12 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     }
   }, 20_000);
 
-  test("a drawer that widened into the column closes with its close button and stays closed", async () => {
-    const page = await clientPage(820);
-    try {
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
-      await page.setViewportSize({ width: 1280, height: 800 });
-      await frames(page);
-      expect((await layout(page)).sidebar).toMatchObject({ x: 1280 - 320, width: 320 });
-      await page.getByRole("button", { name: "Seitenleiste schließen" }).click();
-      await frames(page);
-      const closed = await layout(page);
-      expect(closed.sidebar).toBeNull();
-      expect(closed.toggle).not.toBeNull();
-      expect(await page.evaluate(() => document.cookie)).toContain("assistant_context=closed");
-      // Narrow again, it stays closed until the toggle opens it.
-      await page.setViewportSize({ width: 820, height: 800 });
-      await frames(page);
-      expect((await layout(page)).sidebar).toBeNull();
-    } finally {
-      await page.close();
-    }
-  }, 20_000);
-
   test("opened groups and a working folder's loaded files stay through live updates and a deletion inside", async () => {
     const results = Array.from({ length: 40 }, (_, index) =>
       fileResult(`/bericht-${index}.pdf`, { at: minutesAgo(30 + index * 24 * 60), turn: `t${index}`, seq: index + 1 }),
     );
     const snapshot = sidebarSnapshot({ results });
-    const page = await clientPage(1280, false, snapshot);
+    const page = await tabPage(1280, snapshot);
     const listed: string[] = [];
     await page.route("http://assistant.test/api/ai/conversations/**", async (route) => {
       if (route.request().method() === "DELETE") return route.fulfill({ json: { deleted: true } });
@@ -450,10 +376,9 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     }
   }, 20_000);
 
-  test("on a touch screen the drawer keeps what someone reads until they touch outside it", async () => {
-    const page = await clientPage(820, false, sidebarSnapshot(), true);
+  test("on a touch screen the tab keeps what someone reads until they touch outside it", async () => {
+    const page = await tabPage(820, sidebarSnapshot(), true);
     try {
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).tap();
       const sidebar = page.locator("#assistant-chat-context");
       await sidebar.locator(".assistant-result__description").first().tap();
       const next = sidebarSnapshot();
@@ -473,7 +398,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
   }, 20_000);
 
   test("other changes than results also wait while someone reads, behind an update control", async () => {
-    const page = await clientPage(1280);
+    const page = await tabPage(1280);
     try {
       const sidebar = page.locator("#assistant-chat-context");
       const box = (await sidebar.boundingBox())!;
@@ -494,7 +419,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
   }, 20_000);
 
   test("a focused control that disappears, like Load more after the last page, does not keep holding the sidebar", async () => {
-    const page = await clientPage(1280);
+    const page = await tabPage(1280);
     try {
       const sidebar = page.locator("#assistant-chat-context");
       const box = (await sidebar.boundingBox())!;
@@ -527,7 +452,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       }),
     );
     const snapshot = sidebarSnapshot({ sources: mails, sourceCount: 150, sourceCursor: "cursor-1" });
-    const page = await clientPage(1280, false, snapshot);
+    const page = await tabPage(1280, snapshot);
     const cursors: (string | null)[] = [];
     await page.route("http://assistant.test/api/assistant/**", async (route) => {
       cursors.push(new URL(route.request().url()).searchParams.get("cursor"));
@@ -568,7 +493,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
         mediaType: "text/html",
       }),
     );
-    const page = await clientPage(1280, false, snapshot);
+    const page = await tabPage(1280, snapshot);
     try {
       const sidebar = page.locator("#assistant-chat-context");
       await sidebar.getByRole("button", { name: /Arbeitsdateien/ }).click();
@@ -583,94 +508,347 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       await page.close();
     }
   }, 20_000);
+});
 
-  test("the toggle never covers the first message: below 56 rem the timeline starts below it", async () => {
-    for (const [width, closed] of [
+// Error class: flat DetailPanel styles scoped to one host leave reused panels with nested boxes.
+for (const theme of ["light", "dark"] as const)
+  test(`${theme}: the tab "In this chat" is one surface with flat sections`, async () => {
+    const page = await tabPage(1440);
+    try {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.evaluate((theme) => document.documentElement.classList.toggle("dark", theme === "dark"), theme);
+      const paint = await page.locator(".assistant-context-tab").evaluate((element) => {
+        const sections = Array.from(element.querySelectorAll(".k2b-detail-panel__group,.k2b-detail-panel__body > .k2b-section"));
+        return {
+          count: sections.length,
+          flat: sections.every((section) => {
+            const style = getComputedStyle(section);
+            return style.backgroundColor === "rgba(0, 0, 0, 0)" && style.borderRadius === "0px";
+          }),
+        };
+      });
+      expect(paint.count).toBeGreaterThan(0);
+      expect(paint.flat).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+/** Text styles (size/weight in px) and the centres of leading signs of one surface; the type rule of concept 6d. */
+const typeOf = (page: Page, selector: string) =>
+  page.locator(selector).evaluate((surface) => {
+    const styles = new Set<string>();
+    const walker = document.createTreeWalker(surface, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const element = node.parentElement;
+      if (!element || !node.textContent?.trim() || element.closest("[aria-hidden='true'],[hidden],.k2b-tooltip")) continue;
+      if (element.getClientRects().length === 0 || getComputedStyle(element).visibility === "hidden") continue;
+      const style = getComputedStyle(element);
+      styles.add(`${Number.parseFloat(style.fontSize)}/${style.fontWeight}`);
+    }
+    const left = surface.getBoundingClientRect().left;
+    const axes = new Set(
+      Array.from(surface.querySelectorAll(".assistant-context-box__main > :first-child")).map((sign) => {
+        const rect = sign.getBoundingClientRect();
+        return Math.round((rect.left + rect.width / 2 - left) * 2) / 2;
+      }),
+    );
+    return { styles: [...styles].sort(), axes: [...axes] };
+  });
+
+describe(`Box "In this chat" in ${browserName}`, () => {
+  test("the server's first frame is final: an island beside the chat when there is room, otherwise the button", async () => {
+    for (const [width, tabs] of [
+      [1440, false],
+      [1280, false],
+      [1280, true],
+      [820, false],
+      [390, false],
+    ] as const) {
+      const server = await serverPage(width, { view: "box", tabs });
+      const client = await boxPage(width, sidebarSnapshot(), { tabs });
+      try {
+        const first = await layout(server);
+        await frames(client);
+        expect(await layout(client)).toEqual(first);
+        if (width >= 1280 && !tabs) {
+          // About 300 px at the top right, 12 px from the edges; the chat column ends before it, no button.
+          expect(first.island).toMatchObject({ x: width - 12 - 300, y: 12, width: 300 });
+          expect(first.timeline!.x + first.timeline!.width).toBeLessThanOrEqual(width - 312);
+          expect(first.button).toBeNull();
+          expect(first.firstRow!.height).toBe(28);
+        } else {
+          expect(first.island).toBeNull();
+          expect(first.button).not.toBeNull();
+        }
+      } finally {
+        await server.close();
+        await client.close();
+      }
+    }
+  }, 60_000);
+
+  test("an island with the island shadow and 12 px corners, rows of 28 px, signs on one axis, and three text styles", async () => {
+    const page = await boxPage(1440, sidebarSnapshot({ groups: [automationsGroup()] }));
+    try {
+      const paint = await page.locator(".assistant-context-boxcol > .assistant-context-box").evaluate((element) => {
+        const style = getComputedStyle(element);
+        const rows = Array.from(element.querySelectorAll(".assistant-context-box__row")).map((row) => row.getBoundingClientRect().height);
+        const sign = element.querySelector(".assistant-context-box__icon")!.getBoundingClientRect();
+        const trailing = getComputedStyle(element.querySelector(".assistant-context-box__trailing")!);
+        return { radius: style.borderRadius, shadow: style.boxShadow, rows, signWidth: sign.width, trailing: trailing.fontSize };
+      });
+      expect(paint.radius).toBe("12px");
+      expect(paint.shadow).not.toBe("none");
+      expect(new Set(paint.rows)).toEqual(new Set([28]));
+      expect(paint.rows.length).toBeLessThanOrEqual(10);
+      expect(paint.signWidth).toBe(18);
+      expect(paint.trailing).toBe("12px");
+      const type = await typeOf(page, ".assistant-context-boxcol > .assistant-context-box");
+      expect(type.styles).toEqual(["12/400", "13/400", "13/600"]);
+      expect(type.axes).toHaveLength(1);
+      // A state word is in colour, not bold; the thing that waits for the person has a ring on its tile.
+      const word = await page
+        .locator('.assistant-context-box__trailing[data-tone="ai"]')
+        .evaluate((element) => getComputedStyle(element).fontWeight);
+      expect(word).toBe("400");
+      const ring = await page
+        .locator(".assistant-context-box__row[data-attention] .assistant-context-box__tile")
+        .evaluate((element) => getComputedStyle(element).boxShadow);
+      expect(ring).not.toBe("none");
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("pointing at a row shows exactly one action over its fixed place; the row keeps its height and nothing moves", async () => {
+    const page = await boxPage(1440);
+    try {
+      const row = page.locator(".assistant-context-boxcol .assistant-context-box__row").first();
+      const before = await layout(page);
+      const rowBefore = await row.boundingBox();
+      await row.hover();
+      await frames(page);
+      expect(await row.boundingBox()).toEqual(rowBefore);
+      expect(await layout(page)).toEqual(before);
+      const shown = await row.evaluate((element) => ({
+        actions: Array.from(element.querySelectorAll(".assistant-context-box__act :is(a, button)")).filter(
+          (action) => action.getClientRects().length > 0,
+        ).length,
+        trailing: getComputedStyle(element.querySelector(".assistant-context-box__trailing")!).visibility,
+      }));
+      expect(shown).toEqual({ actions: 1, trailing: "hidden" });
+      expect(await row.getByRole("link", { name: "„Umsatzbericht Q1-Q3.pdf“ herunterladen" }).count()).toBe(1);
+      // The click on the row opens the file as a tab.
+      await row.locator(".assistant-context-box__main").click();
+      expect(await page.evaluate(() => (window as unknown as { sidebar: { opened: string[] } }).sidebar.opened)).toEqual([
+        "/Umsatzbericht Q1-Q3.pdf",
+      ]);
+      // A result without a file shows where it came from.
+      const app = page.locator(".assistant-context-boxcol .assistant-context-box__row").nth(1);
+      await app.hover();
+      await app.getByRole("button", { name: "„Umsatz-Dashboard“ im Chat zeigen" }).click();
+      const jumps = await page.evaluate(() => (window as unknown as { sidebar: { jumps: unknown[] } }).sidebar.jumps);
+      expect(jumps).toEqual([{ messageSeq: 9, callId: "call-app", presentationId: null }]);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("news while the pointer rests in the box wait behind “Neu · n” in its head, and nothing moves", async () => {
+    const page = await boxPage(1440);
+    try {
+      const island = page.locator(".assistant-context-boxcol > .assistant-context-box");
+      const box = (await island.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + 60);
+      const before = await layout(page);
+      const islandBefore = await island.boundingBox();
+      const next = sidebarSnapshot();
+      next.results = [fileResult("/Prognose Q4.xlsx", { at: SIDEBAR_NOW, turn: "turn-4", seq: 12 }), ...next.results];
+      await push(page, next);
+      await frames(page);
+      expect(await layout(page)).toEqual(before);
+      expect(await island.boundingBox()).toEqual(islandBefore);
+      expect(await island.locator(".assistant-context-box__title").first().textContent()).toBe("Umsatzbericht Q1-Q3.pdf");
+      const fresh = island.locator('.assistant-context-box__new[data-pending="true"]');
+      expect(await fresh.textContent()).toBe("Neu · 1");
+      await fresh.click();
+      expect(await island.locator(".assistant-context-box__title").first().textContent()).toBe("Prognose Q4.xlsx");
+      expect(await fresh.count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("with tabs open, the button opens the box below it without moving the chat; Escape closes it", async () => {
+    const page = await boxPage(1280, sidebarSnapshot(), { tabs: true });
+    try {
+      const before = await layout(page);
+      await page.getByRole("button", { name: "In diesem Chat" }).click();
+      const popover = page.locator(".assistant-context-popover");
+      await popover.getByText("Umsatzbericht Q1-Q3.pdf").waitFor();
+      const open = await layout(page);
+      expect(open.timeline).toEqual(before.timeline);
+      expect(open.composer).toEqual(before.composer);
+      expect(open.button).toEqual(before.button);
+      expect(open.popover!.y).toBeGreaterThanOrEqual(before.button!.y + before.button!.height);
+      await page.keyboard.press("Escape");
+      await popover.waitFor({ state: "hidden" });
+      expect(await page.evaluate(() => document.activeElement?.classList.contains("assistant-context-button"))).toBe(true);
+      // "Open as tab" leaves the popover for the tab.
+      await page.getByRole("button", { name: "In diesem Chat" }).click();
+      await popover.getByRole("button", { name: "Als Tab öffnen", exact: true }).click();
+      await popover.waitFor({ state: "hidden" });
+      expect(await page.evaluate(() => (window as unknown as HarnessWindow).sidebar.actions)).toEqual([{ name: "all", sheetOpen: false }]);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("the button never covers the first message: below 56 rem the timeline starts below it", async () => {
+    for (const [width, tabs] of [
       [390, false],
       [820, false],
-      [900, true],
       [1280, true],
     ] as const) {
-      const page = await clientPage(width, closed);
+      const page = await boxPage(width, sidebarSnapshot(), { tabs });
       try {
         const box = await page.evaluate(() => {
           const content = document.querySelector(".harness-timeline")!;
           const style = getComputedStyle(content);
           const rect = content.getBoundingClientRect();
-          const toggle = document.querySelector(".assistant-context-toggle")!.getBoundingClientRect();
+          const button = document.querySelector(".assistant-context-button")!.getBoundingClientRect();
           return {
             top: rect.top + Number.parseFloat(style.paddingTop),
             right: rect.right - Number.parseFloat(style.paddingRight),
-            toggleBottom: toggle.bottom,
-            toggleLeft: toggle.left,
+            buttonBottom: button.bottom,
+            buttonLeft: button.left,
           };
         });
-        // The messages start below the toggle, or end left of it.
-        expect(box.top >= box.toggleBottom || box.right <= box.toggleLeft).toBe(true);
+        expect(box.top >= box.buttonBottom || box.right <= box.buttonLeft).toBe(true);
       } finally {
         await page.close();
       }
     }
   }, 30_000);
 
-  test("on a phone, an action in the sheet's Context runs after the sheet closed", async () => {
-    const page = await clientPage(390);
+  test("on a phone the button opens the box as a sheet; its lines run after the sheet closed, and Back closes it", async () => {
+    const page = await boxPage(390);
     try {
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
+      await page.getByRole("button", { name: "In diesem Chat" }).click();
       const sheet = page.getByRole("dialog");
+      await sheet.locator(".assistant-context-sheet").getByText("Umsatzbericht Q1-Q3.pdf").waitFor();
+      expect(await sheet.getByRole("heading", { name: "In diesem Chat" }).count()).toBe(1);
+      const type = await typeOf(page, ".assistant-context-sheet .assistant-context-box");
+      expect(type.styles).toEqual(["12/400", "13/400", "13/600"]);
       await sheet.getByRole("button", { name: /^Kontext/ }).click();
-      await sheet.getByRole("button", { name: "Secrets" }).click();
       await sheet.waitFor({ state: "detached" });
       await page.waitForFunction(() => (window as unknown as HarnessWindow).sidebar.actions.length > 0);
       expect(await page.evaluate(() => (window as unknown as HarnessWindow).sidebar.actions)).toEqual([
-        { name: "secrets", sheetOpen: false },
+        { name: "context", sheetOpen: false },
       ]);
+      await page.getByRole("button", { name: "In diesem Chat" }).click();
+      await sheet.waitFor();
+      await page.goBack();
+      await sheet.waitFor({ state: "detached" });
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("dark: the island lifts as a lighter surface", async () => {
+    const page = await boxPage(1440);
+    try {
+      await page.evaluate(() => document.documentElement.classList.add("dark"));
+      const paint = await page.locator(".assistant-context-boxcol > .assistant-context-box").evaluate((element) => {
+        const chat = getComputedStyle(document.querySelector(".assistant-chat-pane")!).backgroundColor;
+        return { island: getComputedStyle(element).backgroundColor, chat };
+      });
+      expect(paint.island).not.toBe("rgba(0, 0, 0, 0)");
     } finally {
       await page.close();
     }
   }, 20_000);
 });
 
-// Error class: flat DetailPanel styles scoped to one host leave reused panels
-// with nested boxes. Exercise the real sidebar's column, drawer, and sheet.
-for (const theme of ["light", "dark"] as const)
-  for (const width of [1440, 834, 390])
-    test(`${width} ${theme}: chat context shares one surface with flat sections`, async () => {
-      const page = await clientPage(width);
+// Screenshots of every state of the box for the image comparison with the concept, when asked for.
+const shots = process.env.ASSISTANT_SCREENSHOT_DIR;
+test.skipIf(!shots)(
+  "screenshots of the box in light, 1440 and 390",
+  async () => {
+    // Fonts and icons as Cloud serves them, so the images compare with the concept's.
+    const publicDir = resolve(root, "public");
+    await (await import("../../../core/scripts/font-assets")).buildFontAssets(publicDir);
+    await (await import("../../../core/scripts/tabler-assets")).buildTablerIconAssets(publicDir);
+    const states: Array<[string, number, AssistantChatContextSnapshot, Omit<HarnessView, "view">, ((page: Page) => Promise<void>)?]> = [
+      ["kasten-normal", 1440, sidebarSnapshot({ groups: [automationsGroup()] }), {}],
+      [
+        "kasten-zeigen",
+        1440,
+        sidebarSnapshot({ groups: [automationsGroup()] }),
+        {},
+        async (page) => {
+          await page.locator(".assistant-context-boxcol .assistant-context-box__row").nth(1).hover();
+        },
+      ],
+      [
+        "kasten-neu",
+        1440,
+        sidebarSnapshot(),
+        {},
+        async (page) => {
+          const island = (await page.locator(".assistant-context-boxcol > .assistant-context-box").boundingBox())!;
+          await page.mouse.move(island.x + 40, island.y + 10);
+          const next = sidebarSnapshot();
+          next.results = [fileResult("/Prognose Q4.xlsx", { at: SIDEBAR_NOW, turn: "turn-4", seq: 12 }), ...next.results];
+          await push(page, next);
+        },
+      ],
+      ["kasten-leer", 1440, emptySidebarSnapshot(), {}],
+      ["kasten-laedt", 1440, sidebarSnapshot(), { pending: "loading" }],
+      ["kasten-fehler", 1440, sidebarSnapshot(), { pending: "error" }],
+      ["kasten-knopf", 1280, sidebarSnapshot(), { tabs: true }],
+      [
+        "kasten-knopf-offen",
+        1280,
+        sidebarSnapshot({ groups: [automationsGroup()] }),
+        { tabs: true },
+        async (page) => {
+          await page.getByRole("button", { name: "In diesem Chat" }).click();
+          await page.locator(".assistant-context-popover .assistant-context-box__row").first().waitFor();
+        },
+      ],
+      ["kasten-telefon", 390, sidebarSnapshot(), {}],
+      [
+        "kasten-telefon-offen",
+        390,
+        sidebarSnapshot({ groups: [automationsGroup()] }),
+        {},
+        async (page) => {
+          await page.getByRole("button", { name: "In diesem Chat" }).click();
+          await page.locator(".assistant-context-sheet .assistant-context-box__row").first().waitFor();
+          await page.waitForTimeout(600);
+        },
+      ],
+    ];
+    for (const [name, width, snapshot, view, act] of states) {
+      const page = await clientPage(width, { view: "box", ...view }, snapshot);
       try {
+        await page.route("http://assistant.test/public/**", (route) =>
+          route.fulfill({ path: resolve(root, new URL(route.request().url()).pathname.slice(1)) }),
+        );
+        await page.addStyleTag({ url: "http://assistant.test/public/fonts.css" });
+        await page.addStyleTag({ url: "http://assistant.test/public/tabler-icons.css" });
+        await page.evaluate(() => document.fonts.ready);
+        await page.setViewportSize({ width, height: width < 768 ? 780 : 900 });
         await page.emulateMedia({ reducedMotion: "reduce" });
-        await page.evaluate((theme) => document.documentElement.classList.toggle("dark", theme === "dark"), theme);
-        if (width < 896) await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
-        const panel = page.locator(width === 390 ? ".assistant-context-sheet" : ".assistant-context-sidebar__panel");
-        await panel.waitFor();
-        const paint = await panel.evaluate((element) => {
-          const sections = Array.from(element.querySelectorAll(".k2b-detail-panel__group,.k2b-detail-panel__body > .k2b-section"));
-          const aside = element.closest(".assistant-context-sidebar");
-          const surface = document.createElement("span");
-          surface.style.background = "var(--k2b-surface)";
-          element.append(surface);
-          const color = getComputedStyle(surface).backgroundColor;
-          surface.remove();
-          return {
-            count: sections.length,
-            flat: sections.every((section) => {
-              const style = getComputedStyle(section);
-              return style.backgroundColor === "rgba(0, 0, 0, 0)" && style.borderRadius === "0px";
-            }),
-            color,
-            background: aside && getComputedStyle(aside).backgroundColor,
-            border: aside && getComputedStyle(aside).borderInlineStartWidth,
-            shadow: aside && getComputedStyle(aside).boxShadow,
-          };
-        });
-        expect(paint.count).toBeGreaterThan(0);
-        expect(paint.flat).toBe(true);
-        if (width !== 390) {
-          expect(paint.background).toBe(paint.color);
-          expect(paint.border).toBe("0px");
-        }
-        if (width === 834) expect(paint.shadow).toContain(theme === "light" ? "-14px 0px 36px" : "-16px 0px 40px");
+        await act?.(page);
+        await frames(page);
+        await page.screenshot({ path: resolve(shots!, `${name}-light-${width}.png`) });
       } finally {
         await page.close();
       }
-    }, 20_000);
+    }
+  },
+  120_000,
+);

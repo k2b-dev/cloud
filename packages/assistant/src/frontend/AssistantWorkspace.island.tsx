@@ -55,7 +55,6 @@ import {
   ButtonLink,
   Chat,
   type ChatMention,
-  DetailsToggle,
   dialogCore,
   LocaleProvider,
   NoticeCard,
@@ -89,7 +88,8 @@ import {
   type ContextView,
   createAssistantChatContextState,
 } from "./AssistantChatContext";
-import { AssistantChatSidebarPanel, type ChatSidebarJump, openAssistantChatSidebarSheet } from "./AssistantChatSidebar";
+import { AssistantChatContextPlaces, type ContextBoxActions, openAssistantContextBoxSheet } from "./AssistantChatContextBox";
+import type { ChatSidebarJump } from "./AssistantChatSidebar";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
@@ -98,7 +98,7 @@ import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
 import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
-import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
+import { AssistantWaitingStrip, createWaitingQuestionFocus, type WaitingAttention } from "./AssistantWaitingStrip";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
@@ -125,7 +125,7 @@ import { submitAssistantProjectMessage } from "./assistant-project-chat";
 import { assistantSearchOptions } from "./assistant-search";
 import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
-import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
+import { revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
@@ -198,7 +198,6 @@ type Props = {
   initialDetail: InitialDetail | null;
   initialContext: AssistantChatContextSnapshot | null;
   /** The person closed the chat sidebar's column before; the server renders it closed. */
-  initialContextClosed?: boolean;
   projects: AiProject[];
   initialProject: AiProject | null;
   initialProjectChats: AiConversationPage | null;
@@ -1528,22 +1527,55 @@ export default function AssistantWorkspace(props: Props) {
       onOpenSecrets: openChatSecrets,
       onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
     });
-  const contextHost = createChatSidebarHost({
-    initialClosed: props.initialContextClosed === true,
-    onSheet: () =>
-      void openAssistantChatSidebarSheet({
-        state: contextState,
-        actions: sidebarActions(),
-        project: activeConversationProject(),
-        runCount: contextState.snapshot()?.runCount,
-        wrap: (content) => (
-          <LocaleProvider locale={locale()}>
-            <AssistantLiveProvider value={liveHub}>{content()}</AssistantLiveProvider>
-          </LocaleProvider>
-        ),
-      }),
+  // The box "In this chat": a click opens the thing as a tab beside the chat, or jumps to it.
+  const contextBoxActions = (): ContextBoxActions => ({
+    onOpen: (target) => {
+      const actions = sidebarActions();
+      if (target.kind === "file") actions.onOpenFile({ path: target.path, title: target.title });
+      else if (target.kind === "app") actions.onOpenApp(target.id, target.title);
+      else if (target.kind === "jump") actions.onJump(target.target);
+      else window.location.assign(target.href);
+    },
+    onJump: (target) => void jumpTo(target),
+    onOpenAll: () => openContextOverview("files", sidebarCopy().title),
+    onOpenSources: () => openContextOverview("sources", contextText("Sources")),
+    onOpenContext: () => openContextOverview("context", artifactCopy().context),
   });
-  createEffect(on(() => chat.activeConversationId(), contextHost.closeDrawer, { defer: true }));
+  const openContextSheet = () =>
+    void openAssistantContextBoxSheet({
+      state: contextState,
+      actions: contextBoxActions(),
+      project: activeConversationProject(),
+      wrap: (content) => (
+        <LocaleProvider locale={locale()}>
+          <AssistantLiveProvider value={liveHub}>{content()}</AssistantLiveProvider>
+        </LocaleProvider>
+      ),
+    });
+  // What stopped in this chat and waits for the person shows beside the open questions, with the same target as before.
+  const chatAttention = (): WaitingAttention[] => {
+    const snapshot = contextState.snapshot();
+    if (!snapshot || snapshot.chatId !== chat.activeConversationId()) return [];
+    const copy = sidebarCopy();
+    return [
+      ...snapshot.tasks
+        .filter((task) => task.state === "needs_attention")
+        .map((task) => ({
+          key: `task:${task.id}`,
+          label: copy.taskNeedsAttention({ title: assistantTaskTitle(task) }),
+          icon: "ti ti-calendar-time",
+          onClick: () => sidebarActions().onOpenTask?.(task),
+        })),
+      ...snapshot.results
+        .filter((result) => result.app?.lastRun === "error")
+        .map((result) => ({
+          key: `app:${result.key}`,
+          label: copy.appRunFailed({ title: result.title }),
+          icon: "ti ti-alert-circle",
+          onClick: () => artifactWorkspace.open(appTab(result.app!.id, result.title)),
+        })),
+    ];
+  };
   const [emptyProjectId, setEmptyProjectId] = createSignal<string | null>(activeConversation()?.projectId ?? null);
   const [choosingProject, setChoosingProject] = createSignal(false);
   let emptyProjectConversationId: string | null = null;
@@ -2217,13 +2249,14 @@ export default function AssistantWorkspace(props: Props) {
                 />
               </Show>
               {/* Right above the field, under the thumb on phones. */}
-              <Show when={waiting().total > 0}>
+              <Show when={waiting().total > 0 || chatAttention().length > 0}>
                 <AssistantWaitingStrip
                   view={waiting()}
                   conversationId={waitingConversationId()}
-                  quiet={waitingFocus.quiet()}
+                  quiet={waitingFocus.quiet() && chatAttention().length === 0}
                   onJump={(question) => void jumpToQuestion(question)}
                   onShowMore={openApprovals}
+                  attention={chatAttention()}
                 />
               </Show>
             </>
@@ -2756,12 +2789,7 @@ export default function AssistantWorkspace(props: Props) {
                   when={projectView()}
                   fallback={
                     <Chat class="assistant-chat-shell min-h-0 flex-1">
-                      <div
-                        ref={contextHost.layoutRef}
-                        class="assistant-chat-layout"
-                        data-context={contextHost.closed() ? "closed" : "auto"}
-                        data-drawer={contextHost.drawerOpen() ? "open" : undefined}
-                      >
+                      <div class="assistant-chat-layout" data-tabs={artifactWorkspace.state().tabs.length > 0 ? "open" : undefined}>
                         <div class="contents">
                           <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
                             <Show
@@ -2870,23 +2898,12 @@ export default function AssistantWorkspace(props: Props) {
                           </Show>
                         </div>
                         <Show when={activeConversation() && !emptyChat()}>
-                          <DetailsToggle
-                            ref={contextHost.toggleRef}
-                            class="assistant-context-toggle"
-                            size="sm"
-                            label={sidebarCopy().show}
-                            aria-expanded="false"
-                            aria-controls="assistant-chat-context"
-                            onClick={contextHost.open}
-                          />
-                          <AssistantChatSidebarPanel
-                            id="assistant-chat-context"
+                          <AssistantChatContextPlaces
+                            chatId={chat.activeConversationId()}
                             state={contextState}
-                            actions={sidebarActions()}
+                            actions={contextBoxActions()}
                             project={activeConversationProject()}
-                            runCount={contextState.snapshot()?.runCount}
-                            onClose={contextHost.close}
-                            headingRef={contextHost.headingRef}
+                            onSheet={openContextSheet}
                           />
                         </Show>
                       </div>

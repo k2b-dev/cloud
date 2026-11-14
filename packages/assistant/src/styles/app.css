@@ -66,57 +66,226 @@
    viewport and the neighboring artifact workspace. */
 .k2b-ui .assistant-chat-pane { container: assistant-chat / inline-size; }
 
-/* The chat sidebar ("In this chat"). CSS alone decides its presentation, so the
-   server's first frame is final: a 20rem column when the chat area is at least
-   56rem wide and the person has not closed it; otherwise a drawer over the
-   chat's edge that the toggle opens without changing the chat's width; on
-   phones the toggle opens a bottom sheet instead. */
-.k2b-ui .assistant-context-sidebar { display: none; }
-.k2b-ui .assistant-context-toggle {
+/* The box "In this chat" (concept gustav-ui-neu 3k). CSS alone decides its
+   presentation, so the server's first frame is final: an island at the top right
+   beside the timeline while the chat area is at least 56rem wide and no tabs are
+   open; otherwise a button at the top of the chat that opens the same box below
+   it; on phones the button opens a sheet. The island never moves the chat. */
+.k2b-ui .assistant-context-boxcol { display: none; }
+.k2b-ui .assistant-context-button {
   position: absolute;
   z-index: 2;
   inset-block-start: 0.5rem;
   inset-inline-end: 1.25rem;
   background: var(--k2b-surface);
 }
-.k2b-ui .assistant-chat-layout[data-drawer="open"] > .assistant-context-toggle { visibility: hidden; }
-.k2b-ui .assistant-chat-layout[data-drawer="open"] > .assistant-context-sidebar {
-  display: flex;
-  position: absolute;
-  z-index: 3;
-  inset-block: 0;
-  inset-inline-end: 0;
-  width: min(20rem, 100%);
-  box-shadow: var(--k2b-shadow-side);
-  clip-path: inset(0 0 0 -4rem);
-}
-
 @media (max-width: 47.999rem) {
   .k2b-ui .assistant-chat-layout { --assistant-context-mode: sheet; }
+  .k2b-ui .assistant-context-button .k2b-button__label > span { display: none; }
 }
-/* Below 56rem the toggle always shows at the top of a full-width timeline: the first message starts below it, so the
-   toggle never covers it. From 56rem the timeline's centered column keeps clear of the toggle by itself. */
+/* Below 56rem the button always shows at the top of a full-width timeline: the first message starts below it, so the
+   button never covers it. From 56rem the timeline's centered column keeps clear of the button by itself. */
 @container assistant-chat (max-width: 55.999rem) {
-  .k2b-ui .assistant-chat-layout:has(> .assistant-context-toggle) .k2b-chat-timeline__content { padding-block-start: 2.75rem; }
+  .k2b-ui .assistant-chat-layout:has(> .assistant-context-button) .k2b-chat-timeline__content { padding-block-start: 2.75rem; }
 }
-
 @container assistant-chat (min-width: 56rem) {
-  .k2b-ui .assistant-chat-layout { --assistant-context-mode: column; }
-  .k2b-ui .assistant-chat-layout[data-context="auto"]:has(> .assistant-context-sidebar) {
-    --assistant-chat-context-width: 20rem;
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) { --assistant-context-mode: column; }
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol) {
+    --assistant-chat-context-width: 19.5rem;
   }
-  .k2b-ui .assistant-chat-layout[data-context="auto"] > .assistant-context-toggle { display: none; }
-  /* Above the messages' full-width scrollport, which spans this column too. */
-  .k2b-ui .assistant-chat-layout[data-context="auto"] > .assistant-context-sidebar {
-    display: flex;
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-button { display: none; }
+  /* Above the messages' full-width scrollport, which spans this column too; only the island takes the pointer. */
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-boxcol {
+    display: block;
     position: relative;
     z-index: 1;
-    width: auto;
+    min-width: 0;
     grid-column: 2;
     grid-row: 1 / -1;
-    box-shadow: none;
+    padding: 0.75rem 0.75rem 0 0;
+    pointer-events: none;
   }
+  .k2b-ui .assistant-context-boxcol > .assistant-context-box { pointer-events: auto; }
 }
+
+.k2b-ui .assistant-context-box {
+  display: grid;
+  min-width: 0;
+  gap: 0.125rem;
+  padding: 0.375rem 0.375rem 0.5rem;
+  color: var(--k2b-text);
+  font-size: var(--k2b-type-13, 0.8125rem);
+}
+.k2b-ui .assistant-context-box[data-variant="island"] {
+  border-radius: 0.75rem;
+  background: var(--k2b-island-surface, var(--k2b-surface));
+  box-shadow: var(--k2b-island-shadow);
+}
+.k2b-ui .assistant-context-popover .assistant-context-box { padding: 0.375rem 0.375rem 0.5rem; }
+.k2b-ui .assistant-context-box[data-variant="sheet"] { padding: 0 0 0.5rem; }
+.k2b-ui .assistant-context-box__head {
+  display: grid;
+  height: 2rem;
+  grid-template-columns: minmax(0, 1fr) auto 1.75rem;
+  align-items: center;
+  gap: 0.25rem;
+  padding-inline-start: 0.5rem;
+}
+.k2b-ui .assistant-context-box__heading {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--k2b-type-13, 0.8125rem);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.k2b-ui .assistant-context-box__heading:focus { outline: none; }
+/* The fixed place for "New · n": empty, it keeps its width. */
+.k2b-ui .assistant-context-box__slot { display: inline-flex; min-width: 6.5rem; height: 1.375rem; align-items: center; justify-content: flex-end; }
+.k2b-ui .assistant-context-box__new {
+  visibility: hidden;
+  padding: 0.0625rem 0.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--k2b-action) 10%, transparent);
+  color: var(--k2b-action);
+  font: inherit;
+  font-size: var(--k2b-type-12, 0.75rem);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.k2b-ui .assistant-context-box__new[data-pending="true"] { visibility: visible; }
+.k2b-ui .assistant-context-box__new:focus-visible,
+.k2b-ui .assistant-context-box__all:focus-visible,
+.k2b-ui .assistant-context-box__retry:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+.k2b-ui .assistant-context-box__group { display: grid; min-width: 0; }
+.k2b-ui .assistant-context-box__label {
+  display: flex;
+  height: 1.5rem;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0.25rem 0 0;
+  padding: 0 0.5rem;
+  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  font-size: var(--k2b-type-12, 0.75rem);
+  font-weight: 400;
+}
+.k2b-ui .assistant-context-box__count { font-variant-numeric: tabular-nums; }
+.k2b-ui .assistant-context-box__all {
+  margin-inline-start: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k2b-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.k2b-ui .assistant-context-box__all:hover { color: var(--k2b-text); text-decoration: underline; }
+.k2b-ui .assistant-context-box__rows,
+.k2b-ui .assistant-context-box__lines { margin: 0; padding: 0; list-style: none; }
+.k2b-ui .assistant-context-box__lines {
+  margin-block-start: 0.375rem;
+  padding-block-start: 0.25rem;
+  border-block-start: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+}
+.k2b-ui .assistant-context-box__none,
+.k2b-ui .assistant-context-box__empty {
+  display: flex;
+  height: 1.75rem;
+  align-items: center;
+  margin: 0;
+  padding: 0 0.5rem;
+  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  font-size: var(--k2b-type-12, 0.75rem);
+}
+.k2b-ui .assistant-context-box__empty { height: auto; padding: 0.25rem 0.5rem 0.375rem; line-height: 1.45; }
+/* One row per thing: 28 px, sign, title, and at the end a fixed place for a word or the one action. */
+.k2b-ui .assistant-context-box__row { position: relative; height: 1.75rem; border-radius: 0.4375rem; }
+.k2b-ui .assistant-context-box__row:hover,
+.k2b-ui .assistant-context-box__row:focus-within { background: var(--k2b-edge-hover-bg, var(--k2b-hover)); }
+.k2b-ui .assistant-context-box__main {
+  display: grid;
+  width: 100%;
+  height: 1.75rem;
+  grid-template-columns: 1.125rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--k2b-type-13, 0.8125rem);
+  text-align: start;
+  cursor: pointer;
+}
+.k2b-ui .assistant-context-box__main:disabled { cursor: default; }
+.k2b-ui .assistant-context-box__main:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: -2px; }
+.k2b-ui .assistant-context-box__icon { color: var(--k2b-text-secondary); font-size: 0.9375rem; text-align: center; }
+.k2b-ui .assistant-context-box__tile {
+  display: grid;
+  width: 1.125rem;
+  height: 1.125rem;
+  place-items: center;
+  border-radius: 0.3125rem;
+  background: color-mix(in srgb, var(--assistant-context-box-accent, var(--k2b-text-secondary)) 12%, var(--k2b-surface));
+  color: var(--assistant-context-box-accent, var(--k2b-text-secondary));
+  font-size: 0.75rem;
+}
+.k2b-ui .assistant-context-box__row[data-attention] .assistant-context-box__tile {
+  box-shadow: 0 0 0 2px var(--k2b-ai-surface), 0 0 0 3px var(--k2b-ai-accent);
+}
+.k2b-ui .assistant-context-box__title { min-width: 0; overflow: hidden; white-space: nowrap; }
+.k2b-ui .assistant-context-box__key { margin-inline-end: 0.375rem; color: var(--k2b-text-subtle, var(--k2b-text-muted)); }
+.k2b-ui .assistant-context-box__trailing {
+  min-width: 1.75rem;
+  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  font-size: var(--k2b-type-12, 0.75rem);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+.k2b-ui .assistant-context-box__trailing[data-tone="warn"] { color: var(--k2b-warning-text); }
+.k2b-ui .assistant-context-box__trailing[data-tone="ok"] { color: var(--k2b-success-text); }
+.k2b-ui .assistant-context-box__trailing[data-tone="ai"] { color: var(--k2b-ai-accent); }
+.k2b-ui .assistant-context-box__trailing[data-tone="danger"] { color: var(--k2b-danger-text); }
+/* The one action while pointing: over the fixed place at the end, so nothing moves. */
+.k2b-ui .assistant-context-box__act {
+  position: absolute;
+  inset-block-start: 0.125rem;
+  inset-inline-end: 0.25rem;
+  display: none;
+  border-radius: 0.375rem;
+  background: var(--k2b-edge-hover-bg, var(--k2b-hover));
+}
+.k2b-ui .assistant-context-box__act .k2b-button { width: 1.5rem; height: 1.5rem; min-height: 0; }
+.k2b-ui .assistant-context-box__row:is(:hover, :focus-within) > .assistant-context-box__act { display: block; }
+.k2b-ui .assistant-context-box__row:has(> .assistant-context-box__act):is(:hover, :focus-within) .assistant-context-box__trailing { visibility: hidden; }
+@media (hover: none) {
+  .k2b-ui .assistant-context-box__act { display: none !important; }
+  .k2b-ui .assistant-context-box__trailing { visibility: visible !important; }
+}
+.k2b-ui .assistant-context-box__loading { display: grid; gap: 0; padding: 0.25rem 0.5rem; }
+.k2b-ui .assistant-context-box__skeleton { height: 0.6875rem; margin-block: 0.53125rem; border-radius: 999px; }
+.k2b-ui .assistant-context-box__skeleton:nth-child(2) { width: 72%; }
+.k2b-ui .assistant-context-box__skeleton:nth-child(3) { width: 54%; }
+.k2b-ui .assistant-context-box__failed { display: grid; gap: 0.25rem; justify-items: start; padding: 0.375rem 0.5rem 0.5rem; }
+.k2b-ui .assistant-context-box__failed p { margin: 0; }
+.k2b-ui .assistant-context-box__meta { display: block; color: var(--k2b-text-subtle, var(--k2b-text-muted)); font-size: var(--k2b-type-12, 0.75rem); }
+.k2b-ui .assistant-context-box__retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k2b-action);
+  font: inherit;
+  cursor: pointer;
+}
+.k2b-ui .assistant-context-box__retry:hover { text-decoration: underline; }
+.k2b-ui .assistant-context-popover { padding: 0; }
 
 /* One surface, shared with the chat; sections are separated by space. */
 .k2b-ui .assistant-context-sidebar {

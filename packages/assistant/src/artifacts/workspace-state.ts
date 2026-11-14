@@ -64,7 +64,10 @@ export function workspaceSelectionFromHref(href: string): WorkspaceTab | null {
     if (kind === "task" && value.length === 2) return taskTab(id, id);
     if (kind === "app" && value.length === 2) return appTab(id, id);
     if (typeof path !== "string" || !path || path.length > 500 || value.length !== 3) return null;
-    if (kind === "context" && (path === "apps" || path === "files" || path === "sources" || path === "knowledge" || path === "tasks"))
+    if (
+      kind === "context" &&
+      (path === "apps" || path === "files" || path === "sources" || path === "knowledge" || path === "tasks" || path === "context")
+    )
       return contextTab(id, path, path);
     if (kind === "file") return fileTab(id, path);
     if (kind === "source") return sourceTab(id, path);
