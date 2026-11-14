@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../../ui/test/browser";
 import { sidebarSnapshot } from "../frontend/AssistantChatSidebar.fixture";
 
 // The tabs beside the chat are the real Panes of @k2b/ui: arranging, dragging, boundaries, and the hint carry over
@@ -149,7 +149,7 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
       await page.getByRole("menuitem", { name: "Andere schließen" }).waitFor();
       expect(await chatBox(page)).toEqual(before);
       await page.keyboard.press("Escape");
-      await page.getByRole("tab", { name: /Quellen/ }).hover();
+      await hoverInPlace(page.getByRole("tab", { name: /Quellen/ }));
       await page.getByRole("button", { name: /Quellen schließen/ }).click();
       await frames(page);
       expect(await chatBox(page)).toEqual(before);
