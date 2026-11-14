@@ -95,8 +95,9 @@ export function ThreadRows(props: RowsProps): JSX.Element {
       >
         {row("all")}
         <Show when={!props.system}>{row("general")}</Show>
-        <For each={props.system ? systemThreadRows(props.threads, props.view) : activeThreads(props.threads)}>
-          {(thread) => row(thread.id)}
+        {/* Live summaries replace thread objects; keep the anchor through a press and its release. */}
+        <For each={(props.system ? systemThreadRows(props.threads, props.view) : activeThreads(props.threads)).map((thread) => thread.id)}>
+          {(id) => row(id)}
         </For>
         <Show when={!props.system && props.archived && archivedThreads(props.threads).length > 0}>
           <AppWorkspace.SidebarItem
@@ -107,7 +108,7 @@ export function ThreadRows(props: RowsProps): JSX.Element {
             {t().archivedThreads({ count: archivedThreads(props.threads).length })}
           </AppWorkspace.SidebarItem>
           <Show when={archiveOpen()}>
-            <For each={archivedThreads(props.threads)}>{(thread) => row(thread.id, 2)}</For>
+            <For each={archivedThreads(props.threads).map((thread) => thread.id)}>{(id) => row(id, 2)}</For>
           </Show>
         </Show>
         <Show when={props.system}>
