@@ -7,6 +7,7 @@ import {
   Button,
   createPanesLayout,
   Dropdown,
+  type DropdownAction,
   type DropdownItem,
   FileTree,
   FileView,
@@ -545,7 +546,7 @@ export function ArtifactWorkspace(props: {
   };
   const menu = (tab: WorkspaceTab): DropdownItem[] => {
     const copy = w();
-    const items: DropdownItem[] = [];
+    const items: DropdownAction[] = [];
     const result =
       tab.kind === "file"
         ? resultOf(tab.path)
@@ -609,38 +610,47 @@ export function ArtifactWorkspace(props: {
         action: () => window.open(`/app/assistant/apps/${tab.artifactId}`, "_blank", "noopener"),
       });
     const pinned = props.controller.isPinned(tab.key);
-    items.push({
-      sectionLabel: undefined,
-      items: [
-        {
-          label: pinned ? copy.unpin : copy.pin,
-          icon: pinned ? "ti ti-pinned-off" : "ti ti-pin",
-          trailing: <span class="artifact-pane__hint">{copy.pinHint}</span>,
-          action: () => props.controller.togglePin(tab.key),
-        },
-        { label: copy.close, icon: "ti ti-x", action: () => void close(tab.key) },
-        {
-          label: copy.closeOthers,
-          icon: "ti ti-square-x",
-          disabled: state().tabs.length < 2 || undefined,
-          action: () => void closeOthers(tab.key),
-        },
-      ],
-    } as DropdownItem);
-    return items;
+    // What Cloud can do with the thing, then what the tab itself does; arranging stays with Panes.
+    return [
+      { items },
+      {
+        items: [
+          {
+            label: pinned ? copy.unpin : copy.pin,
+            icon: pinned ? "ti ti-pinned-off" : "ti ti-pin",
+            trailing: <span class="artifact-pane__hint">{copy.pinHint}</span>,
+            action: () => props.controller.togglePin(tab.key),
+          },
+          { label: copy.close, icon: "ti ti-x", action: () => void close(tab.key) },
+          {
+            label: copy.closeOthers,
+            icon: "ti ti-square-x",
+            disabled: state().tabs.length < 2,
+            action: () => void closeOthers(tab.key),
+          },
+        ],
+      },
+    ];
   };
   /** "…" of a web page: ask about it, copy its address, open it outside, pin, close. */
   const webMenu = (tab: WorkspaceTab, url: string): DropdownItem[] =>
-    menu(tab).map((item) =>
-      "label" in item && item.label === w().copyLink
+    menu(tab).map((section) =>
+      "items" in section
         ? {
-            ...item,
-            action: async () => {
-              await navigator.clipboard.writeText(url).catch(() => undefined);
-              toast.success(w().linkCopied);
-            },
+            ...section,
+            items: section.items.map((item) =>
+              item.label === w().copyLink
+                ? {
+                    ...item,
+                    action: async () => {
+                      await navigator.clipboard.writeText(url).catch(() => undefined);
+                      toast.success(w().linkCopied);
+                    },
+                  }
+                : item,
+            ),
           }
-        : item,
+        : section,
     );
   const actions = (tab: WorkspaceTab): JSX.Element => {
     if (tab.kind !== "file") return undefined;
