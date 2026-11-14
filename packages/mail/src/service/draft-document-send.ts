@@ -15,6 +15,17 @@ import { lockDraftDocumentInTransaction, readDraftDocument } from "./draft-docum
 import { loadSendContent } from "./send-content";
 
 const log = logger("mail:draft-document-send");
+/** The same value without `null` members, so two storage forms of one message compare equal. */
+const withoutNulls = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(withoutNulls)
+    : value !== null && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([, entry]) => entry !== null)
+            .map(([key, entry]) => [key, withoutNulls(entry)]),
+        )
+      : value;
 const changed = () =>
   Object.assign(new Error("Draft changed before sending; review it again"), { code: "SEND_CONTENT_CHANGED", status: 409 });
 type EditedDraftSend = { revision: number; contentHash: string; safetyApproval: ComposeSafetyApproval };
@@ -94,7 +105,24 @@ export const withFrozenDraftSends = async <T>(
               if (saved.data.status !== "accepted") throw changed();
               // The published edit remains saved if a later freeze/send fails. Never send
               // peer changes merged during the write unless they were also reviewed.
-              const contentHash = sha256Json({ ...base.data.snapshot, revision: saved.data.revision });
+              // The shared document stores addresses in its own canonical form (an absent name becomes null), so
+              // compare what is sent, not how it is stored, and bind the send to the saved revision's own hash.
+              const after = await loadSendContent({
+                db,
+                context,
+                mailboxId: params.mailboxId,
+                draftId: input.draftId,
+                expectedRevision: saved.data.revision,
+                senderIdentityId: input.senderIdentityId,
+                actor: actorRefFromRequest(context),
+              });
+              if (!after.ok) throw after.error;
+              if (
+                sha256Json(withoutNulls({ ...base.data.snapshot, revision: 0 })) !==
+                sha256Json(withoutNulls({ ...after.data.snapshot, revision: 0 }))
+              )
+                throw changed();
+              const contentHash = after.data.contentHash;
               const reviewed = await reviewDraftComposeSafety({
                 db,
                 context,

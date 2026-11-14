@@ -773,7 +773,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       "calendar.ics",
       "logo.png",
       "contact.vcf",
-      "1 externer Empfänger.",
+      "1 externer Empfänger: Diese E-Mail verlässt",
     ])
       expect(text).toContain(expected);
     expect(review.view?.blocks[0]).toMatchObject({ kind: "Draft", fields: [{ name: "subject" }, { name: "body" }] });
