@@ -123,6 +123,7 @@ describe("MailReplyBox", () => {
         send: spyOn({ fn: () => undefined }, "fn"),
         sendAt: spyOn({ fn: (_at: string) => undefined }, "fn"),
         focusText: () => undefined,
+        selection: () => undefined,
         ready: () => true,
         text: () => typed,
         changed: () => typed !== "",
@@ -604,5 +605,43 @@ describe("MailReplyBox", () => {
     dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-box='detached'] button")!.click();
     await waitFor(() => mounts.length === 2);
     expect(mounts[1]!.initialDraft?.id).toBe("Draft1");
+  });
+
+  test("Write large hands the draft to a large window and takes it back with the caret where it stood", async () => {
+    const windows = await import("./mail-compose-windows");
+    const opened: Array<{ draftId: string; options: Record<string, unknown> }> = [];
+    const [open, setOpen] = createSignal<string | null>(null);
+    const recalls: string[] = [];
+    await mount({ drafts: () => [summary()] });
+    const unregister = windows.registerDraftWindowHost({
+      mailboxId: `Box${mailbox}`,
+      open: (draftId, options) => {
+        opened.push({ draftId, options: { ...options } });
+        setOpen(draftId);
+      },
+      isOpen: (draftId) => open() === draftId,
+      recall: async (draftId) => {
+        recalls.push(draftId);
+        setOpen(null);
+        return true;
+      },
+    });
+    try {
+      host().box!.detach("Draft1", { large: true, selection: { anchor: 2, head: 5 } });
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-reply-box='detached']")));
+      expect(opened).toEqual([
+        { draftId: "Draft1", options: { mailboxId: `Box${mailbox}`, large: true, origin: "reply-box", selection: { anchor: 2, head: 5 } } },
+      ]);
+      // Making the large window smaller: the box takes the draft back, with the caret the window reports.
+      expect(windows.returnDraftToReplyBox("Draft1", { anchor: 4, head: 4 })).toBe(true);
+      await waitFor(() => mounts.length === 2);
+      expect(recalls).toEqual(["Draft1"]);
+      expect(mounts[1]!.initialDraft?.id).toBe("Draft1");
+      expect(mounts[1]!.host.initialSelection).toEqual({ anchor: 4, head: 4 });
+      // Back in the box, the window has nobody to return to: a later "smaller" keeps it a window.
+      expect(windows.returnDraftToReplyBox("Draft1", undefined)).toBe(false);
+    } finally {
+      unregister();
+    }
   });
 });

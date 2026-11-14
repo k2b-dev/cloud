@@ -1,22 +1,65 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, Placeholder, ScrollArea, useLocale } from "@k2b/ui";
+import { Avatar, Button, FileTypeIcon, NoticeCard, Placeholder, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { SenderIdentity } from "../../contracts";
+import type { ConversationComment } from "../../service/collaboration";
 import type { MessageDetail, MessageSummary } from "../../service/messages";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
+import MailConversationNote from "./MailConversationNote";
 import MailMessageAttachments from "./MailMessageAttachments";
 import MailMessageBody from "./MailMessageBody";
 import { formatMailAddress } from "./mail-compose-derivation";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { isOutgoingMessage, mergeLatestMessagePages } from "./mail-conversation-history";
 import { formatMailMessageDateTime } from "./mail-message-presentation";
+import type { MailReplyPosition } from "./mail-workspace-preferences";
 
 type MessagePage = { items: MessageSummary[]; nextCursor: string | null };
 
-const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSummary; expanded: boolean }) => {
+/** One file of a message with "Attach to reply": it waits while it attaches and says so when it could not. */
+const HistoryAttachmentChip = (props: {
+  attachment: MessageDetail["attachments"][number];
+  messageId: string;
+  attach: (attachment: MessageDetail["attachments"][number], messageId: string) => Promise<void>;
+}) => {
+  const locale = useLocale();
+  const t = () => mailComposerMessages.resolve([locale()]).t;
+  const [busy, setBusy] = createSignal(false);
+  const name = () => props.attachment.filename ?? t().attachment;
+  return (
+    <li class="mail-composer-history-file">
+      <FileTypeIcon name={name()} mediaType={props.attachment.contentType} />
+      <span class="mail-composer-history-file-name">{name()}</span>
+      <Button
+        variant="ghost"
+        size="xs"
+        type="button"
+        loading={busy()}
+        aria-label={t().attachToReplyNamed({ name: name() })}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await props.attach(props.attachment, props.messageId);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {t().attachToReply}
+      </Button>
+    </li>
+  );
+};
+
+const MailComposerHistoryBody = (props: {
+  mailboxId: string;
+  message: MessageSummary;
+  expanded: boolean;
+  onAttach?: (attachment: MessageDetail["attachments"][number], messageId: string) => Promise<void>;
+}) => {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const detail = query.create<string, MessageDetail>({
@@ -38,7 +81,7 @@ const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSum
 
   return (
     <Show when={props.expanded}>
-      <div class="px-3 py-3">
+      <div class="mail-composer-history-body">
         <Show
           when={current()}
           fallback={
@@ -94,12 +137,25 @@ const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSum
                   </div>
                 </Show>
                 <Show when={message().attachments.length > 0 && !linksDisabled()}>
-                  <MailMessageAttachments
-                    mailboxId={props.mailboxId}
-                    messageId={message().id}
-                    attachments={message().attachments}
-                    canShare={false}
-                  />
+                  <Show
+                    when={props.onAttach}
+                    fallback={
+                      <MailMessageAttachments
+                        mailboxId={props.mailboxId}
+                        messageId={message().id}
+                        attachments={message().attachments}
+                        canShare={false}
+                      />
+                    }
+                  >
+                    {(attach) => (
+                      <ul class="mail-composer-history-files">
+                        <For each={message().attachments.filter((attachment) => !attachment.contentId)}>
+                          {(attachment) => <HistoryAttachmentChip attachment={attachment} messageId={message().id} attach={attach()} />}
+                        </For>
+                      </ul>
+                    )}
+                  </Show>
                 </Show>
               </div>
             );
@@ -110,12 +166,23 @@ const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSum
   );
 };
 
+type HistoryAttachment = MessageDetail["attachments"][number];
+type HistoryEntry = { kind: "message"; at: string; message: MessageSummary } | { kind: "note"; at: string; note: ConversationComment };
+
+/**
+ * The conversation beside a draft (compose page and large composer), read-only and in the reader's look: one avatar,
+ * name, and time per message, the newest one open; internal notes as yellow tiles at their time. With `order` "top"
+ * the newest message comes first, as with the reply box on top in the reader (F4). With `onAttach`, each attachment
+ * offers "Attach to reply"; a failure says so and leaves the draft as it is.
+ */
 export default function MailComposerHistory(props: {
   mailboxId: string;
   conversationId: string;
   identities: SenderIdentity[];
   dateConfig: DateContext;
   active: () => boolean;
+  order?: () => MailReplyPosition;
+  onAttach?: (attachment: HistoryAttachment, messageId: string) => Promise<void>;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -137,16 +204,39 @@ export default function MailComposerHistory(props: {
     },
     getNextCursor: (page) => page.nextCursor,
   });
-  const messages = createMemo(() => mergeLatestMessagePages(history.pages()));
+  // Internal notes stand at their time between the messages; without them the conversation still reads.
+  const notes = query.create<string, ConversationComment[]>({
+    source: () => props.conversationId,
+    enabled: props.active,
+    load: async (conversationId, { abortSignal }) => {
+      const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].comments.$get(
+        { param: { mailboxId: props.mailboxId, conversationId }, query: { order: "newest", limit: "50" } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) return [];
+      return (await response.json()).items;
+    },
+  });
+  const newestFirst = () => props.order?.() === "top";
+  const messages = createMemo(() =>
+    mergeLatestMessagePages(history.pages()).toSorted((left, right) => left.internalDate.localeCompare(right.internalDate)),
+  );
+  const entries = createMemo<HistoryEntry[]>(() => {
+    const list: HistoryEntry[] = [
+      ...messages().map((message) => ({ kind: "message" as const, at: message.internalDate, message })),
+      ...(notes.data() ?? []).filter((note) => !note.deletedAt).map((note) => ({ kind: "note" as const, at: note.createdAt, note })),
+    ].toSorted((left, right) => left.at.localeCompare(right.at));
+    return newestFirst() ? list.toReversed() : list;
+  });
   const [expandedMessageIds, setExpandedMessageIds] = createSignal<Set<string>>(new Set());
   let initializedConversationId: string | null = null;
 
   createEffect(() => {
     if (initializedConversationId === props.conversationId) return;
-    const firstMessageId = messages()[0]?.id;
-    if (!firstMessageId) return;
+    const newest = messages().at(-1)?.id;
+    if (!newest) return;
     initializedConversationId = props.conversationId;
-    setExpandedMessageIds(new Set([firstMessageId]));
+    setExpandedMessageIds(new Set([newest]));
   });
 
   const toggleMessage = (messageId: string) => {
@@ -158,10 +248,36 @@ export default function MailComposerHistory(props: {
     });
   };
 
+  const earlier = () => (
+    <Show when={history.hasMore()}>
+      <div class="mail-composer-history-more">
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          loading={history.loadingMore()}
+          disabled={history.loadingMore()}
+          onClick={() => void history.loadMore()}
+        >
+          <i class="ti ti-dots" aria-hidden="true" /> {t().loadEarlier}
+        </Button>
+      </div>
+    </Show>
+  );
+
   return (
-    <section class="flex h-full min-h-72 flex-col overflow-hidden bg-[var(--ui-surface)]" aria-label={t().conversationHistory}>
-      <ScrollArea class="flex-1">
-        <Show when={!history.loading()} fallback={<Placeholder state="loading" variant="panel" title={t().loadingHistory} />}>
+    <section class="mail-composer-history" aria-label={t().conversationHistory} data-order={newestFirst() ? "newest" : "oldest"}>
+      <ScrollArea class="mail-composer-history-scroll">
+        <Show
+          when={!history.loading()}
+          fallback={
+            <div class="mail-composer-history-skeleton" role="status" aria-label={t().loadingHistory}>
+              <span />
+              <span />
+              <span />
+            </div>
+          }
+        >
           <Show
             when={messages().length > 0}
             fallback={
@@ -177,19 +293,16 @@ export default function MailComposerHistory(props: {
                   />
                 }
               >
-                {(error) => (
-                  <Placeholder
-                    state="error"
-                    variant="panel"
-                    title={t().historyLoadFailed}
-                    description={error().message}
-                    action={
-                      <Button variant="secondary" size="sm" type="button" onClick={() => void history.refresh()}>
-                        {t().retry}
-                      </Button>
-                    }
-                  />
-                )}
+                <Placeholder
+                  state="error"
+                  variant="panel"
+                  title={t().historyFailedKeepsDraft}
+                  action={
+                    <Button variant="secondary" size="sm" type="button" onClick={() => void history.refresh()}>
+                      {t().retry}
+                    </Button>
+                  }
+                />
               </Show>
             }
           >
@@ -203,59 +316,81 @@ export default function MailComposerHistory(props: {
                 </NoticeCard>
               )}
             </Show>
-            <div class="flex flex-col gap-2">
-              <For each={messages()}>
-                {(message) => {
-                  const expanded = () => expandedMessageIds().has(message.id);
-                  const outgoing = () => isOutgoingMessage(message, props.identities);
-                  const sender = () => message.from.map(formatMailAddress).join(", ") || t().unknownSender;
-                  const recipients = () => message.to.map(formatMailAddress).join(", ") || t().undisclosedRecipients;
-                  return (
-                    <article>
-                      <button
-                        type="button"
-                        class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] px-3 py-2.5 text-left hover:bg-[var(--ui-hover)] focus-visible:bg-[var(--ui-hover)]"
-                        aria-expanded={expanded()}
-                        onClick={() => toggleMessage(message.id)}
-                      >
-                        <span class="min-w-0">
-                          <span class="flex min-w-0 items-center gap-2">
-                            <i
-                              class={`ti ${outgoing() ? "ti-arrow-up-right" : "ti-arrow-down-left"} shrink-0 text-dimmed`}
-                              aria-hidden="true"
-                            />
-                            <span class="truncate text-sm font-semibold text-primary">{outgoing() ? t().you : sender()}</span>
-                            <span class="truncate text-xs text-dimmed">{outgoing() ? t().toNamed({ value: recipients() }) : t().toMe}</span>
-                          </span>
-                          <span class="mt-0.5 block truncate text-xs text-secondary">{message.subject || t().noSubject}</span>
-                        </span>
-                        <span class="flex items-center gap-2 text-xs text-dimmed">
-                          <time dateTime={message.internalDate} title={dates.formatDateTime(message.internalDate, props.dateConfig)}>
-                            {formatMailMessageDateTime(message.internalDate, props.dateConfig)}
-                          </time>
-                          <i class={`ti ${expanded() ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />
-                        </span>
-                      </button>
-                      <MailComposerHistoryBody mailboxId={props.mailboxId} message={message} expanded={expanded()} />
-                    </article>
-                  );
-                }}
+            <Show when={!newestFirst()}>{earlier()}</Show>
+            <div class="mail-composer-history-list">
+              <For each={entries()}>
+                {(entry) => (
+                  <Show
+                    when={entry.kind === "message" ? entry.message : null}
+                    fallback={
+                      <MailConversationNote
+                        note={{ ...(entry as Extract<HistoryEntry, { kind: "note" }>).note, canEdit: false, canDelete: false }}
+                        dateConfig={props.dateConfig}
+                        saving={false}
+                        onSave={async () => undefined}
+                        onDelete={() => undefined}
+                      />
+                    }
+                  >
+                    {(message) => {
+                      const expanded = () => expandedMessageIds().has(message().id);
+                      const outgoing = () => isOutgoingMessage(message(), props.identities);
+                      const sender = () => message().from.map(formatMailAddress).join(", ") || t().unknownSender;
+                      const senderName = () => message().from[0]?.name || message().from[0]?.address || t().unknownSender;
+                      const recipients = () => message().to.map(formatMailAddress).join(", ") || t().undisclosedRecipients;
+                      return (
+                        <article class="mail-composer-history-message" data-expanded={expanded() ? "" : undefined}>
+                          <button
+                            type="button"
+                            class="mail-composer-history-head"
+                            aria-expanded={expanded()}
+                            onClick={() => toggleMessage(message().id)}
+                          >
+                            <Avatar name={senderName()} size="sm" />
+                            <span class="mail-composer-history-who">
+                              <span class="mail-composer-history-name">{outgoing() ? t().you : sender()}</span>
+                              <Show
+                                when={expanded()}
+                                fallback={
+                                  <span class="mail-composer-history-snippet">
+                                    {message().preview || message().subject || t().noSubject}
+                                  </span>
+                                }
+                              >
+                                <span class="mail-composer-history-meta">
+                                  {outgoing() ? t().toNamed({ value: recipients() }) : t().toMe} ·{" "}
+                                  {formatMailMessageDateTime(message().internalDate, props.dateConfig)}
+                                </span>
+                              </Show>
+                            </span>
+                            <Show when={!expanded()}>
+                              <span class="mail-composer-history-time">
+                                <Show when={message().hasAttachments}>
+                                  <i class="ti ti-paperclip" aria-hidden="true" />
+                                </Show>
+                                <time
+                                  dateTime={message().internalDate}
+                                  title={dates.formatDateTime(message().internalDate, props.dateConfig)}
+                                >
+                                  {formatMailMessageDateTime(message().internalDate, props.dateConfig)}
+                                </time>
+                              </span>
+                            </Show>
+                          </button>
+                          <MailComposerHistoryBody
+                            mailboxId={props.mailboxId}
+                            message={message()}
+                            expanded={expanded()}
+                            onAttach={props.onAttach}
+                          />
+                        </article>
+                      );
+                    }}
+                  </Show>
+                )}
               </For>
             </div>
-            <Show when={history.hasMore()}>
-              <div class="flex justify-center p-3">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  type="button"
-                  loading={history.loadingMore()}
-                  disabled={history.loadingMore()}
-                  onClick={() => void history.loadMore()}
-                >
-                  {t().loadEarlier}
-                </Button>
-              </div>
-            </Show>
+            <Show when={newestFirst()}>{earlier()}</Show>
           </Show>
         </Show>
       </ScrollArea>

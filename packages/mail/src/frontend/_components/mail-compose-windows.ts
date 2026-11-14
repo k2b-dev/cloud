@@ -7,7 +7,16 @@ import type { MailDraft } from "../../contracts";
  * `sessionStorage`, so a reload or a return from another app (which loads the page again) opens them again. Nothing is
  * stored on the server; the drafts themselves are.
  */
-export type StoredComposeWindow = { draftId: string; state: FloatingWindowState; rect?: FloatingWindowRect };
+export type StoredComposeWindow = {
+  draftId: string;
+  state: FloatingWindowState;
+  rect?: FloatingWindowRect;
+  /** The reply box opened this window to write large; making it smaller hands the draft back to that box. */
+  origin?: "reply-box";
+};
+
+/** Where the caret and selection stood in the text, handed along when a draft moves between the box and a window. */
+export type DraftTextSelection = { anchor: number; head: number };
 
 export const composeWindowsKey = (mailboxId: string): string => `cloud:mail:compose-windows:${mailboxId}`;
 
@@ -35,10 +44,11 @@ export const readComposeWindows = (storage: Pick<Storage, "getItem">, mailboxId:
   const windows: StoredComposeWindow[] = [];
   for (const entry of parsed) {
     if (!entry || typeof entry !== "object") continue;
-    const { draftId, state, rect } = entry as Record<string, unknown>;
+    const { draftId, state, rect, origin } = entry as Record<string, unknown>;
     if (typeof draftId !== "string" || !draftIdPattern.test(draftId) || seen.has(draftId)) continue;
     seen.add(draftId);
     const stored: StoredComposeWindow = { draftId, state: isState(state) ? state : "normal" };
+    if (origin === "reply-box") stored.origin = origin;
     const place = readRect(rect);
     if (place) stored.rect = place;
     windows.push(stored);
@@ -67,6 +77,12 @@ export type DraftWindowOpenOptions = {
   fresh?: boolean;
   /** Where the focus returns when the window closes; defaults to the element focused when it opened. */
   returnFocus?: HTMLElement | null;
+  /** "Write large": the window opens maximized, with the draft, its conversation, and the preview side by side. */
+  large?: boolean;
+  /** The reply box handed the draft over; making the window smaller gives it back. */
+  origin?: "reply-box";
+  /** The caret and selection the text had in the box. */
+  selection?: DraftTextSelection;
 };
 
 /** The mailbox's window host; the open mailbox registers it while it is mounted. */
@@ -115,3 +131,25 @@ export const draftWindowOpen = (draftId: string): boolean => host()?.isOpen(draf
  * without a notice. Resolves `false` when no window held it or the draft could not be released (the window then stays).
  */
 export const recallDraftWindow = (draftId: string): Promise<boolean> => host()?.recall(draftId) ?? Promise.resolve(false);
+
+/** The reply boxes that handed a draft to a large window, by draft: each takes its draft back on request. */
+const replyBoxReturns = new Map<string, (selection: DraftTextSelection | undefined) => void>();
+
+/** A reply box offers to take its draft back while the large window holds it; the returned function withdraws that. */
+export const registerReplyBoxReturn = (draftId: string, takeBack: (selection: DraftTextSelection | undefined) => void): (() => void) => {
+  replyBoxReturns.set(draftId, takeBack);
+  return () => {
+    if (replyBoxReturns.get(draftId) === takeBack) replyBoxReturns.delete(draftId);
+  };
+};
+
+/**
+ * Hands a draft from its large window back to the reply box it came from, with the caret where it stood. Returns
+ * `false` when that box is gone, such as after opening another conversation; the window then stays a window.
+ */
+export const returnDraftToReplyBox = (draftId: string, selection: DraftTextSelection | undefined): boolean => {
+  const takeBack = replyBoxReturns.get(draftId);
+  if (!takeBack) return false;
+  takeBack(selection);
+  return true;
+};

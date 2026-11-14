@@ -69,6 +69,7 @@ import MailComposerAttachments from "./MailComposerAttachments";
 import { openMailComposerCalendarDialog } from "./MailComposerCalendarDialog";
 import MailComposerEditor from "./MailComposerEditor";
 import MailComposerHistory from "./MailComposerHistory";
+import MailComposerLarge from "./MailComposerLarge";
 import MailComposerLifecycleNotice from "./MailComposerLifecycleNotice";
 import MailComposerSignature from "./MailComposerSignature";
 import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./MailDraftCollaborationDialog";
@@ -80,10 +81,11 @@ import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsS
 import type { MailTextEditorActions } from "./MailTextEditor";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { mailComposeWindowMessages } from "./mail-compose-window-messages";
+import type { DraftTextSelection } from "./mail-compose-windows";
 import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
 import { mailComposerMessages } from "./mail-composer-messages";
-import { reconcileMailComposerPanes } from "./mail-composer-panes";
+import { createDefaultMailComposerPanesLayout, reconcileLargeMailComposerPanes, reconcileMailComposerPanes } from "./mail-composer-panes";
 import { defaultSignatureTemplateId, type MailComposerSignatures } from "./mail-composer-signature";
 import { createMailComposerTransition } from "./mail-composer-transition";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
@@ -96,6 +98,7 @@ import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
 import { mailSendLaterPresets } from "./mail-reply-box";
 import { mailReplyBoxMessages } from "./mail-reply-box-messages";
 import { writeMailSenderPreference } from "./mail-sender-preference";
+import type { MailReplyPosition } from "./mail-workspace-preferences";
 
 class ComposeSafetyCancelled extends Error {}
 class ComposeSafetyAttachmentRequested extends Error {}
@@ -120,6 +123,8 @@ export type MailInlineDraftControls = {
   sendAt: (scheduledAt: string) => void;
   /** Moves the caret back into the text, at its end. */
   focusText: () => void;
+  /** Where the caret and selection stand in the text now, to hand them along when the draft moves. */
+  selection: () => DraftTextSelection | undefined;
   /** The editor is there and the draft takes input. */
   ready: Accessor<boolean>;
   /** The text as the editor holds it now. */
@@ -156,8 +161,11 @@ export type MailReplyBoxHost = {
   autofocus: boolean;
   /** A draft that started as a local seed now exists on the server. */
   materialized: (draft: MailDraft) => void;
-  /** "Open in a window": the draft is saved and released; the box hands it to a compose window. */
-  detach: (draftId: string) => void;
+  /**
+   * "Open in a window" or "Write large": the draft is saved and released; the box hands it to a compose window,
+   * maximized with the conversation and preview beside it when `large`, with the caret where it stood.
+   */
+  detach: (draftId: string, options?: { large?: boolean; selection?: DraftTextSelection }) => void;
   /** The text typed while `holdCreate` is true, for the box to keep per conversation. */
   buffer: (text: string) => void;
 };
@@ -175,6 +183,12 @@ export type MailComposerHost = {
   fresh: boolean;
   fullscreen: Accessor<boolean>;
   toggleFullscreen: () => void;
+  /** Where the caret and selection go once the text takes input, handed along from where the draft was before. */
+  initialSelection?: DraftTextSelection;
+  /** The order of the large composer's conversation, as the reader shows it (F4). */
+  replyPosition?: () => MailReplyPosition;
+  /** The one-time hint in the large composer that its panes can be arranged; the host stores that it was seen. */
+  arrangeHint?: { open: () => boolean; dismiss: () => void };
   /** The composer hands the host its safe close, so Esc and the host's own controls take the same path. */
   register: (controls: MailInlineDraftControls) => void;
   /** Who wrote a message of the conversation and when, for the quote line ("Marlene Hofbauer, today 09:12"). */
@@ -539,7 +553,9 @@ export default function MailComposer(props: {
   // Inline, "Preview" is one visible switch in the draft's tools; the page keeps its panes.
   const [inlinePreview, setInlinePreview] = createSignal(false);
   const [inlineFormatting, setInlineFormatting] = createSignal(false);
-  const previewVisible = () => (props.host ? inlinePreview() : isPanesItemVisible(currentComposerPanes(), "preview"));
+  // The large composer shows the preview as a pane of its own, also for a plain message (as text).
+  const [largePreview, setLargePreview] = createSignal(false);
+  const previewVisible = () => (props.host ? inlinePreview() || largePreview() : isPanesItemVisible(currentComposerPanes(), "preview"));
   type PreviewInput = { draft: DraftEditableContentInput; conversationId: string | null; sourceMessageId: string | null };
   const initialPreviewInput: PreviewInput = {
     draft: content(),
@@ -549,7 +565,7 @@ export default function MailComposer(props: {
   const [previewSource, setPreviewSource] = createSignal(JSON.stringify(initialPreviewInput));
   const previewQuery = query.create<string, ComposePreview>({
     source: previewSource,
-    enabled: () => format() === "markdown" && previewVisible() && Boolean(identityId()),
+    enabled: () => (format() === "markdown" || largePreview()) && previewVisible() && Boolean(identityId()),
     load: async (serialized, { abortSignal }) => {
       const input = JSON.parse(serialized) as PreviewInput;
       const response = await apiClient.mailboxes[":mailboxId"]["compose-preview"]
@@ -629,6 +645,15 @@ export default function MailComposer(props: {
       const active = document.activeElement;
       const around = active?.contains(surface() ?? null) ?? false;
       if (active && active !== document.body && active !== focusAtOpen && active.isConnected && !around) return;
+      // A draft handed over from the box or the large window keeps its caret and selection where they stood.
+      const handed = props.host?.initialSelection;
+      if (handed) {
+        const length = element.view.state.doc.length;
+        const clamp = (value: number) => Math.max(0, Math.min(length, value));
+        element.view.dispatch({ selection: { anchor: clamp(handed.anchor), head: clamp(handed.head) }, scrollIntoView: true });
+        element.view.focus();
+        return;
+      }
       // A new message inside the flow starts where it begins: with its recipients.
       const recipients =
         props.host && composerIntent() === "new" && to().length === 0
@@ -1572,6 +1597,10 @@ export default function MailComposer(props: {
     send: () => void sendDraft({}),
     sendAt: (scheduledAt) => void sendDraft({ scheduledAt }),
     focusText: () => focusEditorAtEnd(),
+    selection: () => {
+      const main = editorController?.view.state.selection.main;
+      return main ? { anchor: main.anchor, head: main.head } : undefined;
+    },
     ready: () => editable() && Boolean(readyEditor()),
     text: () => untrack(body),
     changed: () => untrack(() => serializeMailDraftContent(content()) !== initialSerializedContent),
@@ -1968,11 +1997,18 @@ export default function MailComposer(props: {
       const box = host.box;
       const r = () => mailReplyBoxMessages.resolve([locale()]).t;
       const surfaceId = createUniqueId();
-      /** Saves the draft (creating it from the seed if needed), gives the lease back, and lets the box open its window. */
-      const detachDraft = async () => {
+      /** A failed "Write large" keeps the box with its text and says so in place, with a way to try again. */
+      const [largeFailed, setLargeFailed] = createSignal(false);
+      /**
+       * Saves the draft (creating it from the seed if needed), gives the lease back, and lets the box open its window;
+       * `large` opens it maximized with the conversation and preview beside it, the caret where it stood.
+       */
+      const detachDraft = async (large = false) => {
         if (uploadsInProgress()) return void (await prompts.error(t().finishUploadsBeforeMove));
         const reservation = composerTransition.reserve("handoff");
         if (!reservation) return;
+        const main = editorController?.view.state.selection.main;
+        const selection = main ? { anchor: main.anchor, head: main.head } : undefined;
         stopScheduledSave();
         try {
           const saved = await persist();
@@ -1983,9 +2019,12 @@ export default function MailComposer(props: {
             await releaseLeaseOnExit();
           }
           draftSession.allowNavigation();
-          box.detach(saved.id);
+          setLargeFailed(false);
+          box.detach(saved.id, large ? { large: true, selection } : undefined);
         } catch (error) {
-          if (!disposed) await prompts.error(error instanceof Error ? error.message : t().requestedWindowFailed);
+          if (disposed) return;
+          if (large) setLargeFailed(true);
+          else await prompts.error(error instanceof Error ? error.message : t().requestedWindowFailed);
         } finally {
           composerTransition.release(reservation);
         }
@@ -2255,6 +2294,31 @@ export default function MailComposer(props: {
                 </Button>
               </span>
             </Show>
+            {/* While an attachment uploads the handover would wait for it, so the control waits and says why. */}
+            <Tooltip.Anchor
+              content={
+                uploadsInProgress() ? (
+                  r().writeLargeWaits
+                ) : (
+                  <span class="mail-reply-box-large-tip">
+                    <span>{r().writeLarge}</span>
+                    <span>{r().writeLargeHint}</span>
+                  </span>
+                )
+              }
+            >
+              <IconButton
+                type="button"
+                size="sm"
+                class="mail-reply-box-large"
+                label={r().writeLarge}
+                data-mail-write-large
+                disabled={!editable() || uploadsInProgress()}
+                onClick={() => void detachDraft(true)}
+              >
+                <i class="ti ti-arrows-maximize" aria-hidden="true" />
+              </IconButton>
+            </Tooltip.Anchor>
           </header>
           <Show when={showCc()}>
             <div class="mail-inline-draft-rows">
@@ -2297,6 +2361,14 @@ export default function MailComposer(props: {
             </div>
           </Show>
           <DraftNotices />
+          <Show when={largeFailed()}>
+            <div class="mail-inline-draft-notice" data-tone="danger" role="alert" data-mail-write-large-failed>
+              <span class="min-w-0 flex-1">{r().writeLargeFailed}</span>
+              <Button size="sm" variant="secondary" type="button" disabled={!editable()} onClick={() => void detachDraft(true)}>
+                {r().retry}
+              </Button>
+            </div>
+          </Show>
           <Show when={inlinePreview()}>
             <div class="mail-reply-box-previewing" role="status">
               <i class="ti ti-eye" aria-hidden="true" />
@@ -2574,26 +2646,52 @@ export default function MailComposer(props: {
       if (host.fullscreen()) host.toggleFullscreen();
       else void collapse();
     };
-    return (
-      <section
-        ref={setSurface}
-        class="mail-inline-draft"
-        data-mail-inline-draft
-        data-intent={composerIntent()}
-        data-fullscreen={host.fullscreen() ? "" : undefined}
-        data-history-label={t().historyBelow}
-        data-suggestion={suggestionUntouched() ? "" : undefined}
-        aria-label={t().inlineDraftLabel({ intent: inlineIntentLabel() })}
-        onKeyDown={onKeyDown}
-      >
-        <FileDropTarget
-          for={surface()}
-          label={t().dropFiles}
-          disabled={!editable()}
-          onDrop={(files) => {
-            if (files.length > 0 && !disposed) void attachments.addFiles(files);
-          }}
-        />
+    // "Write large": the maximized window shows the draft beside its conversation and preview. The draft block is one
+    // element that moves between both places, so its text keeps caret, selection, undo history, and uploads.
+    const large = () => Boolean(windowSlots) && host.fullscreen();
+    const [shownLarge, setShownLarge] = createSignal(untrack(large));
+    let draftBlock!: HTMLDivElement;
+    createEffect(
+      on(
+        large,
+        (next) => {
+          // Moving an element drops its focus; what had it gets it back in the new place.
+          const focused = draftBlock.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
+          if (next) setInlinePreview(false);
+          setShownLarge(next);
+          if (focused) queueMicrotask(() => focused.isConnected && focused.focus({ preventScroll: true }));
+        },
+        { defer: true },
+      ),
+    );
+    const largeLayout = createMemo(() => reconcileLargeMailComposerPanes(composerPanes(), Boolean(conversationId())));
+    createEffect(() => setLargePreview(shownLarge() && isPanesItemVisible(largeLayout(), "preview")));
+    /** "Attach to reply": the file of a message joins the draft through the same upload as a dropped file. */
+    const attachFromConversation = async (attachment: { id: string; filename: string | null; contentType: string }, messageId: string) => {
+      const name = attachment.filename ?? t().attachment;
+      try {
+        const response = await fetch(`/api/mail/mailboxes/${props.mailboxId}/messages/${messageId}/attachments/${attachment.id}`);
+        if (!response.ok) throw new Error(await readApiError(response, t().attachToReplyFailed({ name })));
+        const file = new File([await response.blob()], name, { type: attachment.contentType });
+        if (!disposed) await attachments.addFiles([file]);
+      } catch {
+        if (disposed) return;
+        const notice = toast.error(t().attachToReplyFailed({ name }), {
+          action: {
+            label: t().retry,
+            onClick: () => {
+              notice.dismiss();
+              void attachFromConversation(attachment, messageId);
+            },
+          },
+        });
+      }
+    };
+    const largeDefault = createMemo(() =>
+      reconcileLargeMailComposerPanes(createDefaultMailComposerPanesLayout(), Boolean(conversationId())),
+    );
+    const draftBlockElement = (
+      <div ref={draftBlock} class="mail-draft-block" data-mail-draft-block>
         <header class="mail-inline-draft-head">
           <Show
             when={suggestionUntouched()}
@@ -2955,7 +3053,7 @@ export default function MailComposer(props: {
                             <i class="ti ti-sparkles" aria-hidden="true" />
                           </IconButton>
                         </Tooltip.Anchor>
-                        <Show when={format() === "markdown"}>
+                        <Show when={format() === "markdown" && !shownLarge()}>
                           {/* A visible switch, not a menu entry: the person checks exactly how the mail arrives. */}
                           <Button
                             type="button"
@@ -3046,6 +3144,57 @@ export default function MailComposer(props: {
               </Show>
             </>
           )}
+        </Show>
+      </div>
+    );
+    return (
+      <section
+        ref={setSurface}
+        class="mail-inline-draft"
+        data-mail-inline-draft
+        data-intent={composerIntent()}
+        data-fullscreen={host.fullscreen() ? "" : undefined}
+        data-large={shownLarge() ? "" : undefined}
+        data-history-label={t().historyBelow}
+        data-suggestion={suggestionUntouched() ? "" : undefined}
+        aria-label={t().inlineDraftLabel({ intent: inlineIntentLabel() })}
+        onKeyDown={onKeyDown}
+      >
+        <FileDropTarget
+          for={surface()}
+          label={t().dropFiles}
+          disabled={!editable()}
+          onDrop={(files) => {
+            if (files.length > 0 && !disposed) void attachments.addFiles(files);
+          }}
+        />
+        <Show when={shownLarge()} fallback={draftBlockElement}>
+          <MailComposerLarge
+            layout={largeLayout}
+            defaultLayout={largeDefault}
+            onLayoutChange={updateComposerPanes}
+            draft={draftBlockElement}
+            history={
+              conversationId()
+                ? () => (
+                    <MailComposerHistory
+                      mailboxId={props.mailboxId}
+                      conversationId={conversationId()!}
+                      identities={props.identities}
+                      dateConfig={props.dateConfig}
+                      active={() => isPanesItemVisible(largeLayout(), "history")}
+                      order={host.replyPosition}
+                      onAttach={attachFromConversation}
+                    />
+                  )
+                : undefined
+            }
+            preview={preview}
+            previewError={previewError}
+            previewPending={() => previewQuery.loading() || previewQuery.refreshing()}
+            onRetryPreview={retryPreview}
+            arrangeHint={host.arrangeHint ? { open: host.arrangeHint.open(), onDismiss: host.arrangeHint.dismiss } : undefined}
+          />
         </Show>
       </section>
     );

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { encoding } from "@k2b/stdlib";
+import type { PanesLayout } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
@@ -209,7 +210,17 @@ describe("MailComposer in a floating window", () => {
     dom.cleanup();
   });
 
-  const mount = async (options: { draft?: MailDraft; uploads?: UnfinishedDraftUpload[]; sheet?: boolean; ready?: boolean } = {}) => {
+  const mount = async (
+    options: {
+      draft?: MailDraft;
+      uploads?: UnfinishedDraftUpload[];
+      sheet?: boolean;
+      ready?: boolean;
+      fullscreen?: () => boolean;
+      initialSelection?: { anchor: number; head: number };
+      panes?: PanesLayout;
+    } = {},
+  ) => {
     const [{ default: MailComposer }, { LocaleProvider }] = await Promise.all([import("./MailComposer"), import("@k2b/ui")]);
     statusSlot = dom.document.createElement("span");
     actionsSlot = dom.document.createElement("span");
@@ -228,13 +239,14 @@ describe("MailComposer in a floating window", () => {
             signatures={{ templates: [], personalDefaults: [] }}
             initialDraft={options.draft ?? initialDraft}
             unfinishedUploads={options.uploads}
-            initialPanes={{ version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } }}
+            initialPanes={options.panes ?? { version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } }}
             returnHref="/app/mail/Box001"
             dateConfig={{ locale: "en", timeZone: "UTC" }}
             host={{
               fresh: false,
-              fullscreen: () => false,
+              fullscreen: options.fullscreen ?? (() => false),
               toggleFullscreen: () => undefined,
+              initialSelection: options.initialSelection,
               register: () => undefined,
               messageLabel: () => null,
               leave: (outcome) => leaves.push(outcome),
@@ -396,5 +408,42 @@ describe("MailComposer in a floating window", () => {
       generations.mockRestore();
       document.destroy();
     }
+  });
+
+  test("Write large moves the same draft into panes beside the preview and back, keeping its text and caret", async () => {
+    const previews: string[] = [];
+    documentResponse = (path) => {
+      if (!path.endsWith("/compose-preview")) return null;
+      previews.push(path);
+      return Response.json({ html: "<p>Good morning</p>", text: "Good morning", formattingWarnings: [] });
+    };
+    const [large, setLarge] = createSignal(true);
+    // Mail's own start: the draft beside the preview (a new message has no conversation).
+    const { createDefaultMailComposerPanesLayout } = await import("./mail-composer-panes");
+    await mount({ fullscreen: large, initialSelection: { anchor: 5, head: 12 }, panes: createDefaultMailComposerPanesLayout() });
+    const text = dom.root.querySelector<HTMLElement>(".cm-content")!;
+    const block = dom.root.querySelector<HTMLElement>("[data-mail-draft-block]")!;
+    const view = (text as HTMLElement & { cmView?: { view: { state: { selection: { main: { anchor: number; head: number } } } } } }).cmView
+      ?.view;
+    // The caret the box had stands in the text, and the text has the focus.
+    if (view) expect([view.state.selection.main.anchor, view.state.selection.main.head]).toEqual([5, 12]);
+    await waitFor(() => dom.document.activeElement === text);
+
+    // A new message: the draft beside the preview, no conversation; the preview follows the typing.
+    const panes = dom.root.querySelector<HTMLElement>(".mail-large-panes")!;
+    expect(panes.contains(block)).toBe(true);
+    expect([...panes.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim())).toEqual(["Draft", "Preview"]);
+    await waitFor(() => previews.length > 0 && Boolean(panes.querySelector(".mail-large-preview iframe")));
+    expect(panes.querySelector(".mail-large-preview-status")?.textContent).toContain("As the mail arrives");
+    // The window's own preview switch would duplicate the pane.
+    expect(dom.root.querySelector("[data-mail-draft-preview]")).toBeNull();
+
+    // Smaller: the very same draft element goes back into the window; the text and its focus stay.
+    setLarge(false);
+    await waitFor(() => !dom.root.querySelector(".mail-large-panes"));
+    expect(dom.root.querySelector("[data-mail-draft-block]")).toBe(block);
+    expect(dom.root.querySelector(".cm-content")).toBe(text);
+    expect(text.textContent).toContain("Good morning");
+    await waitFor(() => dom.document.activeElement === text);
   });
 });

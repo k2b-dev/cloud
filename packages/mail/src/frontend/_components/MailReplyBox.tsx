@@ -11,7 +11,13 @@ import type { MailComposerHost, MailInlineDraftControls } from "./MailComposer";
 import { preloadMailComposerEditor } from "./MailComposerEditor";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import { deriveReplyIdentityId, forwardMessageBody, forwardSubject, replySubject } from "./mail-compose-derivation";
-import { draftWindowOpen, openDraftWindow, recallDraftWindow } from "./mail-compose-windows";
+import {
+  type DraftTextSelection,
+  draftWindowOpen,
+  openDraftWindow,
+  recallDraftWindow,
+  registerReplyBoxReturn,
+} from "./mail-compose-windows";
 import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { createDefaultMailComposerPanesLayout } from "./mail-composer-panes";
 import type { MailComposerSignatures } from "./mail-composer-signature";
@@ -66,7 +72,16 @@ const loadComposerParts = (mailboxId: string): Promise<ComposerParts> => {
 
 /** What the box writes into: the conversation's reply draft, or a local seed that becomes it on the first save. */
 type Mount =
-  | { key: number; kind: "draft"; draft: MailDraft; uploads: UnfinishedDraftUpload[]; parts: ComposerParts; autofocus: boolean }
+  | {
+      key: number;
+      kind: "draft";
+      draft: MailDraft;
+      uploads: UnfinishedDraftUpload[];
+      parts: ComposerParts;
+      autofocus: boolean;
+      /** The caret the text had in the large window it came back from. */
+      selection?: DraftTextSelection;
+    }
   | { key: number; kind: "seed"; seed: MailDraftSeed; parts: ComposerParts; autofocus: boolean };
 
 /** Work the box hands to the next mounted draft once it takes input. */
@@ -293,7 +308,7 @@ export default function MailReplyBox(props: {
     target:
       | { kind: "draft"; id: string; known?: MailDraft }
       | { kind: "seed"; intent: MailReplyMailMode; message: MailWorkspaceMessage; withText: boolean; prepared?: MailDraftSeed },
-    options: { autofocus?: boolean } = {},
+    options: { autofocus?: boolean; selection?: DraftTextSelection } = {},
   ): Promise<boolean> => {
     const generation = ++loadGeneration;
     loading = true;
@@ -313,7 +328,14 @@ export default function MailReplyBox(props: {
           if (isMailReplyMailMode(intent)) setMailMode(intent);
           setDraftId(loaded.draft.id);
           setConsolidated(loaded.draft.consolidatedCount ?? 0);
-          setMount({ key: ++mountKey, kind: "draft", ...loaded, parts, autofocus: Boolean(options.autofocus) });
+          setMount({
+            key: ++mountKey,
+            kind: "draft",
+            ...loaded,
+            parts,
+            autofocus: Boolean(options.autofocus),
+            selection: options.selection,
+          });
         });
         // Text kept from a held place meets a draft now: it waits as a copy to restore, never mixed in by itself.
         const buffered = storedText("pending");
@@ -350,6 +372,8 @@ export default function MailReplyBox(props: {
   const settle = (options: { autofocus?: boolean } = {}) => {
     if (disposed || detachedId() !== null || scheduled() || justSent() || switching()) return;
     const existing = replyDraft();
+    // After a reload the draft can stand in a window of this tab again: the box then offers to bring it back.
+    if (existing && draftWindowOpen(existing.id)) return void holdForWindow(existing.id);
     if (existing && !gone.has(existing.id)) return void load({ kind: "draft", id: existing.id }, options);
     const message = sourceMessage();
     if (message) void load({ kind: "seed", intent: mailMode(), message, withText: false }, options);
@@ -401,7 +425,7 @@ export default function MailReplyBox(props: {
     return text || null;
   };
 
-  const openDraft = (id: string) => {
+  const openDraft = (id: string, selection?: DraftTextSelection) => {
     gone.delete(id);
     // Text typed while the last reply waited to send becomes a copy to restore, never mixed in by itself.
     const typed = takeTypedText();
@@ -411,7 +435,7 @@ export default function MailReplyBox(props: {
       setJustSent(false);
       if (mode() === "note") setMode(mailMode());
     });
-    void load({ kind: "draft", id }, { autofocus: true });
+    void load({ kind: "draft", id }, { autofocus: true, selection });
   };
 
   /** Switches between Reply, Reply all, and Forward; the text stays. */
@@ -599,20 +623,49 @@ export default function MailReplyBox(props: {
     openDraft,
   });
 
-  /** Takes the draft back from its window into the box. */
-  const bringBack = async () => {
+  /** Takes the draft back from its window into the box; from a large window with the caret where it stood. */
+  const bringBack = async (selection?: DraftTextSelection) => {
     const id = detachedId();
     if (!id) return;
     await recallDraftWindow(id);
     if (disposed) return;
-    openDraft(id);
+    openDraft(id, selection);
   };
+  /** While a large window holds this box's draft, making it smaller brings the draft back here. */
+  let withdrawReturn: (() => void) | undefined;
+  onCleanup(() => withdrawReturn?.());
+  const holdForWindow = (id: string) => {
+    batch(() => {
+      setControls(null);
+      setMount(null);
+      setDetachedId(id);
+    });
+    withdrawReturn?.();
+    withdrawReturn = registerReplyBoxReturn(id, (selection) => void bringBack(selection));
+  };
+  // The windows of this tab come back after a reload, possibly after the box loaded: an untouched box steps aside.
+  createEffect(
+    on(
+      () => {
+        const id = replyDraft()?.id;
+        return id && draftWindowOpen(id) ? id : null;
+      },
+      (id) => {
+        if (!id || untrack(detachedId) !== null) return;
+        const current = untrack(mount);
+        if (current?.kind === "draft" && current.draft.id === id && !untrack(controls)?.changed()) holdForWindow(id);
+      },
+      { defer: true },
+    ),
+  );
   // A window closed by itself (sent, discarded, or just closed): the box fills again with the conversation's draft.
   createEffect(
     on(
       detached,
       (now, before) => {
         if (before && !now && untrack(detachedId)) {
+          withdrawReturn?.();
+          withdrawReturn = undefined;
           setDetachedId(null);
           if (!untrack(mount)) settle();
         }
@@ -769,6 +822,7 @@ export default function MailReplyBox(props: {
     fresh: false,
     fullscreen: () => false,
     toggleFullscreen: () => undefined,
+    initialSelection: current.kind === "draft" ? current.selection : undefined,
     register: (next) => setControls(next),
     messageLabel: props.messageLabel,
     leave: (outcome) => {
@@ -818,14 +872,15 @@ export default function MailReplyBox(props: {
         if (!disposed) setDraftId(draft.id);
       },
       buffer: (text) => storeText("pending", text),
-      detach: (id) => {
+      detach: (id, options) => {
         if (current.key !== untrack(mount)?.key) return;
-        batch(() => {
-          setControls(null);
-          setMount(null);
-          setDetachedId(id);
-        });
-        openDraftWindow(id, { mailboxId: props.mailboxId });
+        holdForWindow(id);
+        openDraftWindow(
+          id,
+          options?.large
+            ? { mailboxId: props.mailboxId, large: true, origin: "reply-box", selection: options.selection }
+            : { mailboxId: props.mailboxId },
+        );
       },
     },
   });

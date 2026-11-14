@@ -57,6 +57,7 @@ describe.skipIf(isServer)("Mail draft windows", () => {
         send: () => undefined,
         sendAt: () => undefined,
         focusText: () => document.querySelector<HTMLElement>(`[data-fake-text="${props.draftId}"]`)?.focus(),
+        selection: () => ({ anchor: 7, head: 9 }),
         ready: () => true,
         text: () => "",
         changed: () => false,
@@ -109,6 +110,7 @@ describe.skipIf(isServer)("Mail draft windows", () => {
                 returnHref="/app/mail/Box001"
                 onDraftsChanged={() => changes++}
                 onDockedChange={(value) => docked.push(value)}
+                replyPosition={() => "top"}
               />
             )}
           </Show>
@@ -308,5 +310,37 @@ describe.skipIf(isServer)("Mail draft windows", () => {
     await waitFor(() => frame("Drf002") !== null);
     expect(frames()).toHaveLength(1);
     expect(stored()).toEqual([{ draftId: "Drf002", state: "normal" }]);
+  });
+
+  test("Write large opens maximized with the box's caret; smaller hands it back to the box, or stays a window without one", async () => {
+    mount();
+    const returned: Array<{ draftId: string; selection: unknown }> = [];
+    const withdraw = m.windows.registerReplyBoxReturn("Drf001", (selection) => returned.push({ draftId: "Drf001", selection }));
+    try {
+      m.windows.openDraftWindow("Drf001", { large: true, origin: "reply-box", selection: { anchor: 2, head: 5 } });
+      await waitFor(() => frame("Drf001")?.getAttribute("data-state") === "maximized");
+      expect(hosts.get("Drf001")!.initialSelection).toEqual({ anchor: 2, head: 5 });
+      expect(hosts.get("Drf001")!.replyPosition?.()).toBe("top");
+      // A reload brings the window back large and still from the box.
+      expect(stored()).toEqual([{ draftId: "Drf001", state: "maximized", origin: "reply-box" }]);
+
+      button(frame("Drf001")!, "Restore size").click();
+      expect(returned).toEqual([{ draftId: "Drf001", selection: { anchor: 7, head: 9 } }]);
+      // The box takes it from here (it recalls the window); the window did not turn into a normal one meanwhile.
+      expect(frame("Drf001")?.getAttribute("data-state")).toBe("maximized");
+
+      // Esc in the large window takes the same way back.
+      frame("Drf001")!.querySelector<HTMLElement>("[data-fake-text]")!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+      expect(returned).toHaveLength(2);
+    } finally {
+      withdraw();
+    }
+
+    // Without its box (another conversation is open now), smaller makes it a normal window.
+    button(frame("Drf001")!, "Restore size").click();
+    await waitFor(() => frame("Drf001")?.getAttribute("data-state") === "normal");
+    expect(returned).toHaveLength(2);
   });
 });
