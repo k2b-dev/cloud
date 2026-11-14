@@ -729,7 +729,7 @@ describe("Waiting for you", () => {
     try {
       await strip(page).waitFor();
       // By the question, since the entry drops "in Team Ops Wochenplanung" once that chat is the open one.
-      const entry = strip(page).locator('[data-question="req-routine"]');
+      const entry = strip(page).locator('[data-entry="req-routine"]');
       await entry.click();
       await entry.click();
       await page.waitForURL(/\?conversation=Tops42&question=tool-routine-1$/);
