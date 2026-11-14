@@ -1001,6 +1001,8 @@ for (const view of [
       // text that replaces it line up instead of jumping by a few pixels at every switch.
       await page.locator(".ai-turn-work > summary").click();
       await page.locator(".ai-turn-steps__text").first().waitFor();
+      // The text stays at its step as a note that opens in place.
+      await page.locator(".ai-turn-note__toggle").first().click();
       const stepStyle = await style(".ai-turn-steps__text");
       expect([stepStyle.color, stepStyle.fontSize]).toEqual([statusStyle.color, statusStyle.fontSize]);
       // 12 px at line height 1.55; WebKit reports it as 18.599998px.
@@ -1817,6 +1819,12 @@ test("each text in the expanded work shows three lines with its own chevron, and
     await page.locator(".ai-turn-work > summary").click();
     const text = page.locator(".ai-turn-steps__text").first();
     await text.waitFor();
+    // Each text is a note at its step: a quiet line that opens the text in place, which then shows three lines.
+    const note = text.locator(".ai-turn-note__toggle");
+    expect(await note.getAttribute("aria-expanded")).toBe("false");
+    expect(await note.innerText()).toBe("Note on this step");
+    await note.click();
+    expect(await note.getAttribute("aria-expanded")).toBe("true");
     await settled(page, ".ai-turn-steps");
     const closed = await clampState(page, ".ai-turn-steps__text");
     expect(closed.height).toBeCloseTo(3 * closed.lineHeight, 0);
