@@ -348,7 +348,9 @@ export default function MailComposerHistory(props: {
                           >
                             <Avatar name={senderName()} size="sm" />
                             <span class="mail-composer-history-who">
-                              <span class="mail-composer-history-name">{outgoing() ? t().you : sender()}</span>
+                              <span class="mail-composer-history-name" title={sender()}>
+                                {outgoing() ? t().you : senderName()}
+                              </span>
                               <Show
                                 when={expanded()}
                                 fallback={

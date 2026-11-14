@@ -4582,7 +4582,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
           delivery: null,
           attachments: message.hasAttachments
-            ? [{ id: "Att900", filename: "Quote_Saturday.pdf", contentType: "application/pdf", sizeBytes: 18_000, contentId: null, checksum: null }]
+            ? [
+                {
+                  id: "Att900",
+                  filename: "Quote_Saturday.pdf",
+                  contentType: "application/pdf",
+                  sizeBytes: 18_000,
+                  contentId: null,
+                  checksum: null,
+                },
+              ]
             : [],
         });
         await page.route("**/api/mail/mailboxes/Box001/conversations/Conv01/messages**", (route) =>
@@ -4637,8 +4646,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           // F3: draft on the left; on the right the conversation above the preview.
           expect(await panes.locator('[role="tab"]').allTextContents()).toEqual(["Draft", "History", "Preview"]);
           const [draft, history, preview] = await Promise.all(
-            ["Draft", "History", "Preview"].map(async (name) =>
-              (await panes.locator(`[role="tabpanel"][aria-labelledby="${await panes.getByRole("tab", { name }).getAttribute("id")}"]`).boundingBox())!,
+            ["Draft", "History", "Preview"].map(
+              async (name) =>
+                (await panes
+                  .locator(`[role="tabpanel"][aria-labelledby="${await panes.getByRole("tab", { name }).getAttribute("id")}"]`)
+                  .boundingBox())!,
             ),
           );
           expect(draft.x + draft.width).toBeLessThanOrEqual(history.x);
@@ -4665,7 +4677,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await panes.locator(".k2b-panes__arrange").click();
           await page.locator(".k2b-panes__menu:popover-open").getByRole("menuitemradio", { name: "Tabs" }).click();
           await eventually(
-            async () => decodeURIComponent((await storedCookie(page, "settings-app-mail-composer-panes"))?.value ?? "").includes('"type":"group"'),
+            async () =>
+              decodeURIComponent((await storedCookie(page, "settings-app-mail-composer-panes"))?.value ?? "").includes('"type":"group"'),
             true,
             "the arrangement is stored",
           );
@@ -4709,6 +4722,65 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await close(page);
         }
       });
+
+      if (screenshots)
+        test("Write large review screenshots", async () => {
+          const directory = resolve(screenshots);
+          const shot = async (
+            name: string,
+            path: string,
+            width: number,
+            act: (page: Page) => Promise<void>,
+            failing?: "history" | "preview",
+          ) => {
+            const page = await open(path, width, undefined, "reduce", async (next) => {
+              await draftApi(next);
+              await historyApi(next);
+              if (failing === "history")
+                await next.route("**/api/mail/mailboxes/Box001/conversations/Conv01/messages**", (route) =>
+                  route.fulfill({ status: 503, json: { message: "Unavailable" } }),
+                );
+              if (failing === "preview")
+                await next.route("**/api/mail/mailboxes/Box001/compose-preview", (route) =>
+                  route.fulfill({ status: 503, json: { message: "Unavailable" } }),
+                );
+            });
+            try {
+              await readyDraft(page);
+              await act(page);
+              await settled(page);
+              await page.screenshot({ path: join(directory, `${name}.png`) });
+            } finally {
+              await page.context().close();
+            }
+          };
+          const thread = `${boxPath}?conversation=Conv01&identity=1`;
+          await shot("large-entry-light-1440", thread, 1440, async (page) => {
+            await page.locator("[data-mail-reply-box='mail'] [data-mail-write-large]").hover();
+            await page.locator("[role='tooltip']", { hasText: "Write large" }).waitFor();
+          });
+          await shot("large-stacked-dark-1440", `${thread}&theme=dark`, 1440, writeLarge);
+          await shot(
+            "large-history-error-light-1440",
+            thread,
+            1440,
+            async (page) => {
+              await writeLarge(page);
+              await page.locator(".mail-composer-history", { hasText: "The conversation could not load" }).waitFor();
+            },
+            "history",
+          );
+          await shot(
+            "large-preview-error-light-1440",
+            thread,
+            1440,
+            async (page) => {
+              await writeLarge(page);
+              await page.locator(".mail-large-preview", { hasText: "Preview could not be rendered" }).waitFor();
+            },
+            "preview",
+          );
+        }, 120_000);
 
       if (screenshots)
         test("draft review screenshots", async () => {
