@@ -7,7 +7,7 @@ import { readApiError } from "./api-response";
 import type { MailComposerHost } from "./MailComposer";
 import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { mailComposerMessages } from "./mail-composer-messages";
-import { createDefaultMailComposerPanesLayout } from "./mail-composer-panes";
+import { createDefaultMailComposerPanesLayout, readMailComposerPanesFromCookieHeader } from "./mail-composer-panes";
 import type { MailComposerSignatures } from "./mail-composer-signature";
 
 /** The draft is gone for this person: sent, discarded, deleted, or no longer theirs to see. */
@@ -116,7 +116,12 @@ export default function MailInlineDraft(props: {
           signatures={loaded.signatures}
           initialDraft={loaded.draft}
           unfinishedUploads={loaded.uploads}
-          initialPanes={createDefaultMailComposerPanesLayout()}
+          // Drafts here render in the browser: the large composer opens with the arrangement the person chose last.
+          initialPanes={
+            typeof document === "undefined"
+              ? createDefaultMailComposerPanesLayout()
+              : readMailComposerPanesFromCookieHeader(document.cookie)
+          }
           returnHref={props.returnHref}
           dateConfig={props.dateConfig}
           canShareAttachments={props.canAdmin}

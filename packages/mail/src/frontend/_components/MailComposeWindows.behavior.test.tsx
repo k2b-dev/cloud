@@ -330,9 +330,9 @@ describe.skipIf(isServer)("Mail draft windows", () => {
       expect(frame("Drf001")?.getAttribute("data-state")).toBe("maximized");
 
       // Esc in the large window takes the same way back.
-      frame("Drf001")!.querySelector<HTMLElement>("[data-fake-text]")!.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-      );
+      frame("Drf001")!
+        .querySelector<HTMLElement>("[data-fake-text]")!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       expect(returned).toHaveLength(2);
     } finally {
       withdraw();
