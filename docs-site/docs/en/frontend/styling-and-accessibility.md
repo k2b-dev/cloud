@@ -353,7 +353,9 @@ height-constrained and may cross its overflow boundary, use
 [`ScrollArea`](/en/ui/layout/scroll-area) or the scrolling part of the shared
 component that owns the region. Its stable scrollbar gutter keeps text,
 controls, and aligned columns from moving horizontally when a scrollbar
-appears or disappears.
+appears or disappears. The scrollbar itself is the shared one from `@k2b/ui`;
+applications only hide a scrollbar and never style their own, see
+[Scrollbars](/en/ui/layout/scroll-area#scrollbars).
 
 Treat the content length as dynamic when it can change through:
 

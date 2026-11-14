@@ -449,6 +449,19 @@
   scrollbar-gutter: stable;
 }
 
+/* With a mouse the scroll area below keeps the shared 0.5rem track from the start (Safari reserves no gutter), so the
+   head keeps the same empty track. */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .help-shell[data-surface="modal"] .help-head,
+    .help-shell[data-surface="panel"] .help-head,
+    .help-shell[data-surface="embedded"] .help-head {
+      overflow-x: hidden;
+      overflow-y: scroll;
+    }
+  }
+}
+
 @media (min-width: 40rem) {
   .help-head {
     padding-inline: 1.25rem;

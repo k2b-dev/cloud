@@ -229,12 +229,11 @@
   /* Scrolling — both layers must reserve scrollbar space identically
      or the content widths diverge and long lines wrap at different
      columns. We force `overflow-y: scroll` on both so the gutter is
-     always present. The textarea shows its native scrollbar; the
+     always present. The textarea shows the shared @k2b/ui scrollbar; the
      preview's scrollbar is rendered but painted transparent (see
      `.md-editor-preview` block) — the gutter stays, the visual goes. */
   overflow-y: scroll !important;
   overflow-x: hidden !important;
-  scrollbar-width: thin !important;
 
   /* Background neutralised — wrapper owns the surface color */
   background: transparent !important;
@@ -279,20 +278,25 @@
   user-select: none !important;
   -webkit-user-select: none !important;
   @apply text-zinc-900 dark:text-zinc-100;
-  /* Paint the preview's scrollbar transparent so only the textarea's
-     scrollbar (sitting on top, z-index: 2) is visible. We CAN'T set
-     `scrollbar-width: none` here — that would also remove the gutter
-     and the preview's content width would no longer match the
-     textarea's, breaking wrap alignment. The transparent-colour trick
-     preserves the gutter while hiding the visual. */
-  scrollbar-color: transparent transparent !important;
 }
 
-.md-editor-preview::-webkit-scrollbar-thumb,
-.md-editor-preview::-webkit-scrollbar-track,
-.md-editor-preview::-webkit-scrollbar-corner {
+/* Paint the preview's scrollbar transparent so only the textarea's
+   scrollbar (sitting on top, z-index: 2) is visible. We CAN'T set
+   `scrollbar-width: none` here — that would also remove the gutter
+   and the preview's content width would no longer match the
+   textarea's, breaking wrap alignment. The transparent thumb
+   preserves the gutter while hiding the visual. Chromium ignores
+   ::-webkit-scrollbar beside `scrollbar-color`, so only Firefox gets it. */
+/* scrollbars: allow the mirror layer keeps the shared gutter without a thumb */
+.md-editor-preview::-webkit-scrollbar-thumb {
   background: transparent !important;
-  border: 0 !important;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .md-editor-preview {
+    /* scrollbars: allow the mirror layer keeps the shared gutter without a thumb */
+    scrollbar-color: transparent transparent !important;
+  }
 }
 
 /* Critical alignment safeguard (overtype lesson, styles.js:256-264):

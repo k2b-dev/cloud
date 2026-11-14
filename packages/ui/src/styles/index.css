@@ -1024,13 +1024,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: none;
 }
 
+/* The shared scrollbar, drawn over the tab row's bottom inset: a 0.5rem lane
+   whose thumb is 4px at rest and 6px under the pointer. */
 .k2b-ui .k2b-panes__tabs-scrollbar {
   position: absolute;
   z-index: 4;
-  top: calc(2.5rem - 0.375rem);
+  top: calc(2.5rem - 0.4375rem);
   right: 0;
   left: 0;
-  height: 0.375rem;
+  height: 0.5rem;
   border-radius: 999px;
   cursor: ew-resize;
   opacity: 0;
@@ -1050,10 +1052,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 100%;
   border: 0.125rem solid transparent;
   border-radius: 999px;
-  background: var(--k2b-border-strong);
+  background: var(--k2b-scrollbar-thumb);
   background-clip: padding-box;
   transform: translateX(var(--k2b-panes-scroll-left));
   width: var(--k2b-panes-scroll-width);
+}
+
+.k2b-ui .k2b-panes__tabs-scrollbar:hover > span {
+  border-width: 0.0625rem;
+  background: var(--k2b-scrollbar-thumb-hover);
+  background-clip: padding-box;
 }
 
 .k2b-ui .k2b-panes__tab {
@@ -8465,13 +8473,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   mask-image: linear-gradient(to right, transparent, #000 2rem, #000 calc(100% - 2rem), transparent);
 }
 
+/* The shared scrollbar below the chips: a 0.5rem lane whose thumb is 4px at
+   rest and 6px under the pointer. */
 .k2b-ui .k2b-choice-groups-scrollbar {
   position: absolute;
   z-index: 1;
   right: 0;
-  bottom: -0.3125rem;
+  bottom: -0.375rem;
   left: 0;
-  height: 0.375rem;
+  height: 0.5rem;
   border-radius: 999px;
   cursor: ew-resize;
   opacity: 0;
@@ -8492,9 +8502,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 100%;
   border: 0.125rem solid transparent;
   border-radius: 999px;
-  background: var(--k2b-border-strong);
+  background: var(--k2b-scrollbar-thumb);
   background-clip: padding-box;
   transform: translateX(var(--k2b-choice-scroll-left));
+}
+
+.k2b-ui .k2b-choice-groups-scrollbar:hover > span {
+  border-width: 0.0625rem;
+  background: var(--k2b-scrollbar-thumb-hover);
+  background-clip: padding-box;
 }
 
 .k2b-ui .k2b-choice-groups > button {
@@ -10966,7 +10982,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-y: hidden;
   padding: 0.125rem 0;
   overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
 }
 
 .k2b-ui .k2b-date-durations button {
@@ -11568,9 +11583,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-data-table__scrollbar > span {
   position: absolute;
   display: block;
-  border: 1px solid transparent;
+  border: 0.125rem solid transparent;
   border-radius: 9999px;
-  background: color-mix(in srgb, var(--k2b-scrollbar-thumb) 45%, transparent);
+  background: var(--k2b-scrollbar-thumb);
   background-clip: padding-box;
 }
 
@@ -11588,7 +11603,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 100%;
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (hover: hover) and (pointer: fine) and (forced-colors: none) {
   .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap {
     scrollbar-width: none;
   }
@@ -11607,8 +11622,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     pointer-events: auto;
   }
 
+  /* The shared thumb: 4px at rest, 6px under the pointer, inside the same 0.5rem. */
   .k2b-ui .k2b-data-table__scrollbar:hover > span {
-    background: var(--k2b-scrollbar-thumb);
+    border-width: 0.0625rem;
+    background: var(--k2b-scrollbar-thumb-hover);
     background-clip: padding-box;
   }
 }
@@ -12606,82 +12623,145 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-shrink: 0;
 }
 
+/* scrollbars: central rule begin */
+/* One scrollbar for every scroller inside `.k2b-ui` and for the document that
+   hosts it: no track, no corner, no arrows, only a fully round thumb in the
+   two tokens below. Chromium and WebKit draw a fixed 0.5rem scrollbar whose
+   thumb is 4px wide at rest and 6px under the pointer or while dragged. The
+   thumb widens inside that fixed space, so hovering never moves content.
+   Chromium ignores every ::-webkit-scrollbar rule of an element that has a
+   `scrollbar-width` or `scrollbar-color`, so only browsers without
+   ::-webkit-scrollbar (Firefox) receive those two properties. Touch screens
+   keep their native overlay scrollbars and forced colors the system ones.
+   The rules match every element directly, because a direct match beats an
+   inherited value, and sit in the components layer with no specificity, so a
+   hidden scrollbar (`scrollbar-width: none`, a utility) always wins. Scrollers that
+   can start or stop overflowing reserve this space with `scrollbar-gutter`, or
+   take it from an end inset they already have; see layout-parity.css.
+   scripts/checks/scrollbars.ts keeps other stylesheets from setting their own. */
+:root:has(> .k2b-ui),
 .k2b-ui {
-  --k2b-scrollbar-thumb: rgb(82 82 91 / 0.55);
-  --k2b-scrollbar-thumb-hover: rgb(82 82 91 / 0.75);
-  scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
+  --k2b-scrollbar-thumb: color-mix(in srgb, var(--k2b-neutral-500, #71717a) 45%, transparent);
+  --k2b-scrollbar-thumb-hover: color-mix(in srgb, var(--k2b-neutral-500, #71717a) 80%, transparent);
 }
 
+:root.dark:has(> .k2b-ui),
+:root:has(> .k2b-ui:is([data-theme="dark"], .k2b-dark)),
 .k2b-ui[data-theme="dark"],
 .k2b-ui.k2b-dark,
 .dark .k2b-ui {
-  --k2b-scrollbar-thumb: rgb(113 113 122 / 0.55);
-  --k2b-scrollbar-thumb-hover: rgb(113 113 122 / 0.75);
+  --k2b-scrollbar-thumb: color-mix(in srgb, var(--k2b-neutral-400, #a1a1aa) 35%, transparent);
+  --k2b-scrollbar-thumb-hover: color-mix(in srgb, var(--k2b-neutral-400, #a1a1aa) 70%, transparent);
 }
 
-.k2b-ui::-webkit-scrollbar-track,
-.k2b-ui *::-webkit-scrollbar-track {
-  background: transparent;
+@layer components {
+  @media (pointer: fine) and (forced-colors: none) {
+    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar {
+      width: 0.5rem;
+      height: 0.5rem;
+      background: transparent;
+    }
+
+    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-track,
+    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-button {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-thumb {
+      min-width: 2rem;
+      min-height: 2rem;
+      border: 0.125rem solid transparent;
+      border-radius: 9999px;
+      background: var(--k2b-scrollbar-thumb);
+      background-clip: padding-box;
+    }
+
+    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-thumb:hover,
+    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-thumb:active {
+      border-width: 0.0625rem;
+      background: var(--k2b-scrollbar-thumb-hover);
+      background-clip: padding-box;
+    }
+  }
+
+  @supports not selector(::-webkit-scrollbar) {
+    @media (forced-colors: none) {
+      :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *) {
+        scrollbar-width: thin;
+        scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
+      }
+    }
+  }
+
+  /* Large workspace scrollers, and every scroller marked `k2b-quiet-scrollbar`,
+     stay visually quiet until the pointer or keyboard enters their region.
+     Only the thumb's colour changes, never the scrollbar's geometry, so
+     nothing moves and no fade runs when it appears. */
+  @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+    .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb {
+      background: transparent;
+    }
+
+    /* WebKit repaints a styled scrollbar only when the scroller's own style
+       changes, not when a scrollbar part's does. This invisible change makes
+       the thumb appear and disappear there too. */
+    .k2b-ui .k2b-app-workspace__sidebar-body:hover,
+    .k2b-ui .k2b-chat-timeline__viewport:hover,
+    .k2b-ui .k2b-quiet-scrollbar:hover,
+    .k2b-ui .k2b-app-workspace__sidebar-body:focus-within,
+    .k2b-ui .k2b-chat-timeline__viewport:focus-within,
+    .k2b-ui .k2b-quiet-scrollbar:focus-within {
+      --k2b-scrollbar-revealed: 1;
+    }
+
+    .k2b-ui .k2b-app-workspace__sidebar-body:hover::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-chat-timeline__viewport:hover::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-quiet-scrollbar:hover::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-app-workspace__sidebar-body:focus-within::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-chat-timeline__viewport:focus-within::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-quiet-scrollbar:focus-within::-webkit-scrollbar-thumb {
+      background: var(--k2b-scrollbar-thumb);
+      background-clip: padding-box;
+    }
+
+    .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb:hover,
+    .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb:hover,
+    .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb:hover,
+    .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb:active,
+    .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb:active,
+    .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb:active {
+      background: var(--k2b-scrollbar-thumb-hover);
+      background-clip: padding-box;
+    }
+
+    @supports not selector(::-webkit-scrollbar) {
+      .k2b-ui .k2b-app-workspace__sidebar-body,
+      .k2b-ui .k2b-chat-timeline__viewport,
+      .k2b-ui .k2b-quiet-scrollbar {
+        scrollbar-color: transparent transparent;
+      }
+
+      .k2b-ui .k2b-app-workspace__sidebar-body:hover,
+      .k2b-ui .k2b-chat-timeline__viewport:hover,
+      .k2b-ui .k2b-quiet-scrollbar:hover,
+      .k2b-ui .k2b-app-workspace__sidebar-body:focus-within,
+      .k2b-ui .k2b-chat-timeline__viewport:focus-within,
+      .k2b-ui .k2b-quiet-scrollbar:focus-within {
+        scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
+      }
+    }
+  }
 }
 
-.k2b-ui::-webkit-scrollbar-thumb,
-.k2b-ui *::-webkit-scrollbar-thumb {
-  border-radius: 9999px;
-  background: var(--k2b-scrollbar-thumb);
-}
-
-/* Large workspace scrollers, and every scroller marked `k2b-quiet-scrollbar`,
-   stay visually quiet until the pointer or keyboard enters their region. Only
-   the colour changes, never the scrollbar geometry, so nothing moves and no
-   fade runs when it appears. Touch or coarse-pointer devices keep their native
-   treatment. */
-@media (hover: hover) and (pointer: fine) {
-  .k2b-ui .k2b-app-workspace__sidebar-body,
-  .k2b-ui .k2b-chat-timeline__viewport,
-  .k2b-ui .k2b-quiet-scrollbar {
-    scrollbar-color: transparent transparent;
-  }
-
-  .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-track,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-track,
-  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-track,
-  .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb {
-    background: transparent;
-  }
-
-  .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within),
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within),
-  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within) {
-    scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
-  }
-
-  /* WebKit repaints a styled scrollbar, such as a fixed track, only when the
-     scrollbar's own style changes, not when its thumb's does. This invisible
-     change makes the thumb appear there too. */
-  .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar,
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar,
-  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar {
-    background: transparent;
-  }
-
-  .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar-thumb {
-    border: 1px solid transparent;
-    border-radius: 9999px;
-    background: var(--k2b-scrollbar-thumb);
-    background-clip: padding-box;
-  }
-
-  .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover,
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover,
-  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover {
-    background: var(--k2b-scrollbar-thumb-hover);
-    background-clip: padding-box;
-  }
-}
+/* scrollbars: central rule end */
 
 .k2b-ui .k2b-chat-timeline__viewport:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
@@ -15648,7 +15728,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
   padding: 0.125rem;
   overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
 }
 
 .k2b-ui .k2b-chat-composer__attachment {
@@ -17179,33 +17258,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @media (forced-colors: active) {
-  .k2b-ui,
-  .k2b-ui .k2b-app-workspace__sidebar-body,
-  .k2b-ui .k2b-chat-timeline__viewport,
-  .k2b-ui .k2b-quiet-scrollbar,
-  .k2b-ui .k2b-table-wrap {
-    scrollbar-color: auto;
-  }
-
-  .k2b-ui::-webkit-scrollbar-track,
-  .k2b-ui *::-webkit-scrollbar-track,
-  .k2b-ui::-webkit-scrollbar-thumb,
-  .k2b-ui *::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-track,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-track,
-  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-track,
-  .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb {
-    border: revert;
-    background: revert;
-  }
-
-  .k2b-ui .k2b-table-wrap::-webkit-scrollbar {
-    width: auto;
-    height: auto;
-  }
-
   .k2b-ui .k2b-data-table__scrollbar {
     display: none !important;
   }
@@ -17824,7 +17876,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 1;
   gap: 0.125rem;
   overflow: auto hidden;
-  scrollbar-width: thin;
 }
 
 .k2b-ui .k2b-tabs[data-orientation="vertical"] .k2b-tabs__list {
@@ -19253,16 +19304,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-variant-numeric: tabular-nums;
 }
 
-/* The fixed-width scroll track occupies the existing right inset, even without overflow. */
+/* The shared 0.5rem scrollbar occupies the existing right inset, even without overflow. */
 .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body {
   margin-inline-end: -0.5rem;
   padding: 0;
-  scrollbar-width: auto;
-  scrollbar-color: auto;
   scrollbar-gutter: stable;
-}
-.k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body::-webkit-scrollbar {
-  width: 0.5rem;
 }
 /* Browsers that ignore that width and draw an overlay scrollbar of no width
    would let rows run into the right inset, so the body's content stops at the

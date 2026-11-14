@@ -149,12 +149,6 @@ html:has(> body > .cloud-app-canvas[data-layout-full-page="true"]) {
 * {
   font-variant-ligatures: contextual;
   font-family: var(--font-sans);
-  scrollbar-width: thin;
-  scrollbar-color: rgb(161 161 170 / 0.4) transparent;
-}
-
-.dark * {
-  scrollbar-color: rgb(82 82 91 / 0.5) transparent;
 }
 
 /* stdlib charts: make the SVG fill its wrapping element.
@@ -241,43 +235,6 @@ html:has(> body > .cloud-app-canvas[data-layout-full-page="true"]) {
 .stdlib-chart a:focus .stdlib-chart-state-region {
   opacity: 0.8;
   outline: none;
-}
-
-*::-webkit-scrollbar {
-  width: 0.5rem;
-  height: 0.5rem;
-}
-
-*::-webkit-scrollbar-track {
-  background: transparent;
-  border-radius: 9999px;
-}
-
-*::-webkit-scrollbar-thumb {
-  background: rgb(161 161 170 / 0.35);
-  border-radius: 9999px;
-  border: 1px solid transparent;
-  background-clip: padding-box;
-}
-
-*::-webkit-scrollbar-thumb:hover {
-  background: rgb(161 161 170 / 0.55);
-}
-
-.dark *::-webkit-scrollbar-thumb {
-  background: rgb(82 82 91 / 0.5);
-}
-
-.dark *::-webkit-scrollbar-thumb:hover {
-  background: rgb(82 82 91 / 0.7);
-}
-
-*::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-.multi-select-pill-strip {
-  scrollbar-width: thin;
 }
 
 body {
@@ -391,7 +348,15 @@ solid-island {
   /* A page that scrolls its content in a ScrollArea grows with it here, so
      the area does not scroll and reserves no second gutter beside the
      document's. From md, `main` bounds its height and it scrolls. */
-  .cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated]) .layout-content-main > .k2b-scroll-area { scrollbar-gutter: auto; }
+  .cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated]) .layout-content-main > .k2b-scroll-area { overflow-y: auto; scrollbar-gutter: auto; }
+  /* Safari reserves no gutter before the page overflows. With a mouse the
+     document keeps the shared 0.5rem track from the start instead, like the
+     scrollers in @k2b/ui (layout-parity.css). */
+  @media (pointer: fine) and (forced-colors: none) {
+    @supports selector(::-webkit-scrollbar) {
+      html:has(> body > .cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated])) { overflow-y: scroll; }
+    }
+  }
   .cloud-app-canvas > .layout-shell-content { gap: 0; }
   /* The anonymous header floats as the same card as from md, with the shell
      spacing that the canvas gives it there. */
@@ -565,6 +530,17 @@ solid-island {
   .cloud-app-canvas .layout-content-main:has(> .k2b-app-workspace, > :is(solid-island, solid-client) > .k2b-app-workspace) {
     overflow: visible;
     scrollbar-gutter: auto;
+  }
+  /* Safari reserves no gutter before a regular page overflows. With a mouse
+     its scroller keeps the shared 0.5rem track from the start instead, like
+     the scrollers in @k2b/ui (layout-parity.css); a page that scrolls inside
+     a ScrollArea or workspace keeps no second track. */
+  @media (pointer: fine) and (forced-colors: none) {
+    @supports selector(::-webkit-scrollbar) {
+      .cloud-app-canvas .layout-content-main.md\:overflow-auto:not(:has(> .k2b-scroll-area, > .k2b-app-workspace, > :is(solid-island, solid-client) > .k2b-app-workspace)) {
+        overflow-y: scroll;
+      }
+    }
   }
   .cloud-app-canvas .layout-content-main .k2b-app-workspace[data-flat="true"]:not(.k2b-app-workspace *) {
     --k2b-workspace-radius: var(--k2b-radius-dialog);

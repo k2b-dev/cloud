@@ -692,7 +692,6 @@
   overflow-y: auto;
   overflow-anchor: none;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
 }
 
 .k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__weekdays {
@@ -3361,7 +3360,6 @@
   overflow-anchor: none;
   overscroll-behavior: contain;
   scroll-padding: var(--k2b-calendar-week-top, 5rem) var(--k2b-detail-space, 0px) 0 var(--k2b-calendar-gutter);
-  scrollbar-width: thin;
   outline: none;
 }
 
@@ -5724,10 +5722,17 @@
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--k2b-text) 22%, transparent) transparent;
   scrollbar-gutter: stable;
   touch-action: pan-x pan-y;
+}
+
+/* WebKit reserves no gutter before content overflows, so with a mouse the shared track is always there (layout-parity.css). */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-pdf-viewer__pages {
+      overflow-y: scroll;
+    }
+  }
 }
 
 .k2b-ui .k2b-pdf-viewer__pages[data-fit] {
@@ -6344,7 +6349,6 @@
   overflow-y: hidden;
   overscroll-behavior-x: contain;
   scroll-padding-inline: 1rem;
-  scrollbar-width: thin;
 }
 
 .k2b-ui .k2b-timeline__track {

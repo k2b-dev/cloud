@@ -87,6 +87,61 @@ already behave this way.
 </ScrollArea>
 ```
 
+## Scrollbars
+
+Cloud draws one scrollbar everywhere, from one rule in `@k2b/ui`: no track,
+no corner, and no arrows, only a fully round thumb. With a mouse, the
+scrollbar is a fixed 0.5 rem. Its thumb is 4 px wide at rest and 6 px under
+the pointer or while dragged. The thumb widens inside the same 0.5 rem, so
+nothing moves. Its colors are `--k2b-scrollbar-thumb` and
+`--k2b-scrollbar-thumb-hover`. Chromium and Safari draw it exactly. Firefox
+draws its thin scrollbar in the same color. Touch screens keep their native
+overlay scrollbars, and forced colors mode keeps the system scrollbars.
+
+Applications do not style scrollbars. Do not set `scrollbar-width`,
+`scrollbar-color`, or `::-webkit-scrollbar` rules of your own. Chromium
+ignores the shared rule for an element that has either property, so one
+local value draws a different scrollbar. The `scrollbars` repository check
+reports such rules. The only allowed change is to hide a scrollbar, for a
+strip that fades at its edges and scrolls by wheel, touch, or keyboard:
+
+```css
+.k2b-ui .my-chip-strip {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+```
+
+In markup, `[scrollbar-width:none]` does the same. A rare justified exception
+names its reason in a comment on the line above the declaration or its selector
+(`scrollbars: allow <reason>`).
+
+A scrollbar never moves content when it appears. `ScrollArea`, level bodies,
+the workspace sidebar, `Main`, `MainPane`, `DetailPanel.Body`,
+`ChatTimeline`, `VirtualFeed`, and `PdfViewer` keep the scrollbar's room from
+the start. Chromium and Firefox reserve it with `scrollbar-gutter: stable`.
+Safari reserves no gutter before content overflows, so with a mouse these
+scrollers always show the empty 0.5 rem track. Where a column already has an
+end inset, the track takes that inset instead of adding room: an inset
+`ScrollArea`, a level body, and the sidebar keep 0.5 rem on both sides. An
+application scroller with its own end padding does the same and subtracts
+the track from its padding:
+
+```css
+/* The reader pads 1.25rem; the shared track takes 0.5rem of it. */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .reader-scroll {
+      overflow-y: scroll;
+      padding-inline-end: 0.75rem;
+    }
+  }
+}
+```
+
+`DataTable` and the tabs of `Panes` draw the same thumb as an overlay that
+takes no room.
+
 ## Horizontal strips
 
 Use `orientation="horizontal"` for a bounded row of wider content. It uses

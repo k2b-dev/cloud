@@ -1951,7 +1951,6 @@
   inset: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
 }
 .notebook-graph__timeline-wrap {
   position: relative;

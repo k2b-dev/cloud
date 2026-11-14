@@ -877,7 +877,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   list-style: none;
-  scrollbar-width: thin;
 }
 .filesv2-new-folder__row {
   --filesv2-new-folder-depth: 0;
@@ -1094,7 +1093,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   border-radius: var(--k2b-radius-control);
-  scrollbar-width: thin;
 }
 .filesv2-upload[data-expanded="false"] .filesv2-upload__scroll {
   display: none;

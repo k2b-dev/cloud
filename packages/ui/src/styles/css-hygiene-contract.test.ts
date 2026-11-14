@@ -142,12 +142,52 @@ describe("@k2b/ui stylesheet hygiene", () => {
     }
   });
 
+  test("draws one scrollbar everywhere: no track, a 4px thumb that widens to 6px inside a fixed 0.5rem", () => {
+    const rules = readShippedCssRules(stylesDir);
+    const declarations = (selector: string, context: string) => {
+      const rule = rules.find((candidate) => candidate.selector === selector && candidate.context === context);
+      expect(rule, `${context} ${selector}`).toBeDefined();
+      return cssDeclarations(rule!.body);
+    };
+    // Every element inside `.k2b-ui` and the document hosting it, matched directly: a direct match beats an inherited value.
+    const every = ":where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)";
+    const webkit = "@layer components > @media (pointer: fine) and (forced-colors: none)";
+    const scrollbar = declarations(`${every}::-webkit-scrollbar`, webkit);
+    expect([scrollbar.get("width"), scrollbar.get("height")]).toEqual([["0.5rem"], ["0.5rem"]]);
+    expect(declarations(`${every}::-webkit-scrollbar-track`, webkit).get("background")).toEqual(["transparent"]);
+    expect(declarations(`${every}::-webkit-scrollbar-corner`, webkit).get("background")).toEqual(["transparent"]);
+    expect(declarations(`${every}::-webkit-scrollbar-button`, webkit).get("display")).toEqual(["none"]);
+    const thumb = declarations(`${every}::-webkit-scrollbar-thumb`, webkit);
+    expect(thumb.get("border")).toEqual(["0.125rem solid transparent"]);
+    expect(thumb.get("background")).toEqual(["var(--k2b-scrollbar-thumb)"]);
+    for (const state of ["hover", "active"]) {
+      const widened = declarations(`${every}::-webkit-scrollbar-thumb:${state}`, webkit);
+      expect(widened.get("border-width")).toEqual(["0.0625rem"]);
+      expect(widened.get("background")).toEqual(["var(--k2b-scrollbar-thumb-hover)"]);
+    }
+    // Chromium ignores ::-webkit-scrollbar beside either property, so only engines without it receive them.
+    const firefox = declarations(every, "@layer components > @supports not selector(::-webkit-scrollbar) > @media (forced-colors: none)");
+    expect(firefox.get("scrollbar-width")).toEqual(["thin"]);
+    expect(firefox.get("scrollbar-color")).toEqual(["var(--k2b-scrollbar-thumb) transparent"]);
+    const tokens = (selector: string) =>
+      rules
+        .filter((rule) => rule.selector === selector && rule.context === "")
+        .map((rule) => cssDeclarations(rule.body))
+        .find((found) => found.has("--k2b-scrollbar-thumb"))!;
+    const light = tokens(".k2b-ui");
+    expect(light.get("--k2b-scrollbar-thumb")).toEqual(["color-mix(in srgb, var(--k2b-neutral-500, #71717a) 45%, transparent)"]);
+    expect(light.get("--k2b-scrollbar-thumb-hover")).toEqual(["color-mix(in srgb, var(--k2b-neutral-500, #71717a) 80%, transparent)"]);
+    const dark = tokens(".dark .k2b-ui");
+    expect(dark.get("--k2b-scrollbar-thumb")).toEqual(["color-mix(in srgb, var(--k2b-neutral-400, #a1a1aa) 35%, transparent)"]);
+    expect(dark.get("--k2b-scrollbar-thumb-hover")).toEqual(["color-mix(in srgb, var(--k2b-neutral-400, #a1a1aa) 70%, transparent)"]);
+  });
+
   test("reveals workspace scrollbars for pointer and keyboard use without changing their geometry", () => {
     const rules = readShippedCssRules(stylesDir);
     // `k2b-quiet-scrollbar` is the public class for an application's own scrollers.
     const scrollers = [".k2b-ui .k2b-app-workspace__sidebar-body", ".k2b-ui .k2b-chat-timeline__viewport", ".k2b-ui .k2b-quiet-scrollbar"];
-    const finePointer = "@media (hover: hover) and (pointer: fine)";
-    const forcedColors = "@media (forced-colors: active)";
+    const quiet = "@layer components > @media (hover: hover) and (pointer: fine) and (forced-colors: none)";
+    const firefox = `${quiet} > @supports not selector(::-webkit-scrollbar)`;
     const declarations = (selector: string, context: string) => {
       const rule = rules.find((candidate) => candidate.selector === selector && candidate.context === context);
       expect(rule, `${context} ${selector}`).toBeDefined();
@@ -155,20 +195,23 @@ describe("@k2b/ui stylesheet hygiene", () => {
     };
 
     for (const selector of scrollers) {
-      const idle = declarations(selector, finePointer);
-      expect(idle.get("scrollbar-color")).toEqual(["transparent transparent"]);
-      expect(idle.has("scrollbar-width")).toBe(false);
-      expect(declarations(`${selector}::-webkit-scrollbar-thumb`, finePointer).get("background")).toEqual(["transparent"]);
-      expect(declarations(`${selector}:is(:hover, :focus-within)`, finePointer).get("scrollbar-color")?.[0]).not.toStartWith("transparent");
-      expect(declarations(`${selector}:is(:hover, :focus-within)::-webkit-scrollbar-thumb`, finePointer).get("background")?.[0]).not.toBe(
-        "transparent",
-      );
-      // WebKit repaints a styled track's thumb only when the scrollbar's own style changes.
-      const repaint = declarations(`${selector}:is(:hover, :focus-within)::-webkit-scrollbar`, finePointer);
-      expect([...repaint.keys()]).toEqual(["background"]);
-      expect(repaint.get("background")).toEqual(["transparent"]);
-      expect(declarations(selector, forcedColors).get("scrollbar-color")).toEqual(["auto"]);
-      expect(declarations(`${selector}::-webkit-scrollbar-thumb`, forcedColors).get("background")).toEqual(["revert"]);
+      const idle = declarations(`${selector}::-webkit-scrollbar-thumb`, quiet);
+      expect([...idle.keys()]).toEqual(["background"]);
+      expect(idle.get("background")).toEqual(["transparent"]);
+      for (const reveal of ["hover", "focus-within"]) {
+        expect(declarations(`${selector}:${reveal}::-webkit-scrollbar-thumb`, quiet).get("background")).toEqual([
+          "var(--k2b-scrollbar-thumb)",
+        ]);
+        // WebKit repaints a styled scrollbar only when the scroller's own style changes.
+        expect([...declarations(`${selector}:${reveal}`, quiet).keys()]).toEqual(["--k2b-scrollbar-revealed"]);
+        expect(declarations(`${selector}:${reveal}`, firefox).get("scrollbar-color")).toEqual(["var(--k2b-scrollbar-thumb) transparent"]);
+      }
+      expect(declarations(`${selector}::-webkit-scrollbar-thumb:hover`, quiet).get("background")).toEqual([
+        "var(--k2b-scrollbar-thumb-hover)",
+      ]);
+      const firefoxIdle = declarations(selector, firefox);
+      expect(firefoxIdle.get("scrollbar-color")).toEqual(["transparent transparent"]);
+      expect(firefoxIdle.has("scrollbar-width")).toBe(false);
     }
   });
 
@@ -186,9 +229,9 @@ describe("@k2b/ui stylesheet hygiene", () => {
     expect(declarations(".k2b-ui .k2b-app-overview__icon").get("color")).toEqual(["var(--k2b-app-workspace-active)"]);
   });
 
-  test("overlays DataTable scrollbars and keeps dark scrollbars quieter", () => {
+  test("overlays DataTable scrollbars with the shared thumb", () => {
     const rules = readShippedCssRules(stylesDir);
-    const finePointer = "@media (hover: hover) and (pointer: fine)";
+    const finePointer = "@media (hover: hover) and (pointer: fine) and (forced-colors: none)";
     const forcedColors = "@media (forced-colors: active)";
     const declarations = (selector: string, context = "") => {
       const rule = rules.find((candidate) => candidate.selector === selector && candidate.context === context);
@@ -208,8 +251,11 @@ describe("@k2b/ui stylesheet hygiene", () => {
       ).get("display"),
     ).toEqual(["block"]);
     expect(declarations(".k2b-ui .k2b-data-table__scrollbar", forcedColors).get("display")).toEqual(["none !important"]);
-    expect(shippedCss).toContain("--k2b-scrollbar-thumb: rgb(113 113 122 / 0.55)");
-    expect(shippedCss).toContain("background: var(--k2b-scrollbar-thumb-hover)");
+    // The overlay draws the shared thumb: 4px of its 0.5rem lane at rest, 6px under the pointer.
+    const thumb = declarations(".k2b-ui .k2b-data-table__scrollbar > span");
+    expect([thumb.get("border"), thumb.get("background")]).toEqual([["0.125rem solid transparent"], ["var(--k2b-scrollbar-thumb)"]]);
+    const hovered = declarations(".k2b-ui .k2b-data-table__scrollbar:hover > span", finePointer);
+    expect([hovered.get("border-width"), hovered.get("background")]).toEqual([["0.0625rem"], ["var(--k2b-scrollbar-thumb-hover)"]]);
   });
 
   test("does not restore selectors and tokens proven dead during migration", () => {
