@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.71.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.70.0...npm-cloud-v0.71.0) (2026-11-14)
+
+
+### Features
+
+* **mail:** warn before sending a message without a subject ([#3296](https://github.com/k2b-dev/cloud/issues/3296)) ([9d04e85](https://github.com/k2b-dev/cloud/commit/9d04e8536652f4984de538a46f6482d5751d9987))
+
+
+### Bug Fixes
+
+* **cloud:** late shared-text publishes no longer change another document's room state ([#3298](https://github.com/k2b-dev/cloud/issues/3298)) ([a68d610](https://github.com/k2b-dev/cloud/commit/a68d6103cac3deae64e094cda97fee9f0cc2190c))
+* **mail:** expand shared draft lifecycle capacity and warn before exhaustion ([#3295](https://github.com/k2b-dev/cloud/issues/3295)) ([e36d304](https://github.com/k2b-dev/cloud/commit/e36d3042f0848a3f1a1dec5e356dac94d5132e65))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.57.1 to 0.58.0
+    * @k2b/editor bumped from 0.11.4 to 0.11.5
+
 ## [0.70.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.69.0...npm-cloud-v0.70.0) (2026-11-13)
 
 

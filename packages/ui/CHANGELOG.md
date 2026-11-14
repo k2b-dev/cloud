@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.58.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.57.1...npm-ui-v0.58.0) (2026-11-14)
+
+
+### Features
+
+* **mail:** write a reply large with draft, conversation and preview side by side ([#3312](https://github.com/k2b-dev/cloud/issues/3312)) ([1866d63](https://github.com/k2b-dev/cloud/commit/1866d632a080a5c593d7b68199ac2bc4ebcb3796))
+* **ui:** panes show their arrangement and separate with the shadow edge ([#3311](https://github.com/k2b-dev/cloud/issues/3311)) ([ab181a8](https://github.com/k2b-dev/cloud/commit/ab181a874e9776280df05909044a9a5d41bb8e15))
+* **ui:** the PDF viewer keeps the current pages while a new document loads ([#3308](https://github.com/k2b-dev/cloud/issues/3308)) ([68a8b28](https://github.com/k2b-dev/cloud/commit/68a8b28576f428dc850a9a9094b9782b1a589154))
+
+
+### Bug Fixes
+
+* **ui:** text selection in the PDF viewer selects text again ([#3305](https://github.com/k2b-dev/cloud/issues/3305)) ([2827b68](https://github.com/k2b-dev/cloud/commit/2827b68a535e0f375c56c8746be9fb3fb4f8f9cc)), closes [#3302](https://github.com/k2b-dev/cloud/issues/3302)
+* **ui:** the PDF viewer builds its text layer without blocking the page ([#3309](https://github.com/k2b-dev/cloud/issues/3309)) ([5082e37](https://github.com/k2b-dev/cloud/commit/5082e3780001a16f4420724144daae574b76fdea)), closes [#3307](https://github.com/k2b-dev/cloud/issues/3307)
+
 ## [0.57.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.57.0...npm-ui-v0.57.1) (2026-11-13)
 
 
