@@ -467,6 +467,13 @@ for (const locale of ["en", "de"] as const) {
           .waitFor();
         expect(new URL(page.url()).pathname).toBe("/admin/code");
         expect(await recover.isEnabled()).toBe(true);
+        expect(await page.locator("#code-review-failure p p").count()).toBe(0);
+        await Promise.all([
+          page.waitForEvent("load"),
+          page.getByRole("button", { name: locale === "de" ? "Neu laden" : "Reload", exact: true }).click(),
+        ]);
+        await page.waitForSelector('body[data-ready="true"]');
+        expect(await page.locator("#code-review-failure").count()).toBe(0);
       }
       expect(logouts).toEqual([FIXTURE_PEOPLE.ben]);
     }, 20_000);

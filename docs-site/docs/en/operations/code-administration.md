@@ -72,7 +72,8 @@ the same account from the last ten minutes, or a decision through Cloud Login.
 When confirmation is missing, **Sign in again** returns to this exact review
 after sign-in. Emergency administrators use **Sign out and use admin token**: Cloud first
 finishes signing this account out, then opens the token sign-in and returns to
-the review. A failed sign-out stays visible and can be retried.
+the review. A failed sign-out stays visible. Reload to check your current sign-in,
+or try signing out again.
 A phone app session, personal API key or OAuth credential cannot replace this
 browser confirmation.
 

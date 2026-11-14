@@ -319,13 +319,23 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
               tabIndex={-1}
               tone="danger"
               title={message()}
-              detail={signOutFailed() ? <p role="alert">{t().signOutFailed}</p> : undefined}
+              detail={signOutFailed() ? <span role="alert">{t().signOutFailed}</span> : undefined}
               actions={
                 <div class="flex flex-wrap gap-2">
                   <Show when={failureCode() === "REAUTHENTICATE"}>
-                    <ButtonLink size="sm" href={signInHref()} navigation="document">
-                      {t().signInAgain}
-                    </ButtonLink>
+                    <Show
+                      when={!signOutFailed()}
+                      fallback={
+                        <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
+                          <i class="ti ti-refresh" aria-hidden="true" />
+                          {t().reload}
+                        </Button>
+                      }
+                    >
+                      <ButtonLink size="sm" href={signInHref()} navigation="document">
+                        {t().signInAgain}
+                      </ButtonLink>
+                    </Show>
                     <Button
                       size="sm"
                       variant="secondary"

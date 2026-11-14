@@ -213,7 +213,7 @@ export const codeAdminMessages = i18n.define({
         "Cloud cannot handle version decisions right now. Try again later. If this continues, ask the operator to check Code approvals.",
       signInAgain: "Sign in again",
       signInAdmin: "Sign out and use admin token",
-      signOutFailed: "Could not finish signing out. Retry here before signing in with the admin token.",
+      signOutFailed: "Could not finish signing out. Reload to check your current sign-in, or try signing out again.",
       reload: "Reload",
       approvedState: "Approved",
       rejectedState: "Rejected",
@@ -580,7 +580,7 @@ export const codeAdminMessages = i18n.define({
       signInAgain: "Erneut anmelden",
       signInAdmin: "Abmelden und Admin-Token nutzen",
       signOutFailed:
-        "Das Abmelden konnte nicht abgeschlossen werden. Versuche es hier erneut, bevor du dich mit dem Admin-Token anmeldest.",
+        "Das Abmelden konnte nicht abgeschlossen werden. Lade neu, um deine aktuelle Anmeldung zu prüfen, oder versuche das Abmelden erneut.",
       reload: "Neu laden",
       approvedState: "Freigegeben",
       rejectedState: "Abgelehnt",
