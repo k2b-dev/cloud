@@ -19,8 +19,8 @@ export const sharedWorkstationMessages = i18n.define({
     de: {
       label: "Gemeinsam genutzter Arbeitsplatz",
       description: "Meldet ab, wenn hier eine Weile niemand arbeitet",
-      markedTitle: "Gemeinsamer Arbeitsplatz an",
-      marked: ({ minutes }) => `Meldet nach ${minutes} Minuten ohne Eingabe und beim Schließen ab.`,
+      markedTitle: "Gemeinsam genutzter Arbeitsplatz an",
+      marked: ({ minutes }) => `Meldet nach ${minutes} Minuten ohne Eingabe und beim Schließen des Browsers ab.`,
       unmarked: "Dieser Browser ist kein gemeinsam genutzter Arbeitsplatz mehr.",
       failed: "Der gemeinsam genutzte Arbeitsplatz konnte nicht geändert werden. Bitte versuche es erneut.",
       warningTitle: "Du wirst gleich abgemeldet",

@@ -250,6 +250,7 @@ test("a message alone reads calmly in the regular weight, only a title is semibo
       const { toast } = window as unknown as ToastWindow;
       toast.success("This browser now signs out after 10 minutes without input and when it closes, so nobody else sees your data.", {
         duration: 0,
+        link: { label: "Open settings", href: "https://cloud.example/me" },
       });
       toast.success("Budget 2027.xlsx · 48 KB", { title: "Export finished", duration: 0 });
     });
@@ -259,26 +260,29 @@ test("a message alone reads calmly in the regular weight, only a title is semibo
       page.evaluate(() =>
         [...document.querySelectorAll<HTMLElement>(".k2b-toast")].map((card) => {
           const style = (selector: string) => {
-            const element = card.querySelector<HTMLElement>(selector)!;
-            if (element.hidden) return null;
+            const element = card.querySelector<HTMLElement>(selector);
+            if (!element || element.hidden) return null;
             const { fontWeight, fontSize, lineHeight, color } = getComputedStyle(element);
             return { fontWeight, fontSize, lineHeight, muted: color !== getComputedStyle(card).color };
           };
           return {
             title: style(".k2b-toast__title"),
             message: style(".k2b-toast__description"),
+            link: style(".k2b-toast__link"),
             height: Math.round(card.getBoundingClientRect().height),
           };
         }),
       );
     const folded = await read();
-    expect(folded.map(({ title, message }) => ({ title, message }))).toEqual([
-      // Alone, however long, the message is body text: regular weight in the text colour, never a headline.
-      { title: null, message: { fontWeight: "400", fontSize: "14px", lineHeight: "20px", muted: false } },
+    expect(folded.map(({ title, message, link }) => ({ title, message, link: link?.fontWeight ?? null }))).toEqual([
+      // Alone, however long, the message is body text: regular weight in the text colour, never a headline. Its link
+      // keeps that weight and differs only by colour and underline.
+      { title: null, message: { fontWeight: "400", fontSize: "14px", lineHeight: "20px", muted: false }, link: "400" },
       // With a title, only the title is semibold; the message is the smaller, muted line under it.
       {
         title: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false },
         message: { fontWeight: "400", fontSize: "13px", lineHeight: "18px", muted: true },
+        link: null,
       },
     ]);
     // Fanning the stack out under the pointer keeps every text style and the front toast's size; the toast folded

@@ -1224,8 +1224,9 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
 
 /* Title, bar and message in one column. A message without a title reads as
    calm body text in the regular weight, however long it is; only a title is
-   semibold, and the message under it turns smaller and muted. Every text row
-   keeps its line height, so a toast never changes size with its weight. */
+   semibold, and the message under it turns smaller and muted. A link in the
+   message keeps its weight, so a toast has at most these two text styles. The
+   line heights stay the same in both forms. */
 .k2b-ui .k2b-toast__content {
   display: flex;
   min-width: 0;
@@ -1275,7 +1276,7 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
 
 .k2b-ui .k2b-toast__link {
   color: var(--k2b-action);
-  font-weight: 500;
+  font-weight: inherit;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
