@@ -14,7 +14,49 @@ import { CountryMap } from "@k2b/ui/country-map";
 import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
+// This gallery backs the frozen existing-demo parity fixture. BalanceFlow has
+// its own catalog showcase in charts/examples/balanceFlow.ts.
+type DemoKind = Exclude<ChartKind, "balanceFlow">;
+
 const examples = {
+  funnel: {
+    description: "Funnel · Share of the start and previous step.",
+    chart: {
+      kind: "funnel",
+      data: [
+        { label: "Visits", value: 12000 },
+        { label: "Products", value: 8400 },
+        { label: "Basket", value: 3600 },
+        { label: "Orders", value: 1800 },
+      ],
+    },
+  },
+  hbar: {
+    description: "Horizontal bars · Quarterly orders by channel, with group headings and totals.",
+    chart: {
+      kind: "hbar",
+      series: ["Q1", "Q2"],
+      rows: [
+        { group: "Store", label: "Furniture", values: [35, 46] },
+        { group: "Web", label: "Lighting", values: [49, 34] },
+      ],
+    },
+  },
+  waterfall: {
+    description: "Waterfall · Follow each inflow and outflow from the opening to the closing balance.",
+    chart: {
+      kind: "waterfall",
+      start: { label: "Opening", value: 18800 },
+      steps: [
+        { label: "Sales", value: 29260 },
+        { label: "Stock", value: -14800 },
+        { label: "Payroll", value: -9600 },
+        { label: "Rent", value: -3200 },
+        { label: "Other", value: -1920 },
+      ],
+      end: { label: "Closing" },
+    },
+  },
   area: {
     description: "Area · Compare recurring and one-off sales as shares of each month's total.",
     chart: {
@@ -261,12 +303,94 @@ const examples = {
       interactive: true,
     },
   },
-} satisfies { [K in ChartKind]: { description: string; chart: Extract<ChartProps, { kind: K }> } };
+  treemap: {
+    description: "Treemap · Area shows the share of each product.",
+    chart: {
+      kind: "treemap",
+      groups: ["Products"],
+      data: [
+        { label: "Chairs", group: "Products", value: 40 },
+        { label: "Tables", group: "Products", value: 25 },
+      ],
+    },
+  },
+  pareto: {
+    description: "Pareto · Ranked causes with a cumulative share.",
+    chart: {
+      kind: "pareto",
+      labels: ["Current", "Previous"],
+      data: [
+        { label: "Chairs", value: 40, prev: 30 },
+        { label: "Tables", value: 25, prev: 28 },
+      ],
+    },
+  },
+  bubble: {
+    description: "Named bubbles compare reach, opens and audience area. Guides show the unweighted average.",
+    chart: {
+      kind: "bubble",
+      groups: ["North", "South"],
+      xLabel: "Visits",
+      yLabel: "Opens",
+      sizeLabel: "Audience",
+      averages: true,
+      data: [
+        { label: "Letter A", group: "North", x: 1, y: 2, size: 4 },
+        { label: "Letter B", group: "North", x: 4, y: 8, size: 16 },
+        { label: "Letter C", group: "South", x: 8, y: 4, size: 8 },
+      ],
+    },
+  },
+  radar: {
+    description: "Two plans use the same five-point scale on every axis. Inspect one axis to compare both plans.",
+    chart: {
+      kind: "radar",
+      axes: ["Quality", "Speed", "Cost", "Access"],
+      max: 5,
+      unit: "points",
+      series: [
+        { label: "Plan A", data: [4, 3, 2, 5] },
+        { label: "Plan B", data: [2, 4, 4, 3] },
+      ],
+    },
+  },
+  sankey: {
+    description: "Sankey · Follow converging paths after a newsletter click; losses stay visible.",
+    chart: {
+      kind: "sankey",
+      nodes: [
+        { id: "a", label: "Click" },
+        { id: "b", label: "Read", tone: "green" },
+        { id: "c", label: "Signup", tone: "in" },
+      ],
+      links: [
+        { source: "a", target: "b", value: 120 },
+        { source: "a", target: "c", value: 20 },
+        { source: "b", target: "c", value: 60 },
+      ],
+    },
+  },
+} satisfies { [K in DemoKind]: { description: string; chart: Extract<ChartProps, { kind: K }> } };
 
 type TooltipField = { label: string; unit?: string; names?: Record<string, string> };
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
-const tooltipExamples: Record<ChartKind, TooltipExample> = {
+const tooltipExamples: Record<DemoKind, TooltipExample> = {
+  bubble: {
+    title: "Campaign",
+    fields: { group: { label: "Group" }, x: { label: "Visits" }, y: { label: "Opens" }, size: { label: "Audience" } },
+  },
+  radar: { title: "Axis", fields: { "series:0": { label: "Plan A" }, "series:1": { label: "Plan B" } } },
+
+  funnel: {
+    title: "Conversion",
+    fields: { value: { label: "Count" }, startPercent: { label: "Share of start" }, previousPercent: { label: "Share of previous step" } },
+  },
+  hbar: { title: "Quarterly orders", fields: { Q1: { label: "Q1" }, Q2: { label: "Q2" }, total: { label: "Total" } } },
+  waterfall: {
+    title: "Running balance",
+    fields: { balance: { label: "Balance" }, inflow: { label: "In" }, outflow: { label: "Out" }, after: { label: "Balance after" } },
+  },
   area: { title: "Sales mix", fields: { value: { label: "Sales" }, percent: { label: "Share", unit: "%" } } },
   line: {
     title: "Request rate",
@@ -367,6 +491,20 @@ const tooltipExamples: Record<ChartKind, TooltipExample> = {
       detail: { label: "Activity" },
     },
   },
+  treemap: { title: "Product shares", fields: { value: { label: "Units" }, percent: { label: "Share", unit: "%" } } },
+  pareto: {
+    title: "Ranked causes",
+    fields: { value: { label: "Current" }, previous: { label: "Previous" }, cumulative: { label: "Cumulative" } },
+  },
+  sankey: {
+    title: "Paths after the click",
+    fields: {
+      incoming: { label: "Incoming" },
+      outgoing: { label: "Outgoing" },
+      value: { label: "Readers" },
+      percent: { label: "Share", unit: "%" },
+    },
+  },
 };
 
 const createTooltip =
@@ -410,13 +548,31 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
   <For each={gallery}>
     {(example) => {
       const [selection, setSelection] = createSignal<ChartSelection>();
-      const tooltip = createTooltip(tooltipExamples[example.chart.kind]);
+      const native =
+        example.chart.kind === "bubble" ||
+        example.chart.kind === "radar" ||
+        example.chart.kind === "treemap" ||
+        example.chart.kind === "pareto";
+      const tooltip = native ? undefined : createTooltip(tooltipExamples[example.chart.kind]);
+      const detailTooltip: ChartTooltipFormatter =
+        tooltip ??
+        (({ datum }) => ({
+          title: datum.label,
+          rows: datum.values.map((field) => ({
+            label: tooltipExamples[example.chart.kind].fields[field.key]?.label ?? field.key,
+            value: field.formatted ?? String(field.value),
+          })),
+        }));
       return (
         <DemoCard
           id={example.chart.kind === "line" ? "charts" : `charts-${example.chart.kind}`}
           chip={{ kind: "component", name: `Chart · ${example.chart.kind}`, from: "@k2b/ui" }}
           description={example.description}
-          code={`import { Chart, type ChartTooltipFormatter } from "@k2b/ui";\n\n${tooltipCode(tooltipExamples[example.chart.kind])}\n\n<Chart\n  {...${JSON.stringify(example.chart, null, 2).replaceAll("\n", "\n  ")}}\n  tooltip={tooltip}\n  onSelect={(selection) => console.log(selection)}\n/>`}
+          code={
+            native
+              ? `import { Chart } from "@k2b/ui";\n\n<Chart {...${JSON.stringify(example.chart, null, 2)}} />`
+              : `import { Chart, type ChartTooltipFormatter } from "@k2b/ui";\n\n${tooltipCode(tooltipExamples[example.chart.kind])}\n\n<Chart\n  {...${JSON.stringify(example.chart, null, 2).replaceAll("\n", "\n  ")}}\n  tooltip={tooltip}\n  onSelect={(selection) => console.log(selection)}\n/>`
+          }
         >
           <div class="ui-chart-demo">
             <Show when={example.chart.kind === "line"}>
@@ -432,7 +588,7 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
             <Chart {...example.chart} tooltip={tooltip} onSelect={setSelection} />
             <output aria-live="polite" style={{ display: "block", "min-height": "2rem" }}>
               {selection()
-                ? `Selected: ${tooltip(selection()!).title} — ${tooltip(selection()!)
+                ? `Selected: ${detailTooltip(selection()!).title} — ${detailTooltip(selection()!)
                     .rows.map((row) => `${row.label}: ${row.value}`)
                     .join(" · ")}`
                 : "Select a data point to see its details here."}
@@ -448,6 +604,21 @@ const euro = new Intl.NumberFormat("en", { style: "currency", currency: "EUR", m
 
 /** Bar labels in every state: few short labels as columns, rows for long labels, negative values, many categories. */
 const barStates = [
+  {
+    title: "Nested dot matrix: clicks are part of opens",
+    chart: {
+      kind: "bar",
+      layout: "nested",
+      marks: "dots",
+      total: 1000,
+      dots: 100,
+      x: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      series: [
+        { label: "Opened", data: [780, 620, 810, 690, 570] },
+        { label: "Clicked", data: [320, 210, 420, 290, 190] },
+      ],
+    },
+  },
   {
     title: "Few short labels stand below columns with their values",
     chart: {
@@ -651,12 +822,11 @@ export function CalendarHeatmapDemo() {
     <DemoCard
       id="charts-calendar-heatmap"
       chip={{ kind: "component", name: "Chart.Calendar", from: "@k2b/ui" }}
-      description="Weeks as columns; scroll to the newest observations on a phone."
+      description="Square cells fill the available width up to 32px; the height follows the seven rows. Scroll only when 14px cells cannot fit."
       code={'<Chart.Calendar scale="sequential" data={observations} />'}
     >
       <Chart.Calendar
         scale="sequential"
-        style={{ height: "14rem" }}
         data={Array.from({ length: 365 }, (_, i): [string, number] => [
           new Date(Date.UTC(2025, 0, 1) + i * 86400000).toISOString().slice(0, 10),
           (i * 17) % 211,

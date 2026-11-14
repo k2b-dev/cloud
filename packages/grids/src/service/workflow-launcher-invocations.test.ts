@@ -359,6 +359,49 @@ describe("workflow kernel bulk launchers", () => {
     expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
   });
 
+  test("accepts exactly 10000 explicit records", async () => {
+    const item = setup(launcher({ kind: "bulk", input: "records" }), workflow("records", "recordList"));
+    const recordIds = Array.from({ length: 10_000 }, (_, index) => `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`);
+
+    const result = await invokeBulkLauncher(bulkInput({ recordIds }), item.deps);
+
+    expect(result.ok).toBe(true);
+    expect(item.resolveExplicitRecordIds).toHaveBeenCalledWith(baseId, tableId, recordIds, undefined);
+    expect(item.invokeWorkflow).toHaveBeenCalledTimes(1);
+  });
+
+  test("rejects mixed and missing selectors before loading or invoking a launcher", async () => {
+    const item = setup(launcher({ kind: "bulk", input: "records" }), workflow("records", "recordList"));
+    const { recordIds: _recordIds, ...missingSelector } = bulkInput();
+
+    for (const input of [bulkInput({ query: { limit: 2 } }), missingSelector]) {
+      const result = await invokeBulkLauncher(input, item.deps);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.status).toBe(400);
+    }
+    expect(item.deps.getLauncher).not.toHaveBeenCalled();
+    expect(item.authorize).not.toHaveBeenCalled();
+    expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
+    expect(item.resolveQueryRecordIds).not.toHaveBeenCalled();
+    expect(item.invokeWorkflow).not.toHaveBeenCalled();
+  });
+
+  test("keeps field and limit diagnostics for an invalid query selector", async () => {
+    const item = setup(launcher({ kind: "bulk", input: "records" }), workflow("records", "recordList"));
+    const { recordIds: _recordIds, ...input } = bulkInput({ query: { limit: 10_001 } });
+
+    const result = await invokeBulkLauncher(input, item.deps);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.status).toBe(400);
+      expect(result.error.message).toContain("query.limit");
+      expect(result.error.message).toContain("10000");
+    }
+    expect(item.deps.getLauncher).not.toHaveBeenCalled();
+    expect(item.invokeWorkflow).not.toHaveBeenCalled();
+  });
+
   test("rejects duplicate UUIDs and missing records before invocation", async () => {
     const duplicate = setup(launcher({ kind: "bulk", input: "records" }), workflow("records", "recordList"));
     const missing = setup(launcher({ kind: "bulk", input: "records" }), workflow("records", "recordList"), {
@@ -494,7 +537,11 @@ describe("workflow kernel bulk launchers", () => {
 
     expect(invalidUuid.ok).toBe(false);
     expect(tooMany.ok).toBe(false);
-    if (!tooMany.ok) expect(tooMany.error.message).toContain("10000");
+    if (!tooMany.ok) {
+      expect(tooMany.error.status).toBe(400);
+      expect(tooMany.error.message).toContain("recordIds");
+      expect(tooMany.error.message).toContain("10000");
+    }
     expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
     expect(item.invokeWorkflow).not.toHaveBeenCalled();
   });

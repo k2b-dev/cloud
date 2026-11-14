@@ -1,16 +1,33 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { FileTreeActions } from "../src/content/FileTree";
 import type { FileTreeEntry } from "../src/content/file-tree";
-import type { LightboxImage } from "../src/content/Lightbox";
+import type { LightboxItem } from "../src/content/Lightbox";
 import { createDomTestHarness } from "./dom";
 
 const flush = async (): Promise<void> => {
   await Promise.resolve();
   await new Promise<void>((done) => requestAnimationFrame(() => done()));
+};
+
+// pdf.js draws pages only in a real browser (pdf-viewer.browser.test.ts covers it). Here it records what it was asked
+// to open and fails, so a PDF reaches the viewer's "cannot be shown here" state.
+const opened: Blob[] = [];
+mock.module("../src/content/pdf-document", () => ({
+  openPdfDocument: async (data: Blob) => {
+    opened.push(data);
+    throw new Error("pdf.js draws only in a real browser");
+  },
+  pageImageWidth: () => 400,
+  PDF_LIMITS: { maxBytes: 1, maxPages: 1, maxCanvasPixels: 1, maxImageWidth: 1 },
+  PDF_TOO_LARGE: "PdfTooLargeError",
+}));
+/** Lets a shown PDF reach its end state: the viewer loads, pdf.js fails, the viewer says so. */
+const settle = async (): Promise<void> => {
+  for (let turn = 0; turn < 10; turn++) await Bun.sleep(5);
 };
 
 const key = (element: Element, value: string, options: KeyboardEventInit = {}): KeyboardEvent => {
@@ -338,19 +355,11 @@ describe("@k2b/ui files and media runtime behavior", () => {
     test(`previews a PDF from its loaded bytes and remounts only for changed bytes (downloadHref ${downloadHref ? "set" : "absent"})`, async () => {
       const dom = createDomTestHarness();
       const { default: FileView } = await import("../src/content/FileView");
-      const created: Blob[] = [];
-      const revoked: string[] = [];
-      const originalCreate = URL.createObjectURL;
-      const originalRevoke = URL.revokeObjectURL;
-      URL.createObjectURL = (blob) => {
-        created.push(blob as Blob);
-        return `blob:pdf-${created.length}`;
-      };
-      URL.revokeObjectURL = (url) => revoked.push(url);
       const [revision, setRevision] = createSignal(1);
       // The second refetch returns the same bytes, as a host revision bump often does.
       const versions = ["%PDF-1.7 v1", "%PDF-1.7 v1", "%PDF-1.7 v2"];
       let loads = 0;
+      opened.length = 0;
 
       try {
         const dispose = render(
@@ -365,45 +374,75 @@ describe("@k2b/ui files and media runtime behavior", () => {
             }),
           dom.root,
         );
-        await flush();
+        await settle();
 
         expect(loads).toBe(1);
         expect(dom.root.querySelector("object")).toBeNull();
-        expect(dom.root.querySelector("iframe")?.getAttribute("src")).toBe("blob:pdf-1");
-        // The host names the file; the frame keeps it only as the document's accessible title.
+        expect(dom.root.querySelector("iframe")).toBeNull();
+        // The host names the file; the viewer has no heading of its own.
         expect(dom.root.querySelector("h2")).toBeNull();
-        expect(dom.root.querySelector("iframe")?.getAttribute("title")).toBe("q3.pdf");
-        expect(created[0]?.type).toBe("application/pdf");
-        expect(await created[0]?.text()).toBe("%PDF-1.7 v1");
-        const frame = dom.root.querySelector("iframe");
+        expect(opened).toHaveLength(1);
+        expect(opened[0]?.type).toBe("application/pdf");
+        expect(await opened[0]?.text()).toBe("%PDF-1.7 v1");
+        const shown = dom.root.querySelector(".k2b-pdf-viewer");
 
         setRevision(2);
-        await flush();
+        await settle();
         expect(loads).toBe(2);
-        expect(dom.root.querySelector("iframe")).toBe(frame);
-        expect(created).toHaveLength(1);
-        expect(revoked).toEqual([]);
+        expect(dom.root.querySelector(".k2b-pdf-viewer")).toBe(shown);
+        expect(opened).toHaveLength(1);
 
         setRevision(3);
-        await flush();
+        await settle();
         expect(loads).toBe(3);
-        expect(dom.root.querySelector("iframe")?.getAttribute("src")).toBe("blob:pdf-2");
-        expect(await created[1]?.text()).toBe("%PDF-1.7 v2");
-        expect(revoked).toEqual(["blob:pdf-1"]);
-
+        expect(dom.root.querySelector(".k2b-pdf-viewer")).not.toBe(shown);
+        expect(await opened[1]?.text()).toBe("%PDF-1.7 v2");
         dispose();
-        expect(revoked).toEqual(["blob:pdf-1", "blob:pdf-2"]);
       } finally {
-        URL.createObjectURL = originalCreate;
-        URL.revokeObjectURL = originalRevoke;
         dom.cleanup();
       }
     });
   }
 
-  test("keeps a host inline PDF URL on the native object without loading bytes", async () => {
+  test("keeps a PDF's binary bytes intact through base64", async () => {
     const dom = createDomTestHarness();
     const { default: FileView } = await import("../src/content/FileView");
+    // A real PDF header carries a binary comment line; bytes above 0x7f must survive the round trip.
+    const bytes = new Uint8Array([...new TextEncoder().encode("%PDF-1.7\n%"), 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]);
+    opened.length = 0;
+    const dispose = render(
+      () =>
+        createComponent(FileView, {
+          file: { path: "/report.pdf" },
+          load: async () => ({ encoding: "base64" as const, mediaType: "application/pdf", content: btoa(String.fromCharCode(...bytes)) }),
+        }),
+      dom.root,
+    );
+    try {
+      await settle();
+      expect(opened[0]?.type).toBe("application/pdf");
+      expect(new Uint8Array(await opened[0]!.arrayBuffer())).toEqual(bytes);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("previews a host inline PDF URL from that address without loading bytes, and opens that address", async () => {
+    const dom = createDomTestHarness();
+    const { default: FileView } = await import("../src/content/FileView");
+    const fetched: string[] = [];
+    const originalFetch = globalThis.fetch;
+    const originalOpen = window.open;
+    const tabs: (string | URL | undefined)[] = [];
+    window.open = ((url?: string | URL) => {
+      tabs.push(url);
+      return { opener: window } as unknown as Window;
+    }) as typeof window.open;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      fetched.push(String(input));
+      return new Response(new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+    }) as typeof fetch;
     let loads = 0;
     const dispose = render(
       () =>
@@ -418,55 +457,53 @@ describe("@k2b/ui files and media runtime behavior", () => {
         }),
       dom.root,
     );
-    await flush();
-
-    expect(loads).toBe(0);
-    expect(dom.root.querySelector("object")?.getAttribute("data")).toBe("/inline/invoice.pdf?preview-revision=0");
-    expect(dom.root.querySelector("iframe")).toBeNull();
-
-    dispose();
-    dom.cleanup();
-  });
-
-  test("revokes a PDF object URL produced after the preview was disposed", async () => {
-    const dom = createDomTestHarness();
-    const { default: PdfPreview } = await import("../src/content/PdfPreview");
-    let resolveRequest!: (value: Blob) => void;
-    const request = new Promise<Blob>((resolve) => {
-      resolveRequest = resolve;
-    });
-    const created: string[] = [];
-    const revoked: string[] = [];
-    const originalCreate = URL.createObjectURL;
-    const originalRevoke = URL.revokeObjectURL;
-    URL.createObjectURL = () => {
-      const value = `blob:test-${created.length + 1}`;
-      created.push(value);
-      return value;
-    };
-    URL.revokeObjectURL = (value) => revoked.push(value);
-
     try {
-      const dispose = render(() => createComponent(PdfPreview, { request: () => request }), dom.root);
-      // Call Solid's delegated handler directly: FileView tests above loaded PdfPreview against an earlier document.
-      const button = dom.root.querySelector<HTMLButtonElement & { $$click?: (event: MouseEvent) => void }>(
-        ".k2b-content-pdf-preview__actions button:last-child",
-      );
-      button?.$$click?.(new MouseEvent("click"));
-      dispose();
-      resolveRequest(new Blob([], { type: "application/pdf" }));
-      await flush();
-
-      expect(created).toEqual(["blob:test-1"]);
-      expect(revoked).toEqual(["blob:test-1"]);
+      await settle();
+      expect(loads).toBe(0);
+      expect(fetched).toEqual(["/inline/invoice.pdf?preview-revision=0"]);
+      expect(dom.root.querySelector("object")).toBeNull();
+      const open = dom.root.querySelector<HTMLButtonElement & { $$click?: (event: MouseEvent) => void }>(".k2b-pdf-viewer button")!;
+      expect(open.textContent).toBe("Open in new tab");
+      open.$$click?.(new MouseEvent("click"));
+      expect(tabs).toEqual(["/inline/invoice.pdf?preview-revision=0"]);
     } finally {
-      URL.createObjectURL = originalCreate;
-      URL.revokeObjectURL = originalRevoke;
+      globalThis.fetch = originalFetch;
+      window.open = originalOpen;
+      dispose();
       dom.cleanup();
     }
   });
 
-  test("uses simple Lightbox navigation buttons and resyncs a reactive image index", async () => {
+  test("keeps another origin's inline PDF URL with the browser's viewer, without a request", async () => {
+    const dom = createDomTestHarness();
+    const { default: FileView } = await import("../src/content/FileView");
+    const fetched: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      fetched.push(String(input));
+      return new Response(null, { status: 500 });
+    }) as typeof fetch;
+    const dispose = render(
+      () =>
+        createComponent(FileView, {
+          file: { path: "/invoice.pdf", mediaType: "application/pdf" },
+          load: async () => ({ encoding: "base64" as const, mediaType: "application/pdf", content: "" }),
+          previewHref: "https://files.example.org/invoice.pdf",
+        }),
+      dom.root,
+    );
+    try {
+      await settle();
+      expect(fetched).toEqual([]);
+      expect(dom.root.querySelector("object")?.getAttribute("data")).toBe("https://files.example.org/invoice.pdf?preview-revision=0");
+    } finally {
+      globalThis.fetch = originalFetch;
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("Lightbox steps with its edge buttons, follows the caller's index and leads its actions with Open", async () => {
     const dom = createDomTestHarness();
     const dialogPrototype = dom.window.HTMLDialogElement.prototype as typeof dom.window.HTMLDialogElement.prototype & {
       showModal: () => void;
@@ -479,59 +516,73 @@ describe("@k2b/ui files and media runtime behavior", () => {
       this.removeAttribute("open");
     };
     const { default: Lightbox } = await import("../src/content/Lightbox");
-    let setImages: (images: LightboxImage[]) => void = () => {};
-    let setInitialIndex: (index: number | undefined) => void = () => {};
-    const first = { src: "/a.png", alt: "A" };
-    const second = { src: "/b.png", alt: "B" };
-    const third = { src: "/c.png", alt: "C" };
+    let setItems: (items: LightboxItem[]) => void = () => {};
+    let setIndex: (index: number) => void = () => {};
+    const first = { src: "/a.png", name: "A.png" };
+    const second = { src: "/b.png", name: "B.png" };
+    const third = { src: "/c.png", name: "C.png" };
 
     const dispose = render(() => {
-      const [images, updateImages] = createSignal<LightboxImage[]>([first, second, third]);
-      const [initialIndex, updateInitialIndex] = createSignal<number | undefined>(1);
-      setImages = updateImages;
-      setInitialIndex = updateInitialIndex;
+      const [items, updateItems] = createSignal<LightboxItem[]>([first, second, third]);
+      const [index, updateIndex] = createSignal(1);
+      setItems = updateItems;
+      setIndex = updateIndex;
       return createComponent(Lightbox, {
-        get images() {
-          return images();
+        get items() {
+          return items();
         },
-        get initialIndex() {
-          return initialIndex();
+        get index() {
+          return index();
         },
+        onIndexChange: updateIndex,
         onClose: () => {},
       });
     }, dom.root);
     await flush();
 
-    const image = () => dom.root.querySelector<HTMLImageElement>(".k2b-content-lightbox__image");
+    const image = () => dom.root.querySelector<HTMLImageElement>(".k2b-lightbox__image");
+    const edge = (direction: string) => dom.root.querySelector<HTMLButtonElement>(`.k2b-lightbox__edge[data-direction="${direction}"]`)!;
     expect(image()?.src).toEndWith("/b.png");
-    expect(dom.root.querySelector('[role="tablist"], [role="tab"]')).toBeNull();
-    expect(dom.root.querySelector(".k2b-content-lightbox__dots")?.getAttribute("role")).toBe("group");
-    expect(dom.root.querySelectorAll(".k2b-content-lightbox__dot[aria-current='true']")).toHaveLength(1);
+    // No counter: the edge buttons and the strip say where one is.
+    expect(dom.root.textContent).not.toContain("2 / 3");
 
-    setImages([third, first, second]);
-    expect(image()?.src).toEndWith("/b.png");
-    expect(dom.root.querySelector(".k2b-content-lightbox__counter")?.textContent?.trim()).toBe("3 / 3");
-
-    setImages([third]);
+    // The caller owns the index: an index out of range shows the nearest file. Each file resolves its address first.
+    setIndex(99);
+    await flush();
     expect(image()?.src).toEndWith("/c.png");
-    expect(dom.root.querySelector(".k2b-content-lightbox__counter")).toBeNull();
-
-    setImages([first, second, third]);
-    setInitialIndex(99);
-    expect(image()?.src).toEndWith("/c.png");
-    setInitialIndex(-5);
+    expect(edge("next").style.visibility).toBe("hidden");
+    setIndex(-5);
+    await flush();
     expect(image()?.src).toEndWith("/a.png");
+    expect(edge("previous").style.visibility).toBe("hidden");
+    edge("next").click();
+    await flush();
+    expect(image()?.src).toEndWith("/b.png");
 
-    // An image's own actions sit before Download, in the same style, and act on that image only.
+    // A file's own actions sit before Download and act on that file only; Open leads when the caller gives a target.
     const saved: string[] = [];
-    const save = (src: string) => [{ label: "Save to Files", icon: "ti ti-folder-down", onClick: () => saved.push(src) }];
-    setImages([{ ...first, downloadUrl: "/a.png", actions: save("/a.png") }, second]);
-    const buttons = () => [...dom.root.querySelectorAll<HTMLElement>(".k2b-content-lightbox__actions .k2b-content-lightbox__button")];
-    expect(buttons().map((button) => button.getAttribute("aria-label"))).toEqual(["Save to Files", "Download image", "Close lightbox"]);
-    buttons()[0]!.click();
+    const opened: string[] = [];
+    setItems([
+      {
+        ...first,
+        downloadUrl: "/a.png",
+        open: { onOpen: () => opened.push("a") },
+        actions: [{ label: "Save to Files", icon: "ti ti-folder-down", onClick: () => saved.push("/a.png") }],
+      },
+      second,
+    ]);
+    setIndex(0);
+    const labels = () =>
+      [...dom.root.querySelectorAll<HTMLElement>(".k2b-lightbox__actions :is(button, a)")].map(
+        (control) => control.getAttribute("aria-label") ?? control.textContent?.trim(),
+      );
+    expect(labels()).toEqual(["Open", "Save to Files", "Download", "Close"]);
+    dom.root.querySelector<HTMLButtonElement>('.k2b-lightbox__actions [aria-label="Save to Files"]')!.click();
     expect(saved).toEqual(["/a.png"]);
-    dom.root.querySelector<HTMLButtonElement>('.k2b-content-lightbox__nav[data-direction="next"]')!.click();
-    expect(buttons().map((button) => button.getAttribute("aria-label"))).toEqual(["Close lightbox"]);
+    dom.root.querySelector<HTMLButtonElement>(".k2b-lightbox__open")!.click();
+    expect(opened).toEqual(["a"]);
+    edge("next").click();
+    expect(labels()).toEqual(["Close"]);
 
     dispose();
     dom.cleanup();

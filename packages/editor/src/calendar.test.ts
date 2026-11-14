@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { chartKinds, chartRenderOptions, chartTable } from "./charts";
-import { renderNotebookChartFigure } from "./markdown/lib/chart-blocks";
+import { type ChartDescription, calendarLayout, calendarViewportHeight } from "@k2b/ui/charts";
+import { type ChartInput, chartKinds, chartRenderOptions, chartTable } from "./charts";
+import { notebookChartFrameHtml, notebookChartHeight, renderNotebookChartFigure } from "./markdown/lib/chart-blocks";
 
 const spec = {
   kind: "heatmap",
@@ -11,7 +12,7 @@ const spec = {
     ["2026-11-02", 1234.5],
     ["2026-11-03", 0],
   ],
-};
+} satisfies ChartDescription;
 test("calendar schema is additive, validates dates and preserves table locale", () => {
   const schema = chartKinds();
   const input = schema.parse(spec);
@@ -61,4 +62,33 @@ test("calendar notebook print frames permit uniform page scaling", () => {
   expect(figure).toContain("min-width:0;");
   expect(figure).not.toContain("data-stretch");
   expect(figure).not.toMatch(/min-width:[1-9]\d*px/);
+});
+
+const calendarInput: ChartInput = {
+  kind: "heatmap",
+  layout: "calendar",
+  title: "Opens per day",
+  scale: "sequential",
+  data: Array.from({ length: 182 }, (_, i): [string, number] => [
+    new Date(Date.UTC(2026, 4, 11) + i * 86400000).toISOString().slice(0, 10),
+    i,
+  ]),
+};
+test("calendar notebook placeholder and drawing reserve the same responsive geometry; print fits the page", () => {
+  const options = chartRenderOptions(calendarInput, "en-GB");
+  if (options.kind !== "heatmap" || options.layout !== "calendar") throw new Error("Expected calendar");
+  const size = calendarLayout(options),
+    height = notebookChartHeight(calendarInput, "en-GB");
+  expect(height).toBe(calendarViewportHeight(size));
+  const placeholder = notebookChartFrameHtml({ ...calendarInput, height }, "");
+  const drawn = renderNotebookChartFigure(calendarInput, "en-GB")!;
+  for (const html of [placeholder, drawn]) {
+    expect(html).toContain('data-calendar="true"');
+    expect(html).toContain(`--notebook-chart-height:${height}`);
+    expect(html).not.toContain(`${height}px`);
+  }
+  expect(drawn).toContain(`min-width:${size.minWidth}px`);
+  const print = renderNotebookChartFigure(calendarInput, "en-GB", { print: true })!;
+  expect(print).toContain("min-width:0;");
+  expect(print).toContain(`calc(min(100cqw, ${size.maxWidth}px) * ${size.height / size.width})`);
 });

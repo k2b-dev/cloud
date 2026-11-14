@@ -12,7 +12,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "content-styles.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { FileView, MarkdownView, PdfPreview, renderSafeMarkdown } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { FileView, MarkdownView, PdfViewer, renderSafeMarkdown } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const code = Array.from({ length: 3 }, (_, index) => "const value" + index + " = " + index + ";").join("\\n");
 const file = (id, previewLines) => {
@@ -178,7 +178,7 @@ noticeHost.className = "notice-host";
 noticeHost.innerHTML = renderSafeMarkdown(":::warning\\nRun the **migration** first.\\n:::");
 const standalone = app.appendChild(document.createElement("section"));
 standalone.id = "standalone-pdf";
-render(() => createComponent(PdfPreview, { title: "Report", request: async () => new Blob(["%PDF-1.4"], { type: "application/pdf" }) }), standalone);
+render(() => createComponent(PdfViewer, { title: "Report", request: async () => new Blob(["%PDF-1.4"], { type: "application/pdf" }) }), standalone);
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the content fixture for the browser.");
@@ -195,13 +195,12 @@ beforeAll(async () => {
       `<span id="fill" style="background:var(--k2b-surface-muted)"></span>` +
       `<span id="border" style="border-left:1px solid var(--k2b-border)"></span><span id="strong" style="border-left:1px solid var(--k2b-border-strong)"></span></body></html>`,
   );
-  // Chromium's headless shell reports no inline PDF viewer, where a PDF preview shows a hint instead of its frame.
-  await page.evaluate(() => Object.defineProperty(Navigator.prototype, "pdfViewerEnabled", { get: () => true }));
   await page.addScriptTag({ content: script });
   await page.locator("#excerpt .k2b-content-code-display").waitFor();
   await page.locator("#plain .k2b-content-markdown").waitFor();
   await page.locator("#plain-text .k2b-content-code-display").waitFor();
-  await page.locator("#pdf iframe").waitFor();
+  // The fixture's bytes are no real PDF, so the viewer ends in its "cannot be shown here" state.
+  await page.locator('#pdf .k2b-pdf-viewer[data-state="undrawable"]').waitFor();
   await page.locator("#plain-excerpt .k2b-content-file-view__truncated button").waitFor();
   await page.locator("#plain-json .k2b-content-structured-data").waitFor();
   await page.locator("#plain-sheet thead").waitFor();
@@ -482,18 +481,20 @@ describe("@k2b/ui content previews apply their own styles", () => {
     });
   });
 
-  test("a PDF from loaded bytes has no visible heading or toolbar line, and neither has a standalone PDF toolbar", async () => {
+  test("a PDF in a file view and on its own is one rounded grey ground, without a heading, frame, or toolbar line", async () => {
     const result = await page.evaluate(() => {
-      const viewer = document.querySelector("#pdf .k2b-content-file-view__pdf-viewer")!;
+      const ground = (selector: string) => {
+        const style = getComputedStyle(document.querySelector(selector)!);
+        return [style.borderTopWidth, style.borderTopLeftRadius !== "0px", style.backgroundColor !== "rgba(0, 0, 0, 0)"];
+      };
       return {
-        headings: document.querySelectorAll("#pdf h2").length,
-        frameTitle: document.querySelector("#pdf iframe")!.getAttribute("title"),
-        frame: getComputedStyle(viewer).borderTopWidth,
-        actionsLine: getComputedStyle(viewer.querySelector(".k2b-content-pdf-preview__actions")!).borderBottomWidth,
-        toolbarLine: getComputedStyle(document.querySelector("#standalone-pdf .k2b-content-pdf-preview__toolbar")!).borderBottomWidth,
+        headings: document.querySelectorAll("#pdf h2, #standalone-pdf h2").length,
+        inFileView: ground("#pdf .k2b-content-file-view__pdf-viewer.k2b-pdf-viewer"),
+        standalone: ground("#standalone-pdf .k2b-pdf-viewer"),
+        nested: document.querySelectorAll(".k2b-pdf-viewer .k2b-pdf-viewer").length,
       };
     });
-    expect(result).toEqual({ headings: 0, frameTitle: "q3.pdf", frame: "1px", actionsLine: "0px", toolbarLine: "0px" });
+    expect(result).toEqual({ headings: 0, inFileView: ["0px", true, true], standalone: ["0px", true, true], nested: 0 });
   });
 
   test("a plain excerpt lines its expander up with the content", async () => {

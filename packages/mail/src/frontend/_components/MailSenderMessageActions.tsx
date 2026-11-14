@@ -12,6 +12,7 @@ import { isOutgoingMessage } from "./mail-conversation-history";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { resolveMailMessageActionVisibility } from "./mail-message-action-visibility";
 import { buildExactSenderSearchHref, buildMailingListHref, mailRouteUrl, senderDomainFromAddress } from "./mail-navigation";
+import { mailReaderMessages } from "./mail-reader-messages";
 
 type SelectionContext = {
   selectionKey: string | null;
@@ -29,12 +30,23 @@ export type MailMessageMenuProps = {
   totalMessageCount: number;
   identities: SenderIdentity[];
   primaryActions?: DropdownItem[];
+  /** Every message of the conversation, so Technical details can step from one to the next. */
+  conversationMessages?: MailWorkspaceMessage[];
   onReassignMessage: (messageId: string) => void | Promise<void>;
   onSplitMessage: (messageId: string) => void | Promise<void>;
   onDeriveMessage: (kind: DraftDerivationKind, message: MailWorkspaceMessage) => unknown;
 };
 
 export type MailMessageMenu = ReturnType<typeof createMailMessageMenu>;
+
+/** One thing to do about a message's sender, for the sender card. */
+export type SenderAction = {
+  id: "find" | "automation" | "block" | "block-domain" | "unsubscribe";
+  label: string;
+  icon: string;
+  href?: string;
+  action?: () => void;
+};
 
 /** The items of a message's "…" menu, which a right-click on the message opens as well. */
 export function createMailMessageMenu(props: MailMessageMenuProps) {
@@ -120,77 +132,87 @@ export function createMailMessageMenu(props: MailMessageMenuProps) {
     reportPhishing.abort();
   });
 
+  // Who sent the message: the sender card offers these (Mail v5); the message's "…" keeps what concerns the message.
+  const senderActions = (): SenderAction[] => {
+    const address = sender()?.address;
+    if (!address || !actionVisibility().findSender) return [];
+    const visibility = actionVisibility();
+    return [
+      ...(findSenderHref() ? [{ id: "find" as const, label: t().findSender, icon: "ti ti-search", href: findSenderHref()! }] : []),
+      ...(visibility.createIncomingAutomation
+        ? [
+            {
+              id: "automation" as const,
+              label: t().createSenderAutomation,
+              icon: "ti ti-filter-plus",
+              action: () => void openIncomingAutomation(address),
+            },
+          ]
+        : []),
+      ...(visibility.blockSender
+        ? [
+            {
+              id: "block" as const,
+              label: t().blockSender,
+              icon: "ti ti-user-x",
+              action: () => void openIncomingAutomation(address, { action: "junk", name: t().blockNamed({ value: address }) }),
+            },
+            ...(senderDomainFromAddress(address)
+              ? [
+                  {
+                    id: "block-domain" as const,
+                    label: t().blockSenderDomain,
+                    icon: "ti ti-world-x",
+                    action: () =>
+                      void openIncomingAutomation(address, {
+                        matchKind: "domain",
+                        action: "junk",
+                        name: t().blockNamed({ value: senderDomainFromAddress(address)! }),
+                      }),
+                  },
+                ]
+              : []),
+          ]
+        : []),
+      ...(visibility.manageUnsubscribe && props.message.mailingList?.unsubscribe
+        ? [
+            {
+              id: "unsubscribe" as const,
+              label: t().manageUnsubscribe,
+              icon: "ti ti-mail-off",
+              href: buildMailingListHref(mailRouteUrl(props.requestUrl), props.message.mailingList.listKey),
+            },
+          ]
+        : []),
+    ];
+  };
+
+  const [inspectorLoading, setInspectorLoading] = createSignal(false);
+  /** The inspector loads its code on first use; until its dialog opens, another choice must not open a second one. */
+  const openTechnicalDetails = async () => {
+    if (inspectorLoading()) return;
+    setInspectorLoading(true);
+    const inspector = await importOnDemand(() => import("./MailMessageInspectorDialog"));
+    setInspectorLoading(false);
+    if (!inspector) return;
+    await inspector.openMailMessageInspector({
+      mailboxId: props.mailboxId,
+      messages: props.conversationMessages ?? [props.message],
+      initialMessageId: props.message.id,
+      initialTab: "headers",
+    });
+  };
+
   const items = (): DropdownItem[] => [
     ...(props.primaryActions ?? []),
-    ...(sender() && actionVisibility().findSender
-      ? [
-          {
-            sectionLabel: t().sender,
-            items: [
-              ...(findSenderHref() ? [{ label: t().findSender, icon: "ti ti-search", href: findSenderHref()! }] : []),
-              ...(actionVisibility().createIncomingAutomation
-                ? [
-                    {
-                      label: t().createSenderAutomation,
-                      icon: "ti ti-filter-plus",
-                      action: () => void openIncomingAutomation(sender()!.address),
-                    },
-                  ]
-                : []),
-              ...(actionVisibility().blockSender
-                ? [
-                    {
-                      label: t().blockSender,
-                      icon: "ti ti-user-x",
-                      action: () =>
-                        void openIncomingAutomation(sender()!.address, {
-                          action: "junk",
-                          name: t().blockNamed({ value: sender()!.address }),
-                        }),
-                    },
-                    ...(senderDomainFromAddress(sender()!.address)
-                      ? [
-                          {
-                            label: t().blockSenderDomain,
-                            icon: "ti ti-world-x",
-                            action: () =>
-                              void openIncomingAutomation(sender()!.address, {
-                                matchKind: "domain",
-                                action: "junk",
-                                name: t().blockNamed({ value: senderDomainFromAddress(sender()!.address)! }),
-                              }),
-                          },
-                        ]
-                      : []),
-                  ]
-                : []),
-              ...(actionVisibility().manageUnsubscribe && props.message.mailingList?.unsubscribe
-                ? [
-                    {
-                      label: t().manageUnsubscribe,
-                      icon: "ti ti-mail-off",
-                      href: buildMailingListHref(mailRouteUrl(props.requestUrl), props.message.mailingList.listKey),
-                    },
-                  ]
-                : []),
-              ...(actionVisibility().reportPhishing
-                ? [
-                    {
-                      label: t().reportPhishing,
-                      icon: "ti ti-shield-exclamation",
-                      action: () => void reportPhishing.mutate({ selectionKey: props.selectionKey }),
-                    },
-                  ]
-                : []),
-            ],
-          },
-        ]
-      : []),
-    ...(actionVisibility().conversationRepair
+    ...(actionVisibility().conversationRepair || actionVisibility().editAsNew
       ? [
           {
             sectionLabel: t().conversationSection,
             items: [
+              ...(actionVisibility().editAsNew
+                ? [{ label: t().useAsNew, icon: "ti ti-copy", action: () => props.onDeriveMessage("edit_as_new", props.message) }]
+                : []),
               ...(actionVisibility().conversationRepair
                 ? [
                     {
@@ -209,19 +231,30 @@ export function createMailMessageMenu(props: MailMessageMenuProps) {
           },
         ]
       : []),
-    ...(actionVisibility().editAsNew
-      ? [
-          {
-            label: t().useAsNew,
-            icon: "ti ti-copy",
-            action: () => props.onDeriveMessage("edit_as_new", props.message),
-          },
-        ]
-      : []),
+    {
+      sectionLabel: t().other,
+      items: [
+        ...(sender() && actionVisibility().reportPhishing
+          ? [
+              {
+                label: t().reportPhishing,
+                icon: "ti ti-shield-exclamation",
+                action: () => void reportPhishing.mutate({ selectionKey: props.selectionKey }),
+              },
+            ]
+          : []),
+        {
+          label: mailReaderMessages.resolve([locale()]).t.technicalDetails,
+          icon: inspectorLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-list-details",
+          disabled: inspectorLoading(),
+          action: () => void openTechnicalDetails(),
+        },
+      ],
+    },
     ...cloudId.section({ messageId: props.message.id, conversationId: props.selectedConversationId }),
   ];
 
-  return { items, pending, automationLoading, label: () => t().messageActions };
+  return { items, senderActions, pending, automationLoading, label: () => t().messageActions };
 }
 
 export function MailMessageMenuTrigger(props: { menu: MailMessageMenu }) {

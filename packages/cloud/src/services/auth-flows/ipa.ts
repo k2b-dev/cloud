@@ -13,6 +13,7 @@ type IpaLoginFailure =
   | { ok: false; status: 400; reason: "user_not_synced"; message: string }
   | { ok: false; status: 400; reason: "user_not_found"; message: string }
   | { ok: false; status: 403; reason: "account_expired"; message: string }
+  | { ok: false; status: 403; reason: "account_locked"; message: string }
   | { ok: false; status: 403; reason: "account_out_of_scope"; message: string }
   | { ok: false; status: 503; reason: "sync_unavailable"; message: string };
 
@@ -62,12 +63,14 @@ const failInvalidCredentials = async (params: { identifier: string; password: st
   return { ok: false, status: 401, reason: "invalid_credentials", message: "Invalid username or password" };
 };
 
-const loadSyncedIpaUser = async (uid: string): Promise<{ ok: true; userId: string; user: User } | IpaLoginFailure> => {
-  const userRows = await sql`
-    SELECT id FROM auth.users
-    WHERE provider = 'ipa'
-      AND uid = ${uid}
-  `;
+/** Loads the account the single-user sync verified; with FreeIPA sync disabled, the account of the username. */
+const loadSyncedIpaUser = async (
+  uid: string,
+  verifiedUserId: string | null,
+): Promise<{ ok: true; userId: string; user: User } | IpaLoginFailure> => {
+  const userRows = verifiedUserId
+    ? await sql`SELECT id FROM auth.users WHERE provider = 'ipa' AND id = ${verifiedUserId}::uuid`
+    : await sql`SELECT id FROM auth.users WHERE provider = 'ipa' AND uid = ${uid}`;
   if (userRows.length === 0) {
     return {
       ok: false,
@@ -100,8 +103,8 @@ export const login = async (params: { username: string; password: string }): Pro
   }
 
   // Read before the password check so a concurrent password change or sign-out ends this sign-in too.
-  const [account] = await sql<Array<{ auth_epoch: string | number | bigint }>>`
-    SELECT auth_epoch FROM auth.users WHERE provider = 'ipa' AND uid = ${uid}
+  const [account] = await sql<Array<{ id: string; auth_epoch: string | number | bigint }>>`
+    SELECT id, auth_epoch FROM auth.users WHERE provider = 'ipa' AND uid = ${uid}
   `;
   const authEpoch = account ? Number(account.auth_epoch) : null;
   if (authEpoch !== null && (!Number.isSafeInteger(authEpoch) || authEpoch < 0)) throw new Error("User auth_epoch is invalid");
@@ -153,6 +156,8 @@ export const login = async (params: { username: string; password: string }): Pro
         reason: "account_expired",
         message: "Your FreeIPA account is expired. Contact an administrator.",
       };
+    case "locked":
+      return { ok: false, status: 403, reason: "account_locked", message: "Your FreeIPA account is locked. Contact an administrator." };
     case "out_of_scope":
       return {
         ok: false,
@@ -176,10 +181,11 @@ export const login = async (params: { username: string; password: string }): Pro
       };
   }
 
-  const userResult = await loadSyncedIpaUser(uid);
+  const userResult = await loadSyncedIpaUser(uid, syncOutcome.status === "synced" ? syncOutcome.userId : null);
   if (!userResult.ok) return userResult;
   // An account synced in only after the read has no epoch this sign-in is bound to; the next attempt has one.
-  if (authEpoch === null) {
+  // The epoch also belongs to one account: a username that moved to another account meanwhile retries.
+  if (authEpoch === null || account?.id !== userResult.userId) {
     return {
       ok: false,
       status: 400,

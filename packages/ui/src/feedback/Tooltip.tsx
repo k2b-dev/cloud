@@ -20,8 +20,11 @@ export type TooltipAnchorProps = Omit<JSX.HTMLAttributes<HTMLSpanElement>, "cont
 export type TooltipTriggerProps = Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, "content"> &
   Omit<TooltipProps, "target" | "focusTarget">;
 
-/** True below a Tooltip.Anchor, whose hint already covers the controls inside it. */
-const AnchorContext = createContext(false);
+/**
+ * True below a Tooltip.Anchor or a HoverCard, whose hint already covers the controls inside it. Not part of the public
+ * index.
+ */
+export const AnchorContext = createContext(false);
 
 /**
  * The hint an icon-only control shows by default: its label, unless the caller

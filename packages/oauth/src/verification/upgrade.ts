@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { connections, sql } from "@k2b/cloud";
 import { initializePlatform } from "@k2b/cloud/start";
 import { decodeJwt, decodeProtectedHeader, type JWTPayload } from "jose";
+import { OAuthScopeSchema } from "../contracts";
 import * as client from "./reference-client";
 
 await initializePlatform({ appId: "oauth", source: "env" });
@@ -95,21 +96,27 @@ const stableClaims = (claims: JWTPayload) => {
     values: stable,
   };
 };
-// Epoch and login extension additions are checked separately from the stable upgrade snapshot.
+// Epoch, login extensions and corrected discovery scopes are checked separately from the stable upgrade snapshot.
 const tokenFields = (tokens: client.Tokens) =>
   Object.keys(tokens)
     .filter((field) => field !== "refresh_token_expires_in")
     .sort();
-const discovery = async () => {
+const discovery = async (current: boolean) => {
   const configuration = await client.json(await client.request("/.well-known/openid-configuration"));
   assert.deepEqual(await client.json(await client.request("/.well-known/oauth-authorization-server")), configuration);
   assert(configuration && typeof configuration === "object");
+  assert("scopes_supported" in configuration);
+  if (current) assert.deepEqual(configuration.scopes_supported, OAuthScopeSchema.options);
   return Object.fromEntries(
     Object.entries(configuration)
       .filter(([field]) => field !== "cloud_login_ttl_supported" && field !== "cloud_login_hint_supported")
       .map(([field, value]) => [
         field,
-        field === "claims_supported" && Array.isArray(value) ? value.filter((claim) => claim !== "auth_epoch") : value,
+        field === "claims_supported" && Array.isArray(value)
+          ? value.filter((claim) => claim !== "auth_epoch")
+          : field === "scopes_supported" && Array.isArray(value)
+            ? value.filter((scope) => scope !== "groups" && scope !== "admin")
+            : value,
       ]),
   );
 };
@@ -130,7 +137,7 @@ const exercise = async (
     ? await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`
     : [];
   const authEpoch = user ? Number(user.auth_epoch) : null;
-  const snapshot: Record<string, unknown> = { discovery: await discovery() };
+  const snapshot: Record<string, unknown> = { discovery: await discovery(epochRequired) };
   for (const [name, registration] of [
     ["public", clients.public],
     ["confidential", clients.confidential],

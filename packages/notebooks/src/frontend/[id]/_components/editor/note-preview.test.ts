@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { frontMatterLength, LIGATURES } from "@k2b/editor/markdown/lib/ligatures";
-import { NOTE_PREVIEW_BUDGET, type NotePreviewPart, notePreviewLines } from "./note-preview";
+import { NOTE_PREVIEW_BUDGET, type NotePreviewPart, notePreviewChart, notePreviewLines } from "./note-preview";
 
 const repositoryRoot = resolve(import.meta.dir, "../../../../../../..");
 
@@ -10,12 +10,16 @@ const lines = (markdown: string, mode: "rich" | "source" = "rich") => notePrevie
 const classes = (parts: NotePreviewPart[]): string[] =>
   parts.flatMap((part) => (typeof part === "string" ? [] : [part.className, ...classes(part.children)]));
 
-test("headings keep the first line's marker and hide later opening marks plus one space", () => {
-  expect(lines("# First\n\n## Second\n###  Third ###")).toEqual(["# First", "", "Second", " Third ###"]);
+test("headings hide their opening marks plus one space, also on the first line where the caret starts", () => {
+  expect(lines("# First\n\n## Second\n###  Third ###")).toEqual(["First", "", "Second", " Third ###"]);
 });
-test("emphasis ranges include cursor zero; later strong, emphasis and strike marks hide", () => {
+test("a chart on the first line keeps its box like a later one, since the caret there reveals no source on mount", () => {
+  const chart = ":::chart\ntype: bar\ntitle: Revenue\ncolumns: [Month, Revenue]\nrows:\n  - [January, 1200]\nx: Month\ny: Revenue\n:::";
+  expect(notePreviewChart(chart, notePreviewLines(chart, "rich"), "en")).toMatchObject({ kind: "bar" });
+});
+test("strong, emphasis and strike marks hide, also at the start where the caret starts", () => {
   for (const marker of ["**", "__", "*", "_", "~~"]) {
-    expect(lines(`${marker}first${marker}\n\nText ${marker}later${marker}`)).toEqual([`${marker}first${marker}`, "", "Text later"]);
+    expect(lines(`${marker}first${marker}\n\nText ${marker}later${marker}`)).toEqual(["first", "", "Text later"]);
   }
   const parts = notePreviewLines("Text **bold** *soft* ~~gone~~", "rich")[0]!.parts;
   expect(classes(parts)).toEqual(

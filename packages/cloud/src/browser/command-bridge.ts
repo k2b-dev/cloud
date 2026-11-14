@@ -12,6 +12,8 @@ export type ContextAwareCommand = {
   scope?: "selection" | "page";
   /** One platform-aware key combination, for example mod+shift+k. */
   shortcut?: string;
+  /** More words the command menu's search matches, such as English terms on a German page. */
+  keywords?: readonly string[];
   /** A linkable app Command, an in-place search, or a local UI interaction. */
   action: CommandTarget | { search: GlobalSearchOptions } | (() => void | Promise<void>);
 };

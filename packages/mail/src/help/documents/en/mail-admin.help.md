@@ -122,7 +122,7 @@ An identity that is not ready to send shows the reason as its status:
 - **Not verified:** Choose **Verify** and send the test message.
 - **Verification waiting:** Mail is synchronizing the mailbox. Mail sends the test message automatically when the synchronization lets it. If this does not happen in 10 minutes, verify the identity again.
 
-When a mailbox has no identity that is ready to send, **Compose**, **Reply**, and **Forward** show the same reason. People with **Manage** access can open the sender settings from there.
+When a mailbox has no identity that is ready to send, **New message**, **Reply**, and **Forward** show the same reason. People with **Manage** access can open the sender settings from there.
 
 **Allow automatic replies** is separate from verification. Automatic replies can use only an identity that is ready to send and has this option turned on. Turning it on sends nothing by itself. An automatic reply or workflow that is turned on is still required.
 
@@ -229,7 +229,7 @@ The CLI offers the same recovery tools:
 
 ## Choose the contact directory {icon="address-book"}
 
-Mail uses the built-in Contacts app for recipient suggestions, contacts in **Conversation details**, **New contact**, and contacts attached to **Write with AI**. You do not need to set anything up for this.
+Mail uses the built-in Contacts app for recipient suggestions, the card of a message sender, **New contact**, and contacts attached to **Write with AI**. You do not need to set anything up for this.
 
 To use another app, such as a customer management app, you need to be a Cloud administrator:
 

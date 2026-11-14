@@ -117,7 +117,7 @@ export const getIdentityRuntimeConfig = async (): Promise<IdentityRuntimeConfig>
   if (loading) return loading;
   // Every caller joins this load. Bound it like the signer refresh, so one hung
   // settings read cannot hold back every later caller; the next one starts over.
-  loading = new Promise<IdentityRuntimeConfig>((resolve, reject) => {
+  const pending = new Promise<IdentityRuntimeConfig>((resolve, reject) => {
     const timer = setTimeout(
       () =>
         reject(new DOMException(`Cloud identity settings did not load within ${IDENTITY_REFRESH_TIMEOUT_MS / 1_000} s`, "TimeoutError")),
@@ -128,15 +128,17 @@ export const getIdentityRuntimeConfig = async (): Promise<IdentityRuntimeConfig>
       .finally(() => clearTimeout(timer));
   })
     .then((value) => {
-      cached = { value, expiresAt: Date.now() + RUNTIME_CONFIG_TTL_MS };
+      if (loading === pending) cached = { value, expiresAt: Date.now() + RUNTIME_CONFIG_TTL_MS };
       return value;
     })
     .finally(() => {
-      loading = null;
+      if (loading === pending) loading = null;
     });
-  return loading;
+  loading = pending;
+  return pending;
 };
 
 export const invalidateIdentityRuntimeConfig = (): void => {
   cached = null;
+  loading = null;
 };

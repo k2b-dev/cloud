@@ -41,12 +41,10 @@ const listProps = (requestUrl: string) => ({
   listMode: "conversations" as const,
   loading: false,
   liveDegraded: false,
-  onCollapse: () => {},
   onOpenHealth: () => {},
   onOpenDeliverySettings: () => {},
   onNavigate: () => {},
   onNavigateItem: () => {},
-  onToggleSelectionMode: () => {},
 
   onToggleSelection: () => {},
   onClearSelection: () => {},
@@ -102,31 +100,65 @@ test.skipIf(isServer)("overscrolling the conversation list at its top runs the w
   }
 });
 
-test.skipIf(isServer)("search filters open one builder however often they are pressed while its code loads", async () => {
-  const dom = createDomTestHarness();
+/** The head's search field with its filter button, as the mailbox renders them. */
+const renderSearch = async (
+  dom: ReturnType<typeof createDomTestHarness>,
+  props: Parameters<typeof import("./mailbox-search").createMailboxSearch>[0],
+) => {
   const { createMailboxSearch } = await import("./mailbox-search");
-  const { MailSearchInput, MailSearchOptions } = await import("./MailWorkspaceSearch");
-  const MailSearchHarness = (props: Parameters<typeof createMailboxSearch>[0]) => {
-    const search = createMailboxSearch(props);
-    return [createComponent(MailSearchInput, { search, mailboxName: "Support" }), createComponent(MailSearchOptions, { search, count: 0 })];
+  const { MailSearchInput } = await import("./MailWorkspaceSearch");
+  const { MailSearchFilter } = await import("./MailWorkspaceHead");
+  const { resolveMailSearchRoute: resolve } = await import("../../search-state");
+  let search!: ReturnType<typeof createMailboxSearch>;
+  const dispose = render(() => {
+    search = createMailboxSearch(props);
+    return createComponent(MailSearchInput, {
+      search,
+      mailboxName: "Support",
+      get children() {
+        return createComponent(MailSearchFilter, {
+          requestUrl: props.requestUrl,
+          search: resolve(new URL(props.requestUrl, "https://cloud.test")),
+          folders: props.folders,
+          folderId: null,
+          localTags: props.localTags,
+          quickSearch: search,
+          onOpenHref: (href) => void props.onOpenHref(href),
+          onEditSearch: () => {},
+          hint: { open: false, onDismiss: () => {} },
+        });
+      },
+    });
+  }, dom.root);
+  const filterButton = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-filter-button]")!;
+  /** Opens the filter menu and returns its entries. */
+  const openFilters = async () => {
+    filterButton().click();
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+    const menu = dom.document.getElementById(filterButton().getAttribute("aria-controls")!)!;
+    return [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]')];
   };
-  const dispose = render(() => createComponent(MailSearchHarness, { ...listProps("/app/mail/Box001?q=sdsd"), query: "sdsd" }), dom.root);
+  return { dispose, search: () => search, filterButton, openFilters };
+};
+
+test.skipIf(isServer)("More filters opens one builder however often it is chosen while its code loads", async () => {
+  const dom = createDomTestHarness();
+  const view = await renderSearch(dom, { ...listProps("/app/mail/Box001?q=sdsd"), query: "sdsd" });
   try {
-    const filters = dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!;
-    filters.click();
-    // The trigger shows that it is busy and stays enabled, so it keeps focus for the dialog to return it.
-    expect(filters.getAttribute("aria-busy")).toBe("true");
-    expect(filters.disabled).toBe(false);
-    expect(filters.querySelector("i.ti-loader-2")).not.toBeNull();
-    filters.click();
-    filters.click();
-    expect(dom.root.querySelector(".mail-search-summary")).toBeNull();
-    for (let attempt = 0; attempt < 100 && filters.hasAttribute("aria-busy"); attempt += 1) await Bun.sleep(5);
+    const more = (await view.openFilters()).find((item) => item.textContent?.includes("More filters"))!;
+    more.click();
+    // The button shows that the builder loads and stays enabled, so it keeps focus for the dialog to return it.
+    expect(view.filterButton().getAttribute("aria-busy")).toBe("true");
+    expect(view.filterButton().disabled).toBe(false);
+    expect(view.filterButton().querySelector("i.ti-loader-2")).not.toBeNull();
+    more.click();
+    more.click();
+    for (let attempt = 0; attempt < 100 && view.filterButton().hasAttribute("aria-busy"); attempt += 1) await Bun.sleep(5);
     expect(searchBuilderOpens).toHaveLength(1);
-    expect(filters.hasAttribute("aria-busy")).toBe(false);
-    expect(filters.querySelector("i.ti-adjustments-search")).not.toBeNull();
+    expect(view.filterButton().hasAttribute("aria-busy")).toBe(false);
+    expect(view.filterButton().querySelector("i.ti-adjustments-horizontal")).not.toBeNull();
   } finally {
-    dispose();
+    view.dispose();
     dom.cleanup();
   }
 });
@@ -141,44 +173,31 @@ for (const [query, expected] of [
 ]) {
   test.skipIf(isServer)(`the list builder retains structured, saved-view, quick-search precedence: ${query}`, async () => {
     const dom = createDomTestHarness();
-    const { createMailboxSearch } = await import("./mailbox-search");
-    const { MailSearchInput, MailSearchOptions } = await import("./MailWorkspaceSearch");
-    const MailSearchHarness = (props: Parameters<typeof createMailboxSearch>[0]) => {
-      const search = createMailboxSearch(props);
-      return [
-        createComponent(MailSearchInput, { search, mailboxName: "Support" }),
-        createComponent(MailSearchOptions, { search, count: 0 }),
-      ];
-    };
-    const dispose = render(
-      () =>
-        createComponent(MailSearchHarness, {
-          ...listProps(`/app/mail/Box001${query}`),
-          activeSavedViewId: "View01",
-          savedViews: [
-            {
-              id: "View01",
-              mailboxId: "Box001",
-              scope: "private",
-              ownerUserId: "user-1",
-              name: "Saved",
-              filter: { expression: { type: "text", field: "subject", query: "saved", match: "words" }, sort: "newest" },
-              revision: 1,
-              createdAt: "2026-10-14T10:00:00Z",
-              updatedAt: "2026-10-14T10:00:00Z",
-            },
-          ],
-        }),
-      dom.root,
-    );
+    const view = await renderSearch(dom, {
+      ...listProps(`/app/mail/Box001${query}`),
+      activeSavedViewId: "View01",
+      savedViews: [
+        {
+          id: "View01",
+          mailboxId: "Box001",
+          scope: "private",
+          ownerUserId: "user-1",
+          name: "Saved",
+          filter: { expression: { type: "text", field: "subject", query: "saved", match: "words" }, sort: "newest" },
+          revision: 1,
+          createdAt: "2026-10-14T10:00:00Z",
+          updatedAt: "2026-10-14T10:00:00Z",
+        },
+      ],
+    });
     try {
       const before = searchBuilderOpens.length;
-      dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
+      (await view.openFilters()).find((item) => item.textContent?.includes("More filters"))!.click();
       const deadline = performance.now() + 2000;
       while (searchBuilderOpens.length === before && performance.now() < deadline) await Bun.sleep(1);
       expect(searchBuilderOpens.at(-1)).toMatchObject({ initialState: { expression: { query: expected } } });
     } finally {
-      dispose();
+      view.dispose();
       dom.cleanup();
     }
   });
@@ -227,8 +246,6 @@ test.skipIf(isServer)("a long folder search stays editable and does not navigate
 
 test.skipIf(isServer)("a direct folder search names its actual scope and can return to the whole mailbox", async () => {
   const dom = createDomTestHarness();
-  const { createMailboxSearch } = await import("./mailbox-search");
-  const { MailSearchOptions } = await import("./MailWorkspaceSearch");
   const { simpleMailSearchExpression } = await import("../../search-url");
   const route = `/app/mail/Box001?${new URLSearchParams({
     q: "invoice",
@@ -239,24 +256,21 @@ test.skipIf(isServer)("a direct folder search names its actual scope and can ret
     }),
   })}`;
   const navigations: string[] = [];
-  const dispose = render(() => {
-    const search = createMailboxSearch({
-      ...listProps(route),
-      query: "invoice",
-      folders: [mailTestFolder("Inbox1", { name: "Inbox" }), mailTestFolder("Trash1", { name: "Trash" })],
-      onOpenHref: (href) => {
-        navigations.push(href);
-      },
-    });
-    return createComponent(MailSearchOptions, { search, count: 0 });
-  }, dom.root);
+  const view = await renderSearch(dom, {
+    ...listProps(route),
+    query: "invoice",
+    folders: [mailTestFolder("Inbox1", { name: "Inbox" }), mailTestFolder("Trash1", { name: "Trash" })],
+    onOpenHref: (href) => {
+      navigations.push(href);
+    },
+  });
   try {
-    const scope = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Place: Only Trash"]');
-    expect(scope).not.toBeNull();
-    scope!.click();
-    for (let turn = 0; turn < 10; turn++) await Promise.resolve();
-    const options = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')];
-    expect(options.map((option) => option.textContent)).toContain("Only Inbox");
+    // While searching, the place counts as a filter and the menu names it.
+    expect(view.filterButton().getAttribute("aria-label")).toBe("Filters, 1 active");
+    const options = await view.openFilters();
+    const labels = options.map((option) => option.textContent?.trim());
+    expect(labels).toContain("Only Inbox");
+    expect(options.find((option) => option.textContent?.trim() === "Only Trash")?.getAttribute("aria-checked")).toBe("true");
     const whole = options.find((option) => option.textContent?.trim() === "Whole mailbox");
     expect(whole).toBeDefined();
     whole!.click();
@@ -266,7 +280,7 @@ test.skipIf(isServer)("a direct folder search names its actual scope and can ret
     expect(next.searchParams.has("search")).toBe(false);
     expect(next.searchParams.get("q")).toBe("invoice");
   } finally {
-    dispose();
+    view.dispose();
     dom.cleanup();
   }
 });

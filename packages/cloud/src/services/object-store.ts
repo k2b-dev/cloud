@@ -2,8 +2,10 @@ import type { S3ListObjectsResponse, S3Stats } from "bun";
 import { objectStoreArea } from "../_internal/object-store-area";
 import { objectStoreBackend } from "../_internal/object-store-config";
 import { validateObjectKey as validateKey } from "../_internal/object-store-key";
+import { DEFAULT_STORAGE_BUCKET_ID, parseStorageBucketId, type StorageBucketId } from "../contracts/storage-buckets";
 import { publicCloudOrigin } from "../shared/app-url";
 import { get } from "./settings";
+import { listStorageBuckets } from "./storage-buckets/rows";
 
 export type ObjectVisibility = "private" | "public";
 export type ObjectWriteData = string | ArrayBuffer | ArrayBufferView | Blob | Request | Response;
@@ -89,14 +91,18 @@ const uploadData = async (data: ObjectWriteData, limit: number): Promise<string 
   throw new TypeError("Unsupported object data.");
 };
 
-const file = (key: string, visibility: ObjectVisibility = "private"): ObjectStoreFile => {
+const file = (
+  key: string,
+  visibility: ObjectVisibility = "private",
+  bucketId: StorageBucketId = DEFAULT_STORAGE_BUCKET_ID,
+): ObjectStoreFile => {
+  const backend = () => objectStoreBackend(bucketId);
   const prefix = objectStoreArea(visibility);
   validateKey(key, prefix);
   const path = prefix + key;
   const stream = () => {
     let reader: Promise<ReadableStreamDefaultReader<Uint8Array>> | undefined;
-    const source = () =>
-      (reader ??= objectStoreBackend().then(({ client, limit }) => boundedStream(client.file(path).stream(), limit).getReader()));
+    const source = () => (reader ??= backend().then(({ client, limit }) => boundedStream(client.file(path).stream(), limit).getReader()));
     return new ReadableStream<Uint8Array>(
       {
         async pull(controller) {
@@ -131,13 +137,13 @@ const file = (key: string, visibility: ObjectVisibility = "private"): ObjectStor
   return Object.freeze({
     key,
     get size() {
-      return objectStoreBackend().then(({ client }) => client.size(path));
+      return backend().then(({ client }) => client.size(path));
     },
     async stat() {
-      return (await objectStoreBackend()).client.stat(path);
+      return (await backend()).client.stat(path);
     },
     async write(data: ObjectWriteData, options: ObjectWriteOptions = {}) {
-      const { client, limit } = await objectStoreBackend();
+      const { client, limit } = await backend();
       const content = await uploadData(data, limit);
       const inheritedType =
         data instanceof Blob
@@ -151,14 +157,14 @@ const file = (key: string, visibility: ObjectVisibility = "private"): ObjectStor
     bytes: () => new Response(stream()).bytes(),
     stream,
     async exists() {
-      return (await objectStoreBackend()).client.file(path).exists();
+      return (await backend()).client.file(path).exists();
     },
     async delete() {
-      return (await objectStoreBackend()).client.file(path).delete();
+      return (await backend()).client.file(path).delete();
     },
     async copy(destinationKey: string) {
       validateKey(destinationKey, prefix);
-      const { client, limit } = await objectStoreBackend();
+      const { client, limit } = await backend();
       const metadata = await client.stat(path);
       assertSize(metadata.size, limit);
       const content = await new Response(boundedStream(client.file(path).stream(), limit)).bytes();
@@ -171,19 +177,24 @@ const file = (key: string, visibility: ObjectVisibility = "private"): ObjectStor
       if (!Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > 900) throw new RangeError("Presign expiry must be 1–900 seconds.");
       if (!["GET", "HEAD", "DELETE"].includes(method))
         throw new TypeError("Presign supports GET, HEAD, and DELETE; upload through write().");
-      return objectStoreBackend().then(({ client }) => client.file(path).presign({ method, expiresIn }));
+      return backend().then(({ client }) => client.file(path).presign({ method, expiresIn }));
     },
     get url() {
       if (visibility !== "public") throw new Error("Private objects have no public URL.");
       return get<string>("app.url").then(
-        (base) => `${publicCloudOrigin(base)}/public/storage/${path.slice("public/".length).split("/").map(encodeURIComponent).join("/")}`,
+        (base) =>
+          `${publicCloudOrigin(base)}/public/storage/${bucketId === DEFAULT_STORAGE_BUCKET_ID ? "" : `~${bucketId}/`}${path.slice("public/".length).split("/").map(encodeURIComponent).join("/")}`,
       );
     },
   });
 };
 
 /** App-bound S3 operations. Identity comes from app.start(), never from an API parameter. */
-const list = async (options: ObjectListOptions = {}, visibility: ObjectVisibility = "private"): Promise<ObjectListResult> => {
+const list = async (
+  options: ObjectListOptions = {},
+  visibility: ObjectVisibility = "private",
+  bucketId: StorageBucketId = DEFAULT_STORAGE_BUCKET_ID,
+): Promise<ObjectListResult> => {
   const prefix = objectStoreArea(visibility);
   const relative = validateKey(options.prefix ?? "", prefix, true);
   const startAfter = options.startAfter === undefined ? undefined : prefix + validateKey(options.startAfter, prefix);
@@ -195,7 +206,7 @@ const list = async (options: ObjectListOptions = {}, visibility: ObjectVisibilit
   ) {
     throw new TypeError("Invalid S3 continuation token.");
   }
-  const { client } = await objectStoreBackend();
+  const { client } = await objectStoreBackend(bucketId);
   const result = await client.list({ prefix: prefix + relative, startAfter, maxKeys, continuationToken: options.continuationToken });
   const contents = result.contents?.flatMap((object) => {
     if (!object.key.startsWith(prefix + relative)) throw new Error("S3 returned an object outside the requested area.");
@@ -210,8 +221,22 @@ const list = async (options: ObjectListOptions = {}, visibility: ObjectVisibilit
   return { contents, isTruncated: result.isTruncated, nextContinuationToken: result.nextContinuationToken };
 };
 
+const bucketStore = (id: StorageBucketId) =>
+  Object.freeze({
+    file: (key: string) => file(key, "private", id),
+    list: (options?: ObjectListOptions) => list(options, "private", id),
+    public: Object.freeze({
+      file: (key: string) => file(key, "public", id),
+      list: (options?: ObjectListOptions) => list(options, "public", id),
+    }),
+  });
+const defaultStore = bucketStore(DEFAULT_STORAGE_BUCKET_ID);
 export const storage = Object.freeze({
-  file: (key: string) => file(key),
-  list: (options?: ObjectListOptions) => list(options),
-  public: Object.freeze({ file: (key: string) => file(key, "public"), list: (options?: ObjectListOptions) => list(options, "public") }),
+  ...defaultStore,
+  bucket(id: StorageBucketId) {
+    const parsed = parseStorageBucketId(id);
+    if (!parsed) throw Object.assign(new TypeError("Invalid storage bucket ID."), { code: "storage_bucket_invalid" });
+    return parsed === DEFAULT_STORAGE_BUCKET_ID ? defaultStore : bucketStore(parsed);
+  },
+  buckets: listStorageBuckets,
 });

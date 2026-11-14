@@ -10,4 +10,5 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       shortcuts JSONB NOT NULL DEFAULT '[]'
     )
   `.simple();
+  await db`ALTER TABLE auth.rail_preferences ADD COLUMN IF NOT EXISTS show_names BOOLEAN NOT NULL DEFAULT true`.simple();
 };

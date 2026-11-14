@@ -958,8 +958,9 @@ additive changes; the shared compatibility check remains enabled.
 - `record.create` requires an idempotency key and a review through Cloud's
   capability dispatcher. Reuse a key only for retries of the same request.
 - Record updates and external upserts retain review and permission checks but
-  are no longer classified as destructive operations. They can remember an
-  approval scoped to one table; document issuance still needs individual approval.
+  are no longer classified as destructive operations. Their silent shared policy
+  permits unattended writes with ordinary base access; document issuance still
+  needs individual approval.
 - Timestamps use ISO 8601 with an explicit UTC offset; consumers must accept
   offsets as well as `Z`.
 
@@ -977,3 +978,57 @@ Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
 formats remain unchanged and can retain metadata. Previously uploaded images
 are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
 for the supported formats and limits.
+
+### Change records and issue documents through capabilities
+
+Use `grids.record.atomic` to create or update several records together. Supply
+one base, at least one existing coordination record in `locks`, optional
+current-version, field-value or GQL `checks`, and ordered `changes`. The operation
+allows 100 distinct locked records, 50 checks and 50 changes. Every check runs
+after the locks; any failure rolls back all changes. Choose a coordination
+record shared by competing writers when asserting a business condition.
+
+`record.create`, `record.update`, `record.upsert-external`, `record.atomic`
+and `record.correction-draft` have an explicit silent shared policy. They use
+the caller's ordinary base write access and the table's mutation and audit
+rules. Capability writes use the normal record API source (`direct`), never
+workflow authority. Audit entries retain the authenticated actor, calling
+surface, visible provenance and request ID. Inputs cannot select their actor.
+
+Read `record.finalization.read` before `record.close` or `record.finalize`.
+Pass the current record version and policy revision. Close finalizes under
+Direct mode or creates a Four-eyes request; finalization under Four-eyes still
+requires an eligible independent approver. Both Actions always ask.
+`record.correction-draft` creates an editable correction or cancellation linked
+to a finalized original through a single self-relation and a select option.
+The original remains unchanged; draft creation does not issue a document.
+
+For a query export:
+
+1. Call `document.capture` with the base and a GQL query. It freezes a complete
+   result, up to 10,000 rows within the document data budget. Truncated results
+   are rejected. Keep the returned public capture ID, digest and timestamp.
+2. Call `document.issue` with that capture and the output definition. Supported
+   formats are PDF, CSV, JSON, XML, ZIP, DATEV and SEPA. Financial output uses
+   `version: 1`; its destination, mapping and source record versions are fixed
+   with the preview. CSV protects spreadsheet formulas by default. ZIP uses
+   public template and document IDs and packages stored original artifacts.
+3. DATEV and SEPA return `confirmationRequired`. Review `document.confirm`
+   with the returned receipt and digest, then confirm that exact preview as
+   the original caller. Confirmation rechecks access and source versions and
+   completes issuance. It retains duplicate-export claims and sends no payment.
+4. Read `document.read` or stream `document.content.read` to retrieve stored
+   artifacts. These exports remain readable independently of a workflow run.
+
+Issuing, confirming and finalizing always require approval; an unattended
+caller cannot use these Actions. Capture and draft creation can run unattended
+with ordinary access. Retry a capability call only with its original
+idempotency key and identical input. After a stale-version conflict, read the
+current state and submit a new operation.
+
+The Grids CLI provides `records atomic`, `records correction-draft`,
+`records close`, `documents capture`, `documents issue` and `documents confirm`.
+Each takes `--body-file request.json` (or `--body`/`--stdin`) and a stable
+`--idempotency-key`. Use `cld capabilities review grids <action> --input-file
+request.json` to inspect a complete proposal. The generic capability commands
+also expose `record.finalization.read` and `record.finalize`.

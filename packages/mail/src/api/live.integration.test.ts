@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { LiveViewer } from "@k2b/cloud/events";
+import { createLiveEngine, createMemoryLiveTopic } from "@k2b/cloud/events/testing";
 import type { RequestActor } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { useRegisteredTestApp } from "@k2b/cloud/services/identity/application.test-fixture";
@@ -114,6 +115,50 @@ const firstAnswer = async (headers: Record<string, string>, scope: unknown) => {
 const notFound = { t: "revoked", id: "m", code: "not_found" };
 
 suite("Mail live channel", () => {
+  test("a mailbox access hint revokes both assigned-reader delivery keys", async () => {
+    const target = await mailbox("Assigned live access");
+    const reader = await person("Assigned Reader");
+    await grant(target.id, { user_id: reader.userId });
+    const accessId = grants.at(-1)!;
+    await sql`DELETE FROM mail.mailbox_access WHERE mailbox_id = ${target.id}::uuid AND access_id = ${accessId}::uuid`;
+    await sql`INSERT INTO mail.mailbox_assigned_access (mailbox_id, access_id) VALUES (${target.id}::uuid, ${accessId}::uuid)`;
+    const topic = createMemoryLiveTopic();
+    const frames: Array<{ t: string }> = [];
+    const ready = Promise.withResolvers<void>();
+    const revoked = Promise.withResolvers<void>();
+    const engine = createLiveEngine({ appId: "mail", topic: () => topic, channels: mailLiveChannels });
+    try {
+      const connection = engine.open(
+        {
+          send: (text) => {
+            const frame = JSON.parse(text);
+            frames.push(frame);
+            if (frame.t === "ready") ready.resolve();
+            if (frame.t === "revoked") revoked.resolve();
+          },
+          close: () => {},
+          getBufferedAmount: () => 0,
+        },
+        reader,
+        async () => reader,
+      );
+      connection.message(JSON.stringify({ t: "sub", id: "assigned", channel: "mailbox", scope: { mailbox: target.shortId } }));
+      await ready.promise;
+      await sql`DELETE FROM mail.mailbox_assigned_access WHERE mailbox_id = ${target.id}::uuid AND access_id = ${accessId}::uuid`;
+      const [hint] = await sql<{ payload: { v: 1; k: string; a: true } }[]>`
+        SELECT payload FROM events.outbox WHERE app_id = 'mail' AND kind = 'live'
+          AND ordering_key = ${target.id} AND payload->>'a' = 'true' ORDER BY seq DESC LIMIT 1`;
+      expect(hint?.payload).toEqual({ v: 1, k: target.id, a: true });
+      topic.publish(hint!.payload);
+      await revoked.promise;
+      topic.publish({ v: 1, k: `${target.id}:${reader.userId}`, d: {} });
+      topic.publish({ v: 1, k: `${target.id}:assigned`, d: {} });
+      expect(frames.map((frame) => frame.t)).toEqual(["ready", "revoked"]);
+    } finally {
+      engine.stop();
+    }
+  });
+
   test("the channel admits exactly the people the Mail API lets read a mailbox", async () => {
     const shared = await mailbox("Live shared");
     const everyone = await mailbox("Live everyone");

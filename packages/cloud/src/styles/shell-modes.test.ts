@@ -24,6 +24,8 @@ test("the shell modes cover every width exactly once", async () => {
     "(min-width: 768px)",
     "not all and (min-width: 1024px)",
     "(min-width: 1024px)",
+    // The app bar with names widens within the card mode; it switches no mode, so it needs no opposite.
+    "(min-width: 1680px)",
     // Focus state follows the same boundaries; only its reveal strip needs a coarse pointer.
     "(min-width: 768px)",
     "(min-width: 768px) and (pointer: coarse)",

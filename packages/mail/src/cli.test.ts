@@ -333,6 +333,54 @@ test("admin security commands expose report and policy management", async () => 
   ]);
 }, 20_000);
 
+test("conversation by-sender keeps the total, public permalinks, and exact query", async () => {
+  let query: URLSearchParams | undefined;
+  const server = withMailbox((request) => {
+    const url = new URL(request.url);
+    if (url.pathname !== `/api/mail/mailboxes/${MAILBOX_ID}/sender-conversations`) return api({ message: "unexpected" }, { status: 500 });
+    query = url.searchParams;
+    return api({
+      total: 12,
+      items: [
+        {
+          id: CONVERSATION_ID,
+          subject: "Earlier mail",
+          participantSummary: "Ada",
+          latestMessageAt: "2026-08-18T12:00:00.000Z",
+          preview: "Earlier context",
+        },
+      ],
+    });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const result = await runCli(origin, [
+    "--json",
+    "mail",
+    "conversation",
+    "by-sender",
+    "ada+sales@example.test",
+    "--mailbox",
+    MAILBOX_ID,
+    "--limit",
+    "3",
+    "--exclude",
+    CONVERSATION_ID,
+  ]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({
+    total: 12,
+    items: [{ id: CONVERSATION_ID, permalink: `${origin}/open/mail.conversation/~${CONVERSATION_ID}` }],
+  });
+  expect(query?.get("email")).toBe("ada+sales@example.test");
+  expect(query?.get("limit")).toBe("3");
+  expect(query?.get("excludeConversationId")).toBe(CONVERSATION_ID);
+  const human = await runCli(origin, ["mail", "conversation", "by-sender", "ada@example.test", "--mailbox", MAILBOX_ID]);
+  expect(human.exitCode, human.stderr).toBe(0);
+  expect(human.stdout).toContain("12 conversations");
+  expect(human.stdout).toContain("Earlier mail");
+}, 20_000);
+
 test("conversation context commands expose Contacts and deterministic related mail", async () => {
   const requestedPaths: string[] = [];
   const server = withMailbox(async (request) => {
@@ -431,6 +479,7 @@ test("conversation drafts lists resumable work for one conversation", async () =
       intent: "reply",
       subject: "Re: Support request",
       bodyPreview: "We are looking into this.",
+      suggestion: false,
       createdByDisplayName: "Writer",
       updatedAt: "2026-07-23T09:00:00.000Z",
     },
@@ -489,6 +538,31 @@ test("mailbox configure maps automatic reply access to the mailbox policy", asyn
   expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requestBody).toEqual({ automaticReplyManagementPermission: "write" });
+});
+
+test("mailbox configure sets how new drafts are edited", async () => {
+  let requestBody: unknown;
+  const server = withMailbox(async (request) => {
+    if (request.method === "PATCH" && new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}`) {
+      requestBody = await request.json();
+      return api({ ...mailbox, draftEditMode: "lock" });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "mail",
+    "configure",
+    "--mailbox",
+    MAILBOX_ID,
+    "--drafts",
+    "lock",
+  ]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(requestBody).toEqual({ draftEditMode: "lock" });
 });
 
 test("subscription commands expose safe list actions and durable disposition", async () => {
@@ -1091,6 +1165,7 @@ test("compose rendering commands send one validated draft context", async () => 
   };
   const validatedDraft = {
     ...draft,
+    quoteSource: null,
     priority: "normal",
     requestDeliveryReceipt: false,
     requestReadReceipt: false,
@@ -1158,7 +1233,7 @@ test("compose rendering commands send one validated draft context", async () => 
     },
     {
       path: `/api/mail/mailboxes/${MAILBOX_ID}/compose-preview`,
-      body: { draft: validatedDraft, conversationId: CONVERSATION_ID },
+      body: { draft: validatedDraft, conversationId: CONVERSATION_ID, sourceMessageId: null },
     },
   ]);
   expect(JSON.parse(snippet.stdout)).toEqual({ markdown: "Rendered snippet" });
@@ -3044,7 +3119,9 @@ const composeServer = (bodies: Array<{ path: string; body: unknown }>, draftOver
       const warnings =
         draftOverrides.subject === "Attachment"
           ? [{ id: "missing_attachment", title: "Attachment may be missing", description: "No attachment is included." }]
-          : [];
+          : draftOverrides.subject === ""
+            ? [{ id: "missing_subject", title: "No subject", description: "The message has no subject. Send anyway?" }]
+            : [];
       return api({
         draftId: DRAFT_ID,
         revision: draftOverrides.revision ?? 1,
@@ -3078,7 +3155,7 @@ test("reply drafts from the latest message with the default identity, and send s
     to: [],
     cc: [],
     bcc: [],
-    subject: "Re: CLI test",
+    subject: "",
     body: "Reply body",
     conversationId: CONVERSATION_ID,
     intent: "reply_all",
@@ -3144,6 +3221,20 @@ test("forward quotes the source message and copies its attachments", async () =>
   expect(body.body).toStartWith("FYI\n\n---------- Forwarded message ----------\nFrom: Ada <ada@example.test>");
   expect(body.body).toEndWith("Original text");
 
+  const withoutAttachments = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "mail",
+    "forward",
+    CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--to",
+    "grace@example.test",
+    "--no-attachments",
+  ]);
+  expect(withoutAttachments.exitCode, withoutAttachments.stderr).toBe(0);
+  expect(bodies[1]!.body).toMatchObject({ includeSourceAttachments: false });
+
   const missing = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "forward", CONVERSATION_ID, "--mailbox", MAILBOX_ID]);
   expect(missing.exitCode).toBe(1);
   expect(missing.stderr).toContain("Pass at least one --to recipient.");
@@ -3167,6 +3258,25 @@ test("send requires explicit approval for the exact safety review", async () => 
     expectedDraftRevision: 3,
     expectedContentHash: "c".repeat(64),
     safetyApproval: { revision: 3, fingerprint: "b".repeat(64), warningIds: ["missing_attachment"] },
+  });
+});
+
+test("send without a subject shows the warning and accepts explicit safety approval", async () => {
+  const bodies: Array<{ path: string; body: unknown }> = [];
+  const server = composeServer(bodies, { subject: "", revision: 3 });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const base = ["--json", "mail", "send", DRAFT_ID, "--mailbox", MAILBOX_ID];
+  const rejected = await runCli(origin, base);
+  expect(rejected.exitCode).toBe(1);
+  expect(rejected.stderr).toContain("No subject: The message has no subject. Send anyway?");
+  expect(rejected.stderr).toContain("Pass --approve-safety");
+  expect(bodies).toHaveLength(0);
+  const approved = await runCli(origin, [...base, "--approve-safety"]);
+  expect(approved.exitCode, approved.stderr).toBe(0);
+  expect(bodies[0]!.body).toMatchObject({
+    expectedDraftRevision: 3,
+    safetyApproval: { revision: 3, fingerprint: "b".repeat(64), warningIds: ["missing_subject"] },
   });
 });
 
@@ -6306,4 +6416,168 @@ test("unassigned-only CLI assignment preserves the caller's revision and rejects
   const missing = await runCli(server.url.origin, args);
   expect(missing.exitCode).toBe(1);
   expect(inputs).toHaveLength(1);
+});
+
+for (const output of ["text", "json", "jsonl"] as const) {
+  test(`Mail automation export includes every page in ${output} output`, async () => {
+    const requests: string[] = [];
+    const cursor = "44bb0000-0000-4000-8000-000000000001";
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url);
+        requests.push(`${url.pathname}${url.search}`);
+        return api({
+          format: "cloud.mail-automation",
+          version: 1,
+          authority: "none",
+          scope: "installation",
+          exportedAt: "2026-11-07T00:00:00.000Z",
+          items: [{ version: { id: requests.length === 1 ? "first" : "last" } }],
+          nextCursor: requests.length === 1 ? cursor : null,
+        });
+      },
+    });
+    servers.push(server);
+    const result = await runCli(server.url.origin, [
+      "mail",
+      "automation",
+      "export",
+      "--all",
+      ...(output === "text" ? [] : [`--${output}`]),
+    ]);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(requests).toEqual(["/api/mail/admin/automation-export", `/api/mail/admin/automation-export?after=${cursor}`]);
+    if (output === "jsonl") expect(result.stdout.trim().split("\n")).toHaveLength(2);
+    else
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        items: [{ version: { id: "first" } }, { version: { id: "last" } }],
+        nextCursor: null,
+      });
+  });
+}
+
+test("Mail export rejects --all with an explicit mailbox before calling the server", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch() {
+      throw new Error("Unexpected request");
+    },
+  });
+  servers.push(server);
+  const result = await runCli(server.url.origin, ["mail", "automation", "export", "--all", "--mailbox", "Support"]);
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("Use either --mailbox or --all");
+});
+
+test("draft create and update carry the explicit quote choice", async () => {
+  const bodies: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    bodies.push(await request.json());
+    return api(draftFixture());
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  for (const command of [["create"], ["update", DRAFT_ID, "--revision", "1"]]) {
+    const base = ["--json", "mail", "draft", ...command, "--mailbox", MAILBOX_ID, "--identity", IDENTITY_ID, "--body", "Reply"];
+    for (const choice of ["--quote", "--no-quote"]) {
+      const result = await runCli(origin, [
+        "--locale",
+        "de-CH",
+        ...base,
+        choice,
+        ...(choice === "--quote" ? ["--quote-time-zone", "Europe/Berlin"] : []),
+      ]);
+      expect(result.exitCode, result.stderr).toBe(0);
+    }
+    const conflict = await runCli(origin, [...base, "--quote", "--no-quote"]);
+    expect(conflict.exitCode).toBe(1);
+    expect(conflict.stderr).toContain("Use either --quote or --no-quote.");
+  }
+  expect(bodies).toEqual([
+    expect.objectContaining({ quoteSource: { locale: "de", timeZone: "Europe/Berlin" } }),
+    expect.objectContaining({ quoteSource: null }),
+    expect.objectContaining({ draft: expect.objectContaining({ quoteSource: { locale: "de", timeZone: "Europe/Berlin" } }) }),
+    expect.objectContaining({ draft: expect.objectContaining({ quoteSource: null }) }),
+  ]);
+});
+
+test("draft intent and acknowledge-consolidation use the revision-checked reply operations", async () => {
+  const bodies: Array<{ path: string; body: unknown }> = [];
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (request.method === "POST" && path.startsWith(`/api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID}/`)) {
+      bodies.push({ path, body: await request.json() });
+      return api(draftFixture({ intent: "forward", revision: 8, consolidatedCount: 0 }));
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const changed = await runCli(origin, [
+    "--json",
+    "mail",
+    "draft",
+    "intent",
+    DRAFT_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--intent",
+    "forward",
+    "--revision",
+    "7",
+  ]);
+  expect(changed.exitCode).toBe(0);
+  expect(JSON.parse(changed.stdout)).toMatchObject({ intent: "forward", revision: 8 });
+  const acknowledged = await runCli(origin, ["--json", "mail", "draft", "acknowledge-consolidation", DRAFT_ID, "--mailbox", MAILBOX_ID]);
+  expect(acknowledged.exitCode).toBe(0);
+  expect(bodies).toEqual([
+    { path: `/api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID}/intent`, body: { intent: "forward", expectedRevision: 7 } },
+    { path: `/api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID}/consolidation/acknowledge`, body: {} },
+  ]);
+  const staleInput = await runCli(origin, ["mail", "draft", "intent", DRAFT_ID, "--mailbox", MAILBOX_ID, "--intent", "forward"]);
+  expect(staleInput.exitCode).not.toBe(0);
+});
+
+test("reply without content opens the existing draft and supplied content fails visibly", async () => {
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/messages")) return api({ items: [sourceMessageFixture], nextCursor: null });
+    if (path.endsWith(`/messages/${MESSAGE_ID}`)) return api(sourceMessageFixture);
+    if (path.endsWith("/sender-identities")) return api([{ id: IDENTITY_ID, isDefault: true, status: "verified" }]);
+    if (path.endsWith("/drafts") && request.method === "POST") {
+      const body = await request.json();
+      if (body.body)
+        return api(
+          {
+            code: "DRAFT_REPLY_BOX_OCCUPIED",
+            message: `Reply draft ${DRAFT_ID} already exists. Open it and apply your content explicitly; no supplied content was saved.`,
+            draftId: DRAFT_ID,
+          },
+          { status: 409 },
+        );
+      expect(body.subject).toBe("");
+      return api(draftFixture({ creationOutcome: "existing" }));
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const opened = await runCli(origin, ["mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID]);
+  expect(opened.exitCode, opened.stderr).toBe(0);
+  expect(opened.stdout).toContain(`existing reply draft ${DRAFT_ID}`);
+  const occupied = await runCli(origin, ["mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--body", "Keep my text"]);
+  expect(occupied.exitCode).not.toBe(0);
+  expect(occupied.stderr).toContain(DRAFT_ID);
+  expect(occupied.stderr).toContain("409");
+  expect(occupied.stderr).toContain("no supplied content was saved");
+  expect(occupied.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent reply --revision`);
+  expect(occupied.stderr).not.toContain("--intent forward");
+  const replyAll = await runCli(origin, ["mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--all", "--body", "Keep my text"]);
+  expect(replyAll.exitCode).not.toBe(0);
+  expect(replyAll.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent reply_all --revision`);
+  const forward = await runCli(origin, ["mail", "forward", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--to", "forward@example.test"]);
+  expect(forward.exitCode).not.toBe(0);
+  expect(forward.stderr).toContain(DRAFT_ID);
+  expect(forward.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent forward --revision`);
 });

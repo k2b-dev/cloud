@@ -163,7 +163,7 @@ word. An explicit prop wins over the default.
 
 ## API reference
 
-See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`. Text and multiline fields take a [suggestion](/en/ui/input/field-suggestion); Markdown mode does not.
 
 ```ts
 type TextInputProps = Omit<

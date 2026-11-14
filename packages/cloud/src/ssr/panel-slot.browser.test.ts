@@ -514,7 +514,7 @@ test("mod+J toggles in the host and closes from a provider input", async () => {
   }
 });
 
-// The rail's panel button takes the blue of search and help; an open panel keeps its fill and moves no rail control.
+// The rail's panel button has the neutral ink of search and help; an open panel keeps its blue fill and moves no rail control.
 test("the rail panel button keeps a blue fill while open and moves no rail control", async () => {
   const { context, page } = await fixture();
   try {

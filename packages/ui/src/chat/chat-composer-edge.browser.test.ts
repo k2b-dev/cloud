@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // The assistant prompt carries the AI colour: a light plum edge at rest, the full plum edge with a soft glow outside on
 // focus, red with an error and a quiet grey edge when disabled. The edge stays 2 px in every state and the glow lies
@@ -111,6 +111,9 @@ const measure = (page: Page, name: string) =>
           return layer.content !== "none" && layer.boxShadow !== "none" && layer.opacity === "1";
         })(),
         fill: rgba(style.backgroundColor),
+        radius: style.borderTopLeftRadius,
+        // The glow layer sits on the outer edge of the border, so the glow starts where the edge ends.
+        glowInset: getComputedStyle(edge, "::after").top,
       };
     },
     { name, field: FIELD },
@@ -178,7 +181,7 @@ const enter = async (page: Page, name: string, state: State) => {
   await settled(page);
   const cell = page.locator(`[data-composer="${name}"]`);
   if (state.focus) await cell.locator(FIELD).evaluate((node: HTMLElement) => node.focus({ focusVisible: true } as FocusOptions));
-  if (state.hover) await cell.locator(".k2b-chat-composer").hover({ position: { x: 4, y: 4 } });
+  if (state.hover) await hoverInPlace(cell.locator(".k2b-chat-composer"), { x: 4, y: 4 });
   await settled(page);
 };
 
@@ -225,6 +228,9 @@ describe("assistant composer edge in the browser", () => {
               expect(actual.box.width, `${label} ${state} width`).toBe(rest.box.width);
               expect(actual.drop, `${label} ${state} shadow on the card`).toBe(0);
               expect(actual.glow, `${label} ${state} glow`).toBe(state.includes("focus"));
+              // v12: the assistant card has a 14 px radius, and the glow starts at the outer edge of its 2 px border.
+              expect(actual.radius, `${label} ${state} radius`).toBe("14px");
+              expect(actual.glowInset, `${label} ${state} glow layer`).toBe("-2px");
             }
             const expected: Record<string, [Rgba, Rgba]> = {
               rest: [token.rest, token.surface],

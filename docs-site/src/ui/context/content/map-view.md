@@ -18,7 +18,9 @@ import { createSignal, For } from "solid-js";
 ## Use MapView
 
 The host owns selection, map styles, and attribution. Supply a style object or
-a path served by your application.
+a path served by your application. For a small map inside other content that
+opens the full map with a list and navigation, use
+[MapTile and MapDialog](/en/ui/content/map-dialog).
 
 ## Style
 
@@ -178,6 +180,7 @@ style declares its own attribution.
 | `notice` | Host message above the map at the top left. |
 | `empty` | Host sentence centered when there is no geometry. |
 | `onLocate` | Shows the location button. The host obtains and supplies the location. |
+| `still` | A calm picture: the map image loads, but there are no controls, gestures, pin selection, or info tile, and pins are images. Use it inside a [MapTile](/en/ui/content/map-dialog), which opens the full map. |
 | `class` | Additional root class. |
 
 Marker and area tones are `accent`, `second`, `neutral`, and `warning`.

@@ -806,19 +806,15 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     const address = await resolveMailAddress({ context: contextFor(readerA), mailbox: mailboxShortId });
     expect(address.ok && [address.data.mailbox.permission, address.data.mailbox.accessScope]).toEqual(["read", "assigned"]);
     for (const token of [tokenA, tokenB])
-      for (const path of [
-        "saved-views",
-        "details",
-        "health",
-        "assignable-users",
-        "activity",
-        "settings-context",
-        "remote-content-rules",
-        `conversations/${c1.shortId}/related`,
-        `conversations/${c1.shortId}/context`,
-      ]) {
+      for (const path of ["saved-views", "details", "health", "assignable-users", "activity", "settings-context", "remote-content-rules"]) {
         expect((await call(token, `${base()}/${path}`)).status).toBe(403);
       }
+    for (const suffix of ["related", "context"]) {
+      // Mailbox-wide collaboration stays forbidden for a visible conversation; hidden IDs answer like unknown IDs.
+      expect((await call(tokenA, `${base()}/conversations/${c1.shortId}/${suffix}`)).status).toBe(403);
+      expect((await call(tokenB, `${base()}/conversations/${c1.shortId}/${suffix}`)).status).toBe(404);
+      expect((await call(tokenB, `${base()}/conversations/${newShortId()}/${suffix}`)).status).toBe(404);
+    }
   });
 
   test("capability mailbox list, search and conversation read use the same current visibility", async () => {

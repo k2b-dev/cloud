@@ -736,13 +736,13 @@ describe("Venue shift detail and schedule", () => {
     expect(detail).toContain('aria-label="Remove Sam Sample"');
     expect(text(detail)).toContain("Take shift");
     expect(text(detail)).toContain("Also the next 4 weeks");
-    // The K1 outline: kind and state above the title, the main action in the panel accent, then properties and people,
+    // The K1 outline: the title, then kind and state below it, the main action in the panel accent, then properties and people,
     // sections without icons, and the remove action waiting in its row.
     expect(detail).toMatch(/class="k2b-detail-panel__kind"><span>Shift<\/span>[\s\S]*?k2b-status-badge__label">1 missing</);
     expect(detail).not.toContain("ti-calendar-event");
     expect(detail).toMatch(/class="k2b-button venue-details-main[^"]*"[^>]*>[\s\S]*?Take shift/);
     expect(detail).toMatch(/>Properties<\/h3>[\s\S]*>Staffing<\/dt>[\s\S]*1 of 2–3 staffed[\s\S]*>People<\/h3>/);
-    expect(detail).not.toContain("k2b-detail-panel__section-icon");
+    expect(detail).not.toContain("k2b-section__icon");
     expect(detail).toMatch(/class="k2b-progressive-row[^"]*"[^>]*data-shift-person="Asg002"/);
     expect(detail).toMatch(
       /class="k2b-button k2b-progressive-action[^"]*"[^>]*aria-label="Remove Sam Sample"|aria-label="Remove Sam Sample"[^>]*class="k2b-button k2b-progressive-action/,

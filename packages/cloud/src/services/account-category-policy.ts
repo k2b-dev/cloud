@@ -5,6 +5,7 @@ import {
   DEFAULT_ACCOUNT_CATEGORY_POLICY,
 } from "../contracts/account-categories";
 import { sql } from "../runtime/clients";
+import { accountLockedSql } from "./account-lock";
 import { decryptValue } from "./settings/crypto";
 
 const prefix = "user.category.";
@@ -29,10 +30,29 @@ export const decodeAccountCategoryEnabled = async (encrypted: unknown): Promise<
   return value;
 };
 
+/**
+ * Whether the account category is enabled. It does not see a single account's state, such as a FreeIPA lock; for a
+ * concrete account that signs in or acts, use `isAccountAllowed`.
+ */
 export const isAccountCategoryAllowed = async (
   user: { provider: "local" | "ipa"; profile: "guest" | "user" },
   db: typeof sql = sql,
 ): Promise<boolean> => (await readValue(`${accountCategory(user)}.enabled`, true, db)) === true;
+
+/**
+ * Whether this account may use any credential: its category is enabled and FreeIPA does not lock it
+ * (nsaccountlock, mirrored by the sync). Use it wherever a concrete account signs in or acts; one query.
+ */
+export const isAccountAllowed = async (
+  user: { id: string; provider: "local" | "ipa"; profile: "guest" | "user" },
+  db: typeof sql = sql,
+): Promise<boolean> => {
+  const [row] = await db<{ value: string | null; locked: boolean }[]>`
+    SELECT (SELECT value FROM settings.entries WHERE key = ${`${prefix}${accountCategory(user)}.enabled`}) AS value,
+      ${accountLockedSql(sql`${user.id}::uuid`)} AS locked
+  `;
+  return row?.locked !== true && (await decodeAccountCategoryEnabled(row?.value ?? null));
+};
 
 export const readAccountCategoryPolicy = async (db: typeof sql = sql): Promise<AccountCategoryPolicy> => {
   const policy = structuredClone(DEFAULT_ACCOUNT_CATEGORY_POLICY);

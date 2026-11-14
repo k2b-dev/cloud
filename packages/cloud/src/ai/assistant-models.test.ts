@@ -92,6 +92,7 @@ test("people choices reuse one settings snapshot and one quota read per owning m
     userId: subject.userId,
     memoryEnabled: true,
     memoryLearningEnabled: true,
+    suggestNextMessage: true,
     selection: null,
     updatedAt: "2026-10-27T00:00:00Z",
   });

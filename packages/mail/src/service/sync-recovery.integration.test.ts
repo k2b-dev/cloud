@@ -22,7 +22,7 @@ import {
   releaseProviderLease,
 } from "./provider-operation-lock";
 import { takeFolderSyncActivity } from "./sync-activity";
-import { claimFence, commitSyncBatch, enqueueFolderSync, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
+import { claimFence, commitSyncBatch, enqueueFolderSync, requestedSyncProgress, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -250,6 +250,44 @@ suite("mail sync recovery", () => {
       { state: "failed", error_code: "CONNECT_TIMEOUT" },
       { state: "completed", error_code: null },
     ]);
+  });
+
+  test("a non-empty successful batch retains its completed history", async () => {
+    const fixture = await createSyncedMailbox("changed-history");
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({ ...EMPTY_INBOX, uidNext: 2, messages: 1 });
+    const envelopes = spyOn(imapSmtpConnector, "fetchEnvelopeBatch").mockResolvedValue({
+      messages: [
+        {
+          remoteRef: { folderStableKey: "INBOX:10", uidValidity: "10", uid: "1", modseq: "1" },
+          providerMessageId: null,
+          providerThreadId: null,
+          messageId: `<changed-${suffix}@example.test>`,
+          inReplyTo: null,
+          references: [],
+          subject: "Changed batch",
+          sentAt: null,
+          internalDate: new Date("2026-07-01T10:00:00Z"),
+          sizeBytes: 42,
+          flags: [],
+          labels: [],
+          addresses: { from: [{ name: null, address: "sender@example.test" }], replyTo: [], to: [], cc: [], bcc: [] },
+          mimeStructure: {},
+        },
+      ],
+      nextHighUid: null,
+    });
+    const window = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([{ uid: 1, modseq: "1", flags: [], labels: [] }]);
+    try {
+      expect(await syncFolderBatch(fixture.folderId, async () => undefined)).toMatchObject({ imported: 1 });
+      expect(
+        await sql<{ state: string; imported: string }[]>`SELECT state, stats ->> 'imported' AS imported FROM mail.sync_runs
+        WHERE remote_resource_id = ${fixture.resourceId}::uuid`,
+      ).toEqual([{ state: "completed", imported: "1" }]);
+    } finally {
+      status.mockRestore();
+      envelopes.mockRestore();
+      window.mockRestore();
+    }
   });
 
   test("a degraded mailbox still waits for a changed credential to be verified again", async () => {
@@ -643,7 +681,7 @@ suite("mail sync recovery", () => {
     }
   });
 
-  test("idle commits skip unchanged metadata while preserving freshness, history and changed-state recovery", async () => {
+  test("idle commits keep one folder checkpoint without history and preserve freshness and recovery", async () => {
     const fixture = await createSyncedMailbox("idle-writes");
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
     try {
@@ -712,9 +750,10 @@ suite("mail sync recovery", () => {
       console.info("idle sync run", { statements, writes });
       expect(statements).toBe(16); // Includes BEGIN/COMMIT for both fence claim and commit; the Drafts role rides on the folder lock.
       expect(writes).toEqual([
+        { table_name: "folders", count: 1 },
         { table_name: "provider_bindings", count: 1 },
         { table_name: "remote_resources", count: 2 },
-        { table_name: "sync_runs", count: 2 },
+        { table_name: "sync_runs", count: 1 },
       ]);
       const health = await getMailboxOperationalHealth(ownerContext, fixture.mailboxId);
       const operations = await getMailboxOperations(ownerContext, fixture.mailboxId);
@@ -725,11 +764,29 @@ suite("mail sync recovery", () => {
       if (health.ok) expect(JSON.stringify(health.data)).toContain(state.last_sync_at!.toISOString());
       if (operations.ok) expect(JSON.stringify(operations.data)).toContain(state.last_sync_at!.toISOString());
       expect(state.health).toBe("active");
-      const [run] = await sql<{ state: string; cursor_after: unknown }[]>`
-        SELECT state, cursor_after FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid
-        ORDER BY started_at DESC LIMIT 1`;
-      expect(run?.state).toBe("completed");
-      expect(run?.cursor_after).toEqual(cursor);
+      expect(await sql`SELECT id FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid`).toHaveLength(0);
+      const [checkpoint] = await sql<{ last_sync_snapshot: Record<string, unknown> }[]>`
+        SELECT last_sync_snapshot FROM mail.folders WHERE id = ${fixture.folderId}::uuid`;
+      expect(checkpoint?.last_sync_snapshot).toMatchObject({ uidValidity: "10", statusHighUid: 0, statusModseq: "1" });
+
+      // A removed temporary run cannot erase the previous checkpoint.
+      await commit(1, async () => {
+        await sql`DELETE FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid`;
+      });
+      const [preserved] = await sql`SELECT last_sync_snapshot FROM mail.folders WHERE id = ${fixture.folderId}::uuid`;
+      expect(preserved?.last_sync_snapshot).toEqual(checkpoint?.last_sync_snapshot);
+
+      // An upgraded folder starts with NULL; it remains pending until a new checkpoint commits.
+      await sql`UPDATE mail.folders SET last_sync_snapshot = NULL WHERE id = ${fixture.folderId}::uuid`;
+      const [upgradeRequest] = await sql<{ since: Date }[]>`SELECT clock_timestamp() AS since`;
+      const upgradeProgress = () =>
+        requestedSyncProgress({
+          mailboxId: fixture.mailboxId,
+          requests: [{ id: "upgrade", folderId: fixture.folderId, since: upgradeRequest!.since }],
+        });
+      expect((await upgradeProgress()).get("upgrade")).toEqual({ folders: 1, synced: 0, failed: 0 });
+      await commit();
+      expect((await upgradeProgress()).get("upgrade")).toEqual({ folders: 1, synced: 1, failed: 0 });
 
       // Count a whole warmed idle folder batch as well as the commit seam above.
       const originalUrl = connections().database.url;
@@ -773,10 +830,19 @@ suite("mail sync recovery", () => {
         await runSyncFolderJob({ input: { folderId: fixture.folderId }, heartbeat: async () => undefined, resubmit: () => undefined });
         expect(takeFolderSyncActivity()).toEqual({ triggers: {}, batches: { unchanged: 1 } });
 
-        // A sync command waiting for the folder settles on a completed run.
+        // A waiting sync command gets a checkpoint without an empty history row.
+        const [request] = await sql<{ since: Date }[]>`SELECT clock_timestamp() AS since`;
         await enqueueFolderSync(fixture.folderId, { trigger: "maintenance", awaited: true });
         expect(await syncFolderBatch(fixture.folderId, async () => undefined)).not.toHaveProperty("unchanged");
-        expect(await runs()).toBe(runsBefore + 1);
+        expect(await runs()).toBe(runsBefore);
+        expect(
+          (
+            await requestedSyncProgress({
+              mailboxId: fixture.mailboxId,
+              requests: [{ id: "checkpoint", folderId: fixture.folderId, since: request!.since }],
+            })
+          ).get("checkpoint"),
+        ).toEqual({ folders: 1, synced: 1, failed: 0 });
         expect(takeFolderSyncActivity().triggers).toEqual({ maintenance: 1 });
       } finally {
         idleStatus.mockRestore();
@@ -795,6 +861,40 @@ suite("mail sync recovery", () => {
         expect(await sql`SELECT 1 FROM mail.idle_write_probe WHERE table_name = ${table}`).toHaveLength(1);
       }
       expect((await transportState(fixture)).health).toBe("active");
+      expect(
+        await sql<{ state: string }[]>`SELECT state FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid`,
+      ).toEqual([{ state: "completed" }]);
+
+      // Each error owner can require one empty recovery; later empty commits leave no extra run.
+      for (const [table, id] of [
+        ["provider_bindings", fixture.bindingId],
+        ["remote_resources", fixture.resourceId],
+      ] as const) {
+        await sql`DELETE FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid`;
+        await sql.unsafe(`UPDATE mail.${table} SET last_error_message = 'old' WHERE id = $1::uuid`, [id]);
+        await commit();
+        await commit();
+        expect(
+          await sql<{ state: string }[]>`SELECT state FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid`,
+        ).toEqual([{ state: "completed" }]);
+      }
+      // Rediscovery may have cleared all stored errors. The latest terminal run still needs a resolution.
+      await sql`DELETE FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid`;
+      await sql`INSERT INTO mail.sync_runs (remote_resource_id, binding_id, fence_token, generation, kind, state, stats)
+        VALUES (${fixture.resourceId}::uuid, ${fixture.bindingId}::uuid, 1, 1, 'incremental', 'failed',
+          ${{ folderId: fixture.folderId }}::jsonb)`;
+      const recoveredStatus = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+      try {
+        await syncFolderBatch(fixture.folderId, async () => undefined);
+        await syncFolderBatch(fixture.folderId, async () => undefined);
+      } finally {
+        recoveredStatus.mockRestore();
+      }
+      expect(
+        await sql<
+          { state: string }[]
+        >`SELECT state FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid ORDER BY started_at, id`,
+      ).toEqual([{ state: "failed" }, { state: "completed" }]);
       // FK checks and hydration hold KEY SHARE; idle metadata must remain compatible.
       await measured`SET lock_timeout = '2s'`;
       try {

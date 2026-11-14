@@ -19,7 +19,7 @@ type Agent = Awaited<ReturnType<typeof serviceAccounts.listStandalone>>["items"]
 /** Agents and standalone service accounts, each with its picture; a row opens the agent's page. */
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
   const [pendingRequests, agents] = await Promise.all([

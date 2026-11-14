@@ -29,7 +29,6 @@ packages/core/src/pages/me/QuietTimeSettings.behavior.test.tsx | 2
 packages/core/src/pages/me/account-pages.browser.test.ts | 1
 packages/core/src/pages/me/app.browser.test.ts | 4
 packages/core/test/app-approval.behavior.test.tsx | 5
-packages/filesv2/test/workspace-navigation.behavior.test.tsx | 1
 packages/gateway-ops/src/observability/telemetry/browser/page.render.test.tsx | 1
 packages/grids/src/frontend/_components/documents/DocumentDetailsDialog.behavior.test.tsx | 6
 packages/grids/src/frontend/_components/documents/DocumentSourcesDialog.behavior.test.tsx | 2

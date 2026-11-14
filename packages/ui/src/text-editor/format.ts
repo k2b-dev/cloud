@@ -78,6 +78,40 @@ const linePrefix = (pattern: RegExp, prefix: (state: EditorState, n: number) => 
   return true;
 };
 
+const orderedList = (view: EditorView) => {
+  if (view.state.readOnly) return false;
+  const { state } = view;
+  const numbers = new Set<number>();
+  for (const range of state.selection.ranges)
+    for (let n = state.doc.lineAt(range.from).number; n <= state.doc.lineAt(range.to).number; n++) numbers.add(n);
+  const lines = [...numbers].sort((a, b) => a - b).map((n) => state.doc.line(n));
+  const marker = /^(\s*)(\d+)\. /;
+  const remove = lines.every((line) => marker.test(line.text));
+  let ordinal = 1;
+  let previous = -1;
+  let indentation = "";
+  const changes = state.changes(
+    lines.map((line) => {
+      const match = marker.exec(line.text);
+      const indent = /^\s*/.exec(line.text)?.[0] ?? "";
+      if (line.number !== previous + 1 || indent !== indentation) {
+        const preceding = line.number > 1 ? marker.exec(state.doc.line(line.number - 1).text) : null;
+        ordinal = match ? Number(match[2]) : preceding?.[1] === indent ? Number(preceding[2]) + 1 : 1;
+      }
+      previous = line.number;
+      indentation = indent;
+      return {
+        from: line.from + indent.length,
+        to: line.from + (match?.[0].length ?? indent.length),
+        insert: remove ? "" : `${ordinal++}. `,
+      };
+    }),
+  );
+  view.dispatch({ changes, selection: state.selection.map(changes, 1), userEvent: "input.format" });
+  view.focus();
+  return true;
+};
+
 const heading = (level: number) => (view: EditorView) => {
   if (view.state.readOnly) return false;
   const { state } = view;
@@ -129,7 +163,7 @@ export const commands = {
     return true;
   },
   bulletList: linePrefix(/^\s*[-*] /, () => "- "),
-  orderedList: linePrefix(/^\s*\d+\. /, () => "1. "),
+  orderedList,
   quote: linePrefix(/^> ?/, () => "> "),
   link: inlineCommand("link"),
   table: (view: EditorView) => {

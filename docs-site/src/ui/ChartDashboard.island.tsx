@@ -1,5 +1,5 @@
-import { DocCode, SegmentedControl } from "@k2b/ui";
-import { createSignal, For } from "solid-js";
+import { DashboardGrid, DashboardSection, DocCode, SegmentedControl } from "@k2b/ui";
+import { createSignal, For, Show } from "solid-js";
 import { showcaseDashboard } from "./demo-sections/charts/dashboards";
 import { ShowcaseFrame, type ShowcaseState, showcaseStates } from "./demo-sections/charts/ShowcaseFrame";
 
@@ -13,6 +13,23 @@ const shorten = (value: Json): Json =>
     : value !== null && typeof value === "object"
       ? Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, shorten(entry)]))
       : value;
+
+/**
+ * A panel's content height: its own, or its phone height where the dashboard grid gives every panel the whole row
+ * (600 px or less, measured on the grid like its widths). The phone height is a custom property that a container
+ * query sets inside the grid; server and browser write the same value.
+ */
+const panelHeight = (id: string, height: number, compact = height) =>
+  compact === height ? height : `var(--ui-charts-panel-${id}, ${height}px)`;
+const compactHeights = (dashboard: NonNullable<ReturnType<typeof showcaseDashboard>>) => {
+  const rules = dashboard.sections
+    .flatMap((section) => section.panels)
+    .filter((panel) => panel.compactHeight !== undefined && panel.compactHeight !== panel.height)
+    .map((panel) => `--ui-charts-panel-${panel.id}: ${panel.compactHeight}px;`);
+  return rules.length
+    ? `@container k2b-dashboard (max-width: 600px) { .ui-charts-dashboard .k2b-dashboard-section { ${rules.join(" ")} } }`
+    : "";
+};
 
 /** An example dashboard from the catalog mockup, drawn panel by panel from its portable description. */
 export default function ChartDashboard(props: { slug: string }) {
@@ -34,6 +51,7 @@ export default function ChartDashboard(props: { slug: string }) {
     );
   return (
     <div class="ui-charts-dashboard k2b-ui">
+      <Show when={compactHeights(dashboard)}>{(css) => <style>{css()}</style>}</Show>
       <div class="ui-charts-dashboard__bar">
         <div class="ui-charts-dashboard__heading">
           <p>{dashboard.eyebrow}</p>
@@ -45,42 +63,32 @@ export default function ChartDashboard(props: { slug: string }) {
           <SegmentedControl ariaLabel="Preview state" size="sm" value={state()} onValueChange={setState} options={showcaseStates} />
         </div>
       </div>
-      <ShowcaseFrame spec={dashboard.stats} title="Key figures" state={state()} height={0} onRetry={() => setState("data")} />
-      <For each={dashboard.sections}>
-        {(section) => (
-          <section class="ui-charts-dashboard__section" aria-labelledby={`${section.id}-title`}>
-            <h3 class="ui-charts-dashboard__section-title" id={`${section.id}-title`}>
-              <i class={section.icon} aria-hidden="true" />
-              {section.title}
-            </h3>
-            <div class="ui-charts-grid">
+      <DashboardGrid>
+        <DashboardSection ariaLabel="Key figures" headingLevel={3}>
+          <ShowcaseFrame spec={dashboard.stats} title="Key figures" state={state()} height={0} onRetry={() => setState("data")} />
+        </DashboardSection>
+        <For each={dashboard.sections}>
+          {(section) => (
+            <DashboardSection title={section.title} icon={section.icon} headingLevel={3}>
               <For each={section.panels}>
                 {(panel) => (
-                  <div
-                    class="ui-charts-grid__cell"
-                    data-width={panel.width}
-                    style={{
-                      "--ui-charts-panel": `${panel.height}px`,
-                      "--ui-charts-panel-compact": `${panel.compactHeight ?? panel.height}px`,
-                    }}
-                  >
-                    <ShowcaseFrame
-                      spec={panel.spec}
-                      title={panel.id}
-                      state={state()}
-                      height="var(--ui-charts-panel-height)"
-                      empty={panel.empty}
-                      intended={panel.intended}
-                      onRetry={() => setState("data")}
-                      headingLevel={4}
-                    />
-                  </div>
+                  <ShowcaseFrame
+                    spec={panel.spec}
+                    title={panel.id}
+                    state={state()}
+                    width={panel.width}
+                    height={panelHeight(panel.id, panel.height, panel.compactHeight)}
+                    empty={panel.empty}
+                    intended={panel.intended}
+                    onRetry={() => setState("data")}
+                    headingLevel={4}
+                  />
                 )}
               </For>
-            </div>
-          </section>
-        )}
-      </For>
+            </DashboardSection>
+          )}
+        </For>
+      </DashboardGrid>
       <details class="ui-charts-dashboard__json">
         <summary>Description of this dashboard (JSON, data shortened)</summary>
         <DocCode title="JSON" code={description()} language="js" copy />

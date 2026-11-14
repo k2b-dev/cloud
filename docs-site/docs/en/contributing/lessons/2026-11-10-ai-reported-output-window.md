@@ -1,0 +1,6 @@
+### A transport fallback shrank a model's reported output budget
+
+- **What happened:** A reasoning model with a reported output limit and no known context window received less output space than reported, or no explicit budget when the adapter did not advertise thinking. Reasoning and the visible answer share this space, so an answer could truncate.
+- **Root cause:** Output budgeting treated Nessi's synthetic 128,000-token context window as model metadata and gated a model ceiling on a transport thinking capability. The catalog side-table join preserved the ceiling correctly. The exact 16,384-token production cutoff was not reproduced by the local fake.
+- **Error class:** A transport default or capability substitutes for an authoritative model constraint.
+- **Guard:** `output-budget.integration.test.ts` persists a model with a 1,048,576-token ceiling and no context window, explicit budget or reasoning setting, resolves its catalog profile, and checks the real adapter's HTTP body through completion, loop and structured inference. It covers thinking-capable and non-advertising adapters and explicit model/request precedence. `output-budget.test.ts` covers known-window bounds and missing metadata; `settings.test.ts` covers discovery independently of transport thinking capabilities.

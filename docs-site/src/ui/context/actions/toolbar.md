@@ -20,11 +20,59 @@ A separator groups clusters with space, not a drawn line, and keeps `role="separ
 
 ## Floating variant
 
-Use `variant="floating"` for selection actions at the bottom of a column. It is always horizontal and never wraps. Its buttons have 44 × 44 px targets.
+Use `variant="floating"` for selection actions at the bottom of a column. It is always horizontal and never wraps. It is a pill of small controls (`k2b-pill`, see [Layers and shadows](/en/ui/surfaces/elevation#floating-pills)): every button in it is round and 24 px high, also one you wrap in your own element or a tooltip anchor, with 14 px icons and 12 px text. The pill is 38 px high, with the same 7 px between its edge and each button above, below, and at the sides. Touch screens keep the 44 px hit area through the buttons' own touch rule; the pill does not grow. Buttons inside its menus keep their own size.
 
-Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min-height: 0`, then the toolbar. The column reserves the toolbar's height, keeping the final row clear. It can also be the last child inside a scroll container: the strip sticks to the bottom and reserves its own height after the rows. It never leaves its column: when the column is taller than the screen, the toolbar stays at the bottom of the visible part of the column.
+The floating toolbar is a pill on layer 3 of [Layers and shadows](/en/ui/surfaces/elevation): fully rounded, a light 1 px edge, a solid elevated surface, and `--k2b-shadow-toolbar`. A toolbar that stays open is softer than a menu that opens for a moment, so it never uses the menu shadow. Apps do not add a shadow of their own.
+
+A floating toolbar never reaches past its row. It measures the row, not the window, in three steps: with room, an action with `text` shows its label beside the icon; when the row gets narrow, all labels go first and every action keeps its icon (with its name as tooltip and accessible name); only then do actions move into More by `priority`. A fixed control such as a `Button` with a word keeps it.
+
+`edge="top"` makes the floating toolbar stick to the top of its column in its place in the flow, for example above the newest message of a conversation; the default `bottom` floats it at the bottom.
+
+```tsx
+<Toolbar label="Conversation actions" variant="floating" edge="top">
+  <Button variant="ghost" onClick={reply}><i class="ti ti-arrow-back-up" aria-hidden="true" />Reply</Button>
+  <Toolbar.Action label="Reply all" icon="ti ti-arrow-back-up-double" text priority={2} />
+  <Toolbar.Action label="Forward" icon="ti ti-arrow-forward-up" text priority={2} />
+  <Toolbar.Separator />
+  <Toolbar.Action label="Done" icon="ti ti-check" text priority={1} />
+</Toolbar>
+```
+
+For two pills at the start and end edge of one column, wrap both in `ToolbarDock`. The dock is the one floating row: it sticks to the bottom of the column, places the first pill at the start edge and the last at the end edge, and keeps the end of the content reachable above it. Each pill measures its own room and moves its lower-priority actions into More when the row gets narrow.
+
+```tsx
+<ToolbarDock>
+  <Toolbar label="Formatting" variant="floating">…</Toolbar>
+  <Toolbar label="Page" variant="floating">…</Toolbar>
+</ToolbarDock>
+```
+
+Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min-height: 0`, then the toolbar. The column reserves the toolbar's height, keeping the final row clear. It can also be the last child inside a scroll container that is a flex column: the strip stands at the container's end however few rows there are, sticks to the bottom while the rows scroll beneath, and reserves its own height after them. In a block container it would follow the last row instead. A pill that comes and goes with a selection stays rendered and is only hidden without one, so its reserved height never changes and no row moves when it appears or goes. It never leaves its column: when the column is taller than the screen, the toolbar stays at the bottom of the visible part of the column.
 
 Render it in an island. The browser measures it before its first paint, so it never rearranges after it appears; until then it is invisible but keeps its space. A toolbar under a hidden ancestor waits until it is shown. Without scripting, the server layout stays visible.
+
+### Danger tone
+
+When the work behind a floating toolbar stops, such as an editor that can no longer save, set `tone="danger"` on one floating toolbar and render it in place of the row's usual pills. It stays a pill with the same height and toolbar shadow; only its surface, edge, and ink turn to the danger tokens, so nothing moves when it appears. Inside `ToolbarDock` or its own strip it spans the row.
+
+- Lead with a `Toolbar.Label` that says what happened, with the tone's icon first: a short state as its text ("Changes not saved") and the reason as `detail` (". Connection closed"). The detail shows while it fits and disappears whole on a narrow row, before the actions give up their labels; the state keeps its full width until actions have moved into More. The label is announced to screen readers at once with its detail, again whenever its text changes. Add no `role="alert"` of your own.
+- Put a `Toolbar.Spacer` between the message and the actions; the spacer counts only its minimum when the toolbar measures.
+- Give the one way out that must always stay, such as Copy text or Sign in again, no `priority`. Other actions take a `priority` and move into More on a narrow row.
+- Keep the workspace controls the row had, such as navigation and detail toggles, inside the pill.
+
+```tsx
+<ToolbarDock>
+  <Toolbar label="Saving stopped" variant="floating" tone="danger">
+    <Toolbar.Label detail=". Connection closed"><i class="ti ti-alert-triangle" aria-hidden="true" />Changes not saved</Toolbar.Label>
+    <Toolbar.Spacer />
+    <Toolbar.Action label="Copy text" icon="ti ti-copy" text onClick={copy} />
+    <Toolbar.Action label="Keep on this device" icon="ti ti-device-floppy" text priority={2} onClick={keep} />
+    <Toolbar.Action label="Discard device changes" icon="ti ti-trash" text priority={3} onClick={discard} />
+  </Toolbar>
+</ToolbarDock>
+```
+
+Use it only for a stopped state. A notice that work continues, such as reconnecting, stays a quiet status inside the usual pill.
 
 ## Selection toolbar
 
@@ -46,8 +94,8 @@ container clips it.
   icon commands and a `size="sm"` ghost `Button` for a text command such as
   Comment. On touch screens every button keeps a 44 px hit area through the
   buttons' own touch rule; the bar does not grow. Shortcuts from `keys` show in
-  the tooltips only: the hints under the icons that the floating variant has do
-  not fit.
+  the tooltips only: hints under the icons do not fit, as in a floating
+  toolbar.
 - Pressing its buttons keeps the selection, so actions apply to it.
 - Escape inside the toolbar calls `onEscape`; close the toolbar there and
   return focus to the text. Keyboard navigation is the `Toolbar` roving group.
@@ -64,17 +112,21 @@ container clips it.
 
 ## Toolbar.Action
 
-Use `Toolbar.Action` for ghost icon buttons. `label` names the button, its tooltip, and its row in the More menu; `icon` takes a class such as `"ti ti-archive"`. `disabled` applies to both the button and its menu row. `onClick` runs from either place.
+Use `Toolbar.Action` for ghost icon buttons. `label` names the button, its tooltip, and its row in the More menu; `icon` takes a class such as `"ti ti-archive"`. `disabled` applies to both the button and its menu row. `onClick` runs from either place. `text` also shows the label beside the icon while a floating toolbar has room; the labels are the first thing a narrow toolbar gives up.
 
 In a floating toolbar, `priority` lets an action move into More when the column is too narrow. **1 is most important.** Larger numbers move first; equal priorities move the later action first. Omit `priority` to keep an action fixed. More is the last control and lists the moved actions in their original order. Widening the column brings them back. Inline toolbars keep every action in place; use `wrap` there.
 
-`keys` uses the `Kbd` format, such as `"e"`, `"mod+j"`, or `"shift+arrowdown"`. It adds a hint under the icon (not in `SelectionToolbar`), the platform shortcut to the tooltip, and `aria-keyshortcuts`. Hints appear with the [keyboard input flag](/en/ui/input-mode) and never move icons or resize buttons. The application still owns shortcut handlers.
+Pass rarer commands that belong in More at every width, such as Copy to or Move to trash for a selection, as the floating toolbar's `moreItems` (`DropdownItem`s). More then always shows and its room is always counted; actions that move there on a narrow row come first in a group of their own, the `moreItems` follow. Do not add a second "…" menu of your own beside More.
+
+`keys` uses the `Kbd` format, such as `"e"`, `"mod+j"`, or `"shift+arrowdown"`. It adds a hint under the icon of an inline toolbar's action, the platform shortcut to the tooltip, and `aria-keyshortcuts`. A floating toolbar and `SelectionToolbar` show the shortcut in the tooltip only: their small buttons leave no room below the icon. Hints appear with the [keyboard input flag](/en/ui/input-mode) and never move icons or resize buttons. The application still owns shortcut handlers.
+
+`pressed` makes an action a toggle and exposes its state as `aria-pressed`, such as Bold over bold text. Leave it out for a plain command.
 
 To hide an action, stop rendering it, for example with `<Show>`. A `Toolbar.Group` hidden through its `class` also takes its actions out of More, because the toolbar measures again. A style that an outer element's class applies inside the toolbar is noticed only at the next resize. In a floating toolbar, empty groups and leading, trailing, or repeated separators are hidden. Keep fixed content compact. Actions move before a `Toolbar.Label` truncates; only when the fixed items alone are too wide does the label shrink.
 
 ## Toolbar.Label
 
-`Toolbar.Label` is non-interactive text for a selection count or event title. It never moves into More. It stays on one line, can shrink, and truncates with an ellipsis at about 10rem.
+`Toolbar.Label` is non-interactive text for a selection count or event title. It never moves into More. It stays on one line, can shrink, and truncates with an ellipsis at about 10rem. Give it a `detail` for text that may follow while it fits; a narrow toolbar hides the detail whole and counts only the label's own text when it measures. In a danger toolbar it carries the message, has no width cap, and is announced at once.
 
 ## Accessibility
 
@@ -84,7 +136,7 @@ The roving group has one Tab stop: the last focused item, or the first item init
 
 Roving items are buttons, links with `href`, checkboxes and other button-like inputs, and controls with `tabindex`. Text fields, textareas, selects, sliders, radio buttons, and editable regions stay their own Tab stops. They keep their arrow, Home, and End keys.
 
-Hidden and natively disabled controls are skipped, as are controls inside menus, listboxes, dialogs, or popovers. The tab stop follows visibility. A toolbar that becomes visible later, or whose tab stop is hidden, picks the first visible control. `aria-disabled="true"` controls remain reachable; their handlers must guard unavailable actions.
+Hidden and natively disabled controls are skipped, as are controls inside menus, listboxes, dialogs, or popovers. The tab stop follows visibility. A toolbar that becomes visible later, or whose tab stop is hidden, picks the first visible control. While a toolbar is entirely hidden, its first enabled control keeps the stop, so Tab right after it shows, as with a `SelectionToolbar`, reaches it. `aria-disabled="true"` controls remain reachable; their handlers must guard unavailable actions.
 
 More is the last roving control. Enter opens its menu; menu arrows navigate its rows. Escape closes the menu and returns focus to More. If a focused action moves into More after a resize, focus follows it to the More trigger.
 

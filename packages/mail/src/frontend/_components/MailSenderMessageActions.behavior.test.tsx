@@ -37,7 +37,7 @@ const message: MessageDetail = {
   selectedHeaders: {},
   sourceAvailable: true,
   mailingList: null,
-  remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+  remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
   delivery: null,
   attachments: [],
 };
@@ -48,7 +48,7 @@ describe("Mail sender message actions", () => {
     return;
   }
 
-  test("heads each section like the other action menus", async () => {
+  test("heads each section like the other action menus; the sender's actions live in the sender card", async () => {
     const dom = createDomTestHarness();
     const [{ default: MailSenderMessageActions }, { LocaleProvider }] = await Promise.all([
       import("./MailSenderMessageActions"),
@@ -79,7 +79,11 @@ describe("Mail sender message actions", () => {
     try {
       dom.document.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger")?.click();
       const sections = Array.from(dom.document.querySelectorAll("[role='group']")).map((group) => group.getAttribute("aria-label"));
-      expect(sections).toEqual(["Sender", "Conversation"]);
+      expect(sections).toEqual(["Conversation", "Other"]);
+      const items = Array.from(dom.document.querySelectorAll("[role='menuitem']")).map((item) => item.textContent?.trim());
+      expect(items).toContain("Report phishing");
+      expect(items).toContain("Technical details");
+      expect(items).not.toContain("Block sender");
     } finally {
       dispose();
       dom.cleanup();
@@ -88,48 +92,33 @@ describe("Mail sender message actions", () => {
 
   test("a sender automation opens one editor however often it is chosen while its code loads", async () => {
     const dom = createDomTestHarness();
-    const [{ default: MailSenderMessageActions }, { LocaleProvider }] = await Promise.all([
-      import("./MailSenderMessageActions"),
-      import("@k2b/ui"),
-    ]);
-    const dispose = render(
-      () => (
-        <LocaleProvider locale="en">
-          <MailSenderMessageActions
-            mailboxId="Box001"
-            requestUrl="http://localhost/app/mail/Box001/c/Conv01"
-            canWrite={true}
-            canAdmin={true}
-            mailboxWide
-            selectionKey="Conv01"
-            selectedConversationId="Conv01"
-            message={message}
-            totalMessageCount={2}
-            identities={[]}
-            onReassignMessage={() => {}}
-            onSplitMessage={() => {}}
-            onDeriveMessage={() => {}}
-          />
-        </LocaleProvider>
-      ),
-      dom.root,
-    );
-    const trigger = dom.document.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger")!;
-    const choose = (label: string) => {
-      trigger.click();
-      const item = Array.from(dom.document.querySelectorAll<HTMLElement>("[role='menuitem']")).find(
-        (element) => element.textContent?.trim() === label,
-      );
-      expect(item).toBeDefined();
-      item!.click();
-    };
+    const [{ createMailMessageMenu }, { createRoot }] = await Promise.all([import("./MailSenderMessageActions"), import("solid-js")]);
+    const { menu, dispose } = createRoot((dispose) => ({
+      dispose,
+      menu: createMailMessageMenu({
+        mailboxId: "Box001",
+        requestUrl: "http://localhost/app/mail/Box001/c/Conv01",
+        canWrite: true,
+        canAdmin: true,
+        mailboxWide: true,
+        selectionKey: "Conv01",
+        selectedConversationId: "Conv01",
+        message,
+        totalMessageCount: 2,
+        identities: [],
+        onReassignMessage: () => {},
+        onSplitMessage: () => {},
+        onDeriveMessage: () => {},
+      }),
+    }));
+    const choose = (id: string) => menu.senderActions().find((action) => action.id === id)!.action!();
     try {
-      choose("Create automation from sender");
-      // The trigger shows that the editor is on its way and keeps focus for the editor to return it.
-      expect(trigger.getAttribute("aria-busy")).toBe("true");
-      expect(trigger.disabled).toBe(false);
-      choose("Block sender");
-      for (let attempt = 0; attempt < 100 && trigger.hasAttribute("aria-busy"); attempt += 1) await Bun.sleep(5);
+      expect(menu.senderActions().map((action) => action.id)).toEqual(["find", "automation", "block", "block-domain"]);
+      choose("automation");
+      // The menu shows that the editor is on its way; a second choice meanwhile opens nothing more.
+      expect(menu.automationLoading()).toBe(true);
+      choose("block");
+      for (let attempt = 0; attempt < 100 && menu.automationLoading(); attempt += 1) await Bun.sleep(5);
       expect(editorOpens).toEqual([expect.objectContaining({ mailboxId: "Box001", initialAction: "mark_read" })]);
     } finally {
       dispose();

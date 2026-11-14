@@ -1481,41 +1481,32 @@ describe("spaces capabilities", () => {
     expect(forced.ok && "approvalScope" in forced.data).toBe(false);
   });
 
-  test("scopes tag and comment approvals to their understandable work context", async () => {
+  test("shared tag and comment reviews retain complete content, scopes and access checks", async () => {
     spyOn(spacesService.item, "get").mockResolvedValue(task);
     spyOn(spacesService.space, "get").mockResolvedValue(space);
-    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
-    spyOn(spacesService.space, "getDetail").mockResolvedValue({
-      ...space,
-      columns: [],
-      virtualColumns: [],
-      tags: [tag],
-      templates: [],
-    });
-
-    const tags = await spacesCapabilities.actions["item.tags.set"].review!({ itemId, tagIds: [tagId] }, userContext);
-    const commentReview = await spacesCapabilities.actions["comment.create"].review!({ itemId, content: "Draft is ready." }, userContext);
-
-    expect(tags).toMatchObject({
-      ok: true,
-      data: {
-        approvalScope: `space:${spaceId}`,
-        details: [
-          { label: "Item", value: task.title },
-          { label: "Tags", value: tag.name },
-        ],
-      },
-    });
-    expect(commentReview).toMatchObject({
-      ok: true,
-      data: {
-        approvalScope: `item:${itemId}`,
-        details: [
-          { label: "Item", value: task.title },
-          { label: "Comment", value: "Draft is ready.", display: "block" },
-        ],
-      },
-    });
+    const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.space, "getDetail").mockResolvedValue({ ...space, columns: [], virtualColumns: [], tags: [tag], templates: [] });
+    for (const locale of ["en", "de"] as const) {
+      const tags = await spacesCapabilities.actions["item.tags.set"].review!({ itemId, tagIds: [tagId] }, { ...userContext, locale });
+      const commentReview = await spacesCapabilities.actions["comment.create"].review!(
+        { itemId, content: "Draft is ready." },
+        { ...userContext, locale },
+      );
+      for (const [review, scope, content] of [
+        [tags, `space:${spaceId}`, tag.name],
+        [commentReview, `item:${itemId}`, "Draft is ready."],
+      ] as const) {
+        if (!review.ok) throw new Error("review failed");
+        assertCapabilityReview(review.data);
+        expect(review.data.locale).toBe(locale);
+        expect(review.data.scope).toBe(scope);
+        expect(review.data.content?.body).toContain(content);
+        expect("ask" in review.data).toBe(false);
+      }
+    }
+    permission.mockResolvedValue("read");
+    expect((await spacesCapabilities.actions["item.tags.set"].review!({ itemId, tagIds: [] }, userContext)).ok).toBe(false);
+    expect((await spacesCapabilities.actions["comment.create"].review!({ itemId, content: "Denied" }, userContext)).ok).toBe(false);
   });
 
   test("returns a scope from every rememberable action review", async () => {

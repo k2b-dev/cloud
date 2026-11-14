@@ -224,14 +224,14 @@ describe("Book controller", () => {
     }
   });
 
-  test("opens attachments in place: a file in its preview, an image in the lightbox", async () => {
+  test("opens attachments in place in the Lightbox: a file and an image", async () => {
     const app = await mount();
     const { dialogCore } = await import("@k2b/ui");
     const content = "/api/notebooks/book01/attachments";
     app.article.innerHTML = `<p><a id="file" href="${content}/Att001/content?v=1">Floor plan</a></p>
       <p><a id="image" class="notebook-book-image-link" href="${content}/Att002/content?v=1"><img alt="Stage" src="${content}/Att002/content?v=1"></a></p>`;
-    // The browser has shown the image.
-    Object.defineProperties(app.article.querySelector("#image img")!, { complete: { value: true }, naturalWidth: { value: 640 } });
+    const lightboxes = () => document.querySelectorAll<HTMLDialogElement>("dialog.k2b-lightbox");
+    const close = () => lightboxes()[0]?.querySelector<HTMLButtonElement>("button[aria-label='Close']")?.click();
     try {
       expect(app.click("file").defaultPrevented).toBe(true);
       // The preview code loads on the first click; wait for it instead of guessing how long loading takes.
@@ -242,20 +242,25 @@ describe("Book controller", () => {
         Response.json({ id: "Att001", filename: "Floor_plan.pdf", mimeType: "application/pdf", sizeBytes: 2048, kind: "file" }),
       );
       await flush();
-      expect(document.querySelector(".k2b-dialog[open].notebooks-attachment-dialog h2")?.textContent).toBe("Floor_plan.pdf");
-      dialogCore.close();
+      expect(lightboxes()[0]?.getAttribute("aria-label")).toBe("Floor_plan.pdf");
+      close();
       await flush();
+      expect(lightboxes()).toHaveLength(0);
 
-      // A double click lands twice before the preview code has loaded, and still opens one lightbox.
+      // A double click lands twice before the preview code has loaded, reads the image's stored type once and opens
+      // one Lightbox.
       expect(app.click("image").defaultPrevented).toBe(true);
       expect(app.click("image").defaultPrevented).toBe(true);
+      // The Lightbox read the PDF itself; only the lookups count here.
+      const lookups = () => app.requests.filter((request) => !request.path.endsWith("/content"));
+      for (let attempt = 0; attempt < 100 && lookups().length < 2; attempt++) await flush();
+      expect(lookups().map((request) => request.path)).toEqual([`${content}/Att001`, `${content}/Att002`]);
+      lookups()[1]!.resolve(Response.json({ id: "Att002", filename: "Stage.png", mimeType: "image/png", sizeBytes: 4096, kind: "image" }));
       await flush();
-      expect(document.querySelectorAll("dialog.k2b-content-lightbox")).toHaveLength(1);
-      const lightbox = document.querySelector("dialog.k2b-content-lightbox");
-      expect(lightbox?.querySelector("img")?.getAttribute("src")).toBe(`${content}/Att002/content?v=1`);
-      expect(lightbox?.textContent).toContain("Stage");
-      expect(app.requests).toHaveLength(2);
-      lightbox?.querySelector<HTMLButtonElement>("button[aria-label='Close lightbox']")?.click();
+      expect(lightboxes()).toHaveLength(1);
+      expect(lightboxes()[0]?.querySelector("img.k2b-lightbox__image")?.getAttribute("src")).toBe(`${content}/Att002/content?v=1`);
+      expect(lightboxes()[0]?.getAttribute("aria-label")).toBe("Stage.png");
+      close();
       await flush();
       expect(location.pathname).toEndWith("/note01");
     } finally {

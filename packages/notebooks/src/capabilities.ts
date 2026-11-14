@@ -19,6 +19,7 @@ import { dates, err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import { annotationActions, annotationQueries } from "./annotation-capabilities";
 import { notebooksEvents } from "./app-events";
+import { notebookAutomationReview } from "./capability-action-reviews";
 import {
   ActivityDataSchema,
   ActivityInputSchema,
@@ -1458,21 +1459,24 @@ export const notebooksCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
-      approval: "rememberable",
+      policy: { silent: "shared" },
       review: async (input, context) => {
         const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
         if (!context.user) return fail(err.forbidden(t.userRequired));
         const resolved = await requireNoteByShortId(input.noteId, context, "write");
         if (!resolved.ok) return resolved;
-        return ok({
-          message: t.commentCreateReview({ title: resolved.data.note.title }),
-          details: [
-            { label: t.note, value: resolved.data.note.title },
-            { label: t.comment, value: input.content, display: "block" as const },
-          ],
-          links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
-          approvalScope: notebookApprovalScope(resolved.data.notebook),
-        });
+        return ok(
+          notebookAutomationReview("comment.create", context.locale, {
+            title: resolved.data.note.title,
+            message: t.commentCreateReview({ title: resolved.data.note.title }),
+            details: [
+              { label: t.note, value: resolved.data.note.title },
+              { label: t.comment, value: input.content, display: "block" as const },
+            ],
+            links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
+            scope: notebookApprovalScope(resolved.data.notebook),
+          }),
+        );
       },
       run: runCommentCreate,
     },
@@ -1485,7 +1489,7 @@ export const notebooksCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
-      approval: "rememberable",
+      policy: { silent: "shared" },
       review: async (input, context) => {
         const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
         const access = await requireNotebookByShortId(input.notebookId, context, "write");
@@ -1501,36 +1505,35 @@ export const notebooksCapabilities = defineCapabilities({
           : null;
         if (template && !template.ok) return template;
         const content = template?.data.contentMd ?? input.content ?? "";
-        const previewLimit = 9_000;
-        const truncated = content.length > previewLimit;
-        return ok({
-          message: t.createReview({ notebook: access.data.notebook.name }),
-          details: [
-            { label: t.notebook, value: access.data.notebook.name },
-            { label: t.parent, value: parentTitle },
-            ...(input.position === undefined ? [] : [{ label: t.position, value: String(input.position) }]),
-            // The preview may be cut; the hash of the whole filled-in text makes a changed template ask again.
-            ...(template
-              ? [
-                  { label: t.pageTemplate, value: template.data.name },
-                  { label: t.pageTemplateContentHash, value: noteContentHash(content) },
-                ]
-              : []),
-            ...(input.content === undefined && !template
-              ? []
-              : [
-                  {
-                    label: t.initialMarkdown,
-                    value: `${t.characters({ count: content.length })}.${
-                      truncated ? t.previewTruncated({ limit: previewLimit.toLocaleString(context.locale ?? "en") }) : ""
-                    }\n\n${truncated ? `${content.slice(0, previewLimit - 1)}…` : content}`,
-                    display: "block" as const,
-                  },
-                ]),
-          ],
-          links: [{ rel: "open" as const, href: notebookHref(access.data.notebook) }],
-          approvalScope: notebookApprovalScope(access.data.notebook),
-        });
+        return ok(
+          notebookAutomationReview("note.create", context.locale, {
+            title: access.data.notebook.name,
+            message: t.createReview({ notebook: access.data.notebook.name }),
+            details: [
+              { label: t.notebook, value: access.data.notebook.name },
+              { label: t.parent, value: parentTitle },
+              ...(input.position === undefined ? [] : [{ label: t.position, value: String(input.position) }]),
+              // The preview may be cut; the hash of the whole filled-in text makes a changed template ask again.
+              ...(template
+                ? [
+                    { label: t.pageTemplate, value: template.data.name },
+                    { label: t.pageTemplateContentHash, value: noteContentHash(content) },
+                  ]
+                : []),
+              ...(input.content === undefined && !template
+                ? []
+                : [
+                    {
+                      label: t.initialMarkdown,
+                      value: `${t.characters({ count: content.length })}.\n\n${content}`,
+                      display: "block" as const,
+                    },
+                  ]),
+            ],
+            links: [{ rel: "open" as const, href: notebookHref(access.data.notebook) }],
+            scope: notebookApprovalScope(access.data.notebook),
+          }),
+        );
       },
       run: runNoteCreate,
     },

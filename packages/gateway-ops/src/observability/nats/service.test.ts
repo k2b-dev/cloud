@@ -218,3 +218,45 @@ test("shared diagnostics preserves incomplete scan and consumer failure evidence
   expect(result.inventory).toMatchObject({ status: "partial", matchedTotal: null, total: 0, scannedTotal: 1 });
   expect(JSON.stringify(result)).not.toContain("secret");
 });
+
+test("account inventory identifies lifecycle streams without inventing Sync ownership", async () => {
+  const record = resource("cloud_text_lifecycle_test");
+  const mocked = fake([
+    {
+      offset: 0,
+      total: 1,
+      limit: 1024,
+      streams: [
+        {
+          ...record,
+          config: { ...record.config, metadata: { "sync.namespace": "test", "cloud.shared-text.lifecycle": "cloud:mail:draft-documents" } },
+        },
+      ],
+    },
+  ]);
+  const result = await getNatsInventorySummary(config, mocked.dependencies);
+  expect(result.status).toBe("available");
+  expect(result.streams[0]).toMatchObject({
+    sync: null,
+    deadLetter: false,
+    sharedTextLifecycle: { namespace: "test", id: "cloud:mail:draft-documents" },
+  });
+});
+
+test("document topic readiness metadata survives diagnostics without exposing other metadata", async () => {
+  const topic = resource("S6_T_test");
+  const raw = {
+    ...topic,
+    config: {
+      ...topic.config,
+      metadata: {
+        ...topic.config.metadata,
+        "sync.kind": "topic",
+        "cloud.shared-text.lifecycle.required-bytes": "536870912",
+      },
+    },
+  };
+  const result = await getNatsInventorySummary(config, fake([{ total: 1, offset: 0, limit: 256, streams: [raw] }]).dependencies);
+  expect(result.streams[0]?.sharedTextLifecycleRequiredBytes).toBe(536870912);
+  expect(JSON.stringify(result)).not.toContain("never expose");
+});

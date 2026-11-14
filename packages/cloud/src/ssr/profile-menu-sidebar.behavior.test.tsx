@@ -41,6 +41,11 @@ const installPopoverStub = () => {
 
 const mount = async (hidden = false) => {
   installPopoverStub();
+  // A touch screen without a mouse: the touch menu offers no privacy screen there.
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: (media: string) => ({ matches: false, media, addEventListener() {}, removeEventListener() {} }),
+  });
   dom.root.innerHTML = `<div class="cloud-app-canvas" data-layout-authenticated="true" ${hidden ? 'data-shell-focus="true"' : ""}></div>`;
   const canvas = dom.root.querySelector<HTMLElement>(".cloud-app-canvas")!;
   const { LocaleProvider } = await import("@k2b/ui");
@@ -74,6 +79,7 @@ test("the hover menu starts with the sidebar entries and ends with sign-out in t
   const sections = [...page.profile.querySelectorAll(".layout-profile-preferences__panel > .layout-profile-preferences__section")];
   expect(sections.map((section) => [...section.querySelectorAll(".menu-item > span")].map((label) => label.textContent))).toEqual([
     ["Seitenleiste ausblenden", "Seitenleiste einblenden"],
+    ["Sichtschutz"],
     ["Automatisch", "English", "Profileinstellungen", "App"],
     ["Abmelden"],
   ]);
@@ -82,8 +88,8 @@ test("the hover menu starts with the sidebar entries and ends with sign-out in t
   expect(hide!.dataset.cloudShellFocusToggle).toBe("hide");
   expect(show!.dataset.cloudShellFocusToggle).toBe("show");
   expect(hide!.querySelector(".k2b-kbd")).not.toBeNull();
-  expect(sections[2]!.querySelector(".menu-item")!.getAttribute("data-danger")).toBe("true");
-  expect(sections[1]!.querySelector('[data-danger="true"]')).toBeNull();
+  expect(sections[3]!.querySelector(".menu-item")!.getAttribute("data-danger")).toBe("true");
+  expect(sections[2]!.querySelector('[data-danger="true"]')).toBeNull();
   // Both avatars are where focus returns after the sidebar changes.
   expect(page.profile.querySelectorAll("[data-cloud-shell-focus-return]")).toHaveLength(2);
 });

@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, type Page, devices as playwrightDevices } from "playwright";
-import { browserName, launchBrowser, pageErrors, settled } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, pageErrors, settled } from "../../../../../../ui/test/browser";
 import { startNotebookEditorFixture } from "./shared-text-editor.browser-fixture";
 
 let browser: Browser;
@@ -786,7 +786,7 @@ describe("Notebook on the shared text editor", () => {
       expect(menuGeometry.font).toBe("13.5px");
       await page.keyboard.press("Escape");
       // Approved F2: a row grip offers row and table actions, a column grip column, alignment and table actions.
-      await cell(page, 1, 0).hover();
+      await hoverInPlace(cell(page, 1, 0));
       await page.locator(".k2b-ste-rowMenu").nth(1).click();
       await entries.first().waitFor();
       const row = await entries.allTextContents();
@@ -1082,7 +1082,14 @@ describe("Notebook on the shared text editor", () => {
             // newline before a person could read the suggestion.
             const suggestion = page.locator(".cm-tooltip-autocomplete [role=option]").first();
             try {
-              expect(await suggestion.textContent({ timeout: 1_000 })).toContain("Table");
+              // The tooltip can still show the unfiltered "/" list while the
+              // typed query is applied; wait for the filtered first option.
+              await page.waitForFunction(
+                () => document.querySelector(".cm-tooltip-autocomplete [role=option]")?.textContent?.includes("Table"),
+                undefined,
+                { timeout: 1_000 },
+              );
+              expect(await suggestion.textContent()).toContain("Table");
             } catch (cause) {
               throw new Error(
                 `Missing ${entry} suggestion on ${deviceName}: doc=${JSON.stringify(await text(page))}; active=${await page.evaluate(() => document.activeElement?.outerHTML)}; errors=${JSON.stringify(errors)}`,

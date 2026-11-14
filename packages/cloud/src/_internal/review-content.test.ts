@@ -111,11 +111,12 @@ test("the combined Mail maximum fits the full-content budget even with six-byte 
     bcc: people,
     subject: "\u0000".repeat(998),
     attachments: Array.from({ length: 202 }, () => ({ name: "\u0000".repeat(255), size: Number.MAX_SAFE_INTEGER })),
-    warnings: Array.from({ length: 6 }, () => "\u0000".repeat(300)),
+    warnings: Array.from({ length: 7 }, () => "\u0000".repeat(300)),
     sendAt: "2026-10-20T06:00:00Z",
     baseRevision: 7,
   };
   expect(CapabilityReviewContentSchema.safeParse(maximal).success).toBe(true);
+  expect(CapabilityReviewContentSchema.safeParse({ ...maximal, warnings: [...maximal.warnings, "Eighth warning"] }).success).toBe(false);
   expect(new TextEncoder().encode(JSON.stringify(maximal)).byteLength).toBeLessThan(CAPABILITY_MAX_REVIEW_CONTENT_BYTES);
 });
 

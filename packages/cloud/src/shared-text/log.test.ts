@@ -13,6 +13,7 @@ test("define lists the exact log and recovers retained updates with bounded forw
     const cursor = seq => "s6t.fixture." + seq;
     const topic = { cursorAt: cursor, replay: options => replay(options) };
     mock.module("../_internal/process-sync", () => ({
+      lazySync: factory => () => factory({}),
       processSyncReaders: () => ({ signal: new AbortController().signal, stops: new Set() }),
       getProcessSync: () => ({
         topic: () => topic,

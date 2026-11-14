@@ -80,9 +80,10 @@ export function mapStateMessage(state: NotebookMapState, locale: string) {
     });
   return state.failed ? t.unavailable : "";
 }
-export function routeMetrics(document: GeoDocument, locale: string) {
+/** Distance and driving time of the saved route, as the map tile, the dialog, and the summary line show them. */
+export function routeFigures(document: GeoDocument, locale: string) {
   const route = document.route;
-  if (!route) return "";
+  if (!route) return undefined;
   const t = notebookMapMessages.resolve([locale]).t;
   const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
   const minutes = Math.round(route.durationSeconds / 60);
@@ -90,10 +91,29 @@ export function routeMetrics(document: GeoDocument, locale: string) {
     minutes >= 60
       ? `${number.format(Math.floor(minutes / 60))} h ${number.format(minutes % 60)} min`
       : t.minutes({ count: number.format(minutes) });
+  return { distance: `${number.format(route.distanceMeters / 1000)} km`, time };
+}
+export function routeMetrics(document: GeoDocument, locale: string) {
+  const route = document.route;
+  const figures = routeFigures(document, locale);
+  if (!route || !figures) return "";
+  const t = notebookMapMessages.resolve([locale]).t;
   const date = new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(
     new Date(document.savedAt ?? route.provenance.computedAt),
   );
-  return `${number.format(route.distanceMeters / 1000)} km · ${time} · ${document.savedAt ? t.saved({ date }) : t.computed({ date })}`;
+  return `${figures.distance} · ${figures.time} · ${document.savedAt ? t.saved({ date }) : t.computed({ date })}`;
+}
+/** The tile's pill: places by count, a route by distance, time, and its stops (their count from six on). */
+export function mapTileSummary(document: GeoDocument, locale: string) {
+  const t = notebookMapMessages.resolve([locale]).t;
+  const figures = routeFigures(document, locale);
+  const stops = document.route?.stops ?? [];
+  const order =
+    stops.length >= 6 ? t.stopCount({ count: stops.length }) : stops.map((_, index) => String.fromCharCode(65 + index)).join(" → ");
+  const route = figures ? `${figures.distance} · ${figures.time} · ${order}` : "";
+  if (!document.pins.length) return route || t.empty;
+  const places = t.placeCount({ count: document.pins.length });
+  return route ? `${places} · ${route}` : places;
 }
 export function routeSummary(document: GeoDocument, locale: string) {
   const route = document.route;

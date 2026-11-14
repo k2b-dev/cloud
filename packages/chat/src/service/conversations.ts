@@ -272,6 +272,15 @@ const appendAdded = async (
   if (notificationMessage) await queueAddedNotification(db, notificationMessage, notificationUserIds);
 };
 
+/** JavaScript's whitespace without line breaks, as a Postgres ARE class. */
+const PREVIEW_SPACE = "[\\t\\v\\f    -     　﻿]";
+
+/**
+ * The newest visible text per conversation, bounded before it leaves the database. The bound keeps Markdown's line
+ * structure (one line break, or one blank line for any longer run) so `messagePreview` reads lists, tables, headings
+ * and code as the full message would; only runs of spaces become one space and indentation goes. 1000 characters leave
+ * room for Markdown marks and link targets around the preview's 140 visible ones.
+ */
 const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: typeof sql, ids?: string[]) => {
   const visibility = messageCondition(db, ids);
   const found = rows.length
@@ -296,7 +305,9 @@ const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: t
         SELECT short_id, thread_id, author_type, author_id, author_name,
           (SELECT jsonb_build_object('kind', a.kind, 'name', a.filename) FROM chat.attachments a
             WHERE a.message_id = chat.messages.id ORDER BY a.created_at, a.id LIMIT 1) AS attachment,
-          left(regexp_replace(body_md, ${"[\\t\\n\\v\\f\\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+"}, ' ', 'g'), 600) AS body, created_at
+          left(regexp_replace(regexp_replace(regexp_replace(regexp_replace(body_md, ${"\\r\\n?"}, ${"\n"}, 'g'),
+            ${`${PREVIEW_SPACE}*\\n(?:${PREVIEW_SPACE}*\\n)+${PREVIEW_SPACE}*`}, ${"\n\n"}, 'g'),
+            ${`${PREVIEW_SPACE}*\\n${PREVIEW_SPACE}*`}, ${"\n"}, 'g'), ${`${PREVIEW_SPACE}+`}, ' ', 'g'), 1000) AS body, created_at
         FROM chat.messages WHERE conversation_id = c.id AND kind = 'text' AND deleted_at IS NULL AND ${visibility} ORDER BY seq DESC LIMIT 1
       ) m LEFT JOIN chat.threads t ON t.id = m.thread_id WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
     `

@@ -676,19 +676,28 @@ test("a commit write conflict asks exactly once and replacement uses a fresh ove
   }
 });
 
-test("receipt_unknown fails visibly and Try again uses a new upload key", async () => {
+test("receipt_unknown fails visibly and Try again reconciles the same upload key", async () => {
   const dom = await mountBrowser();
   commitCode = "receipt_unknown";
   pickFiles(dom, [new File([], "notes.txt", { lastModified: 123 })]);
   await flush();
   expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="failed"]')).toHaveLength(1);
   expect(calls).not.toContain("abort");
-  expect(uploadKeys()).toEqual([]);
-  commitCode = "";
+  // A missing receipt does not prove publication failed; a fresh key could duplicate or overwrite it.
+  const unresolved = uploadKeys();
+  expect(unresolved).toHaveLength(1);
   retryFailed(dom);
   await flush();
   expect(starts).toHaveLength(2);
-  expect(starts[1]!.idempotencyKey).not.toBe(starts[0]!.idempotencyKey);
+  expect(starts[1]!.idempotencyKey).toBe(starts[0]!.idempotencyKey);
+  expect(uploadKeys()).toEqual(unresolved);
+  expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="failed"]')).toHaveLength(1);
+  commitCode = "";
+  retryFailed(dom);
+  await flush();
+  expect(starts).toHaveLength(3);
+  expect(starts[2]!.idempotencyKey).toBe(starts[0]!.idempotencyKey);
+  expect(uploadKeys()).toEqual([]);
   expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]')).toHaveLength(1);
 });
 

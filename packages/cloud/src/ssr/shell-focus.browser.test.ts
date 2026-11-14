@@ -7,7 +7,7 @@ import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-shell-focus-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -184,7 +184,7 @@ const apple = (page: Page) => page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(na
 // where the avatar opens a dropdown island, the shortcut stands in for it.
 const hideSidebar = async (page: Page, touch: boolean) => {
   if (touch) return page.keyboard.press((await apple(page)) ? "Meta+Backslash" : "Control+Backslash");
-  await page.locator(".layout-rail .layout-profile-preferences__link").hover();
+  await hoverInPlace(page.locator(".layout-rail .layout-profile-preferences__link"));
   await page.locator(hide).click();
 };
 for (const [width, height, touch, inset] of [
@@ -209,7 +209,8 @@ for (const [width, height, touch, inset] of [
       await page.goto(`${origin}/app/focus`);
       await settled(page);
       const original = await boxes(page);
-      expect(original.rail.width).toBe(width < 1024 ? 60 : 56);
+      // From 1680 px the app bar shows names by default; hiding and restoring it keeps either width.
+      expect(original.rail.width).toBe(width >= 1680 ? 208 : width < 1024 ? 60 : 56);
       // No sidebar button above the apps: the first app follows Home at the rail's gap.
       const gap = await page.locator(".layout-rail").evaluate((rail) => parseFloat(getComputedStyle(rail).rowGap));
       expect(original.apps.top).toBe(original.logo.bottom + gap);
@@ -257,20 +258,23 @@ for (const [width, height, touch, inset] of [
       if (width >= 1024) await expectClearCorners(page);
       if (!touch) {
         // The floating avatar's menu offers the way back.
-        await page.locator(".layout-rail .layout-profile-preferences__link").hover();
+        await hoverInPlace(page.locator(".layout-rail .layout-profile-preferences__link"));
         expect(await page.locator(show).isVisible()).toBe(true);
         expect(await page.locator(hide).isVisible()).toBe(false);
         await page.mouse.move(width / 2, height / 2);
         await settled(page);
         expect(await page.locator(show).isVisible()).toBe(false);
-        // The floating avatar keeps a visible focus ring beside its shadow.
+        // The floating avatar keeps the app bar's shared focus ring beside its shadow.
         await page.locator(".layout-rail .layout-profile-preferences__link").focus();
         await page.keyboard.press("Shift+Tab");
         await page.keyboard.press("Tab");
         await settled(page);
-        expect(
-          await page.locator(".layout-rail .layout-profile-preferences__link").evaluate((avatar) => getComputedStyle(avatar).boxShadow),
-        ).toContain("inset");
+        const avatarFocus = await page.locator(".layout-rail .layout-profile-preferences__link").evaluate((avatar) => {
+          const style = getComputedStyle(avatar);
+          return { outline: `${style.outlineStyle} ${style.outlineWidth}`, shadow: style.boxShadow };
+        });
+        expect(avatarFocus.outline).toBe("solid 2px");
+        expect(avatarFocus.shadow).not.toBe("none");
         await page.locator(".layout-rail .layout-profile-preferences__link").blur();
       }
       await page.keyboard.press((await apple(page)) ? "Meta+Backslash" : "Control+Backslash");

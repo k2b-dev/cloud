@@ -17,7 +17,6 @@ import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono, type Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { HTTPException } from "hono/http-exception";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {
@@ -44,6 +43,8 @@ import {
   composePreviewInputSchema,
   composeSafetyConfigSchema,
   composeSafetyReviewInputSchema,
+  composeSignatureInputSchema,
+  composeSignatureSchema,
   composeSuggestionsInputSchema,
   configurableFolderRoleSchema,
   conversationPresenceHeartbeatSchema,
@@ -67,6 +68,7 @@ import {
   deriveDraftFromMessageInputSchema,
   draftContentInputSchema,
   draftEditableContentInputSchema,
+  draftEditModeSchema,
   draftLeaseSchema,
   draftLeaseTokenSchema,
   draftSchema,
@@ -111,6 +113,8 @@ import {
   renderComposeSnippetInputSchema,
   searchBackendSchema,
   searchRequestSchema,
+  senderConversationsPageSchema,
+  senderConversationsQuerySchema,
   senderDispositionInputSchema,
   setComposeSignatureDefaultInputSchema,
   setConversationReminderSchema,
@@ -211,6 +215,7 @@ import { CountRefreshBusy } from "../service/view-count-cache";
 import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
+import automationExportRoutes from "./automation-export";
 import automationLogRoutes from "./automation-log";
 import contactDirectoryRoutes from "./contact-directory";
 import { requireDraftDocumentAccount } from "./draft-document-identity";
@@ -219,6 +224,7 @@ import {
   internalDraftSeedInput,
   internalInput,
   internalMailboxId,
+  internalMailboxResourceId,
   internalParams,
   type MailApiContext,
   mailboxParamSchema,
@@ -367,6 +373,8 @@ const updateMailboxSchema = z
     searchBackend: searchBackendSchema.optional(),
     automaticReplyManagementPermission: automaticReplyManagementPermissionSchema.optional(),
     composeSafety: composeSafetyConfigSchema.optional(),
+    /** How new drafts are edited: one person at a time, or together. Existing drafts keep their mode. */
+    draftEditMode: draftEditModeSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 const calendarDestinationInputSchema = z.object({ spaceId: ResourceShortIdSchema.nullable() }).strict();
@@ -598,7 +606,16 @@ const respondComposeTemplates = <T>(c: Context<MailApiContext>, result: Result<T
   respondPublic(c, result, "composeTemplates");
 const respondSenderIdentities = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) =>
   respondPublic(c, result, "senderIdentities");
-const respondDrafts = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => respondPublic(c, result, "drafts");
+const respondDrafts = async <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => {
+  const resolved = await result;
+  if (!resolved.ok && resolved.error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in resolved.error)
+    return respond(
+      c,
+      { ok: false, error: localizeMailError(resolved.error, getLocale(c)).message, status: 409, code: resolved.error.code },
+      { errorDetails: { draftId: String(resolved.error.draftId) } },
+    );
+  return respondPublic(c, resolved, "drafts");
+};
 const respondDeliveries = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => respondPublic(c, result, "deliveries");
 const projectAttachmentLinks = async <T extends AttachmentLink | { link: AttachmentLink } | AttachmentLinkPage>(
   result: Result<T> | Promise<Result<T>>,
@@ -640,8 +657,7 @@ const internalCommandInput = async (c: Context<MailApiContext>, input: MailComma
     case "move":
     case "copy":
     case "delete": {
-      const messageId = await publicResources.resolveMailboxPublicId("messages", internalMailboxId(c), resolved.messageId);
-      if (!messageId) throw new HTTPException(404, { message: localizeMailError(err.notFound("Mail resource"), getLocale(c)).message });
+      const messageId = await internalMailboxResourceId(c, "messages", resolved.messageId);
       return { ...resolved, messageId };
     }
     default:
@@ -1321,6 +1337,42 @@ const mailOperationsApi = new Hono<MailApiContext>()
     },
   )
   .get(
+    "/mailboxes/:mailboxId/sender-conversations",
+    describeRoute({
+      tags: ["Mail:Context"],
+      summary: "List earlier conversations from one sender",
+      description:
+        "Exact From-address matches in this mailbox, newest first. The preview and total both respect assigned-only access. Optionally exclude the open conversation.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(senderConversationsPageSchema, "Up to five conversations and the total number of visible matches"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid sender query"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox or excluded conversation not found"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    v("query", senderConversationsQuerySchema),
+    async (c) => {
+      const query = c.req.valid("query");
+      const mailboxId = internalMailboxId(c);
+      const excluded = query.excludeConversationId
+        ? await publicResources.resolveMailboxPublicId("conversations", mailboxId, query.excludeConversationId)
+        : undefined;
+      if (query.excludeConversationId && !excluded) return respond(c, fail(err.notFound("Conversation")));
+      return respondConversations(
+        c,
+        conversationContext.listSenderConversations({
+          context: requestContext(c),
+          mailboxId,
+          email: query.email,
+          limit: query.limit,
+          excludeConversationId: excluded ?? undefined,
+        }),
+      );
+    },
+  )
+  .get(
     "/mailboxes/:mailboxId/conversations/:conversationId/related",
     describeRoute({
       tags: ["Mail:Context"],
@@ -1891,7 +1943,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
       context: requestContext(c),
       ...internalParams(c, c.req.valid("param")),
     });
-    return resolved.ok ? c.redirect(resolved.data.href, 302) : respondPublic(c, resolved);
+    if (resolved.ok) return c.redirect(resolved.data.href, 302);
+    return respondPublic(c, resolved.error.code === "NOT_FOUND" ? fail(err.notFound("Reminder")) : resolved);
   })
   .get("/mailboxes/:mailboxId/assignable-users", v("param", mailboxParamSchema), v("query", collaboratorQuerySchema), async (c) =>
     respondPublic(
@@ -2945,6 +2998,31 @@ const mailOperationsApi = new Hono<MailApiContext>()
     ),
   )
   .post(
+    "/mailboxes/:mailboxId/compose-signature",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Render the selected signature for the editor",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(composeSignatureSchema, "Sanitized signature fragment without outgoing styles or images"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid signature or compose render failure"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
+      },
+    }),
+    auth.readOnly,
+    v("param", mailboxParamSchema),
+    v("json", composeSignatureInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.previewComposeSignature({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
+  )
+  .post(
     "/mailboxes/:mailboxId/compose-preview",
     auth.readOnly,
     v("param", mailboxParamSchema),
@@ -3133,7 +3211,10 @@ const mailOperationsApi = new Hono<MailApiContext>()
       return respond(
         c,
         ok({
-          ...value,
+          generation: value.generation,
+          revision: value.revision,
+          lifecycle: value.lifecycle,
+          historyComplete: value.historyComplete,
           fresh: { ...value.fresh, state: toBase64(value.fresh.state) },
           durable: { ...value.durable, state: toBase64(value.durable.state) },
           frozen: value.frozen ? { ...value.frozen, state: toBase64(value.frozen.state) } : null,
@@ -3252,15 +3333,15 @@ const mailOperationsApi = new Hono<MailApiContext>()
     "/mailboxes/:mailboxId/draft-seeds/materialize",
     v("param", mailboxParamSchema),
     v("json", materializeDraftSeedInputSchema),
-    async (c) =>
-      respondDrafts(
-        c,
-        drafts.materializeDraftSeed({
-          context: requestContext(c),
-          mailboxId: internalMailboxId(c),
-          input: await internalDraftSeedInput(c, c.req.valid("json")),
-        }),
-      ),
+    async (c) => {
+      const result = await drafts.materializeDraftSeed({
+        context: requestContext(c),
+        mailboxId: internalMailboxId(c),
+        input: await internalDraftSeedInput(c, c.req.valid("json")),
+        rejectDifferentContent: true,
+      });
+      return respondDrafts(c, result);
+    },
   )
   .post("/mailboxes/:mailboxId/drafts", v("param", mailboxParamSchema), v("json", draftContentInputSchema), async (c) =>
     respondDrafts(
@@ -3269,6 +3350,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         context: requestContext(c),
         mailboxId: internalMailboxId(c),
         input: await internalInput(c, c.req.valid("json")),
+        rejectOccupiedContent: drafts.hasDraftCreationContent(c.req.valid("json")),
       }),
     ),
   )
@@ -3288,6 +3370,47 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     );
   })
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/intent",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Switch reply mode, preserving body text",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(draftSchema, "Reply draft"),
+        409: jsonResponse(ErrorResponseSchema, "Stale revision or draft not editable"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    v("json", z.object({ expectedRevision: z.number().int().positive(), intent: z.enum(["reply", "reply_all", "forward"]) }).strict()),
+    async (c) =>
+      respondDrafts(
+        c,
+        drafts.switchDraftIntent({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+          ...c.req.valid("json"),
+        }),
+      ),
+  )
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/consolidation/acknowledge",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Acknowledge the one-time draft consolidation notice",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(draftSchema, "Reply draft") },
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    async (c) =>
+      respondDrafts(
+        c,
+        drafts.acknowledgeDraftConsolidation({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+        }),
+      ),
+  )
   .post(
     "/mailboxes/:mailboxId/drafts/:draftId/safety-review",
     v("param", mailboxAndIdParamSchema("draftId")),
@@ -3759,6 +3882,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         }),
       ),
   )
+  .route("/", automationExportRoutes)
   .route("/", workflowRoutes)
   .route("/", automationLogRoutes);
 

@@ -209,7 +209,7 @@ export const settingsMessages = i18n.define({
       operations: "Operations",
       operationsDescription: "Timezone and schedules used by automatic platform jobs.",
       login: "Sign-in",
-      loginDescription: "How long users remain signed in.",
+      loginDescription: "How long users remain signed in, also on shared workstations.",
       appApproval: "App sign-in",
       appApprovalDescription:
         "Connect a separately hosted app for Guest, Login, and FreeIPA accounts. Users pair devices under Security. Existing sign-in methods remain available.",
@@ -462,7 +462,7 @@ export const settingsMessages = i18n.define({
       operations: "Betrieb",
       operationsDescription: "Zeitzone und Zeitpläne automatischer Plattformaufgaben.",
       login: "Anmeldung",
-      loginDescription: "Wie lange Nutzer angemeldet bleiben.",
+      loginDescription: "Wie lange Nutzer angemeldet bleiben, auch an gemeinsam genutzten Arbeitsplätzen.",
       appApproval: "App-Anmeldung",
       appApprovalDescription:
         "Verbinde eine separat gehostete App für Guest, Login und FreeIPA. Nutzer koppeln Geräte unter Sicherheit. Bisherige Anmeldemethoden bleiben verfügbar.",

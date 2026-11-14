@@ -412,7 +412,7 @@ const ContactFavoriteSchema = z.object({
 const SetContactFavoriteSchema = z.object({ favorite: z.boolean() });
 const ContactFavoriteStateSchema = z.object({ favorite: z.boolean() });
 
-const ContactIdsSchema = z.array(ResourceShortIdSchema).min(1).max(500);
+const ContactIdsSchema = z.array(ResourceShortIdSchema).min(1).max(contactsService.contact.MAX_BULK_CONTACTS);
 const BulkContactTagsSchema = z.object({ contactIds: ContactIdsSchema, tagIds: z.array(ResourceShortIdSchema).min(1).max(100) });
 const BulkContactMoveSchema = z.object({ contactIds: ContactIdsSchema, targetBookId: ResourceShortIdSchema });
 const BulkContactSelectionSchema = z.object({ contactIds: ContactIdsSchema });

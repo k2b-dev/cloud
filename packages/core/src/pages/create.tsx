@@ -24,6 +24,7 @@ import {
   registrationPage,
   signinPage,
 } from "./admin/signin/page";
+import storageAdminPage from "./admin/storage/page";
 import pairDevicePage from "./app-approval/pair.page";
 import { createAppIconRoutes } from "./app-icons";
 import consentPage from "./auth/consent.page";
@@ -117,6 +118,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     // App credentials now live with each app under Keys › Tokens for host operation; the old address says so.
     .get("/admin/app-credentials", auth.requireRole("admin", ssr.access), (c) => c.redirect("/admin/apps?moved=credentials", 302))
     .get("/admin/outgoing-mail", auth.requireRole("admin", ssr.access), ...outgoingMailPage)
+    .get("/admin/storage", auth.requireRole("admin", ssr.access), ...storageAdminPage)
     .get("/admin/base", auth.requireRole("admin", ssr.access), ...generalPage)
     .get("/admin/base/legal", auth.requireRole("admin", ssr.access), ...legalPage)
     .get("/admin/base/pdf", auth.requireRole("admin", ssr.access), ...pdfPage)

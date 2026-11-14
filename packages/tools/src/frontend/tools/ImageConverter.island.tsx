@@ -14,6 +14,7 @@ import {
   ProgressBar,
   prompts,
   ScrollArea,
+  Section,
   SegmentedControl,
   Slider,
   SplitButton,
@@ -568,7 +569,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
 
           <DetailPanel.Body scrollPreserveKey="image-converter-settings">
             <DetailPanel.Group label={t().groupOutput}>
-              <DetailPanel.Section title={t().sectionFormat}>
+              <Section title={t().sectionFormat}>
                 <SegmentedControl<ImageConverterFormat>
                   options={[
                     { value: "jpeg", label: "JPEG" },
@@ -605,11 +606,11 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                     />
                   </div>
                 </Show>
-              </DetailPanel.Section>
+              </Section>
             </DetailPanel.Group>
 
             <DetailPanel.Group label={t().groupSize}>
-              <DetailPanel.Section title={t().maxDimensions} description={t().maxDimensionsDescription}>
+              <Section title={t().maxDimensions} description={t().maxDimensionsDescription}>
                 <div class="grid grid-cols-2 gap-2">
                   <NumberInput
                     name="image-converter-max-width"
@@ -638,7 +639,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                     disabled={exportMutation.loading()}
                   />
                 </div>
-              </DetailPanel.Section>
+              </Section>
             </DetailPanel.Group>
 
             <Show when={error()}>

@@ -11,6 +11,7 @@ import {
   NoticeCard,
   NumberInput,
   prompts,
+  Section,
   SegmentedControl,
   Select,
   Slider,
@@ -1007,7 +1008,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
               {(color) => (
                 <button
                   type="button"
-                  class="h-8 w-8 rounded border border-black/15 shadow-sm dark:border-white/20"
+                  class="h-8 w-8 rounded border border-black/15 dark:border-white/20"
                   classList={{ "ring-2 ring-blue-500 ring-offset-1": markupColor() === color.value }}
                   style={{ "background-color": color.value }}
                   onClick={() => setMarkupColor(color.value)}
@@ -1277,7 +1278,6 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       >
         <DetailPanel>
           <DetailPanel.Header
-            kind={activeImage() ? <span>{t().imageKind}</span> : undefined}
             title={activeImage()?.name ?? t().imageControls}
             subtitle={activeImageSubtitle()}
             actions={
@@ -1383,7 +1383,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
               <Show when={editorMode() === "markup"}>
                 <DetailPanel.Group label={t().markupControls}>
-                  <DetailPanel.Section title={t().tool}>
+                  <Section title={t().tool}>
                     <div class="flex flex-col gap-2">
                       <div class="grid grid-cols-7 gap-1">
                         <For
@@ -1447,11 +1447,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                         </Tooltip.Anchor>
                       </div>
                     </div>
-                  </DetailPanel.Section>
+                  </Section>
                   <Show when={markupTool() === "shape" || isSizedMarkupTool(markupTool())}>
-                    <DetailPanel.Section title={t().style}>
+                    <Section title={t().style}>
                       <MarkupSettings />
-                    </DetailPanel.Section>
+                    </Section>
                   </Show>
                 </DetailPanel.Group>
               </Show>
@@ -1460,7 +1460,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                 <>
                   <DetailPanel.Group label={t().geometry}>
                     {/* Crop */}
-                    <DetailPanel.Section title={t().crop}>
+                    <Section title={t().crop}>
                       <div class="flex flex-col gap-2">
                         <div class="flex gap-2">
                           <Show
@@ -1513,15 +1513,16 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           </Button>
                         </Show>
                       </div>
-                    </DetailPanel.Section>
+                    </Section>
 
                     {/* Transform */}
-                    <DetailPanel.Section title={t().transform}>
+                    <Section title={t().transform}>
                       <div class="flex flex-col gap-2">
                         <Slider
                           label={t().rotation}
                           value={() => adj().freeRotation}
                           onValueChange={(v) => setAdj("freeRotation", v)}
+                          defaultValue={DEFAULT_ADJ.freeRotation}
                           min={-180}
                           max={180}
                           step={0.5}
@@ -1534,12 +1535,12 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           <Switch label={t().flipV} value={() => adj().flipV} onValueChange={(v) => setAdj("flipV", v)} />
                         </div>
                       </div>
-                    </DetailPanel.Section>
+                    </Section>
                   </DetailPanel.Group>
 
                   <DetailPanel.Group label={t().appearance}>
                     {/* Adjustments */}
-                    <DetailPanel.Section
+                    <Section
                       title={t().adjustments}
                       actions={
                         <Button variant="ghost" size="xs" onClick={resetAdjustments}>
@@ -1552,6 +1553,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().brightness}
                           value={() => adj().brightness}
                           onValueChange={(v) => setAdj("brightness", v)}
+                          defaultValue={DEFAULT_ADJ.brightness}
                           min={0.5}
                           max={1.5}
                           step={0.01}
@@ -1563,6 +1565,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().contrast}
                           value={() => adj().contrast}
                           onValueChange={(v) => setAdj("contrast", v)}
+                          defaultValue={DEFAULT_ADJ.contrast}
                           min={0.5}
                           max={2}
                           step={0.01}
@@ -1574,6 +1577,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().saturation}
                           value={() => adj().saturation}
                           onValueChange={(v) => setAdj("saturation", v)}
+                          defaultValue={DEFAULT_ADJ.saturation}
                           min={0}
                           max={2}
                           step={0.01}
@@ -1585,6 +1589,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().hue}
                           value={() => adj().hueRotate}
                           onValueChange={(v) => setAdj("hueRotate", v)}
+                          defaultValue={DEFAULT_ADJ.hueRotate}
                           min={0}
                           max={360}
                           step={1}
@@ -1595,6 +1600,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().blur}
                           value={() => adj().blur}
                           onValueChange={(v) => setAdj("blur", v)}
+                          defaultValue={DEFAULT_ADJ.blur}
                           min={0}
                           max={10}
                           step={0.1}
@@ -1605,6 +1611,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().sepia}
                           value={() => adj().sepia}
                           onValueChange={(v) => setAdj("sepia", v)}
+                          defaultValue={DEFAULT_ADJ.sepia}
                           min={0}
                           max={1}
                           step={0.01}
@@ -1615,6 +1622,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().vignette}
                           value={() => adj().vignette}
                           onValueChange={(v) => setAdj("vignette", v)}
+                          defaultValue={DEFAULT_ADJ.vignette}
                           min={0}
                           max={1}
                           step={0.01}
@@ -1625,6 +1633,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().grain}
                           value={() => adj().grain}
                           onValueChange={(v) => setAdj("grain", v)}
+                          defaultValue={DEFAULT_ADJ.grain}
                           min={0}
                           max={0.5}
                           step={0.01}
@@ -1632,10 +1641,10 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           formatValue={(v) => `${Math.round(v * 200)}%`}
                         />
                       </div>
-                    </DetailPanel.Section>
+                    </Section>
 
                     {/* Presets */}
-                    <DetailPanel.Section title={t().presets}>
+                    <Section title={t().presets}>
                       <div class="grid grid-cols-4 gap-1">
                         <For each={Object.keys(PRESETS)}>
                           {(key) => (
@@ -1645,10 +1654,10 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           )}
                         </For>
                       </div>
-                    </DetailPanel.Section>
+                    </Section>
 
                     {/* Copy / Paste Edits */}
-                    <DetailPanel.Section title={t().edits}>
+                    <Section title={t().edits}>
                       <div class="grid grid-cols-3 gap-1">
                         <Button variant="secondary" size="sm" onClick={copyEdits} title={t().copyAdjustmentsTitle}>
                           <i class="ti ti-copy" /> {t().copy}
@@ -1672,7 +1681,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           <i class="ti ti-clipboard-check" /> {t().pasteAll}
                         </Button>
                       </div>
-                    </DetailPanel.Section>
+                    </Section>
                   </DetailPanel.Group>
                 </>
               </Show>

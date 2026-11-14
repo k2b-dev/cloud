@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
+import { publishNotebooksEvent } from "../app-events";
 import { generateUniqueShortId } from "../lib/short-id";
 import * as activity from "./activity";
 import * as workspaceEvents from "./workspace-events";
@@ -177,6 +178,9 @@ export const create = async (config: {
     LEFT JOIN auth.users author ON author.id = inserted.author_user_id
   `;
     if (row) {
+      const [notebook] = await tx<{ short_id: string }[]>`SELECT short_id FROM notebooks.notebooks WHERE id = ${config.notebookId}::uuid`;
+      if (!notebook) throw new Error("Comment event names a missing notebook");
+      await publishNotebooksEvent(tx, "comment.created", row.short_id, notebook.short_id);
       await activity.record(
         {
           notebookId: config.notebookId,

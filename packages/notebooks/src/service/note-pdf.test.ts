@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { NetworkTargetBlockedError, requestPublicHttps, resolvePublicNetworkAddresses } from "@k2b/cloud/services";
 import * as pdfModule from "@k2b/cloud/services/pdf";
@@ -144,8 +145,16 @@ test("note PDF includes the chart, data fallback and Cloud light palette", () =>
   expect(html).toContain('<table class="md-table">');
   expect(html).toContain('<span class="md-align-right">12</span>');
   expect(html).toContain(".notebook-book-chart .stdlib-chart");
-  expect(html).toContain("--stdlib-chart-c1:#14b8a6");
-  expect(html).toContain("--stdlib-chart-c8:#ef4444");
+  const baseCss = readFileSync(new URL("../../../ui/src/base/base.css", import.meta.url), "utf8");
+  const browserPrintCss = readFileSync(new URL("../styles/app.css", import.meta.url), "utf8")
+    .split(":root .notebook-book-content[data-print-region] :is(.stdlib-chart, .k2b-chart-legend) {")[1]!
+    .split("}")[0]!;
+  for (const [, index, color] of baseCss.matchAll(/--stdlib-chart-c([1-8]): (#[0-9a-f]{6});/g)) {
+    // The PDF's own CSS must not override the converted SVG with a different palette.
+    expect(html).toContain(`--stdlib-chart-c${index}:${color}`);
+    expect(html.match(/<svg\b[\s\S]*?<\/svg>/)?.[0]).toContain(`--stdlib-chart-c${index}: ${color};`);
+    expect(browserPrintCss).toContain(`--stdlib-chart-c${index}: ${color};`);
+  }
   expect(html).toContain("aspect-ratio: 480 / 280");
 });
 

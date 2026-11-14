@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser } from "../../../ui/test/browser";
 import { solidTestPlugin } from "../../../ui/test/solid-test-plugin";
 
 // The table widget's bleed reaches into the editor content's inline padding,
@@ -150,7 +150,7 @@ test("the editor table widget bleeds like the Book: flush text, one width for li
       flush: 0,
       layout: undefined,
     });
-    await page.locator("#rich .cm-table-widget tbody tr").last().locator("td").nth(1).hover();
+    await hoverInPlace(page.locator("#rich .cm-table-widget tbody tr").last().locator("td").nth(1));
     expect((await measure()).layout).toEqual(idle.layout);
   } finally {
     await page.close();

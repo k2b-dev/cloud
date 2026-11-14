@@ -139,7 +139,12 @@ suite("Durable Mail workflow effect order", () => {
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
 
-  const ingest = async (uid: number, inReplyTo: string | null = null, captureWorkflowTriggers = true) => {
+  const ingest = async (
+    uid: number,
+    inReplyTo: string | null = null,
+    captureWorkflowTriggers = true,
+    subject = `Placement message ${uid}`,
+  ) => {
     const messageId = `<placement-${uid}-${suffix}@example.test>`;
     await sql.begin(async (tx) =>
       ingestEnvelope({
@@ -155,7 +160,7 @@ suite("Durable Mail workflow effect order", () => {
           messageId,
           inReplyTo,
           references: inReplyTo ? [inReplyTo] : [],
-          subject: `Placement message ${uid}`,
+          subject,
           sentAt: new Date("2026-01-15T12:00:00Z"),
           internalDate: new Date("2026-01-15T12:00:00Z"),
           sizeBytes: 128,
@@ -239,8 +244,8 @@ ${steps}
       if (!disabled.ok) throw new Error(disabled.error.message);
     }
   };
-  const receive = async (inReplyTo: string | null = null) => {
-    const message = await ingest(nextUid++, inReplyTo);
+  const receive = async (inReplyTo: string | null = null, subject?: string) => {
+    const message = await ingest(nextUid++, inReplyTo, true, subject);
     const events = await sql<{ id: string; target_workflow_id: string }[]>`
       SELECT id::text, target_workflow_id::text FROM workflows.event
       WHERE app_id='mail' AND scope_id=${mailboxId}
@@ -637,9 +642,9 @@ ${steps}
       });
     };
     try {
-      const first = await ingest(nextUid++, null, false);
+      const first = await ingest(nextUid++, null, false, "Placement conversation");
       await hydrate(first);
-      const received = await receive(first.messageId),
+      const received = await receive(first.messageId, "Re: Placement conversation"),
         run = await dispatch(received.events);
       expect(received.snapshot.preconditions.conversation!.id).toBe(first.snapshot.preconditions.conversation!.id);
       let hydrated = false;

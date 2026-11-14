@@ -103,6 +103,34 @@ export const migrateBuiltAvatars = async (db = sql): Promise<void> => {
   }
 };
 
+/**
+ * FreeIPA's immutable entry ID (ipaUniqueID) identifies the directory user of an account; the next sync fills it.
+ * Checks the catalog first so later starts take no table lock. The column and the index use separate short
+ * transactions that never queue behind a running sync for long: the new column holds no values to index yet.
+ */
+const migrateIpaEntryId = async (): Promise<void> => {
+  const step = (run: (tx: typeof sql) => Promise<unknown>) =>
+    sql.begin(async (tx) => {
+      await tx`SET LOCAL lock_timeout = '5s'`.simple();
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.auth.user_ipa_data.ipa_entry_id', 0))`;
+      await run(tx);
+    });
+  await step(async (tx) => {
+    const [column] = await tx`SELECT 1 FROM pg_attribute WHERE attrelid = 'auth.user_ipa_data'::regclass
+      AND attname = 'ipa_entry_id' AND NOT attisdropped`;
+    if (!column) await tx`ALTER TABLE auth.user_ipa_data ADD COLUMN ipa_entry_id TEXT`.simple();
+  });
+  await step(async (tx) => {
+    const [index] = await tx`SELECT 1 FROM pg_class WHERE oid = to_regclass('auth.uq_user_ipa_data_ipa_entry_id')`;
+    if (!index) {
+      await tx`
+        CREATE UNIQUE INDEX uq_user_ipa_data_ipa_entry_id
+        ON auth.user_ipa_data(ipa_entry_id) WHERE ipa_entry_id IS NOT NULL
+      `.simple();
+    }
+  });
+};
+
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
   console.log("  ✓ auth schema");
@@ -267,6 +295,8 @@ export const migrate = async (): Promise<void> => {
   // Existing sessions retain their access; every newly issued session records
   // whether explicit first-login acceptance is still outstanding.
   await sql`ALTER TABLE auth.session_families ADD COLUMN IF NOT EXISTS legal_pending BOOLEAN NOT NULL DEFAULT false`.simple();
+  // Set only for browser sessions on a shared workstation: the last real input, which bounds the session's idle time.
+  await sql`ALTER TABLE auth.session_families ADD COLUMN IF NOT EXISTS last_input_at TIMESTAMPTZ`.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS auth.legal_acceptances (
       user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -301,6 +331,9 @@ export const migrate = async (): Promise<void> => {
     ON auth.user_ipa_data(uid_number)
     WHERE uid_number IS NOT NULL
   `.simple();
+  // When the sync first saw FreeIPA's own account lock (nsaccountlock); NULL while the account is not locked.
+  await sql`ALTER TABLE auth.user_ipa_data ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ`.simple();
+  await migrateIpaEntryId();
   console.log("  ✓ auth.user_ipa_data table");
 
   // Committed before remote mutation, retained if the local promotion rolls back.

@@ -6,10 +6,13 @@
  *   bun scripts/generate-config-docs.ts          write the three files
  *   bun scripts/generate-config-docs.ts --check  exit 1 when they are stale
  */
+import { existsSync } from "node:fs";
 import { Glob } from "bun";
 import { z } from "zod";
 import { type EnvScope, type EnvSpec, type EnvSpecs, envBoolean, envList, envString } from "../packages/cloud/src/config/define-env";
 import { env } from "../packages/cloud/src/config/env";
+
+import { appIds } from "./workspace";
 
 const root = new URL("..", import.meta.url).pathname;
 const check = process.argv.includes("--check");
@@ -28,7 +31,9 @@ const registrySchema = z.object({
 const loadRegistries = async (): Promise<Registry[]> => {
   const registries: Registry[] = [{ name: "Platform", source: "packages/cloud/src/config/env.ts", specs: env.$specs }];
   const paths = [
-    ...new Glob("packages/*/src/env.ts").scanSync({ cwd: root }),
+    ...appIds(root)
+      .map((id) => `packages/${id}/src/env.ts`)
+      .filter((path) => existsSync(`${root}${path}`)),
     ...new Glob("pwas/*/server/env.ts").scanSync({ cwd: root }),
   ].sort();
   for (const path of paths) {

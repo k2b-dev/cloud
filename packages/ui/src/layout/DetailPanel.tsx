@@ -1,6 +1,9 @@
-import { children, createEffect, createSignal, createUniqueId, type JSX, Show, splitProps } from "solid-js";
+import { createUniqueId, type JSX, Show, splitProps } from "solid-js";
 import { Button, ButtonLink, type ButtonLinkProps, type ButtonProps, IconButton } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
+import { Checkbox } from "../inputs/Checkbox";
+import { showTruncatedTitle } from "../internal/truncated-title";
+import { SectionFrameDefault } from "../surfaces/Section";
 import { useDetailPanelMessages } from "./detail-panel-messages";
 import { createScrollFade } from "./scroll-fade";
 
@@ -12,7 +15,10 @@ export type DetailPanelProps = {
 };
 
 type DetailPanelHeaderBaseProps = {
-  /** A short line above the title that names what is shown, such as "Conversation", followed by its state. */
+  /**
+   * The item's state, such as a "Done" or "Read only" badge, at the start of the line below the title. Name a type
+   * only where one list mixes types that the title and subtitle do not tell apart, such as "Query" or "Action".
+   */
   kind?: JSX.Element;
   title: JSX.Element;
   subtitle?: JSX.Element;
@@ -66,20 +72,6 @@ export type DetailPanelGroupProps = {
   class?: string;
 };
 
-export type DetailPanelTone = "accent" | "neutral" | "success" | "warning" | "danger";
-
-type DetailPanelSectionBaseProps = {
-  title: JSX.Element;
-  icon?: string;
-  tone?: DetailPanelTone;
-  description?: JSX.Element;
-  /** How many things the section lists, as a chip after the title; `0` reads "None yet". */
-  count?: number;
-  /** Short state after the title, such as "2 of 4 done". */
-  meta?: JSX.Element;
-  class?: string;
-};
-
 /** One direct secondary command, rendered as a sibling icon button at the end of the row. */
 export type DetailPanelActionSecondary = {
   /** Icon class, for example `ti ti-trash`. */
@@ -90,12 +82,25 @@ export type DetailPanelActionSecondary = {
   variant?: "danger";
 };
 
+/**
+ * A checkbox before the row that toggles on its own, such as "done" for a task the row opens. It always shows its
+ * state, unlike a secondary action, which waits for hover.
+ */
+export type DetailPanelActionCheckbox = {
+  checked: boolean;
+  /** Accessible name, after the row, such as "Done: Call Mrs. Weber". */
+  label: string;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+};
+
 type DetailPanelActionBaseProps = {
   title: JSX.Element;
   description?: JSX.Element;
   leading?: JSX.Element;
   trailing?: JSX.Element;
   secondaryAction?: DetailPanelActionSecondary;
+  checkbox?: DetailPanelActionCheckbox;
   /** Marks the row of the current place, such as the section in view, in the panel's accent. */
   current?: boolean;
   /** Lets the title wrap to two lines instead of ending with an ellipsis. */
@@ -136,48 +141,16 @@ export type DetailPanelRowProps = {
   class?: string;
 };
 
-export type DetailPanelSectionProps = DetailPanelSectionBaseProps &
-  (
-    | {
-        children?: JSX.Element;
-        actions?: JSX.Element;
-        collapsible?: false;
-        summary?: never;
-        defaultOpen?: never;
-        open?: never;
-        onOpenChange?: never;
-        disabled?: never;
-      }
-    | {
-        children: JSX.Element;
-        actions?: never;
-        collapsible: true;
-        /** One line that says what the closed section holds, such as its newest entry; hidden while open. */
-        summary?: JSX.Element;
-        defaultOpen?: boolean;
-        open?: boolean;
-        onOpenChange?: (open: boolean) => void;
-        disabled?: boolean;
-      }
-  );
-
 type DetailPanelComponent = ((props: DetailPanelProps) => JSX.Element) & {
   Header: (props: DetailPanelHeaderProps) => JSX.Element;
   Body: (props: DetailPanelBodyProps) => JSX.Element;
   Summary: (props: DetailPanelSummaryProps) => JSX.Element;
   Group: (props: DetailPanelGroupProps) => JSX.Element;
-  Section: (props: DetailPanelSectionProps) => JSX.Element;
   Action: (props: DetailPanelActionProps) => JSX.Element;
   Row: (props: DetailPanelRowProps) => JSX.Element;
 };
 
 const classNames = (base: string, extra?: string): string => (extra ? `${base} ${extra}` : base);
-
-const showTruncatedTitle = (event: PointerEvent & { currentTarget: HTMLHeadingElement }) => {
-  const heading = event.currentTarget;
-  if (heading.scrollHeight > heading.clientHeight + 1) heading.title = heading.textContent ?? "";
-  else heading.removeAttribute("title");
-};
 
 const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
   const t = useDetailPanelMessages();
@@ -205,13 +178,14 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
           <div class="k2b-detail-panel__header-leading">{props.leading}</div>
         </Show>
         <div class="k2b-detail-panel__heading">
-          <Show when={props.kind}>
-            <div class="k2b-detail-panel__kind">{props.kind}</div>
-          </Show>
-          {/* A long title wraps to two lines and ends with an ellipsis; then the native hint shows all of it. */}
+          {/* The name comes first, beside the close button. It never wraps: a long title ends with an ellipsis, and
+              then the native hint shows all of it. */}
           <h2 onPointerEnter={showTruncatedTitle}>{props.title}</h2>
-          <Show when={props.subtitle || props.meta}>
+          <Show when={props.kind || props.subtitle || props.meta}>
             <div class="k2b-detail-panel__supporting">
+              <Show when={props.kind}>
+                <div class="k2b-detail-panel__kind">{props.kind}</div>
+              </Show>
               <Show when={props.subtitle}>
                 <p>{props.subtitle}</p>
               </Show>
@@ -292,38 +266,6 @@ const DetailPanelGroup = (props: DetailPanelGroupProps): JSX.Element => {
   );
 };
 
-const DetailPanelSectionIcon = (props: Pick<DetailPanelSectionBaseProps, "icon" | "tone">): JSX.Element => (
-  <Show when={props.icon}>
-    {(icon) => (
-      <span class="k2b-detail-panel__section-icon" data-tone={props.tone ?? "neutral"} aria-hidden="true">
-        <i class={icon()} />
-      </span>
-    )}
-  </Show>
-);
-
-/** A count chip, or "None yet" for zero; shared by sections and discussions. */
-export const DetailPanelCount = (props: { count: number }): JSX.Element => {
-  const messages = useDetailPanelMessages();
-  return (
-    <Show when={props.count > 0} fallback={<span class="k2b-detail-panel__none">{messages().noneYet}</span>}>
-      <span class="k2b-count-chip">{props.count}</span>
-    </Show>
-  );
-};
-
-/** Title, then its count and state right after it, so every section reads the same way. */
-const SectionTitleMeta = (props: Pick<DetailPanelSectionBaseProps, "count" | "meta">): JSX.Element => (
-  <>
-    <Show when={props.count !== undefined}>
-      <DetailPanelCount count={props.count ?? 0} />
-    </Show>
-    <Show when={props.meta}>
-      <span class="k2b-detail-panel__section-meta">{props.meta}</span>
-    </Show>
-  </>
-);
-
 const DetailPanelActionContent = (props: DetailPanelActionBaseProps): JSX.Element => (
   <>
     {/* Hidden while empty: a row's icon, or its text when it has none, starts on the section's text edge. */}
@@ -350,6 +292,7 @@ const DetailPanelAction = (props: DetailPanelActionProps): JSX.Element => {
     "menuItems",
     "menuLabel",
     "secondaryAction",
+    "checkbox",
     "title",
     "trailing",
     "wrap",
@@ -392,8 +335,19 @@ const DetailPanelAction = (props: DetailPanelActionProps): JSX.Element => {
   );
 
   return (
-    <Show when={local.secondaryAction || local.menuItems?.length} fallback={action()}>
-      <div class="k2b-detail-panel__action-row">
+    <Show when={local.secondaryAction || local.menuItems?.length || local.checkbox} fallback={action()}>
+      <div class="k2b-detail-panel__action-row" data-checkbox={local.checkbox ? "true" : undefined}>
+        <Show when={local.checkbox}>
+          {(checkbox) => (
+            <Checkbox
+              class="k2b-detail-panel__action-check"
+              aria-label={checkbox().label}
+              value={checkbox().checked}
+              disabled={checkbox().disabled}
+              onValueChange={(checked) => checkbox().onChange(checked)}
+            />
+          )}
+        </Show>
         {action()}
         <Show when={local.secondaryAction}>
           {(secondary) => (
@@ -427,136 +381,13 @@ const DetailPanelRow = (props: DetailPanelRowProps): JSX.Element => (
   </div>
 );
 
-const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
-  const headingId = `k2b-detail-panel-section-${createUniqueId()}`;
-  const bodyId = `${headingId}-body`;
-  const [internalOpen, setInternalOpen] = createSignal(props.defaultOpen ?? false);
-  const open = () => props.open ?? internalOpen();
-  let expand: HTMLButtonElement | undefined;
-  let collapse: HTMLButtonElement | undefined;
-  let body: HTMLDivElement | undefined;
-  const toggle = (next: boolean) => {
-    if (props.disabled) return;
-    if (props.open === undefined) setInternalOpen(next);
-    props.onOpenChange?.(next);
-  };
-  createEffect(() => {
-    const expanded = open();
-    // Restore focus only when its current control becomes hidden, including
-    // a parent-controlled collapse while focus is inside an editor.
-    queueMicrotask(() => {
-      if (expanded !== open()) return;
-      const active = expand?.ownerDocument.activeElement;
-      if (expanded && active === expand) collapse?.focus();
-      if (!expanded && (active === collapse || (active && body?.contains(active)))) expand?.focus();
-    });
-  });
-  const className = () => classNames("k2b-detail-panel__section", props.class);
-  // Resolve once: reading `props.children` twice would instantiate the section body twice.
-  const resolved = children(() => props.children);
-
-  return (
-    <Show
-      when={props.collapsible}
-      fallback={
-        <section class={className()} aria-labelledby={headingId} data-icon={props.icon ? "true" : undefined}>
-          <header class="k2b-detail-panel__section-header">
-            <DetailPanelSectionIcon icon={props.icon} tone={props.tone} />
-            <div class="k2b-detail-panel__section-copy">
-              <div class="k2b-detail-panel__section-heading">
-                <h3 id={headingId}>{props.title}</h3>
-                <SectionTitleMeta count={props.count} meta={props.meta} />
-              </div>
-              <Show when={props.description}>
-                <p class="k2b-detail-panel__section-description">{props.description}</p>
-              </Show>
-            </div>
-            <Show when={props.actions}>
-              <div class="k2b-detail-panel__section-actions">{props.actions}</div>
-            </Show>
-          </header>
-          <Show when={resolved()}>
-            <div class="k2b-detail-panel__section-body">{resolved()}</div>
-          </Show>
-        </section>
-      }
-    >
-      <section
-        class={className()}
-        aria-labelledby={open() ? headingId : `${headingId}-closed`}
-        data-open={open()}
-        data-icon={props.icon ? "true" : undefined}
-        data-summary={props.summary ? "true" : undefined}
-      >
-        <div hidden={open()}>
-          <Button
-            ref={expand}
-            variant="ghost"
-            class="k2b-detail-panel__section-summary"
-            disabled={props.disabled}
-            aria-expanded={false}
-            aria-controls={bodyId}
-            onClick={() => toggle(true)}
-          >
-            <DetailPanelSectionIcon icon={props.icon} tone={props.tone} />
-            <span class="k2b-detail-panel__section-copy">
-              <span class="k2b-detail-panel__section-heading">
-                <span id={`${headingId}-closed`} class="k2b-detail-panel__section-title">
-                  {props.title}
-                </span>
-                <SectionTitleMeta count={props.count} meta={props.meta} />
-                <Show when={props.summary}>
-                  <span class="k2b-detail-panel__section-preview k2b-truncate-fade">{props.summary}</span>
-                </Show>
-              </span>
-              <Show when={props.description}>
-                <span class="k2b-detail-panel__section-description">{props.description}</span>
-              </Show>
-            </span>
-            {/* Same column as the open header's collapse button, so nothing moves between the states. */}
-            <span class="k2b-detail-panel__section-toggle" aria-hidden="true">
-              <i class="ti ti-chevron-down" />
-            </span>
-          </Button>
-        </div>
-        <div hidden={!open()}>
-          <header class="k2b-detail-panel__section-header">
-            <DetailPanelSectionIcon icon={props.icon} tone={props.tone} />
-            <div class="k2b-detail-panel__section-copy">
-              <div class="k2b-detail-panel__section-heading">
-                <h3 id={headingId}>{props.title}</h3>
-                <SectionTitleMeta count={props.count} meta={props.meta} />
-              </div>
-              <Show when={props.description}>
-                <p class="k2b-detail-panel__section-description">{props.description}</p>
-              </Show>
-            </div>
-            <Button
-              ref={collapse}
-              variant="ghost"
-              size="sm"
-              class="k2b-detail-panel__section-toggle"
-              disabled={props.disabled}
-              aria-labelledby={headingId}
-              aria-expanded={true}
-              aria-controls={bodyId}
-              onClick={() => toggle(false)}
-            >
-              <i class="ti ti-chevron-up" aria-hidden="true" />
-            </Button>
-          </header>
-        </div>
-        <div ref={body} id={bodyId} hidden={!open()} class="k2b-detail-panel__section-body">
-          {resolved()}
-        </div>
-      </section>
-    </Show>
-  );
-};
-
+/**
+ * The panel for one selected object. Its topics are `Section`s; the panel frames them itself, so they stand flat
+ * inside it.
+ */
 const DetailPanel = ((props: DetailPanelProps): JSX.Element => (
   <div class={classNames("k2b-detail-panel", props.class)} data-surface={props.surface}>
-    {props.children}
+    <SectionFrameDefault.Provider value="none">{props.children}</SectionFrameDefault.Provider>
   </div>
 )) as DetailPanelComponent;
 
@@ -564,7 +395,6 @@ DetailPanel.Header = DetailPanelHeader;
 DetailPanel.Body = DetailPanelBody;
 DetailPanel.Summary = DetailPanelSummary;
 DetailPanel.Group = DetailPanelGroup;
-DetailPanel.Section = DetailPanelSection;
 DetailPanel.Action = DetailPanelAction;
 DetailPanel.Row = DetailPanelRow;
 

@@ -41,7 +41,8 @@ export const ActivityInput = z
     path: z.string().max(4096).optional(),
     scope: z.enum(["item", "folder"]).default("item"),
     q: z.string().trim().min(1).max(4096).optional(),
-    actor: z.uuid().optional(),
+    /** A person's user ID, or `me` for the caller's own changes; the reader resolves `me` from the request identity. */
+    actor: z.union([z.uuid(), z.literal("me")]).optional(),
     action: HistoryAction.optional(),
     from: z.iso.datetime({ offset: true }).optional(),
     to: z.iso.datetime({ offset: true }).optional(),

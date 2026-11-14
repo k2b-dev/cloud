@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 import { type FixtureOptions, uiDirectory, workspaceCss, workspaceDist, workspaceTree } from "../../test/workspace-host-fixture";
 
 declare global {
@@ -365,11 +365,11 @@ test("the current view stays inside the strip's scrollport when long labels do n
   }
 });
 
-test("a page at the app's root keeps its title beside the overlay sidebar's button", async () => {
+test("a page at the app's root shows no title beside the overlay sidebar's button", async () => {
   const page = await load({ head: { root: true } }, 1440, 834);
   try {
     expect(await page.locator(".k2b-app-workspace__head-toggle").isVisible()).toBe(true);
-    expect(await page.locator(".k2b-app-workspace__head .k2b-page-title").isVisible()).toBe(true);
+    expect(await page.locator(".k2b-app-workspace__head .k2b-page-title").isVisible()).toBe(false);
   } finally {
     await page.close();
   }
@@ -394,14 +394,14 @@ test("view, classic tab, and segment selection and hover never move neighbouring
   try {
     const before = await boxes(page, ".k2b-view-tabs__tab");
     expect(await boxes(other, ".k2b-view-tabs__tab")).toEqual(before);
-    await page.locator(".k2b-view-tabs__tab").nth(1).hover();
+    await hoverInPlace(page.locator(".k2b-view-tabs__tab").nth(1));
     await settled(page);
     expect(await boxes(page, ".k2b-view-tabs__tab")).toEqual(before);
     await page.evaluate(() => window.mountControls());
     await settled(page);
     for (const selector of ['[role="tab"]', '[role="radio"]']) {
       const initial = await boxes(page, selector);
-      await page.locator(selector).nth(1).hover();
+      await hoverInPlace(page.locator(selector).nth(1));
       await settled(page);
       expect(await boxes(page, selector)).toEqual(initial);
       await page.locator(selector).nth(1).click();

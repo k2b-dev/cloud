@@ -11,6 +11,7 @@ import type {
 import { validateNotificationTargetHref } from "../../contracts/notification-types";
 import { sql } from "../../runtime/clients";
 import { normalizeLocale } from "../../shared/locale";
+import { accountLockedSql } from "../account-lock";
 import { logger } from "../logging";
 import { encryptSecret } from "../secrets";
 import { ensureNotificationDefinition } from "./catalog";
@@ -109,27 +110,31 @@ const validatePresentation = (presentation: NotificationPresentation, appId: str
   };
 };
 
+/** A locked account receives nothing on any channel; the dispatcher checks again when a delivery goes out. */
 const resolveRecipient = async (
   recipient: { userId: string } | { email: string },
 ): Promise<{
   recipient: ResolvedNotificationRecipient;
   recipientKey: string;
+  locked: boolean;
 }> => {
   if ("userId" in recipient) {
-    const rows = await sql<{ id: string; mail: string | null }[]>`
-      SELECT id, btrim(mail) AS mail FROM auth.users WHERE id = ${recipient.userId}::uuid LIMIT 1
+    const rows = await sql<{ id: string; mail: string | null; locked: boolean }[]>`
+      SELECT u.id, btrim(u.mail) AS mail, ${accountLockedSql(sql`u.id`)} AS locked
+      FROM auth.users u WHERE u.id = ${recipient.userId}::uuid LIMIT 1
     `;
     const user = rows[0];
     if (!user) throw new Error("Notification recipient user was not found");
     return {
       recipient: { userId: user.id, email: user.mail?.trim().toLowerCase() || null },
       recipientKey: `user:${user.id}`,
+      locked: user.locked === true,
     };
   }
 
   const email = recipient.email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Notification recipient email is invalid");
-  return { recipient: { userId: null, email }, recipientKey: `email:${email}` };
+  return { recipient: { userId: null, email }, recipientKey: `email:${email}`, locked: false };
 };
 
 const preferredChannels = async (
@@ -279,10 +284,14 @@ export const sendTypedNotification = async <
   await ensureNotificationDefinition(definition);
 
   const excluded = new Set<string>(definition.delivery?.excluded ?? []);
-  const requiredChannels = unique([...(definition.delivery?.required ?? [])]).filter((channel) => !excluded.has(channel));
+  const requiredChannels = resolved.locked
+    ? []
+    : unique([...(definition.delivery?.required ?? [])]).filter((channel) => !excluded.has(channel));
   const requiredChannelSet = new Set<string>(requiredChannels);
   const preference = await preferredChannels(definition.id, resolved.recipient, definition.delivery?.recommended ?? []);
-  const preferred = preference.channels.filter((channel) => !requiredChannelSet.has(channel) && !excluded.has(channel));
+  const preferred = resolved.locked
+    ? []
+    : preference.channels.filter((channel) => !requiredChannelSet.has(channel) && !excluded.has(channel));
 
   const identity = await sql.begin(async (tx) => {
     const eventRows = await tx<{ id: string }[]>`
@@ -363,7 +372,20 @@ export const sendTypedNotification = async <
     )
   ).flat();
 
-  if (requiredPlans.length === 0 && preferredPlans.length === 0) {
+  if (resolved.locked) {
+    preferredPlans.push({
+      channel: "none",
+      endpointId: null,
+      destinationKey: "account-locked",
+      destinationLabel: "No delivery channel",
+      payloadEncrypted: null,
+      required: false,
+      routePriority: null,
+      status: "suppressed",
+      errorCode: "account_locked",
+      errorMessage: "The recipient's account is locked.",
+    });
+  } else if (requiredPlans.length === 0 && preferredPlans.length === 0) {
     preferredPlans.push({
       channel: "none",
       endpointId: null,

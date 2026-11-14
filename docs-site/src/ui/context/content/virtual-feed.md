@@ -7,9 +7,14 @@ while the reader is at the end, the feed stays there as items arrive and rows
 or the surrounding layout change size. A reader who scrolled up stays on the
 same item, to the pixel, whatever loads or grows around it.
 
+With `anchor="start"`, the same feed is a work list such as an inbox: it opens
+at the first item, loads more below, and never follows the end (see
+[Lists that start at the top](#lists-that-start-at-the-top)).
+
 The application owns the items, their order, paging, and every row's content.
 The component owns scrolling, measuring, the reading position, the "Jump to
-latest" overlay, and the feed semantics for assistive technology.
+latest" and "New above" overlays, and the feed semantics for assistive
+technology.
 
 For a conversation, render each item with
 [`MessageRow`](/en/ui/content/message-rows); its rows have their final height
@@ -90,8 +95,12 @@ mounted:
   `"start"`; `highlight` tints the item briefly. The item stays in place
   afterwards.
 - `scrollToEnd()` follows the end again. Call it after the reader sends an
-  item, so the item shows even while the feed still coasts from a fling.
-- `isAtEnd()` tells whether new items keep the feed at the end.
+  item, so the item shows even while the feed still coasts from a fling. With
+  `anchor="start"` it shows the last loaded item and follows nothing.
+- `scrollToStart()` shows the first loaded item, for example when the reader
+  opens the same list again.
+- `isAtEnd()` tells whether new items keep the feed at the end. It is always
+  `false` with `anchor="start"`.
 
 `onEndChange` reports when the reader reaches or leaves the end.
 
@@ -114,6 +123,16 @@ not seen yet and shows a "New" label above it; change the text with
 `markerLabel`. Both are part of their item's row. When one appears or goes
 away, the content of the item at the top of the view stays where it is.
 
+Set `stickySeparators` to keep the separator of the group in view at the top
+of the visible area until the next separator pushes it away. It stays also
+when its own item is far above and no longer rendered. The feed draws one
+copy of that separator over the rows, on the same pixels as the row's own, so
+the two never show at once; the copy is hidden from assistive technology,
+which reads the row's own separator. In a conversation the copy is a floating
+label that lets clicks through beside it; in a list that starts at the top it
+is an opaque group heading that takes clicks itself, so a click never reaches
+a row hidden under it.
+
 ### Jump to latest
 
 While the reader is away from the end, an overlay button "Jump to latest"
@@ -122,6 +141,39 @@ left the end; pass `newCount` to show your own number instead. Items are new
 when they come after the newest item the feed had loaded while no newer items
 existed. Pages of older history that `onLoadNewer` brings in after a jump do
 not count. The button overlays the feed, so it never changes the layout.
+
+### Lists that start at the top
+
+`anchor="start"` makes the feed a work list whose first item matters most,
+such as an inbox, receipts, or an activity log with the newest event first.
+Pass `items` in display order, first item first. Read once, when the feed is
+created.
+
+- The feed opens at the first item and never follows the end. Appended pages
+  and growing rows below keep what the reader sees in place.
+- `hasMore` and `onLoadMore` load the next page below, with the same meaning
+  as on `DataTable`: the feed calls `onLoadMore` when the reader nears the end
+  while `hasMore` is true, and appends nothing itself. The end of the list is
+  the shared [`LoadMore`](/en/ui/content/load-more) edge: "Load more" while
+  idle, "Loading more…" while the promise runs, and the error with "Try
+  again" when it rejects. A failed page waits for "Try again" instead of
+  retrying while the reader scrolls.
+- Items that arrive above the first loaded one, for example from a live
+  update, keep the reading position, also when the reader is at the very top:
+  a row the reader is about to click never moves. A "New above" button with
+  the number of new items appears at the top; it scrolls to the first item and
+  moves focus there. Reaching the start by scrolling counts the new items as
+  seen. The new items are announced in the `log` region ("3 new items
+  above"). Items that a new `items` array sorts in above the first known item,
+  such as a conversation that moved to the top, count as new above too.
+- A shorter or taller view keeps the item at its top in place.
+- `hasOlder`, `hasNewer`, `onLoadOlder`, `onLoadNewer`, `onLoadNewest`, and
+  `onEndChange` belong to feeds that open at the end; the types do not allow
+  them with `anchor="start"`.
+
+Rows fill the feed's width instead of the reading column, and separators read
+as the list's group headings. Combine with `stickySeparators` for headings
+that stay while their group scrolls.
 
 ### Long feeds
 
@@ -216,9 +268,11 @@ when you know them. Without `firstPosition`, positions are left out while
 `hasNewer` is set. The feed is `aria-busy` while `busy` is set or a page
 loads.
 
-One item is in the tab order, by default the newest visible one. Arrow keys
-and Page Up or Page Down move between items and scroll along, Ctrl+Home goes
-to the first loaded item, and Ctrl+End to the end. The focused item stays
+One item is in the tab order, by default the newest visible one, or the top
+visible one with `anchor="start"`. Arrow keys and Page Up or Page Down move
+between items and scroll along, Ctrl+Home goes to the first loaded item, and
+Ctrl+End to the end; a list that starts at the top goes to its last loaded
+item without following the end. The focused item stays
 mounted while the reader scrolls elsewhere in the laid-out window, so focus
 never falls back to the page. The scroll area itself is not a tab stop.
 
@@ -232,9 +286,18 @@ feed are dropped.
 
 ## Runtime
 
-The server renders the empty scroll area with its label; rows appear after
-mount, because they need the browser to measure them. Pass `empty` for
-content shown while `items` is empty.
+The server renders the items at the starting point without virtualization:
+the last items for a feed that opens at the end, the first items with
+`anchor="start"` or while `hasNewer` is set (the browser then opens at the
+first loaded item too), as many as fill about 1,600 px by their
+`estimateSize`. They
+sit in the normal flow, at the end of the scroll area or at its top, exactly
+where the browser places them. When the island mounts, the browser renders
+the same rows at the same pixels before it paints, so the server's picture is
+the first picture and nothing jumps. The scroll area cannot scroll until then.
+A sticky separator appears with the browser: on the server, the first item's
+own separator is in its place. Pass `empty` for content shown while `items` is
+empty.
 
 ## Example
 
@@ -262,4 +325,23 @@ let feed: VirtualFeedController | undefined;
   </VirtualFeed>
   <ReplyField />
 </div>;
+```
+
+A work list, newest first, with day headings that stay at the top and older
+pages below:
+
+```tsx
+<VirtualFeed
+  anchor="start"
+  items={rows()}
+  getKey={(row) => row.id}
+  estimateSize={(row) => (row.detail ? 58 : 50)}
+  label="Mailbox events"
+  separator={(row, previous) => (previous?.day === row.day ? undefined : row.day)}
+  stickySeparators
+  hasMore={Boolean(nextCursor())}
+  onLoadMore={loadOlderPage}
+>
+  {(row) => <EventRow row={row} />}
+</VirtualFeed>
 ```

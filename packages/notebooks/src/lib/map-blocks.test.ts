@@ -2,9 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { GeoDocumentSchema, serializeGeoDocument } from "@k2b/cloud/geo/document";
 import { renderNotebookBook } from "./book-renderer";
 import { fictionalMap, fictionalRouteMap } from "./map.test-fixture";
-import { mapLinkHref, notebookMapRevision, parseNotebookMapBlocks, renderNotebookMapFigure } from "./map-blocks";
+import { mapLinkHref, mapTileSummary, notebookMapRevision, parseNotebookMapBlocks, renderNotebookMapFigure } from "./map-blocks";
 
 describe("saved Notebook geo documents", () => {
+  test("the tile's pill names places by count and a route by distance, time and its stops", () => {
+    expect(mapTileSummary(fictionalMap(), "de")).toBe("4 Orte");
+    const route = fictionalRouteMap();
+    expect(mapTileSummary(route, "de")).toMatch(/^[\d,]+ km · .+ · A → B → C → D$/);
+    const long = {
+      ...route,
+      route: { ...route.route!, stops: [...route.route!.stops, ...route.route!.stops.map((stop) => ({ ...stop, id: `${stop.id}2` }))] },
+    };
+    expect(mapTileSummary(long, "de")).toMatch(/ · 8 Stopps$/);
+    expect(mapTileSummary({ ...fictionalMap(), pins: [] }, "en")).toBe("No pins yet.");
+  });
   test("round-trips genuine geo fields and the entire saved route without recalculation", () => {
     const document = fictionalRouteMap();
     const markdown = serializeGeoDocument(document);

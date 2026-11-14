@@ -180,7 +180,19 @@ const buildProfileUpdate = (flags: ProfileUpdateFlags) => {
 const getCurrentUser = (ctx: CloudCliContext): Promise<User> => readApi<User>(ctx, "/");
 
 const updateProfile = async (ctx: CloudCliContext, data: unknown) => {
-  const result = await readApi<{ message: string }>(ctx, "/", jsonRequest("PATCH", data));
+  const response = await ctx.fetch(apiPath("/"), jsonRequest("PATCH", data));
+  if (response.status === 403) {
+    // SSH key changes need a confirmed browser sign-in, like new API keys and passkeys.
+    const body: unknown = await response
+      .clone()
+      .json()
+      .catch(() => null);
+    const code = body && typeof body === "object" && "code" in body ? body.code : null;
+    const href = new URL("/me", ctx.options.server).href;
+    if (code === "BROWSER_SIGN_IN_REQUIRED") throw new Error(`Change SSH keys in the browser: ${href}`);
+    if (code === "REAUTHENTICATE") throw new Error(`Sign in again in the browser, then change the SSH keys: ${href}`);
+  }
+  const result = await ctx.readJson<{ message: string }>(response);
   if (ctx.options.output === "json") ctx.json(result);
   else ctx.print(result.message);
 };

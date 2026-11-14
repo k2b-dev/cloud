@@ -13,6 +13,7 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import type { MailboxPageData } from "../service/workspace";
+import { mailTestRow } from "./_components/mail-list-test-fixtures";
 
 // Load once outside any test, so the cold Solid transform of the workspace's source graph does not count against the
 // 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
@@ -41,6 +42,7 @@ const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
+  workspacePreference: { listShare: null, seenHints: [] },
   viewPreference: { large: "auto", phone: "compact" },
   doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
@@ -54,6 +56,7 @@ const data: MailboxPageData = {
     searchBackend: "auto",
     automaticReplyManagementPermission: "admin",
     accessScope: "mailbox",
+    draftEditMode: "lock",
     composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
     createdAt: now,
     updatedAt: now,
@@ -217,7 +220,7 @@ describe("Mail workspace live updates", () => {
     dom.cleanup();
   });
 
-  const mount = async (path = `/app/mail/${MAILBOX_ID}`) => {
+  const mount = async (path = `/app/mail/${MAILBOX_ID}`, pageData = data) => {
     const {
       readThemeFromCookieHeader,
       DEFAULT_MAIL_CONTACT_DIRECTORY,
@@ -229,7 +232,7 @@ describe("Mail workspace live updates", () => {
     dispose = render(
       () =>
         createComponent(MailWorkspace, {
-          data,
+          data: pageData,
           requestPath: path,
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
@@ -302,6 +305,46 @@ describe("Mail workspace live updates", () => {
     await settle();
     expect(workspaceRequests).toBe(3);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  test("new mail refreshes the list in the background without dimming it", async () => {
+    const withRow = { ...data, listItems: [mailTestRow("Conv01", { subject: "Quarterly figures" })] };
+    let answerRefresh = () => {};
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (!url.includes("/workspace-route")) return Response.json({});
+        workspaceRequests += 1;
+        await new Promise<void>((resolve) => {
+          answerRefresh = resolve;
+        });
+        return Response.json(withRow);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await mount(undefined, withRow);
+    socket().open();
+    socket().message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+    await settle();
+
+    const list = () => dom.root.querySelector<HTMLElement>('[data-mail-conversation-list] [role="list"]');
+    const dimmed = () => {
+      for (let node = list(); node && node !== dom.root; node = node.parentElement) {
+        if (node.style.opacity || node.style.filter) return true;
+      }
+      return false;
+    };
+    expect(list()?.textContent).toContain("Quarterly figures");
+
+    event("1", "s6t.mail.5", "Conv01");
+    await settle();
+    expect(workspaceRequests).toBe(1);
+    expect(list()?.textContent).toContain("Quarterly figures");
+    expect(dimmed()).toBe(false);
+
+    answerRefresh();
+    await settle();
+    expect(dimmed()).toBe(false);
   });
 
   test("the subscription dialog shares the page's socket, and the view catches up once the dialog closes", async () => {

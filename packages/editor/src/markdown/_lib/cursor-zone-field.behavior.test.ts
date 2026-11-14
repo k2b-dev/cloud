@@ -1,12 +1,18 @@
 import { describe, expect, jest, test } from "bun:test";
 import { forceParsing } from "@codemirror/language";
-import { EditorSelection, EditorState } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { markdownExtension } from "../markdown";
 import { markupExtension } from "../markup";
-import { pointerSelectionHeld, pointerSelectionMarkdownRefreshExtension, refreshMarkdownDecorationsEffect } from "./cursor-zone-field";
+import {
+  markdownEditorFocused,
+  placeMarkdownCaret,
+  pointerSelectionHeld,
+  pointerSelectionMarkdownRefreshExtension,
+  refreshMarkdownDecorationsEffect,
+} from "./cursor-zone-field";
 
 const pointer = (target: EventTarget, type: string, pointerType = "mouse", button = 0) => {
   const event = new Event(type, { bubbles: true });
@@ -29,6 +35,9 @@ const mount = async () => {
   forceParsing(view, text.length, 5000);
   view.dispatch({ effects: refreshMarkdownDecorationsEffect.of() });
   jest.useFakeTimers();
+  // A press in the editor focuses it; CodeMirror reports the focus after 10 ms.
+  view.focus();
+  jest.advanceTimersByTime(10);
   return {
     view,
     cleanup: () => {
@@ -94,6 +103,139 @@ describe("pointer decoration refresh", () => {
       expect(view.state.field(pointerSelectionHeld)).toBe(true);
     } finally {
       cleanup();
+    }
+  });
+});
+
+describe("Markdown source follows focus", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  // A note opens with CodeMirror's default selection at its start, which is the title line. Nobody placed it there.
+  const open = async (extensions: Extension[] = []) => {
+    const dom = createDomTestHarness();
+    const { linksExtension } = await import("../links");
+    const text = "# Title with **bold** and [link](https://example.com)\n\nBody";
+    const view = new EditorView({
+      parent: dom.root,
+      state: EditorState.create({
+        doc: text,
+        extensions: [markdownExtension(), markupExtension(), linksExtension(), ...extensions],
+      }),
+    });
+    forceParsing(view, text.length, 5000);
+    view.dispatch({ effects: refreshMarkdownDecorationsEffect.of() });
+    jest.useFakeTimers();
+    return {
+      view,
+      cleanup: () => {
+        view.destroy();
+        dom.cleanup();
+        jest.useRealTimers();
+      },
+    };
+  };
+
+  test("a note shows no marker until the person acts in it, and blur renders the block again", async () => {
+    const { view, cleanup } = await open();
+    try {
+      expect(view.state.selection.main.head).toBe(0);
+      expect(view.contentDOM.textContent).toBe("Title with bold and linkBody");
+      expect(view.state.field(markdownEditorFocused)).toBe(false);
+
+      // The app focuses the note when it opens, so the person can type right away: that alone reveals nothing.
+      view.focus();
+      jest.advanceTimersByTime(10);
+      view.dispatch({ selection: { anchor: 0 }, scrollIntoView: true });
+      expect(view.state.field(markdownEditorFocused)).toBe(false);
+      expect(view.contentDOM.textContent).toBe("Title with bold and linkBody");
+
+      // A key that moves the caret is the person's own act.
+      view.dispatch({ selection: { anchor: 1 }, userEvent: "select" });
+      expect(view.state.field(markdownEditorFocused)).toBe(true);
+      expect(view.contentDOM.textContent).toBe("# Title with bold and linkBody");
+      view.dispatch({ selection: { anchor: 16 }, userEvent: "select" });
+      expect(view.contentDOM.textContent).toBe("# Title with **bold** and linkBody");
+
+      // Focus moves to another field: nothing is being edited, so the block renders again.
+      view.contentDOM.blur();
+      jest.advanceTimersByTime(10);
+      expect(view.state.field(markdownEditorFocused)).toBe(false);
+      expect(view.contentDOM.textContent).toBe("Title with bold and linkBody");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("taking focus adds no transaction of its own, so focus listeners such as table cells see a plain focus update", async () => {
+    const updates: Array<{ transactions: number; focusChanged: boolean }> = [];
+    const { view, cleanup } = await open([
+      EditorView.updateListener.of((update) => {
+        if (update.focusChanged) updates.push({ transactions: update.transactions.length, focusChanged: true });
+      }),
+    ]);
+    try {
+      view.focus();
+      jest.advanceTimersByTime(10);
+      expect(updates).toEqual([{ transactions: 0, focusChanged: true }]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("a control places the caret in an editor that cannot take focus", async () => {
+    const { view, cleanup } = await open([EditorView.editable.of(false)]);
+    try {
+      view.dispatch({ selection: { anchor: 16 }, effects: placeMarkdownCaret.of() });
+      expect(view.contentDOM.textContent).toBe("# Title with **bold** and linkBody");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("a press that focuses the editor reveals the source after its release, not under the pointer", async () => {
+    const { view, cleanup } = await open([pointerSelectionMarkdownRefreshExtension()]);
+    try {
+      pointer(view.contentDOM, "pointerdown");
+      view.dispatch({ selection: { anchor: 3 }, userEvent: "select.pointer" });
+      view.focus();
+      jest.advanceTimersByTime(10);
+      expect(view.contentDOM.textContent).toBe("Title with bold and linkBody");
+      // Other rebuilds during the press, such as an edit by someone else, still reveal nothing under the pointer.
+      view.dispatch({ changes: { from: view.state.doc.length, insert: "!" } });
+      expect(view.contentDOM.textContent).toBe("Title with bold and linkBody!");
+      pointer(document, "pointerup");
+      jest.advanceTimersByTime(0);
+      expect(view.state.field(markdownEditorFocused)).toBe(true);
+      expect(view.contentDOM.textContent).toBe("# Title with bold and linkBody!");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("decorations added to an editor that already has focus reveal the caret's block once the person acts", async () => {
+    const dom = createDomTestHarness();
+    const rich = new Compartment();
+    const text = "# Title\n\nBody";
+    const view = new EditorView({
+      parent: dom.root,
+      state: EditorState.create({ doc: text, extensions: [markdownExtension(), rich.of([])] }),
+    });
+    try {
+      view.focus();
+      await Bun.sleep(20);
+      // A note switches from its source view to its rich view while the person keeps typing.
+      view.dispatch({ effects: rich.reconfigure(markupExtension()) });
+      forceParsing(view, text.length, 5000);
+      expect(view.contentDOM.textContent).toBe("TitleBody");
+      view.dispatch({ changes: { from: 7, insert: "s" }, selection: { anchor: 8 }, userEvent: "input.type" });
+      expect(view.state.field(markdownEditorFocused)).toBe(true);
+      expect(view.contentDOM.textContent).toBe("# TitlesBody");
+    } finally {
+      view.destroy();
+      dom.cleanup();
     }
   });
 });

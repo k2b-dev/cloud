@@ -4,12 +4,11 @@ import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { RemoteMessagePrecondition } from "../contracts";
+import { projectMailMessagePrecondition } from "./command-message-state";
 import {
   loadIncomingAutomationSiblingTransitions,
-  mailMessageStatePayloadTransitions,
   mailWorkflowConversationLinkView,
   mailWorkflowMessagePrecondition,
-  projectMailWorkflowMessagePrecondition,
 } from "./workflow-message-preconditions";
 import {
   applyMailMessageTransition,
@@ -49,14 +48,14 @@ describe("Mail workflow message preconditions", () => {
 test("projects only successful own transitions and keeps the first provider precondition intact", () => {
   const frozen: RemoteMessagePrecondition = { modseq: "42", flags: ["answered"], keywords: ["Review", "Unrelated"] };
   const message = { flags: ["\\Answered", "recent"], keywords: ["Review", "Unrelated"] };
-  expect(projectMailWorkflowMessagePrecondition(frozen, mailWorkflowMessageStateTransitions(message))).toBe(frozen);
+  expect(projectMailMessagePrecondition(frozen, mailWorkflowMessageStateTransitions(message))).toBe(frozen);
   expect(applyMailMessageTransition(message, "addKeyword", "REVIEW")).toBe(false);
-  expect(projectMailWorkflowMessagePrecondition(frozen, mailWorkflowMessageStateTransitions(message))).toBe(frozen);
+  expect(projectMailMessagePrecondition(frozen, mailWorkflowMessageStateTransitions(message))).toBe(frozen);
   applyMailMessageTransition(message, "addFlag", "seen");
   applyMailMessageTransition(message, "removeFlag", "\\Answered");
   applyMailMessageTransition(message, "removeKeyword", "review");
   applyMailMessageTransition(message, "addKeyword", "Sorted");
-  expect(projectMailWorkflowMessagePrecondition(frozen, mailWorkflowMessageStateTransitions(message))).toEqual({
+  expect(projectMailMessagePrecondition(frozen, mailWorkflowMessageStateTransitions(message))).toEqual({
     modseq: undefined,
     flags: ["seen"],
     keywords: ["Unrelated", "Sorted"],
@@ -68,14 +67,12 @@ test("drops modseq even after own changes cancel each other and preserves omitte
   const message = { flags: [], keywords: [] };
   applyMailMessageTransition(message, "addFlag", "seen");
   applyMailMessageTransition(message, "removeFlag", "seen");
-  expect(
-    projectMailWorkflowMessagePrecondition({ modseq: "42", flags: [], keywords: [] }, mailWorkflowMessageStateTransitions(message)),
-  ).toEqual({
+  expect(projectMailMessagePrecondition({ modseq: "42", flags: [], keywords: [] }, mailWorkflowMessageStateTransitions(message))).toEqual({
     modseq: undefined,
     flags: [],
     keywords: [],
   });
-  expect(projectMailWorkflowMessagePrecondition({ modseq: null }, mailWorkflowMessageStateTransitions(message))).toEqual({
+  expect(projectMailMessagePrecondition({ modseq: null }, mailWorkflowMessageStateTransitions(message))).toEqual({
     modseq: undefined,
   });
 });
@@ -97,7 +94,7 @@ test("replayed completed actions restore provider expectations before the next a
     { state: "completed", output: { action: "addFlag", applied: true, value: "seen" } },
   );
   expect(
-    projectMailWorkflowMessagePrecondition({ modseq: "42", flags: [], keywords: ["keep"] }, mailWorkflowMessageStateTransitions(message)),
+    projectMailMessagePrecondition({ modseq: "42", flags: [], keywords: ["keep"] }, mailWorkflowMessageStateTransitions(message)),
   ).toEqual({
     modseq: undefined,
     flags: ["seen"],
@@ -137,58 +134,13 @@ test("restored message aliases use the canonical target projection across action
   // A later condition on the alias sees the same state as one on the input.
   expect(alias.flags).toEqual(["seen"]);
   expect(canonical.flags).toEqual(["seen"]);
-  expect(
-    projectMailWorkflowMessagePrecondition({ modseq: "42", flags: [], keywords: [] }, mailWorkflowMessageStateTransitions(canonical)),
-  ).toEqual({
-    modseq: undefined,
-    flags: ["seen"],
-    keywords: [],
-  });
-});
-
-test("converts confirmed state payloads in provider operation order", () => {
-  expect(
-    mailMessageStatePayloadTransitions({
-      addFlags: ["seen", "answered"],
-      removeFlags: ["flagged"],
-      addKeywords: ["alpha", "beta"],
-      removeKeywords: ["review"],
-    }),
-  ).toEqual([
-    { field: "flags", add: true, value: "seen" },
-    { field: "flags", add: true, value: "answered" },
-    { field: "flags", add: false, value: "flagged" },
-    { field: "keywords", add: true, value: "alpha" },
-    { field: "keywords", add: true, value: "beta" },
-    { field: "keywords", add: false, value: "review" },
-  ]);
-});
-
-test("retains modseq without sibling writes and drops it only when a transition applies", () => {
-  const frozen: RemoteMessagePrecondition = { modseq: "42", flags: [], keywords: [] };
-  expect(
-    projectMailWorkflowMessagePrecondition(
-      frozen,
-      mailMessageStatePayloadTransitions({
-        addFlags: [],
-        removeFlags: [],
-        addKeywords: [],
-        removeKeywords: [],
-      }),
-    ),
-  ).toBe(frozen);
-  expect(
-    projectMailWorkflowMessagePrecondition(
-      frozen,
-      mailMessageStatePayloadTransitions({
-        addFlags: ["seen"],
-        removeFlags: [],
-        addKeywords: ["alpha"],
-        removeKeywords: [],
-      }),
-    ),
-  ).toEqual({ modseq: undefined, flags: ["seen"], keywords: ["alpha"] });
-  expect(frozen).toEqual({ modseq: "42", flags: [], keywords: [] });
+  expect(projectMailMessagePrecondition({ modseq: "42", flags: [], keywords: [] }, mailWorkflowMessageStateTransitions(canonical))).toEqual(
+    {
+      modseq: undefined,
+      flags: ["seen"],
+      keywords: [],
+    },
+  );
 });
 
 describe("incoming automation sibling transition loading", () => {

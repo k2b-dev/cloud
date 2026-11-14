@@ -1,5 +1,5 @@
 import { type InfiniteQueryResult, query } from "@k2b/stdlib/solid";
-import { Button, DetailPanel, prompts, Skeleton, toast, useLocale } from "@k2b/ui";
+import { Button, DetailPanel, prompts, Section, Skeleton, toast, useLocale } from "@k2b/ui";
 import { type Accessor, createMemo, createSignal, For, Match, mapArray, Show, Switch } from "solid-js";
 import type { ShareAccessCounts, ShareAccessPeriod } from "../activity-contracts";
 import type { ShareView } from "../contracts";
@@ -91,7 +91,7 @@ export default function ShareHistory(props: ShareHistoryProps) {
   return (
     <Show when={props.shares.length > 0}>
       <DetailPanel.Group label={h().publicLink}>
-        <DetailPanel.Section title={h().publicLink} icon="ti ti-world" tone="neutral" count={props.shares.length}>
+        <Section title={h().publicLink} icon="ti ti-world" tone="neutral" count={props.shares.length}>
           <div class="filesv2-share-history">
             <For each={props.shares}>
               {(item) => (
@@ -107,7 +107,7 @@ export default function ShareHistory(props: ShareHistoryProps) {
               )}
             </For>
           </div>
-        </DetailPanel.Section>
+        </Section>
       </DetailPanel.Group>
     </Show>
   );
@@ -158,10 +158,10 @@ function ShareFacts(props: {
     if (!cursor || moreLoading()) return;
     const key = source();
     setMoreLoading(true);
-    setMoreFailed(false);
     try {
       const page = await props.load({ shareId: props.share.id, networkAfter: cursor }, new AbortController().signal);
       if (key !== source()) return;
+      setMoreFailed(false);
       setMore({ source: key, items: [...(extra()?.items ?? []), ...page.networks.items], next: page.networks.next });
     } catch {
       if (key === source()) setMoreFailed(true);
@@ -263,8 +263,9 @@ function ShareFacts(props: {
                   </Button>
                 </Show>
                 <Show when={expanded() && (next() || moreFailed())}>
-                  <Button size="xs" variant="text" class="filesv2-history-link" loading={moreLoading()} onClick={() => void loadMore()}>
+                  <Button size="xs" variant="link" loading={moreLoading()} onClick={() => void loadMore()}>
                     {moreFailed() ? h().retry : h().loadMoreNetworks}
+                    <i class={moreFailed() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
                   </Button>
                 </Show>
                 <Show when={moreFailed()}>

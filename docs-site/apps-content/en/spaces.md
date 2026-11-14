@@ -780,3 +780,19 @@ declares `item` inside `space`, lists authorized containers through
 Activity accepts `container` alongside the published `space` alias; when
 both are supplied they must identify the same space. The existing list
 and activity results remain compatible.
+
+## Connect automations to a Space
+
+Automations can react when someone adds a comment, changes an item's assignees,
+deadline or status, or when an open task becomes due. These events identify the
+item or comment and its Space; content is read through authorized capabilities.
+Current read access to the Space is checked before delivery. Due events fire when
+the due time is reached after the installation's first successful due sweep;
+there are no events for tasks that were already overdue at that first sweep. Moving a deadline into
+the future allows an event when that new due time is reached.
+
+With the required mandate and current write access, an automation can add
+comments and set item tags without a separate prompt. Assignee changes still
+require confirmation. See [Spaces task writes](/en/docs/reference/spaces-task-mutations#use-actions-from-background-work)
+and [resource events](/en/docs/platform/app-events#built-in-resource-events)
+for the exact policies, due-time rules and delivery limits.

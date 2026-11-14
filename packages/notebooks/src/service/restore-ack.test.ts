@@ -4,7 +4,7 @@ import * as Y from "yjs";
 
 // SQL and module fixtures stay in a subprocess, outside other suites' graphs.
 if (process.env.NOTEBOOKS_RESTORE_ACK_CHILD !== "1") {
-  test("restore and receipts validate and replay under the same row lock", async () => {
+  test("restore markers order replacement before legacy delivery validation", async () => {
     const child = Bun.spawn([process.execPath, "test", import.meta.path], {
       env: { ...process.env, NOTEBOOKS_RESTORE_ACK_CHILD: "1" },
       stdout: "pipe",
@@ -140,6 +140,15 @@ if (process.env.NOTEBOOKS_RESTORE_ACK_CHILD !== "1") {
       expect(lockKind).toBe("exclusive");
       return events.at(-1)?.cursor ?? null;
     },
+    publish: async (input: { expectedAfter: string | null; data: SharedTextSyncEvent }) => {
+      expect(lockKind).toBe("exclusive");
+      expect(writes).toBe(0);
+      expect(input.expectedAfter).toBe(events.at(-1)?.cursor ?? null);
+      expect(input.data).toMatchObject({ kind: "freeze", restoreRevision: "1", payload: "" });
+      const cursor = `s6t.fixture.${events.length + 1}`;
+      events.push({ cursor, data: input.data });
+      return { cursor };
+    },
     cursorSequence: (cursor: string) => Number(cursor.split(".").at(-1)),
   };
   mock.module("./yjs-sync", () => ({
@@ -171,6 +180,7 @@ if (process.env.NOTEBOOKS_RESTORE_ACK_CHILD !== "1") {
     expect(row?.content_md).toBe("TOKEN");
     expect(row?.yjs_restore_revision).toBe("1");
     expect(versions).toBe(1);
+    expect(events.at(-1)?.data).toMatchObject({ kind: "freeze", restoreRevision: "1" });
     let sent = 0;
     expect(
       await notes.deliverAtRestoreRevision({

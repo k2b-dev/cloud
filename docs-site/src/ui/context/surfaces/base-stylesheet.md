@@ -65,7 +65,7 @@ instead of fixed colors or `prefers-color-scheme`.
 | Feedback | `role="alert"` is an error surface and hidden while empty. `role="status"` is muted text without a surface. `<output>` keeps the text color, because it holds a result the reader needs, and uses tabular numbers. `data-tone` (`info`, `success`, `warning`, `danger`) colors the surface of alerts and the text of status messages and outputs. |
 | Navigation | Buttons or links in a `<nav>` are tabs or filters; `aria-pressed`, `aria-current`, or `aria-selected` marks the active one. |
 | Disclosure and dialog | `details` shows a chevron. `dialog` is the only floating surface; `showModal()` opens it centered. A `footer` or `menu` inside it aligns its buttons at the end. |
-| Charts | An `@k2b/stdlib` chart uses the chart tokens in the markup that [Charts](#charts) describes. |
+| Charts | An `@k2b/ui/charts/core` drawing uses the chart tokens in the markup that [Charts](#charts) describes. |
 
 ## Helper classes
 
@@ -86,7 +86,7 @@ add up.
 
 ## Charts
 
-The SVG of an `@k2b/stdlib` chart takes the chart tokens and colors inside
+The SVG of an `@k2b/ui/charts/core` chart takes the chart tokens and colors inside
 the wrapper markup of the `Chart` component:
 
 ```html

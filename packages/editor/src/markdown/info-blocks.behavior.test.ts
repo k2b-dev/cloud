@@ -3,6 +3,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { markdownEditorFocused } from "./_lib/cursor-zone-field";
 
 const doc = "Intro\n\n:::warning\nBack up **first**.\n:::\n\nOutro";
 
@@ -12,7 +13,12 @@ const mount = async (anchor: number, source = doc) => {
   const { infoBlocksExtension } = await import("./info-blocks");
   const view = new EditorView({
     parent: dom.root,
-    state: EditorState.create({ doc: source, selection: { anchor }, extensions: [infoBlocksExtension("de")] }),
+    // The person put the caret at `anchor`.
+    state: EditorState.create({
+      doc: source,
+      selection: { anchor },
+      extensions: [markdownEditorFocused.init(() => true), infoBlocksExtension("de")],
+    }),
   });
   return {
     view,

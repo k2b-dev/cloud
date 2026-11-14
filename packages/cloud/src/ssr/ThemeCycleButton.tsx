@@ -1,4 +1,4 @@
-import { Button, type ButtonSize, type ButtonVariant } from "@k2b/ui";
+import { Button, type ButtonSize, type ButtonVariant, IconButton } from "@k2b/ui";
 import { type createPreferenceController, THEME_CYCLE } from "./preference-controller";
 
 type Props = {
@@ -7,6 +7,8 @@ type Props = {
   size?: ButtonSize;
   /** Shows only the icon below `md`; the accessible name still states the choice. */
   compact?: boolean;
+  /** Shows only the icon at every width; its tooltip and accessible name state the choice and the next one. */
+  iconOnly?: boolean;
 };
 
 /**
@@ -20,24 +22,37 @@ export function ThemeCycleButton(props: Props) {
 
   return (
     <>
-      <Button
-        type="button"
-        class="cloud-theme-cycle"
-        variant={props.variant}
-        size={props.size}
-        aria-label={props.preferences.themeCycleLabel()}
-        onClick={props.preferences.cycleTheme}
-      >
-        <i class={current().icon} aria-hidden="true" />
-        <span
-          class="cloud-theme-cycle__label"
-          data-compact={props.compact ? "true" : undefined}
-          data-reserve-a={otherLabels()[0]}
-          data-reserve-b={otherLabels()[1]}
+      {props.iconOnly ? (
+        <IconButton
+          type="button"
+          class="cloud-theme-cycle"
+          variant={props.variant}
+          size={props.size}
+          label={props.preferences.themeCycleLabel()}
+          onClick={props.preferences.cycleTheme}
         >
-          <span>{current().label}</span>
-        </span>
-      </Button>
+          <i class={current().icon} aria-hidden="true" />
+        </IconButton>
+      ) : (
+        <Button
+          type="button"
+          class="cloud-theme-cycle"
+          variant={props.variant}
+          size={props.size}
+          aria-label={props.preferences.themeCycleLabel()}
+          onClick={props.preferences.cycleTheme}
+        >
+          <i class={current().icon} aria-hidden="true" />
+          <span
+            class="cloud-theme-cycle__label"
+            data-compact={props.compact ? "true" : undefined}
+            data-reserve-a={otherLabels()[0]}
+            data-reserve-b={otherLabels()[1]}
+          >
+            <span>{current().label}</span>
+          </span>
+        </Button>
+      )}
       <span class="sr-only" aria-live="polite">
         {props.preferences.themeAnnouncement()}
       </span>

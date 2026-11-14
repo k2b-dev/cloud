@@ -16,6 +16,7 @@ import type { JobContext, JobFailureDecision, Worker } from "@k2b/sync";
 import { publishMessageReceived } from "../app-events";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
+import { buildRuntimeHistoryIndexes } from "../migrate";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
 import { isStorableMessageAddress, normalizeEmailAddress } from "./address-normalization";
 import { cleanupPublicAttachmentLinks } from "./attachment-links";
@@ -28,6 +29,8 @@ import { closeReusableImapSessions } from "./connectors/imap-smtp";
 import { keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { isAutomaticSubmission } from "./conversation-work-state";
 import { databaseErrorCode, databaseErrorConstraint, databaseErrorFacts, isPermanentDataError } from "./database-errors";
+import { retryPendingDraftSendCloses } from "./draft-document-send";
+import { draftDocumentSnapshots } from "./draft-document-snapshots";
 import {
   enqueueDraftImports,
   enqueueDraftProjectionSnapshot,
@@ -88,6 +91,7 @@ import { captureMailWorkflowEffectOrder } from "./workflow-effect-order";
 
 const log = logger("mail:sync");
 const ENVELOPE_BATCH_SIZE = 200;
+const AUTOMATIC_CONVERSATION_CANDIDATES = 10;
 const FLAG_WINDOW_SIZE = 5_000;
 const RECONCILE_WINDOW_SIZE = 5_000;
 const HYDRATION_BATCH_SIZE = 20;
@@ -229,7 +233,7 @@ const initialCursor = (uidValidity: string, currentHighUid: number, highestModse
 // makes it active again. `pending`, `paused`, and `connection_required` stay
 // excluded, and the mailbox and binding checks still fence pause, credential
 // changes, and revocation.
-// `folderId` names the folder a sync run imports, so a requested sync can tell when it ran.
+// `folderId` names the folder in diagnostic history. Empty completed runs are removed at commit.
 export const claimFence = async (
   resourceId: string,
   bindingId: string,
@@ -285,6 +289,14 @@ export const claimFence = async (
     return { token: Number(resource.token), generation: Number(resource.generation), runId: run.id };
   });
 
+// RFC 5322 caps a header line at 998 characters. Counted in bytes, the lowercased value also
+// fits a Postgres B-tree entry (at most 2704 bytes) in message_contents_message_id_idx.
+const MESSAGE_ID_MAX_BYTES = 998;
+
+const replyMessageIds = (message: ConnectorEnvelope): string[] => [
+  ...new Set([message.inReplyTo, ...message.references].filter((value): value is string => Boolean(value))),
+];
+
 const allParticipantEmails = (message: ConnectorEnvelope): string[] => [
   ...new Set(
     Object.values(message.addresses)
@@ -300,6 +312,134 @@ const storedAddress = (address: string): string => normalizeEmailAddress(address
 const senderSet = (message: ConnectorEnvelope): string[] => [
   ...new Set(message.addresses.from.map((address) => storedAddress(address.address))),
 ];
+
+/** Checks stored thread membership, independent of how the automatic candidate was found. */
+const getAutomaticConversationAdmission = async (params: {
+  db: typeof sql;
+  mailboxId: string;
+  conversationId: string;
+  messageId: string;
+  normalizedSubject: string;
+  message: ConnectorEnvelope;
+  mailboxAddresses: string[];
+  fromMailbox: boolean;
+}): Promise<"participant" | "list" | null> => {
+  const parentIds = replyMessageIds(params.message).map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES).toLowerCase());
+  const senders = senderSet(params.message);
+  if (senders.length === 0) return null;
+  const list = parseMessageProtocolFacts(params.message.protocolFacts).list;
+  const rawListId = list.id;
+  const listId = (rawListId?.match(/<([^<>]+)>/)?.[1] ?? rawListId)?.trim().toLowerCase() || null;
+  const postingAddresses = [
+    ...new Set(
+      list.post.flatMap((link) => {
+        const address = link.match(/^mailto:([^?]+)/i)?.[1];
+        const normalized = address ? normalizeEmailAddress(address) : null;
+        return normalized && !params.mailboxAddresses.includes(normalized) ? [normalized] : [];
+      }),
+    ),
+  ];
+  const incomingId = params.message.messageId?.toLowerCase() ?? null;
+  const storedIncomingId = incomingId ? truncateUtf8(incomingId, MESSAGE_ID_MAX_BYTES) : null;
+  const [eligible] = await params.db<{ admission: "participant" | "list" }[]>`
+    SELECT CASE WHEN own_reply.id IS NOT NULL OR ${params.fromMailbox} OR participant.known
+      THEN 'participant' ELSE 'list' END AS admission
+    FROM mail.conversations conversation
+    LEFT JOIN LATERAL (
+      -- An own sent reply can establish a previously unseen original during newest-first sync.
+      SELECT prior.id
+      FROM mail.conversation_messages link
+      JOIN mail.message_contents prior ON prior.id = link.message_id
+      WHERE link.conversation_id = conversation.id
+        AND prior.mailbox_id = conversation.mailbox_id
+        AND prior.id <> ${params.messageId}::uuid
+        AND lower(prior.in_reply_to) = ${incomingId}
+        AND ${Boolean(params.normalizedSubject)} AND prior.normalized_subject = ${params.normalizedSubject}
+        AND EXISTS (SELECT 1 FROM mail.message_addresses sender WHERE sender.message_id = prior.id AND sender.role = 'from')
+        AND NOT EXISTS (
+          SELECT 1 FROM mail.message_addresses sender WHERE sender.message_id = prior.id AND sender.role = 'from'
+            AND NOT (sender.normalized_email = ANY(${toPgTextArray(params.mailboxAddresses)}::text[]))
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM mail.message_contents original
+          WHERE original.mailbox_id = conversation.mailbox_id AND original.id <> ${params.messageId}::uuid
+            AND lower(original.message_id) = ${storedIncomingId}
+        )
+      LIMIT 1
+    ) own_reply ON true
+    LEFT JOIN LATERAL (
+      SELECT NOT EXISTS (
+          SELECT 1 FROM unnest(${toPgTextArray(senders)}::text[]) sender(email)
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM mail.conversation_messages link
+            JOIN mail.message_contents prior ON prior.id = link.message_id
+            JOIN mail.message_addresses address ON address.message_id = prior.id
+            WHERE link.conversation_id = conversation.id
+              AND prior.mailbox_id = conversation.mailbox_id
+              AND prior.id <> ${params.messageId}::uuid
+              AND link.added_by <> 'list'
+              AND address.normalized_email = sender.email
+              AND NOT (address.normalized_email = ANY(${toPgTextArray(params.mailboxAddresses)}::text[]))
+              AND (
+                address.role IN ('from', 'to', 'cc', 'reply_to')
+                OR (
+                  address.role = 'bcc'
+                  AND EXISTS (SELECT 1 FROM mail.message_addresses own_sender WHERE own_sender.message_id = prior.id AND own_sender.role = 'from')
+                  AND NOT EXISTS (
+                    SELECT 1 FROM mail.message_addresses own_sender
+                    WHERE own_sender.message_id = prior.id AND own_sender.role = 'from'
+                      AND NOT (own_sender.normalized_email = ANY(${toPgTextArray(params.mailboxAddresses)}::text[]))
+                  )
+                )
+              )
+          )
+        ) AS known
+    ) participant ON true
+    WHERE conversation.id = ${params.conversationId}::uuid
+      AND conversation.mailbox_id = ${params.mailboxId}::uuid
+      AND (own_reply.id IS NOT NULL OR EXISTS (
+        SELECT 1
+        FROM mail.conversation_messages link
+        JOIN mail.message_contents message ON message.id = link.message_id
+        WHERE link.conversation_id = conversation.id
+          AND message.mailbox_id = conversation.mailbox_id
+          AND message.id <> ${params.messageId}::uuid
+          AND (
+            lower(message.message_id) = ANY(${toPgTextArray(parentIds)}::text[])
+            OR (${params.message.providerThreadId}::text IS NOT NULL AND message.provider_thread_id = ${params.message.providerThreadId})
+            OR (${Boolean(params.normalizedSubject)} AND message.normalized_subject = ${params.normalizedSubject})
+          )
+      ))
+      AND (
+        own_reply.id IS NOT NULL
+        OR ${params.fromMailbox}
+        OR (
+          ${listId}::text IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM mail.conversation_messages link
+            JOIN mail.message_contents prior ON prior.id = link.message_id
+            WHERE link.conversation_id = conversation.id
+              AND prior.mailbox_id = conversation.mailbox_id
+              AND prior.id <> ${params.messageId}::uuid
+              AND lower(btrim(coalesce(substring(prior.protocol_facts #>> '{list,id}' FROM '<([^<>]+)>'), prior.protocol_facts #>> '{list,id}'))) = ${listId}
+              AND EXISTS (
+                SELECT 1
+                FROM (
+                  SELECT lower(btrim(substring(post.url FROM '(?i)^mailto:([^?]+)'))) AS email
+                  FROM jsonb_array_elements_text(coalesce(prior.protocol_facts #> '{list,post}', '[]'::jsonb)) post(url)
+                ) posting
+                WHERE posting.email = ANY(${toPgTextArray(postingAddresses)}::text[])
+                  AND NOT (posting.email = ANY(${toPgTextArray(params.mailboxAddresses)}::text[]))
+              )
+          )
+        )
+        OR participant.known
+      )
+    LIMIT 1
+  `;
+  return eligible?.admission ?? null;
+};
 
 const counterpartyLabels = (message: ConnectorEnvelope, outbound: boolean): string[] => {
   const addresses = outbound ? [...message.addresses.to, ...message.addresses.cc, ...message.addresses.bcc] : message.addresses.from;
@@ -344,10 +484,6 @@ const upsertAddresses = async (db: typeof sql, messageId: string, message: Conne
   }
 };
 
-// RFC 5322 caps a header line at 998 characters. Counted in bytes, the lowercased value also
-// fits a Postgres B-tree entry (at most 2704 bytes) in message_contents_message_id_idx.
-const MESSAGE_ID_MAX_BYTES = 998;
-
 const findConversation = async (params: {
   db: typeof sql;
   mailboxId: string;
@@ -357,7 +493,11 @@ const findConversation = async (params: {
   /** The other side of the message: its recipients when the mailbox sent it, otherwise its sender and Reply-To, without the mailbox's own addresses. */
   counterparties: string[];
 }): Promise<string | null> => {
+  // Stored Message-IDs are shortened to MESSAGE_ID_MAX_BYTES; a reply quotes the full value.
+  const replyIds = [...new Set(replyMessageIds(params.message).map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES).toLowerCase()))];
   if (params.message.providerThreadId) {
+    // A provider thread can span separate local conversations. Prefer the quoted parent,
+    // then its reference chain, matching subject and counterparty before mere recency.
     const [native] = await params.db<{ conversation_id: string }[]>`
       SELECT cm.conversation_id
       FROM mail.message_contents mc
@@ -365,7 +505,20 @@ const findConversation = async (params: {
       WHERE mc.mailbox_id = ${params.mailboxId}::uuid
         AND mc.id <> ${params.messageId}::uuid
         AND mc.provider_thread_id = ${params.message.providerThreadId}
-      ORDER BY mc.internal_date DESC, mc.id DESC
+      ORDER BY
+        CASE
+          WHEN lower(mc.message_id) = ${params.message.inReplyTo ? truncateUtf8(params.message.inReplyTo, MESSAGE_ID_MAX_BYTES).toLowerCase() : null} THEN 0
+          WHEN lower(mc.message_id) = ANY(${toPgTextArray(replyIds)}::text[]) THEN 1
+          ELSE 2
+        END,
+        (mc.normalized_subject = ${params.normalizedSubject}) DESC,
+        EXISTS (
+          SELECT 1 FROM mail.message_addresses address
+          WHERE address.message_id = mc.id
+            AND address.role IN ('from', 'to', 'cc')
+            AND address.normalized_email = ANY(${toPgTextArray(params.counterparties)}::text[])
+        ) DESC,
+        mc.internal_date DESC, mc.id DESC
       LIMIT 1
     `;
     if (native) return native.conversation_id;
@@ -411,14 +564,6 @@ const findConversation = async (params: {
     if (twin) return twin.conversation_id;
   }
 
-  // Stored Message-IDs are shortened to MESSAGE_ID_MAX_BYTES; a reply quotes the full value.
-  const replyIds = [
-    ...new Set(
-      [params.message.inReplyTo, ...params.message.references]
-        .filter((value): value is string => Boolean(value))
-        .map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES)),
-    ),
-  ];
   const participants = allParticipantEmails(params.message);
   if (replyIds.length > 0 && participants.length > 0) {
     const [referenced] = await params.db<{ conversation_id: string }[]>`
@@ -427,7 +572,7 @@ const findConversation = async (params: {
       JOIN mail.conversation_messages cm ON cm.message_id = mc.id
       WHERE mc.mailbox_id = ${params.mailboxId}::uuid
         AND mc.id <> ${params.messageId}::uuid
-        AND lower(mc.message_id) = ANY(${toPgTextArray(replyIds.map((value) => value.toLowerCase()))}::text[])
+        AND lower(mc.message_id) = ANY(${toPgTextArray(replyIds)}::text[])
         AND mc.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '2 years'
           AND ${params.message.internalDate}::timestamptz + interval '1 day'
         AND EXISTS (
@@ -613,12 +758,13 @@ const findManualConversationOverride = async (params: { db: typeof sql; mailboxI
 
 const findCanonicalMessageContent = async (params: {
   db: typeof sql;
+  fromMailbox: boolean;
   mailboxId: string;
   remoteResourceId: string;
   message: ConnectorEnvelope;
   normalizedSubject: string;
 }): Promise<string | null> => {
-  if (params.message.messageId) {
+  if (params.message.messageId && params.fromMailbox) {
     const [outbound] = await params.db<{ message_id: string }[]>`
       SELECT outbox.message_id
       FROM mail.outbox_submissions outbox
@@ -802,6 +948,21 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     uid: params.message.remoteRef.uid,
   });
   const normalizedSubject = normalizeMailSubject(params.message.subject);
+  const ownAddresses = await params.db<{ address: string; sender_identity: boolean }[]>`
+    SELECT from_address AS address, true AS sender_identity
+    FROM mail.sender_identities
+    WHERE mailbox_id = ${params.mailboxId}::uuid
+    UNION ALL
+    SELECT email AS address, false AS sender_identity
+    FROM mail.provider_connections
+    WHERE owner_mailbox_id = ${params.mailboxId}::uuid
+  `;
+  const senderIdentities = new Set(ownAddresses.filter((row) => row.sender_identity).map((row) => storedAddress(row.address)));
+  const mailboxAddresses = new Set(ownAddresses.map((row) => storedAddress(row.address)));
+  const senders = senderSet(params.message);
+  const isOutbound = senders.length > 0 && senders.every((address) => senderIdentities.has(address));
+  // Every From address must be ours; a mixed From set does not identify a sent copy.
+  const fromMailbox = senders.length > 0 && senders.every((address) => mailboxAddresses.has(address));
   const [knownRemoteRef] = await params.db<{ message_id: string }[]>`
     SELECT message_id
     FROM mail.remote_message_refs
@@ -813,6 +974,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     knownRemoteRef?.message_id ??
     (await findCanonicalMessageContent({
       db: params.db,
+      fromMailbox,
       mailboxId: params.mailboxId,
       remoteResourceId: params.remoteResourceId,
       message: params.message,
@@ -1102,20 +1264,6 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     return messageContentId;
   }
 
-  const ownAddresses = await params.db<{ address: string; sender_identity: boolean }[]>`
-    SELECT from_address AS address, true AS sender_identity
-    FROM mail.sender_identities
-    WHERE mailbox_id = ${params.mailboxId}::uuid
-    UNION ALL
-    SELECT email AS address, false AS sender_identity
-    FROM mail.provider_connections
-    WHERE owner_mailbox_id = ${params.mailboxId}::uuid
-  `;
-  const senderIdentities = new Set(ownAddresses.filter((row) => row.sender_identity).map((row) => storedAddress(row.address)));
-  const mailboxAddresses = new Set(ownAddresses.map((row) => storedAddress(row.address)));
-  const isOutbound = params.message.addresses.from.some((address) => senderIdentities.has(storedAddress(address.address)));
-  // The account address counts as the mailbox's side too, even before sending is set up.
-  const fromMailbox = isOutbound || params.message.addresses.from.some((address) => mailboxAddresses.has(storedAddress(address.address)));
   const { addresses } = params.message;
   const counterparties = [
     ...new Set(
@@ -1141,6 +1289,56 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       normalizedSubject,
       counterparties,
     }));
+  let listOnly = false;
+  // Existing links and manual overrides remain authoritative. Each automatic candidate
+  // must pass the same membership check, including candidates with missing originals.
+  if (!manualConversationId) {
+    const checkedCandidates = new Set<string>();
+    const eligible = async (candidate: string) => {
+      if (checkedCandidates.has(candidate) || checkedCandidates.size >= AUTOMATIC_CONVERSATION_CANDIDATES) return false;
+      checkedCandidates.add(candidate);
+      const admission = await getAutomaticConversationAdmission({
+        db: params.db,
+        mailboxId: params.mailboxId,
+        conversationId: candidate,
+        messageId: messageContentId,
+        normalizedSubject,
+        message: params.message,
+        mailboxAddresses: [...mailboxAddresses],
+        fromMailbox,
+      });
+      if (admission) listOnly = admission === "list";
+      return admission !== null;
+    };
+    if (conversationId && !(await eligible(conversationId))) conversationId = null;
+    // A preferred parent may belong to a separate conversation. Try the other stored
+    // references before splitting a reply from a conversation it already participates in.
+    if (!conversationId) {
+      const quoted = replyMessageIds(params.message).map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES).toLowerCase());
+      if (quoted.length > 0) {
+        const alternatives = await params.db<{ conversation_id: string }[]>`
+          SELECT link.conversation_id
+          FROM mail.message_contents prior
+          JOIN mail.conversation_messages link ON link.message_id = prior.id
+          WHERE prior.mailbox_id = ${params.mailboxId}::uuid
+            AND prior.id <> ${messageContentId}::uuid
+            AND lower(prior.message_id) = ANY(${toPgTextArray(quoted)}::text[])
+            AND prior.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '2 years'
+              AND ${params.message.internalDate}::timestamptz + interval '1 day'
+          GROUP BY link.conversation_id
+          ORDER BY max(prior.internal_date) DESC, link.conversation_id DESC
+          LIMIT ${AUTOMATIC_CONVERSATION_CANDIDATES}
+        `;
+        for (const { conversation_id: candidate } of alternatives) {
+          if (checkedCandidates.size >= AUTOMATIC_CONVERSATION_CANDIDATES) break;
+          if (await eligible(candidate)) {
+            conversationId = candidate;
+            break;
+          }
+        }
+      }
+    }
+  }
   const participantLabels = counterpartyLabels(params.message, isOutbound);
   if (!conversationId) {
     const initialWorkStatus = isOutbound && (await startsWaiting(params.db, params.folderId, params.message)) ? "waiting" : "needs_action";
@@ -1187,11 +1385,13 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       ${
         manualConversationId
           ? "manual"
-          : params.message.providerThreadId
-            ? "provider"
-            : params.message.inReplyTo || params.message.references.length
-              ? "headers"
-              : "heuristic"
+          : listOnly
+            ? "list"
+            : params.message.providerThreadId
+              ? "provider"
+              : params.message.inReplyTo || params.message.references.length
+                ? "headers"
+                : "heuristic"
       }
     )
     ON CONFLICT (message_id) DO NOTHING
@@ -2055,6 +2255,17 @@ const confirmUnchangedFolder = async (params: {
         AND resource.status = 'active'
         AND resource.last_error_code IS NULL
         AND resource.last_error_message IS NULL
+        AND NOT COALESCE((
+          SELECT terminal.state = 'failed' AND NOT EXISTS (
+            SELECT 1 FROM mail.sync_runs completed
+            WHERE completed.remote_resource_id = resource.id AND completed.state = 'completed'
+              AND completed.stats ->> 'folderId' = ${params.folderId}
+              AND (completed.started_at, completed.id) > (terminal.started_at, terminal.id)
+          ) FROM mail.sync_runs terminal
+          WHERE terminal.remote_resource_id = resource.id AND terminal.stats ->> 'folderId' = ${params.folderId}
+            AND terminal.state <> 'completed' AND terminal.state <> 'running'
+          ORDER BY terminal.started_at DESC, terminal.id DESC LIMIT 1
+        ), false)
         AND mailbox.sync_enabled = true
         AND mailbox.deleted_at IS NULL
         AND mailbox.health = 'active'
@@ -2134,8 +2345,8 @@ export const commitSyncBatch = async (params: {
   liveInvalidated: boolean;
 }> => {
   const result = await (params.db ?? sql).begin(async (tx) => {
-    const [resource] = await tx<{ id: string }[]>`
-      SELECT id
+    const [resource] = await tx<{ id: string; recovering: boolean }[]>`
+      SELECT id, (last_error_code IS NOT NULL OR last_error_message IS NOT NULL) AS recovering
       FROM mail.remote_resources
       WHERE id = ${params.folder.remote_resource_id}::uuid
         AND current_fence_token = ${params.fence.token}
@@ -2151,10 +2362,29 @@ export const commitSyncBatch = async (params: {
     `;
     if (!resource) throw Object.assign(new Error("Stale mail sync fence"), { code: "STALE_SYNC_FENCE" });
     // The Drafts role is read again with the locked folder: an administrator may have moved it
-    // while the batch read the provider.
-    const [lockedFolder] = await tx<{ id: string; reconcile_next_low: string | null; is_drafts: boolean }[]>`
+    // while the batch read the provider. The partial non-completed index finds rare failures
+    // without walking every historical success of other folders on this resource.
+    const [lockedFolder] = await tx<{ id: string; reconcile_next_low: string | null; is_drafts: boolean; recovering: boolean }[]>`
       SELECT
         f.id,
+        (EXISTS (
+          SELECT 1 FROM mail.provider_bindings binding
+          JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+          WHERE binding.id = ${params.bindingId}::uuid
+            AND (binding.last_error_code IS NOT NULL OR binding.last_error_message IS NOT NULL
+              OR connection.last_error_code IS NOT NULL OR connection.last_error_message IS NOT NULL)
+        ) OR COALESCE((
+          SELECT terminal.state = 'failed' AND NOT EXISTS (
+            SELECT 1 FROM mail.sync_runs completed
+            WHERE completed.remote_resource_id = ${params.folder.remote_resource_id}::uuid AND completed.state = 'completed'
+              AND completed.stats ->> 'folderId' = ${params.folderId}
+              AND (completed.started_at, completed.id) > (terminal.started_at, terminal.id)
+          ) FROM mail.sync_runs terminal
+          WHERE terminal.remote_resource_id = ${params.folder.remote_resource_id}::uuid
+            AND terminal.stats ->> 'folderId' = ${params.folderId}
+            AND terminal.state <> 'completed' AND terminal.state <> 'running'
+          ORDER BY terminal.started_at DESC, terminal.id DESC LIMIT 1
+        ), false)) AS recovering,
         f.envelope_cursor ->> 'reconcileNextLow' AS reconcile_next_low,
         (
           EXISTS (
@@ -2302,11 +2532,13 @@ export const commitSyncBatch = async (params: {
       SET
         envelope_cursor = ${params.cursor}::jsonb,
         sync_status = ${params.cursor.backfillComplete ? "current" : "syncing"},
-        last_reconciled_at = CASE WHEN ${params.reconcileWindow != null} THEN now() ELSE last_reconciled_at END
+        last_reconciled_at = CASE WHEN ${params.reconcileWindow != null} THEN now() ELSE last_reconciled_at END,
+        last_sync_snapshot = COALESCE((
+          SELECT jsonb_build_object('startedAt', started_at, 'uidValidity', ${params.status.uidValidity}::text,
+            'statusHighUid', ${Math.max(0, params.status.uidNext - 1)}::bigint, 'statusModseq', ${params.status.highestModseq}::text)
+          FROM mail.sync_runs WHERE id = ${params.fence.runId}::uuid
+        ), last_sync_snapshot)
       WHERE id = ${params.folderId}::uuid
-        AND (envelope_cursor IS DISTINCT FROM ${params.cursor}::jsonb
-          OR sync_status IS DISTINCT FROM ${params.cursor.backfillComplete ? "current" : "syncing"}
-          OR ${params.reconcileWindow != null})
     `;
     await tx`
       UPDATE mail.binding_folder_refs
@@ -2331,9 +2563,10 @@ export const commitSyncBatch = async (params: {
       RETURNING connection_id
     `;
     if (!binding) throw Object.assign(new Error("Sync binding changed before commit"), { code: "STALE_SYNC_BINDING" });
-    const [connection] = await tx<{ id: string }[]>`
+    const [connection] = await tx<{ id: string; recovering: boolean }[]>`
       WITH eligible AS MATERIALIZED (
-        SELECT id FROM mail.provider_connections
+        SELECT id, (last_error_code IS NOT NULL OR last_error_message IS NOT NULL) AS recovering
+        FROM mail.provider_connections
         WHERE id = ${binding.connection_id}::uuid
           AND status = 'active' AND secret_revision = ${params.secretRevision}
         FOR NO KEY UPDATE
@@ -2344,7 +2577,7 @@ export const commitSyncBatch = async (params: {
         WHERE connection.id = eligible.id
           AND (connection.last_error_code IS NOT NULL OR connection.last_error_message IS NOT NULL)
       )
-      SELECT id FROM eligible
+      SELECT id, recovering FROM eligible
     `;
     if (!connection) throw Object.assign(new Error("Sync credentials changed before commit"), { code: "STALE_SYNC_BINDING" });
     await tx`
@@ -2384,7 +2617,18 @@ export const commitSyncBatch = async (params: {
       WHERE mailbox.id = desired.id
         AND (mailbox.health, mailbox.health_reason) IS DISTINCT FROM (desired.health, desired.health_reason)
     `;
-    await tx`
+    const changed =
+      hydratedIds.length > 0 ||
+      draftImportSnapshotIds.length > 0 ||
+      draftExportSnapshotIds.length > 0 ||
+      flagsUpdated > 0 ||
+      removed > 0 ||
+      params.uidValidityChanged;
+    // Keep one successful recovery even if it changed no mail, so failures have a visible resolution.
+    if (!changed && !resource.recovering && !lockedFolder.recovering && !connection.recovering)
+      await tx`DELETE FROM mail.sync_runs WHERE id = ${params.fence.runId}::uuid AND state = 'running'`;
+    else
+      await tx`
       UPDATE mail.sync_runs
       SET
         state = 'completed',
@@ -2394,9 +2638,10 @@ export const commitSyncBatch = async (params: {
           envelopeKind: params.envelopeKind,
           imported: hydratedIds.length,
           draftImportsQueued: draftImportSnapshotIds.length,
+          draftExportsQueued: draftExportSnapshotIds.length,
           flagsUpdated,
           removed,
-          // The provider state this batch saw, so a requested sync can tell once Mail holds it.
+          // Diagnostic provider state; command progress uses the bounded folder checkpoint.
           statusHighUid: Math.max(0, params.status.uidNext - 1),
           statusModseq: params.status.highestModseq,
         }}::jsonb,
@@ -2512,8 +2757,8 @@ export const syncFolderBatch = async (
             const draftCounter = (uidValidity: string) => (maxUid: number) =>
               imapSmtpConnector.countDraftMessages(runtime, folderExecution.path, uidValidity, maxUid, signal);
             // Most checks of a quiet folder find nothing new. Such a check reads STATUS first and ends
-            // before it claims a fence or records a run. A sync command waiting for the folder needs
-            // a recorded run, so its folder claims the fence first.
+            // before it claims a fence or records a run. A waiting sync command needs a fresh
+            // folder checkpoint, so its folder takes the fenced commit path.
             if (beforeCursor && mayBeUnchangedFolder(beforeCursor, draftsFolder) && !(await folderSyncAwaited(folderId))) {
               failedRun.claimFence = () => claimFence(folder.remote_resource_id, bindingId, "incremental", folderId);
               const status = await readStatus();
@@ -2713,8 +2958,8 @@ const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
 // when the job would end. A request counts this long: it outlasts a long batch and a few retries.
 export const FOLDER_SYNC_REQUEST_MS = 10 * 60_000;
 const syncRequestKey = (folderId: string): string => `mail:sync-requested:${folderId}`;
-// A sync command waiting for the folder settles on a completed run after it (requestedSyncProgress),
-// so while the request counts, the folder's batches never end as unchanged without a run.
+// A waiting sync settles on the folder checkpoint (requestedSyncProgress), so its next batch
+// commits a fresh checkpoint even when STATUS is unchanged; history still omits empty successes.
 const awaitedSyncKey = (folderId: string): string => `mail:sync-awaited:${folderId}`;
 const folderSyncAwaited = async (folderId: string): Promise<boolean> =>
   Number(await redis.send("EXISTS", [awaitedSyncKey(folderId)]).catch(() => 1)) > 0;
@@ -3673,7 +3918,7 @@ const submitDueWork = async (): Promise<{
   };
 };
 
-/** `awaited`: a sync command waits for the folders, so each records a completed run. */
+/** `awaited`: a sync command waits for a fresh committed checkpoint from each folder. */
 export const enqueueMailboxSync = async (
   mailboxId: string,
   options: { trigger?: FolderSyncTrigger; awaited?: boolean } = {},
@@ -3718,43 +3963,27 @@ export const requestedSyncProgress = async (params: {
   requests: Array<{ id: string; folderId: string | null; since: Date }>;
 }): Promise<Map<string, { folders: number; synced: number; failed: number }>> => {
   if (params.requests.length === 0) return new Map();
-  // One pass over the mailbox's runs since the earliest request, however many requests wait.
+  // One checkpoint per folder, independent of history volume and retention.
   const rows = await sql<{ id: string; folders: number; pending: string }[]>`
     WITH requests AS (
       SELECT id, "folderId" AS folder_id, since
       FROM jsonb_to_recordset(${params.requests}::jsonb) AS request(id text, "folderId" text, since timestamptz)
     ),
-    runs AS MATERIALIZED (
-      SELECT
-        run.stats ->> 'folderId' AS folder_id,
-        run.started_at,
-        run.cursor_after ->> 'uidValidity' AS uid_validity,
-        (run.stats ->> 'statusHighUid')::bigint AS high_uid,
-        (run.stats ->> 'statusModseq')::numeric AS modseq
-      FROM mail.remote_resources rr
-      JOIN mail.sync_runs run ON run.remote_resource_id = rr.id
-      WHERE rr.mailbox_id = ${params.mailboxId}::uuid
-        AND run.started_at >= (SELECT min(since) FROM requests)
-        AND run.state = 'completed'
-        AND run.stats ? 'statusHighUid'
-    ),
     folders AS (
       -- When the latest batch started whose provider state Mail holds.
       SELECT
         f.id::text AS id,
-        max(run.started_at) FILTER (
-          WHERE run.uid_validity = f.envelope_cursor ->> 'uidValidity'
-            AND (f.envelope_cursor ->> 'highestSeenUid')::bigint >= run.high_uid
-            AND (run.modseq IS NULL OR (f.envelope_cursor ->> 'highestModseq')::numeric >= run.modseq)
-        ) AS synced_since
+        CASE WHEN f.last_sync_snapshot ->> 'uidValidity' = f.envelope_cursor ->> 'uidValidity'
+            AND (f.envelope_cursor ->> 'highestSeenUid')::bigint >= (f.last_sync_snapshot ->> 'statusHighUid')::bigint
+            AND (f.last_sync_snapshot ->> 'statusModseq' IS NULL
+              OR (f.envelope_cursor ->> 'highestModseq')::numeric >= (f.last_sync_snapshot ->> 'statusModseq')::numeric)
+          THEN (f.last_sync_snapshot ->> 'startedAt')::timestamptz END AS synced_since
       FROM mail.folders f
       JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
-      LEFT JOIN runs run ON run.folder_id = f.id::text
       WHERE rr.mailbox_id = ${params.mailboxId}::uuid
         AND f.selected_for_sync = true
         AND f.discovery_state = 'active'
         AND f.sync_status <> 'excluded'
-      GROUP BY f.id
     )
     SELECT
       request.id,
@@ -3878,9 +4107,11 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
     });
     await mailScheduler().create({
       id: "mail:runtime-history-cleanup",
-      cron: "43 * * * *",
+      cron: "* * * * *",
       meta: { appId: "mail", family: "mail:runtime", label: "Mail runtime history cleanup" },
       process: async () => {
+        // Retry busy/interrupted background builds without holding up this sweep or Mail startup.
+        void buildRuntimeHistoryIndexes();
         await cleanupMailRuntimeHistory();
       },
     });
@@ -3890,6 +4121,16 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
       meta: { appId: "mail", family: "mail:storage", label: "Mail storage usage reconciliation" },
       process: async () => {
         await reconcileMailStorageUsage();
+      },
+    });
+    await mailScheduler().create({
+      id: "mail:draft-document-reconcile",
+      cron: "13 * * * *",
+      misfire: "latest",
+      meta: { appId: "mail", family: "mail:drafts", label: "Mail draft document recovery" },
+      process: async (ctx) => {
+        await retryPendingDraftSendCloses(ctx.signal);
+        await draftDocumentSnapshots.reconcile({ signal: ctx.signal, heartbeat: () => ctx.heartbeat() });
       },
     });
     mailSchedulerWorker = await mailScheduler().process();

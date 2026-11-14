@@ -5,6 +5,7 @@ import assistantCodeModeAppActions from "./skills/assistant-code-mode/references
 import assistantCodeModeApps from "./skills/assistant-code-mode/references/apps.md" with { type: "text" };
 import assistantCodeModeCamt from "./skills/assistant-code-mode/references/camt.md" with { type: "text" };
 import assistantCodeModeCapabilities from "./skills/assistant-code-mode/references/capabilities.md" with { type: "text" };
+import assistantCodeModeChartKinds from "./skills/assistant-code-mode/references/chart-kinds.md" with { type: "text" };
 import assistantCodeModeCharts from "./skills/assistant-code-mode/references/charts.md" with { type: "text" };
 import assistantCodeModeChat from "./skills/assistant-code-mode/references/chat.md" with { type: "text" };
 import assistantCodeModeCloud from "./skills/assistant-code-mode/references/cloud.md" with { type: "text" };
@@ -44,6 +45,7 @@ export const SKILLS = [
       "references/camt.md": assistantCodeModeCamt,
       "references/capabilities.md": assistantCodeModeCapabilities,
       "references/charts.md": assistantCodeModeCharts,
+      "references/chart-kinds.md": assistantCodeModeChartKinds,
       "references/chat.md": assistantCodeModeChat,
       "references/cloud.md": assistantCodeModeCloud,
       "references/database.md": assistantCodeModeDatabase,

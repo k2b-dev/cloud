@@ -31,8 +31,9 @@ export async function writeInstallableIcons(publicDir: string, appId: string, ap
         fallback: source,
         variants,
       }),
+      // These fixed, local Tabler assets need a CPU bound, not a request's wall-clock deadline.
+      10,
     );
-    const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
     try {
       let bytes = 0;
       const stdout = child.stdout.pipeThrough(
@@ -45,7 +46,10 @@ export async function writeInstallableIcons(publicDir: string, appId: string, ap
         }),
       );
       const output = await new Response(stdout).text();
-      if ((await child.exited) !== 0) throw new Error("Installable icon worker failed");
+      if ((await child.exited) !== 0)
+        throw new Error(
+          `Installable icon worker failed (exit ${child.exitCode}, signal ${child.signalCode ?? "none"}): ${await child.diagnostics}`,
+        );
       const result = z.object({ icons: z.record(z.string(), z.string()), fallback: z.literal(false) }).parse(JSON.parse(output));
       for (const { id } of variants) {
         const png = result.icons[id];
@@ -53,7 +57,6 @@ export async function writeInstallableIcons(publicDir: string, appId: string, ap
         await writeFile(resolve(out, `${id}-${theme}.png`), Buffer.from(png, "base64"));
       }
     } finally {
-      clearTimeout(timer);
       child.kill("SIGKILL");
       await child.exited;
     }

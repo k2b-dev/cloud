@@ -54,6 +54,13 @@ secret values to browser code.
 | `cron` | `string` | Five-field cron expression |
 | `timezone` | `string` | Empty or valid IANA time zone |
 | `template` | `string` | Valid Liquid template |
+| `storage_bucket` | `StorageBucketId` | A bucket ID (`"default"` or a UUID); see [Object store](/en/docs/platform/object-store#use-further-buckets) |
+
+`storage_bucket` references a bucket an administrator connected. `default` is
+optional and is always the default bucket. Validation checks the ID's form, not
+that the bucket exists, so a removed bucket's ID stays stored. Setting entries
+of this kind carry `storageBuckets`, the list from `storage.buckets()`, for
+`StorageBucketSelect`.
 
 List inputs accept arrays or comma- and newline-separated text.
 

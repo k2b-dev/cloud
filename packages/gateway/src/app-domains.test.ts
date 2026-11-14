@@ -125,16 +125,28 @@ test.each([
   expect(f.rates).toEqual([]);
 });
 
-test.each(["/", "/api/anything", "/public/storage/files/a", "/health"])("app host owns %s", async (path) => {
+test("Cloud storage routes preserve additional bucket paths", async () => {
   const f = fixture();
-  const response = await f.request(`${path}?q=a%2Fb&x=+&x=%20`);
-  const body = await response.json();
-  expect(body.path).toBe(`/_cloud/public${path}?q=a%2Fb&x=+&x=%20`);
-  expect(body.headers["x-cloud-public-host"]).toBe("site.test");
-  expect(body.headers["x-forwarded-proto"]).toBe("https");
-  expect(f.storageCalls()).toBe(0);
-  expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ appId: "site", routePrefix: "/" }));
+  const response = await f.request("/public/storage/~12345678-1234-1234-1234-123456789012/inventory/a.png", {}, "cloud.test");
+  expect(response.status).toBe(200);
+  expect(await response.text()).toBe("cloud storage");
+  expect(f.storageCalls()).toBe(1);
+  expect(f.requests).toHaveLength(0);
 });
+
+test.each(["/", "/api/anything", "/public/storage/files/a", "/public/storage/~12345678-1234-1234-1234-123456789012/files/a", "/health"])(
+  "app host owns %s",
+  async (path) => {
+    const f = fixture();
+    const response = await f.request(`${path}?q=a%2Fb&x=+&x=%20`);
+    const body = await response.json();
+    expect(body.path).toBe(`/_cloud/public${path}?q=a%2Fb&x=+&x=%20`);
+    expect(body.headers["x-cloud-public-host"]).toBe("site.test");
+    expect(body.headers["x-forwarded-proto"]).toBe("https");
+    expect(f.storageCalls()).toBe(0);
+    expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ appId: "site", routePrefix: "/" }));
+  },
+);
 
 test.each(["GET", "HEAD", "POST"])("alias %s keeps escaped path and query", async (method) => {
   const f = fixture();

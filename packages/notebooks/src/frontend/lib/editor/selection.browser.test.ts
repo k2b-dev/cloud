@@ -380,7 +380,11 @@ describe("rich editor selection", () => {
       expect((await selection(page)).head).toBe(pos);
       expect(await page.evaluate(() => window.selectionHarness.held("a"))).toBe(false);
       await select(page, "a", pos, pos + 5);
-      expect(await page.locator("#a .cm-selectionBackground").count()).toBeGreaterThan(0);
+      // CodeMirror uses the native main selection and its own handles on iOS.
+      expect(
+        await page.locator(browserName === "webkit" ? "#a .cm-selectionHandle" : "#a .cm-selectionBackground").count(),
+      ).toBeGreaterThan(0);
+      if (browserName === "webkit") expect(await page.evaluate(() => window.getSelection()?.toString())).toBe((await selection(page)).text);
       await expectCopy(page);
       expect(await page.evaluate(() => window.selectionHarness.held("a"))).toBe(false);
     } finally {

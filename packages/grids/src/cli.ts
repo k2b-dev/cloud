@@ -6,6 +6,7 @@ import { documentCommands, documentTemplateCommands } from "./cli/documents";
 import { evidenceCommands } from "./cli/evidence";
 import { formCommands } from "./cli/forms";
 import { GRIDS_CLI_HELP_DE } from "./cli/help-de";
+import { integrityCommands } from "./cli/integrity";
 import { navigationCommands } from "./cli/navigation";
 import { publishedAppCommands } from "./cli/published-apps";
 import { recordDiscussionCommands } from "./cli/record-discussion";
@@ -28,6 +29,7 @@ export const gridsCommands = [
   ...tableCommands,
   ...fieldCommands,
   ...recordCommands,
+  ...integrityCommands,
   ...recordDiscussionCommands,
   ...recordEventCommands,
   ...viewCommands,

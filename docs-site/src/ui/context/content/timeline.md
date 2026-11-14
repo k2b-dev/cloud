@@ -146,7 +146,8 @@ The timeline is a region named by `label` (default "Timeline"). Every day
 has a heading, level 3 unless `headingLevel` says otherwise, and an ordered
 list: all-day items first, then timed items by start. Each item is named
 with its time, detail, day, and checkbox state, for example "Release planning
-4.2, 16:00 to 17:30, Room Schlei, Thursday, October 8". Folds, hours, free
+4.2, 16:00–17:30, Room Schlei, Thursday, October 8". The name includes the
+visible label, time, and detail in their reading order. Folds, hours, free
 time, and the now line are hidden from assistive technology.
 
 The timeline is one tab stop, at first the item happening now or next. The

@@ -74,6 +74,27 @@ suite("chat view snapshots", () => {
     }
   });
 
+  // The sidebar bounds the body in SQL; the live summary reads the whole body. Both must show the same plain text.
+  test("conversation projections read Markdown structure like the full message", async () => {
+    const owner = await f.person();
+    const chat = await f.create(owner, []);
+    const bodies: [string, string][] = [
+      ["- eins\n- zwei", "eins zwei"],
+      ["| A | B |\n| - | - |\n| 1 | 2 |", "A B 1 2"],
+      ["# Titel\r\n\r\n> Zitat\n\n```ts\nconst a = 1;\n```", "Titel Zitat const a = 1;"],
+      ["1. erst\n   - unter\n2. dann\n\n\n\n- [x] **erledigt**", "erst unter dann erledigt"],
+    ];
+    for (const [index, [body, preview]] of bodies.entries()) {
+      const response = await f.request(owner.headers, `/${chat.shortId}/messages`, "POST", { clientId: `markdown-${index}`, body });
+      expect(response.status).toBe(201);
+      const sent = MessageViewSchema.parse(await response.json());
+      expect(messagePreview(body)).toBe(preview);
+      const expected = { thread: null, id: sent.id, author: sent.author, preview, createdAt: sent.createdAt };
+      expect((await detail(owner, chat.shortId)).lastMessage).toEqual(expected);
+      expect((await sidebar(owner)).items.find((row) => row.id === chat.shortId)?.lastMessage).toEqual(expected);
+    }
+  });
+
   test("snapshot includes a live cursor, latest history, and the ascending middle-message window", async () => {
     const owner = await f.person();
     const chat = await f.fixture(owner);

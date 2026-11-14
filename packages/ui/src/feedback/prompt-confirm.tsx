@@ -1,10 +1,12 @@
 import { createSignal, type JSX, Show } from "solid-js";
 import { TextInput } from "../inputs/TextInput";
+import { showTruncatedTitle } from "../internal/truncated-title";
 import { resolveUiMessages } from "../intl/messages";
 import { dialogCore } from "./dialog-core";
 import { type DialogTone, dialogToneIcon, dialogToneLabel } from "./dialog-tone";
 import { resolvePromptMessages } from "./prompt-messages";
 import type { ConfirmOptions, DialogOptions } from "./prompts";
+import { SuccessCheck } from "./success-check";
 
 // The dialog frame and `prompts.confirm`, apart from the form prompts: `PanelDialog` asks before discarding changes,
 // and the form prompts render date pickers whose phone sheet is a `PanelDialog`, so one module would be an import cycle.
@@ -20,10 +22,24 @@ export const promptTone = (variant: DialogOptions["variant"]): DialogTone | unde
 export const promptButtonVariant = (variant: DialogOptions["variant"]): "danger" | "primary" | "success" =>
   variant === undefined || variant === "warning" ? "primary" : variant;
 
-export const DialogHeader = (props: { close: () => void; title?: string; icon?: string; tone?: DialogTone }): JSX.Element => (
+export const DialogHeader = (props: {
+  close: () => void;
+  title?: string;
+  icon?: string;
+  tone?: DialogTone;
+  /** A success tone draws its check once when the header appears; see `prompts.success`. */
+  celebrate?: boolean;
+}): JSX.Element => (
   <header class="k2b-dialog__header">
-    <Show when={props.tone ? dialogToneIcon(props.tone) : props.icon}>
-      {(icon) => <i class={icon()} data-tone={props.tone} aria-hidden="true" />}
+    <Show
+      when={props.celebrate && props.tone === "success"}
+      fallback={
+        <Show when={props.tone ? dialogToneIcon(props.tone) : props.icon}>
+          {(icon) => <i class={icon()} data-tone={props.tone} aria-hidden="true" />}
+        </Show>
+      }
+    >
+      <SuccessCheck />
     </Show>
     <Show when={props.tone}>
       {(tone) => (
@@ -33,7 +49,7 @@ export const DialogHeader = (props: { close: () => void; title?: string; icon?: 
       )}
     </Show>
     <Show when={props.title} fallback={<span class="k2b-dialog__header-spacer" />}>
-      {(title) => <h2>{title()}</h2>}
+      {(title) => <h2 onPointerEnter={showTruncatedTitle}>{title()}</h2>}
     </Show>
     <button type="button" class="k2b-dialog__close" aria-label={resolveUiMessages().closeDialog} onClick={props.close}>
       <i class="ti ti-x" aria-hidden="true" />

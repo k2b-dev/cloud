@@ -83,25 +83,34 @@ describe("ProfilePreferences SSR", () => {
     expect(panel).toContain('aria-label="Darstellung: Dunkel. Wechselt zu Automatisch."');
     expect(panel).toContain('class="ti ti-moon"');
     expect(panel).toContain(">Dunkel</span>");
-    expect(panel).not.toContain('role="radiogroup"');
-    expect(panel).not.toContain("k2b-segmented-control");
     expect(html).toContain("English");
     expect(html).toContain("Profileinstellungen");
     expect(html).toContain("Abmelden");
     expect(html).toContain('<button type="button" class="layout-profile-preferences__link"');
     expect(html).not.toContain('<a href="/me" class="layout-profile-preferences__link"');
     expect(html.indexOf("Abmelden")).toBeGreaterThan(html.indexOf("Profileinstellungen"));
-    // The sidebar entries come first, with the shortcut; sign-out ends the menu in the danger tone, in its own section.
+    // The sidebar entries come first, with the shortcut; then one screen section with two one-line entries, the
+    // privacy screen with its shortcut and the shared workstation switch, without headings, descriptions or timer;
+    // sign-out ends the menu in the danger tone, in its own section.
     const sections = panel.split('class="layout-profile-preferences__section"').slice(1);
-    expect(sections).toHaveLength(3);
+    expect(sections).toHaveLength(4);
     expect(sections[0]).toContain('data-cloud-shell-focus-toggle="hide"');
     expect(sections[0]).toContain(">Seitenleiste ausblenden</span>");
     expect(sections[0]).toContain('data-cloud-shell-focus-toggle="show"');
     expect(sections[0]).toContain(">Seitenleiste einblenden</span>");
     expect(sections[0]).toContain('class="k2b-kbd"');
-    expect(sections[1]).toContain(">Dunkel</span>");
-    expect(sections[2]).toContain('data-danger="true"');
-    expect(sections[2]).toContain(">Abmelden</span>");
+    expect(sections[1]).toContain(">Sichtschutz</span>");
+    expect(sections[1]).toContain('aria-keyshortcuts="Control+Period"');
+    expect(sections[1]).toContain('class="k2b-kbd"');
+    expect(sections[1]).toContain('role="switch"');
+    expect(sections[1]).toContain(">Gemeinsam genutzter Arbeitsplatz</span>");
+    expect(sections[1]).not.toContain("<small");
+    expect(panel).not.toContain('role="radio"');
+    expect(panel).not.toContain("Dieser Browser");
+    expect(sections[2]).toContain(">Dunkel</span>");
+    expect(sections[3]).not.toContain('role="switch"');
+    expect(sections[3]).toContain('data-danger="true"');
+    expect(sections[3]).toContain(">Abmelden</span>");
     expect(html).toContain('data-position="right-start"');
     expect(html).not.toContain(user.mail ?? "");
     expect(html).not.toContain("undefined");

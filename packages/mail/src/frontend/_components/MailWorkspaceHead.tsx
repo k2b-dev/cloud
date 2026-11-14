@@ -1,11 +1,11 @@
-import { Dropdown, FilterChip, FilterToggle, useLocale, ViewTabs } from "@k2b/ui";
-import { createMemo, Show } from "solid-js";
+import { Dropdown, type DropdownItem, MovedHint, useLocale, ViewTabs } from "@k2b/ui";
+import { createMemo } from "solid-js";
 import type { MailSearchState } from "../../contracts";
 import { mailFolderNames } from "../../folder-names";
-import type { ResolvedMailSearchRoute } from "../../search-url";
+import { DEFAULT_MAIL_QUICK_SEARCH_FIELDS, type ResolvedMailSearchRoute } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { MailFolderView } from "../../service/messages";
-import type { MailListMode } from "../../service/workspace";
+import { mailWorkspaceMessages } from "../mail-workspace-messages";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import {
   emptyMailHeadFilters,
@@ -18,9 +18,9 @@ import {
   readMailHeadFilters,
 } from "./mail-head-filters";
 import { buildMailSearchClearHref, mailRouteUrl } from "./mail-navigation";
-import { summarizeMailSearchExpression } from "./mail-search-builder-model";
 import { mailSidebarMessages } from "./mail-sidebar-messages";
 import { openViewTabsInPlace } from "./mail-view-tabs";
+import { type createMailboxSearch, isDefaultQuickSearch } from "./mailbox-search";
 
 /** The mailbox's head tabs. A plain click opens the view in place, as the sidebar's places do. */
 export function MailboxViewTabs(props: {
@@ -39,197 +39,251 @@ export function MailboxViewTabs(props: {
   return <ViewTabs label={messages().mailboxViews} items={props.items} current={props.current} max={props.items.length} fit />;
 }
 
-type MailboxFilterContext = {
+/** Everything the filter button changes lives in the URL, so old links, reload, and Back keep working. */
+type MailSearchFilterProps = {
   requestUrl: string;
   search: ResolvedMailSearchRoute;
   folders: MailFolderView[];
   /** The effective folder from the canonical workspace response, after route precedence. */
   folderId: string | null;
   localTags: LocalTag[];
+  /** The mailbox's search: while it runs, "Search in" and the place join the menu. */
+  quickSearch: Pick<
+    ReturnType<typeof createMailboxSearch>,
+    | "searchValue"
+    | "searchFields"
+    | "quickSearchFieldOptions"
+    | "updateSearchFields"
+    | "scopeFolderId"
+    | "originFolder"
+    | "updateScope"
+    | "structuredSummary"
+    | "openAdvancedSearch"
+    | "searchBuilderLoading"
+  >;
   onOpenHref: (href: string) => void;
+  onEditSearch: (state: MailSearchState, source: URL) => void;
+  /** The one-time note that the filters moved here from the head's chips. */
+  hint: { open: boolean; onDismiss: () => void };
 };
 
-const createMailboxFilterContext = (props: MailboxFilterContext) => {
+/**
+ * F9: one filter button at the search field holds what the head's chips did: Unread, Flagged, With attachment, the
+ * date range and a tag, and while searching "Search in" and the place. A count on the button and Reset beside it show
+ * an active filter. Arbitrary search trees stay in the search builder under "More filters".
+ */
+export function MailSearchFilter(props: MailSearchFilterProps) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
+  const workspaceText = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
   const url = () => mailRouteUrl(props.requestUrl);
   const quick = createMemo(() => readMailHeadFilters(url(), props.search, props.folderId));
-  const folder = () => props.folders.find((folder) => folder.id === quick()?.folderId);
+  const folder = () => props.folders.find((candidate) => candidate.id === quick()?.folderId);
   const knownQuick = () => {
     const value = quick();
     if (folder()?.role === "sent" && (value?.unread || value?.flagged)) return null;
     return value && (!value.folderId || folder()) && (!value.tagId || props.localTags.some((tag) => tag.id === value.tagId)) ? value : null;
   };
-  return { url, folder, knownQuick };
-};
-
-/** Folder quick filters share the existing search expression. Arbitrary trees remain searches. */
-export function MailboxHeadFilters(
-  props: MailboxFilterContext & {
-    onEditSearch: (state: MailSearchState, source: URL) => void;
-  },
-) {
-  const locale = useLocale();
-  const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
-  const folderName = createMemo(() => mailFolderNames(locale()));
-  const { url, folder, knownQuick } = createMailboxFilterContext(props);
-  const searchSummary = () => {
-    const expression = props.search.expression;
-    if (!expression || knownQuick()) return null;
-    return summarizeMailSearchExpression(expression, locale(), { folders: props.folders, tags: props.localTags });
-  };
+  /** Unread, Flagged, With attachment and the date range need the folder they filter in. */
+  const folderFilters = () => Boolean(folder() && knownQuick());
   const update = (change: Partial<MailHeadFilters>) => {
     const current = knownQuick();
     if (current) props.onOpenHref(mailHeadFilterHref(url(), { ...current, ...change }, current));
   };
-  const dateLabel = () => {
-    const days = mailHeadFilterDayCount(knownQuick()?.dates ?? []);
-    return days === 7 ? messages().lastSevenDays : days === 30 ? messages().lastThirtyDays : messages().dateRange;
+  const setTag = (tagId: string | null) => {
+    const current = knownQuick() ?? emptyMailHeadFilters(props.folderId);
+    props.onOpenHref(mailHeadFilterHref(url(), { ...current, tagId }, knownQuick()));
   };
-  return (
-    <>
-      <Show when={folder() && knownQuick()}>
-        <Show when={props.folderId !== folder()?.id}>
-          <span class="shrink-0 text-sm text-primary" data-mail-filter-folder>
-            {messages().inFolder({ name: folderName()(folder()!) })}
-          </span>
-        </Show>
-        <Show when={folder()?.role !== "sent"}>
-          <FilterToggle
-            label={
-              <>
-                {messages().unread}
-                <span class="ml-1 text-muted">{folder()?.unread?.toLocaleString(locale())}</span>
-              </>
-            }
-            icon="ti ti-point"
-            active={knownQuick()?.unread ?? false}
-            onClick={() => update({ unread: !knownQuick()?.unread })}
-          />
-          <FilterToggle
-            label={messages().flagged}
-            icon="ti ti-flag"
-            active={knownQuick()?.flagged ?? false}
-            onClick={() => update({ flagged: !knownQuick()?.flagged })}
-          />
-        </Show>
-        <FilterToggle
-          label={messages().withAttachment}
-          icon="ti ti-paperclip"
-          active={knownQuick()?.attachment ?? false}
-          onClick={() => update({ attachment: !knownQuick()?.attachment })}
-        />
-        <Dropdown.Root
-          position="bottom-left"
-          label={messages().dateRange}
-          items={[
-            ...([7, 30] as const).map((days) => ({
-              label: days === 7 ? messages().lastSevenDays : messages().lastThirtyDays,
-              icon: "ti ti-calendar",
-              choice: "radio" as const,
-              checked: mailHeadFilterDayCount(knownQuick()?.dates ?? []) === days,
-              action: () => update({ dates: mailHeadFilterDays(days, Date.now()) }),
-            })),
-            {
-              label: messages().customDateRange,
-              icon: "ti ti-calendar-event",
-              action: () => {
-                const current = knownQuick();
-                if (!current) return;
-                const state = mailHeadFilterState({
-                  ...current,
-                  dates: current.dates.length ? current.dates : mailHeadFilterDays(7, Date.now()),
-                });
-                if (state) props.onEditSearch(state, mailHeadFilterSource(url(), current));
-              },
+  const dayCount = () => mailHeadFilterDayCount(knownQuick()?.dates ?? []);
+  const searching = () => Boolean(props.quickSearch.searchValue().trim());
+  /** A search tree the chips cannot show; a running text search is the field's own, not a filter. */
+  const structured = () => (knownQuick() || searching() ? null : props.quickSearch.structuredSummary());
+  const placeLabel = (folderId: string) => {
+    const match = props.folders.find((candidate) => candidate.id === folderId);
+    return listText().onlyFolder({ name: match ? folderName()(match) : folderId });
+  };
+  const placeOptions = () => {
+    const scope = props.quickSearch.scopeFolderId();
+    const origin = props.quickSearch.originFolder();
+    return [
+      { value: "", label: listText().wholeMailbox },
+      ...(scope && scope !== origin?.id ? [{ value: scope, label: placeLabel(scope) }] : []),
+      ...(origin ? [{ value: origin.id, label: placeLabel(origin.id) }] : []),
+    ];
+  };
+  /** How many filters narrow the list: each chip of old, a changed "Search in" or place, and a search tree. */
+  const activeCount = () => {
+    const value = knownQuick();
+    const quickCount = value
+      ? [value.unread, value.flagged, value.attachment, value.dates.length > 0, Boolean(value.tagId)].filter(Boolean).length
+      : 0;
+    const searchCount = searching()
+      ? [!isDefaultQuickSearch(props.quickSearch.searchFields()), Boolean(props.quickSearch.scopeFolderId())].filter(Boolean).length
+      : 0;
+    return quickCount + searchCount + (structured() ? 1 : 0);
+  };
+  const items = (): DropdownItem[] => {
+    const value = knownQuick();
+    const sections: DropdownItem[] = [];
+    if (folderFilters() && value) {
+      sections.push({
+        // A direct link may filter another folder than the one the route shows; the section names it then.
+        sectionLabel: props.folderId !== folder()?.id ? messages().inFolder({ name: folderName()(folder()!) }) : listText().showOnly,
+        items: [
+          ...(folder()?.role === "sent"
+            ? []
+            : [
+                {
+                  choice: "checkbox" as const,
+                  label: messages().unread,
+                  icon: "ti ti-point",
+                  trailing: folder()?.unread ? <span class="tabular-nums">{folder()!.unread!.toLocaleString(locale())}</span> : undefined,
+                  checked: value.unread,
+                  closeOnSelect: false,
+                  action: () => update({ unread: !value.unread }),
+                },
+                {
+                  choice: "checkbox" as const,
+                  label: messages().flagged,
+                  icon: "ti ti-flag",
+                  checked: value.flagged,
+                  closeOnSelect: false,
+                  action: () => update({ flagged: !value.flagged }),
+                },
+              ]),
+          {
+            choice: "checkbox" as const,
+            label: messages().withAttachment,
+            icon: "ti ti-paperclip",
+            checked: value.attachment,
+            closeOnSelect: false,
+            action: () => update({ attachment: !value.attachment }),
+          },
+        ],
+      });
+      sections.push({
+        sectionLabel: messages().dateRange,
+        items: [
+          ...([7, 30] as const).map((days) => ({
+            choice: "radio" as const,
+            label: days === 7 ? messages().lastSevenDays : messages().lastThirtyDays,
+            icon: "ti ti-calendar",
+            checked: dayCount() === days,
+            action: () => update({ dates: mailHeadFilterDays(days, Date.now()) }),
+          })),
+          {
+            label: messages().customDateRange,
+            icon: "ti ti-calendar-event",
+            action: () => {
+              const state = mailHeadFilterState({ ...value, dates: value.dates.length ? value.dates : mailHeadFilterDays(7, Date.now()) });
+              if (state) props.onEditSearch(state, mailHeadFilterSource(url(), value));
             },
-            ...(knownQuick()?.dates.length
-              ? [{ label: messages().clearDateRange, icon: "ti ti-x", action: () => update({ dates: [] }) }]
-              : []),
-          ]}
+          },
+          ...(value.dates.length ? [{ label: messages().clearDateRange, icon: "ti ti-x", action: () => update({ dates: [] }) }] : []),
+        ],
+      });
+    }
+    if (props.localTags.length > 0 && !searching()) {
+      const tagId = value?.tagId ?? null;
+      sections.push({
+        sectionLabel: messages().tag,
+        items: props.localTags.map((tag) => ({
+          choice: "radio" as const,
+          label: tag.name,
+          color: tag.color,
+          checked: tagId === tag.id,
+          action: () => setTag(tagId === tag.id ? null : tag.id),
+        })),
+      });
+    }
+    if (searching()) {
+      sections.push({
+        sectionLabel: listText().searchIn,
+        items: props.quickSearch.quickSearchFieldOptions().map((option) => ({
+          choice: "checkbox" as const,
+          label: option.label,
+          icon: option.icon,
+          checked: () => props.quickSearch.searchFields().some((field) => field === option.value),
+          closeOnSelect: false,
+          action: () => {
+            const fields: string[] = [...props.quickSearch.searchFields()];
+            props.quickSearch.updateSearchFields(
+              fields.includes(option.value) ? fields.filter((field) => field !== option.value) : [...fields, option.value],
+            );
+          },
+        })),
+      });
+      sections.push({
+        sectionLabel: listText().place,
+        items: placeOptions().map((option) => ({
+          choice: "radio" as const,
+          label: option.label,
+          checked: () => (props.quickSearch.scopeFolderId() ?? "") === option.value,
+          closeOnSelect: false,
+          action: () => props.quickSearch.updateScope(option.value || null),
+        })),
+      });
+    }
+    sections.push({
+      items: [
+        {
+          label: listText().moreFiltersEllipsis,
+          icon: "ti ti-adjustments-search",
+          description: structured() ?? undefined,
+          action: () => void props.quickSearch.openAdvancedSearch(),
+        },
+        ...(activeCount() > 0 ? [{ label: listText().resetFilters, icon: "ti ti-filter-off", action: reset }] : []),
+      ],
+    });
+    return sections;
+  };
+  /** Reset clears what narrows the list: while searching the search options, otherwise the filters in the URL. */
+  const reset = () => {
+    if (searching()) {
+      props.quickSearch.updateSearchFields([...DEFAULT_MAIL_QUICK_SEARCH_FIELDS]);
+      props.quickSearch.updateScope(null);
+      return;
+    }
+    props.onOpenHref(buildMailSearchClearHref(url()));
+  };
+  let trigger: HTMLElement | undefined;
+  const label = () => (activeCount() > 0 ? listText().filtersActive({ count: activeCount() }) : listText().filters);
+  return (
+    <span class="mail-search-filter" ref={(element) => (trigger = element)} data-mail-search-filter>
+      <Dropdown.Root position="bottom-right" width="18rem" items={items()} label={listText().filters} phone="sheet">
+        <Dropdown.Trigger
+          iconOnly
+          type="button"
+          variant="ghost"
+          label={label()}
+          tooltip={label()}
+          data-active={activeCount() > 0 ? "true" : undefined}
+          // The search builder loads on first use; the button says so and keeps its place and focus meanwhile.
+          aria-busy={props.quickSearch.searchBuilderLoading() ? "true" : undefined}
+          data-mail-filter-button
         >
-          <Dropdown.Trigger
-            appearance="plain"
-            class="k2b-filter-chip"
-            data-active={knownQuick()?.dates.length ? "true" : undefined}
-            label={dateLabel()}
-          >
-            <i class="ti ti-calendar" aria-hidden="true" />
-            <span class="k2b-filter-chip__label">{dateLabel()}</span>
-            <i class="ti ti-chevron-down k2b-filter-chip__chevron" aria-hidden="true" />
-          </Dropdown.Trigger>
-        </Dropdown.Root>
-      </Show>
-      <Show when={searchSummary()}>
-        {(summary) => (
-          <FilterChip
-            label={messages().search}
-            icon="ti ti-filter-check"
-            showValue
-            options={[{ options: [{ value: "search", label: summary() }] }]}
-            value={["search"]}
-            onValueChange={() => props.onOpenHref(buildMailSearchClearHref(url()))}
+          <i
+            class={props.quickSearch.searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-adjustments-horizontal"}
+            aria-hidden="true"
           />
-        )}
-      </Show>
-    </>
-  );
-}
-
-/** The tag filter belongs beside Search and selection, while its value stays in the canonical query. */
-export function MailboxTagFilter(props: MailboxFilterContext) {
-  const locale = useLocale();
-  const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
-  const { url, knownQuick } = createMailboxFilterContext(props);
-  const activeTag = () => props.localTags.find((tag) => tag.id === knownQuick()?.tagId);
-  return (
-    <Show when={props.localTags.length > 0}>
-      <FilterChip
-        label={activeTag() ? messages().tagValue({ name: activeTag()!.name }) : messages().tag}
-        icon="ti ti-tag"
-        iconOnly
-        variant={activeTag() ? "subtle" : "ghost"}
-        class="mail-head-tag"
-        options={[{ options: props.localTags.map((tag) => ({ value: tag.id, label: tag.name, color: tag.color })) }]}
-        value={activeTag() ? [activeTag()!.id] : []}
-        onValueChange={(value) => {
-          const current = knownQuick() ?? emptyMailHeadFilters(props.folderId);
-          props.onOpenHref(mailHeadFilterHref(url(), { ...current, tagId: value.at(-1) ?? null }, knownQuick()));
+          <span class="mail-search-filter-count" aria-hidden="true">
+            {activeCount() > 0 ? activeCount() : ""}
+          </span>
+        </Dropdown.Trigger>
+      </Dropdown.Root>
+      <MovedHint
+        open={props.hint.open}
+        onDismiss={props.hint.onDismiss}
+        target={() => trigger?.querySelector<HTMLElement>("[data-mail-filter-button]") ?? undefined}
+        action={{
+          label: workspaceText().showFilters,
+          onClick: () => queueMicrotask(() => trigger?.querySelector<HTMLElement>("[data-mail-filter-button]")?.click()),
         }}
-      />
-    </Show>
-  );
-}
-
-/** Conversations or messages, at the end of the head row. */
-export function MailListModeMenu(props: { listMode: MailListMode; onListModeChange: (mode: MailListMode) => void }) {
-  const locale = useLocale();
-  const messages = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
-  return (
-    <Dropdown.Root
-      position="bottom-right"
-      width="14rem"
-      items={[
-        {
-          label: messages().conversationView,
-          icon: props.listMode === "conversations" ? "ti ti-check" : "ti ti-messages",
-          action: () => props.onListModeChange("conversations"),
-        },
-        {
-          label: messages().messageView,
-          icon: props.listMode === "messages" ? "ti ti-check" : "ti ti-mail",
-          action: () => props.onListModeChange("messages"),
-        },
-      ]}
-    >
-      <Dropdown.Trigger
-        iconOnly
-        type="button"
-        variant="ghost"
-        size="sm"
-        label={messages().chooseListView}
-        tooltip={props.listMode === "conversations" ? messages().conversationView : messages().messageView}
       >
-        <i class="ti ti-layout-list" aria-hidden="true" />
-      </Dropdown.Trigger>
-    </Dropdown.Root>
+        {workspaceText().filtersHint}
+      </MovedHint>
+    </span>
   );
 }

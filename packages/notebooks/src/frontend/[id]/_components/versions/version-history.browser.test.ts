@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
 
 const buildHarness = async (): Promise<string> => {
   const ui = `${resolve(import.meta.dir, "../../../../../../ui")}/`;
@@ -271,7 +271,7 @@ for (const viewport of viewports) {
           await select(page);
           expect(await page.getByRole("button", { name: labels[locale].primary, exact: true }).count()).toBe(1);
           const before = await primary(page).boundingBox();
-          await primary(page).hover();
+          await hoverInPlace(primary(page));
           await settle(page);
           sameBox(before, await primary(page).boundingBox(), "hover primary");
           expect(await page.getByRole("button", { name: labels[locale].menu, exact: true }).count()).toBe(1);

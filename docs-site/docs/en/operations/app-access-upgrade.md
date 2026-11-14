@@ -196,7 +196,12 @@ The adapter must preserve resource eligibility, group semantics and bound-key
 limits and cancel its query when the probe aborts.
 
 Revocation takes effect on the next request; there is no cache across
-requests. Open live connections retain the one-minute revalidation bound.
+requests. Open live connections retain the one-minute revalidation bound by
+default. The explicit `eventOnly` SSE/socket guard option removes polling only
+for decisions fully covered by access events and local expiry timers.
+Resource-derived entry rules retain periodic checks. AI conversation streams
+opt in using Identity-Access events and conversation archive, owner and deletion
+events; no operator setting is needed.
 Verify grant, last-right removal, group removal, guest and service-account
 entry, and matching search and CLI visibility before adopting the rule.
 
@@ -382,3 +387,30 @@ scope lists. Replace a limited key by issuing a new one and revoking the old
 one. New OAuth clients created with `cld admin agents create` include `admin`;
 existing clients are unchanged. No data migration is required. See
 [Standalone service accounts and agents](/en/docs/identity/service-accounts#use-an-agent-from-the-cli).
+
+## Event-only live channels
+
+Live channels can explicitly declare `eventOnly: true` when their owning
+services publish every access change. This disables the channel's two-second
+delivery cache and ten-second access sweep, and its sixty-second collection
+refresh. Existing channels keep those defaults until they opt in. There is
+no operator setting or database migration for the option.
+
+AI's user channel, Chat's personal channel, Mail's mailbox channel, Spaces'
+space channel, and Grids' record, metadata and run channels opt in. Mail maps
+assigned-reader delivery keys to their mailbox access key. Grids publishes
+access hints when a table or workflow is soft-deleted. Chat conversation and
+list channels and Contacts channels retain periodic checks. Domain bursts defer
+unfinished collection discovery to the next ten-second refresh attempt;
+unrelated domain keys do not restart subscription admission.
+
+Chat discussion channels consume cached resource authority during live checks.
+A missing or expired entry drops the key and requests a client reload. HTTP
+reads renew that authority; live delivery does not wait for the resource-owning
+application.
+
+Deploy the owning application's event sources with its opted-in channels.
+Keep Core's Identity-Access delivery running on NATS and verify event-driven
+revocation and known expiry deadlines as part of an upgrade. See
+[Live updates](/en/docs/automation/live-updates#access-changes) for the channel
+contract and SQL budget guards.

@@ -52,6 +52,7 @@ const mailbox = (index: number, permission: "read" | "write" | "admin" = "write"
   syncEnabled: true,
   searchBackend: "postgres",
   automaticReplyManagementPermission: "admin",
+  draftEditMode: "lock",
   composeSafety: composeSafetyConfigSchema.parse({}),
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
@@ -107,7 +108,15 @@ afterEach(() => {
 beforeEach(() => {
   spies.push(spyOn(services.coreSettings, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
-  spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
+  spies.push(
+    spyOn(rail, "readRailSnapshot").mockResolvedValue({
+      revision: 0,
+      visibility: {},
+      shortcuts: [],
+      showNames: true,
+      managedShortcuts: [],
+    }),
+  );
   // Public ids keep the last digit of the internal id, so each test can tell which mailbox or sender reached the page.
   spies.push(
     spyOn(publicResources, "publicIds").mockImplementation(

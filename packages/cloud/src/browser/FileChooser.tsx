@@ -2,6 +2,7 @@ import { fileIcons, text } from "@k2b/stdlib";
 import {
   Button,
   createCollectionSelection,
+  createDelayedLoading,
   FileDropTarget,
   FileDropzone,
   FileGrid,
@@ -11,12 +12,15 @@ import {
   type StatusTone,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { createStore } from "solid-js/store";
+import type { FileChooserPlace } from "../contracts/file-chooser-place";
 import type { FileProviderContext, FileProviderEntry, FileProviderTag } from "../contracts/file-provider";
 import { deviceFilesProblem } from "./choice-limits";
 import { fileChooserMessages } from "./file-chooser-messages";
-import { FileDialogFrame, type FileDialogSource, FileDialogSources } from "./file-dialog";
+import { type FileChooserPlaceState, placeOf } from "./file-chooser-place";
+import { FileChooserPreview } from "./file-chooser-preview";
+import { FileDialogFrame, FileDialogSkeletonRows, type FileDialogSource, FileDialogSources } from "./file-dialog";
 import {
   type EntryProblem,
   eachLimited,
@@ -28,7 +32,7 @@ import {
   providerIcon,
   readProviderFile,
 } from "./file-providers";
-import { createProviderFolder, FolderContents, FolderToolbar } from "./provider-folder";
+import { createProviderFolder, FolderContents, type FolderLocation, FolderToolbar } from "./provider-folder";
 
 export type ChooseFilesOptions = {
   /** `<input accept>` syntax, for example `"image/*,.pdf"`. */
@@ -71,6 +75,20 @@ type Download = {
 };
 
 const DEVICE = "device";
+/** From this viewport width the chooser is wider and shows the file in focus beside the list. */
+const PREVIEW_MEDIA = "(min-width: 75rem)";
+
+/** Whether the preview column shows; below its width it is hidden and reads nothing. */
+const createPreviewWidth = () => {
+  const media = typeof matchMedia === "function" ? matchMedia(PREVIEW_MEDIA) : undefined;
+  const [wide, setWide] = createSignal(media?.matches ?? false);
+  if (media) {
+    const change = () => setWide(media.matches);
+    media.addEventListener("change", change);
+    onCleanup(() => media.removeEventListener("change", change));
+  }
+  return wide;
+};
 
 const TAG_TONES: Record<NonNullable<FileProviderTag["tone"]>, StatusTone> = {
   neutral: "neutral",
@@ -91,9 +109,19 @@ export const EntryTile = (props: { entry: FileProviderEntry }): JSX.Element => (
   </span>
 );
 
-/** "1.2 MB · 28/10/2026" for a file, "Folder · 28/10/2026" for a folder. */
-export const EntryFacts = (props: { entry: FileProviderEntry; folder: string }): JSX.Element => (
+/** "1.2 MB · 28/10/2026" for a file, "Folder · 28/10/2026" for a folder; a search hit leads with where it lies. */
+export const EntryFacts = (props: { entry: FileProviderEntry; folder: string; location?: boolean }): JSX.Element => (
   <>
+    <Show when={props.location !== false && props.entry.location}>
+      {(location) => (
+        <>
+          <span class="cloud-file-chooser__location" title={location()}>
+            <i class="ti ti-folder" aria-hidden="true" /> {location()}
+          </span>
+          <span aria-hidden="true"> · </span>
+        </>
+      )}
+    </Show>
     {props.entry.kind === "file" ? <Format.Bytes value={props.entry.size} /> : props.folder}
     <Show when={props.entry.updatedAt}>
       {(updated) => (
@@ -107,14 +135,18 @@ export const EntryFacts = (props: { entry: FileProviderEntry; folder: string }):
 );
 
 /**
- * The shared file chooser: the sources on the left, "This device" first and open; inside a provider, its folders
- * page by page. It resolves the chosen files, read through the providers' streams, or `[]`.
+ * The shared file chooser: the sources on the left, "This device" first; inside a provider, its folders page by page.
+ * It opens where the person was last, in a provider's folder or on This device, and remembers the place as it closes.
+ * It resolves the chosen files, read through the providers' streams, or `[]`.
  */
 export function FileChooser(props: {
   options: ChooseFilesOptions;
   providers: () => FileProviderList;
   retryProviders: () => void;
   caller: () => FileProviderCaller;
+  /** The person's last place; while it loads, the content waits instead of showing This device first. */
+  place: () => FileChooserPlaceState;
+  remember: (place: FileChooserPlace | null) => void;
   close: (files: File[]) => void;
 }): JSX.Element {
   const locale = useLocale();
@@ -124,11 +156,17 @@ export function FileChooser(props: {
   let deviceInput: HTMLInputElement | undefined;
   let root: HTMLDivElement | undefined;
 
+  /** The restored place takes focus from This device once its rows show, unless the person moved on before. */
+  let focusRestored = false;
   /** After navigation the activated row is gone; give focus to the first row so the keyboard continues there. */
   const refocus = () => {
     queueMicrotask(() => {
+      const restored = focusRestored;
+      focusRestored = false;
       const active = document.activeElement;
-      if (active && root?.contains(active) && active.isConnected && active.tagName !== "DIALOG") return;
+      // Until the person acts, focus rests wherever opening put it: on This device, the dialog itself (Chromium), or
+      // its first control, the close button (WebKit's native dialog focus). The restored folder's rows take it from any.
+      if (!restored && active && root?.contains(active) && active.isConnected && active.tagName !== "DIALOG") return;
       const first = items()[0]?.id;
       if (location() && first) selection.focus(first);
       else root?.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]')?.focus();
@@ -137,17 +175,60 @@ export function FileChooser(props: {
   /** Providers that answered 403 or 404 at their root; they leave the list for this dialog. */
   const [gone, setGone] = createSignal<ReadonlySet<string>>(new Set());
   const [goneNote, setGoneNote] = createSignal<string>();
+  /** The location opened from the remembered place; a missing folder there falls back to the provider's root. */
+  let restored: FolderLocation = null;
   const folder = createProviderFolder({
     caller: props.caller,
     t,
     settled: refocus,
     context: props.options.context,
+    tree: true,
     gone: (provider) => {
       setGone(new Set([...gone(), provider.appId]));
       setGoneNote(t().sourceGone({ app: provider.name }));
     },
+    missing: (provider) => {
+      if (!restored || location() !== restored) return false;
+      restored = null;
+      folder.openProvider(provider);
+      return true;
+    },
   });
   const { location, items, openFolder } = folder;
+
+  // Open where the person was last, once both the place and the providers are known. A provider that is gone, or a
+  // place that cannot be read, leaves This device open; a folder that is gone opens the provider's root instead.
+  const [restoring, setRestoring] = createSignal(true);
+  /** The stored place, once known, and the location the chooser opened with: This device or the restored folder. */
+  let initialPlace: string | undefined;
+  let openedAt: FolderLocation = null;
+  createEffect(() => {
+    if (!restoring()) return;
+    const place = props.place();
+    const list = props.providers();
+    if (place.state === "loading") return;
+    initialPlace = JSON.stringify(place.place);
+    const remembered = place.place;
+    if (remembered && list.state === "loading") return;
+    setRestoring(false);
+    const provider = remembered && list.state === "ready" ? list.providers.find((item) => item.appId === remembered.appId) : undefined;
+    if (!remembered || !provider) return;
+    untrack(() => {
+      focusRestored = true;
+      folder.navigate({ provider, trail: [{ name: provider.name }, ...remembered.folders] });
+      restored = location();
+      openedAt = restored;
+    });
+  });
+  const restoringPlaceholder = createDelayedLoading(restoring);
+  onCleanup(() => {
+    // Only a place the person moved to is remembered. Closing where the chooser opened keeps the stored place, also
+    // when it could not be opened, such as while the apps were still loading or a provider was briefly unavailable.
+    const open = location();
+    if (open === openedAt) return;
+    const place = open ? placeOf(open.provider.appId, open.trail) : null;
+    if (JSON.stringify(place) !== initialPlace) props.remember(place);
+  });
   const [downloads, setDownloads] = createStore<Download[]>([]);
   const [downloading, setDownloading] = createSignal(false);
   let transfer: AbortController | undefined;
@@ -191,6 +272,7 @@ export function FileChooser(props: {
     const open = location();
     return open ? `app:${open.provider.appId}` : DEVICE;
   };
+  const wide = createPreviewWidth();
 
   // Files that do not fit stay in focus order, so the keyboard and screen readers reach the reason, but cannot be chosen.
   const blocked = createMemo(() => new Set(items().flatMap((entry) => (problem(entry) ? [entry.id] : []))));
@@ -232,6 +314,9 @@ export function FileChooser(props: {
   createEffect(on(chosen, () => setDeviceNote(undefined), { defer: true }));
 
   const openSource = (row: SourceRow) => {
+    // The person chose a place before the remembered one was known; it is no longer opened for them.
+    setRestoring(false);
+    focusRestored = false;
     setGoneNote(undefined);
     setDeviceNote(undefined);
     const open = location();
@@ -241,6 +326,48 @@ export function FileChooser(props: {
     if (location()) folder.navigate(null);
     // The click or key press on the row is the user activation the native picker needs.
     deviceInput?.click();
+  };
+
+  /**
+   * The file in focus, previewed beside the list on wide screens, once the person used the list: the row that only
+   * stands first in a folder is not read.
+   */
+  const [engaged, setEngaged] = createSignal(false);
+  createEffect(on(location, () => setEngaged(false)));
+  const focusedFile = createMemo(() => {
+    const id = selection.focused();
+    const entry = !engaged() || id === null ? undefined : items().find((item) => item.id === id);
+    return entry?.kind === "file" ? entry : undefined;
+  });
+  /**
+   * Previewed files, so Add does not read them a second time: those that are selected and the one shown last. Others
+   * are dropped at once, and every one when the folder changes or the dialog closes.
+   */
+  const previews = new Map<string, File>();
+  let lastPreview: string | undefined;
+  const keepPreviews = () => {
+    for (const id of previews.keys()) if (id !== lastPreview && !selection.selected().has(id)) previews.delete(id);
+    // The browser holds no more previews than one choice may hold; past that only the one shown stays.
+    const held = [...previews.values()].reduce((sum, file) => sum + file.size, 0);
+    if (maxTotal !== undefined && held > maxTotal) for (const id of previews.keys()) if (id !== lastPreview) previews.delete(id);
+  };
+  createEffect(on(() => selection.selected(), keepPreviews, { defer: true }));
+  createEffect(
+    on(
+      location,
+      () => {
+        previews.clear();
+        lastPreview = undefined;
+      },
+      { defer: true },
+    ),
+  );
+  onCleanup(() => previews.clear());
+  const knownRead = (entry: FileEntry) => previews.get(entry.id);
+  const keepRead = (entry: FileEntry, file: File) => {
+    lastPreview = entry.id;
+    previews.set(entry.id, file);
+    keepPreviews();
   };
 
   const add = async () => {
@@ -254,7 +381,18 @@ export function FileChooser(props: {
     // Only a retry of this transfer finds earlier downloads: Cancel clears them, and the location cannot change
     // while a transfer is shown, so a finished file never stands in for another provider's file with the same ID.
     const previous = new Map(downloads.filter((item) => item.state === "done").map((item) => [item.entry.id, item]));
-    setDownloads(files.map((entry) => previous.get(entry.id) ?? { entry, loaded: 0, total: entry.size, state: "waiting" }));
+    setDownloads(
+      files.map((entry): Download => {
+        const kept = previous.get(entry.id);
+        if (kept) return kept;
+        // A file the preview read counts like a finished download: it was read with the same limits, and only when it
+        // still has the listed size, which the selection's limits counted.
+        const read = knownRead(entry);
+        return read && read.size === entry.size
+          ? { entry, loaded: read.size, total: read.size, state: "done", file: read }
+          : { entry, loaded: 0, total: entry.size, state: "waiting" };
+      }),
+    );
     setDownloading(true);
     // One budget for the whole transfer: each read takes the size it announces, which may be more than was listed.
     let used = downloads.reduce((sum, item) => sum + (item.file?.size ?? 0), 0);
@@ -320,10 +458,60 @@ export function FileChooser(props: {
       : { long: t().wrongType, short: t().wrongTypeShort };
   };
 
+  // One preview per provider location: the frame reads `aside` twice, and each read of inline JSX would build another.
+  const aside = createMemo(() =>
+    // Only inside a provider and only where the column shows: a hidden preview reads nothing.
+    location() && wide() ? (
+      <FileChooserPreview
+        entry={focusedFile()}
+        provider={location()?.provider}
+        caller={props.caller}
+        maxBytes={limit()}
+        accept={props.options.accept}
+        blocked={Boolean(focusedFile() && problem(focusedFile()!))}
+        known={knownRead}
+        onRead={keepRead}
+        icon={entryIcon}
+        t={t}
+      >
+        <Show when={focusedFile()}>
+          {(entry) => (
+            <div class="cloud-file-preview__details">
+              <p class="cloud-file-preview__name">{entry().name}</p>
+              {/* A long location wraps on its own line, so no line starts with a separator. */}
+              <Show when={entry().location}>
+                {(location) => (
+                  <p class="cloud-file-preview__facts">
+                    <i class="ti ti-folder" aria-hidden="true" /> {location()}
+                  </p>
+                )}
+              </Show>
+              <p class="cloud-file-preview__facts">
+                <Show when={reason(entry())} fallback={<EntryFacts entry={entry()} folder={t().folder} location={false} />}>
+                  {(why) => (
+                    <>
+                      <i class="ti ti-ban" aria-hidden="true" /> {why().long}
+                    </>
+                  )}
+                </Show>
+              </p>
+            </div>
+          )}
+        </Show>
+      </FileChooserPreview>
+    ) : undefined,
+  );
+
   return (
     <FileDialogFrame
       ref={(element) => {
         root = element;
+        // A key or pointer in the dialog is the person's own move: the restored folder no longer takes focus from it.
+        const acted = () => {
+          focusRestored = false;
+        };
+        element.addEventListener("pointerdown", acted, true);
+        element.addEventListener("keydown", acted, true);
       }}
       title={t().title({ multiple })}
       close={() => props.close([])}
@@ -354,6 +542,7 @@ export function FileChooser(props: {
         />
       }
       toolbar={location() ? <FolderToolbar folder={folder} t={t} disabled={downloading()} /> : undefined}
+      aside={aside()}
       status={
         <Switch>
           <Match when={downloading()}>{progress()}</Match>
@@ -362,6 +551,8 @@ export function FileChooser(props: {
           <Match when={!location()}>{null}</Match>
           <Match when={overLimit()}>{overLimit()}</Match>
           <Match when={chosen().length > 0}>{t().selected({ count: chosen().length })}</Match>
+          {/* The search left out folders it could not search: one calm line in the status's fixed place. */}
+          <Match when={folder.query() && folder.incomplete()}>{t().subfoldersSkipped}</Match>
           <Match when={limits()}>{`${t().selectHint({ multiple })} · ${limits()}`}</Match>
           <Match when={true}>{t().selectHint({ multiple })}</Match>
         </Switch>
@@ -430,6 +621,12 @@ export function FileChooser(props: {
             </For>
           </ul>
         </Match>
+        <Match when={restoring() && !location()}>
+          {/* The remembered place is not known yet: its folder may open here, so This device does not show first. */}
+          <Show when={restoringPlaceholder()} fallback={<div class="cloud-file-dialog__list" aria-busy="true" />}>
+            <FileDialogSkeletonRows label={t().loading} />
+          </Show>
+        </Match>
         <Match when={!location()}>
           <div class="cloud-file-dialog__device">
             <FileDropzone
@@ -453,7 +650,7 @@ export function FileChooser(props: {
           </div>
         </Match>
         <Match when={true}>
-          <FolderContents folder={folder} t={t} noMatchingFiles={props.options.noMatchingFiles}>
+          <FolderContents folder={folder} t={t} noMatchingFiles={props.options.noMatchingFiles} onUse={() => setEngaged(true)}>
             <FileGrid
               rows={items()}
               getRowId={(entry) => entry.id}

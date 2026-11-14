@@ -1,13 +1,13 @@
 import {
   Button,
   DescriptionList,
-  DetailPanel,
   FileGrid,
   FileTypeIcon,
   fileKindLabel,
   IconButton,
   NoticeCard,
   Placeholder,
+  Section,
   StatusBadge,
   Tooltip,
   useLocale,
@@ -52,7 +52,7 @@ export function WorkflowRunExecutionSection(props: {
     <>
       <Show when={props.run.error}>{(error) => <NoticeCard tone="danger">{error().message}</NoticeCard>}</Show>
       <Show when={props.run.resultMessage}>{(message) => <NoticeCard tone="success">{message()}</NoticeCard>}</Show>
-      <DetailPanel.Section title={t().execution}>
+      <Section title={t().execution}>
         <DescriptionList
           layout="rows"
           size="sm"
@@ -68,7 +68,7 @@ export function WorkflowRunExecutionSection(props: {
               : []),
           ]}
         />
-      </DetailPanel.Section>
+      </Section>
     </>
   );
 }
@@ -78,7 +78,7 @@ export function WorkflowRunTechnicalSection(props: { run: PublicWorkflowRun; can
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <DetailPanel.Section title={t().technicalDetails} collapsible summary={t().runTechnicalSummary}>
+    <Section title={t().technicalDetails} collapsible summary={t().runTechnicalSummary}>
       <DescriptionList
         layout="rows"
         size="sm"
@@ -98,7 +98,7 @@ export function WorkflowRunTechnicalSection(props: { run: PublicWorkflowRun; can
           },
         ]}
       />
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -106,7 +106,7 @@ export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] 
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <DetailPanel.Section title={t().input}>
+    <Section title={t().input}>
       <Show when={props.inputs.length > 0} fallback={<p class="grids-details-none">{t().noInputs}</p>}>
         <DescriptionList
           layout="rows"
@@ -121,7 +121,7 @@ export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] 
           }))}
         />
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -134,7 +134,7 @@ export function WorkflowRunStepsSection(props: {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <DetailPanel.Section title={t().steps}>
+    <Section title={t().steps}>
       <div class="flex flex-col gap-2">
         <For
           each={props.steps}
@@ -197,7 +197,7 @@ export function WorkflowRunStepsSection(props: {
           <p class="text-xs text-dimmed">{t().stepsTruncated}</p>
         </Show>
       </div>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -220,7 +220,7 @@ export function WorkflowRunDocumentsSection(props: {
     return { label: t().downloadAll, hint: t().downloadAllMixedHint };
   };
   return (
-    <DetailPanel.Section
+    <Section
       title={t().generatedDocuments}
       count={props.documents.total || undefined}
       actions={
@@ -282,6 +282,6 @@ export function WorkflowRunDocumentsSection(props: {
         </Show>
         <Show when={props.loadMoreError}>{(error) => <p class="text-xs text-red-600 dark:text-red-400">{error()}</p>}</Show>
       </div>
-    </DetailPanel.Section>
+    </Section>
   );
 }

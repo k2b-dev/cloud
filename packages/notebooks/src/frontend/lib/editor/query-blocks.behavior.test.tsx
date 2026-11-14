@@ -13,6 +13,7 @@ const loading = createDomTestHarness();
 const { createQueryBlockPreviews } = await import("./query-blocks");
 const { notebookChartOptions } = await import("../../../lib/chart-options");
 const { extractNotebookDirectiveRanges } = await import("../../../lib/query-blocks");
+const { placeMarkdownCaret } = await import("@k2b/editor/markdown");
 loading.cleanup();
 
 const DOCUMENT = "# Heading\n\n:::query\nsource: notes\n:::\n\n:::toc\n:::";
@@ -189,8 +190,8 @@ describe("query block previews", () => {
       toggle.click();
       expect(toggle.getAttribute("aria-pressed")).toBe("true");
       expect(preview.querySelector(".notebook-book-chart__table table")).not.toBeNull();
-      // Entering the source replaces the decoration and calls QueryBlockWidget.destroy().
-      app.view().dispatch({ selection: { anchor: markdown.indexOf(":::chart") } });
+      // A person entering the source replaces the decoration and calls QueryBlockWidget.destroy().
+      app.view().dispatch({ selection: { anchor: markdown.indexOf(":::chart") }, effects: placeMarkdownCaret.of() });
       expect(widget.isConnected).toBe(false);
       expect(app.dom.root.querySelector(".notebook-book-chart__actions button")).toBeNull();
       expect(preview.querySelector("button, .notebook-book-chart__table, [data-interactive], [tabindex]")).toBeNull();

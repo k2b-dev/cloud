@@ -41,6 +41,60 @@ afterAll(() => {
 });
 
 const source = "def f():\n    return 1";
+test.each([
+  ["google-docs", "Hello world"],
+  ["word", "Some text **with bold**."],
+  [
+    "outlook",
+    "Going to lose first word here as well. Bla bla bla. Add some text here… some text here… some text here. Sometimes all the list items show 1, 1 and 1. Adding more words here.",
+  ],
+  ["apple-notes", "normal, **bold**, *italic*, underline\n\n1. numbered\n2. bullets\n\n- dotted\n- Bullets"],
+  ["web", "X[X](https://en.wikipedia.org/wiki/United_States_Senate_election_in_Illinois,_2004)X"],
+])("source HTML fixture: %s", async (name, markdown) => {
+  const html = await Bun.file(new URL(`./clipboard-fixtures/${name}.html`, import.meta.url)).text();
+  expect(htmlToMarkdown(html)).toEqual({ markdown, droppedImages: 0 });
+});
+test.each([
+  [
+    "Docs clipboard whitespace style",
+    '<b style="font-weight:normal"><p><span style="white-space:pre-wrap">Hello world</span></p></b><br class="Apple-interchange-newline">',
+    "Hello world",
+  ],
+  [
+    "Google Docs paragraphs",
+    '<b style="font-weight:normal"><p>eins</p><p><span style="font-weight:700">zwei</span></p></b>',
+    "eins\n\n**zwei**",
+  ],
+  [
+    "Google Docs sibling sublist",
+    '<b style="font-weight:normal"><ul><li><p>A</p></li><ul><li>A1</li><li>A2</li></ul><li>B</li></ul></b>',
+    "- A\n  - A1\n  - A2\n- B",
+  ],
+  ["multiple paragraphs in one item", "<ul><li><p>a</p><p>b</p></li><li>c</li></ul>", "- a\n\n  b\n- c"],
+  ["literal Markdown", "<p># kein Titel</p><p>1. Januar</p><p>*.txt und *.pdf</p>", "\\# kein Titel\n\n1\\. Januar\n\n\\*.txt und \\*.pdf"],
+  ["tight list", "<ul><li>a</li><li>b</li></ul>", "- a\n- b"],
+  ["standard nested list", "<ul><li>A<ul><li>nested</li></ul></li><li>B</li></ul>", "- A\n  - nested\n- B"],
+  ["ordered start", '<ol start="3"><li>drei</li><li>vier</li></ol>', "3. drei\n4. vier"],
+  [
+    "HTML table escapes literal text once",
+    "<table><tr><td>a<br>b</td><td>c|d</td><td>*.txt</td></tr></table>",
+    "| a b | c\\|d | \\*.txt |\n| --- | --- | --- |",
+  ],
+  ["line marker split across spans", "<p><span>1</span><span>. Januar</span></p>", "1\\. Januar"],
+  ["literal rule and setext markers", "<p>text<br>---<br>===</p>", "text\n\\---\n\\==="],
+  ["literal exclamation before link", '<p>!<a href="https://example.com">link</a></p>', "\\![link](https://example.com)"],
+  ["plain URL stays navigable", "<p>see https://example.com/docs#install_x</p>", "see https://example.com/docs#install_x"],
+  ["intraword punctuation stays literal", "<p>snake_case C# a | b ~ home</p>", "snake_case C# a | b ~ home"],
+  ["brackets do not become math", "<p>[Chorus]</p>", "\\[Chorus]"],
+  [
+    "URL pipes stay inside their table cell",
+    "<table><tr><td>https://example.com/a|b</td></tr></table>",
+    "| https://example.com/a\\|b |\n| --- |",
+  ],
+  ["paired single tildes stay literal", "<p>~draft~</p>", "\\~draft\\~"],
+])("clipboard structure: %s", (_name, html, markdown) => {
+  expect(htmlToMarkdown(html)?.markdown).toBe(markdown);
+});
 const editorHtml = '<div style="white-space: pre;"><div><span>def</span><span> f():</span></div><div><span>    return 1</span></div></div>';
 const fenced = (text: string) => `\`\`\`\n${text}\n\`\`\``;
 
@@ -67,12 +121,16 @@ function paste({
 }) {
   const errors: string[] = [];
   const images: number[] = [];
+  let scroll = false;
   const view = new EditorView({
     parent: dom.root,
     state: EditorState.create({
       doc,
       selection: { anchor: at, head: to },
       extensions: [
+        EditorView.updateListener.of((update) => {
+          scroll ||= update.transactions.some((tr) => tr.scrollIntoView);
+        }),
         markdown(),
         EditorState.readOnly.of(readOnly),
         tableHost.of({
@@ -96,11 +154,15 @@ function paste({
   Object.defineProperty(event, "clipboardData", { value: data });
   try {
     view.contentDOM.dispatchEvent(event);
-    return { text: view.state.doc.toString(), errors, images, prevented: event.defaultPrevented, html: view.dom.innerHTML };
+    return { text: view.state.doc.toString(), errors, images, scroll, prevented: event.defaultPrevented, html: view.dom.innerHTML };
   } finally {
     view.destroy();
   }
 }
+
+test("converted paste scrolls to the insertion", () => {
+  expect(paste({ html: "<p>inserted</p>" }).scroll).toBe(true);
+});
 
 describe("code clipboard fidelity", () => {
   test("editor HTML becomes one fenced block outside code, with exact indentation", () => {

@@ -1,5 +1,133 @@
 # Changelog
 
+## [0.11.5](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.11.4...npm-editor-v0.11.5) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.57.1 to 0.58.0
+
+## [0.11.4](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.11.3...npm-editor-v0.11.4) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.57.0 to 0.57.1
+
+## [0.11.3](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.11.2...npm-editor-v0.11.3) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.56.0 to 0.57.0
+
+## [0.11.2](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.11.1...npm-editor-v0.11.2) (2026-11-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.55.0 to 0.56.0
+
+## [0.11.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.11.0...npm-editor-v0.11.1) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.54.0 to 0.55.0
+
+## [0.11.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.10.0...npm-editor-v0.11.0) (2026-11-10)
+
+
+### Features
+
+* **ui:** balance flows carry each month's closing into the next ([#2824](https://github.com/k2b-dev/cloud/issues/2824)) ([3b4452e](https://github.com/k2b-dev/cloud/commit/3b4452e2551f40a8ea1705e76838cbde446c5b14))
+
+
+### Bug Fixes
+
+* **editor:** Markdown source, the bubble menu and the shared caret follow focus ([#3086](https://github.com/k2b-dev/cloud/issues/3086)) ([a9b3b65](https://github.com/k2b-dev/cloud/commit/a9b3b656c5754b19da2828de33b1b0fac592414d))
+* **editor:** preserve pasted content and speed up long notes ([#3088](https://github.com/k2b-dev/cloud/issues/3088)) ([4a5b296](https://github.com/k2b-dev/cloud/commit/4a5b2968808ae8aaf94aa6d3b2602b840616e418)), closes [#3077](https://github.com/k2b-dev/cloud/issues/3077) [#3078](https://github.com/k2b-dev/cloud/issues/3078) [#3079](https://github.com/k2b-dev/cloud/issues/3079)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.53.0 to 0.54.0
+
+## [0.10.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.9.0...npm-editor-v0.10.0) (2026-11-09)
+
+
+### Features
+
+* **notebooks:** formatting and page actions float as two pills over the note ([#2975](https://github.com/k2b-dev/cloud/issues/2975)) ([17a7897](https://github.com/k2b-dev/cloud/commit/17a7897e07f5c304936447ce3a5e3df105458b80))
+* **ui:** Cloud exports standalone and PDF charts with the UI palette ([#3018](https://github.com/k2b-dev/cloud/issues/3018)) ([95ad9d1](https://github.com/k2b-dev/cloud/commit/95ad9d1ac43b2dce1b2bfbc9997a32f66a052894))
+* **ui:** dot matrix bars for nested counts ([#2743](https://github.com/k2b-dev/cloud/issues/2743)) ([4afc36a](https://github.com/k2b-dev/cloud/commit/4afc36aed51747b16f6f472057dd83282255bd70))
+* **ui:** lines show forecasts, thresholds and today ([#2776](https://github.com/k2b-dev/cloud/issues/2776)) ([0a1b8c1](https://github.com/k2b-dev/cloud/commit/0a1b8c16df200c220abc88f6dda35a65b3b7e3b3))
+* **ui:** sankey charts ([#2772](https://github.com/k2b-dev/cloud/issues/2772)) ([088d8d7](https://github.com/k2b-dev/cloud/commit/088d8d72bfb61c0fe8c29142055964d51c1820fe))
+
+
+### Bug Fixes
+
+* **ui:** bar rows draw negative values again ([#2964](https://github.com/k2b-dev/cloud/issues/2964)) ([db822b5](https://github.com/k2b-dev/cloud/commit/db822b54bcc7ed94a5cbad4e859ebdbdf5c694c3))
+* **ui:** browser tests that measure around a hover use hoverInPlace ([#3020](https://github.com/k2b-dev/cloud/issues/3020)) ([7b5cf3c](https://github.com/k2b-dev/cloud/commit/7b5cf3ce897e2ffbedbfc5320475bb7fb2af2308))
+* **ui:** calendar heatmaps fill their panel ([#2794](https://github.com/k2b-dev/cloud/issues/2794)) ([757cf86](https://github.com/k2b-dev/cloud/commit/757cf86ea07a1cd4022f5a9b7be32ee4cfbab3ae))
+* **ui:** fit distribution labels and make remainders explicit ([#2784](https://github.com/k2b-dev/cloud/issues/2784)) ([7f2b4b2](https://github.com/k2b-dev/cloud/commit/7f2b4b2f033533df57d871c53d36ff1200ee04ee))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.52.0 to 0.53.0
+
+## [0.9.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.8.0...npm-editor-v0.9.0) (2026-11-08)
+
+
+### Features
+
+* **ui:** funnels and ranked bar lists ([#2736](https://github.com/k2b-dev/cloud/issues/2736)) ([b2875ae](https://github.com/k2b-dev/cloud/commit/b2875ae2d34782a6bd013d598133570ef1457600))
+* **ui:** named bubbles with averages and radar charts ([#2779](https://github.com/k2b-dev/cloud/issues/2779)) ([334f441](https://github.com/k2b-dev/cloud/commit/334f4417ca4be015c9650b26a723f2c43ce15e90))
+* **ui:** treemaps and pareto charts ([#2777](https://github.com/k2b-dev/cloud/issues/2777)) ([6fefdbf](https://github.com/k2b-dev/cloud/commit/6fefdbf3f5f428d2f6aebc1464ff7190b127e1f4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.51.0 to 0.52.0
+
+## [0.8.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.7.0...npm-editor-v0.8.0) (2026-11-08)
+
+
+### Features
+
+* **cloud:** Chat and Notebooks share one chart description owned by @k2b/ui ([#2778](https://github.com/k2b-dev/cloud/issues/2778)) ([05299cb](https://github.com/k2b-dev/cloud/commit/05299cb9d7451df2c91e712407614a267435b589))
+* **ui:** stacked, grouped, compared and horizontal bars ([#2729](https://github.com/k2b-dev/cloud/issues/2729)) ([cbfea20](https://github.com/k2b-dev/cloud/commit/cbfea2061617aa5f24bef50aefd01f41d7d316e3))
+* **ui:** waterfall charts ([#2758](https://github.com/k2b-dev/cloud/issues/2758)) ([3b05ef2](https://github.com/k2b-dev/cloud/commit/3b05ef22952c7cb3b883f1d688ada671344db2c2))
+
+
+### Bug Fixes
+
+* **cloud:** localize chart points and keep schema assertions internal ([#2783](https://github.com/k2b-dev/cloud/issues/2783)) ([b2e4a1a](https://github.com/k2b-dev/cloud/commit/b2e4a1a6a396b733dbb5778abecf210febf54228))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.50.0 to 0.51.0
+
 ## [0.7.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.5...npm-editor-v0.7.0) (2026-11-07)
 
 

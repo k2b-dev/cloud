@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 const topLegendFixture = `
 import { createChartCursor } from "../src/content/chart-cursor";
@@ -106,7 +106,7 @@ test("a plain bar chart shows label and value on hover without shifting layout",
     await settled(page);
     const before = await chart.boundingBox();
     expect(before).not.toBeNull();
-    await chart.locator(".stdlib-chart-bar").first().hover();
+    await hoverInPlace(chart.locator(".stdlib-chart-bar").first());
     expect(await tooltipText(page)).toContain("42");
     expect(await chart.boundingBox()).toEqual(before);
     await page.mouse.move(0, 0);
@@ -145,7 +145,7 @@ test("bar rows label every category and keep their geometry while a bar is inspe
     const box = await chart.evaluate((node) => ({ client: node.clientHeight, scroll: node.scrollHeight }));
     expect(box.scroll).toBeGreaterThan(box.client);
     const before = await geometry();
-    await chart.locator(".stdlib-chart-bar").first().hover();
+    await hoverInPlace(chart.locator(".stdlib-chart-bar").first());
     expect(await tooltipText(page, ".rows-bar", "Northwestern coastal region 1")).toContain("1000");
     expect(await geometry()).toEqual(before);
   } finally {
@@ -212,7 +212,7 @@ test("a StatCell trend has a named sparkline with hover inspection and stable ge
     await settled(page);
     const before = await chart.boundingBox();
     expect(before).not.toBeNull();
-    await chart.locator("[data-chart-datum] circle").last().hover();
+    await hoverInPlace(chart.locator("[data-chart-datum] circle").last());
     const text = await tooltipText(page, ".requests-trend .k2b-stat-cell__trend", "18");
     expect(await tooltipContent(page, ".requests-trend")).toEqual({ title: null, rows: [["Requests", "18"]] });
     expect(text).toContain("Requests: 18");

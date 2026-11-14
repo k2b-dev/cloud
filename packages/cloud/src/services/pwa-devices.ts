@@ -4,12 +4,13 @@ import type { Context } from "hono";
 import { lazySync } from "../_internal/process-sync";
 import { PWA_LIMITS as limits, type PwaDeviceView, type PwaErrorCode, type PwaPairingState, type PwaPlatform } from "../contracts/pwa";
 import { sql } from "../runtime/clients";
-import { isAccountCategoryAllowed } from "./account-category-policy";
+import { isAccountAllowed } from "./account-category-policy";
 import { audit } from "./audit";
 import { logger } from "./logging";
 import { pairingSecret } from "./pairing-secret";
 import { type AuthenticatedSession, session } from "./session";
 import { requireRecentWebSession } from "./session/recent";
+import { sharedWorkstationIdleSeconds, withinIdleLimit } from "./session/shared-workstation";
 
 /**
  * Paired phones of the mobile app (preview). A phone holds a device key that only Core
@@ -168,13 +169,14 @@ const initiatorValid = async (tx: SQL, pairing: PairingRow): Promise<boolean> =>
     JOIN auth.signing_keys sk ON sk.kid = sf.signing_kid AND sk.state <> 'revoked'
     WHERE sf.sid = ${pairing.initiator_sid}::uuid AND sf.user_id = ${pairing.initiator_user_id ?? pairing.user_id}::uuid
       AND sf.revoked_at IS NULL AND sf.expires_at > now() AND sf.auth_epoch = u.auth_epoch AND sf.pwa_device_id IS NULL
+      AND ${withinIdleLimit(sql`sf.last_input_at`, await sharedWorkstationIdleSeconds())}
       AND (${pairing.initiator_user_id === null} OR u.admin = true)
       AND (${pairing.initiator_user_id === null} OR u.account_expires IS NULL OR u.account_expires > now())
   `;
   if (!row) return false;
   if (pairing.initiator_user_id) {
     const [admin] = await tx<UserRow[]>`SELECT * FROM auth.users WHERE id = ${pairing.initiator_user_id}::uuid`;
-    return Boolean(admin && (await isAccountCategoryAllowed(admin, tx)));
+    return Boolean(admin && (await isAccountAllowed(admin, tx)));
   }
   return true;
 };
@@ -329,7 +331,7 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
         await revokeDevice(tx, device, "account_expired", null);
         return { outcome: "ended" };
       }
-      if (!(await isAccountCategoryAllowed(user, tx)) || !(await legalAccepted(tx, user.id))) return { outcome: "blocked" };
+      if (!(await isAccountAllowed(user, tx)) || !(await legalAccepted(tx, user.id))) return { outcome: "blocked" };
       if (match === "current") {
         // The phone uses the newest key, so the older one stops working.
         if (device.previous_secret_hash) await tx`UPDATE auth.pwa_devices SET previous_secret_hash = NULL WHERE id = ${device.id}::uuid`;
@@ -374,7 +376,7 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
       }
       const target = targetUserId ? await lockUser(tx, targetUserId) : account;
       if (!target) return fail("NOT_FOUND", 404);
-      if (targetUserId && (accountExpired(target) || !(await isAccountCategoryAllowed(target, tx)))) fail("ACCOUNT_BLOCKED", 403);
+      if (targetUserId && (accountExpired(target) || !(await isAccountAllowed(target, tx)))) fail("ACCOUNT_BLOCKED", 403);
       const [open] = await tx<{ count: number }[]>`
           SELECT count(*)::int AS count FROM auth.pwa_pairings
           WHERE user_id = ${userId}::uuid AND expires_at > now() AND state IN ('pending', 'claimed', 'awaiting_device', 'confirmed')
@@ -456,7 +458,7 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
         if (p.state === "cancelled" || passed(p.expires_at) || user.auth_epoch !== p.auth_epoch || !(await initiatorValid(tx, p)))
           return { ok: false, code: "EXPIRED", status: 410 };
         if (p.state !== "claimed") return { ok: false, code: "CONFLICT", status: 409 };
-        if (accountExpired(user) || !(await isAccountCategoryAllowed(user, tx))) return { ok: false, code: "FORBIDDEN", status: 403 };
+        if (accountExpired(user) || !(await isAccountAllowed(user, tx))) return { ok: false, code: "FORBIDDEN", status: 403 };
         if (!sameCode(code, p.comparison)) {
           const failed = p.failed_attempts + 1;
           if (failed >= limits.confirmAttempts) {
@@ -528,8 +530,7 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
         const [p] = await tx<PairingRow[]>`SELECT * FROM auth.pwa_pairings WHERE id = ${snapshot.id}::uuid FOR UPDATE`;
         if (!user || !p || p.state === "cancelled" || passed(p.expires_at) || passed(p.claim_until)) return fail("EXPIRED", 410);
         if (p.state !== "pending") return fail("ALREADY_USED", 409);
-        if (user.auth_epoch !== p.auth_epoch || accountExpired(user) || !(await isAccountCategoryAllowed(user, tx)))
-          return fail("EXPIRED", 410);
+        if (user.auth_epoch !== p.auth_epoch || accountExpired(user) || !(await isAccountAllowed(user, tx))) return fail("EXPIRED", 410);
         await tx`UPDATE auth.pwa_pairings SET state = 'claimed', completion_secret_hash = ${pairingSecret.hash(completionSecret)},
           comparison = ${code}, platform = ${input.platform}, device_name = ${defaultDeviceName(input.platform, input.userAgent)}
           WHERE id = ${p.id}::uuid`;
@@ -570,7 +571,7 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
           if (!user || !p || passed(p.expires_at) || user.auth_epoch !== p.auth_epoch || !(await initiatorValid(tx, p)))
             return fail("EXPIRED", 410);
           if (p.state !== "awaiting_device" || !p.initiator_user_id) return fail("CONFLICT", 409);
-          if (accountExpired(user) || !(await isAccountCategoryAllowed(user, tx))) return fail("ACCOUNT_BLOCKED", 403);
+          if (accountExpired(user) || !(await isAccountAllowed(user, tx))) return fail("ACCOUNT_BLOCKED", 403);
           const [admin] = await tx<UserRow[]>`SELECT * FROM auth.users WHERE id = ${p.initiator_user_id}::uuid`;
           if (!admin) return fail("EXPIRED", 410);
           const confirmationToken = pairingSecret.create();
@@ -599,8 +600,7 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
         const user = await lockUser(tx, snapshot.user_id);
         const [p] = await tx<PairingRow[]>`SELECT * FROM auth.pwa_pairings WHERE id = ${snapshot.id}::uuid FOR UPDATE`;
         if (!user || !p || passed(p.expires_at) || user.auth_epoch !== p.auth_epoch) return fail("EXPIRED", 410);
-        const eligible = async () =>
-          !accountExpired(user) && (await isAccountCategoryAllowed(user, tx)) && (await legalAccepted(tx, user.id));
+        const eligible = async () => !accountExpired(user) && (await isAccountAllowed(user, tx)) && (await legalAccepted(tx, user.id));
         if (p.state === "completed" && p.device_id) {
           // A lost response: answer again without creating a second device.
           const [device] = await tx<DeviceRow[]>`SELECT * FROM auth.pwa_devices WHERE id = ${p.device_id}::uuid FOR UPDATE`;
@@ -683,7 +683,7 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
         const next = input.decision === "confirm" ? "confirmed" : "rejected";
         if (p.state === next || (next === "confirmed" && p.state === "completed")) return;
         if (p.state !== "awaiting_device") return fail("CONFLICT", 409);
-        if (accountExpired(user) || !(await isAccountCategoryAllowed(user, tx))) return fail("ACCOUNT_BLOCKED", 403);
+        if (accountExpired(user) || !(await isAccountAllowed(user, tx))) return fail("ACCOUNT_BLOCKED", 403);
         await tx`UPDATE auth.pwa_pairings SET state = ${next} WHERE id = ${p.id}::uuid`;
         await record(
           tx,

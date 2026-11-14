@@ -20,7 +20,15 @@ let server: ReturnType<typeof Bun.serve> | undefined;
 let origin: string;
 beforeAll(async () => {
   browser = await launchBrowser();
-  server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });
+  server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const response = await app.fetch(request);
+      if (request.headers.has("x-server-geometry")) response.headers.set("content-security-policy", "script-src 'none'");
+      return response;
+    },
+  });
   origin = `http://127.0.0.1:${server.port}`;
 }, 120_000);
 afterAll(async () => {
@@ -102,7 +110,10 @@ const frames = (page: Page, scope: string) =>
           frame.querySelector(".k2b-chart-explorer__viewport"),
         ].map((element) => {
           const box = element?.getBoundingClientRect();
-          return box ? [Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)] : null;
+          // Focusing a tall chart may scroll the page. Layout stability concerns its document position.
+          return box
+            ? [Math.round(box.x + window.scrollX), Math.round(box.y + window.scrollY), Math.round(box.width), Math.round(box.height)]
+            : null;
         }),
       ),
     scope,
@@ -153,6 +164,27 @@ test("the overview hydrates its live cards without a console error", async () =>
   const { page, errors } = await open("/en/ui/charts", 1280);
   try {
     expect(await page.locator(".ui-charts-card").count()).toBe(chartShowcaseKinds.length);
+    // Each card is an island with the island shadow; nothing inside it casts a second one.
+    expect(
+      await page.evaluate(() => {
+        // The tokens live on `.k2b-ui`, so the probe takes the class, as each card does.
+        const probe = document
+          .querySelector(".ui-charts-cards")!
+          .appendChild(Object.assign(document.createElement("div"), { className: "k2b-ui" }));
+        probe.style.boxShadow = "var(--k2b-shadow-raised)";
+        const raised = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        const cards = Array.from(document.querySelectorAll(".ui-charts-card"));
+        const lifted = cards.filter((card) => getComputedStyle(card).boxShadow === raised).length;
+        const nested = cards
+          .flatMap((card) => Array.from(card.querySelectorAll("*")))
+          .filter((element) => {
+            const shadow = getComputedStyle(element).boxShadow;
+            return shadow === raised;
+          }).length;
+        return { raised: raised !== "none", lifted: lifted === cards.length, nested };
+      }),
+    ).toEqual({ raised: true, lifted: true, nested: 0 });
     expect(errors).toEqual([]);
   } finally {
     await page.close();
@@ -205,18 +237,28 @@ for (const width of [1280, 390]) {
 
 test("both dashboards keep every panel in place in every state", async () => {
   for (const dashboard of showcaseDashboards) {
-    for (const width of [1280, 390]) {
+    for (const width of [1440, 390]) {
       const { page, errors } = await open(`/en/ui/charts/dashboards/${dashboard.slug}`, width);
       try {
-        const before = await frames(page, ".ui-charts-grid__cell > *, .k2b-stat-cell");
+        const before = await frames(page, ".k2b-dashboard-section__grid > .k2b-dashboard-frame, .k2b-stat-cell");
         expect(before.length, dashboard.slug).toBeGreaterThan(4);
+        // Every panel keeps its title and its controls on one row, also in a third of the grid and on a phone.
+        const wrapped = await page.$$eval(".k2b-chart-explorer > .k2b-chart-explorer__header", (headers) =>
+          headers.flatMap((header) => {
+            const parts = [...header.children].map((part) => part.getBoundingClientRect());
+            return parts.length > 1 && parts.at(-1)!.top >= parts[0]!.bottom - 2
+              ? [header.querySelector(".k2b-chart-explorer__title")?.textContent ?? ""]
+              : [];
+          }),
+        );
+        expect({ dashboard: dashboard.slug, width, wrapped }).toEqual({ dashboard: dashboard.slug, width, wrapped: [] });
         for (const state of states) {
           await pick(page, "Preview state", state);
           expect({
             dashboard: dashboard.slug,
             width,
             state,
-            frames: await frames(page, ".ui-charts-grid__cell > *, .k2b-stat-cell"),
+            frames: await frames(page, ".k2b-dashboard-section__grid > .k2b-dashboard-frame, .k2b-stat-cell"),
           }).toEqual({
             dashboard: dashboard.slug,
             width,
@@ -231,3 +273,177 @@ test("both dashboards keep every panel in place in every state", async () => {
     }
   }
 }, 600_000);
+
+// Geometry comes from the real server document. Keep hydration in open()/the
+// parity tests: starting every overview island is unrelated to these bounds.
+// A script-src 'none' policy keeps the document exactly the server markup while
+// test evaluation (settled, measurements) still runs. Set it in the fixture
+// server so navigation needs no Playwright fetch/fulfill round trip.
+const openServerGeometry = async (width: number, height: number, path: string) => {
+  const page = await browser!.newPage({
+    viewport: { width, height },
+    reducedMotion: "reduce",
+    extraHTTPHeaders: { "x-server-geometry": "true" },
+  });
+  const response = await page.goto(`${origin}${path}`, { waitUntil: "load" });
+  expect(response!.ok()).toBe(true);
+  await settled(page);
+  return { page, response: response! };
+};
+
+for (const width of [390, 800, 1440, 1920]) {
+  for (const path of ["/en/ui/charts/calendar", "/en/ui/charts/dashboards/newsletter", "/en/ui/charts"]) {
+    test(`calendar starts flush with newest weeks in ${path} at ${width}px`, async () => {
+      const { page, response } = await openServerGeometry(width, 1000, path);
+      const errors = pageErrors(page);
+      try {
+        // Extract in Bun; normalize only the SVG fragment in the browser, not the whole overview again.
+        const fragment = (await response.text()).match(/<svg\b[^>]*\bdata-calendar="true"[^>]*>[\s\S]*?<\/svg>/)?.[0];
+        expect(fragment, path).toBeDefined();
+        const serverSvg = await page.evaluate(
+          (html) => new DOMParser().parseFromString(html!, "text/html").querySelector("svg")!.outerHTML,
+          fragment,
+        );
+        // These are immediate reads of a settled server document. Native DOM queries avoid Playwright's
+        // locator polling and repeated document scans on the large overview (#3021).
+        const geometry = await page.evaluate(() => {
+          const element = document.querySelector(".k2b-chart:has(svg[data-calendar])")!;
+          const viewport = element.getBoundingClientRect();
+          const drawing = element.querySelector(".k2b-chart__svg")!.getBoundingClientRect();
+          const newest = element.querySelectorAll("[data-chart-datum] rect");
+          const last = newest[newest.length - 1]!.getBoundingClientRect();
+          const label = element.querySelector("[data-calendar-weekdays] text")!.getBoundingClientRect();
+          const firstVisible = [...newest]
+            .map((e) => e.getBoundingClientRect())
+            .filter((b) => b.left >= label.right - 0.1)
+            .sort((a, b) => a.left - b.left)[0]!;
+          return {
+            svg: element.querySelector(".k2b-chart__svg > svg[data-calendar]")!.outerHTML,
+            left: element.scrollLeft,
+            gap: drawing.width > viewport.width ? drawing.right - viewport.right : drawing.left - viewport.left,
+            lastRight: last.right - viewport.right,
+            lastLeft: last.left - viewport.left,
+            cell: last.width,
+            square: Math.abs(last.width - last.height),
+            labelGap: firstVisible.left - label.right,
+            labelLeft: label.left - viewport.left,
+            railLeft: element.querySelector("[data-calendar-weekdays] > rect")!.getBoundingClientRect().left - viewport.left,
+            height: drawing.height,
+            viewportHeight: viewport.height,
+          };
+        });
+        expect(geometry.svg, path).toBe(serverSvg);
+        expect(Math.abs(geometry.gap), path).toBeLessThan(1);
+        expect(geometry.labelGap, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.labelGap, path).toBeLessThanOrEqual(8);
+        expect(geometry.labelLeft, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.railLeft, path).toBeLessThanOrEqual(0);
+        expect(geometry.left, path).toBe(0);
+        expect(geometry.lastRight, path).toBeLessThanOrEqual(1);
+        expect(geometry.lastLeft, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.cell, path).toBeLessThanOrEqual(32.1);
+        expect(geometry.square, path).toBeLessThan(0.2);
+        expect(geometry.viewportHeight - geometry.height, path).toBeGreaterThanOrEqual(-1);
+        expect(geometry.viewportHeight - geometry.height, path).toBeLessThanOrEqual(17);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+}
+
+for (const width of [390, 1440]) {
+  test(`distribution overview cards keep axes and name/value blocks inside at ${width}px`, async () => {
+    // This guard measures server SVGs. Hydrating every overview card belongs to
+    // the separate parity test and must not consume this geometry test's budget.
+    const { page } = await openServerGeometry(width, 900, "/en/ui/charts");
+    const errors = pageErrors(page);
+    try {
+      const geometry = await page.evaluate(() => {
+        const paretos = document.querySelectorAll('[data-chart-kind="pareto"]');
+        const pareto = paretos[0]!;
+        const ticks = [...pareto.querySelectorAll("svg > text")];
+        const bounds = pareto.getBoundingClientRect();
+        const treemaps = document.querySelectorAll('[data-chart-kind="treemap"]');
+        const treemap = treemaps[0]!;
+        return {
+          paretos: paretos.length,
+          ticks: ticks.length,
+          ticksInside: ticks.every((tick) => {
+            const box = tick.getBoundingClientRect();
+            return box.left >= bounds.left - 1 && box.right <= bounds.right + 1;
+          }),
+          treemaps: treemaps.length,
+          names: treemap.querySelectorAll("[data-treemap-name]").length,
+          values: treemap.querySelectorAll("[data-treemap-value]").length,
+          fits: [...treemap.querySelectorAll("[data-chart-datum]")].every((group) => {
+            const text = group.querySelector("[data-treemap-name]");
+            if (!text) return true;
+            const cell = group.querySelector("rect")!.getBoundingClientRect(),
+              name = text.getBoundingClientRect(),
+              value = group.querySelector("[data-treemap-value]")?.getBoundingClientRect();
+            return (
+              name.left >= cell.left - 1 &&
+              name.right <= cell.right + 1 &&
+              name.bottom <= cell.bottom + 1 &&
+              (!value ||
+                (name.bottom <= value.top &&
+                  value.left >= cell.left - 1 &&
+                  value.right <= cell.right + 1 &&
+                  value.bottom <= cell.bottom + 1))
+            );
+          }),
+        };
+      });
+      expect(geometry.paretos).toBe(1);
+      expect(geometry.ticks).toBeGreaterThan(0);
+      expect(geometry.ticksInside).toBe(true);
+      expect(geometry.treemaps).toBe(1);
+      expect(geometry.names).toBeGreaterThan(0);
+      expect(geometry.values).toBeGreaterThan(0);
+      expect(geometry.fits).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
+  test(`small Sankey card keeps its source label inside the initial viewport at ${width}px`, async () => {
+    const { page } = await openServerGeometry(width, 900, "/en/ui/charts");
+    const errors = pageErrors(page);
+    try {
+      const geometry = await page.evaluate(() => {
+        const cards = document.querySelectorAll('.ui-charts-card:has([data-chart-kind="sankey"])');
+        const card = cards[0]!;
+        const scroller = card.querySelector(".ui-charts-card__chart")!;
+        const source = card.querySelector("[data-chart-datum]:has(rect) text")!;
+        return {
+          cards: cards.length,
+          heading: card.querySelector("h1, h2, h3, h4, h5, h6, [role=heading]")!.textContent,
+          left: scroller.scrollLeft,
+          source: source.textContent,
+          viewport: scroller.getBoundingClientRect().toJSON(),
+          label: source.getBoundingClientRect().toJSON(),
+          inside: [...card.querySelectorAll<SVGGraphicsElement>("[data-chart-datum] text")].every((element) => {
+            const box = element.getBBox(),
+              svg = element.closest("svg")!;
+            return box.x >= 0 && box.x + box.width <= svg.viewBox.baseVal.width;
+          }),
+        };
+      });
+      expect(geometry.cards).toBe(1);
+      expect(geometry.heading).toBe("Sankey");
+      expect(geometry.left).toBe(0);
+      expect(geometry.source).toContain("Clicked");
+      expect(geometry.label.x).toBeGreaterThanOrEqual(geometry.viewport.x);
+      expect(geometry.label.x + geometry.label.width).toBeLessThanOrEqual(geometry.viewport.x + geometry.viewport.width);
+      expect(geometry.inside).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+}

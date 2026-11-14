@@ -10,6 +10,7 @@ export const app = defineApp({
       "/_internal/assistant/tools/*",
       "/app/assistant/apps/:id/run",
       "/api/assistant/runner/app-assets",
+      "/api/assistant/runner/chart-parts",
       "/api/assistant/runner/chunks/:name",
       "/api/assistant/runner/:id",
       "/api/assistant/runner/:id/app",

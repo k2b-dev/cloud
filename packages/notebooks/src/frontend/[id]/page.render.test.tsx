@@ -553,7 +553,8 @@ test("a saved writable note has readable server text before its editor mounts", 
   expect(preview?.text).toContain("Wir sammeln wichtige Gedanken für das Team.");
   expect(preview?.text).not.toContain("**");
   const rows = await select(html, "#notebook-note-preview .notebook-note-preview__line");
-  expect(rows[0]?.text).toBe("# Wochenplan");
+  // No mark before the title: the editor mounts focused but reveals Markdown only once the person acts in it.
+  expect(rows[0]?.text).toBe("Wochenplan");
   expect(await select(html, "#notebook-note-preview .notebook-note-preview__strong")).toHaveLength(1);
   expect(await select(html, "#notebook-note-preview [class^=cm-]")).toEqual([]);
 });

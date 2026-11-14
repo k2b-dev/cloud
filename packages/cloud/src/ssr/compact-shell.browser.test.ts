@@ -852,7 +852,8 @@ describe("profile menu in the rail", () => {
             radios: panel.querySelectorAll('[role="radio"]').length,
             items: [...panel.querySelectorAll(".menu-item")]
               .filter((item) => item.checkVisibility())
-              .map((item) => item.querySelector(":scope > span")?.textContent?.trim()),
+              // Every entry is one line: an icon or check box, the label, perhaps a shortcut.
+              .map((item) => item.querySelector(":scope > span:last-of-type")?.textContent?.trim()),
             shortcut: panel.querySelector(".menu-item")?.querySelector(".k2b-kbd")?.checkVisibility(),
             signOutColor: getComputedStyle([...panel.querySelectorAll(".menu-item")].at(-1)!).color,
           };
@@ -868,8 +869,17 @@ describe("profile menu in the rail", () => {
         expect(menu.top).toBeLessThan(menu.avatarTop);
         expect(menu.items).toEqual(
           language === "de"
-            ? ["Seitenleiste ausblenden", "Hell", "English", "Profileinstellungen", "App", "Abmelden"]
-            : ["Hide sidebar", "Light", "Deutsch", "Profile settings", "App", "Sign out"],
+            ? [
+                "Seitenleiste ausblenden",
+                "Sichtschutz",
+                "Gemeinsam genutzter Arbeitsplatz",
+                "Hell",
+                "English",
+                "Profileinstellungen",
+                "App",
+                "Abmelden",
+              ]
+            : ["Hide sidebar", "Privacy screen", "Shared workstation", "Light", "Deutsch", "Profile settings", "App", "Sign out"],
         );
         expect(menu.shortcut).toBe(true);
         // Sign-out takes the danger tone (#b91c1c).
@@ -913,15 +923,18 @@ describe("profile menu in the rail", () => {
 });
 
 describe("anonymous pages", () => {
-  // Without an app bar, the header keeps the phone's app name, help, and search up to lg; from lg it shows the trail.
+  // Without an app bar, the header keeps help, language, appearance, and Sign in at every width; from lg the trail
+  // replaces the app name (#2921).
   const header = (page: Page) =>
     page.evaluate(() => {
       const visible = (element: Element | null) => Boolean(element?.checkVisibility());
       const header = document.querySelector(".layout-header")!;
       return {
         header: getComputedStyle(header).display,
-        signIn: visible(header.querySelector('a[href="/auth/login"]')),
+        signIn: visible(header.querySelector('a[href="/auth/login?redirectTo=%2Fpublic"]')),
         help: visible(header.querySelector('[aria-label="Open help"]')),
+        language: visible(header.querySelector('[aria-haspopup="menu"][aria-label^="Language: "]')),
+        appearance: visible(header.querySelector(".cloud-theme-cycle")),
         breadcrumbs: visible(header.querySelector("nav")),
         rail: document.querySelector(".layout-rail"),
       };
@@ -934,7 +947,9 @@ describe("anonymous pages", () => {
         expect(await header(page)).toEqual({
           header: "flex",
           signIn: true,
-          help: device.width < 1024,
+          help: true,
+          language: true,
+          appearance: true,
           breadcrumbs: device.width >= 1024,
           rail: null,
         });

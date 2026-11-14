@@ -1,8 +1,28 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { transform } from "../../packages/ssr/src/transform";
 
-/** Source inputs reachable without loading an on-demand chunk. */
-export const buildIslandClosure = async (entries: string[], files?: Record<string, string>) => {
+/** Re-export barrels carry other modules' exports and no code of their own. */
+const barrel = /\bexport\s*\*|\bexport\s*\{[^}]*\}\s*from\b/;
+
+/**
+ * A module whose code reaches no output, replaced by its import edges and empty exports. Its code still counts in the
+ * minifier's naming of the chunks it touches, so an unused function would change the measured size; the edges keep
+ * the module graph, and with it the chunks, as they are.
+ */
+const stubDeadModule = (path: string, code: string) => {
+  const loader = /\.tsx?$/.test(path) ? (path.endsWith("x") ? "tsx" : "ts") : "js";
+  const scan = new Bun.Transpiler({ loader }).scan(code);
+  const edges = scan.imports
+    .filter((entry) => entry.kind === "import-statement")
+    .map((entry, index) => `export * as __edge${index} from ${JSON.stringify(entry.path)};`);
+  const names = scan.exports.map((name) => (name === "default" ? "export default void 0;" : `export const ${name} = void 0;`));
+  return [...edges, ...names].join("\n") || "export {};";
+};
+
+/** Source inputs reachable without loading an on-demand chunk. `dead` modules are replaced by `stubDeadModule`. */
+export const buildIslandClosure = async (entries: string[], files?: Record<string, string>, dead?: ReadonlySet<string>) => {
+  const stubs: string[] = [];
+  for (const path of dead ?? []) if (!barrel.test(files?.[path] ?? (await Bun.file(path).text()))) stubs.push(path);
   const result = await Bun.build({
     files,
     entrypoints: entries,
@@ -13,6 +33,22 @@ export const buildIslandClosure = async (entries: string[], files?: Record<strin
     define: { "process.env.NODE_ENV": '"production"' },
     splitting: true,
     plugins: [
+      ...(stubs.length
+        ? [
+            {
+              name: "island-closure-dead-modules",
+              setup(build: Bun.PluginBuilder) {
+                // Only the stubbed paths: a loader that matched every file would keep the Solid transform below from running.
+                const filter = new RegExp(`^(?:${stubs.map((path) => path.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("|")})$`);
+                build.onLoad({ filter }, async ({ path }) => ({
+                  contents: stubDeadModule(path, files?.[path] ?? (await Bun.file(path).text())),
+                  loader: "js",
+                  resolveDir: dirname(path),
+                }));
+              },
+            },
+          ]
+        : []),
       {
         name: "island-closure-solid-dom",
         setup(build) {

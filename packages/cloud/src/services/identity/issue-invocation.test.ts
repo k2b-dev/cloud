@@ -43,7 +43,7 @@ const demoRegistry = async () => [{ id: "demo", access: appAccess.signedIn() }];
 describe("checked invocation issuer", () => {
   test("fanout decides app access with the reloaded authority: a phone's session never opens an admin-only app", async () => {
     const load = spyOn(userService, "loadCurrentUser").mockResolvedValue({ ...person, roles: ["user", "admin"] });
-    const category = spyOn(accountCategory, "isAccountCategoryAllowed").mockResolvedValue(true);
+    const category = spyOn(accountCategory, "isAccountAllowed").mockResolvedValue(true);
     const sign = mock(async () => {
       throw new Error("must never sign");
     });
@@ -65,7 +65,7 @@ describe("checked invocation issuer", () => {
 
   test.each(["app session", "scoped OAuth"])("fanout reloads %s authority once and retains its ceilings", async (credential) => {
     const load = spyOn(userService, "loadCurrentUser").mockResolvedValue({ ...person, roles: ["user", "admin"] });
-    const category = spyOn(accountCategory, "isAccountCategoryAllowed").mockResolvedValue(true);
+    const category = spyOn(accountCategory, "isAccountAllowed").mockResolvedValue(true);
     const authority: InvocationAuthority =
       credential === "app session"
         ? params.authority

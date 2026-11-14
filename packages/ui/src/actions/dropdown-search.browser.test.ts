@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // A searchable menu keeps the focus in its field and marks entries as the field's active descendant, and a menu can
 // adopt a server-rendered link as its trigger. Both need real focus, keys, and popovers, so the shipped build runs here.
@@ -220,12 +220,18 @@ describe("Dropdown search", () => {
     const page = await load({ viewport: { width: 1280, height: 360 } });
     try {
       const before = await page.getByRole("button", { name: "Search menu" }).boundingBox();
-      await page.getByRole("button", { name: "Search menu" }).click();
+      // Hold until the press animation has finished, then release: a quick click only sometimes samples its scale.
+      await hoverInPlace(page.getByRole("button", { name: "Search menu" }));
+      await page.mouse.down();
+      await settled(page);
+      await page.mouse.up();
       await settled(page);
       const field = await page.getByRole("combobox").boundingBox();
       for (let step = 0; step < 9; step += 1) await page.keyboard.press("ArrowDown");
       await settled(page);
       expect(await page.getByRole("combobox").boundingBox()).toEqual(field);
+      expect(await page.getByRole("listbox").evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+      expect(await page.evaluate(() => [scrollX, scrollY])).toEqual([0, 0]);
       expect(await page.getByRole("option", { name: "Create template…" }).isVisible()).toBe(true);
       expect(await page.getByRole("button", { name: "Search menu" }).boundingBox()).toEqual(before);
     } finally {

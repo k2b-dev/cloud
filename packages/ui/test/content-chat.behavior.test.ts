@@ -118,6 +118,25 @@ describe("@k2b/ui content and chat behavior", () => {
 
   test("keeps infinite DataTable loading single-flight until the result changes", async () => {
     const dom = createDomTestHarness();
+    const previousObserver = Object.getOwnPropertyDescriptor(globalThis, "IntersectionObserver");
+    // The table's end is in view: every observe() reports it within reach, as a browser does.
+    class InReach {
+      constructor(private readonly callback: IntersectionObserverCallback) {}
+      observe(target: Element) {
+        queueMicrotask(() =>
+          this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver),
+        );
+      }
+      unobserve() {}
+      disconnect() {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+    }
+    Object.defineProperty(globalThis, "IntersectionObserver", { configurable: true, writable: true, value: InReach });
+    const ticks = async () => {
+      for (let tick = 0; tick < 4; tick++) await Promise.resolve();
+    };
     const { default: DataTable } = await import("../src/content/DataTable");
     const [rows, setRows] = createSignal([{ id: "one" }]);
     let calls = 0;
@@ -137,16 +156,22 @@ describe("@k2b/ui content and chat behavior", () => {
     );
     const region = dom.root.querySelector<HTMLElement>(".k2b-table-wrap")!;
 
+    // The owner reports no loading state and returns nothing: one request until its rows arrive, whatever scrolls.
+    await ticks();
     region.dispatchEvent(new Event("scroll"));
     region.dispatchEvent(new Event("scroll"));
+    await ticks();
     expect(calls).toBe(1);
 
+    // The page arrived while the end is still in reach: the next one follows.
     setRows([{ id: "one" }, { id: "two" }]);
-    await Promise.resolve();
+    await ticks();
     expect(calls).toBe(2);
 
     dispose();
     dom.cleanup();
+    if (previousObserver) Object.defineProperty(globalThis, "IntersectionObserver", previousObserver);
+    else delete (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver;
   });
 
   test("tracks DataTable overflow without exposing a second scroll owner", async () => {

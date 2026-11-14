@@ -438,7 +438,11 @@ export const assistantApi = {
     return response.json();
   },
 
-  updatePrefs: async (input: { memoryEnabled?: boolean; memoryLearningEnabled?: boolean }): Promise<AiUserPrefs> => {
+  updatePrefs: async (input: {
+    suggestNextMessage?: boolean;
+    memoryEnabled?: boolean;
+    memoryLearningEnabled?: boolean;
+  }): Promise<AiUserPrefs> => {
     const response = await client.prefs.$put({ json: input });
     if (!response.ok) throw new Error(await readError(response, "Failed to save AI preferences"));
     return response.json();

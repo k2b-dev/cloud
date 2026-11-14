@@ -112,8 +112,12 @@ suite("GeoIP Postgres replacement, audit and multi-instance reload", () => {
     expect(second.databases[0]).toMatchObject({
       source: "uploaded",
       databaseType: "Custom-City",
-      upload: { uploadedBy: { id: admin.id, name: "GeoIP Admin" } },
+      upload: { size: bytes("Custom-City").length, uploadedBy: { id: admin.id, name: "GeoIP Admin" } },
     });
+    const [metadata] = await sql<{ kind: string; description: string }[]>`
+      SELECT jsonb_typeof(metadata) AS kind, metadata->'description'->>'en' AS description
+      FROM geoip.databases WHERE kind = 'city'`;
+    expect(metadata).toEqual({ kind: "object", description: "Synthetic test database" });
     expect(second.databases[0].upload?.sha256).not.toBe(first.databases[0].upload?.sha256);
     // auth.users.display_name defaults to '', which must fall back to the uid instead of a blank name.
     await sql`UPDATE auth.users SET display_name = '' WHERE id = ${admin.id}::uuid`;
@@ -155,6 +159,19 @@ suite("GeoIP Postgres replacement, audit and multi-instance reload", () => {
     other.lookup("8.8.8.8");
     await other.refresh();
     expect(other.status().city?.source).toBe("bundled");
+  });
+
+  test("migration repairs serialized metadata without replacing the uploaded database", async () => {
+    await service.upload(admin, body(bytes()), {});
+    const [before] = await sql`SELECT * FROM geoip.databases WHERE kind='city'`;
+    // Recreate the historical writer's JSON-string value without relying on Bun's parameter inference.
+    await sql`UPDATE geoip.databases SET metadata=to_jsonb(metadata::text) WHERE kind='city'`;
+    expect((await sql`SELECT jsonb_typeof(metadata) AS kind FROM geoip.databases`)[0].kind).toBe("string");
+    await migrateGeoIp();
+    await migrateGeoIp();
+    expect((await sql`SELECT * FROM geoip.databases WHERE kind='city'`)[0]).toEqual(before);
+    expect((await service.status(admin, { now: () => frozenNow })).databases[0].upload?.size).toBe(bytes().length);
+    expect(await createGeoIpUploads().read("city", before.sha256)).toEqual(bytes());
   });
 
   test.each([false, true])(

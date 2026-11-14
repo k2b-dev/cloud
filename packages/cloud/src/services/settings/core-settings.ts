@@ -21,7 +21,7 @@ import { DEFAULT_TRUSTED_PROXIES, validateNetworkAllowlist, validateTrustedProxi
 
 const IPA_MATCH_MODE_OPTIONS = [
   { value: "ignore", label: "Ignore local match" },
-  { value: "migrate", label: "Migrate matching local account" },
+  { value: "migrate", label: "Propose matching local account" },
 ] as const;
 
 const IPA_ACCOUNT_TRANSITION_OPTIONS = [
@@ -217,6 +217,24 @@ export const CORE_SETTINGS = {
     },
   },
 
+  "previews.max_bytes": {
+    kind: "number",
+    label: "Preview storage budget (bytes)",
+    description: "Default 2 GiB across all applications. Maintenance removes the least recently shown previews first.",
+    default: 2 * 1024 ** 3,
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    integer: true,
+    presentation: {
+      translations: {
+        de: {
+          label: "Speicherbudget für Vorschauen (Bytes)",
+          description:
+            "Standard: 2 GiB für alle Anwendungen. Die Bereinigung entfernt zuerst die am längsten nicht angezeigten Vorschauen.",
+        },
+      },
+    },
+  },
   "outgoing_mail.content_retention_days": {
     kind: "number",
     label: "Mail content retention (days)",
@@ -850,6 +868,16 @@ export const CORE_SETTINGS = {
     default: 8,
     min: 1,
     description: "How long a login session stays valid (in hours)",
+  },
+  "user.session.shared_workstation_idle_minutes": {
+    kind: "number",
+    label: "Shared workstation idle minutes",
+    default: 10,
+    min: 2,
+    max: 240,
+    integer: true,
+    description:
+      "Minutes without typing, clicking, scrolling or touching after which a browser marked as a shared workstation signs out. Background updates do not count. Applies to every marked browser and to sessions already running there.",
   },
   "user.account.ipa_expires_days": {
     kind: "number",

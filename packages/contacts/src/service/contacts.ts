@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { type AccessSubject, buildAccessPrincipalCondition } from "@k2b/cloud/server";
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
+import { contactEventState, contactEventStates, publishContactCreated, publishContactsUpdated, publishContactUpdated } from "../app-events";
 import { newShortId, withShortIdRetry } from "../lib/short-id";
 import { resolveContactName, resolveStoredContactLabel } from "../shared";
 import {
@@ -37,6 +38,8 @@ import type {
   CreateContactInput,
   UpdateContactInput,
 } from "./types";
+
+export const MAX_BULK_CONTACTS = 500;
 
 const normalizeContactIds = (ids: string[]): Result<string[]> => {
   const unique = [...new Set(ids)];
@@ -1232,6 +1235,7 @@ export const create = async (config: { bookId: string; data: CreateContactInput;
       if (prepared.data.tagIds !== null) {
         await tags.replaceAssignments({ contactId: inserted.id, tagIds: prepared.data.tagIds, db: tx });
       }
+      await publishContactCreated(tx, inserted.id);
       if (config.announce !== false) {
         await publishContactChange(tx, { type: "contact.created", bookId: config.bookId, contactId: inserted.id });
       }
@@ -1325,6 +1329,7 @@ export const createIdempotent = async (config: {
       if (prepared.data.tagIds !== null) {
         await tags.replaceAssignments({ contactId: inserted.id, tagIds: prepared.data.tagIds, db: tx });
       }
+      await publishContactCreated(tx, inserted.id);
       await publishContactChange(tx, { type: "contact.created", bookId: config.bookId, contactId: inserted.id });
       return ok({ contactId: inserted.id, resultLabel, replayed: false });
     }),
@@ -1392,6 +1397,7 @@ export const update = async (config: {
   if (!prepared.ok) return prepared;
 
   const row = await sql.begin(async (tx): Promise<{ id: string } | null> => {
+    const before = await contactEventState(tx, config.id);
     const [updated] = await tx<{ id: string }[]>`
       UPDATE contacts.contacts
       SET
@@ -1424,6 +1430,7 @@ export const update = async (config: {
     if (prepared.data.tagIds !== null) {
       await tags.replaceAssignments({ contactId: updated.id, tagIds: prepared.data.tagIds, db: tx });
     }
+    await publishContactUpdated(tx, before);
     await publishContactChange(tx, { type: "contact.updated", bookId: config.bookId, contactId: updated.id });
     return updated;
   });
@@ -1455,6 +1462,7 @@ export const move = async (config: {
   //   * own tag assignments → DELETE (tags are book-scoped vocabulary)
   // The user sees a warning in the UI before confirming.
   const row = await sql.begin(async (tx) => {
+    const before = await contactEventState(tx, config.id);
     const [existing] = await tx<{ id: string; updated_at: Date }[]>`
       SELECT id, updated_at
       FROM contacts.contacts
@@ -1503,6 +1511,7 @@ export const move = async (config: {
     `;
     if (!moved) return null;
     // Two updates, one per book: a reader of one book does not learn the other.
+    await publishContactUpdated(tx, before);
     await publishContactChange(tx, { type: "contact.deleted", bookId: config.sourceBookId, contactId: moved.id });
     await publishContactChange(tx, { type: "contact.created", bookId: config.targetBookId, contactId: moved.id });
     return moved;
@@ -1580,6 +1589,7 @@ export const addTags = async (config: { bookId: string; ids: string[]; tagIds: s
   if (!isUuid(config.bookId)) return fail(err.notFound("Book"));
   const normalized = normalizeContactIds(config.ids);
   if (!normalized.ok) return normalized;
+  if (normalized.data.length > MAX_BULK_CONTACTS) return fail(err.badInput(`Choose at most ${MAX_BULK_CONTACTS} contacts`));
   const validTags = await tags.validateTagsInBook({ bookId: config.bookId, tagIds: config.tagIds });
   if (!validTags.ok) return validTags;
   if (validTags.data.length === 0) return fail(err.badInput("Choose at least one tag"));
@@ -1590,9 +1600,14 @@ export const addTags = async (config: { bookId: string; ids: string[]; tagIds: s
       FROM contacts.contacts
       WHERE book_id = ${config.bookId}::uuid
         AND id = ANY(${toPgUuidArray(normalized.data)}::uuid[])
-      FOR UPDATE
+      ORDER BY id
+      FOR NO KEY UPDATE
     `;
     if (rows.length !== normalized.data.length) return 0;
+    const before = await contactEventStates(
+      tx,
+      rows.map((row) => row.id),
+    );
     await tx`
       INSERT INTO contacts.contact_tag_assignments (contact_id, tag_id)
       SELECT contact_id, tag_id
@@ -1605,6 +1620,7 @@ export const addTags = async (config: { bookId: string; ids: string[]; tagIds: s
       SET updated_at = now()
       WHERE id = ANY(${toPgUuidArray(normalized.data)}::uuid[])
     `;
+    await publishContactsUpdated(tx, before);
     await publishContactChange(tx, { type: "contacts.changed", bookId: config.bookId });
     return rows.length;
   });
@@ -1653,6 +1669,7 @@ export const moveMany = async (config: { sourceBookId: string; targetBookId: str
   if (config.sourceBookId === config.targetBookId) return fail(err.badInput("Choose another contact book"));
   const normalized = normalizeContactIds(config.ids);
   if (!normalized.ok) return normalized;
+  if (normalized.data.length > MAX_BULK_CONTACTS) return fail(err.badInput(`Choose at most ${MAX_BULK_CONTACTS} contacts`));
 
   const moved = await sql.begin(async (tx) => {
     const rows = await tx<{ id: string }[]>`
@@ -1660,9 +1677,14 @@ export const moveMany = async (config: { sourceBookId: string; targetBookId: str
       FROM contacts.contacts
       WHERE book_id = ${config.sourceBookId}::uuid
         AND id = ANY(${toPgUuidArray(normalized.data)}::uuid[])
-      FOR UPDATE
+      ORDER BY id
+      FOR NO KEY UPDATE
     `;
     if (rows.length !== normalized.data.length) return 0;
+    const before = await contactEventStates(
+      tx,
+      rows.map((row) => row.id),
+    );
 
     await tx`
       UPDATE contacts.contacts
@@ -1700,6 +1722,7 @@ export const moveMany = async (config: { sourceBookId: string; targetBookId: str
       SET book_id = ${config.targetBookId}::uuid, updated_at = now()
       WHERE id = ANY(${toPgUuidArray(normalized.data)}::uuid[])
     `;
+    await publishContactsUpdated(tx, before);
     await publishContactChange(tx, { type: "contacts.changed", bookId: config.sourceBookId });
     await publishContactChange(tx, { type: "contacts.changed", bookId: config.targetBookId });
     return rows.length;
@@ -1879,6 +1902,7 @@ export const mergeDuplicate = async (config: {
     ) {
       return false;
     }
+    const before = await contactEventState(tx, keep.id);
     const nextParentId =
       lockedKeep.parent_contact_id === duplicate.id
         ? lockedDuplicate.parent_contact_id === keep.id
@@ -1942,6 +1966,7 @@ export const mergeDuplicate = async (config: {
       WHERE book_id = ${config.bookId} AND contact_id = ${duplicate.id}::uuid
     `;
     await tx`DELETE FROM contacts.contacts WHERE id = ${duplicate.id}::uuid AND book_id = ${config.bookId}::uuid`;
+    await publishContactUpdated(tx, before);
     await publishContactChange(tx, { type: "contacts.changed", bookId: config.bookId });
     return true;
   });

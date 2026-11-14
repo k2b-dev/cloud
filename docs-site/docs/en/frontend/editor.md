@@ -92,16 +92,22 @@ place, such as a keymap.
 and `end` hold controls before and after the actions, such as navigation or a
 sync status. Pressing a control keeps focus and selection in the editor. With
 `liftAboveKeyboard`, the toolbar rises to the top edge of a phone keyboard while
-the editor has focus.
+the editor has focus. With `mainClass`, `start`, the actions, and dictation share
+one wrapper with that class and `end` stands beside it, so a host can draw them
+as two floating pills at the edges of its column (as Notebooks does; see
+[Layers and shadows](/en/ui/surfaces/elevation)).
 
 `<BubbleMenu>` opens at a selection once it settles, not while a pointer still
 drags it. It stays open while focus moves between the text and the menu. Escape,
-a collapsed selection, or leaving both closes it. On
+a collapsed selection, or leaving both closes it. After Escape it stays closed
+for that selection, also while collaborators edit around it; a new selection
+opens it again. On
 touch screens it sits below the selection, where the system's own menu does not
 cover it. Children after the actions hold extra controls, such as **Comment**.
 
 `<SlashMenu>` opens when a person types `/` at the start of a line or after a
-space. Exact names and aliases come first, then fuzzy matches. A slash action
+space, outside fenced, indented and inline code. Exact names and aliases come
+first, then fuzzy matches. A slash action
 adds `name`, optional `aliases`, `description`, and `params`: with
 `params: /^(\d+)x(\d+)$/`, typing `/table2x4` passes the match to `run`. A
 block action typed after text starts on a new line; set `inline: true` to
@@ -172,8 +178,9 @@ const undoManager = new Y.UndoManager(text);
 draws the other writers' cursors. Every action run through `editor.run` stays
 one undo step. The editor writes its own cursor into the awareness state as
 `cursor: { anchor, head }`, relative positions from
-`Y.relativePositionToJSON`, and reads `user.name` and `user.color` of the
-others. An application that checks presence on its server keeps exactly these
+`Y.relativePositionToJSON`, sets it to `null` while focus is in a field outside
+the editor, and writes the current selection again when focus returns. It reads `user.name`
+and `user.color` of the others. An application that checks presence on its server keeps exactly these
 fields.
 
 The transport stays in the application: the WebSocket or another provider,
@@ -218,8 +225,18 @@ The subpath includes lists and list commands, display ligatures, marks,
 subscript and superscript, notices, named data blocks, images, links, math,
 Mermaid, completions, themes, and scroll helpers. The Markdown parsers are also
 available to render the same source outside an editor. Extensions preserve the
-source text; editing a rendered block reveals its Markdown. The math extension
-expects the host to load KaTeX’s stylesheet and fonts.
+source text; editing a rendered block reveals its Markdown, once the person acts
+in the focused editor: a press, a key that moves the caret, typing, deleting, or
+undo. Focus alone reveals nothing, so a note that the application focuses when
+it opens shows no `#` before its title, like its server render, and neither does
+focus that returns from a dialog or another window. The block last edited
+renders again when focus moves elsewhere. A control that moves the selection
+into a block's source for the person, also in a read-only editor that cannot
+take focus, adds `placeMarkdownCaret.of()` to its transaction. The math extension expects the
+host to load KaTeX’s stylesheet and fonts.
+
+On iOS, CodeMirror uses the browser's native highlight for the main selection
+and draws selection handles. Other selections keep their editor highlights.
 
 | Extension | Application options |
 | --- | --- |

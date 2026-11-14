@@ -5,6 +5,7 @@ import type { Context } from "hono";
 import { WSContext, type WSEvents } from "hono/ws";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { createWsInvalidations } from "../test/ws-invalidations";
 import { createYjsProvider } from "./frontend/lib/yjs/provider";
 
 // Module mocks belong to a subprocess, never to another suite's module graph.
@@ -19,12 +20,12 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     expect({ code, output: code === 0 ? "passed" : `${stdout}\n${stderr}` }).toEqual({ code: 0, output: "passed" });
   }, 60_000);
 } else {
+  const invalidations = createWsInvalidations();
   let events: WSEvents | undefined;
   let revision = "0";
   let state: Uint8Array = new Uint8Array([0, 0]);
   let exists = true;
   let permission = "write";
-  let restoreAfterRead: (() => void) | null = null;
   let streamStarts = 0;
   type Entry = { cursor: string; data: SharedTextSyncEvent };
   let replayEntries: Entry[] = [];
@@ -32,9 +33,9 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
   let echoPublications = false;
   let admissionFailure: Error | null = null;
   let recoverIngress = false;
-  let beforeAdmission: (() => void) | null = null;
+  let beforeAdmission: (() => void | Promise<void>) | null = null;
   const ingress: { baseCursor: string | null; update: Uint8Array }[] = [];
-  let beforeDelivery: (() => Promise<void>) | null = null;
+  let beforeReplay: (() => Promise<void>) | null = null;
   const liveWaiters = new Set<() => void>();
   const appendLive = (entry: Entry) => {
     liveEntries.push(entry);
@@ -70,6 +71,7 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     historyIncomplete: false,
     contentMd: null,
   });
+  mock.module("@k2b/cloud/events", () => ({ subscribeIdentityAccessChanged: () => () => {} }));
   mock.module("@k2b/cloud/server", () => ({
     guardAppAccessSocket: async (_c: Context, _appId: string, events: WSEvents) => events,
     getLocale: () => "en",
@@ -103,7 +105,7 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
           validate: () => Promise<boolean>;
         }) => {
           ingress.push({ baseCursor: input.baseCursor, update: input.update });
-          beforeAdmission?.();
+          await beforeAdmission?.();
           if (!(await input.validate())) return { status: "recoveryRequired" };
           if (admissionFailure) throw admissionFailure;
           if (recoverIngress || input.restoreRevision !== revision) return { status: "recoveryRequired" };
@@ -120,24 +122,21 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
           return { status: "accepted", cursor: "s6t.fixture.10" };
         },
         getByShortId: async () => note,
-        get: async () => note,
+        get: async () => (exists ? note : null),
+        getRoomAccessState: async () => (exists ? { ...note, restoreRevision: revision } : null),
         getAnchoredYjsState: async () => stored(),
         deliverAtRestoreRevision: async (input: { restoreRevision: string; deliver: () => undefined }) => {
-          await beforeDelivery?.();
           if (!exists) return "notFound";
           if (input.restoreRevision !== revision) return "stale";
           input.deliver();
           return "delivered";
         },
         getYjsStateWithCursor: async () => {
-          const result = exists ? stored() : null;
-          restoreAfterRead?.();
-          restoreAfterRead = null;
-          return result;
+          return exists ? stored() : null;
         },
       },
       notebook: { permission: { get: async () => permission } },
-      workspaceEvents: { live: waitUntilAborted },
+      workspaceEvents: { live: invalidations.live, latestCursor: async () => "s6t.events.0" },
       presence: {
         snapshot: async () => ({ participants: [], cursor: "0" }),
         watch: waitUntilAborted,
@@ -147,18 +146,14 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     },
   }));
   mock.module("./service/presence", () => ({ PRESENCE_HEARTBEAT_INTERVAL_MS: 10_000 }));
-  mock.module("./service/yjs-sync", () => ({
-    NODE_ID: "fixture-node",
-    toBase64,
-    isValidYjsUpdate: isValidSharedTextUpdate,
-    isStorageExhausted: () => false,
-    maxStreamCursor: (_previous: string | null, next: string) => next,
-    createYjsTopic: () => ({
+  mock.module("./service/yjs-sync", () => {
+    const topic = () => ({
       latestCursor: async () => {
         streamStarts++;
         return replayEntries.at(-1)?.cursor ?? null;
       },
       replay: async function* () {
+        await beforeReplay?.();
         yield* replayEntries;
       },
       cursorAt: () => "s6t.fixture.0",
@@ -168,9 +163,29 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
         if (echoPublications) appendLive({ cursor: "s6t.fixture.10", data: input.data });
         return { cursor: "s6t.fixture.10" };
       },
-    }),
-    createYjsAwarenessTopic: () => ({ live: waitUntilAborted }),
-  }));
+    });
+    return {
+      notebooksTextLog: {
+        topic,
+        withStore: () => ({
+          accept: async (
+            docId: string,
+            input: Omit<Parameters<typeof import("./service")["notebooksService"]["note"]["acceptYjsUpdate"]>[0], "noteId">,
+          ) => {
+            const { notebooksService } = await import("./service");
+            return notebooksService.note.acceptYjsUpdate({ ...input, noteId: docId });
+          },
+        }),
+      },
+      NODE_ID: "fixture-node",
+      toBase64,
+      isValidYjsUpdate: isValidSharedTextUpdate,
+      isStorageExhausted: () => false,
+      maxStreamCursor: (_previous: string | null, next: string) => next,
+      createYjsTopic: topic,
+      createYjsAwarenessTopic: () => ({ live: waitUntilAborted }),
+    };
+  });
   mock.module("./service/yjs-snapshot-worker", () => ({
     yjsSnapshotWorker: { queueSnapshotSave: async (input: unknown) => snapshots.push(input) },
   }));
@@ -227,7 +242,6 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     state = new Uint8Array([0, 0]);
     exists = true;
     permission = "write";
-    restoreAfterRead = null;
     streamStarts = 0;
     replayEntries = [];
     liveEntries = [];
@@ -236,7 +250,7 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     recoverIngress = false;
     beforeAdmission = null;
     ingress.length = 0;
-    beforeDelivery = null;
+    beforeReplay = null;
     published.length = 0;
     snapshots.length = 0;
   };
@@ -268,13 +282,15 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     expect(snapshots).toEqual([{ noteId: "test-note", targetCursor: "s6t.fixture.10", reason: "unload" }]);
   });
 
-  test("a connected writer cannot publish after a store-only restore", async () => {
+  test("a restore event closes a connected writer before further publication", async () => {
     reset();
     const socket = await openSocket();
     try {
       socket.replay(null);
       await socket.ready();
       revision = "1";
+      invalidations.emit();
+      await expectReopen(socket);
       socket.publish("0");
       await expectReopen(socket);
       expect(published).toEqual([]);
@@ -299,7 +315,7 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     }
   });
 
-  test("a restore after the store check leaves old deletes tagged with their original revision", async () => {
+  test("a restore event leaves old deletes tagged with their original revision", async () => {
     reset();
     const original = new Y.Doc();
     const replacement = new Y.Doc();
@@ -313,10 +329,10 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     try {
       socket.replay(null);
       await socket.ready();
-      restoreAfterRead = () => {
-        revision = "1";
-        state = restoredState;
-      };
+      revision = "1";
+      state = restoredState;
+      invalidations.emit();
+      await expectReopen(socket);
       socket.publish("0", toBase64(Y.encodeStateAsUpdate(original)));
       await expectReopen(socket);
       expect(published).toHaveLength(0);
@@ -344,7 +360,7 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     }
   });
 
-  test("store check -> restore -> publish -> live delivery preserves TOKEN and the provider's unsent AFTER", async () => {
+  test("restore event -> publish -> live delivery preserves TOKEN and the provider's unsent AFTER", async () => {
     reset();
     const originalWebSocket = globalThis.WebSocket;
     class BrowserSocket {
@@ -393,10 +409,10 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
       doc.getText("codemirror").insert(0, "AFTER");
       expect(provider.hasUnsentChanges()).toBe(true);
       const publication = BrowserSocket.latest.sent.map((raw) => JSON.parse(raw)).find((msg) => msg.type === "notes.yjs.sync.publish");
-      restoreAfterRead = () => {
-        revision = "1";
-        state = historical;
-      };
+      revision = "1";
+      state = historical;
+      invalidations.emit();
+      await expectReopen(socket);
       echoPublications = true;
       socket.message(publication.type, publication.payload);
       await expectReopen(socket);
@@ -425,68 +441,57 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     data: { kind: "sync", payload: "AAA=", restoreRevision: "0", actionId: `action-${seq}`, originNodeId: "peer", originPeerId: "peer" },
   });
 
-  test("a restore while a replay batch waits suppresses stale batches and readiness, including finally", async () => {
+  test("a restore event during catch-up suppresses stale batches and readiness, including finally", async () => {
     reset();
     replayEntries = [entry(10), entry(11)];
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    beforeReplay = async () => {
+      entered.resolve();
+      await release.promise;
+    };
     const socket = await openSocket();
     try {
-      // Cursor reconnect skips the initial snapshot; race the first replay send.
-      beforeDelivery = async () => {
-        revision = "1";
-      };
       socket.replay("0", "s6t.fixture.9");
+      await entered.promise;
+      revision = "1";
+      invalidations.emit();
       await expectReopen(socket);
+      release.resolve();
+      await Bun.sleep(0);
       expect(socket.sent.some((msg) => msg.type === "notes.yjs.sync.push" || msg.type === "notes.yjs.replay.ready")).toBe(false);
     } finally {
+      release.resolve();
       await socket.close();
     }
   });
 
-  test("a mismatch drops queued timer and size batches without a finally echo", async () => {
+  test("a restore event drops a pending timer batch without a finally echo", async () => {
     reset();
     const socket = await openSocket();
-    const entered = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
     try {
       socket.replay("0", "s6t.fixture.9");
       await socket.ready();
-      beforeDelivery = async () => {
-        entered.resolve();
-        await release.promise;
-      };
       appendLive(entry(10));
-      await entered.promise;
-      for (let i = 11; i <= 110; i++) appendLive(entry(i));
+      await Bun.sleep(1);
       revision = "1";
-      release.resolve();
+      invalidations.emit();
       await expectReopen(socket);
+      for (let i = 11; i <= 110; i++) appendLive(entry(i));
+      await Bun.sleep(30);
       expect(socket.sent.filter((msg) => msg.type === "notes.yjs.sync.push")).toEqual([]);
       expect(socket.sent.filter((msg) => msg.type === "notes.yjs.replay.ready")).toHaveLength(1);
     } finally {
-      release.resolve();
       await socket.close();
     }
   });
 
-  test("timer and size flushes serialize peer receipts before replay readiness without duplicate batches", async () => {
+  test("timer and size flushes serialize peer receipts before readiness without duplicate batches", async () => {
     reset();
-    const entered = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
-    let deliveries = 0;
-    beforeDelivery = async () => {
-      deliveries++;
-      if (deliveries === 1) {
-        entered.resolve();
-        await release.promise;
-      }
-    };
     replayEntries = Array.from({ length: 205 }, (_, i) => entry(i + 10));
     const socket = await openSocket();
     try {
       socket.replay("0", "s6t.fixture.9");
-      await entered.promise;
-      expect(socket.sent.some((msg) => msg.type === "notes.yjs.replay.ready")).toBe(false);
-      release.resolve();
       await socket.ready();
       const pushes = socket.sent.filter((msg) => msg.type === "notes.yjs.sync.push");
       expect(pushes.map((msg) => msg.payload.updates?.length)).toEqual([100, 100, 5]);
@@ -494,27 +499,13 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
         replayEntries.map((e) => e.data.actionId),
       );
       expect(socket.sent.at(-1)?.type).toBe("notes.yjs.replay.ready");
-      // Force a timer flush to wait, then fill the next size-triggered batch.
-      const timerEntered = Promise.withResolvers<void>();
-      const timerRelease = Promise.withResolvers<void>();
-      const prior = deliveries;
-      beforeDelivery = async () => {
-        deliveries++;
-        if (deliveries === prior + 1) {
-          timerEntered.resolve();
-          await timerRelease.promise;
-        }
-      };
       appendLive(entry(215));
-      await timerEntered.promise;
+      await waitFor(() => socket.sent.filter((msg) => msg.type === "notes.yjs.sync.push").length === 4);
       for (let i = 216; i < 316; i++) appendLive(entry(i));
-      expect(deliveries).toBe(prior + 1);
-      timerRelease.resolve();
       await waitFor(() => socket.sent.filter((msg) => msg.type === "notes.yjs.sync.push").length === 5);
       const all = socket.sent.filter((msg) => msg.type === "notes.yjs.sync.push").flatMap((msg) => msg.payload.updates ?? []);
       expect(all.map((update) => update.cursor)).toEqual(Array.from({ length: 306 }, (_, i) => `s6t.fixture.${i + 10}`));
     } finally {
-      release.resolve();
       await socket.close();
     }
   });
@@ -624,11 +615,29 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
       socket.replay(null);
       await socket.ready();
       exists = false;
+      invalidations.emit();
+      await waitFor(() => socket.closed.length > 0);
       socket.publish("0");
       await waitFor(() => socket.closed.length > 0);
       expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.code).toBe("NOTE_NOT_FOUND");
       expect(published).toEqual([]);
     } finally {
+      await socket.close();
+    }
+  });
+  test("a changed document scope reconnects before listening to the wrong permission topic", async () => {
+    reset();
+    const socket = await openSocket();
+    try {
+      socket.replay(null);
+      await socket.ready();
+      note.notebookId = "moved-notebook";
+      invalidations.emit();
+      await waitFor(() => socket.closed.length > 0);
+      expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.code).toBe("STREAM_FAILED");
+      expect(published).toHaveLength(0);
+    } finally {
+      note.notebookId = "test-notebook";
       await socket.close();
     }
   });
@@ -649,29 +658,38 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     }
   });
 
-  test("an admission CAS race reconnects with STREAM_FAILED and never confirms rejected input", async () => {
+  test("an admission CAS race keeps the revision and retries BUSY input without reopening", async () => {
     reset();
+    revision = "7";
     admissionFailure = new ConflictError("head advanced");
     const socket = await openSocket();
     try {
-      socket.replay("0", "s6t.fixture.9");
+      socket.replay("7", "s6t.fixture.9");
       await socket.ready();
-      socket.publish("0");
-      await waitFor(() => socket.closed.length > 0);
-      expect(socket.sent.filter((value) => value.type === "notes.yjs.error").map((value) => value.payload)).toEqual([
-        expect.objectContaining({ code: "STREAM_FAILED" }),
-      ]);
+      socket.publish("7");
+      await waitFor(() => socket.sent.some((value) => value.payload.code === "BUSY"));
+      expect(socket.closed).toEqual([]);
       expect(published).toHaveLength(0);
       expect(socket.sent.filter((value) => value.type === "notes.yjs.sync.push")).toHaveLength(0);
+      admissionFailure = null;
+      socket.publish("7");
+      await waitFor(() => socket.sent.filter((value) => value.payload.code === "BUSY").length === 2);
+      expect(ingress).toHaveLength(1);
+      socket.message("notes.yjs.sync.publish", { restoreRevision: "7", payload: "AAA=", baseCursor: "s6t.fixture.9", retry: true });
+      await waitFor(() => published.length === 1);
+      expect(published[0]?.data.restoreRevision).toBe("7");
+      expect(socket.closed).toEqual([]);
     } finally {
       await socket.close();
     }
   });
 
-  test("admission rechecks write permission after its replay awaits", async () => {
+  test("a permission event during admission stops publication after replay awaits", async () => {
     reset();
-    beforeAdmission = () => {
+    beforeAdmission = async () => {
       permission = "read";
+      invalidations.emit();
+      await Bun.sleep(0);
     };
     const socket = await openSocket();
     try {
@@ -680,7 +698,7 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
       socket.publish("0");
       await waitFor(() => socket.sent.some((value) => value.type === "notes.yjs.error"));
       expect(published).toHaveLength(0);
-      expect(socket.sent.find((value) => value.type === "notes.yjs.error")?.payload.code).toBe("ACCESS_DENIED");
+      expect(socket.sent.find((value) => value.type === "notes.yjs.error")?.payload.code).toBe("ACCESS_REVOKED");
     } finally {
       await socket.close();
     }

@@ -1,4 +1,4 @@
-import { AppWorkspace, Button, DescriptionList, DetailPanel, IconButton, PanelHeader } from "@k2b/ui";
+import { AppWorkspace, Button, DescriptionList, DetailPanel, IconButton, PanelHeader, Section } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 
 /** The app area holds a 64 px rail strip and the app card, like a Cloud shell. */
@@ -65,7 +65,7 @@ export default function WorkspaceHostDemo(props: { host: number }) {
                     }
                   />
                   <DetailPanel.Body>
-                    <DetailPanel.Section title="Contact">
+                    <Section title="Contact">
                       <DescriptionList
                         items={[
                           { term: "Email", description: "mira@example.com" },
@@ -73,7 +73,7 @@ export default function WorkspaceHostDemo(props: { host: number }) {
                           { term: "Location", description: "Berlin" },
                         ]}
                       />
-                    </DetailPanel.Section>
+                    </Section>
                   </DetailPanel.Body>
                 </DetailPanel>
               </AppWorkspace.Detail>

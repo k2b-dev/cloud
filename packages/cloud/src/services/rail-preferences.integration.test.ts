@@ -37,8 +37,11 @@ suite("Core rail preferences persistence", () => {
     expect(await service.get(first)).toEqual({ ...input, revision: 1 });
     expect(await service.get(second)).toEqual(defaultRailPreferences());
     expect(await service.save(second, { ...input, revision: 8 })).toBeNull();
-    const reset = await service.save(first, { ...defaultRailPreferences(), revision: 1 });
-    expect(reset?.revision).toBe(2);
+    // The names setting rides the same row and revision; a reset turns names back on.
+    expect(await service.save(first, { ...input, revision: 1, showNames: false })).toEqual({ ...input, revision: 2, showNames: false });
+    expect((await service.get(first)).showNames).toBe(false);
+    const reset = await service.save(first, { ...defaultRailPreferences(), revision: 2 });
+    expect(reset).toEqual({ ...defaultRailPreferences(), revision: 3 });
     expect(await service.save(first, { ...input, revision: 1 })).toBeNull();
     await db`DELETE FROM auth.users WHERE id = ${first}::uuid`;
     expect(await db`SELECT * FROM auth.rail_preferences WHERE user_id = ${first}::uuid`).toHaveLength(0);

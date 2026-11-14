@@ -37,10 +37,15 @@ ${source[1].trim()}
 
 export async function readTablerIcon(icon: string): Promise<string> {
   const iconName = tablerIconName(icon);
+  const root = resolve(import.meta.dir, "..");
   try {
-    return await readFile(Bun.resolveSync(`@tabler/icons/outline/${iconName}.svg`, resolve(import.meta.dir, "..")), "utf8");
+    return await readFile(Bun.resolveSync(`@tabler/icons/outline/${iconName}.svg`, root), "utf8");
   } catch {
-    throw new Error(`Unknown Tabler app icon ${JSON.stringify(icon)}`);
+    // Glyphs that @k2b/ui adds to the Tabler set, such as `ti-feat-code`, carry their outline drawing in its preset.
+    const preset = await readFile(Bun.resolveSync("@k2b/ui/icons/tabler.css", root), "utf8");
+    const drawing = new RegExp(`\\.ti-${iconName}::?before\\s*\\{[^}]*url\\("data:image/svg\\+xml,([^"]+)"\\)`).exec(preset)?.[1];
+    if (!drawing) throw new Error(`Unknown Tabler app icon ${JSON.stringify(icon)}`);
+    return decodeURIComponent(drawing);
   }
 }
 

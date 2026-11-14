@@ -40,7 +40,9 @@ test("tool names have the same keys in every locale", () => {
 test("every built-in tool has a name in English and German", () => {
   const { names, unread } = builtinTools();
   expect(unread).toEqual([]);
-  expect(names).toEqual(expect.arrayContaining(["code_check", "view_image", "code_write", "code_import", "memory", "search_tools"]));
+  expect(names).toEqual(
+    expect.arrayContaining(["code_check", "view_image", "code_write", "code_import", "memory", "search_tools", "suggest_next_message"]),
+  );
   const missing = names.filter((name) => !aiBuiltinToolName(name, "en") || !aiBuiltinToolName(name, "de"));
   expect(missing).toEqual([]);
 });
@@ -53,6 +55,8 @@ test("shows built-in tools by their localized name and other tools by their name
   expect(displayToolName("code_check", "en")).toBe("App check");
   expect(displayToolName("code_check", "de")).toBe("App-Prüfung");
   expect(displayToolName("view_image", "de-AT")).toBe("Bild ansehen");
+  expect(displayToolName("suggest_next_message", "en")).toBe("Suggest next message");
+  expect(displayToolName("suggest_next_message", "de")).toBe("Nächste Nachricht vorschlagen");
   expect(displayToolName("cloud_card", "de")).toBe("Karte");
   expect(displayToolName("custom_tool", "de")).toBe("Custom tool");
 });

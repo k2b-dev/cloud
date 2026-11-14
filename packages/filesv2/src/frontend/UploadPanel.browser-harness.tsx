@@ -54,7 +54,7 @@ render(
           add: (files, target = "Projects") =>
             queue.add(
               null,
-              { key: target, label: target },
+              { key: target, label: target, href: `#${target}` },
               files.map(([path, size]) => ({ file: new File([new Uint8Array(size)], path.split("/").at(-1)!), path })),
             ),
           progress: (bytes) => current().progress(bytes),
@@ -72,3 +72,24 @@ render(
   ),
   host,
 );
+
+// Invented data for the ETA screenshot, driven through the real queue and estimator.
+if (new URLSearchParams(location.search).has("eta-demo")) {
+  window.uploads.add(
+    Array.from({ length: 81 }, (_, index) => [
+      index === 33 ? "Rundgang.mp4" : `Werkstatt/Foto_${String(index + 1).padStart(3, "0")}.jpg`,
+      index === 33 ? 1_000_000 : 50_000,
+    ]),
+    "Projektatelier",
+  );
+  const next = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let index = 0; index < 33; index++) {
+      window.uploads.finish();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    window.uploads.progress(0);
+    setTimeout(() => window.uploads.progress(100_000), 6000);
+  };
+  void next();
+}

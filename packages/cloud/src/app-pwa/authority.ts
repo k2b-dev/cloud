@@ -1,6 +1,7 @@
 import type { SQL, TransactionSQL } from "bun";
 import { accountCategory } from "../contracts/account-categories";
 import { decodeAccountCategoryEnabled } from "../services/account-category-policy";
+import { sharedWorkstationIdleSeconds } from "../services/session/shared-workstation";
 import { type AppPwaWebSignIn, pwaFail } from "./contracts";
 
 type User = {
@@ -16,6 +17,7 @@ type Family = {
   pwa_device_id: string | null;
   signing_kid: string;
   legal_pending: boolean;
+  idle_ends_at: Date | null;
 };
 
 export const databaseClock = async (tx: TransactionSQL): Promise<Date> => {
@@ -41,7 +43,10 @@ export const lockWebAuthority = async (tx: TransactionSQL, signIn: AppPwaWebSign
   const [user] = await tx<User[]>`SELECT auth_epoch, provider, profile, account_expires
     FROM auth.users WHERE id = ${signIn.userId}::uuid FOR NO KEY UPDATE`;
   if (!user) return pwaFail("WEB_SESSION_REQUIRED", 401);
-  const [family] = await tx<Family[]>`SELECT auth_epoch, expires_at, revoked_at, pwa_device_id, signing_kid, legal_pending
+  const idleSeconds = await sharedWorkstationIdleSeconds();
+  // A shared workstation's family also ends after its idle limit, also while nobody uses it to authenticate.
+  const [family] = await tx<Family[]>`SELECT auth_epoch, expires_at, revoked_at, pwa_device_id, signing_kid, legal_pending,
+      last_input_at + ${idleSeconds} * interval '1 second' AS idle_ends_at
     FROM auth.session_families WHERE sid = ${signIn.sid}::uuid AND user_id = ${signIn.userId}::uuid FOR UPDATE`;
   if (!family) return pwaFail("WEB_SESSION_REQUIRED", 401);
   const [key] = await tx<{ state: string }[]>`SELECT state FROM auth.signing_keys
@@ -62,13 +67,16 @@ export const lockWebAuthority = async (tx: TransactionSQL, signIn: AppPwaWebSign
       key.state === "revoked" ||
       String(family.auth_epoch) !== String(user.auth_epoch) ||
       family.expires_at <= time ||
+      (family.idle_ends_at && family.idle_ends_at <= time) ||
       !legal ||
       (user.account_expires && user.account_expires <= time) ||
       !categoryEnabled
     ) {
       return pwaFail("WEB_SESSION_REQUIRED", 401);
     }
-    return new Date(Math.min(family.expires_at.getTime(), user.account_expires?.getTime() ?? Infinity));
+    return new Date(
+      Math.min(family.expires_at.getTime(), user.account_expires?.getTime() ?? Infinity, family.idle_ends_at?.getTime() ?? Infinity),
+    );
   };
   await check(await databaseClock(tx));
   return { user, family, check };

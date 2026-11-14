@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { redis, sql } from "../runtime/clients";
 import { userResourceContext } from "./projects.test-fixture";
@@ -11,6 +12,8 @@ import { compileReviewFixture, reviewFixture } from "../_internal/capability-rev
 import * as registry from "../_internal/registry";
 import * as capabilityDispatch from "../api/capabilities";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
+import { subscribeIdentityAccessChanged, wakeAppAccessChanged } from "../events/app-access";
+import { liveTopic, startLiveDelivery } from "../events/live-delivery";
 import { accounts } from "../services/accounts";
 import { approvalScopeFromToolName, approvals } from "../services/approvals";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
@@ -23,6 +26,7 @@ import { AI_WEBSITE_APPROVAL_TOOL, findRememberedAiToolApproval, hasRememberedAi
 import * as assistantModels from "./assistant-models";
 import { aiChatTasks } from "./chat-tasks";
 import { aiFileStore } from "./files-store";
+import { aiLive } from "./live";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
@@ -668,24 +672,190 @@ suiteFor(
       signal,
     });
 
+  /** Revocation must work while no heartbeat can run. */
+  const withoutHeartbeat = async (open: () => Response | Promise<Response>) => {
+    const intervals = spyOn(globalThis, "setInterval");
+    try {
+      const response = await open();
+      const heartbeats = intervals.mock.calls.flatMap(([, ms], index) => (ms === 5_000 ? [intervals.mock.results[index]!] : []));
+      expect(heartbeats).toHaveLength(1);
+      for (const heartbeat of heartbeats) {
+        if (heartbeat.type === "return") clearInterval(heartbeat.value);
+      }
+      return response;
+    } finally {
+      intervals.mockRestore();
+    }
+  };
+
+  test("SQL budget of authenticated chat stream admission and live deltas", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: chat.id,
+      modelId: "budget",
+      runConfig: { kind: "chat", input: "Code", toolSource: { kind: "none" } },
+      userMessage: { role: "user", content: [{ type: "text", text: "Code" }] },
+    });
+    const abort = new AbortController();
+    const meter = await meterSql();
+    const warmAbort = new AbortController();
+    let intervals: ReturnType<typeof spyOn<typeof globalThis, "setInterval">> | undefined;
+    try {
+      // Match #3242: fill process caches once, then pin every authenticated connection.
+      const warm = await openStream(chat.shortId, token, warmAbort.signal);
+      expect(warm.status).toBe(200);
+      expect((await readFirstEvent(warm.body!.getReader())).type).toBe("state");
+      intervals = spyOn(globalThis, "setInterval");
+      const readers: ReadableStreamDefaultReader<Uint8Array>[] = [];
+      for (let connection = 0; connection < 3; connection++) {
+        const setup = await meter.during(async () => {
+          const response = await openStream(chat.shortId, token, abort.signal);
+          expect(response.status).toBe(200);
+          const reader = response.body!.getReader();
+          readers.push(reader);
+          expect((await readFirstEvent(reader)).type).toBe("state");
+        });
+        console.log("SQL BUDGET authenticated chat setup", setup.length);
+        expect(setup).toHaveLength(13);
+      }
+      for (let event = 1; event <= 3; event++) {
+        const delivered = await meter.during(async () => {
+          const pending = readers.map(readFirstEvent);
+          await publishAiWireEvent({
+            v: 1,
+            type: "block_delta",
+            conversationId: chat.id,
+            turnId: turn.id,
+            attempt: 0,
+            seq: event,
+            blockId: "code-progress",
+            blockKind: "text",
+            delta: "step",
+          });
+          for (const result of await Promise.all(pending)) expect(result.type).toBe("block_delta");
+        });
+        expect(delivered).toEqual([]);
+      }
+      // Drive the actual five-second heartbeat callbacks repeatedly, without extending test timeouts.
+      const ticks = intervals.mock.calls.filter(([, ms]) => ms === 5_000).map(([tick]) => tick);
+      expect(ticks).toHaveLength(readers.length);
+      for (let beat = 0; beat < 3; beat++) {
+        const heartbeat = await meter.during(async () => {
+          const pending = readers.map((reader) => reader.read());
+          for (const tick of ticks) tick();
+          for (const result of await Promise.all(pending)) {
+            expect(result.done).toBe(false);
+            expect(new TextDecoder().decode(result.value)).toStartWith(":");
+          }
+          // Await asynchronous work the heartbeat might have started too.
+          await Bun.sleep(10);
+        });
+        console.log("SQL BUDGET chat heartbeat", beat + 1, heartbeat.length);
+        expect(heartbeat).toEqual([]);
+      }
+      const unrelatedUser = "11111111-1111-4111-8111-111111111111";
+      const observed = Promise.withResolvers<void>();
+      const stopObserver = subscribeIdentityAccessChanged(() => observed.resolve(), { userId: unrelatedUser });
+      try {
+        const unrelated = await meter.during(async () => {
+          await liveTopic("core").publish({
+            data: { v: 1, k: "identity.budget", d: { type: "identity.access.changed", userId: unrelatedUser } },
+          });
+          await observed.promise;
+        });
+        expect(unrelated).toHaveLength(0);
+      } finally {
+        stopObserver();
+      }
+      const checked = Promise.withResolvers<void>();
+      let checks = 0;
+      const original = aiConversations.getConversationByShortId;
+      const reload = spyOn(aiConversations, "getConversationByShortId").mockImplementation(async (input) => {
+        const result = await original(input);
+        if (++checks === readers.length + 1) checked.resolve();
+        return result;
+      });
+      try {
+        const invalidation = await meter.during(async () => {
+          await liveTopic("core").publish({ data: { v: 1, k: "identity.budget", d: { type: "identity.access.changed", userId } } });
+          await checked.promise;
+        });
+        console.log("SQL BUDGET chat identity event", invalidation.length);
+        expect(checks).toBe(4); // Three readers and the warm reader, all for this subject.
+        expect(invalidation).toHaveLength(12); // Credential + conversation + plan per affected connection.
+      } finally {
+        reload.mockRestore();
+      }
+    } finally {
+      intervals?.mockRestore();
+      abort.abort();
+      warmAbort.abort();
+      await meter.close();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 15_000);
+
+  for (const revoke of ["session", "conversation"] as const) {
+    test(`admission observes a ${revoke} change between authentication and subscription`, async () => {
+      const userId = await insertUser();
+      const token = await createTestSession(userId);
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      const abort = new AbortController();
+      const stopDelivery = await startLiveDelivery("core");
+      const original = aiConversations.getConversationByShortId;
+      const snapshot = spyOn(aiConversations, "getConversationByShortId").mockImplementationOnce(async (input) => {
+        const authorized = await original(input);
+        if (revoke === "session") await session.revoke(token);
+        else {
+          const after = await aiLive.cursor();
+          const hints = aiLive.accessChanges({ after, signal: abort.signal });
+          await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: userId });
+          wakeAppAccessChanged();
+          // Commit and deliver before subscribing: only cursor replay can observe it.
+          for await (const hint of hints) {
+            if (hint.key === `ai.conversation:${chat.id}`) break;
+          }
+        }
+        return authorized;
+      });
+      try {
+        const response = await withoutHeartbeat(() => openStream(chat.shortId, token, abort.signal));
+        expect(response.status).toBe(200);
+        expect((await readUntilClosed(response.body!.getReader(), 2_000)).closed).toBe(true);
+        expect((await openStream(chat.shortId, token, abort.signal)).status).toBe(revoke === "session" ? 401 : 404);
+      } finally {
+        snapshot.mockRestore();
+        abort.abort();
+        await stopDelivery?.();
+        await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    });
+  }
+
   test("ends an open stream once its session is revoked", async () => {
     const userId = await insertUser();
     const token = await createTestSession(userId);
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     const abort = new AbortController();
+    const stopDelivery = await startLiveDelivery("core");
     try {
-      const response = await openStream(chat.shortId, token, abort.signal);
+      const response = await withoutHeartbeat(() => openStream(chat.shortId, token, abort.signal));
       expect(response.status).toBe(200);
       const reader = response.body!.getReader();
       expect((await readFirstEvent(reader)).type).toBe("state");
 
       await session.revoke(token);
 
-      // One revalidation interval (5 s) plus slack.
+      // The committed identity event ends a quiet stream without a heartbeat.
       expect((await readUntilClosed(reader, 10_000)).closed).toBe(true);
       expect((await openStream(chat.shortId, token, abort.signal)).status).toBe(401);
     } finally {
       abort.abort();
+      await stopDelivery?.();
       await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
@@ -703,8 +873,9 @@ suiteFor(
     if (!created.ok) throw new Error(created.error.message);
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     const abort = new AbortController();
+    const stopDelivery = await startLiveDelivery("core");
     try {
-      const response = await openStreamWithBearer(chat.shortId, created.data.token, abort.signal);
+      const response = await withoutHeartbeat(() => openStreamWithBearer(chat.shortId, created.data.token, abort.signal));
       expect(response.status).toBe(200);
       const reader = response.body!.getReader();
       expect((await readFirstEvent(reader)).type).toBe("state");
@@ -716,6 +887,7 @@ suiteFor(
       expect((await openStreamWithBearer(chat.shortId, created.data.token, abort.signal)).status).toBe(401);
     } finally {
       abort.abort();
+      await stopDelivery?.();
       await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
       await sql`DELETE FROM auth.service_accounts WHERE delegated_user_id = ${userId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
@@ -727,23 +899,48 @@ suiteFor(
     const token = await createTestSession(userId);
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     const abort = new AbortController();
+    const stopDelivery = await startLiveDelivery("core");
     try {
-      const response = await openStream(chat.shortId, token, abort.signal);
+      const response = await withoutHeartbeat(() => openStream(chat.shortId, token, abort.signal));
       expect(response.status).toBe(200);
       const reader = response.body!.getReader();
       expect((await readFirstEvent(reader)).type).toBe("state");
 
       // The credential stays valid; only the conversation check can end this stream.
       expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: userId })).toBe(true);
+      wakeAppAccessChanged();
 
       expect((await readUntilClosed(reader, 10_000)).closed).toBe(true);
       expect((await openStream(chat.shortId, token, abort.signal)).status).toBe(404);
     } finally {
       abort.abort();
+      await stopDelivery?.();
       await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   }, 20_000);
+
+  test("ends a quiet stream when its account is locked, without a heartbeat", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const abort = new AbortController();
+    const stopDelivery = await startLiveDelivery("core");
+    try {
+      const response = await withoutHeartbeat(() => openStream(chat.shortId, token, abort.signal));
+      const reader = response.body!.getReader();
+      expect((await readFirstEvent(reader)).type).toBe("state");
+      await sql`INSERT INTO auth.user_ipa_data(user_id, locked_at) VALUES(${userId}::uuid, now())`;
+      wakeAppAccessChanged();
+      expect((await readUntilClosed(reader, 2_000)).closed).toBe(true);
+      expect((await openStream(chat.shortId, token, abort.signal)).status).toBe(401);
+    } finally {
+      abort.abort();
+      await stopDelivery?.();
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
 
   test("ends the stream instead of buffering without bound when the reader falls behind", async () => {
     const userId = await insertUser();

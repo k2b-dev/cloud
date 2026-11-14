@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import type { FileChooserPlace } from "../contracts/file-chooser-place";
 import type { FileProviderContext } from "../contracts/file-provider";
 import type { ChooseFilesOptions } from "./FileChooser";
 import type { FileProviderSource } from "./file-providers";
@@ -13,6 +14,7 @@ const drive: FileProviderSource = {
   icon: "ti ti-folders",
   list: "folder.list",
   context: false,
+  tree: false,
   read: "file.read",
   maxBytes: 1_000,
 };
@@ -224,6 +226,8 @@ const contextualChooser = async (options: ChooseFilesOptions, locale = "en") => 
           options={options}
           providers={() => ({ state: "ready", providers: [invoices, drive] })}
           retryProviders={() => {}}
+          place={() => ({ state: "ready", place: null })}
+          remember={() => {}}
           caller={() => ({ locale, fetch })}
           close={() => {}}
         />
@@ -368,8 +372,10 @@ domTest("a name filter keeps its own empty state after receiving caller context"
     const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
     filter.value = "missing";
     filter.dispatchEvent(new Event("input", { bubbles: true }));
-    for (let attempt = 0; attempt < 100 && !view.button("Clear filter"); attempt++) await Bun.sleep(5);
+    for (let attempt = 0; attempt < 200 && !view.dom.root.textContent?.includes("Nothing matches “missing”"); attempt++) await Bun.sleep(5);
     expect(view.dom.root.textContent).toContain("Nothing matches “missing”");
+    // The filter's own × clears it; the empty state offers no second action.
+    expect(view.button("Clear filter")).toBeUndefined();
     expect(view.dom.root.textContent).not.toContain("Recipient matches");
     expect(view.calls.at(-1)!.input.context).toEqual({ refs: [customer] });
   } finally {
@@ -409,9 +415,14 @@ const entry = (id: string, size: number): Entry => ({ kind: "file", id, name: `$
 /** The real chooser over a fake transport: `answer` decides each call by its path and input. */
 const chooser = async (
   options: ChooseFilesOptions,
-  answer: (path: string, input: { parent?: string; id?: string } | undefined) => Response | Promise<Response>,
+  answer: (
+    path: string,
+    input: { parent?: string; id?: string; query?: string; scope?: string } | undefined,
+  ) => Response | Promise<Response>,
   providers: FileProviderSource[] = [drive],
+  place: FileChooserPlace | null = null,
 ) => {
+  const remembered: (FileChooserPlace | null)[] = [];
   const dom = createDomTestHarness();
   const [{ FileChooser }, { LocaleProvider }] = await Promise.all([import("./FileChooser"), import("@k2b/ui")]);
   const closed: File[][] = [];
@@ -429,6 +440,8 @@ const chooser = async (
           options={options}
           providers={() => ({ state: "ready", providers })}
           retryProviders={() => {}}
+          place={() => ({ state: "ready", place })}
+          remember={(value) => remembered.push(value)}
           caller={() => ({ locale: "en", fetch })}
           close={(files) => closed.push(files)}
         />
@@ -445,6 +458,7 @@ const chooser = async (
   return {
     dom,
     closed,
+    remembered,
     requests,
     button,
     row,
@@ -667,5 +681,413 @@ domTest("files from this device meet the same limits: the chooser says why and s
   } finally {
     error.mockRestore();
     dom.cleanup();
+  }
+});
+
+domTest("continuation retry retains the alert and the button's idle label until success", async () => {
+  let calls = 0;
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  const view = await chooser({}, () => {
+    calls++;
+    if (calls === 1) return Response.json({ data: { writable: false, items: [entry("a", 1)], next: "next" } });
+    if (calls === 2) return Response.json({ message: "Unavailable" }, { status: 503 });
+    return pending;
+  });
+  try {
+    view.button("Drive")!.click();
+    await waitForChooser(() => !!view.button("Load more"));
+    view.button("Load more")!.click();
+    await waitForChooser(() => !!view.button("Try again"));
+    const retry = view.button("Try again")!;
+    const alert = view.dom.root.querySelector('.cloud-file-chooser__more [role="alert"]');
+    expect(alert).not.toBeNull();
+    retry.click();
+    await settle();
+    expect(retry.disabled).toBe(true);
+    expect(retry.textContent?.trim()).toBe("Try again");
+    expect(view.dom.root.querySelector('.cloud-file-chooser__more [role="alert"]')).toBe(alert);
+    finish(folderPage([entry("b", 1)]));
+    await waitForChooser(() => !!view.row("b.txt"));
+    expect(view.row("a.txt")).toBeDefined();
+    expect(view.dom.root.querySelector('.cloud-file-chooser__more [role="alert"]')).toBeNull();
+  } finally {
+    view.cleanup();
+  }
+});
+
+const until = async (condition: () => boolean, ms = 1_000) => {
+  for (const started = performance.now(); !condition() && performance.now() - started < ms; ) await Bun.sleep(5);
+  expect(condition()).toBe(true);
+};
+const skeleton = (dom: ReturnType<typeof createDomTestHarness>) => dom.document.querySelector(".cloud-file-dialog__skeleton-row") !== null;
+const crumbs = (dom: ReturnType<typeof createDomTestHarness>) =>
+  [...dom.document.querySelectorAll(".cloud-file-chooser__crumbs li")].map((item) => item.textContent?.replace("/", "").trim());
+
+domTest("opens at the remembered folder, and remembers only a place that changed as it closes", async () => {
+  const place = { appId: "drive", folders: [{ id: "scans", name: "Scanner-Ablage" }] };
+  const view = await chooser(
+    { multiple: true },
+    (_path, input) =>
+      folderPage(input?.parent === "scans" ? [entry("scan-1", 10)] : [{ kind: "folder", id: "scans", name: "Scanner-Ablage" }]),
+    [drive],
+    place,
+  );
+  try {
+    await until(() => Boolean(view.row("scan-1.txt")));
+    expect(crumbs(view.dom)).toEqual(["Drive", "Scanner-Ablage"]);
+    expect(view.dom.document.querySelector('.cloud-file-dialog__source[aria-current="true"]')?.textContent).toContain("Drive");
+    // The levels above are links; the current level is text, and there is no Up arrow.
+    expect(view.dom.document.querySelector(".cloud-file-chooser__crumbs button")?.textContent?.trim()).toBe("Drive");
+    expect(view.dom.document.querySelector('.cloud-file-chooser__crumbs [aria-current="location"]')?.textContent).toBe("Scanner-Ablage");
+    expect(view.dom.document.querySelector('.cloud-file-chooser__toolbar [aria-label="Up"]')).toBeNull();
+  } finally {
+    view.cleanup();
+  }
+  // Closing where it opened writes nothing.
+  expect(view.remembered).toEqual([]);
+
+  const moved = await chooser(
+    { multiple: true },
+    (_path, input) =>
+      folderPage(input?.parent === "scans" ? [entry("scan-1", 10)] : [{ kind: "folder", id: "scans", name: "Scanner-Ablage" }]),
+    [drive],
+    place,
+  );
+  try {
+    await until(() => Boolean(moved.row("scan-1.txt")));
+    moved.dom.document.querySelector<HTMLButtonElement>(".cloud-file-chooser__crumbs button")!.click();
+    await until(() => Boolean(moved.row("Scanner-Ablage")));
+  } finally {
+    moved.cleanup();
+  }
+  expect(moved.remembered).toEqual([{ appId: "drive", folders: [] }]);
+});
+
+domTest("a remembered folder that is gone opens the provider's root quietly; a gone provider leaves This device open", async () => {
+  const view = await chooser(
+    {},
+    (_path, input) =>
+      input?.parent === "old"
+        ? Response.json({ code: "NOT_FOUND", message: "Gone" }, { status: 404 })
+        : folderPage([entry("root-file", 1)]),
+    [drive],
+    { appId: "drive", folders: [{ id: "old", name: "Old" }] },
+  );
+  try {
+    await until(() => Boolean(view.row("root-file.txt")));
+    expect(crumbs(view.dom)).toEqual(["Drive"]);
+    expect(view.status().dataset.error).toBeUndefined();
+    expect(view.dom.root.textContent).not.toContain("no longer exists");
+  } finally {
+    view.cleanup();
+  }
+  expect(view.remembered).toEqual([{ appId: "drive", folders: [] }]);
+
+  const gone = await chooser({}, () => folderPage([]), [drive], { appId: "vault", folders: [] });
+  try {
+    await until(() => gone.dom.document.querySelector(".cloud-file-dialog__device") !== null);
+    expect(gone.requests).toEqual([]);
+  } finally {
+    gone.cleanup();
+  }
+  // The provider may only be unavailable for now: closing where it opened keeps the stored place.
+  expect(gone.remembered).toEqual([]);
+});
+
+domTest("a provider that searches below the folder shows where each hit lies; typing stops the earlier search and keeps rows", async () => {
+  const searching = { ...drive, tree: true };
+  const inputs: Record<string, unknown>[] = [];
+  let gate: Promise<void> | undefined;
+  const view = await chooser(
+    { multiple: true },
+    async (_path, input) => {
+      inputs.push({ ...input });
+      await gate;
+      if (!input?.query) return folderPage([entry("here", 1)]);
+      return Response.json({
+        data: {
+          writable: false,
+          items: [{ kind: "file", id: `hit-${input.query}`, name: `${input.query}.pdf`, size: 2, location: "Intern / Info-Blätter" }],
+          next: null,
+        },
+      });
+    },
+    [searching],
+    { appId: "drive", folders: [] },
+  );
+  try {
+    await until(() => Boolean(view.row("here.txt")));
+    const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+    expect(filter.placeholder).toBe("Search here and in subfolders");
+    filter.value = "hinweis";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => Boolean(view.row("hinweis.pdf")));
+    expect(inputs.at(-1)).toMatchObject({ query: "hinweis", scope: "tree" });
+    expect(view.row("hinweis.pdf")!.textContent).toContain("Intern / Info-Blätter");
+
+    // A slow search keeps the earlier rows, without placeholders, until its answer arrives.
+    let release!: () => void;
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    filter.value = "schild";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => inputs.at(-1)?.query === "schild");
+    const slow = view.requests.at(-1)!;
+    expect(view.row("hinweis.pdf")).toBeDefined();
+    expect(skeleton(view.dom)).toBe(false);
+    // Typing again stops the search that is still running.
+    filter.value = "schilder";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(slow.signal?.aborted).toBe(true);
+    expect(view.row("hinweis.pdf")).toBeDefined();
+    release();
+    gate = undefined;
+    await until(() => Boolean(view.row("schilder.pdf")));
+    expect(view.row("hinweis.pdf")).toBeUndefined();
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a provider without tree search says it filters this folder and never asks for the tree", async () => {
+  const inputs: Record<string, unknown>[] = [];
+  const view = await chooser(
+    {},
+    (_path, input) => {
+      inputs.push({ ...input });
+      return folderPage([entry("x", 1)]);
+    },
+    [drive],
+    { appId: "drive", folders: [] },
+  );
+  try {
+    await until(() => Boolean(view.row("x.txt")));
+    const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+    expect(filter.placeholder).toBe("Filter this folder");
+    filter.value = "x";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => inputs.length === 2);
+    expect(inputs[1]).not.toHaveProperty("scope");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("placeholder rows wait 200 ms before they show and then stay at least 300 ms", async () => {
+  let release!: () => void;
+  let gate: Promise<void> | undefined;
+  const view = await chooser(
+    {},
+    async (_path, input) => {
+      if (input?.parent === "slow") await gate;
+      if (input?.parent === "fast") return folderPage([]);
+      return folderPage(
+        input?.parent === "slow"
+          ? [entry("late", 1)]
+          : [
+              { kind: "folder", id: "slow", name: "Slow" },
+              { kind: "folder", id: "fast", name: "Fast" },
+            ],
+      );
+    },
+    [drive],
+    { appId: "drive", folders: [] },
+  );
+  try {
+    await until(() => Boolean(view.row("Fast")));
+    // A fast folder never shows placeholders.
+    const watch = setInterval(() => {
+      if (skeleton(view.dom)) throw new Error("placeholder flashed");
+    }, 1);
+    view.row("Fast")!.click();
+    await until(() => !view.row("Slow") && view.dom.root.textContent!.includes("This folder is empty"));
+    clearInterval(watch);
+    view.dom.document.querySelector<HTMLButtonElement>(".cloud-file-chooser__crumbs button")!.click();
+    await until(() => Boolean(view.row("Slow")));
+
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const started = performance.now();
+    view.row("Slow")!.click();
+    await Bun.sleep(120);
+    expect(skeleton(view.dom)).toBe(false);
+    await until(() => skeleton(view.dom));
+    const shown = performance.now();
+    expect(shown - started).toBeGreaterThanOrEqual(190);
+    release();
+    await until(() => Boolean(view.row("late.txt")));
+    expect(performance.now() - shown).toBeGreaterThanOrEqual(290);
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("closing while the apps still load, or where it opened, keeps the remembered place", async () => {
+  const dom = createDomTestHarness();
+  const [{ FileChooser }, { LocaleProvider }] = await Promise.all([import("./FileChooser"), import("@k2b/ui")]);
+  const remembered: unknown[] = [];
+  const dispose = render(
+    () => (
+      <LocaleProvider locale="en">
+        <FileChooser
+          options={{}}
+          providers={() => ({ state: "loading" })}
+          retryProviders={() => {}}
+          place={() => ({ state: "ready", place: { appId: "drive", folders: [{ id: "scans", name: "Scans" }] } })}
+          remember={(value) => remembered.push(value)}
+          caller={() => ({ locale: "en", fetch: async () => folderPage([]) })}
+          close={() => {}}
+        />
+      </LocaleProvider>
+    ),
+    dom.root,
+  );
+  await settle();
+  dispose();
+  dom.cleanup();
+  expect(remembered).toEqual([]);
+
+  // A provider that failed to load leaves This device open without forgetting the place either.
+  const failed = await chooser({}, () => folderPage([]), [], { appId: "drive", folders: [] });
+  await settle();
+  failed.cleanup();
+  expect(failed.remembered).toEqual([]);
+});
+
+domTest("a new filter hides Load more of the earlier results until its own first page", async () => {
+  let gate: Promise<void> | undefined;
+  const view = await chooser(
+    {},
+    async (_path, input) => {
+      await gate;
+      return Response.json({ data: { writable: false, items: [entry(input?.query ?? "first", 1)], next: "more" } });
+    },
+    [drive],
+    { appId: "drive", folders: [] },
+  );
+  try {
+    await until(() => Boolean(view.button("Load more")));
+    let release!: () => void;
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+    filter.value = "second";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => view.requests.length === 2);
+    // The earlier rows stay, but their cursor no longer continues anything.
+    expect(view.row("first.txt")).toBeDefined();
+    expect(view.button("Load more")).toBeUndefined();
+    filter.value = "third";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(view.button("Load more")).toBeUndefined();
+    release();
+    gate = undefined;
+    await until(() => Boolean(view.row("third.txt")) && Boolean(view.button("Load more")));
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a search refused at a provider's root shows the folder error and keeps the provider", async () => {
+  const view = await chooser(
+    {},
+    (_path, input) =>
+      input?.query ? Response.json({ code: "FORBIDDEN", message: "No access" }, { status: 403 }) : folderPage([entry("root-file", 1)]),
+    [{ ...drive, tree: true }],
+    { appId: "drive", folders: [] },
+  );
+  try {
+    await until(() => Boolean(view.row("root-file.txt")));
+    const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+    filter.value = "plan";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => Boolean(view.dom.root.textContent?.includes("You no longer have access")));
+    expect(view.button("Drive")).toBeDefined();
+    expect(view.dom.root.textContent).not.toContain("no longer available");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a search that left out unreadable subfolders shows its hits with one calm line in the status, never an error", async () => {
+  const view = await chooser(
+    { multiple: true },
+    (_path, input) => {
+      if (!input?.query) return folderPage([entry("root-file", 1)]);
+      const items = input.query === "plan" ? [entry("plan", 1)] : [];
+      return Response.json({ data: { writable: false, items, next: null, incomplete: true } });
+    },
+    [{ ...drive, tree: true }],
+    { appId: "drive", folders: [] },
+  );
+  try {
+    await until(() => Boolean(view.row("root-file.txt")));
+    const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+    filter.value = "plan";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => Boolean(view.row("plan.txt")));
+    expect(view.status().textContent).toBe("Some subfolders could not be searched");
+    // The note uses the status's fixed place, so nothing moves; it is no error.
+    expect(view.status().dataset.error).toBeUndefined();
+    // A selection takes the status back; the note returns without it.
+    view.row("plan.txt")!.click();
+    await until(() => view.status().textContent === "1 file selected");
+    view.row("plan.txt")!.click();
+    await until(() => view.status().textContent === "Some subfolders could not be searched");
+    // Without hits, the empty state names this folder only and repeats the note.
+    filter.value = "zzz";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => Boolean(view.dom.root.textContent?.includes("Nothing matches “zzz”")));
+    expect(view.dom.root.textContent).not.toContain("here or in subfolders");
+    expect(view.dom.root.querySelector(".cloud-file-chooser__state")?.textContent).toContain("Some subfolders could not be searched");
+    // Clearing the filter ends the note.
+    filter.value = "";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => Boolean(view.row("root-file.txt")));
+    expect(view.status().textContent).not.toContain("subfolders");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("the restored folder takes focus from wherever opening put it, but never from the person's own move", async () => {
+  for (const personActs of [false, true]) {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const view = await chooser(
+      {},
+      async () => {
+        await gate;
+        return folderPage([entry("scan", 1)]);
+      },
+      [drive],
+      { appId: "drive", folders: [{ id: "scans", name: "Scans" }] },
+    );
+    try {
+      // WebKit's native dialog focuses its first control, the close button; Chromium focuses the dialog itself.
+      const close = view.dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")!;
+      close.focus();
+      expect(view.dom.document.activeElement).toBe(close);
+      const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+      if (personActs) {
+        filter.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+        filter.focus();
+      }
+      release();
+      await until(() => Boolean(view.row("scan.txt")));
+      await settle();
+      if (personActs) expect(view.dom.document.activeElement).toBe(filter);
+      else expect(view.dom.document.activeElement?.textContent).toContain("scan.txt");
+    } finally {
+      view.cleanup();
+    }
   }
 });

@@ -1,5 +1,5 @@
 import { Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
-import { createMemo } from "solid-js";
+import { createMemo, Show } from "solid-js";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { type MailComposerSignatures, signatureOptions } from "./mail-composer-signature";
 
@@ -10,6 +10,8 @@ export default function MailComposerSignature(props: {
   senderDefaultId: string | null;
   disabled: boolean;
   onChange: (value: string | null) => void;
+  /** Among the draft's quiet tools: an icon like its neighbours; the chosen signature shows as the block itself. */
+  quiet?: boolean;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -34,16 +36,19 @@ export default function MailComposerSignature(props: {
     <Dropdown.Root position="top-right" items={items()} disabled={props.disabled}>
       <Dropdown.Trigger
         size="sm"
-        variant="secondary"
+        variant={props.quiet ? "ghost" : "secondary"}
+        iconOnly={props.quiet}
         class="mail-composer-signature min-w-0"
         label={t().chooseSignature({ name: buttonLabel() })}
         tooltip={t().chooseSignature({ name: buttonLabel() })}
         disabled={props.disabled}
       >
         <i class="ti ti-signature" aria-hidden="true" />
-        {/* The name needs more room than the labels of its neighbors, so it appears one breakpoint later. */}
-        <span class="hidden max-w-40 truncate md:inline">{buttonLabel()}</span>
-        <i class="ti ti-chevron-down hidden text-xs text-dimmed md:inline" aria-hidden="true" />
+        <Show when={!props.quiet}>
+          {/* The name needs more room than the labels of its neighbors, so it appears one breakpoint later. */}
+          <span class="hidden max-w-40 truncate md:inline">{buttonLabel()}</span>
+          <i class="ti ti-chevron-down hidden text-xs text-dimmed md:inline" aria-hidden="true" />
+        </Show>
       </Dropdown.Trigger>
     </Dropdown.Root>
   );

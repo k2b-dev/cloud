@@ -5,6 +5,7 @@ import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiStoredMessage, 
 import { aiOpenQuestionFixture, aiQuestionFixtures } from "@k2b/cloud/ai/testing";
 import type { Browser, Page, Route } from "playwright";
 import { browserName, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { appAssetResponse, appAssetsJson } from "../artifacts/html/test-assets";
 import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 
 // "Waiting for you" is layout and focus: its reserved row, whether it shows while a card's answers are in view, a
@@ -269,6 +270,7 @@ let assets: ReturnType<typeof Bun.serve>;
 let css: string;
 let script: string;
 beforeAll(async () => {
+  const chartParts = await appAssetResponse(await appAssetsJson(), "/chart-parts").text();
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
@@ -320,6 +322,8 @@ beforeAll(async () => {
     port: 0,
     fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/api/assistant/artifacts/runtime/chart-parts")
+        return new Response(chartParts, { headers: { "content-type": "application/json" } });
       if (path === "/harness.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
       if (path === "/harness.css") return new Response(css, { headers: { "content-type": "text/css" } });
       if (path.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", path.slice(4))));
@@ -363,7 +367,13 @@ const open = async (
   const errors = pageErrors(page);
   await page.route(`${assets.url.href}**`, async (route: Route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/harness.js" || url.pathname === "/harness.css" || url.pathname.startsWith("/ui/")) return route.continue();
+    if (
+      url.pathname === "/harness.js" ||
+      url.pathname === "/harness.css" ||
+      url.pathname.startsWith("/ui/") ||
+      url.pathname === "/api/assistant/artifacts/runtime/chart-parts"
+    )
+      return route.continue();
     if (url.pathname === "/app/assistant") {
       // A chat opened at a message that answers later than the stream's 500 ms reconnect delay, so the stream that
       // the navigation cancelled always opens again while the page waits, and WebKit refuses it.

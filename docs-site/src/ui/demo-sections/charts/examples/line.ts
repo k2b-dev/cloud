@@ -1,18 +1,117 @@
+import { liquidityForecastSpec } from "../liquidity-forecast";
 import { axisOption, commonOptions, inspectA11y } from "./common";
 import type { ChartShowcaseExample } from "./types";
 
-const months = [
-  "2026-01-01",
-  "2026-02-01",
-  "2026-03-01",
-  "2026-04-01",
-  "2026-05-01",
-  "2026-06-01",
-  "2026-07-01",
-  "2026-08-01",
-  "2026-09-01",
-  "2026-10-01",
+const forecastExamples: ChartShowcaseExample[] = [
+  {
+    id: "line-forecast",
+    kind: "line",
+    question: "trend" as const,
+    title: "Can the studio cover its next payments?",
+    summary: "Invented cash balances combine observed values with a dashed forecast, a range, reserve threshold and today marker.",
+    spec: {
+      kind: "line",
+      title: "Studio cash outlook",
+      legend: true,
+      zero: true,
+      smooth: false,
+      series: [
+        {
+          label: "Cash",
+          data: [
+            { x: 1, y: 32 },
+            { x: 2, y: 28 },
+            { x: 3, y: 36 },
+            { x: 4, y: 22 },
+            { x: 5, y: 15 },
+            { x: 6, y: 8 },
+            { x: 7, y: -3 },
+            { x: 8, y: 12 },
+            { x: 9, y: 24 },
+          ],
+        },
+        {
+          label: "Committed",
+          data: [
+            { x: 1, y: 24 },
+            { x: 2, y: 22 },
+            { x: 3, y: 26 },
+            { x: 4, y: 18 },
+            { x: 5, y: 10 },
+            { x: 6, y: 4 },
+            { x: 7, y: -6 },
+            { x: 8, y: 7 },
+            { x: 9, y: 16 },
+          ],
+        },
+      ],
+      forecast: {
+        from: 5,
+        band: [
+          [11, 19],
+          [2, 14],
+          [-10, 4],
+          [3, 21],
+          [12, 36],
+        ],
+      },
+      threshold: { value: 10, label: "Reserve" },
+      marker: { at: 5, label: "Today" },
+    },
+    height: 280,
+    width: "twoThirds" as const,
+    useFor: ["Separate observed values from an outlook without losing their connection."],
+    avoidFor: ["Represent certainty when the forecast range is unknown."],
+    a11y: [
+      "Arrow keys, Home and End inspect each X; Enter pins and Escape closes.",
+      "The legend shows each series value at the cursor; null stays a gap.",
+    ],
+    options: [
+      {
+        name: "legendValues",
+        type: "boolean",
+        description: "Opt in to cursor values without annotations; existing specs retain their legends.",
+      },
+      {
+        name: "forecast",
+        type: "{from:number|ISO,band?:[number,number][]}",
+        description: "Dash from an existing X. Bounds match the first series suffix ordered by X, with lower ≤ upper.",
+      },
+      { name: "zero", type: "boolean", description: "Include zero and tint the area below it red." },
+      { name: "threshold", type: "{value:number,label:string}", description: "A labelled dashed warning line." },
+      { name: "marker", type: "{at:number|ISO,label:string}", description: "A labelled vertical marker, for example Today." },
+      { name: "step", type: '"after"|"before"', description: "Draw horizontal steps rather than interpolated segments." },
+    ],
+  },
+  {
+    id: "line-liquidity",
+    kind: "line",
+    question: "trend" as const,
+    title: "Balance and forecast",
+    summary: "The Liquidity dashboard's invented business account, with booked balances and a widening forecast range.",
+    spec: liquidityForecastSpec,
+    height: 280,
+    width: "full" as const,
+    useFor: ["Compare scheduled payments with the account reserve."],
+    avoidFor: ["Present an uncertain forecast as booked money."],
+    a11y: ["Inspect every day with arrow keys, Home and End; the legend follows the cursor."],
+    options: [
+      { name: "forecast.from", type: "ISO date", description: "The first projected day, also marked as Today." },
+      { name: "smooth", type: "true", description: "The balance and both forecast bounds follow the same smooth interpolation." },
+    ],
+  },
 ];
+
+// The 31 invented days of October: a slow rise with quieter weekends, the same on server and client.
+const days = Array.from({ length: 31 }, (_, index) => {
+  const date = new Date(Date.UTC(2026, 9, 1 + index));
+  return { x: date.toISOString().slice(0, 10), weekend: date.getUTCDay() % 6 === 0, index };
+});
+const visitors = (base: number, rise: number) =>
+  days.map(({ x, weekend, index }) => ({
+    x,
+    y: Math.round(base + rise * index + (weekend ? -base * 0.16 : Math.sin(index * 1.7) * base * 0.03)),
+  }));
 
 const examples: ChartShowcaseExample[] = [
   {
@@ -20,21 +119,14 @@ const examples: ChartShowcaseExample[] = [
     kind: "line",
     question: "trend",
     title: "Line chart",
-    summary: "One or more values over time. Inspect a month and every series answers at once.",
+    summary: "One or more values over time. Inspect a day and every series answers at once.",
     spec: {
       kind: "line",
-      title: "Visitors per month",
-      subtitle: "Website · invented data",
+      title: "Visitors per day",
+      subtitle: "Website · October · invented data",
       series: [
-        {
-          label: "This year",
-          data: months.map((x, i) => ({ x, y: [18200, 19400, 21900, 21100, 23800, 26500, 25900, 27400, 29800, 31200][i]! })),
-        },
-        {
-          label: "Last year",
-          role: "reference",
-          data: months.map((x, i) => ({ x, y: [16100, 16800, 18300, 18900, 19800, 21200, 21900, 22400, 23900, 24800][i]! })),
-        },
+        { label: "This year", data: visitors(1180, 9) },
+        { label: "Last year", role: "reference", data: visitors(1020, 6) },
       ],
       yAxis: { format: { style: "number", compact: true } },
       xAxis: { format: { date: "day" } },
@@ -42,7 +134,7 @@ const examples: ChartShowcaseExample[] = [
       smooth: true,
     },
     useFor: [
-      "A value that changes continuously, such as visitors, revenue or response time.",
+      "A value that changes continuously, such as visitors, revenue or response time. Forecasts add forecast, threshold, marker, zero, step and legendValues.",
       "Up to four series on one scale, such as this year against last year.",
       "Many points: a line stays readable where columns would turn into stripes.",
     ],
@@ -51,7 +143,7 @@ const examples: ChartShowcaseExample[] = [
       "Two values with different units; draw two charts instead of a second axis.",
       "A single number; use a key figure.",
     ],
-    a11y: [...inspectA11y, "Arrow keys move along the time axis; the tooltip lists every series at that time."],
+    a11y: [...inspectA11y, "On a time axis the tooltip lists every series at the inspected time."],
     options: [
       ...commonOptions,
       {
@@ -66,6 +158,7 @@ const examples: ChartShowcaseExample[] = [
       { name: "area", type: "boolean", description: "Fills the area under the first series." },
       { name: "references", type: "{ value, axis?, label? }[]", description: "Labelled reference lines, such as a target." },
       { name: "legend", type: "boolean", description: "Names the series; on by default with more than one series." },
+      ...forecastExamples[0]!.options,
     ],
   },
   {
@@ -102,4 +195,5 @@ const examples: ChartShowcaseExample[] = [
   },
 ];
 
-export default examples;
+export const lineExamples = [...examples, ...forecastExamples];
+export default lineExamples;

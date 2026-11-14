@@ -91,8 +91,9 @@ describe("selection hooks", () => {
   });
 
   test("content selection changes paint without weight, padding, or border width", () => {
+    // The selected row mixes into the surface it lies on: an island's surface inside an island.
     expect(declarations(tableRow).get("background")).toEqual([
-      "color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface))",
+      "color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface-beneath, var(--k2b-surface)))",
     ]);
     for (const selector of [tableRow, ...rows]) {
       const selected = declarations(selector);

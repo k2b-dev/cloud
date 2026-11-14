@@ -80,6 +80,19 @@ After sign-in, Cloud asks you to accept its terms and acknowledge the privacy po
 
 If the result of a sign-in is unclear, reload the page to check your session, or start a new request.
 
+## Use a shared workstation {icon="users"}
+
+Mark a browser that several people use, such as a PC at a counter. Open the profile menu and turn on **Shared workstation**. The mark belongs to the browser and stays after you sign out.
+
+On a shared workstation:
+
+- Cloud signs you out after a few minutes without input from keyboard, mouse or touch. Your administrator sets the minutes.
+- One minute before, Cloud asks **You will be signed out soon**. Choose **Keep working** to stay signed in.
+- Closing the browser also signs you out.
+- The sign-in page remembers nothing about your sign-in.
+
+Work in one tab keeps all tabs of the browser signed in. Drafts that an app saves for you stay saved. To remove the mark, turn off **Shared workstation** in the profile menu.
+
 ## New sign-in notice {icon="bell"}
 
 After a successful sign-in, Cloud sends **New sign-in from a new browser** once for each new browser. This starts 14 days after the upgrade. It does not apply to the Cloud app.

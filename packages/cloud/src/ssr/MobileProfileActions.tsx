@@ -2,13 +2,18 @@ import { documentNavigate } from "@k2b/ssr/nav";
 import { Button, ButtonLink } from "@k2b/ui";
 import type { CloudThemePreference } from "../shared/theme";
 import { createProfileActions } from "./profile-actions";
+import { SharedWorkstationCheck } from "./SharedWorkstationCheck";
 import { ThemeCycleButton } from "./ThemeCycleButton";
 
 export function MobileProfileActions(props: {
   profile: { userId?: string; name: string; theme: CloudThemePreference; appHref?: string };
   beforeSelect: () => Promise<boolean>;
 }) {
-  const { preferences, signingOut, signOut } = createProfileActions(props.profile.theme, props.profile.appHref, props.profile.userId);
+  const { preferences, signingOut, signOut, sharedWorkstation } = createProfileActions(
+    props.profile.theme,
+    props.profile.appHref,
+    props.profile.userId,
+  );
   const navigate = (href: string) => (event: MouseEvent) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -38,6 +43,18 @@ export function MobileProfileActions(props: {
         <i class="ti ti-language" aria-hidden="true" />
         {preferences.languageLabel()}
       </Button>
+      {props.profile.userId && (
+        <Button
+          variant="ghost"
+          role="switch"
+          aria-checked={sharedWorkstation.shared()}
+          disabled={sharedWorkstation.pending()}
+          onClick={() => void sharedWorkstation.toggle()}
+        >
+          <SharedWorkstationCheck checked={sharedWorkstation.shared()} />
+          {sharedWorkstation.messages().label}
+        </Button>
+      )}
       <Button
         variant="ghost"
         disabled={signingOut()}

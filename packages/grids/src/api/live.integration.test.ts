@@ -15,6 +15,7 @@ import { remove as removeBase } from "../service/bases";
 import { gridsLiveKey } from "../service/live";
 import { create as createRecord } from "../service/record-write";
 import { create as createTable, remove as removeTable, update as updateTable } from "../service/tables";
+import { removeWorkflow } from "../service/workflow-definitions";
 import { publishWorkflowRunEvent } from "../service/workflow-run-events";
 import { getWorkflowRun } from "../service/workflow-runs";
 import { deleteTestWorkflowScope, insertTestWorkflow, insertTestWorkflowRun } from "../service/workflow-test-fixture";
@@ -179,8 +180,9 @@ suite("Grids live channels", () => {
       expect([...admitted]).toEqual([reader.id]);
     }
 
-    // A deleted table admits nobody, so its open views are revoked.
+    // A deleted table admits nobody and publishes a hint for its open views.
     expect((await removeTable(orders.id, null)).ok).toBe(true);
+    expect(await pending(gridsLiveKey.table(orders.id))).toContainEqual({ v: 1, k: gridsLiveKey.table(orders.id), a: true });
     expect([...(await gridsLiveChannels.records.authorize(gridsLiveKey.table(orders.id), viewers))]).toEqual([]);
   });
 
@@ -223,6 +225,15 @@ suite("Grids live channels", () => {
         { v: 1, k: child, a: true },
         { v: 1, k: child, a: true },
       ]);
+  });
+
+  test("a soft-deleted workflow invalidates its run readers", async () => {
+    const shared = await base("Live deleted workflow");
+    const workflowId = await insertTestWorkflow({ baseId: shared.id });
+    expect((await removeWorkflow(workflowId, null)).ok).toBe(true);
+    const key = gridsLiveKey.workflow(workflowId);
+    expect(await pending(key)).toContainEqual({ v: 1, k: key, a: true });
+    expect([...(await gridsLiveChannels.runs.authorize(key, []))]).toEqual([]);
   });
 
   test("a run update names public IDs, and one above 32 KiB asks pages to read the run again", async () => {

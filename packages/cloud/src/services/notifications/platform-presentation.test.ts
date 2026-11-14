@@ -13,6 +13,7 @@ test("send validates browser metadata before persistence and normalizes previews
     const sql = async (parts, ...values) => {
       sqlCalls++;
       const query = parts.join("?");
+      if (query === "u.id") return query;
       if (query.includes("INSERT INTO notifications.events")) { eventWrites.push({ query, values }); return [{ id: eventId }]; }
       if (query.includes("UPDATE notifications.events")) { eventWrites.push({ query, values }); return []; }
       if (query.includes("AS delivery_count")) return [{ delivery_count: 0, preparation_failure_count: 0 }];
@@ -33,6 +34,7 @@ test("send validates browser metadata before persistence and normalizes previews
     mock.module(${JSON.stringify(new URL("./catalog.ts", import.meta.url).pathname)}, () => ({ ensureNotificationDefinition: async () => {} }));
     mock.module(${JSON.stringify(new URL("./dispatcher.ts", import.meta.url).pathname)}, () => ({ processNotificationDelivery: async () => ({ status: "delivered" }) }));
     mock.module(${JSON.stringify(new URL("./runtime.ts", import.meta.url).pathname)}, () => ({ enqueueNotificationDelivery: async () => {}, enqueueNotificationDeliveries: async () => {} }));
+    mock.module(${JSON.stringify(new URL("../account-lock.ts", import.meta.url).pathname)}, () => ({ accountLockedSql: () => "false" }));
     mock.module(${JSON.stringify(new URL("../secrets.ts", import.meta.url).pathname)}, () => ({ encryptSecret: async () => "encrypted" }));
     mock.module(${JSON.stringify(new URL("./channels.ts", import.meta.url).pathname)}, () => ({
       getNotificationChannel: channel => ({

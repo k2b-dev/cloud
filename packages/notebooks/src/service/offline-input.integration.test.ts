@@ -126,6 +126,7 @@ for (const withHttpEdit of [false, true])
                     send(socket, notebooksYjs.wsType.replayReady, { noteId: "OffNt1", restoreRevision: "0", cursor: fresh!.cursor });
                   } else if (packet.type === notebooksYjs.wsType.syncPublish && !reject) {
                     const result = await notes.acceptYjsUpdate({
+                      snapshot: await notes.noteDocuments.read(noteId),
                       noteId,
                       actor: { kind: "user", id: crypto.randomUUID() },
                       update: fromBase64(packet.payload.payload),

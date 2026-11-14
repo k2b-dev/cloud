@@ -25,6 +25,10 @@ the budget (when any row is over). On hover and keyboard focus a row's tooltip
 lists booked, expected, budget and what is left or over; the bar's spoken value
 says the same, so touch and screen readers lose nothing.
 
+The list keeps the row measure (`--k2b-row-measure`, 40rem): on a wide screen a
+budget's amount stays within reach of its label instead of drifting to the far
+edge, and a row takes the table's hover tint.
+
 `budgetState(item)` returns the same figures (`total`, `over`, `free`,
 `ratio`, `level: "ok" | "near" | "over"`) for hosts that add their own text.
 For one bar, pass `segments` and `limit` to `ProgressBar` directly;

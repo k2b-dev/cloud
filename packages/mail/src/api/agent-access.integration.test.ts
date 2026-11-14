@@ -187,10 +187,10 @@ suite("Mail REST access for service-account credentials", () => {
     expect(await listedPermission(adminScoped)).toBe("write");
     expect((await call(adminScoped, `/mailboxes/${mailboxShortId}/access`)).status).toBe(403);
 
-    // A token without a Mail scope reaches nothing.
+    // A token without a Mail scope reaches nothing; the mailbox answers it like an unknown one.
     const openidOnly = await tokenFor(agent, ["openid"]);
     expect(await listedPermission(openidOnly)).toBeNull();
-    expect((await call(openidOnly, `/mailboxes/${mailboxShortId}`)).status).toBe(403);
+    expect((await call(openidOnly, `/mailboxes/${mailboxShortId}`)).status).toBe(404);
   });
 
   test("a resource-bound key keeps its binding and its scope cap", async () => {
@@ -233,7 +233,7 @@ suite("Mail REST access for service-account credentials", () => {
     // Without a Mail scope the agent reads no mailbox, so it can neither change nor see a preference.
     const openidOnly = await tokenFor(agent, ["openid"]);
     expect((await call(openidOnly, `/mailboxes/${mailboxShortId}/preference`, { method: "PATCH", body: { pinned: true } })).status).toBe(
-      403,
+      404,
     );
     expect(await preferences(openidOnly)).toEqual({ pinnedMailboxIds: [], hiddenMailboxIds: [] });
 
@@ -455,7 +455,7 @@ suite("Mail REST access for service-account credentials", () => {
         ).status,
       ).toBe(403);
       expect((await createTag(token)).status).toBe(403); // Assigned write is never mailbox-wide write.
-      expect((await call(await tokenFor(accountId, ["openid"]), path(assigned.shortId))).status).toBe(403);
+      expect((await call(await tokenFor(accountId, ["openid"]), path(assigned.shortId))).status).toBe(404);
       expect((await call("owner-session", `${base}/access/${entry.id}`, { method: "PATCH", body: { permission: "read" } })).status).toBe(
         200,
       );
@@ -486,8 +486,9 @@ suite("Mail REST access for service-account credentials", () => {
       expect(restored.status).toBe(200);
       expect(await restored.json()).toMatchObject({ assignees: [principal] });
       expect((await call("owner-session", `${base}/access/${entry.id}`, { method: "DELETE" })).status).toBe(200);
-      expect((await call(token, path(assigned.shortId))).status).toBe(403);
-      expect((await call(token, path(assigned.shortId), { method: "PATCH", body: patch })).status).toBe(403);
+      // Without a grant the mailbox answers like an unknown one.
+      expect((await call(token, path(assigned.shortId))).status).toBe(404);
+      expect((await call(token, path(assigned.shortId), { method: "PATCH", body: patch })).status).toBe(404);
       expect(await commandStillAuthorized(command, "write")).toBe(false);
       const noLongerEligible = await call("owner-session", `${base}/assignable-users?search=${encodeURIComponent(name)}`);
       expect(await noLongerEligible.json()).toEqual([]);

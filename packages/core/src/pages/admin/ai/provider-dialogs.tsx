@@ -30,6 +30,7 @@ type AvailableModel = {
   label?: string;
   kind?: "chat" | "transcription" | "live-transcription" | "decision";
   contextWindow?: number;
+  outputTokenLimit?: number;
 };
 
 const useT = () => {
@@ -529,6 +530,7 @@ function AddModelsDialog(props: {
               ? ["transcription" as const]
               : [],
         contextWindow: model.contextWindow ?? null,
+        ...(model.outputTokenLimit ? { outputTokenLimit: model.outputTokenLimit } : {}),
       }));
       const created = await readAiAdmin<{ models: { id: string }[] }>(
         await aiAdminApi.providers[":id"].models.$post({ param: { id: props.providerId }, json: body }),

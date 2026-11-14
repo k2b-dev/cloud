@@ -17,7 +17,7 @@ import {
   serializeAppWorkspaceLayoutState,
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
-import { fitFloatingWindowRect } from "./floating-window-geometry";
+import { fitFloatingWindowRect, layoutFloatingWindowDock, maximizedFloatingWindowRect } from "./floating-window-geometry";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-advanced-layout-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -360,6 +360,25 @@ describe("@k2b/ui complete advanced layout migrations", () => {
         height: 768,
       }),
     ).toEqual({ x: 508, y: 16, width: 500, height: 700 });
+    // Inside an area that does not start at the corner.
+    expect(fitFloatingWindowRect({ x: 0, y: 0, width: 400, height: 300 }, 360, 320, { x: 100, y: 50, width: 800, height: 600 })).toEqual({
+      x: 116,
+      y: 66,
+      width: 400,
+      height: 320,
+    });
+  });
+
+  test("docks windows in rows from the end of the area and maximizes over it", () => {
+    const bar = { width: 252, height: 42 };
+    const rects = layoutFloatingWindowDock([{ width: 520, height: 420 }, bar, bar], { x: 0, y: 0, width: 900, height: 700 });
+    // The first sits at the end; a bar that no longer fits starts a row above the tallest one.
+    expect(rects).toEqual([
+      { x: 364, y: 268, width: 520, height: 420 },
+      { x: 104, y: 646, width: 252, height: 42 },
+      { x: 632, y: 218, width: 252, height: 42 },
+    ]);
+    expect(maximizedFloatingWindowRect({ x: 80, y: 20, width: 1340, height: 860 })).toEqual({ x: 147, y: 44, width: 1206, height: 812 });
   });
 
   test("keeps utility window resize controlled by component state", async () => {
@@ -1121,7 +1140,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(strip).toContain("height:2.5rem");
       expect(strip).toContain("padding:.375rem .5rem .375rem .75rem");
       expect(strip).not.toContain("border-bottom");
-      expect(strip).toContain("background:var(--k2b-surface)");
+      // The panes are one surface: the boundary shade runs behind the tab row.
+      expect(strip).toContain("background:0 0");
       expect(strip).toContain("overflow-x:auto");
       expect(strip).toContain("scrollbar-width:none");
       expect(css).toContain(".k2b-panes__tabs::-webkit-scrollbar{display:none}");
@@ -1130,24 +1150,30 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(tabsScrollbar).toContain("top:2.125rem");
       expect(tabsScrollbar).toContain("opacity:0");
       expect(tabsScrollbar).toContain("pointer-events:none");
-      expect(css).toContain(".k2b-panes__tabs:focus-within+.k2b-panes__tabs-scrollbar");
+      expect(css).toContain(".k2b-panes__head:has(>.k2b-panes__tabs:is(:hover,:focus-within))+.k2b-panes__tabs-scrollbar");
       expect(rule(".k2b-panes__tabs-scrollbar>span")).toContain("width:var(--k2b-panes-scroll-width)");
 
       const tab = rule(".k2b-panes__tab");
       expect(tab).toContain("min-width:5rem");
       expect(tab).toContain("max-width:16rem");
       expect(tab).toContain("flex:0 auto");
-      expect(rule(".k2b-panes__tab[data-active=true]")).toContain("background:var(--k2b-surface-muted)");
-      expect(rule(".k2b-panes__tab[data-active=true]")).not.toContain("box-shadow");
+      // Selected like every tab: selection fill and 2 px edge in the app colour, one weight in every state.
+      expect(rule(".k2b-panes__tab[data-active=true]")).toContain("var(--k2b-app-workspace-active)");
+      expect(rule(".k2b-panes__tab[data-active=true]")).toContain("box-shadow:inset 0 0 0 var(--k2b-edge-width)");
+      expect(rule(".k2b-panes__tab[data-active=true]")).not.toContain("font-weight");
+      expect(tab).toContain("font-weight:500");
       expect(css).not.toContain(".k2b-panes__single-header");
 
-      // Cloud: `w-2`/`h-2` track with a full-width `rounded-full` indicator.
+      // Cloud: `w-2`/`h-2` track; the grip is the workspace's 3 px by 2 rem resize grip.
       expect(rule(".k2b-panes__separator[data-direction=horizontal]")).toContain("width:.5rem");
-      expect(rule(".k2b-panes__separator[data-direction=horizontal]>span")).not.toContain("width:1px");
-      const activeSeparator = rule(".k2b-panes__separator:not([aria-disabled=true]):active>span");
-      expect(activeSeparator).toContain("background:var(--k2b-success-500)");
-      expect(rule(".k2b-panes__separator:not([aria-disabled=true]):focus-visible>span")).toContain("background:var(--k2b-success-600)");
-      expect(rule(".k2b-panes__separator:focus-visible>span")).toContain("var(--k2b-success-600)");
+      expect(rule(".k2b-panes__separator>span")).toContain("width:3px");
+      expect(rule(".k2b-panes__separator[data-direction=vertical]>span")).toContain("width:2rem");
+      // A neutral grip, visible at rest; keyboard focus turns it blue. No green, no line.
+      expect(rule(".k2b-panes__separator>span")).toContain("background:var(--k2b-border-strong)");
+      expect(rule(".k2b-panes__separator>span")).toContain("height:2rem");
+      expect(rule(".k2b-panes__separator>span")).not.toContain("opacity");
+      expect(rule(".k2b-panes__separator:not([aria-disabled=true]):focus-visible>span")).toContain("background:var(--k2b-focus-ring)");
+      expect(css).not.toMatch(/\.k2b-panes__separator[^{]*\{[^}]*--k2b-success/);
       const targets = rule(".k2b-panes__drop-target");
       expect(targets).toContain("pointer-events:auto");
       expect(targets).toContain("border:0");
@@ -1244,10 +1270,11 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(css).toMatch(/sidebar-item-label:is\(\[data-lines="1"\][^{]*sidebar-status[^{]*\{[^}]*--k2b-truncate-fade-lines:1/);
     });
 
-    test("mutes a pane separator that cannot be dragged", () => {
+    test("hides the grip of a pane separator that cannot be dragged", () => {
       // Cloud paints the highlight only when `canResize()` is true.
-      expect(css).toContain(".k2b-panes__separator:not([aria-disabled=true]):hover>span");
+      expect(css).toContain(".k2b-panes__separator:not([aria-disabled=true]):is(:hover,[data-active=true])>span");
       expect(css).not.toMatch(/\.k2b-panes__separator:hover>span/);
+      expect(rule(".k2b-panes__separator[aria-disabled=true]>span")).toContain("display:none");
       // The document-style tab rail meets the pane body without a second gutter.
       expect(rule(".k2b-panes__group")).toContain("gap:0");
     });

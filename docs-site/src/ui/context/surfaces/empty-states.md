@@ -167,3 +167,21 @@ Its shimmer stops under reduced motion; server and client render the same shape.
   <Skeleton class="h-10 w-full" />
 </div>
 ```
+
+### Delay loading shapes for fast answers
+
+Placeholders that flash for a few milliseconds on every keystroke look like
+flicker. `createDelayedLoading(pending, { delay, minimum })` from `@k2b/ui`
+returns an accessor that becomes true only once `pending` lasted `delay`
+(200 ms by default) and then stays true for at least `minimum` (300 ms).
+Until it is true, keep the previous content in place, such as the results of
+the last filter, or keep the area empty at its final size. It starts false,
+so the server and the first client render agree.
+
+```tsx
+const placeholder = createDelayedLoading(() => status() === "loading");
+
+<Show when={!placeholder()} fallback={<Skeleton class="h-10 w-full" />}>
+  <Results items={items()} aria-busy={status() === "loading"} />
+</Show>;
+```

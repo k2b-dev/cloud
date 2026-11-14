@@ -17,19 +17,19 @@ const firstSample = (data: number[]): ChartSelection => {
   return { kind: "sparkline", datum: JSON.parse(unescape(raw)) };
 };
 
-test("the large reading keeps one decimal below 10 and whole numbers above, in the reader's locale", () => {
+test("the large reading keeps three significant figures, in the reader's locale", () => {
   expect(formatSpeedTestReading(null, "de")).toBe("—");
-  expect(formatSpeedTestReading(9.46, "de")).toBe("9,5");
-  expect(formatSpeedTestReading(9.46, "en")).toBe("9.5");
-  expect(formatSpeedTestReading(94.123456, "de")).toBe("94");
-  expect(formatSpeedTestReading(1234.5, "de")).toBe("1235");
+  expect(formatSpeedTestReading(9.46, "de")).toBe("9,46");
+  expect(formatSpeedTestReading(9.46, "en")).toBe("9.46");
+  expect(formatSpeedTestReading(94.123456, "de")).toBe("94,1");
+  expect(formatSpeedTestReading(1234.5, "de")).toBe("1230");
 });
 
 test("a sparkline sample names its metric and shows the reading with its unit", () => {
   const download = speedTestSparklineTooltip({ label: "Download", unit: "Mbps", locale: "de" })(firstSample([94.123456, 80, 91]));
-  expect(download).toEqual({ rows: [{ label: "Download", value: "94 Mbps" }] });
+  expect(download).toEqual({ rows: [{ label: "Download", value: "94,1 Mbps" }] });
 
   const ping = speedTestSparklineTooltip({ label: "Ping", unit: "ms", locale: "de" })(firstSample([8.26, 12, 9]));
-  expect(ping).toEqual({ rows: [{ label: "Ping", value: "8,3 ms" }] });
+  expect(ping).toEqual({ rows: [{ label: "Ping", value: "8,26 ms" }] });
   expect(JSON.stringify([download, ping])).not.toMatch(/Value|Wert|"x"|"y"/);
 });

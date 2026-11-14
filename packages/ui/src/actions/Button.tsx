@@ -3,7 +3,18 @@ import { type JSX, Show, splitProps } from "solid-js";
 import { isServer } from "solid-js/web";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "text" | "subtle" | "input" | "warning" | "danger" | "success" | "ai";
+export type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "ghost"
+  | "text"
+  | "link"
+  | "subtle"
+  | "input"
+  | "warning"
+  | "danger"
+  | "success"
+  | "ai";
 export type ButtonSize = "xs" | "sm" | "md" | "lg";
 export type ButtonAlign = "center" | "start";
 
