@@ -18279,7 +18279,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.125rem;
   padding: var(--k2b-pill-inset);
-  border: 1px solid transparent;
+  border-width: 1px;
+  border-style: solid;
   border-radius: 999px;
 }
 /* The look has no weight of its own, so a glass or danger surface replaces it. */
@@ -18294,7 +18295,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Every control has the round control height, also one an application wraps
    (a tooltip anchor, its own toggle); buttons inside its menus and other
    popovers keep their own size. */
-.k2b-ui .k2b-pill .k2b-button:not(:is([popover], [role="menu"], [role="dialog"]) .k2b-button) {
+.k2b-ui .k2b-pill .k2b-button:not(.k2b-pill :is([popover], [role="menu"], [role="dialog"]) .k2b-button) {
   min-inline-size: var(--k2b-pill-control);
   min-block-size: var(--k2b-pill-control);
   block-size: var(--k2b-pill-control);
@@ -18304,14 +18305,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.75rem;
   line-height: 1rem;
 }
-.k2b-ui .k2b-pill .k2b-icon-button:not([data-text], :is([popover], [role="menu"], [role="dialog"]) .k2b-button) {
+.k2b-ui .k2b-pill .k2b-icon-button:not([data-text], .k2b-pill :is([popover], [role="menu"], [role="dialog"]) .k2b-button) {
   min-inline-size: var(--k2b-pill-control);
   inline-size: var(--k2b-pill-control);
   padding-inline: 0;
 }
 /* In the components layer, so a utility on one icon still wins. */
 @layer components {
-  .k2b-ui .k2b-pill .k2b-button:not(:is([popover], [role="menu"], [role="dialog"]) .k2b-button) i {
+  .k2b-ui .k2b-pill .k2b-button:not(.k2b-pill :is([popover], [role="menu"], [role="dialog"]) .k2b-button) i {
     font-size: 0.875rem;
     line-height: 1;
   }
