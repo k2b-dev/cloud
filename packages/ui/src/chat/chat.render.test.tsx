@@ -39,6 +39,7 @@ describe("@k2b/ui portable chat family", () => {
   test("exposes one compound chat API without legacy runtime exports", () => {
     expect(Object.keys(Chat)).toEqual([
       "Tasks",
+      "TaskList",
       "Timeline",
       "Message",
       "Activity",
@@ -829,27 +830,49 @@ test("keeps context actions available without usage and out of the Plus menu", (
   expect([...html.matchAll(/role="tooltip"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(["Send message"]);
 });
 
-test("working plan shows one semantic segment per step and bounded disclosure", () => {
+test("working plan names each status in words and keeps folded rows out of reach", () => {
   const items = [
     { id: "done", content: "Read inputs", status: "completed" as const },
     { id: "active", content: "Verify", status: "in_progress" as const },
     { id: "removed", content: "Export", status: "cancelled" as const },
   ];
+  const statusLabels = { pending: "Pending", in_progress: "Current step", completed: "Completed", cancelled: "Cancelled" };
+  const html = (open: boolean) =>
+    renderToString(() =>
+      createComponent(Chat.Tasks, { items, label: "Tasks", progressLabel: "1 of 2", open, onOpenChange: () => {}, statusLabels }),
+    );
+  const opened = html(true);
+  expect(opened).toContain('aria-expanded="true"');
+  expect(opened).toContain('data-open="true"');
+  expect(opened).toContain("1 of 2");
+  expect(opened).toContain('data-status="cancelled"');
+  expect(opened).toContain('<span class="k2b-sr-only">Current step</span>');
+  // Half of the two counted steps are done; the cancelled one does not count.
+  expect(opened).toContain("--k2b-chat-tasks-progress:50%");
+  // The highlight is measured in the browser; the server marks the current row instead.
+  expect(opened).not.toContain("k2b-chat-tasks__glide");
+  const folded = html(false);
+  expect(folded).toContain('aria-expanded="false"');
+  expect(folded).toMatch(/class="k2b-chat-tasks__fold"[^>]*inert/);
+  expect(folded).not.toContain("Running");
+});
+
+test("a still task list shows the same marks without header, ring, or fold", () => {
   const html = renderToString(() =>
-    createComponent(Chat.Tasks, {
-      items,
-      label: "Tasks",
-      progressLabel: "1/2 complete · 1 cancelled",
-      open: true,
-      onOpenChange: () => {},
-      statusLabels: { pending: "Pending", in_progress: "Current step", completed: "Completed", cancelled: "Cancelled" },
+    createComponent(Chat.TaskList, {
+      "aria-label": "Done so far",
+      items: [
+        { id: "a", content: "Wrote the change", status: "completed" },
+        { id: "b", content: "Try the examples", status: "pending" },
+      ],
+      statusLabels: { pending: "Open", in_progress: "Current step", completed: "Done", cancelled: "Dropped" },
     }),
   );
-  expect(html).toContain('aria-expanded="true"');
-  expect(html).toContain("1/2 complete");
-  expect(html).toContain('data-status="cancelled"');
-  expect(html).toContain("Current step");
-  expect(html).not.toContain("Running");
+  expect(html).toContain('<ol class="k2b-chat-task-list" aria-label="Done so far">');
+  expect(html).toContain("ti ti-check");
+  expect(html).toContain('<span class="k2b-sr-only">Open</span>');
+  expect(html).not.toContain("k2b-chat-tasks__header");
+  expect(html).not.toContain("data-fresh");
 });
 
 test("composer context actions expose their toggle state", () => {

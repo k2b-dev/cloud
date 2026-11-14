@@ -13,11 +13,34 @@ const durations = {
   "--k2b-motion-stack": "400ms",
   "--k2b-motion-celebrate": "600ms",
   "--k2b-fresh-fade": "1600ms",
+  // Work in progress (concept gustav-ui-neu, 6a): every moment follows a change of state; only "running" loops.
+  "--k2b-motion-glide": "380ms",
+  "--k2b-motion-check": "260ms",
+  "--k2b-motion-ink": "240ms",
+  "--k2b-motion-progress": "400ms",
+  "--k2b-motion-fold": "280ms",
+  "--k2b-motion-spin": "1100ms",
+  "--k2b-motion-pass": "300ms",
+  "--k2b-motion-glow": "1000ms",
+  "--k2b-motion-count": "500ms",
+  "--k2b-motion-arrive": "460ms",
+  "--k2b-motion-ring-out": "1100ms",
+  "--k2b-motion-busy": "1300ms",
+  "--k2b-motion-switch-on": "340ms",
+  "--k2b-motion-pulse": "1100ms",
+  "--k2b-motion-settle": "300ms",
+  "--k2b-motion-enter-row": "420ms",
+  "--k2b-motion-think": "2200ms",
 };
 const curves = {
   "--k2b-ease-out": "cubic-bezier(0.23, 1, 0.32, 1)",
   "--k2b-ease-spring": "cubic-bezier(0.34, 1.56, 0.64, 1)",
   "--k2b-ease-morph": "cubic-bezier(0.2, 0, 0, 1)",
+  "--k2b-ease-glide": "cubic-bezier(0.3, 0.7, 0.2, 1)",
+  "--k2b-ease-pop": "cubic-bezier(0.2, 1.15, 0.4, 1)",
+  "--k2b-ease-pop-strong": "cubic-bezier(0.2, 1.4, 0.4, 1)",
+  "--k2b-ease-rise": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+  "--k2b-ease-settle": "ease",
 };
 /** Declarations of every rule with this selector in this context, in source order. */
 const declarations = (selector: string, context = "") => {
