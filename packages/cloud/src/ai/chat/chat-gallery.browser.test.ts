@@ -36,6 +36,8 @@ const box = (page: Page, selector: string) =>
         height: rect.height,
         top: rect.top,
         bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
         radius: style.borderRadius,
         background: style.backgroundColor,
         color: style.color,
