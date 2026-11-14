@@ -63,9 +63,33 @@ for (const locale of ["de", "en"]) {
       )!;
     try {
       expect(continued).toEqual([]);
-      expect(dom.root.textContent).toContain(locale === "de" ? "dasselbe Problem" : "the same problem");
-      expect(dom.root.textContent).toContain(locale === "de" ? "Erledigt: 2 Arbeitsschritte" : "Completed: 2 work steps");
-      expect(dom.root.textContent).toContain(locale === "de" ? "1 Entwurf mit Beispielen testen" : "test 1 draft with examples");
+      const lists = Array.from(dom.root.querySelectorAll<HTMLUListElement>(".assistant-authoring-stop__list"));
+      const label = (list: HTMLUListElement) => dom.root.ownerDocument.getElementById(list.getAttribute("aria-labelledby")!)?.textContent;
+      const items = (list: HTMLUListElement) => Array.from(list.querySelectorAll("li"), (item) => item.textContent);
+      expect(dom.root.querySelector(".k2b-notice-card__title")?.textContent).toBe(
+        locale === "de" ? "Gustav hat angehalten" : "Gustav stopped",
+      );
+      expect(dom.root.querySelector(".k2b-notice-card__description")?.textContent).toBe(
+        locale === "de" ? "Dasselbe Problem blieb nach mehreren Versuchen." : "The same problem remained after several attempts.",
+      );
+      expect(lists.map(label)).toEqual(locale === "de" ? ["Erledigt", "Noch offen"] : ["Done", "Still open"]);
+      expect(lists.map(items)).toEqual(
+        locale === "de"
+          ? [
+              ["2 Arbeitsschritte", "Entwurf geschrieben", "Entwurf geprüft"],
+              ["Mit Beispielen testen", "Version speichern"],
+            ]
+          : [
+              ["2 work steps", "Draft written", "Draft checked"],
+              ["Test with examples", "Save a version"],
+            ],
+      );
+      expect(lists.map((list) => Array.from(list.querySelectorAll("li > i"), (icon) => icon.className))).toEqual([
+        ["ti ti-check", "ti ti-check", "ti ti-check"],
+        ["ti ti-circle", "ti ti-circle"],
+      ]);
+      expect(dom.root.textContent).toContain(locale === "de" ? "Der Entwurf ist gespeichert." : "The draft is saved.");
+      expect(button().getAttribute("data-variant")).toBe("secondary");
       expect(dom.root.textContent).not.toMatch(/code_test_invalid_fixture|private-id|\.tsx?/);
       setBusy(true);
       expect(button().disabled).toBe(true);
@@ -76,17 +100,13 @@ for (const locale of ["de", "en"]) {
       await Promise.resolve();
       await Promise.resolve();
       expect(continued).toHaveLength(1);
-      expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain(
-        locale === "de" ? "nicht fortgesetzt" : "could not be continued",
-      );
+      expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain(locale === "de" ? "Das ging nicht." : "Could not continue.");
       const originalButton = button();
       originalButton.focus();
       setHistory(messages.map((message) => ({ ...message, meta: message.meta ? { ...message.meta } : null })));
       expect(button() === originalButton).toBe(true);
       expect(dom.root.ownerDocument.activeElement === originalButton).toBe(true);
-      expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain(
-        locale === "de" ? "nicht fortgesetzt" : "could not be continued",
-      );
+      expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain(locale === "de" ? "Das ging nicht." : "Could not continue.");
       reject = false;
       button().focus();
       button().click();
@@ -107,25 +127,54 @@ for (const locale of ["de", "en"]) {
   });
 }
 
-domTest("a stop before a confirmed draft says what remains and never claims a saved result", async () => {
-  const dom = createDomTestHarness();
-  const { LocaleProvider } = await import("@k2b/ui");
-  const { default: AssistantAuthoringStop } = await import("./AssistantAuthoringStop");
-  const state: AiCodeAuthoringStop = { reason: "input_tokens", completedSteps: 0, drafts: 0, unchecked: 0, untested: 0, unsubmitted: 0 };
-  const dispose = render(
-    () => (
-      <LocaleProvider locale="en">
-        <AssistantAuthoringStop state={state} continuable={() => false} />
-      </LocaleProvider>
-    ),
-    dom.root,
-  );
-  try {
-    expect(dom.root.textContent).toContain("too costly");
-    expect(dom.root.textContent).toContain("A saved draft has not been confirmed yet");
-    expect(dom.root.querySelector("button")?.disabled).toBe(true);
-  } finally {
-    dispose();
-    dom.cleanup();
-  }
-});
+for (const [name, state, reason, done, open, saved] of [
+  [
+    "a stop before a confirmed draft says what remains and never claims a saved result",
+    { reason: "input_tokens", completedSteps: 0, drafts: 0, unchecked: 0, untested: 0, unsubmitted: 0 },
+    "More work would have made this run too costly.",
+    null,
+    ["Write and check a draft"],
+    "No draft is saved yet.",
+  ],
+  [
+    "an attempt limit with several drafts counts what each step still needs",
+    { reason: "model_calls", completedSteps: 7, drafts: 2, unchecked: 1, untested: 2, unsubmitted: 2 },
+    "This run reached its maximum number of attempts.",
+    ["7 work steps", "2 drafts written"],
+    ["Check 1 draft", "Test 2 drafts with examples", "Save 2 versions"],
+    "The drafts are saved.",
+  ],
+  [
+    "a stop after the version is saved leaves only the review open",
+    { reason: "input_tokens", completedSteps: 1, drafts: 1, unchecked: 0, untested: 0, unsubmitted: 0 },
+    "More work would have made this run too costly.",
+    ["1 work step", "Draft written", "Draft checked", "Tested with examples", "Version saved"],
+    ["Review the saved result"],
+    "The version is saved.",
+  ],
+] as const) {
+  domTest(name, async () => {
+    const dom = createDomTestHarness();
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { default: AssistantAuthoringStop } = await import("./AssistantAuthoringStop");
+    const dispose = render(
+      () => (
+        <LocaleProvider locale="en">
+          <AssistantAuthoringStop state={state as AiCodeAuthoringStop} continuable={() => false} />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    try {
+      const group = (status: string) => Array.from(dom.root.querySelectorAll(`[data-status="${status}"] li`), (item) => item.textContent);
+      expect(dom.root.querySelector(".k2b-notice-card__description")?.textContent).toBe(reason);
+      expect(dom.root.querySelector('[data-status="done"]') ? group("done") : null).toEqual(done ? [...done] : null);
+      expect(group("open")).toEqual([...open]);
+      expect(dom.root.querySelector(".assistant-authoring-stop__meta")?.textContent).toContain(saved);
+      expect(dom.root.querySelector("button")?.disabled).toBe(true);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+}
