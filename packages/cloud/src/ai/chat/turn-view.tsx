@@ -711,15 +711,15 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
   const actions = createMemo(() => new Map(layout().actions.map((action) => [action.id, action])));
   const actionIds = createMemo(() => [...actions().keys()]);
   const live = () => isLive(props.segment().phase);
-  // The sources the finished answer cites, numbered as in its text.
-  const sources = createMemo(() =>
-    answerSources(
-      layout()
-        .text.map((block) => block.text)
-        .join("\n\n"),
-      layout().work,
-    ),
-  );
+  // The sources the finished answer cites, numbered as in its text. Read once the turn ends, from the same sanitized HTML
+  // the answer shows, so a link the sanitizer drops never comes back as a source.
+  const sources = createMemo(() => {
+    if (live()) return [];
+    const text = layout()
+      .text.map((block) => block.text)
+      .join("\n\n");
+    return text.includes("](") ? answerSources(markdown.renderSync(text, { locale: locale() }), layout().work) : [];
+  });
   // Screen readers hear once that the turn they followed failed and why; history read later is not announced.
   createEffect(
     on(live, (now, before) => {

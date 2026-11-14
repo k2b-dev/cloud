@@ -4,6 +4,7 @@ import type { AiTurnBlock } from "../protocol";
 import { answerCitations, rootResourceLinks } from "./answer-links";
 import { answerSources } from "./answer-sources";
 
+const md = (source: string) => markdown.renderSync(source, { locale: "de" });
 const html = (source: string) => rootResourceLinks(markdown.renderSync(source, { locale: "de" }), (number) => `Quelle ${number}`);
 
 describe("citations", () => {
@@ -24,12 +25,18 @@ describe("citations", () => {
     expect(rendered).not.toContain('data-cite="100"');
   });
 
-  test("citations are read from the source in number order, a number keeps its first destination", () => {
-    expect(answerCitations("A [2](/open/b/~2), B [1](open/a/~1), C [2](/open/c/~3), D [1](/open/a/~1)")).toEqual([
+  test("citations are read from the sanitized answer in number order, a number keeps its first destination", () => {
+    expect(answerCitations(md("A [2](/open/b/~2), B [1](open/a/~1), C [2](/open/c/~3), D [1](/open/a/~1)"))).toEqual([
       { number: 1, href: "/open/a/~1" },
       { number: 2, href: "/open/b/~2" },
     ]);
-    expect(answerCitations("[x](/open/a/~1) and `[1]` without a link")).toEqual([]);
+    expect(answerCitations(md("[x](/open/a/~1) and `[1](/open/a/~2)` in code\n\n```\n[2](/open/a/~3)\n```"))).toEqual([]);
+  });
+
+  test("a destination keeps its parentheses and query, and a link the sanitizer drops is no source", () => {
+    expect(answerCitations(md("[1](https://example.org/Topic_(detail)?a=1&b=2) [2](javascript:alert%281%29)"))).toEqual([
+      { number: 1, href: "https://example.org/Topic_(detail)?a=1&b=2" },
+    ]);
   });
 });
 
@@ -63,14 +70,14 @@ describe("answer sources", () => {
   ];
 
   test("a source takes its title and app from the result that names it", () => {
-    expect(answerSources("x [1](/open/mail.thread/~m) y [2](/open/files.file/~a)", blocks)).toEqual([
+    expect(answerSources(md("x [1](/open/mail.thread/~m) y [2](/open/files.file/~a)"), blocks)).toEqual([
       { number: 1, href: "/open/mail.thread/~m", title: "Messestand Köln · Jana Berger", icon: "ti ti-mail", accent: "#1d4ed8" },
       { number: 2, href: "/open/files.file/~a", title: "Angebot.pdf", icon: "ti ti-folder", accent: undefined },
     ]);
   });
 
   test("a cited link no result names keeps its number with its app or host", () => {
-    expect(answerSources("[1](/open/mail.thread/~other) [2](https://www.example.com/a) [3](/open/notes.page/~p)", blocks)).toEqual([
+    expect(answerSources(md("[1](/open/mail.thread/~other) [2](https://www.example.com/a) [3](/open/notes.page/~p)"), blocks)).toEqual([
       { number: 1, href: "/open/mail.thread/~other", title: "Mail", icon: "ti ti-mail", accent: "#1d4ed8" },
       { number: 2, href: "https://www.example.com/a", title: "example.com", icon: "ti ti-world", accent: undefined },
       { number: 3, href: "/open/notes.page/~p", title: "/open/notes.page/~p", icon: "ti ti-link", accent: undefined },
@@ -79,7 +86,7 @@ describe("answer sources", () => {
 
   test("a failed call names no source, and an answer without citations has none", () => {
     const failed = { ...blocks[0]!, status: "failed", isError: true } as AiTurnBlock;
-    expect(answerSources("[1](/open/mail.thread/~m)", [failed])[0]!.title).toBe("/open/mail.thread/~m");
-    expect(answerSources("Kein Zitat.", blocks)).toEqual([]);
+    expect(answerSources(md("[1](/open/mail.thread/~m)"), [failed])[0]!.title).toBe("/open/mail.thread/~m");
+    expect(answerSources(md("Kein Zitat."), blocks)).toEqual([]);
   });
 });

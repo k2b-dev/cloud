@@ -19,13 +19,19 @@ export function rootResourceLinks(html: string, citeLabel?: (number: string) => 
 /** A link whose text is only a citation number; the markdown renderer adds a type or external icon around it. */
 const CITATION = /<a\b([^>]*)>(?:<i\b[^>]*><\/i>)?([1-9]\d?)(?:<i\b[^>]*><\/i>)?<\/a>/g;
 
-/** Citations in an answer's Markdown source, in order of first use: `[1](href)`. A number keeps its first destination. */
-export const answerCitations = (markdown: string): { number: number; href: string }[] => {
+const unescapeAttribute = (value: string) =>
+  value.replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+
+/**
+ * Citations in an answer's rendered, sanitized HTML, in number order: the numbered links `rootResourceLinks` turns into
+ * chips. Reading the HTML, not the Markdown source, keeps the sanitizer's URL policy and the parser's view of code and
+ * destinations. A number keeps its first destination.
+ */
+export const answerCitations = (html: string): { number: number; href: string }[] => {
   const citations = new Map<number, string>();
-  for (const match of markdown.matchAll(/\[([1-9]\d?)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)) {
-    const number = Number(match[1]);
-    const href = match[2]!.replace(/^((?:app|open)\/)/, "/$1");
-    if (!citations.has(number)) citations.set(number, href);
+  for (const match of rootResourceLinks(html).matchAll(/<a\b[^>]*\bhref="([^"]*)"[^>]*\bdata-cite="(\d+)"[^>]*>/g)) {
+    const number = Number(match[2]);
+    if (!citations.has(number)) citations.set(number, unescapeAttribute(match[1]!));
   }
   return [...citations].map(([number, href]) => ({ number, href })).sort((a, b) => a.number - b.number);
 };

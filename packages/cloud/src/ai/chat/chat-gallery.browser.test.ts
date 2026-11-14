@@ -124,6 +124,13 @@ for (const width of [1440, 390])
         "In neuem Chat fortsetzen",
         "Details zur Antwort",
       ]);
+      // The menu keeps the menu's own text size, not the icons' 15 px.
+      expect(
+        await page
+          .getByRole("menuitem")
+          .first()
+          .evaluate((node) => getComputedStyle(node).fontSize),
+      ).not.toBe("15px");
       await page.getByRole("menuitem", { name: "Kürzer" }).click();
       expect(await page.evaluate(() => (window as unknown as { retried: unknown[] }).retried)).toEqual([
         { id: "gallery-1", mode: "concise" },
@@ -143,6 +150,23 @@ test("sources and the grey bubble keep their surfaces in dark mode", async () =>
     expect(number.background).not.toBe("rgb(255, 255, 255)");
     const bubble = await box(page, ".k2b-chat-message[data-role=user] .k2b-chat-message__bubble");
     expect(bubble.background).toBe(pill.background);
+  } finally {
+    await close();
+  }
+}, 60_000);
+
+test("a delivered routine result offers no answer again, so a retry never targets the person's earlier message", async () => {
+  const { page, close } = await open("routine", 1440);
+  try {
+    const rows = page.locator(".k2b-chat-message[data-role=assistant] .k2b-chat-message__actions");
+    expect(await rows.count()).toBe(2);
+    const labels = (index: number) =>
+      rows
+        .nth(index)
+        .locator("button[aria-label]")
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
+    expect(await labels(0)).toContain("Neu antworten");
+    expect(await labels(1)).not.toContain("Neu antworten");
   } finally {
     await close();
   }

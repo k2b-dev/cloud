@@ -26,34 +26,43 @@ const appOf = (href: string): string | null =>
 
 const textOf = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim().slice(0, 200) : null);
 
+/** Values one result walk visits at most; results can be large. */
+const RESULT_WALK_LIMIT = 2_000;
+
 /**
- * The title a result gives the object behind `href`: an object in the result whose `href` or `url` is the link names it
- * with `title` or `name`. Results can be large, so the walk stops after a fixed number of values.
+ * The titles a result gives the objects it names: every object with an `href` or `url` and a `title` or `name`. One
+ * bounded breadth-first walk per result.
  */
-const titleIn = (result: unknown, href: string): string | null => {
+const namedLinks = (result: unknown): Map<string, string> => {
+  const titles = new Map<string, string>();
   const queue: unknown[] = [result];
-  for (let visited = 0; queue.length > 0 && visited < 2_000; visited += 1) {
-    const value = queue.shift();
-    if (Array.isArray(value)) queue.push(...value.slice(0, 200));
-    else if (isRecord(value)) {
-      if (value.href === href || value.url === href) {
-        const title = textOf(value.title) ?? textOf(value.name);
-        if (title) return title;
-      }
-      queue.push(...Object.values(value));
+  for (let index = 0; index < queue.length && index < RESULT_WALK_LIMIT; index += 1) {
+    const value = queue[index];
+    const children = Array.isArray(value) ? value : isRecord(value) ? Object.values(value) : [];
+    if (isRecord(value)) {
+      const title = textOf(value.title) ?? textOf(value.name);
+      for (const link of [value.href, value.url]) if (title && typeof link === "string" && !titles.has(link)) titles.set(link, title);
+    }
+    for (const child of children) {
+      if (queue.length >= RESULT_WALK_LIMIT) break;
+      if (child !== null && typeof child === "object") queue.push(child);
     }
   }
-  return null;
+  return titles;
 };
 
 /**
- * The sources an answer cites, numbered as in its text, with the title and app the turn's results give them. A cited
- * link no result names keeps its number with the app's name or the web page's host as its title.
+ * The sources an answer cites, numbered as in its rendered HTML, with the title and app the turn's results give them. A
+ * cited link no result names keeps its number with the app's name or the web page's host as its title.
  */
-export const answerSources = (markdown: string, blocks: AiTurnBlock[]): AiAnswerSource[] => {
+export const answerSources = (html: string, blocks: AiTurnBlock[]): AiAnswerSource[] => {
+  const citations = answerCitations(html);
+  if (citations.length === 0) return [];
   const tools = blocks.filter((block): block is ToolBlock => block.kind === "tool" && block.status === "completed" && !block.isError);
-  return answerCitations(markdown).map(({ number, href }) => {
-    const found = tools.map((tool) => ({ tool, title: titleIn(tool.result, href) })).find((entry) => entry.title);
+  const named = new Map<string, { title: string; tool: ToolBlock }>();
+  for (const tool of tools) for (const [link, title] of namedLinks(tool.result)) if (!named.has(link)) named.set(link, { title, tool });
+  return citations.map(({ number, href }) => {
+    const found = named.get(href);
     const app = appOf(href);
     const owner = found?.tool.presentation ?? tools.find((tool) => tool.presentation?.appId === app)?.presentation;
     const web = isWeb(href);

@@ -314,6 +314,9 @@ const storedItems = (
     if (segments.length === 0 || (turnError && segments.at(-1)?.type === "survey")) segments.push({ type: "assistant", blocks: [] });
     const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
     const scheduledTask = item.entries.find((entry) => entry.meta?.scheduledTask)?.meta?.scheduledTask ?? null;
+    // Only the answer right after the person's message can be given again; a delivered routine result has no prompt.
+    const answerPrompt = scheduledTask ? null : prompt;
+    prompt = null;
     let firstSegment = true;
     let opener = leadingSteerOpener(item.blocks) ?? "start";
     return segments.flatMap((segment, index): ChatTimelineItem[] => {
@@ -328,7 +331,13 @@ const storedItems = (
       const layout = layoutAiTurn(segment.blocks, { phase: segmentPhase, codePresentations: Boolean(actions.renderCodePresentation) });
       const messageActions =
         actionEntry && index === lastAssistant
-          ? createAssistantMessageActions({ entry: actionEntry, entries: item.entries, copyText: finalText(layout), actions, prompt })
+          ? createAssistantMessageActions({
+              entry: actionEntry,
+              entries: item.entries,
+              copyText: finalText(layout),
+              actions,
+              prompt: answerPrompt,
+            })
           : undefined;
       const task = firstSegment ? scheduledTask : null;
       firstSegment = false;

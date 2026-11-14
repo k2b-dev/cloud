@@ -133,8 +133,28 @@ export const answerChat = (): AiStoredMessage[] => {
   ];
 };
 
+/** An answer, then a routine's result delivered into the same chat: only the answer can be given again. */
+export const routineChat = (): AiStoredMessage[] => [
+  ...answerChat(),
+  stored(
+    { role: "assistant", content: [{ type: "text", text: "Wochenbericht: 3 neue Anfragen zum Messestand." }] },
+    {
+      loopId: "turn-routine",
+      meta: {
+        scheduledTask: {
+          taskId: "wochenbericht",
+          occurrenceId: "wochenbericht-46",
+          scheduledFor: "2026-11-13T10:00:00.000Z",
+          trigger: "scheduled",
+        },
+      },
+    },
+  ),
+];
+
 export const galleryScenes = {
   antwort: answerChat,
+  routine: routineChat,
 } satisfies Record<string, () => AiStoredMessage[]>;
 
 export type GalleryScene = keyof typeof galleryScenes;

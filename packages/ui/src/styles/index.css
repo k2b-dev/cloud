@@ -14360,7 +14360,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.9375rem;
 }
 
 .k2b-ui .k2b-chat-message[data-role="assistant"] .k2b-chat-message__actions {
@@ -14371,9 +14370,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-inline-end: -0.5rem;
 }
 
-.k2b-ui .k2b-chat-message__actions :is(button, .k2b-chat-message__menu) {
+.k2b-ui .k2b-chat-message__actions > :is(button, .k2b-chat-message__menu),
+.k2b-ui .k2b-chat-message__actions .k2b-chat-message__menu {
   min-width: 2rem;
   min-height: 2rem;
+  font-size: 0.9375rem;
 }
 
 .k2b-ui .k2b-chat-message__menu {
