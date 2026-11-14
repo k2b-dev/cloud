@@ -363,7 +363,7 @@ export default function FileInspector(props: {
                             <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
                           </button>
                         </Show>
-                        <div class="filesv2-inspector-preview__expand">
+                        <div class="k2b-pill filesv2-inspector-preview__expand">
                           <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
                             <i class="ti ti-arrows-maximize" aria-hidden="true" />
                           </IconButton>

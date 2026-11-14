@@ -4913,18 +4913,19 @@
 .k2b-ui .k2b-lightbox__head > * {
   pointer-events: auto;
 }
+/* The name pill has the height of the pills of small controls beside it and below (`k2b-pill`). */
 .k2b-ui .k2b-lightbox__name {
   display: flex;
   flex: 0 1 auto;
   min-width: 0;
-  height: 2.5rem;
+  height: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px);
   align-items: baseline;
   gap: 0.5rem;
   margin: 0;
   padding: 0 0.875rem;
   border-radius: 999px;
   font-size: 0.8125rem;
-  line-height: 2.375rem;
+  line-height: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px);
   white-space: nowrap;
 }
 .k2b-ui .k2b-lightbox__name b {
@@ -4937,18 +4938,9 @@
   flex: none;
   color: var(--k2b-text-muted);
 }
+/* A pill of small controls (`k2b-pill`): the blue Open keeps the same space to the edge as the round icons. */
 .k2b-ui .k2b-lightbox__actions {
-  display: flex;
   flex: none;
-  height: 2.5rem;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  box-sizing: border-box;
-  border-radius: 999px;
-}
-.k2b-ui .k2b-lightbox__actions :is(.k2b-button, .k2b-icon-button) {
-  border-radius: 999px;
 }
 /* Open and the app's commands keep their width; the name pill gives way first. */
 .k2b-ui :is(.k2b-lightbox__open, .k2b-lightbox__action) {
@@ -5011,7 +5003,6 @@
   margin: 0 7px 7px;
 }
 .k2b-ui .k2b-lightbox__tools {
-  border-radius: 999px;
   font-variant-numeric: tabular-nums;
 }
 .k2b-ui .k2b-lightbox__percent {
@@ -5895,25 +5886,10 @@
   pointer-events: none;
 }
 
-/* Icons only, round like the pill; a pressed fit shows its blue icon without a fill. The pill has the size of every
-   floating pill of small controls: the same space around its icons above, below, and at the sides. */
+/* A pill of small controls (`k2b-pill`), icons only; a pressed fit shows its blue icon without a fill. */
 .k2b-ui .k2b-pdf-viewer__bar > .k2b-toolbar {
-  --k2b-radius-control: 9999px;
   --k2b-selected: transparent;
-  padding: var(--k2b-pill-inset);
-  border: 1px solid var(--k2b-border);
-  border-radius: 9999px;
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-toolbar);
   pointer-events: auto;
-}
-
-/* Touch screens keep the 44 px hit area through the buttons' own touch rule. */
-.k2b-ui .k2b-pdf-viewer__bar .k2b-toolbar__action {
-  min-inline-size: var(--k2b-pill-control);
-  inline-size: var(--k2b-pill-control);
-  min-block-size: var(--k2b-pill-control);
-  block-size: var(--k2b-pill-control);
 }
 
 .k2b-ui :is(.k2b-pdf-viewer__percent, .k2b-pdf-viewer__page-number) {

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
+import { expectCompactPills, measurePills, PILL_HEIGHT } from "../../test/pill";
 import type {} from "../../test/toolbar.browser-harness";
 
 let browser: Browser;
@@ -317,11 +318,8 @@ for (const [viewport, width] of [
         expect(await page.getByRole("menuitem").allTextContents()).toEqual(moved);
         await page.keyboard.press("Escape");
       }
-      for (const button of await toolbar.locator("button:visible").all()) {
-        const box = await button.boundingBox();
-        expect(box!.width).toBeGreaterThanOrEqual(44);
-        expect(box!.height).toBeGreaterThanOrEqual(44);
-      }
+      // A pill of small controls (`k2b-pill`): 38 px high, the same space around each round control on every side.
+      expectCompactPills(await measurePills(page, '[aria-label="Selection actions"]'));
     } finally {
       await page.close();
     }
@@ -402,9 +400,9 @@ test("a danger toolbar is one red pill across the row that announces its message
     });
     // The pill spans the dock between its 1rem insets, at the floating height, on the danger surface. The spacer
     // between message and actions counts with its minimum only, so the labels stay.
-    expect(layout).toEqual({ start: 16, end: 16, height: 54, surface: "rgb(254, 242, 242)", compact: false });
+    expect(layout).toEqual({ start: 16, end: 16, height: PILL_HEIGHT, surface: "rgb(254, 242, 242)", compact: false });
     // An application's own small control, wrapped in its own element, gets the pill's round control size.
-    expect(await pill.getByRole("button", { name: "Navigation" }).evaluate((button) => button.getBoundingClientRect().height)).toBe(44);
+    expect(await pill.getByRole("button", { name: "Navigation" }).evaluate((button) => button.getBoundingClientRect().height)).toBe(24);
     const label = () =>
       pill.locator(".k2b-toolbar__label").evaluate((label) => {
         const main = label.querySelector<HTMLElement>(".k2b-toolbar__label-main")!;
@@ -483,9 +481,21 @@ test("narrowing moves a superset of the least important actions and widening res
   }
 });
 
-test("keyboard hints paint below stationary icons without changing any toolbar or button boxes", async () => {
-  const page = await openFloating(340);
+test("a floating pill keeps its shortcuts in the tooltips and aria-keyshortcuts, with no hint below the icon", async () => {
+  const page = await openFloating();
   try {
+    const toolbar = selectionToolbar(page);
+    expect(await toolbar.locator(".k2b-toolbar__hint").count()).toBe(0);
+    expect(await toolbar.getByRole("button", { name: "Archive", exact: true }).getAttribute("aria-keyshortcuts")).toBe("E");
+  } finally {
+    await page.close();
+  }
+});
+
+test("keyboard hints paint below stationary icons without changing any toolbar or button boxes", async () => {
+  const page = await open();
+  try {
+    await page.evaluate(() => window.toolbarFixture.mount(340, false, {}));
     const geometry = () =>
       selectionToolbar(page).evaluate((root) => {
         const box = (element: Element) => {
@@ -546,7 +556,7 @@ test("the synchronous mount decides overflow before yielding, while hidden ances
 
 // Split in two: one long keyboard walk with dozens of round trips can outgrow the per-test budget on a loaded machine.
 test("floating More is the last roving stop and moved actions are skipped", async () => {
-  const page = await openFloating(340);
+  const page = await openFloating(260);
   try {
     const toolbar = selectionToolbar(page);
     const moved = await movedLabels(page);
@@ -572,7 +582,7 @@ test("floating More is the last roving stop and moved actions are skipped", asyn
 });
 
 test("Escape from More returns focus to it, and a moved action runs from the menu", async () => {
-  const page = await openFloating(340);
+  const page = await openFloating(260);
   try {
     const toolbar = selectionToolbar(page);
     const moved = await movedLabels(page);
@@ -595,7 +605,7 @@ test("Escape from More returns focus to it, and a moved action runs from the men
 });
 
 test("resizing while More is open keeps keyboard focus in the menu", async () => {
-  const page = await openFloating(340);
+  const page = await openFloating(260);
   try {
     const more = selectionToolbar(page).getByRole("button", { name: "More actions", exact: true });
     await more.focus();
@@ -603,8 +613,8 @@ test("resizing while More is open keeps keyboard focus in the menu", async () =>
     await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
     await page.keyboard.press("End");
     const focusedRow = await page.evaluate(() => document.activeElement?.textContent);
-    // 400px brings important actions back but keeps the least important rows, Assistant among them, in More.
-    await resizeFloating(page, 400);
+    // 300px brings important actions back but keeps the least important rows, Assistant among them, in More.
+    await resizeFloating(page, 300);
     const rows = await page.getByRole("menuitem").allTextContents();
     expect(rows).toContain(focusedRow!);
     expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("menuitem");
@@ -617,7 +627,7 @@ test("resizing while More is open keeps keyboard focus in the menu", async () =>
 });
 
 test("widening until every action fits closes an open More and keeps focus in the toolbar", async () => {
-  const page = await openFloating(340);
+  const page = await openFloating(260);
   try {
     const toolbar = selectionToolbar(page);
     await toolbar.getByRole("button", { name: "More actions", exact: true }).focus();
@@ -636,7 +646,7 @@ test("widening until every action fits closes an open More and keeps focus in th
 });
 
 test("reprioritising the focused More row hands focus to More instead of the page", async () => {
-  const page = await openFloating(340);
+  const page = await openFloating(260);
   try {
     const more = selectionToolbar(page).getByRole("button", { name: "More actions", exact: true });
     await more.focus();
@@ -656,7 +666,7 @@ for (const [property, value] of [
   ["visibility", "hidden"],
 ] as const)
   test(`actions an application hides with ${property}: ${value} leave More`, async () => {
-    const page = await openFloating(340);
+    const page = await openFloating(260);
     try {
       await page.evaluate(() => {
         window.toolbarFixture.override("Reply", { priority: 99 });
@@ -732,7 +742,7 @@ test("inline toolbars keep every prioritised action in place and render no More 
 });
 
 test("priority ties follow current DOM order, and registration cleanup removes stale menu rows", async () => {
-  const page = await openFloating(340);
+  const page = await openFloating(260);
   try {
     await page.evaluate(() => {
       for (const label of ["Reply", "Forward", "Archive", "Later", "Move", "Delete", "Assistant"]) {
@@ -766,7 +776,7 @@ test("priority ties follow current DOM order, and registration cleanup removes s
 });
 
 test("moved rows retain reactive names, icons, disabled state, and handlers", async () => {
-  const page = await openFloating(340);
+  const page = await openFloating(260);
   try {
     await page.evaluate(() => {
       window.toolbarFixture.override("Forward", {
@@ -791,7 +801,7 @@ test("moved rows retain reactive names, icons, disabled state, and handlers", as
 });
 
 test("empty groups and redundant separators disappear, including beside a spacer", async () => {
-  const page = await openFloating(340);
+  const page = await openFloating(260);
   try {
     await page.evaluate(() => {
       window.toolbarFixture.override("Reply", { priority: 99 });

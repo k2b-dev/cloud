@@ -580,7 +580,7 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
       {/* The pill: page and zoom unless `zoom` is false, then the host's actions, which stay without zoom. */}
       <Show when={doc() && (props.zoom !== false || (props.actions?.length ?? 0) > 0)}>
         <div class="k2b-pdf-viewer__bar">
-          <Toolbar label={messages().pdfZoom}>
+          <Toolbar label={messages().pdfZoom} class="k2b-pill">
             <Show when={props.zoom !== false}>
               <Show when={props.page === undefined && pages().length > 1}>
                 <Toolbar.Label class="k2b-pdf-viewer__page-number">
