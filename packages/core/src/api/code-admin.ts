@@ -16,7 +16,7 @@ import { CodeIdSchema } from "../code/contracts";
 import { previewCodePolicy, readCodePolicy, requireCodePolicyAdmin, updateCodePolicy } from "../code/policy";
 import { codePolicyContracts } from "../code/policy-contracts";
 import { CodeVersionBindingSchema } from "../code/version-contracts";
-import { CodeVersionError, decideCodeVersion, setCodePaused } from "../code/versions";
+import { CodeVersionDecisionError, CodeVersionError, decideCodeVersion, setCodePaused } from "../code/versions";
 
 /** Browser routes for Administration › Code. They call the same C7/C8 services as the `core.code.*` capabilities. */
 export const codeAdminContracts = {
@@ -40,6 +40,11 @@ export const createCodeAdminRoutes = () => {
     try {
       return Response.json({ data: await action() }, { headers: { "cache-control": "no-store" } });
     } catch (error) {
+      if (error instanceof CodeVersionDecisionError)
+        return Response.json(
+          { code: error.code, message: error.message },
+          { status: error.code === "NOT_FOUND" ? 404 : error.code === "BUSY" || error.code === "UNAVAILABLE" ? 409 : 403 },
+        );
       if (error instanceof CodeVersionError) return Response.json({ code: error.code, message: error.message }, { status: 409 });
       if (error instanceof CodeDataError)
         return Response.json(

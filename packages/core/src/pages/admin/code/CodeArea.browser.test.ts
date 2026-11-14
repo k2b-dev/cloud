@@ -2,13 +2,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:te
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/browser";
 import { codeAreaBrowserFixture } from "./CodeArea.browser-fixture";
-import { FIXTURE_GROUPS, FIXTURE_VERSIONS, fixtureApprovalDetail } from "./CodeArea.fixture-data";
+import { FIXTURE_GROUPS, FIXTURE_PEOPLE, FIXTURE_VERSIONS, fixtureApprovalDetail } from "./CodeArea.fixture-data";
 
 let browser: Browser;
 let fixture: Awaited<ReturnType<typeof codeAreaBrowserFixture>>;
 let page: Page;
 let errors: string[] = [];
-const goto = async (query: string, viewport = { width: 1440, height: 1000 }) => {
+const goto = async (query: string, viewport = { width: 1440, height: 1000 }, locale = "de") => {
   if (page) {
     expect(errors).toEqual([]);
     await page.close();
@@ -23,7 +23,7 @@ const goto = async (query: string, viewport = { width: 1440, height: 1000 }) => 
     });
   }, Date.parse("2026-11-01T12:10:00.000Z"));
   errors = pageErrors(page);
-  await page.goto(`${fixture.url}?locale=de&${query}`);
+  await page.goto(`${fixture.url}?locale=${locale}&${query}`);
   await page.waitForSelector('body[data-ready="true"]');
 };
 const review = `sec=approvals&id=${FIXTURE_VERSIONS.rueckruf3}`;
@@ -383,3 +383,99 @@ test("unused database pending deletion stays disabled and keeps its geometry in 
   expect(await remove.boundingBox()).toEqual(before);
   expect(fixture.requests).toHaveLength(1);
 });
+
+for (const locale of ["en", "de"] as const) {
+  for (const [code, english, german] of [
+    ["SELF_APPROVAL", "Ask that admin to approve it", "Bitte diesen Admin um die Freigabe"],
+    ["REAUTHENTICATE", "from the last ten minutes", "aus den letzten zehn Minuten"],
+    ["REJECT_ONLY", "Open this version in Cloud in your browser", "Öffne diese Version in Cloud im Browser"],
+    ["NOT_FOUND", "no longer available to this account", "für dieses Konto nicht mehr verfügbar"],
+    ["BUSY", "Cloud is handling another change", "Cloud verarbeitet gerade eine andere Änderung"],
+    ["UNAVAILABLE", "Cloud cannot handle version decisions right now", "Cloud kann Versionsentscheidungen gerade nicht verarbeiten"],
+  ] as const) {
+    test(`the approval explains ${code} in ${locale} and offers recovery`, async () => {
+      const query = `${review}&decisionRefusal=${code}${code === "REAUTHENTICATE" ? "&state=sole" : ""}`;
+      await goto(query, { width: 390, height: 844 }, locale);
+      await page.getByRole("button", { name: locale === "de" ? "Version 3 freigeben" : "Approve version 3" }).click();
+      await page.getByText(locale === "de" ? german : english, { exact: false }).waitFor();
+      await page.waitForFunction(() => document.activeElement?.id === "code-review-failure");
+      expect(await page.locator("#code-review-failure").evaluate((element) => element.getBoundingClientRect().top >= 0)).toBe(true);
+      expect(await page.getByText(code, { exact: false }).count()).toBe(0);
+      expect(await page.getByText("Private transport diagnostic", { exact: false }).count()).toBe(0);
+      if (code === "REAUTHENTICATE") {
+        const href = await page
+          .getByRole("link", { name: locale === "de" ? "Erneut anmelden" : "Sign in again", exact: true })
+          .getAttribute("href");
+        const url = new URL(href!, fixture.url);
+        expect(url.pathname).toBe("/auth/login");
+        expect(url.searchParams.get("method")).toBeNull();
+        expect(url.searchParams.get("redirectTo")).toBe(`/admin/code?locale=${locale}&${query}&reauthenticate=1`);
+        await page
+          .getByRole("button", { name: locale === "de" ? "Abmelden und Admin-Token nutzen" : "Sign out and use admin token" })
+          .waitFor();
+      } else {
+        await page.getByRole("button", { name: locale === "de" ? "Neu laden" : "Reload", exact: true }).waitFor();
+        if (code === "NOT_FOUND")
+          expect(
+            await page
+              .getByRole("link", { name: locale === "de" ? "Zurück zur Liste" : "Back to the list", exact: true })
+              .getAttribute("href"),
+          ).toBe("/admin/code?sec=approvals");
+      }
+      expect(await page.getByRole("button", { name: locale === "de" ? "Version 3 freigeben" : "Approve version 3" }).isEnabled()).toBe(
+        true,
+      );
+    }, 20_000);
+  }
+}
+
+for (const locale of ["en", "de"] as const) {
+  for (const status of [200, 409, 503]) {
+    test(`emergency sign-in recovery in ${locale} waits for account-bound sign-out (${status})`, async () => {
+      const query = `${review}&decisionRefusal=REAUTHENTICATE&state=sole`;
+      await goto(`${query}&reauthenticate=1`, { width: 390, height: 844 }, locale);
+      expect(new URL(page.url()).searchParams.has("reauthenticate")).toBe(false);
+      const logouts: string[] = [];
+      await page.route("**/api/auth/logout", (route) => {
+        logouts.push(route.request().headers()["x-cloud-logout-user"] ?? "");
+        return route.fulfill({ status, contentType: "application/json", body: "{}" });
+      });
+      await page.route("**/auth/login?**", (route) =>
+        route.fulfill({
+          contentType: "text/html",
+          body: '<!doctype html><html><head><meta name="view-transition" content="same-origin"><style>@view-transition { navigation: auto; }</style></head><body>Admin token sign-in fixture</body></html>',
+        }),
+      );
+      await page.getByRole("button", { name: locale === "de" ? "Version 3 freigeben" : "Approve version 3" }).click();
+      const recover = page.getByRole("button", {
+        name: locale === "de" ? "Abmelden und Admin-Token nutzen" : "Sign out and use admin token",
+      });
+      await recover.click();
+      if (status === 200) {
+        await page.getByText("Admin token sign-in fixture", { exact: true }).waitFor();
+        const url = new URL(page.url());
+        expect(url.pathname).toBe("/auth/login");
+        expect(url.searchParams.get("method")).toBe("admin");
+        expect(url.searchParams.get("redirectTo")).toBe(`/admin/code?locale=${locale}&${query}`);
+        expect(url.searchParams.get("redirectTo")).not.toContain("reauthenticate");
+      } else {
+        await page
+          .getByRole("alert")
+          .getByText(locale === "de" ? "Das Abmelden konnte nicht abgeschlossen werden." : "Could not finish signing out.", {
+            exact: false,
+          })
+          .waitFor();
+        expect(new URL(page.url()).pathname).toBe("/admin/code");
+        expect(await recover.isEnabled()).toBe(true);
+        expect(await page.locator("#code-review-failure p p").count()).toBe(0);
+        await Promise.all([
+          page.waitForEvent("load"),
+          page.getByRole("button", { name: locale === "de" ? "Neu laden" : "Reload", exact: true }).click(),
+        ]);
+        await page.waitForSelector('body[data-ready="true"]');
+        expect(await page.locator("#code-review-failure").count()).toBe(0);
+      }
+      expect(logouts).toEqual([FIXTURE_PEOPLE.ben]);
+    }, 20_000);
+  }
+}

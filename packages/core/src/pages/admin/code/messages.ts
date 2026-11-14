@@ -198,7 +198,22 @@ export const codeAdminMessages = i18n.define({
       unknownDecideSub: "The decision may have been saved. Reload to see the current state before deciding again.",
       unknownPolicySub: "The policy may have been saved. Load the current policy before saving again.",
       decideConflict: "This version changed in the meantime. Reload to see the current state.",
-      decideForbidden: "Your sign-in cannot decide this version. Sign in again in the browser and retry.",
+      decideForbidden:
+        "This sign-in cannot decide this version. Use a full browser sign-in with a Cloud admin account and reopen the review.",
+      decideSelfApproval:
+        "You authored this version and another active admin exists. Ask that admin to approve it. You can still reject it.",
+      decideReauthenticate:
+        "To approve your own version as the only admin, Cloud needs a browser sign-in with the same account from the last ten minutes. Sign in again, then return and approve. As emergency admin, sign out first, then sign in again with the admin token. You can also decide with Cloud Login.",
+      decideRejectOnly:
+        "This connection can reject this version, but cannot approve it. Open this version in Cloud in your browser and approve it there.",
+      decideNotFound:
+        "This approval is no longer available to this account. Open the list of approvals to see what is still waiting. If needed, ask a Cloud admin to review it.",
+      decideBusy: "Cloud is handling another change. Wait a moment and try your decision again.",
+      decideUnavailable:
+        "Cloud cannot handle version decisions right now. Try again later. If this continues, ask the operator to check Code approvals.",
+      signInAgain: "Sign in again",
+      signInAdmin: "Sign out and use admin token",
+      signOutFailed: "Could not finish signing out. Reload to check your current sign-in, or try signing out again.",
       reload: "Reload",
       approvedState: "Approved",
       rejectedState: "Rejected",
@@ -550,7 +565,22 @@ export const codeAdminMessages = i18n.define({
       unknownPolicySub: "Die Richtlinie ist vielleicht gespeichert. Lade die aktuelle Richtlinie, bevor du erneut speicherst.",
       decideConflict: "Diese Version hat sich inzwischen geändert. Lade neu, um den aktuellen Stand zu sehen.",
       decideForbidden:
-        "Mit dieser Anmeldung kannst du diese Version nicht entscheiden. Melde dich im Browser neu an und versuche es erneut.",
+        "Mit dieser Anmeldung kannst du diese Version nicht entscheiden. Nutze eine vollständige Browser-Anmeldung mit einem Cloud-Admin-Konto und öffne die Prüfung erneut.",
+      decideSelfApproval:
+        "Du hast diese Version erstellt und es gibt einen weiteren aktiven Admin. Bitte diesen Admin um die Freigabe. Ablehnen kannst du weiterhin.",
+      decideReauthenticate:
+        "Um deine eigene Version als einziger Admin freizugeben, braucht Cloud eine Browser-Anmeldung mit demselben Konto aus den letzten zehn Minuten. Melde dich erneut an, kehre zurück und gib die Version frei. Als Notfall-Admin meldest du dich zuerst ab und danach mit dem Admin-Token erneut an. Du kannst auch mit Cloud Login entscheiden.",
+      decideRejectOnly:
+        "Diese Verbindung kann diese Version ablehnen, aber nicht freigeben. Öffne diese Version in Cloud im Browser und gib sie dort frei.",
+      decideNotFound:
+        "Diese Freigabe ist für dieses Konto nicht mehr verfügbar. Öffne die Liste der Freigaben, um zu sehen, was noch wartet. Bitte bei Bedarf einen Cloud-Admin um die Prüfung.",
+      decideBusy: "Cloud verarbeitet gerade eine andere Änderung. Warte einen Moment und versuche deine Entscheidung erneut.",
+      decideUnavailable:
+        "Cloud kann Versionsentscheidungen gerade nicht verarbeiten. Versuche es später erneut. Wenn das so bleibt, bitte den Betreiber, die Code-Freigaben zu prüfen.",
+      signInAgain: "Erneut anmelden",
+      signInAdmin: "Abmelden und Admin-Token nutzen",
+      signOutFailed:
+        "Das Abmelden konnte nicht abgeschlossen werden. Lade neu, um deine aktuelle Anmeldung zu prüfen, oder versuche das Abmelden erneut.",
       reload: "Neu laden",
       approvedState: "Freigegeben",
       rejectedState: "Abgelehnt",
