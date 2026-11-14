@@ -282,18 +282,37 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Tab Code lesen",
           description:
             "Liest für Bearbeitende den Quelltext der eingeschalteten Version, einen gewählten Unterschied und die Versionsdaten in begrenzten Abschnitten.",
+          input: {
+            codeId: "Automation, deren Quelltext du öffnen möchtest.",
+            comparisonVersionId: "Gespeicherte Vergleichsversion; null vergleicht ohne Vorgängerversion.",
+            path: "Quelldatei der eingeschalteten Version; sonst die erste Datei.",
+            sourceOffset: "Position des nächsten Quelltextabschnitts.",
+            diffOffset: "Position des nächsten Abschnitts im Unterschied.",
+            before: "Versionsnummer für die nächste Listenseite.",
+          },
         },
         "code.run.words": {
           title: "Code-Lauf in Worten lesen",
           description: "Liest bestätigte Beobachtungen und den übersetzten Fehlgrund ohne private Eingaben oder Ausgaben.",
+          input: { codeId: "Automation des Laufs.", runId: "Gespeicherter Lauf, der beschrieben werden soll." },
         },
         "code.activity.words": {
           title: "Code-Wirkungen in Worten lesen",
           description: "Liest bestätigte Aktionen der Woche, letzte Ergebnisse und den begrenzten Zeitstrahl eines Tages.",
+          input: {
+            codeId: "Automation für die Übersicht.",
+            day: "Lokaler Kalendertag im ISO-Format.",
+            timeZone: "IANA-Zeitzone für diesen Tag.",
+          },
         },
         "code.version.words": {
           title: "Code-Version in Worten lesen",
           description: "Liest übersetzte Fakten und getrennt markierte Modelltexte mit Zielnamen und Links, die diese Person lesen darf.",
+          input: {
+            codeId: "Automation der Version.",
+            versionId: "Gespeicherte Version, die beschrieben werden soll.",
+            comparisonVersionId: "Gespeicherte Vergleichsversion; sonst der Einreichungsstand, bei null ohne Vorgängerversion.",
+          },
         },
         "code.run.list": {
           title: "Code-Läufe auflisten",

@@ -824,7 +824,8 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
         },
       };
       const other = await codeAuthoringServices.init({ title: "Other person's Code" }, otherContext);
-      expect((await codeAuthoringServices.pull({ codeId: other.config.codeId }, context)).config.codeId).toBe(other.config.codeId);
+      await expect(codeAuthoringServices.pull({ codeId: other.config.codeId }, context)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect((await codeAuthoringServices.pull({ codeId: other.config.codeId }, otherContext)).config.codeId).toBe(other.config.codeId);
       for (const name of ["code_read", "code_pull", "code_sdk"])
         expect(CodeAuthoringErrorSchema.parse(await invoke(name, { codeId: other.config.codeId })).error.code).toBe("NOT_FOUND");
       // Resource ownership and its Code account are immutable from creation.

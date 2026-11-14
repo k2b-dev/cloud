@@ -9,16 +9,12 @@ const chunk = z.strictObject({ text: z.string(), nextOffset: z.number().int().nu
 /** Editor-only data for the Code tab. Source and diff use independent, bounded cursors. */
 export const codeSourceTabContract = {
   input: z.strictObject({
-    codeId: z.string().describe("Automation to open."),
-    comparisonVersionId: z
-      .uuid()
-      .nullable()
-      .optional()
-      .describe("Any saved version of this automation to compare against the enabled version."),
-    path: z.string().optional().describe("Source file in the enabled version; omit for its first file."),
-    sourceOffset: z.number().int().nonnegative().default(0).describe("Next source chunk offset."),
-    diffOffset: z.number().int().nonnegative().default(0).describe("Next difference chunk offset."),
-    before: z.number().int().positive().optional().describe("Next version list cursor."),
+    codeId: z.string().describe("Automation ID."),
+    comparisonVersionId: z.uuid().nullable().optional().describe("Comparison UUID; null for no baseline."),
+    path: z.string().optional().describe("File path; defaults to first file."),
+    sourceOffset: z.number().int().nonnegative().default(0).describe("Source offset."),
+    diffOffset: z.number().int().nonnegative().default(0).describe("Diff offset."),
+    before: z.number().int().positive().optional().describe("Version cursor."),
   }),
   data: z.strictObject({
     enabled: CodeVersionSchema.nullable(),

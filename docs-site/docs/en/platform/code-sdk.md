@@ -60,6 +60,12 @@ while earlier replicas still run and renew its registration.
 SDK generation repeats this validation.
 The checker and runtime share these generated paths.
 
+SDK declarations keep operation titles on their input aliases without repeating
+those titles on result aliases. The chat generates declarations only for the
+selected apps; `codeSdkExportName` from `@k2b/cloud/code` resolves default export
+names with the same reserved-name rules as the generator. Custom
+`sdkExportName` values take precedence.
+
 `http.fetch()` returns `status`, `headers`, `bodyBase64`, `text()` and `json()`.
 Use `await response.text()` for UTF-8 or `await response.json()` for JSON;
 `bodyBase64` preserves binary bytes. Invalid JSON rejects `json()`.

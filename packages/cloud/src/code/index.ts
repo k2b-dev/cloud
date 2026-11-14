@@ -64,6 +64,7 @@ export {
   CodeRouteResponseSchema,
 } from "./request-contract";
 export { codeSdkHash } from "./sdk-hash";
+export { codeSdkExportName } from "./sdk-names";
 export { createCodeTestBridge } from "./test-bridge";
 export type {
   CodeTestCall,

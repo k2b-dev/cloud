@@ -7,29 +7,29 @@ import { loadCodeRunReadModel } from "./run";
 
 export const codeReadModelQueries = {
   "code.source.tab": {
-    title: "Read the Code tab",
-    description: "Editors read the enabled version’s source, a chosen version difference and version dates in bounded pages.",
+    title: "Read source tab",
+    description: "Enabled source, chosen diff and dated history. Editors only.",
     ...codeSourceTabContract,
     openWorld: false,
     run: (input, context) => runCodeQuery(context, (ctx) => loadCodeSourceTab(input, ctx)),
   },
   "code.run.words": {
-    title: "Read a Code run in words",
-    description: "Read confirmed observations and a localized failure reason without private inputs or outputs.",
+    title: "Describe run",
+    description: "Confirmed outcomes and failure reason. No private payloads.",
     ...codeReadModelContracts.run,
     openWorld: false,
     run: (input, context) => runCodeQuery(context, (ctx) => loadCodeRunReadModel(input, ctx)),
   },
   "code.activity.words": {
-    title: "Read Code activity in words",
-    description: "Read confirmed weekly action counts, recent results and the bounded timeline of a local day.",
+    title: "Describe activity",
+    description: "Weekly effects, recent results and local-day timeline.",
     ...codeReadModelContracts.activity,
     openWorld: false,
     run: (input, context) => runCodeQuery(context, (ctx) => loadCodeActivityReadModel(input, ctx)),
   },
   "code.version.words": {
-    title: "Read a Code version in words",
-    description: "Read localized checked facts and separately marked model text, with target names and links authorized for this caller.",
+    title: "Describe version",
+    description: "Localized facts and separate model text. Readable targets only.",
     ...codeReadModelContracts.version,
     openWorld: false,
     run: (input, context) => runCodeQuery(context, (ctx) => loadCodeVersionReadModel(input, ctx)),

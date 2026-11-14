@@ -653,15 +653,14 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.version.diff.read": {
       title: "Read complete Code comparison",
-      description:
-        "Editors read bounded chunks of complete CodeDiff JSON for two immutable versions. Assemble all chunks before rendering.",
+      description: "Editors read complete CodeDiff JSON in chunks; assemble before rendering.",
       ...codeVersionContracts.diffRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersionDiff(input, ctx)),
     },
     "code.version.diff": {
       title: "Compare Code version",
-      description: "Editors read full file rows against the last approved or activated version, with exact decision binding.",
+      description: "Editors compare files against the approved or active version, bound to its decision.",
       ...codeVersionContracts.diff,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => diffCodeVersion(input, ctx)),
@@ -727,8 +726,7 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.version.read": {
       title: "Read a Code version",
-      description:
-        "Read immutable version metadata or manifest text. Source and bundle chunks require editor rights. Follow nextOffset for full content.",
+      description: "Version metadata or manifest; source and bundle require editor rights. Follow nextOffset for all text.",
       ...codeQueryContracts.versionRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersion(input, ctx)),

@@ -92,25 +92,21 @@ export type CodeActivityReadModel = z.infer<typeof CodeActivityReadModelSchema>;
 export const codeReadModelContracts = {
   version: {
     input: z.strictObject({
-      codeId: text.describe("Code ID to read."),
-      versionId: z.uuid().describe("Saved version to describe."),
-      comparisonVersionId: z
-        .uuid()
-        .nullable()
-        .optional()
-        .describe("Version to compare; omit for the submitted baseline, null for no baseline."),
+      codeId: text.describe("Automation ID."),
+      versionId: z.uuid().describe("Version UUID."),
+      comparisonVersionId: z.uuid().nullable().optional().describe("Comparison UUID; omit for submitted baseline, null for none."),
     }),
     data: CodeVersionReadModelSchema,
   },
   run: {
-    input: z.strictObject({ codeId: text.describe("Code ID to read."), runId: z.uuid().describe("Recorded run ID.") }),
+    input: z.strictObject({ codeId: text.describe("Automation ID."), runId: z.uuid().describe("Run UUID.") }),
     data: CodeRunReadModelSchema,
   },
   activity: {
     input: z.strictObject({
-      codeId: text.describe("Code ID to read."),
-      day: z.iso.date().describe("Local calendar day in ISO format."),
-      timeZone: text.describe("IANA time zone for this local day."),
+      codeId: text.describe("Automation ID."),
+      day: z.iso.date().describe("Local ISO date."),
+      timeZone: text.describe("IANA time zone."),
     }),
     data: CodeActivityReadModelSchema,
   },
