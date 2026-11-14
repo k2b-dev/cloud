@@ -11,7 +11,9 @@ Escape and backdrop handling, scroll lock, dialog stack, and dismiss guards.
 Menus, pickers, and navigation that belong to the bottom edge on a phone use
 `bottomSheetOptions` at every width, or the host opens them only on phones.
 Decisions, confirmations, and short forms use `bottomSheetAdaptiveOptions`:
-a sheet below 48rem and a centered 32rem dialog from 48rem up.
+a sheet below 48rem and a centered 32rem dialog from 48rem up. `prompts`
+already does this for its alerts, confirmations, and forms; see
+[Prompts](/en/ui/feedback/prompts#on-a-phone).
 CSS chooses the mode, so server and client agree from the first frame and
 rotation switches the open dialog in place. Dialog mode has no handle;
 provide a footer action or a header close control.

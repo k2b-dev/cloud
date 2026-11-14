@@ -2,9 +2,9 @@ import { createSignal, type JSX, Show } from "solid-js";
 import { TextInput } from "../inputs/TextInput";
 import { showTruncatedTitle } from "../internal/truncated-title";
 import { resolveUiMessages } from "../intl/messages";
-import { dialogCore } from "./dialog-core";
 import { type DialogTone, dialogToneIcon, dialogToneLabel } from "./dialog-tone";
 import { resolvePromptMessages } from "./prompt-messages";
+import { openPrompt } from "./prompt-sheet";
 import type { ConfirmOptions, DialogOptions } from "./prompts";
 import { SuccessCheck } from "./success-check";
 
@@ -73,7 +73,7 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
   }
   let confirmationInput: HTMLInputElement | undefined;
 
-  return dialogCore.open<boolean>(
+  return openPrompt<boolean>(
     (close) => {
       if (!confirmationPhrase) {
         return (
@@ -146,6 +146,7 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
       history: options?.history,
       ariaLabel: options?.ariaLabel ?? options?.title ?? resolvePromptMessages().confirmation,
     },
+    options,
   );
 };
 

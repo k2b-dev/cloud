@@ -250,6 +250,14 @@
   background: inherit;
 }
 
+/* On a phone a prompt is a bottom sheet (`k2b-prompt-sheet`): the sheet's
+ * frame, handle and motion around the prompt's own panel. The handle gives the
+ * top its room, and the last row stays clear of the home indicator. */
+.k2b-ui .k2b-prompt-sheet .k2b-dialog__panel {
+  padding-top: 0;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+
 /* Custom `prompts.dialog` bodies are arbitrary markup with no `__body`
  * padding, so the stack supplies Cloud's `gap-4` between header and body. */
 .k2b-ui .k2b-dialog__stack {

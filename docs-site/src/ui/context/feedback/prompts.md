@@ -12,6 +12,10 @@ Use a toast for non-blocking feedback. Use `PanelDialog` for a persistent editor
 
 Use `prompts.error` only when the user must read a failure and decide how to continue. A failed one-click action gets an error toast with Retry, and invalid input stays inline next to its field; [Toast](/en/ui/feedback/toast#use-toast) lists the whole rule. Validate a `prompts.form` field with `validate`, so the form stays open with the message under the field instead of closing and opening an error dialog. A field shows its errors from the first submit on and then updates them with every change, so a check that fails mid-input, such as a URL still being typed, does not interrupt the user.
 
+## On a phone
+
+Below 48rem a prompt rises from the bottom edge as a sheet, within thumb reach. It has the sheet's handle and motion: it slides in, follows the handle, and slides out, instantly with reduced motion. The handle and a drag down dismiss it the way Escape does, so a prompt with `cancelBehavior: "ignore"` keeps its sheet. A form focuses its first field. From 48rem every prompt stays the dialog in the middle. A `size: "full"` prompt keeps its edge-to-edge frame, and a `surface: "bare"` prompt or a `prompts.dialog` without its header keeps its own chrome. The choice is made when the prompt opens and needs no option.
+
 ## Import
 
 ```tsx
