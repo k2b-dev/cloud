@@ -21,7 +21,8 @@ import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateSecrets } from "../migrate/core/code-secrets";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
-import { type CodeContext, CodeDataError } from "./access";
+import { type CodeContext, CodeDataError, codePerson } from "./access";
+import { previewCodeActivation } from "./activation";
 import { codeAuthoringServices } from "./authoring";
 import { createCodeCheckRequest } from "./authoring-check";
 import {
@@ -40,6 +41,7 @@ import { startCodeRunRetention } from "./retention";
 import * as hosts from "./runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash } from "./store";
+import * as versionState from "./versions";
 import { CodeVersionError } from "./versions";
 
 const id = "11111111-1111-4111-8111-111111111111";
@@ -135,9 +137,26 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     await expect(codeAuthoringServices.submit(input, guest)).rejects.toMatchObject({ code: "code_guests_cannot_author" });
     const saved = await codeAuthoringServices.submit(input, context);
     expect(saved.submission.version.codeId).toBe(project.config.codeId);
+    expect(saved.nextStep).toEqual({ next: "switch_on", who: "personal_owner" });
+  });
+  test("a saved submission asks to check live status when the follow-up readiness read fails", async () => {
+    const project = await codeAuthoringServices.init({ title: "Readiness unavailable" }, context);
+    const readiness = spyOn(versionState, "codeVersionReadiness").mockRejectedValueOnce(new Error("Fixture read unavailable"));
+    try {
+      const saved = await codeAuthoringServices.submit(
+        { codeId: project.config.codeId, files: project.files, entry: project.config.entry, baseVersionId: null },
+        context,
+      );
+      expect(saved.nextStep).toEqual({ next: "check_status", who: "code_editor" });
+      const [stored] = await sql`SELECT id FROM code.versions WHERE id=${saved.submission.version.id}::uuid`;
+      expect(stored.id).toBe(saved.submission.version.id);
+    } finally {
+      readiness.mockRestore();
+    }
   });
   async function withDraftChat(
     run: (invoke: (name: string, input: unknown, conversationId?: string) => Promise<unknown>) => Promise<void>,
+    author: CodeContext = context,
   ) {
     const chat = spyOn(aiConversations, "getConversation").mockResolvedValue({
       id,
@@ -157,13 +176,13 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       unreadCompletion: false,
       projectId: null,
       draft: { content: [], revision: 0, updatedAt: null },
-      createdByUserId: id,
+      createdByUserId: codePerson(author).id,
       createdAt: fixed.toISOString(),
       updatedAt: fixed.toISOString(),
     });
     const turn = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({
       input: "Edit Code",
-      actor: context.authority.actor,
+      actor: author.authority.actor,
     });
     const tools: AiRuntimeTool[] = createCodeAuthoringChatTools();
     try {
@@ -171,7 +190,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
         const tool = tools.find((item) => item.def.name === name);
         if (!tool || !("location" in tool) || tool.location !== "server") throw new Error("Expected server tool");
         return tool.run(tool.def.inputSchema.parse(input), {
-          actor: context.authority.actor,
+          actor: author.authority.actor,
           conversationId,
           turnId: id,
           signal: new AbortController().signal,
@@ -189,6 +208,39 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       setSystemTime(fixed);
     }
   }
+  test("a member's chat submit follows the card's administrator approval before owner switch-on", async () => {
+    const memberId = "33240000-0000-4000-8000-000000000001";
+    const member: CodeContext = {
+      ...context,
+      authority: {
+        ...context.authority,
+        actor: { kind: "user", user: { ...user, id: memberId, roles: ["user"] } },
+        accessSubject: { type: "user", userId: memberId },
+      },
+    };
+    await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${memberId}::uuid,'submit_member','local','user',false)`;
+    const { policy } = await codeAuthoringServices.policyRead({}, context);
+    const updated = await codeAuthoringServices.policyUpdate({ revision: policy.revision, definition: codePolicyPreset("admin") }, context);
+    runner.mockReturnValue({
+      check: async (request) => {
+        const result = checked(request);
+        return result.ok ? { ...result, manifest: { ...result.manifest, internet: ["https://example.com"] } } : result;
+      },
+    });
+    try {
+      await withDraftChat(async (invoke) => {
+        const project = codeAuthoringContracts.init.data.parse(await invoke("code_init", { title: "Member approval" }));
+        const submitted = codeAuthoringContracts.submit.data.parse(await invoke("code_submit", { codeId: project.config.codeId }));
+        expect(submitted.submission.status).toBe("pending");
+        expect(submitted.nextStep).toEqual({ next: "admin_approval", who: "cloud_admin" });
+        const card = await previewCodeActivation({ codeId: project.config.codeId, versionId: submitted.submission.version.id }, member);
+        expect(card.readiness).toEqual({ state: "approval_pending" });
+      }, member);
+    } finally {
+      runner.mockReturnValue({ check: async (request) => checked(request) });
+      await codeAuthoringServices.policyUpdate({ revision: updated.policy.revision, definition: policy.definition }, context);
+    }
+  });
 
   test("chat checks, tests, simulations and submit share exactly the server-held files and fixtures", async () => {
     await withDraftChat(async (invoke) => {

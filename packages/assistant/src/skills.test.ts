@@ -2,6 +2,16 @@ import { expect, test } from "bun:test";
 import { aiSkillLoadTools, mountAiSkillInstructionLinks } from "@k2b/cloud/ai";
 import { SKILLS } from "./skills";
 
+test("Code handover follows submit nextStep and keeps SDK diagnostics out of human replies", () => {
+  const skill = SKILLS.find((skill) => skill.name === "code-authoring")!;
+  expect(skill.instructions).toContain("nextStep");
+  expect(skill.instructions).toContain("admin_approval");
+  expect(skill.instructions).toContain("`next` and `who`");
+  expect(skill.instructions).toContain("never infer one");
+  expect(skill.instructions).toContain("file names or error codes");
+  expect(skill.instructions).toContain("spaces.task.list({ spaceId");
+});
+
 test("ships its Skills with every reference linked from the instructions", () => {
   expect(SKILLS.map((skill) => skill.name)).toEqual([
     "code-authoring",
