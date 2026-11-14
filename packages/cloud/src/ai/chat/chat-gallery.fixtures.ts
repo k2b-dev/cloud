@@ -190,7 +190,28 @@ const readingBlock: AiTurnBlock = {
 
 export type GalleryChat = { messages: AiStoredMessage[]; active?: AiActiveTurn };
 
+/** The answer cut short: by the person (stopped) or by the model service (failed), after the first paragraph. */
+const cutAnswer = (ending: "stopped" | "failed"): AiStoredMessage[] => {
+  const chat = answerChat();
+  const last = chat.at(-1)!;
+  const message = last.message;
+  if (message.role !== "assistant") return chat;
+  return [
+    ...chat.slice(0, -1),
+    {
+      ...last,
+      message: { ...message, content: [{ type: "text", text: "Jana Berger fragt zwei Dinge [1](/open/mail.thread/~messestand-koeln):" }] },
+      loopDoneReason: ending === "stopped" ? "aborted" : "error",
+      meta: ending === "failed" ? { turnError: { code: "model_unavailable" } } : {},
+    },
+  ];
+};
+
 export const galleryScenes = {
+  /** `#g-antwort/gestoppt` */
+  gestoppt: () => ({ messages: cutAnswer("stopped") }),
+  /** `#g-antwort/fehler` */
+  fehler: () => ({ messages: cutAnswer("failed") }),
   antwort: () => ({ messages: answerChat() }),
   routine: () => ({ messages: routineChat() }),
   /** `#g-antwort/denkt`: the turn started and Gustav thinks. */

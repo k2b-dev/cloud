@@ -279,3 +279,46 @@ test("the running work line has the finished line's height, shimmers in 2.2 s, a
     }
   }
 }, 60_000);
+
+test("a stopped answer ends with a quiet line and Answer again; a failed one says what stays", async () => {
+  for (const width of [1440, 390]) {
+    const stopped = await open("gestoppt", width);
+    try {
+      const line = stopped.page.locator(".ai-turn__stopped");
+      expect(await line.innerText()).toContain("Du hast gestoppt. Der Text bis hier bleibt.");
+      // A quiet line, not a warning: no notice card at the end of a stopped answer.
+      expect(await stopped.page.locator(".ai-turn__notice").count()).toBe(0);
+      await line.getByRole("button", { name: "Neu antworten" }).click();
+      expect(await stopped.page.evaluate(() => (window as unknown as { retried: unknown[] }).retried)).toEqual([
+        { id: "gallery-1", mode: "retry" },
+      ]);
+    } finally {
+      await stopped.close();
+    }
+    const failed = await open("fehler", width);
+    try {
+      const notice = failed.page.locator(".ai-turn__notice");
+      expect(await notice.innerText()).toContain("Was bis hier steht, bleibt erhalten.");
+      // The notice ends the turn, below the text that stays.
+      expect(
+        await failed.page.evaluate(() => document.querySelector(".ai-turn")?.lastElementChild?.classList.contains("ai-turn__notice")),
+      ).toBe(true);
+    } finally {
+      await failed.close();
+    }
+  }
+}, 60_000);
+
+test("the Gustav column is 812 px with 764 px for turns and composer, and prose stops at 44 rem", async () => {
+  const { page, close } = await open("antwort", 1440);
+  try {
+    const content = await box(page, ".k2b-chat-timeline__content");
+    expect(content.width).toBe(812);
+    const prose = await box(page, ".ai-turn__text .assistant-markdown-block");
+    expect(prose.width).toBeLessThanOrEqual(704);
+    // Headings stand out by size: 18 px in the answer.
+    expect(await page.locator(".ai-turn__text h2").evaluate((node) => getComputedStyle(node).fontSize)).toBe("18px");
+  } finally {
+    await close();
+  }
+}, 60_000);
