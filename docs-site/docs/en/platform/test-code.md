@@ -111,6 +111,27 @@ flags, and replies or refusal codes. A failed assertion lists its field in
 even when the Code catches the exception. Trace output adds run start and
 completion events; the call list is present with or without trace.
 
+A `code_test_invalid_fixture` refusal from the fake bridge carries a
+model-facing `detail` on the failed call's `result`. If Core rejects JSON or
+the fixture structure before execution, `detail` is on the top-level result
+and includes `file` (`null` for
+simulation). It contains `operation`, zero-based `mockIndex` and `replyIndex`
+(`null` when unavailable), `path` segments from the fixture root, and a short
+`reason` for the first issue. No rejected values or stack traces are copied
+into this detail. The existing result-byte budget also bounds these failures;
+Core omits a detail that would exceed it while retaining the fixture refusal
+code. Runner admission failures that cannot locate a fixture issue have no
+detail.
+
+Correct the named field and run the tests again before submitting. Reply data
+uses the operation's published schema, including ID patterns and required
+fields; the test bridge does not relax them. For example, Spaces IDs have
+exactly six alphanumeric characters: `Itm001` and `Col001` are valid fictional
+IDs; `Itm0001` and `ColBacklog01` are not. Stream reads instead return checked
+FileRefs within the operation's byte limit. Codes, indexes and paths are for
+authoring tools and logs; human-facing summaries describe the tested behavior
+and outcome.
+
 Simulation uses one invocation with fixture data and the same fake bridge.
 It creates no durable Code version, production run, or effect. Source check
 failures stop before sandbox execution. Resource targets may be dynamic; production checks their current access on each call.
