@@ -92,6 +92,7 @@ export default function PwaLayout(props: PwaLayoutProps) {
   const currentPart = parts.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));
   // A part takes its app colour for selection and accents, as an app does on the web; Start and Settings keep Cloud's.
   page.appAccent = currentPart?.appearance?.accent;
+  page.appPrimary = currentPart?.appearance?.primary;
   const sidebar = (
     <MobileShell.Sidebar
       label={t.tabs}

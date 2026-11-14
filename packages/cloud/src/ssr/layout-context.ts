@@ -1,3 +1,4 @@
+import type { AppAppearance } from "../contracts/app";
 import type { PanelConsentSnapshot } from "../contracts/panel-context";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { ScreenPreferences } from "../contracts/screen-preferences";
@@ -19,6 +20,7 @@ export type LayoutContext = {
     pwaOwner?: string;
     /** The current app's accent, which colours the page's body as that app's scope. */
     appAccent?: string;
+    appPrimary?: AppAppearance["primary"];
     /** Signed-in pages: the person's screen preferences, read with the page. */
     screen?: ScreenPreferences;
   };

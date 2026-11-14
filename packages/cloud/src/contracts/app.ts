@@ -34,6 +34,8 @@ export type AppAppearanceColor = `#${string}`;
 
 export type AppAppearance = {
   accent: AppAppearanceColor;
+  /** Use the AI colour for primary actions, selection and focus. Omit for blue. */
+  primary?: "ai";
   background?: {
     from: AppAppearanceColor;
     via?: AppAppearanceColor;

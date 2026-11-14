@@ -201,6 +201,16 @@ for (const [name, props] of [
 
 test("server provider view frame (de)", () => expect(serverPanel({ view: ["share"] }, "de")).toMatchSnapshot());
 
+test("the Help panel host scopes only an app that selects the AI primary", () => {
+  for (const primary of [undefined, "ai"] as const) {
+    const host = serverPanel({ primary }).match(/<div\b[^>]*data-surface="panel"[^>]*>/)?.[0] ?? "";
+    expect(host).toContain("app-accent-scope");
+    expect(host.includes('data-k2b-primary="ai"')).toBe(primary === "ai");
+  }
+  // @ts-expect-error Untyped provider metadata must not emit unsupported primary scopes.
+  expect(serverPanel({ primary: "blue" })).not.toContain("data-k2b-primary");
+});
+
 test("server provider rejects missing, unknown and mismatched article seeds", () => {
   for (const props of [
     { initialTopic: undefined, initialArticle },

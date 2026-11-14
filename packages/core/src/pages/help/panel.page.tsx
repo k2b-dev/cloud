@@ -39,6 +39,7 @@ export default ssr<AuthContext>(async (c) => {
         documents={documents}
         app={app ? { id: app.id, name: app.name, icon: app.icon } : undefined}
         appearance={app ? appAppearanceStyle(app.appearance) : undefined}
+        primary={app?.appearance?.primary}
         view={view}
         initialTopic={initialTopic}
         initialArticle={initialArticle ?? undefined}
