@@ -36,6 +36,15 @@ const registry = defineEnv({
     example: "postgresql://ipa:ipa@localhost:5432/ipa",
     doc: "Postgres connection read by Bun SQL and by application-owned pools.",
   },
+  CLOUD_DATABASE_POOL_MAX: {
+    schema: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(2 ** 31 - 1),
+    default: 10,
+    doc: "Maximum connections in this process's global Cloud SQL pool; integer 1–2147483647 (Bun's signed 32-bit pool bound), default 10; restart to apply and size within the database's connection budget; separate createSql pools and Bun-global clients are independent.",
+  },
   REDIS_URL: {
     schema: z.string(),
     aliases: ["VALKEY_URL"],

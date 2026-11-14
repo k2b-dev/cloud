@@ -22,5 +22,5 @@ export const axisOption = (axis: "xAxis" | "yAxis") => ({
 export const numberFormatOption = {
   name: "format",
   type: "{ style?, currency?, unit?, decimals?, compact? }",
-  description: 'Number format by name: "number", "percent" or "currency" with an ISO currency, decimals and compact notation.',
+  description: 'Number format by name (style "number", "percent" or "currency") with an ISO currency, decimals and compact notation.',
 };

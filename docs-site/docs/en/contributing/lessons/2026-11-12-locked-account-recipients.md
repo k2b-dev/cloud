@@ -1,0 +1,6 @@
+### Apply the account lock where readers and recipients are resolved
+
+- **What happened:** A FreeIPA-locked account could no longer sign in, but it still counted as a resource reader and still received browser and email notifications on destinations registered before the lock.
+- **Root cause:** The lock was checked at every credential, but not where Cloud chooses accounts without a credential: `resolveResourceReaders`, the notification recipient resolution and dispatch, and the recipients of administrator notification batches.
+- **Error class:** An account state that ends access is enforced at sign-in only, while paths that select accounts for passive delivery keep their own, older eligibility rules.
+- **Guard:** `packages/cloud/src/services/identity/resource-readers.integration.test.ts` and `packages/cloud/src/services/notifications/account-lock.integration.test.ts` lock and unlock an account and require that it leaves and rejoins the readers, that no channel delivers to it, that a delivery prepared before the lock is suppressed, that mail still queued for a retry is cancelled, and that batches skip it. Every check uses the shared `accountLockedSql` with a qualified column, so applications that read through these resolvers inherit it.

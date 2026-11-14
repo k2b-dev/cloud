@@ -23,7 +23,7 @@ const fit = (width: number, height: number, box: { width: number; height: number
 /** Worker-only: validate pass-throughs, decode once for resized variants, then emit encodings sequentially. */
 export async function prepareImageVariants(
   source: Uint8Array | undefined,
-  request: z.infer<typeof ImageRequest>,
+  request: Omit<z.infer<typeof ImageRequest>, "encoding"> & { encoding?: "auto" | "preview" },
   write: (index: number, header: z.infer<typeof ImageVariantHeader>, bytes: Uint8Array) => Promise<void>,
 ): Promise<z.infer<typeof ImageResponse>> {
   let identified = false;
@@ -47,6 +47,7 @@ export async function prepareImageVariants(
     const sizes = request.boxes.map((box) => fit(upright.width, upright.height, box));
     const passthrough = request.boxes.map(
       (box) =>
+        request.encoding !== "preview" &&
         metadata.format === "jpeg" &&
         (metadata.orientation === undefined || metadata.orientation === 1) &&
         (metadata.space === "srgb" || metadata.space === "b-w") &&
@@ -91,10 +92,13 @@ export async function prepareImageVariants(
       const size = sizes[index]!;
       let image = sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } });
       if (size.width !== info.width || size.height !== info.height) image = image.resize(size.width, size.height, { fit: "fill" });
-      const type = transparent ? "image/png" : "image/jpeg";
-      let encoded: Buffer | undefined = await (transparent
+      const keepAlpha = transparent && request.encoding !== "preview";
+      const type = keepAlpha ? "image/png" : "image/jpeg";
+      let encoded: Buffer | undefined = await (keepAlpha
         ? image.png()
-        : image.removeAlpha().jpeg({ quality: 85, mozjpeg: true })
+        : (request.encoding === "preview" ? image.flatten({ background: "white" }) : image)
+            .removeAlpha()
+            .jpeg({ quality: request.encoding === "preview" ? 80 : 85, mozjpeg: true })
       ).toBuffer();
       if (encoded.byteLength <= request.maxBytes) {
         await write(index, { ...size, type, bytes: encoded.byteLength }, encoded);

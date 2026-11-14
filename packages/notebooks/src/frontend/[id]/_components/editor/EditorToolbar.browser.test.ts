@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { type Browser, type BrowserContextOptions, type Page, devices as playwrightDevices } from "playwright";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
 
 const indentLabel = "Indent";
 const outdentLabel = "Outdent";
@@ -87,7 +87,7 @@ const devices: Record<string, BrowserContextOptions> = {
   phone: { ...phone, viewport: { width: 390, height: 844 } },
 };
 
-const open = async (device: BrowserContextOptions, options: { keyboard?: boolean; locale?: string } = {}) => {
+const open = async (device: BrowserContextOptions, options: { keyboard?: boolean; locale?: string; shell?: boolean } = {}) => {
   const context = await browser.newContext(device);
   if (options.keyboard) {
     await context.addInitScript(() => {
@@ -112,6 +112,7 @@ const open = async (device: BrowserContextOptions, options: { keyboard?: boolean
   const page = await context.newPage();
   const url = new URL(server.url.href);
   if (options.locale) url.searchParams.set("locale", options.locale);
+  if (options.shell) url.searchParams.set("shell", "1");
   await page.goto(url.href);
   await page.waitForFunction(() => "toolbarHarness" in window);
   return page;
@@ -143,6 +144,92 @@ const load = (page: Page, doc: string) =>
     harness.loadDocument(doc);
     await harness.settle();
   }, doc);
+
+// On the full note page, beside the notebook sidebar, the two pills float at the edges of the main column, and the
+// note scrolls beneath them yet ends above them.
+for (const width of [1440, 900])
+  test(`on the full note page at ${width} px the pills sit at the main column's edges and the note ends above them`, async () => {
+    const page = await open({ viewport: { width, height: 800 } }, { shell: true });
+    try {
+      const text = Array.from({ length: 40 }, (_, index) => `Paragraph ${index + 1}`).join("\n\n");
+      await load(page, `# Cold chain\n\n${text}\n\nLast line`);
+      const geometry = await page.evaluate(async () => {
+        const scroller = document.querySelector<HTMLElement>("[data-editor-scroller] .k2b-scroll-area__viewport, [data-editor-scroller]")!;
+        scroller.scrollTop = scroller.scrollHeight;
+        await window.toolbarHarness.settle();
+        const box = (element: Element) => element.getBoundingClientRect();
+        const main = box(document.querySelector(".notebook-editor-frame")!);
+        const sidebar = document.querySelector("#notebook-navigation");
+        const [format, pageActions] = Array.from(document.querySelectorAll(".notebooks-editor-pill")).map(box);
+        const last = Array.from(document.querySelectorAll(".cm-line")).find((line) => line.textContent === "Last line")!;
+        return {
+          sidebarBeside: !!sidebar && sidebar.getClientRects().length > 0 && box(sidebar).right <= main.left + 0.5,
+          formatInset: Math.round(format!.left - main.left),
+          pageInset: Math.round(main.right - pageActions!.right),
+          bottomInset: Math.round(main.bottom - Math.max(format!.bottom, pageActions!.bottom)),
+          lastAbovePills: box(last).bottom <= Math.min(format!.top, pageActions!.top) + 0.5,
+          pillShadow: getComputedStyle(document.querySelector(".notebooks-editor-pill")!).boxShadow,
+        };
+      });
+      expect(geometry.sidebarBeside).toBe(true);
+      expect(geometry.formatInset).toBe(16);
+      expect(geometry.pageInset).toBe(16);
+      expect(geometry.bottomInset).toBe(16);
+      expect(geometry.lastAbovePills).toBe(true);
+      expect(geometry.pillShadow).not.toBe("none");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+// A pill is as high as its controls need: the space between its edge and the round background of a control is the same
+// above, below, and at the sides, also in the red pill that replaces both (@k2b/ui `--k2b-pill-control` and
+// `--k2b-pill-inset`). The PdfViewer bar has the same 38 px (packages/ui pdf-viewer.browser.test.ts).
+for (const [name, device] of Object.entries(devices))
+  test(`every pill keeps the same space around its controls on every side (${name})`, async () => {
+    const page = await open(device);
+    try {
+      await load(page, "# Cold chain\n\nText");
+      const measure = () =>
+        page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".notebooks-editor-pill, .k2b-toolbar[data-variant=floating]")).map((pill) => {
+            const box = pill.getBoundingClientRect();
+            const controls = Array.from(pill.querySelectorAll<HTMLElement>(".k2b-button"))
+              .filter((control) => control.getClientRects().length > 0 && !control.closest('[data-overflow="hidden"]'))
+              .map((control) => control.getBoundingClientRect());
+            const first = controls[0]!;
+            const last = controls.at(-1)!;
+            const label = pill.querySelector(".k2b-toolbar__label")?.getBoundingClientRect();
+            return {
+              height: box.height,
+              tops: controls.map((control) => control.top - box.top),
+              bottoms: controls.map((control) => box.bottom - control.bottom),
+              // A pill that starts with its message, or whose tools scroll on beyond its end, has no control at that edge.
+              start: label && label.left < first.left ? undefined : first.left - box.left,
+              end: last.right > box.right ? undefined : box.right - last.right,
+            };
+          }),
+        );
+      const check = (pills: Awaited<ReturnType<typeof measure>>) => {
+        expect(pills.length).toBeGreaterThan(0);
+        for (const pill of pills) {
+          expect(pill.height).toBe(38);
+          const inset = pill.tops[0]!;
+          for (const value of [...pill.tops, ...pill.bottoms, pill.start ?? inset, pill.end ?? inset])
+            expect(Math.abs(value - inset)).toBeLessThanOrEqual(0.5);
+          expect(pill.start ?? pill.end).toBeDefined();
+        }
+      };
+      check(await measure());
+      await page.evaluate(async () => {
+        window.toolbarHarness.endSync("RESYNC_REQUIRED", true, true);
+        await window.toolbarHarness.settle();
+      });
+      check(await measure());
+    } finally {
+      await page.context().close();
+    }
+  });
 
 const caret = (page: Page, text: string, offset = 3) =>
   page.evaluate(
@@ -487,7 +574,7 @@ describe.each(Object.entries(devices))("editor toolbar list indentation (%s)", (
         const button = page.getByRole("button", { name: label, exact: true });
         expect(await button.getAttribute("aria-disabled")).toBe("true");
         // The shared @k2b/ui disabled look, with no hover tint, while the button stays focusable.
-        if (name === "desktop") await button.hover({ force: true });
+        if (name === "desktop") await hoverInPlace(button);
         expect(await button.evaluate((element) => [getComputedStyle(element).opacity, getComputedStyle(element).backgroundColor])).toEqual([
           "0.4",
           "rgba(0, 0, 0, 0)",
@@ -793,27 +880,66 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
               const box = document.querySelector(selector)!.getBoundingClientRect();
               return { x: box.x, y: box.y, width: box.width, height: box.height };
             };
-            return { row: rect(".notebooks-editor-toolbar"), scroller: rect("[data-editor-scroller]"), editor: rect(".cm-scroller") };
+            return {
+              row: rect(".notebooks-editor-toolbar"),
+              // The first pill: the formatting pill, or the red pill that replaces both.
+              pill: rect(".notebooks-editor-pill, .k2b-toolbar[data-variant=floating]"),
+              scroller: rect("[data-editor-scroller]"),
+              editor: rect(".cm-scroller"),
+            };
           });
         const original = await bounds();
         const same = (actual: Awaited<ReturnType<typeof bounds>>) => {
-          for (const surface of ["row", "scroller", "editor"] as const)
+          // The recovery bar is one pill where the toolbar had two; the note around it never moves.
+          for (const surface of ["scroller", "editor"] as const)
             for (const dimension of ["x", "y", "width", "height"] as const)
               expect(Math.abs(actual[surface][dimension] - original[surface][dimension])).toBeLessThanOrEqual(0.5);
+          // The red pill starts where the pills start and has their height: its edges never jump.
+          for (const dimension of ["x", "y", "height"] as const)
+            expect(Math.abs(actual.pill[dimension] - original.pill[dimension])).toBeLessThanOrEqual(0.5);
         };
-        for (const code of ["STORAGE_EXHAUSTED", "SESSION_EXPIRED"]) {
-          await page.evaluate(async (code) => {
-            window.toolbarHarness.endSync(code, true);
-            await window.toolbarHarness.settle();
-          }, code);
+        for (const [code, recovery] of [
+          ["STORAGE_EXHAUSTED", false],
+          ["SESSION_EXPIRED", false],
+          ["RESYNC_REQUIRED", true],
+        ] as const) {
+          await page.evaluate(
+            async ([code, recovery]) => {
+              window.toolbarHarness.endSync(code, true, recovery);
+              await window.toolbarHarness.settle();
+            },
+            [code, recovery] as const,
+          );
           same(await bounds());
           const fit = await page.locator("[data-sync-ended]").evaluate((row) => {
             const box = row.getBoundingClientRect();
+            const pill = row.querySelector<HTMLElement>('.k2b-toolbar[data-tone="danger"]')!;
+            const pillBox = pill.getBoundingClientRect();
+            const first = pill.querySelector<HTMLElement>(".k2b-toolbar__action")!;
+            const style = getComputedStyle(row);
+            const content = box.width - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
             return {
+              // One red pill spans the row and keeps the floating height; its first action (copy or sign in) stays.
+              spansRow: Math.abs(pillBox.width - content) <= 1,
+              // Every control, the wrapped navigation and Details toggles too, has the pill's one round size.
+              sameControls: Array.from(pill.querySelectorAll<HTMLElement>(".k2b-button"))
+                .filter((button) => button.getClientRects().length > 0 && !button.closest('[data-overflow="hidden"]'))
+                .every((button) => {
+                  const control = button.getBoundingClientRect();
+                  return control.width >= 24 && control.height === 24;
+                }),
+              // The save state is never cut: it shows whole, and only the reason after it may drop.
+              stateWhole: (() => {
+                const main = pill.querySelector<HTMLElement>(".k2b-toolbar__label-main")!;
+                return main.scrollWidth <= main.clientWidth;
+              })(),
+              red: getComputedStyle(pill).backgroundColor === "rgb(254, 242, 242)",
+              firstShown: first.getClientRects().length > 0,
               pageFits: document.documentElement.scrollWidth <= innerWidth,
               // Phones hide the navigation button (the header's menu takes its place); every shown control fits.
               controlsFit: Array.from(row.querySelectorAll("button"))
-                .filter((button) => button.getClientRects().length > 0)
+                // An idle More keeps its box out of the flow, hidden.
+                .filter((button) => button.getClientRects().length > 0 && !button.closest('[data-overflow="hidden"]'))
                 .every((button) => {
                   const control = button.getBoundingClientRect();
                   return (
@@ -826,7 +952,15 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
                 }),
             };
           });
-          expect(fit).toEqual({ pageFits: true, controlsFit: true });
+          expect(fit).toEqual({
+            spansRow: true,
+            sameControls: true,
+            stateWhole: true,
+            red: true,
+            firstShown: true,
+            pageFits: true,
+            controlsFit: true,
+          });
           await page.evaluate(async () => {
             window.toolbarHarness.resumeSync();
             await window.toolbarHarness.settle();

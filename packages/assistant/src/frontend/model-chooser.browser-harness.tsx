@@ -89,7 +89,7 @@ const models: AiPeopleModels = {
           ? options.slice(0, 4)
           : options,
 };
-const chooserState: AiModelChooserState =
+const initialState: AiModelChooserState =
   state === "loading"
     ? { status: "loading" }
     : state === "error"
@@ -106,12 +106,25 @@ const initial = (): AiModelRequest | null => {
 };
 
 render(() => {
+  const [chooserState, setChooserState] = createSignal(initialState);
+  // "Try again" loads the models again, like a host with its own query; `?retry=default` leaves it to the chooser.
+  const retry =
+    params.get("retry") === "default"
+      ? undefined
+      : () => {
+          setChooserState({ status: "loading" });
+          // `?retry=fail` fails again, like a server that is still down.
+          setTimeout(() => {
+            setChooserState(params.get("retry") === "fail" ? { status: "error" } : { status: "ready", models });
+            document.body.dataset.retried = "true";
+          }, 50);
+        };
   const [value, setValue] = createSignal(initial());
   const [draft, setDraft] = createSignal(params.get("draft") ?? "");
   const running = state === "running";
   const note = () =>
-    aiModelBlocksSending(chooserState, value()) || state === "budget" || state === "revoked" ? (
-      <AiModelNote state={chooserState} value={value()} onChange={setValue} />
+    aiModelBlocksSending(chooserState(), value()) || state === "budget" || state === "revoked" ? (
+      <AiModelNote state={chooserState()} value={value()} onChange={setValue} />
     ) : undefined;
   const composer = (
     <Chat.Composer
@@ -119,14 +132,15 @@ render(() => {
       onValueChange={setDraft}
       placeholder="Assistent etwas fragen"
       state={running ? "running" : "idle"}
-      submitDisabled={aiModelBlocksSending(chooserState, value())}
+      submitDisabled={aiModelBlocksSending(chooserState(), value())}
       fileSelection={{ onSelect: () => {}, choose: async () => [], disabled: running }}
       submitTools={
         <>
           <AiModelChooser
-            state={chooserState}
+            state={chooserState()}
             value={value()}
             onChange={setValue}
+            onRetry={retry}
             locked={running}
             lockedReason="Während eine Antwort läuft, bleibt das Modell gleich."
           />

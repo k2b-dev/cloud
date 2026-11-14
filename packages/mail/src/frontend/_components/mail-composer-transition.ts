@@ -5,6 +5,8 @@ export type MailComposerTransition = "send" | "discard" | "handoff" | "recovery"
 type MailComposerTransitionReservation = Readonly<{
   kind: MailComposerTransition;
   token: symbol;
+  /** Where the focus was when the step began; it returns there when the step ends without a new place. */
+  focus: HTMLElement | null;
 }>;
 
 export const createMailComposerTransition = (): {
@@ -18,12 +20,25 @@ export const createMailComposerTransition = (): {
     active: () => current()?.kind ?? null,
     reserve: (kind) => {
       if (current()) return null;
-      const reservation = { kind, token: Symbol(kind) };
+      const active = typeof document === "undefined" ? null : document.activeElement;
+      const reservation = {
+        kind,
+        token: Symbol(kind),
+        focus: active !== null && active instanceof HTMLElement && active !== document.body ? active : null,
+      };
       setCurrent(reservation);
       return reservation;
     },
     release: (reservation) => {
-      if (current()?.token === reservation.token) setCurrent(null);
+      if (current()?.token !== reservation.token) return;
+      setCurrent(null);
+      // A dialog or a control that paused for the step dropped the focus; give it back once controls work again.
+      const { focus } = reservation;
+      if (focus)
+        queueMicrotask(() => {
+          const active = document.activeElement;
+          if (focus.isConnected && (!active || active === document.body)) focus.focus({ preventScroll: true });
+        });
     },
   };
 };

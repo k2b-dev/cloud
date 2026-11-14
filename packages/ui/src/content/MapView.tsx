@@ -261,7 +261,9 @@ export function MapView(props: MapViewProps): JSX.Element {
           style: currentStyle,
           ...fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING),
           attributionControl: false,
-          cooperativeGestures: true,
+          // A still map is a picture: no gestures, keyboard panning, or focusable canvas.
+          interactive: !props.still,
+          cooperativeGestures: !props.still,
           dragRotate: false,
           // Shift-drag box zoom needs MapLibre's own stylesheet for its rectangle and starts without an input event.
           boxZoom: false,
@@ -270,7 +272,7 @@ export function MapView(props: MapViewProps): JSX.Element {
           maxPitch: 0,
           bearing: 0,
           pitch: 0,
-          keyboard: true,
+          keyboard: !props.still,
           trackResize: false,
           // MapLibre's own gestures (keyboard and double-click zoom, inertia) follow the same choice as our buttons.
           // The value is read when the map starts; MapLibre keeps one setting for all maps on the page.
@@ -447,6 +449,7 @@ export function MapView(props: MapViewProps): JSX.Element {
       class={`k2b-map-view${props.class ? ` ${props.class}` : ""}`}
       style={{ height: `${props.height}px` }}
       data-state={state()}
+      data-still={props.still || undefined}
       role="region"
       aria-label={messages().mapLabel}
     >
@@ -463,7 +466,14 @@ export function MapView(props: MapViewProps): JSX.Element {
         }
       >
         {(value) => (
-          <MapGeometry {...props} frame={value()} boxStyle={boxStyle()} zoomFactor={zoomFactor()} onSelect={props.onSelect} interactive />
+          <MapGeometry
+            {...props}
+            frame={value()}
+            boxStyle={boxStyle()}
+            zoomFactor={zoomFactor()}
+            onSelect={props.onSelect}
+            interactive={!props.still}
+          />
         )}
       </Show>
       <div class="k2b-map-view__messages">
@@ -476,7 +486,17 @@ export function MapView(props: MapViewProps): JSX.Element {
               aria-hidden="true"
               class={state() === "loading" ? "ti ti-loader-2 k2b-spin" : state() === "error" ? "ti ti-alert-circle" : "ti ti-info-circle"}
             />
-            <span>{state() === "loading" ? messages().loading : state() === "error" ? messages().error : messages().noWebgl}</span>
+            <span>
+              {state() === "loading"
+                ? messages().loading
+                : state() === "error"
+                  ? props.still
+                    ? messages().errorShort
+                    : messages().error
+                  : props.still
+                    ? messages().noWebglShort
+                    : messages().noWebgl}
+            </span>
             <Show when={state() === "error"}>
               <Button size="xs" variant="text" onClick={() => (needsReload() ? window.location.reload() : void start())}>
                 {needsReload() ? messages().reload : messages().retry}
@@ -485,8 +505,8 @@ export function MapView(props: MapViewProps): JSX.Element {
           </div>
         </Show>
       </div>
-      <div class="k2b-map-view__controls">
-        <div class="k2b-map-view__zoom">
+      <div class="k2b-map-view__controls" hidden={props.still}>
+        <div class="k2b-map-view__zoom k2b-overlay-surface">
           <IconButton label={messages().zoomIn} tooltip={false} disabled={state() !== "ready"} onClick={() => zoom("in")}>
             <i class="ti ti-plus" aria-hidden="true" />
           </IconButton>
@@ -495,20 +515,16 @@ export function MapView(props: MapViewProps): JSX.Element {
           </IconButton>
         </div>
         <Show when={props.onLocate}>
-          <IconButton
-            class="k2b-map-view__locate"
-            tooltip={false}
-            label={messages().locate}
-            aria-pressed={!!props.ownLocation}
-            onClick={() => props.onLocate?.()}
-          >
-            <i class="ti ti-current-location" aria-hidden="true" />
-          </IconButton>
+          <div class="k2b-map-view__locate-group k2b-overlay-surface">
+            <IconButton tooltip={false} label={messages().locate} aria-pressed={!!props.ownLocation} onClick={() => props.onLocate?.()}>
+              <i class="ti ti-current-location" aria-hidden="true" />
+            </IconButton>
+          </div>
         </Show>
       </div>
       <div class="k2b-map-view__foot">
         <div ref={info} class="k2b-map-view__info" aria-live="polite">
-          <Show when={selectedId()} keyed>
+          <Show when={!props.still && selectedId()} keyed>
             {(_id) => {
               // Keep the tile's state and focus for this selection while its marker data refreshes.
               const initial = selected();

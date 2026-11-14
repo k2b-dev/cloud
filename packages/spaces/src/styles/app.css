@@ -304,42 +304,44 @@
 .k2b-ui .spaces-card-reactions :is(.k2b-reaction-bar__chip, .k2b-reaction-bar__add) { pointer-events: auto; }
 
 /* Kanban on the workspace's surface: no column trays, groups apart by space and a clear head (dot, name, count).
-   A card is an object you drag and open, so it may be a rounded surface (exception 1 of the white surface): calm
-   neutral, or tinted 6 % (10 % dark) by its first tag, whose name it always shows. State changes only paint. */
+   A card is an object you drag and open, so it is an island (layers and shadows, layer 1): a light 1 px edge and
+   the island shadow on the island surface, flat columns around it. Its first tag tints it 6 % (10 % dark), and the
+   tag's name always stands in the footer. State changes only paint. */
 .spaces-kanban-columns { --spaces-kanban-gap: 1rem; gap: var(--spaces-kanban-gap); }
 .spaces-kanban-column { width: 17.5rem; }
 .k2b-ui .spaces-kanban-card {
   /* KanbanBoard sets the first tag's colour inline on a tinted card. */
   --spaces-card-tag: transparent;
-  --spaces-card-fill: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-surface));
-  --spaces-card-fill-hover: color-mix(in srgb, var(--k2b-text) 7%, var(--k2b-surface));
-  --spaces-card-edge: transparent;
+  --spaces-card-fill: var(--k2b-island-surface);
+  --spaces-card-fill-hover: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-island-surface));
+  --spaces-card-edge: color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  --spaces-card-ring: 0 0 #0000;
   background: var(--spaces-card-fill);
-  box-shadow: inset 0 0 0 1px var(--spaces-card-edge);
+  box-shadow: inset 0 0 0 1px var(--spaces-card-edge), var(--spaces-card-ring), var(--k2b-island-shadow);
   transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
 }
 .k2b-ui .spaces-kanban-card[data-spaces-kanban-card-tint] {
-  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 6%, var(--k2b-surface));
-  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-surface));
-  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 12%, transparent);
-}
-.dark .k2b-ui .spaces-kanban-card,
-.k2b-ui.dark .spaces-kanban-card {
-  --spaces-card-fill: color-mix(in srgb, var(--k2b-text) 5%, var(--k2b-surface));
-  --spaces-card-fill-hover: color-mix(in srgb, var(--k2b-text) 8%, var(--k2b-surface));
+  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 6%, var(--k2b-island-surface));
+  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-island-surface));
+  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 20%, var(--k2b-surface));
 }
 .dark .k2b-ui .spaces-kanban-card[data-spaces-kanban-card-tint],
 .k2b-ui.dark .spaces-kanban-card[data-spaces-kanban-card-tint] {
-  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-surface));
-  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 14%, var(--k2b-surface));
-  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 16%, transparent);
+  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-island-surface));
+  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 14%, var(--k2b-island-surface));
+  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 24%, var(--k2b-surface));
 }
 .k2b-ui .spaces-kanban-card:hover { background: var(--spaces-card-fill-hover); }
 .k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="selected"] {
+  --spaces-card-ring: inset 0 0 0 1.5px var(--ui-app-accent-border);
   background: var(--spaces-card-fill-hover);
-  box-shadow: inset 0 0 0 1.5px var(--ui-app-accent-border);
 }
-.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="held"] { box-shadow: inset 0 0 0 1.5px var(--ui-app-accent-border); }
+.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="held"] { --spaces-card-ring: inset 0 0 0 1.5px var(--ui-app-accent-border); }
+/* The drag ghost is a clone of the card on the page; it floats on layer 3 with the float token, through the shadow
+   variable @k2b/stdlib (0.31.1) reads for the ghost. */
+body.k2b-ui > .spaces-kanban-card[aria-hidden="true"] {
+  --stdlib-dnd-ghost-shadow: var(--k2b-shadow-float);
+}
 .k2b-ui .spaces-kanban-card-title { color: var(--k2b-text); }
 .k2b-ui .spaces-kanban-card-status { background: color-mix(in srgb, var(--k2b-text) 6%, transparent); }
 @media (prefers-reduced-motion: reduce) { .k2b-ui :is(.spaces-kanban-card, .spaces-overview-activity-row) { transition: none; } }

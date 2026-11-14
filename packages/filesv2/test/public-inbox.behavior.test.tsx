@@ -9,6 +9,9 @@ let creates = 0,
   aborts = 0,
   nameLoads = 0;
 let commitFails = false;
+// Model publication succeeding before its receipt becomes unavailable. New start keys publish a renamed copy.
+let receiptUnavailable = false;
+const publishedKeys = new Set<string>();
 let commitStatus = 200;
 let startCode = "";
 let openSession = false;
@@ -40,14 +43,17 @@ mock.module("../src/frontend/public-client", () => ({
               creates++;
               startKey = input.json.idempotencyKey;
               if (rateLimitPhase === "start" && creates === rateLimitAt) return rateLimitResponse();
-              if (startCode) return Response.json({ code: startCode, message: "Upload changed" }, { status: 409 });
+              if (startCode)
+                return Response.json({ code: startCode, message: "Upload rejected" }, { status: startCode === "forbidden" ? 403 : 409 });
+              if (receiptUnavailable && publishedKeys.has(startKey))
+                return Response.json({ code: "receipt_unknown", message: "Receipt unavailable" }, { status: 409 });
               return Response.json({
                 id: "s1",
                 path: "file",
                 size: 0,
                 chunkSize: 8 * 1024 * 1024,
-                state: openSession ? "open" : "committed",
-                ...(openSession ? { url: "https://files.test/lease/s1" } : {}),
+                state: openSession && !publishedKeys.has(startKey) ? "open" : "committed",
+                ...(openSession && !publishedKeys.has(startKey) ? { url: "https://files.test/lease/s1" } : {}),
                 expires: "2099-01-01",
               });
             },
@@ -57,6 +63,10 @@ mock.module("../src/frontend/public-client", () => ({
                   commits++;
                   if (rateLimitPhase === "commit" && commits === rateLimitAt) return rateLimitResponse();
                   if (commitStatus !== 200) return Response.json({ message: "unavailable" }, { status: commitStatus });
+                  if (receiptUnavailable) {
+                    publishedKeys.add(startKey);
+                    return Response.json({ code: "upload_uncertain", message: "Receipt unavailable" }, { status: 409 });
+                  }
                   if (commitFails) throw new Error("lost commit response");
                   return Response.json({ name: "file.txt" });
                 },
@@ -115,6 +125,8 @@ afterEach(() => {
   nameLoads = 0;
   startKey = "";
   commitFails = false;
+  receiptUnavailable = false;
+  publishedKeys.clear();
   rateLimitPhase = "start";
   rateLimitAt = 0;
   retryAfter = "1";
@@ -225,14 +237,57 @@ test("public inbox keeps an open session after transient commit failure and drop
   expect(aborts).toBe(0);
   expect(resumeKeys()).toHaveLength(1);
   const original = startKey;
-  startCode = "upload_changed";
+  // A confirmed authorization rejection is final; an unavailable or mismatched receipt is not.
+  startCode = "forbidden";
   jest.advanceTimersByTime(2000);
   await settle(() => creates === 2 && !!dom.document.querySelector('[data-status="failed"]'));
   expect(creates).toBe(2);
   expect(startKey).toBe(original);
   expect(localStorage.length).toBe(0);
   expect(aborts).toBe(0);
-  expect(dom.document.querySelector(".filesv2-upload-row__reason")?.textContent).toBe("Upload changed");
+  expect(dom.document.querySelector(".filesv2-upload-row__reason")?.textContent).toBe("Upload rejected");
+});
+
+test("an unknown inbox receipt retries its reservation without publishing a duplicate", async () => {
+  const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  globalThis.fetch = Object.assign(
+    async () => Response.json({ id: "s1", root: "cloud", size: 0, chunkSize: 8 * 1024 * 1024, state: "open", received: 0 }),
+    { preconnect: nativeFetch.preconnect },
+  );
+  const { default: PublicInbox } = await import("../src/frontend/PublicInbox.island");
+  const dispose = render(() => <PublicInbox token="public-secret" share={share} />, dom.root);
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  openSession = true;
+  receiptUnavailable = true;
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, "files", { configurable: true, value: [new File([], "file.txt", { lastModified: 123 })] });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(() => commits === 1 && !!dom.document.querySelector('[data-status="failed"]'));
+  const original = startKey;
+  const retry = () => {
+    const button = dom.document.querySelector<HTMLButtonElement>('button[aria-label^="Try again:"]');
+    expect(button).not.toBeNull();
+    button!.click();
+  };
+  expect(publishedKeys.size).toBe(1);
+  retry();
+  await settle(() => creates === 2 && !!dom.document.querySelector('[data-status="failed"]'));
+  expect(publishedKeys.size).toBe(1);
+  expect(startKey).toBe(original);
+  expect(commits).toBe(1);
+  expect(resumeKeys()).toHaveLength(1);
+  // Once the receipt is recoverable, the same reservation replays the committed result.
+  receiptUnavailable = false;
+  retry();
+  await settle(() => !!dom.document.querySelector('[data-status="success"]'));
+  expect(startKey).toBe(original);
+  expect(publishedKeys.size).toBe(1);
+  expect(resumeKeys()).toHaveLength(0);
+  expect(aborts).toBe(0);
 });
 
 test.each(["start", "commit"] as const)("public inbox waits for Retry-After midway through 15 files (%s)", async (phase) => {

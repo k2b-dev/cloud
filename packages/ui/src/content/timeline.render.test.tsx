@@ -54,10 +54,10 @@ describe("Timeline", () => {
 
   test("names every item with its time, detail, day, and checkbox state, and makes exactly one a tab stop", () => {
     const html = decode(render("en"));
-    expect(html).toContain('aria-label="Release planning 4.2, 16:00 to 17:30, Room Schlei, Thursday, October 8"');
+    expect(html).toContain('aria-label="Release planning 4.2, 16:00–17:30, Room Schlei, Thursday, October 8"');
     expect(html).toContain('aria-label="Release planning slides, 15:30, Task, Thursday, October 8, open"');
     expect(html).toContain('aria-label="October onboarding workshop, All day, Thursday, October 8 – Friday, October 9"');
-    expect(html).toContain('aria-label="Server maintenance, 01:00 to 02:00, Friday, October 9"');
+    expect(html).toContain('aria-label="Server maintenance, 01:00–02:00, Friday, October 9"');
     expect(html.match(/tabindex="0"/g)).toHaveLength(1);
     // The next entry at or after now holds the tab stop.
     expect(html).toMatch(/data-entry-id="t1"[^>]*tabindex="0"/);
@@ -67,7 +67,7 @@ describe("Timeline", () => {
     const html = decode(render("de"));
     expect(html).toContain('aria-label="Zeitleiste"');
     expect(headings(html).slice(0, 4)).toEqual(["Mi., 7. Okt.", "Heute  Do., 8. Okt.", "Fr., 9. Okt.", "Sa., 10. Okt. – So., 11. Okt."]);
-    expect(html).toContain('aria-label="Release planning 4.2, 16:00 bis 17:30, Room Schlei, Donnerstag, 8. Oktober"');
+    expect(html).toContain('aria-label="Release planning 4.2, 16:00–17:30, Room Schlei, Donnerstag, 8. Oktober"');
     expect(html).toContain('aria-label="Release planning slides, 15:30, Task, Donnerstag, 8. Oktober, offen"');
     expect(html).toContain("Nacht · 22:00–06:00");
     expect(html).toContain("2,5 Std. frei");

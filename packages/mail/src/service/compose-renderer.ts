@@ -7,8 +7,10 @@ import { Tokenizer, TypeGuards } from "liquidjs";
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import sanitizeHtml from "sanitize-html";
+import type { DraftQuoteSource } from "../contracts";
 import {
   type ComposeFormattingWarning,
+  type ComposeSignature,
   composeTemplateVariables,
   draftEditableContentInputSchema,
   MAX_COMPOSE_FORMATTING_WARNINGS,
@@ -666,6 +668,60 @@ export const renderComposeTemplateSource = (
   return fillComposeTemplate(source, context, format === "markdown" ? "editable_markdown" : "plain");
 };
 
+/** Signature fragment for the editor, with the same template budget and no outgoing design. */
+export const renderComposeSignatureBlock = (params: {
+  signature: string | null;
+  context: ComposeRenderContext;
+  format: "plain" | "markdown";
+  logoAltText?: string;
+}): Result<ComposeSignature> => {
+  if (params.signature === null) return ok({ html: params.format === "plain" ? null : "", text: "" });
+  const valid = validateComposeTemplateSource(params.signature);
+  if (!valid.ok) return fail(composeRenderFailure("signatureFailed"));
+  const token = `MAILLOGO${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
+  const filled = fillComposeTemplate(params.signature, params.context, params.format, MAX_COMPOSE_RENDER_MS, token);
+  if (!filled.ok) return "composeRender" in filled.error ? filled : fail(composeRenderFailure("signatureFailed"));
+  const source = filled.data.replace(COMPOSE_SEGMENT_MARKS, "");
+  const alt = params.logoAltText ?? "";
+  if (sourceBytes(source) + source.split(token).length * sourceBytes(alt) > MAX_RENDERED_SOURCE_BYTES) {
+    return fail(composeRenderFailure("tooLarge"));
+  }
+  if (params.format === "plain") return ok({ html: null, text: source.replaceAll(token, () => alt).trimEnd() });
+  const complexity = validateMarkdownSourceComplexity(source);
+  if (!complexity.ok) return complexity;
+  const table = inspectTableStructure(source);
+  if (table.extraCells) return fail(composeRenderFailure("tableNeedsReview"));
+  if (table.missingSeparator) return fail(composeRenderFailure("tableSeparatorNeedsReview"));
+  try {
+    const fragment = mailBodyHtmlFragment(source, `MAILBLANKLINE${crypto.randomUUID().replaceAll("-", "")}`);
+    if (!fragment.ok) return fragment;
+    if ((fragment.data.match(/<[a-z][^>]*>/gi)?.length ?? 0) > MAX_EMAIL_HTML_ELEMENTS) {
+      return fail(composeRenderFailure("tooComplex"));
+    }
+    const html = sanitizeHtml(fragment.data, {
+      ...EMAIL_HTML_SANITIZE_OPTIONS,
+      transformTags: {
+        ...EMAIL_HTML_SANITIZE_OPTIONS.transformTags,
+        "*": (tagName, attribs) => ({
+          tagName,
+          attribs: Object.fromEntries(Object.entries(attribs).map(([key, value]) => [key, value.replaceAll(token, "")])),
+        }),
+      },
+      textFilter: (text) => text.replaceAll(token, () => alt.replace(/[&<>]/g, (char) => `&#${char.charCodeAt(0)};`)),
+    });
+    const text = convert(html, {
+      wordwrap: false,
+      selectors: [
+        { selector: "table", format: "dataTable", options: { uppercaseHeaderCells: false } },
+        { selector: "a", options: { hideLinkHrefIfSameAsText: true } },
+      ],
+    }).trimEnd();
+    return ok({ html, text });
+  } catch {
+    return fail(composeRenderFailure("conversionFailed"));
+  }
+};
+
 const renderComposeTemplateSegments = (
   source: string,
   context: ComposeRenderContext,
@@ -723,6 +779,8 @@ export const renderComposeContent = (params: {
   context: ComposeRenderContext;
   renderLiquid: boolean;
   signature?: string | null;
+  quoteSource?: DraftQuoteSource | null;
+  sourceQuote?: string | null;
   logo?: { src: string; altText: string; displayWidth: number; pixelWidth: number; pixelHeight: number; byteLength: number } | null;
 }): Result<RenderedComposeContent> => {
   // Enforce the draft input budget before template parsing, Markdown or CSS work.
@@ -736,6 +794,7 @@ export const renderComposeContent = (params: {
     : ok(params.body.replace(COMPOSE_SEGMENT_MARKS, ""));
   if (!renderedSource.ok) return renderedSource;
   let source = renderedSource.data;
+  const sourceQuote = params.quoteSource ? (params.sourceQuote?.replace(COMPOSE_SEGMENT_MARKS, "") ?? "") : "";
   let parts: { reply: string; signature: string; history: string } | null = null;
   if (params.signature !== null && params.signature !== undefined) {
     const valid = validateComposeTemplateSource(params.signature);
@@ -744,8 +803,15 @@ export const renderComposeContent = (params: {
     const signature = fillComposeTemplate(params.signature, context, params.format, Math.max(0, budget.remainingMs), token);
     budget.remainingMs -= performance.now() - start;
     if (!signature.ok) return "composeRender" in signature.error ? signature : fail(composeRenderFailure("signatureFailed"));
-    parts = { ...splitQuotedHistory(source), signature: signature.data.replace(COMPOSE_SEGMENT_MARKS, "") };
+    const history = splitQuotedHistory(source);
+    parts = {
+      reply: history.reply,
+      signature: signature.data.replace(COMPOSE_SEGMENT_MARKS, ""),
+      history: [history.history, sourceQuote].filter(Boolean).join("\n\n"),
+    };
     source = [parts.reply, parts.signature, parts.history].filter(Boolean).join("\n\n");
+  } else if (sourceQuote) {
+    source = [source, sourceQuote].filter(Boolean).join("\n\n");
   }
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
   // Only intact tokens may reach replacement; transformed or truncated markers must never be sent.

@@ -77,6 +77,18 @@ test("a local table and its formulas render a chart preview without a server", a
     expect(local.diagnostics).toEqual([]);
     expect(local.blocks[0]!.html).toContain("50");
     expect(local.blocks[0]!.html).toContain("100");
+
+    // A selection inside the chart shows its source only while the editor has focus.
+    editor!.dispatch({ selection: { anchor: markdown.indexOf("type: bar") } });
+    expect(dom.root.querySelector(".cm-query-block-widget")).not.toBeNull();
+    editor!.focus();
+    await Bun.sleep(30);
+    // The person moves the caret into the chart's source.
+    editor!.dispatch({ selection: { anchor: markdown.indexOf("type: bar") }, userEvent: "select" });
+    expect(dom.root.querySelector(".cm-query-block-widget")).toBeNull();
+    editor!.contentDOM.blur();
+    await Bun.sleep(30);
+    expect(dom.root.querySelector(".cm-query-block-widget")).not.toBeNull();
   } finally {
     dispose();
     dom.cleanup();

@@ -5,10 +5,22 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-05
+updated: 2026-11-08
 ---
 
 # Deprecations and migrations
+
+## Saved signed bar rows render again
+
+Bar charts saved with `layout: "rows"` and negative values under Cloud 0.69
+render again. Cloud 0.70 had incorrectly rejected them. Upgrade and
+reopen the saved chart; no data migration or JSON edits are required.
+
+Signed rows retain source order and draw around zero. Ordered categories,
+reference lines, per-bar colors, explicit value visibility and axis settings
+also keep the original row drawing. Plain unordered nonnegative rows keep
+their ranked presentation. Ranking options (`share`, `limit`, `tone`) require
+nonnegative data; the schema rejects them on signed rows with a clear message.
 
 ## Geo uses a global budget
 
@@ -375,6 +387,40 @@ a new send attempt with a new idempotency key. There is no automatic retry or
 new approval. If a signature uses the current time and keeps changing, edit it
 before retrying. For an unknown network outcome, use the existing outcome check
 and retry identity instead of treating it as this confirmed conflict.
+
+## Mail safety review adds a missing-subject warning
+
+Mail adds `missing_subject` to the warning ID enum returned by
+`draft.send.review` and accepted by `draft.send.safetyApproval.warningIds`.
+The approval array's `maxItems` increases from 6 to 7, as does the shared
+complete message review's warning limit. Empty and whitespace-only
+subjects trigger the warning, including replies and forwards whose subject was
+cleared. `Re:` and `Fwd:` alone remain nonempty subjects.
+
+This is a coordinated pre-1.0 contract change under the existing operation IDs.
+Consumers that validate the output enum as a closed set must update their
+schema before using the new Mail release. Refresh generated or frozen
+manifests for these two operations. Pending calls bound to their previous
+schema hashes must be prepared again.
+
+For user-authored drafts, callers of `draft.send` must support confirming
+`missing_subject` when sending without a subject. Use the existing safety
+approval flow:
+
+1. Read `draft.send.review` as the sending actor for the current draft revision
+   and sender identity. Display its warnings for explicit acceptance.
+2. Copy `contentHash` into `expectedContentHash`. After acceptance, pass
+   `safetyApproval` with the review's `revision`, `fingerprint`, and all returned
+   warning IDs in `warningIds`, including `missing_subject`.
+3. If the draft or its review changes, read and present a fresh review before
+   approving again. A stale fingerprint, revision, or incomplete warning set
+   is rejected.
+
+The browser composer and Mail CLI already copy all returned warning IDs. The
+CLI asks callers to pass `--approve-safety` to accept the current warnings.
+Mail-generated automatic replies and workflow drafts retain their existing
+advisory treatment; this change adds no interactive approval to automations.
+No database migration or per-warning setting is required.
 
 ## Pulse requires ClickHouse and starts empty
 

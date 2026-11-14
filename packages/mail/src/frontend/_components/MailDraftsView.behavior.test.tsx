@@ -24,6 +24,7 @@ const draft = (id: string, subject: string): DraftFolderItem => ({
   revision: 7,
   attachmentCount: 0,
   bodyPreview: "Invented draft text.",
+  suggestion: false,
   createdByDisplayName: "Ada Example",
   updatedAt: "2026-10-14T09:00:00.000Z",
 });
@@ -122,9 +123,8 @@ test.skipIf(isServer)("the row's … menu continues a draft or deletes it after 
     view.row("Drf001")!.querySelector<HTMLElement>(".k2b-dropdown__trigger")!.click();
     await waitFor(() => Boolean(view.menuItem("Delete draft")));
     const open = view.menuItem("Continue editing")!;
-    expect(open.closest("a")?.getAttribute("href") ?? open.getAttribute("href")).toBe(
-      "/app/mail/Box001/compose/Drf001?return=%2Fapp%2Fmail%2FBox001%3Ffolder%3DDrafts1",
-    );
+    // A new message continues as a window over this folder (`?draft=`), as a click on the row does.
+    expect(open.closest("a")?.getAttribute("href") ?? open.getAttribute("href")).toBe("/app/mail/Box001?folder=Drafts1&draft=Drf001");
     view.menuItem("Delete draft")!.click();
     await waitFor(() => view.requests.length === 1);
     expect(view.confirm).toHaveBeenCalledTimes(1);

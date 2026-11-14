@@ -87,7 +87,12 @@ const inLocale = (render: () => JSX.Element) =>
 
 const rail = () =>
   `<aside class="layout-rail flex w-14 shrink-0 flex-col" style="height:20rem"><nav class="flex min-h-0 flex-1 flex-col items-center gap-1">${inLocale(
-    () => createComponent(RailApps, { apps, settings: { revision: 0, visibility: {}, shortcuts: [] }, currentPath: "/app/chat" }),
+    () =>
+      createComponent(RailApps, {
+        apps,
+        settings: { revision: 0, visibility: {}, shortcuts: [], showNames: true },
+        currentPath: "/app/chat",
+      }),
   )}</nav></aside>`;
 const grid = (surface: "panel" | "sheet") =>
   inLocale(() => createComponent(AppLaunchpadPanel, { apps, legalLinks: [], close: () => {}, surface }));

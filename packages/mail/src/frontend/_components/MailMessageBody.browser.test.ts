@@ -168,7 +168,13 @@ const withOpenedMessage = async (
           html,
           plainText: null,
           attachments,
-          remoteContent: { imageIds: remoteIds, allowedByRule, sender: "sender@example.com", domain: "example.com" },
+          remoteContent: {
+            imageIds: remoteIds,
+            allowedByRule,
+            allowRules: allowedByRule ? [{ id: "00000000-0000-4000-8000-0000000000aa", scope: "sender", value: "sender@example.com" }] : [],
+            sender: "sender@example.com",
+            domain: "example.com",
+          },
         }),
       {
         html: options.html ?? html,
@@ -455,7 +461,13 @@ describe("HTML mail message frame", () => {
       await page.evaluate(
         (remoteIds) =>
           window.updateMailMessageBody({
-            remoteContent: { imageIds: remoteIds, allowedByRule: true, sender: "sender@example.com", domain: "example.com" },
+            remoteContent: {
+              imageIds: remoteIds,
+              allowedByRule: true,
+              allowRules: [{ id: "00000000-0000-4000-8000-0000000000aa", scope: "sender", value: "sender@example.com" }],
+              sender: "sender@example.com",
+              domain: "example.com",
+            },
           }),
         remoteIds,
       );
@@ -468,8 +480,8 @@ describe("HTML mail message frame", () => {
   test("shows allowed remote and inline images without reloading the frame", async () => {
     await withOpenedMessage(true, async ({ page, frame, errors }) => {
       await visibleImages(frame, 7);
-      // The failed image keeps the notice; wait until every remote request settled.
-      await page.waitForSelector('button:has-text("Load images"):not([disabled])');
+      // The failed image leaves a retry in the row; wait until every remote request settled.
+      await page.waitForSelector('button:has-text("Try again")');
       const trace = await page.evaluate(() => window.mailMessageBodyTrace);
 
       expect(await imageStates(frame)).toEqual({
@@ -495,7 +507,7 @@ describe("HTML mail message frame", () => {
 
       await page.getByRole("button", { name: "Load images" }).click();
       await visibleImages(frame, 7);
-      await page.waitForSelector('button:has-text("Load images"):not([disabled])');
+      await page.waitForSelector('button:has-text("Try again")');
       const trace = await page.evaluate(() => window.mailMessageBodyTrace);
 
       expect((await imageStates(frame))["remote-5"]).toBeFalse();
@@ -1219,7 +1231,7 @@ describe("plain mail message copy", () => {
           plainText:
             "Hello Sam,\n\nthe meeting moves to Thursday.\nRoom 4 stays booked: https://example.com/rooms/4\n\nOn Monday, Sam Example wrote:\n> Is the meeting still on?",
           attachments: [],
-          remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+          remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
         }),
       );
       await page.locator("details > summary").click();

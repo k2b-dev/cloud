@@ -438,6 +438,7 @@ export default function MarkupOverlay(props: MarkupOverlayProps) {
                   onPointerDown={(event) => startResize(handle.id, event)}
                   onLostPointerCapture={resetGesture}
                 >
+                  {/* shadow-tokens: allow a resize handle on a photo needs a halo to stay visible on any picture */}
                   <span class="h-3 w-3 rounded-full border border-white bg-blue-500 shadow-sm" aria-hidden="true" />
                 </button>
               )}

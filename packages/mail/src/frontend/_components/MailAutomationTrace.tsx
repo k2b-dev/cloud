@@ -87,7 +87,10 @@ export default function MailAutomationTrace(props: {
   const did = (item: AutomationLogItem) => item.effects.map((effect) => formatLogEffect(effect, t())).join(", ");
   const sentence = (item: AutomationLogItem) => {
     if (item.outcome === "failed") return t().traceFailed({ rule: ruleName(item), time: time(item) });
-    if (item.outcome === "skipped") return t().traceSkipped({ rule: ruleName(item) });
+    if (item.outcome === "skipped")
+      return item.reasons.some((reason) => reason.kind === "reply_draft_occupied")
+        ? t().traceReplyDraftSkipped({ rule: ruleName(item) })
+        : t().traceSkipped({ rule: ruleName(item) });
     if (item.outcome === "nobody") return t().traceNobody({ rule: ruleName(item), time: time(item) });
     if (item.by.kind === "person") return t().tracePerson({ name: item.by.name, time: time(item), what: did(item) });
     return t().traceDid({ rule: ruleName(item), time: time(item), what: did(item) });

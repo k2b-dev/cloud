@@ -7,7 +7,13 @@ import { Button, Disclosure, Dropdown, MarkdownView, NoticeCard, Placeholder, pr
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { taskTab, workspaceSelectionHref } from "../artifacts/workspace-state";
-import { type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
+import {
+  type AssistantLiveHub,
+  type AssistantLiveInvalidation,
+  AssistantLiveProvider,
+  matchesAssistantInvalidation,
+  useAssistantLive,
+} from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
 import { assistantTaskTitle, formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-copy";
@@ -74,6 +80,21 @@ function TaskScheduleLine(props: { task: AssistantChatTask; now: Date }) {
     </span>
   );
 }
+
+/** All routines of a chat in a dialog, where the chat has no workspace tab for them. */
+export const openAssistantTasksDialog = (options: {
+  chatId: string;
+  live: AssistantLiveHub;
+  onOpenRun: (taskId: string, occurrenceId: string) => void;
+}) =>
+  prompts.dialog<void>(
+    () => (
+      <AssistantLiveProvider value={options.live}>
+        <AssistantTasksView chatId={options.chatId} onOpenRun={options.onOpenRun} />
+      </AssistantLiveProvider>
+    ),
+    { title: assistantBrowserText("Routines"), icon: "ti ti-calendar-time", size: "large" },
+  );
 
 export function AssistantTasksView(props: {
   chatId: string;

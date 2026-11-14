@@ -14,6 +14,8 @@ export default function GuestLoginForm(props: {
   token?: string;
   allowSelfRegistration: boolean;
   category?: "guest" | "login";
+  /** A shared workstation: the page remembers neither the address nor the method. */
+  forget?: boolean;
 }) {
   const locale = useLocale();
   const t = () => authMessages.resolve([locale()]).t;
@@ -54,8 +56,10 @@ export default function GuestLoginForm(props: {
     onSuccess: (user) => {
       // A clicked mail link has no category prop; remember the verified account's category.
       const category = accountCategory(user);
-      cookies.writeCookie("login_method", category);
-      if (category === "login") cookies.writeCookie(LOGIN_EMAIL_SIGN_IN_COOKIE, "1");
+      if (!props.forget) {
+        cookies.writeCookie("login_method", category);
+        if (category === "login") cookies.writeCookie(LOGIN_EMAIL_SIGN_IN_COOKIE, "1");
+      }
       window.location.href = afterSignInHref(props.redirectTo);
     },
   });
@@ -120,7 +124,7 @@ export default function GuestLoginForm(props: {
           icon="ti ti-mail"
           value={email}
           onValueChange={setEmail}
-          autocomplete="username"
+          autocomplete={props.forget ? "off" : "username"}
         />
 
         {error() && (

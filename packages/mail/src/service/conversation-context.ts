@@ -10,7 +10,9 @@ import {
   type RelatedConversationSummary,
   type RelatedMailPage,
   relatedConversationReasonSchema,
+  type SenderConversationsPage,
 } from "../contracts";
+import { conversationVisibleTo, requireMailboxAccess, requireVisibleConversation } from "./access";
 import {
   type AppIntegrationFailure,
   type AppIntegrationRequest,
@@ -471,4 +473,63 @@ export const listRelatedConversations = async (params: {
       reasons: z.array(relatedConversationReasonSchema).min(1).max(6).parse(row.reasons),
     })),
   );
+};
+
+/** Exact From history; recipients and subject relations never establish a sender match. */
+export const listSenderConversations = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  email: string;
+  excludeConversationId?: string;
+  limit?: number;
+}): Promise<Result<SenderConversationsPage>> => {
+  const email = z.email().max(320).safeParse(params.email.trim());
+  if (!email.success) return fail(err.badInput("Invalid sender email address"));
+  const access = await requireMailboxAccess(params.context, params.mailboxId, "read");
+  if (!access.ok) return access;
+  if (params.excludeConversationId) {
+    const visible = await requireVisibleConversation(access.data, params.excludeConversationId);
+    if (!visible.ok) return visible;
+  }
+  const limit = Math.min(Math.max(params.limit ?? 5, 1), 5);
+  const rows = await sql<
+    Array<{
+      total: number;
+      items: Array<{ id: string; subject: string; participantSummary: string; latestMessageAt: string; preview: string | null }>;
+    }>
+  >`
+    WITH matching AS MATERIALIZED (
+      SELECT conversation.id, conversation.subject, conversation.participant_summary, conversation.latest_message_at
+      FROM mail.conversations conversation
+      WHERE conversation.mailbox_id = ${params.mailboxId}::uuid
+        AND (${params.excludeConversationId ?? null}::uuid IS NULL OR conversation.id <> ${params.excludeConversationId ?? null}::uuid)
+        AND ${conversationVisibleTo(access.data, sql`conversation.id`)}
+        AND EXISTS (
+          SELECT 1 FROM mail.conversation_messages link
+          JOIN mail.message_addresses address ON address.message_id = link.message_id
+          WHERE link.conversation_id = conversation.id
+            AND address.role = 'from' AND address.normalized_email = ${email.data.toLowerCase()}
+            AND EXISTS (SELECT 1 FROM mail.message_placements placement
+              WHERE placement.message_id = link.message_id AND placement.deleted_at IS NULL)
+        )
+    ), page AS (
+      SELECT * FROM matching ORDER BY latest_message_at DESC, id DESC LIMIT ${limit}
+    )
+    SELECT (SELECT count(*)::int FROM matching) AS total,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'id', page.id, 'subject', page.subject, 'participantSummary', page.participant_summary,
+        'latestMessageAt', to_char(page.latest_message_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+        'preview', latest.preview
+      ) ORDER BY page.latest_message_at DESC, page.id DESC)
+      FROM page LEFT JOIN LATERAL (
+        SELECT NULLIF(LEFT(BTRIM(COALESCE(message.plain_text, '')), 240), '') AS preview
+        FROM mail.conversation_messages link
+        JOIN mail.message_contents message ON message.id = link.message_id
+        WHERE link.conversation_id = page.id
+          AND EXISTS (SELECT 1 FROM mail.message_placements placement
+            WHERE placement.message_id = message.id AND placement.deleted_at IS NULL)
+        ORDER BY message.internal_date DESC, message.id DESC LIMIT 1
+      ) latest ON true), '[]'::jsonb) AS items
+  `;
+  return ok(rows[0] ?? { total: 0, items: [] });
 };

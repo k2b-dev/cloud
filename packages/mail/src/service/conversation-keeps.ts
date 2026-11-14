@@ -36,8 +36,7 @@ const loadKeep = async (db: SqlClient, conversationId: string): Promise<Omit<Con
     FROM mail.conversation_keeps keep
     LEFT JOIN auth.users actor_user ON keep.kept_by_kind = 'user' AND actor_user.id = keep.kept_by_id
     LEFT JOIN auth.service_accounts actor_service ON keep.kept_by_kind = 'service_account' AND actor_service.id = keep.kept_by_id
-    LEFT JOIN workflows.version actor_version ON keep.kept_by_kind = 'workflow' AND actor_version.id = keep.kept_by_id
-    LEFT JOIN workflows.workflow actor_workflow ON actor_workflow.id = actor_version.workflow_id
+    LEFT JOIN mail.workflow_source_names actor_workflow ON keep.kept_by_kind = 'workflow' AND actor_workflow.version_id = keep.kept_by_id
     WHERE keep.conversation_id = ${conversationId}::uuid
   `;
   return row

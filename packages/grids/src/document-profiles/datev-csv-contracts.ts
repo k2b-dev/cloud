@@ -10,32 +10,32 @@ const identity = z
   .refine((value) => value.trim() === value, "Identity must not have surrounding whitespace.");
 export const DatevPostingSchema = z
   .object({
-    businessId: identity,
-    entryId: identity,
-    amount: z.string(),
-    direction: z.enum(["S", "H"]),
-    account: z.string(),
-    counterAccount: z.string(),
-    documentDate: z.string(),
-    documentNumber: z.string(),
-    text: z.string().optional(),
-    taxKey: z.string().optional(),
-    costCenter1: z.string().optional(),
-    costCenter2: z.string().optional(),
+    businessId: identity.describe("Stable business transaction identity for duplicate-export protection."),
+    entryId: identity.describe("Stable entry identity within its business transaction."),
+    amount: z.string().describe("Exact positive decimal amount."),
+    direction: z.enum(["S", "H"]).describe("Debit S or credit H."),
+    account: z.string().describe("Ledger account."),
+    counterAccount: z.string().describe("Counter-account."),
+    documentDate: z.string().describe("Document calendar date."),
+    documentNumber: z.string().describe("Document number."),
+    text: z.string().optional().describe("Posting text."),
+    taxKey: z.string().optional().describe("Tax code."),
+    costCenter1: z.string().optional().describe("First cost center."),
+    costCenter2: z.string().optional().describe("Second cost center."),
   })
   .strict();
 
 export const DatevHeaderSchema = z
   .object({
-    destinationKey: identity,
-    consultantNumber: z.string(),
-    clientNumber: z.string(),
-    fiscalYearStart: z.string(),
-    accountLength: z.number(),
-    periodStart: z.string(),
-    periodEnd: z.string(),
-    label: z.string(),
-    finalize: z.boolean(),
+    destinationKey: identity.describe("Stable accounting or bank destination identity."),
+    consultantNumber: z.string().describe("DATEV consultant number."),
+    clientNumber: z.string().describe("DATEV client number."),
+    fiscalYearStart: z.string().describe("Fiscal-year start, YYYY-MM-DD."),
+    accountLength: z.number().describe("DATEV account number length."),
+    periodStart: z.string().describe("Booking period start, YYYY-MM-DD."),
+    periodEnd: z.string().describe("Booking period end, YYYY-MM-DD."),
+    label: z.string().describe("Output label."),
+    finalize: z.boolean().describe("Whether DATEV marks the booking batch finalized."),
   })
   .strict()
   .superRefine((input, ctx) => {

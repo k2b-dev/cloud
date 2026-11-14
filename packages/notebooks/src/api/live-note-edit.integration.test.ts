@@ -50,6 +50,34 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
     const { notebooksService } = await import("../service");
     const { createYjsProvider } = await import("../frontend/lib/yjs/provider");
     const { yjsSnapshotWorker } = await import("../service/yjs-snapshot-worker");
+    let holdDelivery = false;
+    const deliveryHeld = Promise.withResolvers<void>();
+    const releaseDelivery = Promise.withResolvers<void>();
+    const { notebooksTextLog } = await import("../service/yjs-sync");
+    const makeTopic = notebooksTextLog.topic;
+    const admissions: string[] = [];
+    spyOn(notebooksTextLog, "topic").mockImplementation(() => {
+      const topic = makeTopic();
+      const hub = topic.hub;
+      return {
+        ...topic,
+        hub: (options) => {
+          const source = hub(options);
+          return {
+            ...source,
+            subscribe: async function* (input) {
+              for await (const event of source.subscribe(input)) {
+                if (holdDelivery) {
+                  deliveryHeld.resolve();
+                  await releaseDelivery.promise;
+                }
+                yield event;
+              }
+            },
+          };
+        },
+      };
+    });
     const { drainNotebookConnections } = await import("../ws");
     spyOn(yjsSnapshotWorker, "queueSnapshotSave").mockResolvedValue(undefined);
     spyOn(server, "guardAppAccessSocket").mockImplementation(async (_c, _appId, events) => events);
@@ -91,25 +119,8 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
     const awareness = new Awareness(doc);
     const http = new Hono().route("/api/notebooks", app);
     const listener = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: http.fetch, websocket });
+    let cleanupAdmission = () => {};
     let provider: ReturnType<typeof createYjsProvider> | undefined;
-    let holdDelivery = false;
-    const deliveryHeld = Promise.withResolvers<void>();
-    const releaseDelivery = Promise.withResolvers<void>();
-    const deliver = notebooksService.note.deliverAtRestoreRevision;
-    spyOn(notebooksService.note, "deliverAtRestoreRevision").mockImplementation(async (input) => {
-      if (holdDelivery) {
-        deliveryHeld.resolve();
-        await releaseDelivery.promise;
-      }
-      return deliver(input);
-    });
-    const admissions: string[] = [];
-    const accept = notebooksService.note.acceptYjsUpdate;
-    spyOn(notebooksService.note, "acceptYjsUpdate").mockImplementation(async (input) => {
-      const result = await accept(input);
-      admissions.push(result.status);
-      return result;
-    });
     const waitFor = async (predicate: () => boolean) => {
       const deadline = performance.now() + 5_000;
       while (!predicate() && performance.now() < deadline) await Bun.sleep(10);
@@ -126,6 +137,15 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
       const created = await notebooksService.note.create({ data: { notebookId, contentMd: "# Plan\n\nfirst\n" }, creatorId: user.id });
       if (!created.ok) throw new Error(created.error);
       const noteId = created.data.id;
+      const admissionAbort = new AbortController();
+      const admissionStream = makeTopic().hub({ tenantId: noteId });
+      // Retained publications are the room's acknowledgement boundary.
+      void (async () => {
+        for await (const event of admissionStream.subscribe({ after: makeTopic().cursorAt(0), signal: admissionAbort.signal })) {
+          if (event.data.kind === "sync" && event.data.originPeerId) admissions.push("accepted");
+        }
+      })().catch(() => {});
+      cleanupAdmission = () => admissionAbort.abort();
       const path = `/${notebookShortId}/notes/${created.data.shortId}/content`;
       const headers = { authorization: "Bearer live-edit", "content-type": "application/json" };
       const read = async () => {
@@ -215,6 +235,7 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
       }
     } finally {
       releaseDelivery.resolve();
+      cleanupAdmission();
       provider?.dispose();
       await drainNotebookConnections();
       await listener.stop(true);

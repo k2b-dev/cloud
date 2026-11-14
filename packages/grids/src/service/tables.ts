@@ -6,7 +6,7 @@ import { normalizeRefKey } from "../ref-syntax";
 import { logAudit, type SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 import { degradeForTableSchemaChange, refreshForTableSchemaChange } from "./federated-tables";
-import { gridsLive, publishMetadataChange } from "./live";
+import { gridsLive, gridsLiveKey, publishMetadataChange } from "./live";
 import { writeNamedResource } from "./named-resource-conflict";
 import { insertWithShortId } from "./short-id";
 import type { CreateTableInput, Table, UpdateTableInput } from "./types";
@@ -387,6 +387,7 @@ export const remove = async (id: string, actorId: string | null, locale?: string
     if (changed.count === 0) return;
     await logAudit({ baseId: existing.baseId, tableId: id, userId: actorId, action: "deleted" }, tx);
     await publishMetadataChange(tx, existing.baseId, "table.deleted");
+    await gridsLive.publish(tx, { key: gridsLiveKey.table(id), access: true });
     await publishGridsLifecycleEvent(tx, "table.deleted", existing.baseId, id);
   });
   gridsLive.wake();

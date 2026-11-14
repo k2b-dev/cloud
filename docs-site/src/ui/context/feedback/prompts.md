@@ -32,7 +32,7 @@ import {
 | Method | Result | Use |
 | --- | --- | --- |
 | `prompts.alert(content, options)` | resolves when closed | Information that requires acknowledgement. |
-| `prompts.success(content, options)` | resolves when closed | Successful result that requires acknowledgement. |
+| `prompts.success(content, options)` | resolves when closed | Successful result that requires acknowledgement. With `celebrate: true`, a finished result such as an issued invoice: the header draws its check once when the dialog opens; see [Celebrate a finished result](#celebrate-a-finished-result). |
 | `prompts.error(content, options)` | resolves when closed | Failure details that must be read. |
 | `prompts.confirm(content, options)` | `boolean \| undefined` | One confirm-or-cancel decision. |
 | `prompts.prompt(content, defaultValue, options)` | `string \| null` | One text value. |
@@ -47,7 +47,7 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 
 | Property | Purpose |
 | --- | --- |
-| `title`, `icon` | Name the dialog and add a muted Tabler icon. The header sits flat on the dialog surface like the `PanelDialog` header, and a long title wraps instead of being cut off. |
+| `title`, `icon` | Name the dialog and add a muted Tabler icon. The header sits flat on the dialog surface like the `PanelDialog` header. A long title stays on one line and ends with an ellipsis; the native hint shows all of it. |
 | `confirmText`, `cancelText` | Override action labels. `cancelText: false` hides the cancel button in `prompts.form`. |
 | `confirmationPhrase` | Requires an exact typed phrase before `prompts.confirm` can confirm. |
 | `variant` | Selects `primary`, `success`, `warning`, or `danger` treatment. `success`, `warning`, and `danger` also give the prompt that [dialog tone](/en/ui/layout/panel-dialog#tone): a 2 px edge in its colour and the tone's icon instead of `icon`. `success` and `danger` colour the action button too; `warning` keeps a primary button, because it asks for care, not for a destructive act. `prompts.success` has the success tone and `prompts.error` the danger tone. |
@@ -58,6 +58,14 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 | `history` | Back closes the prompt like Cancel instead of leaving the page; see [Close dialogs with Back](#close-dialogs-with-back). `prompts.form` does not take it. |
 
 Use `surface: "bare"` with `header: false` only when the custom content supplies complete visible panel structure and a close control.
+
+### Celebrate a finished result
+
+`prompts.success` takes `celebrate: true` for a success that ends a piece of work for good, such as an issued invoice or a created SEPA file. The header draws its check once when the dialog opens: the ring closes, the check follows, and the mark springs up a little, in under a second. The check takes the tone icon's place at the same size and colour, nothing else moves, and screen readers hear the same tone and title. With reduced motion, the check is finished at once. Leave it off for routine results; the same option exists for [toasts](/en/ui/feedback/toast#celebrate-a-finished-result) and a success [PanelDialog](/en/ui/layout/panel-dialog#tone).
+
+```ts
+await prompts.success("The invoice is ready to send.", { title: "Invoice issued", celebrate: true });
+```
 
 ## Warning confirmation
 
@@ -246,6 +254,10 @@ interface ConfirmOptions extends DialogOptions {
   confirmationPhrase?: string;
 }
 
+type SuccessDialogOptions = Omit<DialogOptions, "variant"> & {
+  celebrate?: boolean;
+};
+
 type PromptSearchInput = {
   query: string; abortSignal: AbortSignal;
 };
@@ -419,6 +431,17 @@ entry again, and the returned promise settles only after that, so the caller
 can navigate or open the next dialog right away. Dialogs closed together leave
 the history in one step. After a reload, a leftover entry never reopens a
 dialog or its transient state.
+
+A dialog the URL can name passes `historyUrl` as well, such as the page
+address with `?map=<id>`. Its entry then carries that address, and Back or
+closing returns to the page entry beneath with its own address. After a reload
+on that entry, the host may open the same dialog again with the same
+`historyUrl`; the dialog then resumes the entry instead of adding one, so one
+Back still leaves the dialog. `MapTile` works this way; see
+[MapTile and MapDialog](/en/ui/content/map-dialog#back-and-reload). Like a
+same-address traversal, the move between the dialog's entry and the page
+beneath does not reach application `popstate` listeners when the browser
+supports the Navigation API.
 
 Application `popstate` listeners do not receive a Back or Forward that keeps
 the address and only moves between dialog or sheet entries and the page beneath

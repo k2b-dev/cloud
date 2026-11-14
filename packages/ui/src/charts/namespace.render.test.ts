@@ -7,7 +7,10 @@ import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { chartFixtures } from "../../test/charts/fixtures";
 import type { ChartKindProps } from "../content/Chart";
+// Load this leaf before the SVG namespace: a map re-export must work in either import order.
+import { map } from "./core/map";
 import { chartKinds } from "./core/registry";
+import { charts } from "./core/svg";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-namespace-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
@@ -32,6 +35,8 @@ describe("Chart namespace", () => {
 
 /** Typechecked without invoking hooks outside a Solid owner. */
 function namespaceTypes() {
+  Chart.Funnel({ data: [{ label: "Visit", value: 42 }] });
+  Chart.Hbar({ series: ["Visits"], rows: [{ label: "Mail", values: [42] }] });
   Chart.Pie({ data: [{ label: "Queue", value: 4 }] });
   Chart.Line({ series: [{ data: [{ x: 1, y: 2 }] }] });
   // @ts-expect-error Pie takes slices, not Cartesian series.
@@ -43,9 +48,38 @@ function namespaceTypes() {
 }
 test("namespace props stay narrowed", () => expect(typeof namespaceTypes).toBe("function"));
 
+test("explicit bubble locale wins over the provider in the real Solid SVG", async () => {
+  const { LocaleProvider } = await import("../intl/locale");
+  const draw = (provider: string, locale?: string) =>
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: provider,
+        get children() {
+          return createComponent(Chart.Bubble, {
+            groups: ["North"],
+            data: [{ label: "A", group: "North", x: 1200, y: 2400, size: 3600 }],
+            xLabel: "X",
+            yLabel: "Y",
+            averages: true,
+            locale,
+          });
+        },
+      }),
+    );
+  expect(draw("en", "de-DE")).toContain("Ungewichteter Durchschnitt");
+  expect(draw("en", "de-DE")).toContain("1.200");
+  expect(draw("de-DE", "en")).toContain("Unweighted average");
+  expect(draw("de-DE", "en")).toContain("1,200");
+  expect(draw("de-DE")).toContain("Ungewichteter Durchschnitt");
+});
+
 test("Calendar is the named calendar heatmap component", () => {
   const props = { scale: "sequential" as const, data: [["2026-11-02", 5]] as [string, number][] };
   expect(renderToString(() => createComponent(Chart.Calendar, props))).toBe(
     renderToString(() => createComponent(Chart, { kind: "heatmap", layout: "calendar", ...props })),
   );
+});
+
+test("the map leaf and existing SVG namespace share the same renderer", () => {
+  expect(charts.map).toBe(map);
 });

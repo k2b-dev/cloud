@@ -1,8 +1,9 @@
 /* The shared file dialogs (@k2b/cloud/browser/files): "Add files" and "Save
    to…". They open in the workspace frame, which takes the whole screen on
    phones. On wider screens they keep one fixed size of 680 × 480 px, so moving
-   between sources, folders, and states never resizes or moves the frame.
-   Unlayered, like the shared frame rules.
+   between sources, folders, and states never resizes or moves the frame. From
+   75 rem, "Add files" grows to 1040 × 640 px with a preview column beside the
+   list. Unlayered, like the shared frame rules.
 
    One grid: every column keeps an outer inset --cloud-file-dialog-inset; title, tiles, and status
    start at --cloud-file-dialog-text-x; the close button, the filter, the rows, and Add end --cloud-file-dialog-inset
@@ -13,6 +14,126 @@
     width: min(42.5rem, calc(100vw - 2rem), var(--k2b-dialog-available-width));
     height: min(30rem, calc(100dvh - 2rem), var(--k2b-dialog-available-height));
   }
+}
+
+@media (min-width: 75rem) {
+  .k2b-ui .k2b-dialog.k2b-panel-dialog-frame.cloud-file-chooser-dialog--preview {
+    width: min(65rem, calc(100vw - 2rem), var(--k2b-dialog-available-width));
+    height: min(40rem, calc(100dvh - 2rem), var(--k2b-dialog-available-height));
+  }
+
+  .cloud-file-chooser-dialog--preview .cloud-file-dialog__body {
+    grid-template-columns: 11.75rem minmax(0, 1fr) 20rem;
+  }
+}
+
+/* The preview column: the file in focus on a grey, rounded ground of fixed
+   height, its name and facts below. Every state keeps the same frame, so
+   moving through a folder never moves the list or the footer. */
+.cloud-file-dialog__aside {
+  display: none;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--cloud-file-dialog-inset) var(--cloud-file-dialog-inset) var(--cloud-file-dialog-inset) 0;
+}
+
+@media (min-width: 75rem) {
+  .cloud-file-chooser-dialog--preview .cloud-file-dialog__aside {
+    display: block;
+  }
+}
+
+.cloud-file-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  min-height: 0;
+}
+
+.cloud-file-preview__frame {
+  display: flex;
+  flex: 0 0 min(24rem, 70%);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--k2b-radius-surface, 0.75rem);
+  color: var(--k2b-text-muted);
+  background: color-mix(in srgb, var(--k2b-text) 5%, var(--k2b-surface));
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.cloud-file-preview__frame[data-state="empty"] > i {
+  font-size: 1.5rem;
+}
+
+/* PdfViewer brings its own grey, rounded ground and fills the frame. */
+.cloud-file-preview__frame[data-state="pdf"] {
+  align-items: stretch;
+  background: transparent;
+}
+
+.cloud-file-preview__frame[data-state="pdf"] > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cloud-file-preview__image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.cloud-file-preview__icon {
+  display: grid;
+  place-items: center;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 1rem;
+  color: var(--k2b-text-secondary);
+  background: color-mix(in srgb, var(--k2b-text) 8%, transparent);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.k2b-ui .cloud-file-preview__skeleton {
+  width: 100%;
+  height: 100%;
+}
+
+.cloud-file-preview__details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.cloud-file-preview__name {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.cloud-file-preview__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.125rem;
 }
 
 .cloud-file-chooser {
@@ -211,33 +332,9 @@
   min-width: 0;
 }
 
-.cloud-file-chooser__crumbs {
-  display: flex;
+/* The path (a @k2b/ui Breadcrumbs) takes the room the filter leaves and scrolls sideways under its fade. */
+.k2b-ui .cloud-file-chooser__crumbs {
   flex: 1 1 auto;
-  align-items: center;
-  gap: 0.125rem;
-  min-width: 0;
-}
-
-/* One line: a deep path scrolls sideways instead of wrapping and pushing the list down. */
-.cloud-file-chooser__crumbs ol {
-  display: flex;
-  align-items: center;
-  gap: 0.125rem;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  overflow-x: auto;
-  list-style: none;
-  scrollbar-width: none;
-}
-
-.cloud-file-chooser__crumbs li {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 0.125rem;
-  color: var(--k2b-text-muted);
 }
 
 .k2b-ui .cloud-file-chooser__filter {
@@ -314,6 +411,13 @@
   font-variant-numeric: tabular-nums;
   line-height: 1rem;
   white-space: nowrap;
+}
+
+/* A search hit leads with where it lies; the folders give way before size and date. */
+.cloud-file-chooser__location {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cloud-file-dialog__chevron {

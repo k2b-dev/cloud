@@ -565,3 +565,27 @@ Wähle in der Ordneransicht **Ordner als ZIP herunterladen** neben einer Vorlage
 - Zusätzliche Artefakte bleiben einzelne Downloads.
 
 Das liest den aktuellen Inhalt des Ordners. Es ist keine eingefrorene Sicherung.
+
+## Ohne Workflow exportieren
+
+Die Capability `document.capture` hält ein vollständiges GQL-Ergebnis einer
+Base fest. Verwende die öffentliche ID, Prüfsumme, Zeilenzahl und den
+Zeitstempel mit `document.issue` für PDF, CSV, JSON, XML, ZIP, DATEV oder SEPA.
+ZIP verwendet öffentliche Dokument- und Vorlagen-IDs und packt gespeicherte
+Originaldateien. CSV schützt standardmäßig vor Tabellenkalkulationsformeln.
+Eine Datenaufnahme enthält höchstens 10.000 Zeilen innerhalb des Datenbudgets
+für Dokumente; unvollständige Ergebnisse werden abgelehnt.
+
+Die Ausgabe fragt immer nach. DATEV und SEPA benötigen zusätzlich die
+Versionen der Quelldatensätze und geben zunächst einen offenen Beleg zurück.
+Prüfe `document.confirm` mit genau diesem Beleg und seiner Prüfsumme und
+bestätige als ursprünglicher Auftraggeber. Die Bestätigung prüft den Zugriff
+und Quellversionen erneut und stellt das reservierte Dokument fertig. Eine
+geänderte Quelle benötigt eine neue Vorschau. Es wird keine Bankzahlung
+übermittelt.
+
+Verwende `cld grids documents capture|issue|confirm --body-file request.json
+--idempotency-key <key>` oder die allgemeinen Capability-Befehle. Schlüssel
+und Eingabe bleiben nur bei einer Wiederholung desselben Vorgangs gleich.
+Gespeicherte Dateien lassen sich mit `document.read` und
+`document.content.read` ohne Workflow-Lauf abrufen.

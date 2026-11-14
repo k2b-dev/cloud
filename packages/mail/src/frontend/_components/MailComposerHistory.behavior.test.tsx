@@ -40,7 +40,7 @@ const detail = (message: MessageSummary, dangerous: boolean): MessageDetail => (
   selectedHeaders: {},
   sourceAvailable: true,
   mailingList: null,
-  remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+  remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
   security: dangerous
     ? {
         risk: "danger",
@@ -119,21 +119,23 @@ describe("Mail composer history", () => {
       expect(requests.some((url) => url.includes("/activity"))).toBeFalse();
       expect(requests.some((url) => url.includes("/messages/New001"))).toBeTrue();
       expect(requests.some((url) => url.includes("/messages/Old001"))).toBeFalse();
-      expect(dom.root.textContent).toContain("Newest subject");
+      // The reader's look: the newest message open with who and when, older ones as one line each.
+      expect(dom.root.textContent).toContain("to me · 12:00 Aug 16, 2026");
+      // The notes failed here (500): the messages stand, and a quiet line says so with a way to retry.
+      expect(dom.root.textContent).toContain("The internal notes could not load. The messages are complete.");
       expect(dom.root.textContent).toContain("Older subject");
-      expect(dom.root.textContent).toContain("12:00 Aug 16, 2026");
       expect(dom.root.textContent).toContain("12:00 Aug 15, 2026");
       expect(dom.root.textContent).toContain("https://unsafe.example.test");
       expect(dom.root.querySelector('a[href="https://unsafe.example.test"]')).toBeNull();
       expect(dom.root.querySelector("[class~='border-t']")).toBeNull();
       expect(dom.root.textContent).not.toContain("invoice.pdf");
 
-      const newestButton = Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Newest subject"));
-      const olderButton = Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Older subject"));
-      expect(newestButton?.className).toContain("rounded-[var(--ui-radius-surface)]");
-      expect(newestButton?.className).toContain("bg-[var(--ui-surface-subtle)]");
-      expect(newestButton?.className).toContain("hover:bg-[var(--ui-hover)]");
-      expect(newestButton?.closest("article")?.parentElement?.className).toContain("gap-2");
+      // Oldest first without an order: the newest message is the last one.
+      const heads = () => Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".mail-composer-history-head"));
+      const [olderButton, newestButton] = heads();
+      expect(heads()).toHaveLength(2);
+      // One surface: no grey box per message.
+      expect(newestButton?.className).not.toContain("bg-[var(--ui-surface-subtle)]");
       expect(newestButton?.getAttribute("aria-expanded")).toBe("true");
       expect(olderButton).toBeDefined();
       olderButton!.click();

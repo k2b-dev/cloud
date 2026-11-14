@@ -4,16 +4,9 @@ import { sql } from "@k2b/cloud";
 import { type ReservedSQL, SQL } from "bun";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { type ActivityReadBudget, withActivityReadBudget } from "../service/activity-read-budget";
+import { activityReaderData } from "./activity-reader";
 
 useUnitClients();
-
-const services = await import("@k2b/cloud/services");
-const warning = mock(() => {});
-mock.module("@k2b/cloud/services", () => ({
-  ...services,
-  logger: () => ({ debug: mock(() => {}), info: mock(() => {}), warn: warning, error: mock(() => {}) }),
-}));
-const { activityReaderData } = await import("./activity-reader");
 
 const id = "10000000-0000-4000-8000-000000000001";
 const modes = ["list", "batch", "entry", "bases", "shareAccess"] as const;
@@ -217,6 +210,8 @@ test("a settled budget step removes its cancellation callback before handing con
 });
 
 test("a failed cancellation connection is observed before the original query settles", async () => {
+  // A cached logger still reads console.warn when it emits; replacing its factory depends on file import order.
+  const warning = spyOn(console, "warn").mockImplementation(() => {});
   const started = Promise.withResolvers<void>();
   const result = Promise.withResolvers<unknown[]>();
   const own = connectionFor(() => {
@@ -241,7 +236,9 @@ test("a failed cancellation connection is observed before the original query set
     expect(own.close).toHaveBeenCalledWith({ timeout: 0 });
     expect(control.close).toHaveBeenCalledWith({ timeout: 0 });
     expect(own.release).not.toHaveBeenCalled();
-    expect(warning).toHaveBeenCalledWith("History SQL cancellation failed", { error: expect.any(Error) });
+    expect(warning).toHaveBeenCalledWith("[filesv2:activity-reader]", "History SQL cancellation failed", {
+      error: expect.any(Object),
+    });
     result.reject(new Error("socket closed"));
     await own.released;
     expect(own.release).toHaveBeenCalledTimes(1);
@@ -249,5 +246,6 @@ test("a failed cancellation connection is observed before the original query set
     result.reject(new Error("socket closed"));
     reserve.mockRestore();
     createControl.mockRestore();
+    warning.mockRestore();
   }
 });

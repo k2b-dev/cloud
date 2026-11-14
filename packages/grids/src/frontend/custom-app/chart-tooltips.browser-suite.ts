@@ -6,7 +6,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser } from "../../../../ui/test/browser";
 
 const packageCache = resolve(import.meta.dir, "../../../node_modules/.cache");
 mkdirSync(packageCache, { recursive: true });
@@ -201,7 +201,7 @@ for (const options of [desktop, phone]) {
       await page.reload();
       await ready(page);
       if (options.viewport.width === 390) await page.locator('[data-chart-kind="bar"] .stdlib-chart-bar').first().tap();
-      else await page.locator('[data-chart-kind="bar"] .stdlib-chart-bar').first().hover();
+      else await hoverInPlace(page.locator('[data-chart-kind="bar"] .stdlib-chart-bar').first());
       expect(await tooltip(page, "bar", "Neu")).toContain("4,00 €");
       const clientBoxes = await geometry(page);
       expect(clientBoxes.length).toBe(serverBoxes.length);

@@ -3,6 +3,7 @@ import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
 import type { sql } from "bun";
 import type { z } from "zod";
+import { publishMessagePosted } from "../app-events";
 import { messagePreview, renderSystemMessage } from "../system-messages";
 import { type ChatContext, type ConversationRow, messages, subjectPrincipal } from "./access";
 import { messageAttachments } from "./attachment-store";
@@ -193,7 +194,7 @@ type NewMessage =
 export const appendMessage = async (
   db: typeof sql,
   conversation: ConversationRow,
-  context: Pick<ChatContext, "accessSubject" | "via">,
+  context: Pick<ChatContext, "accessSubject" | "via" | "requestId">,
   message: NewMessage,
   affected: readonly string[] = [],
 ) => {
@@ -207,10 +208,19 @@ export const appendMessage = async (
   if (!head) throw new Error("Chat message has no conversation");
   const refs = message.kind === "text" ? (message.refs ?? []) : [];
   const links = message.kind === "text" ? extractMessageLinks(message.body) : [];
+  // One indexed lookup regardless of reply-chain depth. Legacy targets become the root of new chains.
+  const replyToSeq = message.kind === "text" && conversation.kind === "chat" ? message.replyToSeq : undefined;
+  const [root] =
+    replyToSeq === undefined
+      ? []
+      : await db<{ short_id: string }[]>`
+    SELECT COALESCE(reply_root_id, short_id) AS short_id FROM chat.messages
+    WHERE conversation_id = ${conversation.id}::uuid AND seq = ${replyToSeq}`;
+  if (replyToSeq !== undefined && !root) throw new Error("Chat reply has no root message");
   let row: MessageRow | undefined;
   for (let attempt = 0; attempt < 10 && !row; attempt++) {
     [row] = await db<MessageRow[]>`INSERT INTO chat.messages
-      (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md, system_code, system_params, created_at, thread_id, reply_to_seq, refs, links, via, client_input_hash)
+      (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md, system_code, system_params, created_at, thread_id, reply_to_seq, refs, links, via, client_input_hash, reply_root_id)
       VALUES (${crypto.common.readableId(10)}, ${conversation.id}::uuid, ${head.seq_head}, ${head.rev}, ${message.kind},
         ${author.type}, ${author.id}::uuid, ${snapshot.name}, ${message.kind === "text" ? message.clientId : null},
         ${message.kind === "text" ? message.body : null}, ${message.kind === "system" ? message.system.code : null},
@@ -218,7 +228,7 @@ export const appendMessage = async (
         ${message.kind === "text" ? db`(SELECT last_activity_at FROM chat.conversations WHERE id = ${conversation.id}::uuid)` : db`clock_timestamp()`},
         ${message.threadId ?? null}::uuid, ${message.kind === "text" ? (message.replyToSeq ?? null) : null},
         ${JSON.stringify(refs)}::text::jsonb, ${toPgTextArray(links)}::text[], ${message.kind === "text" ? (context.via ?? null) : null},
-        ${message.kind === "text" ? (message.replayHash ?? null) : null})
+        ${message.kind === "text" ? (message.replayHash ?? null) : null}, ${root?.short_id ?? null})
       ON CONFLICT (short_id) DO NOTHING RETURNING *`;
   }
   if (!row) throw new Error("Chat message ID could not be allocated");
@@ -237,6 +247,18 @@ export const appendMessage = async (
     }
   }
   if (message.kind === "text") await storeMentions(db, row.short_id, message.mentions ?? []);
+  // System conversations have item-specific visibility; their owners publish their own domain events.
+  if (message.kind === "text" && conversation.kind === "chat") {
+    const mentions = [
+      ...new Map((message.mentions ?? []).map(({ principal }) => [`${principal.type}:${principal.id}`, principal])).values(),
+    ];
+    await publishMessagePosted(db, {
+      subject: row.short_id,
+      place: conversation.short_id,
+      requestId: context.requestId,
+      data: { threadReply: root !== undefined, root: root ? { type: "chat.message", id: root.short_id } : null, author, mentions },
+    });
+  }
   if (row.thread_id) await db`UPDATE chat.threads SET last_activity_at = ${row.created_at} WHERE id = ${row.thread_id}::uuid`;
   const [view] = await messageViews(db, [row], conversation.short_id, context.accessSubject);
   if (!view) throw new Error("Chat message could not be projected");

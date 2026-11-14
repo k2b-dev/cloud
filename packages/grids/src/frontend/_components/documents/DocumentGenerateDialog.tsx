@@ -5,7 +5,7 @@ import {
   dialogCore,
   NoticeCard,
   PanelDialog,
-  PdfPreview,
+  PdfViewer,
   panelDialogFixedOptions,
   prompts,
   TagsInput,
@@ -190,13 +190,14 @@ function DocumentGenerateDialog(props: {
           when={!attempt.request()}
           fallback={<NoticeCard tone="info" title={t().retryGeneration} detail={t().retryGenerationDetail} />}
         >
-          <PdfPreview
+          <PdfViewer
             title={t().pdfPreview}
             class="h-[min(56rem,62dvh)] min-h-[36rem] shrink-0"
-            buttonLabel={t().renderPreview}
+            loadLabel={t().renderPreview}
             emptyText={t().chooseRecordAndPreview}
-            disabled={() => !recordId().trim()}
+            disabled={!recordId().trim()}
             request={previewPdf}
+            open
           />
         </Show>
       </PanelDialog.Body>

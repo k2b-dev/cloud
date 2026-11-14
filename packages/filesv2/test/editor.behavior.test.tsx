@@ -94,6 +94,12 @@ describe("Filesv2 office editing", () => {
     rows[1]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     await flush();
     expect(edited).toEqual([]);
+    // A file the editor cannot open shows large in the Lightbox; closing it returns to the list.
+    const lightbox = dom.document.querySelector<HTMLDialogElement>("dialog.k2b-lightbox")!;
+    expect(lightbox.getAttribute("aria-label")).toBe("notes.txt");
+    lightbox.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click();
+    await flush();
+    expect(dom.document.querySelector("dialog.k2b-lightbox")).toBeNull();
     rows[0]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     await flush();
     expect(edited).toEqual(["Minutes.odt"]);

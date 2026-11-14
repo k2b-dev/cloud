@@ -6,6 +6,7 @@ import actionDragAndDrop from "./actions/drag-and-drop.md" with { type: "text" }
 import actionGestures from "./actions/gestures.md" with { type: "text" };
 import actionMenus from "./actions/menus.md" with { type: "text" };
 import actionSegmentedControl from "./actions/segmented-control.md" with { type: "text" };
+import actionSortableList from "./actions/sortable-list.md" with { type: "text" };
 import actionSpotlight from "./actions/spotlight.md" with { type: "text" };
 import actionTabs from "./actions/tabs.md" with { type: "text" };
 import actionToolbar from "./actions/toolbar.md" with { type: "text" };
@@ -23,13 +24,16 @@ import contentFiles from "./content/files.md" with { type: "text" };
 import contentIntl from "./content/intl.md" with { type: "text" };
 import contentKbd from "./content/kbd.md" with { type: "text" };
 import contentLabelChip from "./content/label-chip.md" with { type: "text" };
+import contentLoadMore from "./content/load-more.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
+import contentMapDialog from "./content/map-dialog.md" with { type: "text" };
 import contentMapView from "./content/map-view.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
 import contentMatchText from "./content/match-text.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
 import contentMessageRows from "./content/message-rows.md" with { type: "text" };
 import contentMoney from "./content/money.md" with { type: "text" };
+import contentProgressPath from "./content/progress-path.md" with { type: "text" };
 import contentReactionBar from "./content/reaction-bar.md" with { type: "text" };
 import contentSteps from "./content/steps.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
@@ -39,6 +43,7 @@ import contentTimeline from "./content/timeline.md" with { type: "text" };
 import contentVirtualFeed from "./content/virtual-feed.md" with { type: "text" };
 import feedbackBadges from "./feedback/badges.md" with { type: "text" };
 import feedbackBlocks from "./feedback/blocks.md" with { type: "text" };
+import feedbackHoverCard from "./feedback/hover-card.md" with { type: "text" };
 import feedbackHoverPreview from "./feedback/hover-preview.md" with { type: "text" };
 import feedbackInstallGuide from "./feedback/install-guide.md" with { type: "text" };
 import feedbackMovedHint from "./feedback/moved-hint.md" with { type: "text" };
@@ -59,6 +64,7 @@ import inputCombobox from "./input/combobox.md" with { type: "text" };
 import inputDatePicker from "./input/date-picker.md" with { type: "text" };
 import inputDictation from "./input/dictation.md" with { type: "text" };
 import inputEmojiPicker from "./input/emoji-picker.md" with { type: "text" };
+import inputFieldSuggestion from "./input/field-suggestion.md" with { type: "text" };
 import inputFileDropTarget from "./input/file-drop-target.md" with { type: "text" };
 import inputFileDropzone from "./input/file-dropzone.md" with { type: "text" };
 import inputIcon from "./input/icon.md" with { type: "text" };
@@ -66,6 +72,7 @@ import inputIconChoices from "./input/icon-choices.md" with { type: "text" };
 import inputImage from "./input/image.md" with { type: "text" };
 import inputImageCropper from "./input/image-cropper.md" with { type: "text" };
 import inputNumber from "./input/number.md" with { type: "text" };
+import inputPeriodPicker from "./input/period-picker.md" with { type: "text" };
 import inputPin from "./input/pin.md" with { type: "text" };
 import inputQrScanner from "./input/qr-scanner.md" with { type: "text" };
 import inputRichSelect from "./input/rich-select.md" with { type: "text" };
@@ -88,6 +95,7 @@ import contentPagination from "./layout/pagination.md" with { type: "text" };
 import layoutPanelDialog from "./layout/panel-dialog.md" with { type: "text" };
 import layoutPanes from "./layout/panes.md" with { type: "text" };
 import layoutPermissions from "./layout/permissions.md" with { type: "text" };
+import layoutPersonPopover from "./layout/person-popover.md" with { type: "text" };
 import layoutPrint from "./layout/print.md" with { type: "text" };
 import layoutPullToRefresh from "./layout/pull-to-refresh.md" with { type: "text" };
 import layoutResizeSeparator from "./layout/resize-separator.md" with { type: "text" };
@@ -104,10 +112,12 @@ import surfaceCards from "./surfaces/cards.md" with { type: "text" };
 import surfaceChangeList from "./surfaces/change-list.md" with { type: "text" };
 import surfaceColor from "./surfaces/color.md" with { type: "text" };
 import surfaceDetails from "./surfaces/details.md" with { type: "text" };
+import surfaceElevation from "./surfaces/elevation.md" with { type: "text" };
 import surfaceEmptyStates from "./surfaces/empty-states.md" with { type: "text" };
 import surfaceObservability from "./surfaces/observability.md" with { type: "text" };
 import surfacePaper from "./surfaces/paper.md" with { type: "text" };
 import surfaceProgress from "./surfaces/progress.md" with { type: "text" };
+import surfaceSection from "./surfaces/section.md" with { type: "text" };
 import surfaceStats from "./surfaces/stats.md" with { type: "text" };
 import surfaceUtilities from "./surfaces/utilities.md" with { type: "text" };
 import inputTextEditor from "./text-editor.md" with { type: "text" };
@@ -123,6 +133,7 @@ const catalogContextSources = {
   "input/autocomplete-select": { file: "input/autocomplete-select.md", content: inputAutocompleteSelect },
   "input/number": { file: "input/number.md", content: inputNumber },
   "input/date-picker": { file: "input/date-picker.md", content: inputDatePicker },
+  "input/period-picker": { file: "input/period-picker.md", content: inputPeriodPicker },
   "input/rich-select": { file: "input/rich-select.md", content: inputRichSelect },
   "input/select": { file: "input/select.md", content: inputSelect },
   "input/choice-chips": { file: "input/choice-chips.md", content: inputChoiceChips },
@@ -147,11 +158,13 @@ const catalogContextSources = {
   "input/choice-slider": { file: "input/choice-slider.md", content: inputChoiceSlider },
   "input/slider": { file: "input/slider.md", content: inputSlider },
   "input/boolean": { file: "input/boolean.md", content: inputBoolean },
+  "input/field-suggestion": { file: "input/field-suggestion.md", content: inputFieldSuggestion },
   "actions/buttons": { file: "actions/buttons.md", content: actionButtons },
   "actions/copy-remove": { file: "actions/copy-remove.md", content: actionCopyRemove },
   "actions/menus": { file: "actions/menus.md", content: actionMenus },
   "actions/command-menu": { file: "actions/command-menu.md", content: actionCommandMenu },
   "actions/drag-and-drop": { file: "actions/drag-and-drop.md", content: actionDragAndDrop },
+  "actions/sortable-list": { file: "actions/sortable-list.md", content: actionSortableList },
   "actions/gestures": { file: "actions/gestures.md", content: actionGestures },
   "actions/filters": { file: "filter-chip.md", content: actionFilters },
   "actions/segmented-control": { file: "actions/segmented-control.md", content: actionSegmentedControl },
@@ -177,10 +190,13 @@ const catalogContextSources = {
   "layout/panel-dialog": { file: "layout/panel-dialog.md", content: layoutPanelDialog },
   "layout/floating-window": { file: "layout/floating-window.md", content: layoutFloatingWindow },
   "layout/anchored-popover": { file: "layout/anchored-popover.md", content: layoutAnchoredPopover },
+  "layout/person-popover": { file: "layout/person-popover.md", content: layoutPersonPopover },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
   "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
+  "surfaces/elevation": { file: "surfaces/elevation.md", content: surfaceElevation },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
+  "surfaces/section": { file: "surfaces/section.md", content: surfaceSection },
   "surfaces/empty-states": { file: "surfaces/empty-states.md", content: surfaceEmptyStates },
   "surfaces/details": { file: "surfaces/details.md", content: surfaceDetails },
   "surfaces/avatar-stack": { file: "surfaces/avatar-stack.md", content: surfaceAvatarStack },
@@ -194,13 +210,16 @@ const catalogContextSources = {
   "feedback/toast": { file: "feedback/toast.md", content: feedbackToast },
   "feedback/moved-hint": { file: "feedback/moved-hint.md", content: feedbackMovedHint },
   "feedback/tooltip": { file: "feedback/tooltip.md", content: feedbackTooltip },
+  "feedback/hover-card": { file: "feedback/hover-card.md", content: feedbackHoverCard },
   "feedback/hover-preview": { file: "feedback/hover-preview.md", content: feedbackHoverPreview },
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },
   "feedback/install-guide": { file: "feedback/install-guide.md", content: feedbackInstallGuide },
   "content/map-view": { file: "content/map-view.md", content: contentMapView },
+  "content/map-dialog": { file: "content/map-dialog.md", content: contentMapDialog },
   "content/kbd": { file: "content/kbd.md", content: contentKbd },
   "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
   "content/match-text": { file: "content/match-text.md", content: contentMatchText },
+  "content/progress-path": { file: "content/progress-path.md", content: contentProgressPath },
   "content/steps": { file: "content/steps.md", content: contentSteps },
   "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },
@@ -212,6 +231,7 @@ const catalogContextSources = {
   "content/code": { file: "content/code.md", content: contentCode },
   "content/logs": { file: "content/logs.md", content: contentLogs },
   "content/virtual-feed": { file: "content/virtual-feed.md", content: contentVirtualFeed },
+  "content/load-more": { file: "content/load-more.md", content: contentLoadMore },
   "content/reaction-bar": { file: "content/reaction-bar.md", content: contentReactionBar },
   "content/message-rows": { file: "content/message-rows.md", content: contentMessageRows },
   "content/structured-data": { file: "content/structured-data.md", content: contentStructuredData },

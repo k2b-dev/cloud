@@ -66,8 +66,9 @@ const inside = (ranges: Range[], from: number, to: number) => {
 export const NOTE_PREVIEW_BUDGET = { lines: Math.ceil((2160 + 1000) / 19.6), characters: 16 * 1024 };
 
 /**
- * The lines the note editor shows when it mounts, with the caret at the start,
- * and the styles that size them, within the budget. Rich mode reproduces
+ * The lines the note editor shows when it mounts, before the person acts in it, so
+ * no Markdown mark shows, also not on the first line where the caret starts, and
+ * the styles that size them, within the budget. Rich mode reproduces
  * headings, emphasis and code and ends before the first line the editor draws
  * otherwise (lists, links, tags, ligatures, blocks and other widgets): those
  * lines arrive with the editor, below the preview, so no text moves.
@@ -134,12 +135,12 @@ export const notePreviewLines = (
       }
       if (name.startsWith("ATXHeading") || name.startsWith("SetextHeading")) {
         styled.push({ from, to, className: `${prefix}heading-${name.at(-1)}`, order: 0 });
-        if (name.startsWith("ATXHeading") && text.lastIndexOf("\n", from - 1) >= 0) {
+        if (name.startsWith("ATXHeading")) {
           const mark = node.node.getChild("HeaderMark");
           if (mark) hidden.push({ from, to: mark.to + (text[mark.to] === " " ? 1 : 0) });
         }
       }
-      if (from > 0 && (name === "StrongEmphasis" || name === "Emphasis" || name === "Strikethrough")) {
+      if (name === "StrongEmphasis" || name === "Emphasis" || name === "Strikethrough") {
         const size = name === "Emphasis" ? 1 : 2;
         hidden.push({ from, to: from + size }, { from: to - size, to });
       }
@@ -190,12 +191,13 @@ export const notePreviewLines = (
  * The chart the editor draws right below the preview's last line, if any. Rich mode shows a valid chart block as a
  * widget of fixed height; the preview reserves that widget's box with the chart's title and drawn height, so the
  * editor and then the drawing take its place without moving anything. An invalid block shows its source instead, whose height the preview
- * cannot know: nothing is reserved for it. The first line is never reserved: the caret there reveals the source.
+ * cannot know: nothing is reserved for it. A chart on the first line is drawn too: the caret starting there reveals no
+ * source until the person acts.
  */
 export const notePreviewChart = (markdown: string, lines: NotePreviewLine[], locale: string) => {
   const text = markdown.replace(/\r\n?/g, "\n");
   const line = lines.length + 1;
-  if (line === 1 || !/^ {0,3}:::chart[ \t]*$/.test(text.split("\n")[line - 1] ?? "")) return null;
+  if (!/^ {0,3}:::chart[ \t]*$/.test(text.split("\n")[line - 1] ?? "")) return null;
   const block = parseNotebookChartBlocks(text, { ...notebookChartOptions, line }).blocks[0];
   if (!block) return null;
   const body = text.split("\n").slice(line);

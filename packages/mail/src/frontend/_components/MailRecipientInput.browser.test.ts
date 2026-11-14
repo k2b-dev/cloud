@@ -5,8 +5,8 @@ import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { MailRecipientHarnessOptions } from "./MailRecipientInput.browser-harness";
 
-// Whether the suggestion list opens at its final size without moving the field, and whether the details panel simply
-// has no contacts block without a contact app, are layout questions that only a real engine answers.
+// Whether the suggestion list opens at its final size without moving the field is a layout question that only a real
+// engine answers.
 const buildHarness = async (): Promise<string> => {
   const ui = new URL("../../../../ui/", import.meta.url).pathname;
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -185,10 +185,6 @@ for (const [label, context] of [
         "From this mailboxadmissions@example.test",
       ]);
       expect(await page.locator('[role="option"] .ti-mail').count()).toBe(3);
-      // The details panel has no contacts block and no error without a contact app; Spaces stays.
-      await page.getByText("Spaces task").waitFor();
-      expect(await page.getByRole("region", { name: "Contacts" }).count()).toBe(0);
-      expect(await page.getByText("Contacts unavailable").count()).toBe(0);
       await field.press("ArrowDown");
       await capture(page, `${label}-suggestions-without-contacts`);
       await field.press("Enter");
@@ -214,7 +210,6 @@ for (const [label, context] of [
         "Aus diesem Postfachadmissions@example.test",
       ]);
       expect(await page.locator('[role="option"]').first().locator(".ti-user").count()).toBe(1);
-      await page.getByText("Neuer Kontakt").waitFor();
       await capture(page, `${label}-suggestions-with-contacts`);
       expect(page.errors).toEqual([]);
     } finally {
@@ -222,15 +217,3 @@ for (const [label, context] of [
     }
   });
 }
-
-test("details panel without Contacts shows only the Spaces block", async () => {
-  const page = await load({ locale: "en", contacts: false });
-  try {
-    await page.getByText("Spaces task").waitFor();
-    expect(await page.getByText("Contacts unavailable").count()).toBe(0);
-    expect(await page.getByText("New contact").count()).toBe(0);
-    await capture(page, "desktop-details-without-contacts");
-  } finally {
-    await page.context().close();
-  }
-});

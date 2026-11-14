@@ -2,13 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import { authenticateSignedAppRequest } from "@k2b/cloud/api";
 import { env } from "@k2b/cloud/config";
-import {
-  type AppApprovalConfig,
-  AppApprovalError,
-  isAccountCategoryAllowed,
-  readAppApprovalConfig,
-  toPgTextArray,
-} from "@k2b/cloud/services";
+import { type AppApprovalConfig, AppApprovalError, isAccountAllowed, readAppApprovalConfig, toPgTextArray } from "@k2b/cloud/services";
 import { recordLegacyAppUse } from "@k2b/cloud/services/app-migration-evidence";
 import { isAppRequestProof, withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
@@ -320,7 +314,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
     row.user_id !== null &&
     (!row.provider ||
       (row.profile !== "guest" && row.profile !== "user") ||
-      !(await isAccountCategoryAllowed({ provider: row.provider, profile: row.profile }, db)))
+      !(await isAccountAllowed({ id: row.user_id, provider: row.provider, profile: row.profile }, db)))
   )
     return null;
   if (row.user_id !== null && (row.uid === null || row.profile === null)) return null;

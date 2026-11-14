@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { lifecycleStorageWarning } from "./capacity";
 import { nodeReplicaStatus, replicaStatus } from "./replica-status";
 import {
   getNatsClusterDiagnostics,
@@ -32,7 +33,8 @@ export const streamHasReplicationProblem = (stream: NatsStream) => {
   const status = replicaStatus(stream.cluster, stream.replicas);
   return status !== null && status !== "synchronized";
 };
-export const streamHasProblem = (stream: NatsStream) => (stream.deadLetter && stream.messages > 0) || streamHasReplicationProblem(stream);
+export const streamHasProblem = (stream: NatsStream) =>
+  (stream.deadLetter && stream.messages > 0) || streamHasReplicationProblem(stream) || lifecycleStorageWarning(stream);
 
 /** Filtering applies to the bounded account scan, never just a broker page. */
 export const selectNatsStreams = (snapshot: NatsInventorySummary, query: NatsQuery) => {
@@ -40,8 +42,10 @@ export const selectNatsStreams = (snapshot: NatsInventorySummary, query: NatsQue
   const scoped = snapshot.streams.filter(
     (stream) =>
       (!query.app || stream.sync?.owner === query.app) &&
-      (!query.namespace || stream.sync?.namespace === query.namespace) &&
-      (!resource || stream.name.toLocaleLowerCase("en").includes(resource) || stream.sync?.id.toLocaleLowerCase("en").includes(resource)),
+      (!query.namespace || (stream.sync?.namespace ?? stream.sharedTextLifecycle?.namespace) === query.namespace) &&
+      (!resource ||
+        stream.name.toLocaleLowerCase("en").includes(resource) ||
+        (stream.sync?.id ?? stream.sharedTextLifecycle?.id)?.toLocaleLowerCase("en").includes(resource)),
   );
   const matching = scoped.filter((stream) => query.problems !== "true" || streamHasProblem(stream));
   matching.sort((a, b) => Number(streamHasProblem(b)) - Number(streamHasProblem(a)) || a.name.localeCompare(b.name));
@@ -53,7 +57,14 @@ export const selectNatsStreams = (snapshot: NatsInventorySummary, query: NatsQue
     })),
     facets: {
       apps: [...new Set(snapshot.streams.flatMap((stream) => (stream.sync ? [stream.sync.owner] : [])))].sort(),
-      namespaces: [...new Set(snapshot.streams.flatMap((stream) => (stream.sync ? [stream.sync.namespace] : [])))].sort(),
+      namespaces: [
+        ...new Set(
+          snapshot.streams.flatMap((stream) => {
+            const namespace = stream.sync?.namespace ?? stream.sharedTextLifecycle?.namespace;
+            return namespace ? [namespace] : [];
+          }),
+        ),
+      ].sort(),
     },
     total: matching.length,
     matchedTotal: snapshot.status === "available" ? matching.length : null,

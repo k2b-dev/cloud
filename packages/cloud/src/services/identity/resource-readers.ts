@@ -3,6 +3,7 @@ import { type ResourcePrincipal, ResourcePrincipalSchema } from "../../contracts
 import type { AccessSubject } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { decodeAccountCategoryEnabled } from "../account-category-policy";
+import { accountLockedSql } from "../account-lock";
 import { toPgUuidArray } from "../postgres";
 import type { ServiceAccount } from "../service-accounts";
 
@@ -23,7 +24,7 @@ type AccountRow = {
   resource_id: string | null;
 };
 
-/** Resolve at most 500 current accounts, including delegated users and account-category policy.
+/** Resolve at most 500 current accounts, including delegated users, account-category policy, expiry, and FreeIPA locks.
  * Grants and resource bindings remain the resource provider's responsibility.
  */
 export const resolveResourceReaders = async (principals: readonly ResourcePrincipal[]): Promise<ResourceReader[]> => {
@@ -41,6 +42,7 @@ export const resolveResourceReaders = async (principals: readonly ResourcePrinci
       CASE WHEN u.provider = 'ipa' THEN 'freeipa' WHEN u.profile = 'guest' THEN 'guest' ELSE 'login' END || '.enabled'
     WHERE u.id = ANY(${toPgUuidArray([...userIds, ...accounts.flatMap((account) => (account.delegated_user_id ? [account.delegated_user_id] : []))])}::uuid[])
       AND (u.account_expires IS NULL OR u.account_expires > clock_timestamp())
+      AND NOT ${accountLockedSql(sql`u.id`)}
   `;
   const enabled = new Map<string | null, boolean>();
   const allowedUsers = new Set<string>();

@@ -1,5 +1,5 @@
 import { i18n } from "@k2b/stdlib";
-import { Button, DetailPanel, IconButton, NoticeCard, Select, TextInput, useLocale } from "@k2b/ui";
+import { Button, IconButton, NoticeCard, Section, Select, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Index, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
@@ -341,7 +341,7 @@ export function QueryExportStarter(props: {
               />
             </Show>
             <Show when={format() !== "xml"}>
-              <DetailPanel.Section title={t().advanced} collapsible>
+              <Section title={t().advanced} collapsible>
                 <div class="flex flex-col gap-3">
                   <Show when={format() === "csv"}>
                     <Select
@@ -423,7 +423,7 @@ export function QueryExportStarter(props: {
                     />
                   </Show>
                 </div>
-              </DetailPanel.Section>
+              </Section>
             </Show>
             <p class="text-sm text-dimmed">{t().reviewHint}</p>
             <Button
@@ -456,7 +456,7 @@ export function QueryExportStarter(props: {
             .filter((input) => /^[a-z][a-z0-9_]*$/.test(input.name))
             .map((input) => `params.${input.name}` as const)}
         />
-        <DetailPanel.Section title={t().parameters} collapsible>
+        <Section title={t().parameters} collapsible>
           <div class="flex flex-col gap-3">
             <p class="text-sm text-dimmed">{t().parametersHint}</p>
             <Index each={inputs()}>
@@ -525,7 +525,7 @@ export function QueryExportStarter(props: {
               {t().addParameter}
             </Button>
           </div>
-        </DetailPanel.Section>
+        </Section>
         <div class="flex flex-wrap gap-2">
           <Button variant="input" disabled={loading() || !source().trim()} onClick={() => void loadPreview()}>
             <i class={loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-play"} />

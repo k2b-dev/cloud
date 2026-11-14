@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { hoverInPlace, launchBrowser } from "../../test/browser";
 
 // Hover, focus, and touch states come from the shipped stylesheet and the
 // engine's media features, which happy-dom does not model.
@@ -68,14 +68,14 @@ describe("Checkbox previews ticking", () => {
       const rest = await check(page, "Open");
       expect(rest.color).toBe(hidden);
 
-      await page.hover('label:has(input[aria-label="Open"])');
+      await hoverInPlace(page.locator('label:has(input[aria-label="Open"])'));
       const hovered = await check(page, "Open");
       expect(hovered.color).not.toBe(hidden);
       expect(hovered.color).not.toBe((await check(page, "Done")).color);
       expect(hovered.box).toEqual(rest.box);
 
       // A disabled box offers nothing to preview.
-      await page.hover('label:has(input[aria-label="Locked"])');
+      await hoverInPlace(page.locator('label:has(input[aria-label="Locked"])'));
       expect((await check(page, "Locked")).color).toBe(hidden);
       expect((await check(page, "Open")).color).toBe(hidden);
 

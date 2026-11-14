@@ -31,6 +31,7 @@ export const ResourceDecisionSchema = CloudResourceReaderViewSchema.extend({
 });
 export type ResourceDecision = z.infer<typeof ResourceDecisionSchema>;
 const AuthorizationSchema = ResourceDecisionSchema.pick({ permission: true, container: true }).strip();
+const AuthoritySchema = z.object({ generation: z.string().nullable(), decision: AuthorizationSchema.nullable() });
 const EnvelopeSchema = z.object({
   data: z.unknown(),
   links: z.array(z.object({ rel: z.string(), href: z.string() })).optional(),
@@ -73,11 +74,21 @@ export const contextPrincipal = (context: ChatContext) => {
     ? `${principal}:scopes=${[...new Set(context.actor.scopes)].sort().join(",")}`
     : principal;
 };
-/** Live delivery needs only authority, independent of the locale of the last HTTP read. */
+// Identity hints discard authority; inactive discussion keys do not call their owner.
+const invalidationKey = (principal: string, ref: ResourceRef) => `${authorizationKey(principal, ref)}:generation`;
+export const invalidateResource = async (principal: string, ref: ResourceRef) => {
+  await redis.set(invalidationKey(principal, ref), crypto.randomUUID(), "EX", ACCESS_TTL_SECONDS);
+  await redis.del(authorizationKey(principal, ref));
+};
+/** Live delivery consumes authority warmed by HTTP reads; a miss expires the key immediately. */
 export const cachedResource = async (principal: string, ref: ResourceRef) => {
   try {
     const value = await redis.get(authorizationKey(principal, ref));
-    return value === null ? null : AuthorizationSchema.nullable().parse(JSON.parse(value));
+    if (value !== null) {
+      const authority = AuthoritySchema.parse(JSON.parse(value));
+      if (authority.generation === (await redis.get(invalidationKey(principal, ref)))) return authority.decision;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -110,8 +121,21 @@ const loadResource = async (
   const key = accessKey(principal, ref, context.locale ?? context.caller?.locale ?? "en");
   try {
     context.caller?.signal?.throwIfAborted();
+    const generation = context.capabilityQuery ? null : await redis.get(invalidationKey(principal, ref));
     const cached = context.capabilityQuery ? null : await redis.get(key);
-    if (cached !== null) return ResourceDecisionSchema.nullable().parse(JSON.parse(cached));
+    // A localized view is reusable only while its authority still matches.
+    if (cached !== null) {
+      const decision = ResourceDecisionSchema.nullable().parse(JSON.parse(cached));
+      const authority = await redis.get(authorizationKey(principal, ref));
+      if (authority !== null) {
+        const stored = AuthoritySchema.parse(JSON.parse(authority));
+        if (
+          stored.generation === generation &&
+          JSON.stringify(stored.decision) === JSON.stringify(decision ? AuthorizationSchema.parse(decision) : null)
+        )
+          return decision;
+      }
+    }
     if (!context.caller || !CloudResourceRefSchema.safeParse(ref).success) return null;
     const provider = await providerFor(context, ref.type);
     if (!provider) return null;
@@ -130,13 +154,16 @@ const loadResource = async (
       });
     }
     if (!context.capabilityQuery) {
+      // A response started before an invalidation cannot restore old authority.
+      if (generation !== (await redis.get(invalidationKey(principal, ref)))) return null;
       await redis.set(key, JSON.stringify(decision), "EX", ACCESS_TTL_SECONDS);
       await redis.set(
         authorizationKey(principal, ref),
-        JSON.stringify(decision ? AuthorizationSchema.parse(decision) : null),
+        JSON.stringify({ generation, decision: decision ? AuthorizationSchema.parse(decision) : null }),
         "EX",
         ACCESS_TTL_SECONDS,
       );
+      if (generation !== (await redis.get(invalidationKey(principal, ref)))) return null;
     }
     return decision;
   } catch (error) {

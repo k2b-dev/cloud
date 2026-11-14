@@ -88,8 +88,9 @@ const render = (overrides: Partial<PulseSource> = {}, locale = "en", scrapes: Pu
 
 test("a source detail follows the K1 outline: kind and state, one main action, properties, then More about this source", () => {
   const html = render();
-  // The kind and state share the first row; no header icon.
-  expect(html).toMatch(/class="k2b-detail-panel__kind"><span>Source<\/span>[\s\S]*?k2b-status-badge__label">Enabled</);
+  // The name comes first; the state leads the line below it, without a type word; no header icon.
+  expect(html).toMatch(/<h2[^>]*>[\s\S]*?<\/h2>[\s\S]*?class="k2b-detail-panel__kind">[\s\S]*?k2b-status-badge__label">Enabled</);
+  expect(html).not.toContain("<span>Source</span>");
   expect(html).not.toContain("ti-database-share");
   // One quiet meta line: the source type and its authentication; the state moved into the badge.
   expect(html).toContain("<p>Metrics endpoint<!--!$--> · Bearer authentication</p>");
@@ -104,13 +105,13 @@ test("a source detail follows the K1 outline: kind and state, one main action, p
   expect(html).toMatch(/>Properties<\/h3>[\s\S]*>Target<\/dt>[\s\S]*shop\.example\.test\/metrics[\s\S]*>Newest data<\/dt>/);
   expect(html).toMatch(/>More about this source<\/div>[\s\S]*>Scrape history<\/span>[\s\S]*>Success · /);
   // No section icons, no danger zone section.
-  expect(html).not.toContain("k2b-detail-panel__section-icon");
+  expect(html).not.toContain("k2b-section__icon");
   expect(html).not.toContain("Danger zone");
 });
 
 test("an HTTP ingest source keeps its API keys open and its example collapsed, in German", () => {
   const html = render({ kind: "http_ingest", endpointUrl: null, scrapeIntervalSeconds: null, enabled: false }, "de", []);
-  expect(html).toMatch(/class="k2b-detail-panel__kind"><span>Quelle<\/span>[\s\S]*?k2b-status-badge__label">Pausiert</);
+  expect(html).toMatch(/class="k2b-detail-panel__kind">[\s\S]*?k2b-status-badge__label">Pausiert</);
   expect(html).toMatch(/role="menu"[\s\S]*?<span>Fortsetzen<\/span>/);
   expect(html).not.toContain("<span>Abrufen</span>");
   expect(html).toContain("POST https://cloud.example.test/api/pulse/ingest");

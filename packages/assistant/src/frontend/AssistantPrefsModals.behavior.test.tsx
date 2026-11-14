@@ -15,6 +15,7 @@ test("saving one personalization switch does not record a choice for learning", 
     userId: "user",
     memoryEnabled: true,
     memoryLearningEnabled: true,
+    suggestNextMessage: true,
     selection: null,
     updatedAt: new Date(0).toISOString(),
   };
@@ -65,6 +66,7 @@ test("searching personalization keeps the field, its focus and the previous resu
     userId: "user",
     memoryEnabled: true,
     memoryLearningEnabled: true,
+    suggestNextMessage: true,
     selection: null,
     updatedAt: new Date(0).toISOString(),
   };
@@ -136,6 +138,7 @@ test("API access appears only while the operator offers the OpenAI-compatible AP
     userId: "user",
     memoryEnabled: true,
     memoryLearningEnabled: true,
+    suggestNextMessage: true,
     selection: null,
     updatedAt: new Date(0).toISOString(),
   };
@@ -203,6 +206,7 @@ test("a Skill link opens that Skill's editor directly", async () => {
     userId: "user",
     memoryEnabled: true,
     memoryLearningEnabled: true,
+    suggestNextMessage: true,
     selection: null,
     updatedAt: new Date(0).toISOString(),
   };

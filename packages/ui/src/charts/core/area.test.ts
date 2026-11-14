@@ -111,3 +111,19 @@ test("pure SVG carries the localized total label for every inspection host", () 
     expect(renderAreaSvg({ ...spec, ...size, inspect: true, locale })).toContain(`data-chart-total-label="${label}"`);
   }
 });
+
+test("base-only and PDF hosts use the same eight fallback colors as base.css", async () => {
+  const css = await Bun.file(new URL("../../base/base.css", import.meta.url)).text();
+  const palette = Array.from(css.matchAll(/--stdlib-chart-c[1-8]: (#[0-9a-f]{6});/g), (match) => match[1]!);
+  expect(palette).toHaveLength(8);
+  const svg = renderAreaSvg({
+    layout: "stacked",
+    x: [1, 2],
+    series: palette.map((_, index) => ({ label: `Source ${index + 1}`, data: [1, 2] })),
+    ...size,
+  });
+  palette.forEach((color, index) => {
+    expect(svg).toContain(`stroke="var(--stdlib-chart-c${index + 1}, ${color})"`);
+    expect(svg).toContain(`fill="color-mix(in srgb, var(--stdlib-chart-c${index + 1}, ${color}) 55%,`);
+  });
+});

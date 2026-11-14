@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { workspaceCss, workspaceDist, workspaceFrames, workspaceTree } from "../../test/workspace-host-fixture";
 
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-resize-cue-"));
@@ -285,7 +285,7 @@ async function exercise(page: Page, spec: Edge) {
   const restingShade = spec.drawer ? await drawerShade(page) : null;
   if (restingShade) expect(restingShade.position).toBe("absolute");
 
-  await handle.hover();
+  await hoverInPlace(handle);
   await workspaceFrames(page);
   // settled: hover has painted for two frames; it must not move any region or handle.
   expect(await page.evaluate(geometry)).toEqual(baseline);
@@ -305,7 +305,7 @@ async function exercise(page: Page, spec: Edge) {
   await page.mouse.up();
   await away(page);
 
-  await handle.hover();
+  await hoverInPlace(handle);
   await workspaceFrames(page);
   // settled: use the current handle center after hover.
   const box = await handle.boundingBox();

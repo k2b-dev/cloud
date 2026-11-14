@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-11-05
+updated: 2026-11-11
 ---
 
 # Runtime configuration
@@ -107,6 +107,35 @@ configuration. Set both URLs before running the preload. Postgres URL aliases
 `TLS_POSTGRES_DATABASE_URL`) remain accepted. Implicit localhost and `PG*`-only
 configuration now need an explicit URL. See
 [Platform start and connections](/en/docs/build/platform-start) for the author API.
+
+## SQL pool size
+
+Set `CLOUD_DATABASE_POOL_MAX` in each application process or container before
+startup to limit its global Cloud SQL pool. The default remains 10; accepted
+values are integers from 1 to 2147483647 (Bun's signed 32-bit pool range).
+Choose a small value within the database's connection budget, counting every
+replica, worker, smoke-test process and separately owned pool. This is a
+per-process ceiling, not an installation-wide limit or a number of connections
+opened immediately. Connections open on use; work beyond the pool limit waits
+for a connection to become available. Restart the process to apply a change.
+The setting also applies when Core delivers the database URL through app-key
+bootstrap; it remains local process configuration.
+
+When upgrading, move client options out of `DATABASE_URL` query parameters.
+Cloud now rejects keys such as `max` and `connect_timeout` before connecting,
+instead of letting Bun forward them to Postgres. For a global pool, set
+`CLOUD_DATABASE_POOL_MAX`; for separate pools, pass native `createSql` options.
+TLS and server startup parameters remain supported. The URL is not rewritten,
+and installations without client query parameters retain their current default.
+No database migration is required. If rolling back, retain a connection budget
+for the previous 10-connection global pool: older builds ignore the new variable.
+
+The variable does not configure application-owned `createSql()` pools or Bun's
+own global `sql` client. A process using both Bun and Cloud globals can still
+open two independent pools. Replace Bun-global imports with the Cloud handle,
+or configure any intentionally separate native pool independently. See
+[Platform start and connections](/en/docs/build/platform-start) for the API and
+[Configuration reference](/en/docs/operations/configuration) for the registry.
 
 ## Bootstrap application connections from Core
 

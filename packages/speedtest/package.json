@@ -1,0 +1,31 @@
+{
+  "name": "@k2b/speedtest",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/engine.ts",
+    "./browser": "./src/browser.ts",
+    "./http": "./src/http.ts",
+    "./node": "./src/node.ts",
+    "./udp-client": "./src/udp-client.ts",
+    "./ui": "./src/ui/Speedtest.tsx",
+    "./messages": "./src/ui/messages.ts",
+    "./format": "./src/ui/format.ts",
+    "./styles.css": "./src/ui/styles.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:",
+    "bun-plugin-tailwind": "catalog:"
+  },
+  "license": "AGPL-3.0-or-later",
+  "dependencies": {
+    "@k2b/ssr": "workspace:*",
+    "@k2b/stdlib": "catalog:",
+    "@k2b/ui": "workspace:*",
+    "solid-js": "catalog:"
+  }
+}

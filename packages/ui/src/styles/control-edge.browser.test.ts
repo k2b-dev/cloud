@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // The edge contract: every field keeps a 2 px edge in every state, drawn
 // inside its box, so the outer box and the text never move. States change the
@@ -118,6 +118,7 @@ const geometry = (element: Locator, text: Locator) =>
           borderWidth: style.borderTopWidth,
           borderColor: style.borderTopColor,
           boxShadow: style.boxShadow,
+          outline: style.outlineStyle === "none" ? 0 : Number.parseFloat(style.outlineWidth),
           background: style.backgroundColor,
         };
       }),
@@ -125,15 +126,13 @@ const geometry = (element: Locator, text: Locator) =>
     return { outer, inner, paint };
   });
 
-// The painted edge: 1 px border plus an inset shadow of the same colour. A
-// border-less control (the compact field) carries the full width as inset.
-const edgeOf = (paint: { borderWidth: string; borderColor: string; boxShadow: string }) => {
+// The painted edge: one 2 px border and nothing else. A second source beside
+// it (an inset shadow, an outline) leaves a lighter seam between the two at
+// fractional zoom, and a child's fill paints over an inset but never over a
+// border.
+const edgeOf = (paint: { borderWidth: string; borderColor: string; boxShadow: string; outline: number }) => {
   const shadows = paint.boxShadow === "none" ? [] : paint.boxShadow.split(/,(?![^(]*\))/).map((part) => part.trim());
-  const inset = shadows.filter((part) => part.includes("inset"));
-  const drop = shadows.filter((part) => !part.includes("inset"));
-  const spread = inset.map((part) => Number(part.match(/(-?[\d.]+)px\s+inset/)?.[1] ?? Number.NaN));
-  const color = inset[0]?.match(/rgba?\([^)]*\)/)?.[0];
-  return { width: Number.parseFloat(paint.borderWidth) + (spread[0] ?? 0), color, drop, borderColor: paint.borderColor };
+  return { width: Number.parseFloat(paint.borderWidth), shadows, outline: paint.outline, borderColor: paint.borderColor };
 };
 
 const states = ["rest", "hover", "focus", "focus-hover"] as const;
@@ -223,8 +222,8 @@ describe("field edge contract in the browser", () => {
                   expect(outer, `${label} ${state} box`).toEqual(seen.rest!.outer);
                   expect(inner, `${label} ${state} text`).toEqual(seen.rest!.inner);
                   expect(painted.width, `${label} ${state} edge width`).toBe(2);
-                  expect(painted.drop, `${label} ${state} drop shadow`).toEqual([]);
-                  expect(painted.color, `${label} ${state} inset = border colour`).toBe(painted.borderColor);
+                  expect(painted.shadows, `${label} ${state} shadow beside the border`).toEqual([]);
+                  expect(painted.outline, `${label} ${state} outline beside the border`).toBe(0);
                   const expected = state.startsWith("focus") ? tokens.focus : invalid ? tokens.danger : tokens.edge;
                   expect(painted.borderColor, `${label} ${state} edge colour`).toBe(expected);
                 }
@@ -256,9 +255,131 @@ describe("field edge contract in the browser", () => {
   }
 });
 
+// At a fractional scale a border and an inset shadow of one colour round to
+// different device pixels and leave a lighter seam between them. Scan a pixel
+// column through the top edge: the edge colour must form one unbroken run.
+// Steppers fill up to the inside of that border and part from the value with
+// one line in the edge grey.
+describe("one edge source in the browser", () => {
+  for (const theme of ["light", "dark"] as const) {
+    test(
+      `${theme}: no seam inside the edge at 1.5x, steppers fill up to it`,
+      async () => {
+        const page = await browser.newPage({ viewport: { width: 1280, height: 1100 }, deviceScaleFactor: 1.5 });
+        try {
+          await page.setContent(`<!doctype html><html lang="en"><head><style>${css}</style>
+            <style>*,*::before,*::after{transition:none!important;animation:none!important}
+            #app{display:flex;flex-wrap:wrap;gap:16px;padding:16px;align-items:flex-start}</style></head>
+            <body class="k2b-ui" data-theme="${theme}" style="margin:0"><div id="app"></div></body></html>`);
+          await page.addScriptTag({ content: script });
+          await page.locator('[data-field="input-button"] .k2b-button').waitFor();
+
+          // Distance of each pixel from the surface, down the column at the middle of the edge.
+          const column = async (edge: Locator) => {
+            const box = (await edge.boundingBox())!;
+            const clip = { x: box.x + box.width / 2, y: box.y - 3, width: 1, height: 10 };
+            const png = (await page.screenshot({ clip })).toString("base64");
+            return page.evaluate(async (data) => {
+              const image = new Image();
+              image.src = `data:image/png;base64,${data}`;
+              await image.decode();
+              const canvas = document.createElement("canvas");
+              canvas.width = image.width;
+              canvas.height = image.height;
+              const context = canvas.getContext("2d")!;
+              context.drawImage(image, 0, 0);
+              const pixels = context.getImageData(0, 0, 1, image.height).data;
+              const values: number[][] = [];
+              for (let index = 0; index < pixels.length; index += 4) values.push([pixels[index]!, pixels[index + 1]!, pixels[index + 2]!]);
+              const [base] = values;
+              return values.map((pixel) => pixel.reduce((sum, channel, at) => sum + Math.abs(channel - base![at]!), 0));
+            }, png);
+          };
+          const seam = (distances: number[]) => {
+            const strongest = Math.max(...distances);
+            const strong = distances.map((distance) => distance >= strongest * 0.8);
+            // The column has to cross a visible edge at least two device pixels deep.
+            if (strongest < 40 || strong.filter(Boolean).length < 2) return true;
+            const first = strong.indexOf(true);
+            const last = strong.lastIndexOf(true);
+            return strong.slice(first, last + 1).includes(false);
+          };
+
+          for (const invalid of [false, true]) {
+            for (const name of Object.keys(shells)) {
+              if (invalid && name === "input-button") continue;
+              const cell = page.locator(`[data-field="${name}${invalid ? "-invalid" : ""}"]`);
+              const edge = cell.locator(shells[name]!.edge).first();
+              for (const state of ["rest", "focus"] as const) {
+                await enter(page, cell, name, state);
+                const distances = await column(edge);
+                expect(seam(distances), `${theme} ${name}${invalid ? " invalid" : ""} ${state} edge pixels ${distances.join(" ")}`).toBe(
+                  false,
+                );
+              }
+            }
+          }
+
+          const number = page.locator('[data-field="number"]');
+          const shell = number.locator(".k2b-input-shell");
+          const step = number.locator(".k2b-number-input__step").first();
+          for (const state of ["rest", "hover", "focus", "focus-hover"] as const) {
+            await page.mouse.move(5, 1090);
+            await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+            if (state.startsWith("focus")) await number.locator("input").focus();
+            if (state.endsWith("hover")) await hoverInPlace(step);
+            await settled(page);
+            const [outer, inner, line] = await Promise.all([
+              shell.evaluate((node) => {
+                const style = getComputedStyle(node);
+                const { x, y, height } = node.getBoundingClientRect();
+                return { x, y, height, border: Number.parseFloat(style.borderTopWidth), overflow: style.overflow };
+              }),
+              step.evaluate((node) => {
+                const { x, y, height } = node.getBoundingClientRect();
+                return { x, y, height, shadow: getComputedStyle(node).boxShadow };
+              }),
+              step.evaluate((node) => {
+                const probe = document.createElement("span");
+                probe.style.color = "var(--k2b-edge)";
+                node.append(probe);
+                const edge = getComputedStyle(probe).color;
+                probe.remove();
+                return { color: getComputedStyle(node).borderRightColor, width: getComputedStyle(node).borderRightWidth, edge };
+              }),
+            ]);
+            const label = `${theme} stepper ${state}`;
+            // The fill starts right inside the border and is clipped to its rounded corner.
+            expect(inner.x, `${label} left`).toBe(outer.x + outer.border);
+            expect(inner.y, `${label} top`).toBe(outer.y + outer.border);
+            expect(inner.height, `${label} height`).toBe(outer.height - 2 * outer.border);
+            expect(outer.overflow, `${label} clip`).toBe("hidden");
+            expect(inner.shadow, `${label} own edge`).toBe("none");
+            // 1 px; WebKit snaps it to one device pixel at 1.5x (0.667 px).
+            const divider = Number.parseFloat(line.width);
+            expect(divider > 0 && divider <= 1, `${label} divider width ${line.width}`).toBe(true);
+            expect(line.color, `${label} divider colour`).toBe(line.edge);
+          }
+          // Forced colours drop the fill, so a stepper focused from the keyboard shows the system outline.
+          await page.emulateMedia({ forcedColors: "active" });
+          await step.evaluate((node: HTMLElement) => node.focus({ focusVisible: true } as FocusOptions));
+          await settled(page);
+          expect(await step.evaluate((node) => getComputedStyle(node).outlineStyle), `${theme} forced stepper focus`).toBe("solid");
+          await page.emulateMedia({ forcedColors: "none" });
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT * 2,
+    );
+  }
+});
+
 // Filters share the field edge as a pure inset (no border); an active filter
 // takes the selected edge and fill. Secondary buttons and clickable cards keep
-// a light 1 px border in every state and change only their fill.
+// a light 1 px border in every state and change only their fill. The card sits
+// in a flat layer here: in the main content a clickable card is an island with
+// the island shadow (elevation.browser.test.ts), which no state changes.
 const controlsEntry = resolve(import.meta.dir, "control-edge-controls.fixture.ts");
 const controlsFixture = `
 import { createComponent, render } from "solid-js/web";
@@ -266,6 +387,7 @@ import { Button, FilterChip, FilterToggle, Paper, SegmentedControl, Tabs, ViewTa
 const cell = (name, make) => {
   const node = document.createElement("div");
   node.dataset.control = name;
+  node.dataset.k2bLayer = "flat";
   node.style.cssText = "width:260px";
   render(make, node);
   return node;
@@ -359,7 +481,8 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
                 borderColor: rgba(style.borderTopColor),
                 inset: Number(inset[0]?.match(/(-?[\d.]+)px\s+inset/)?.[1] ?? 0),
                 insetColor: color ? rgba(color) : undefined,
-                drop: shadows.filter((part) => !part.includes("inset")),
+                // A transparent no-op layer (the flat island hook) paints nothing.
+                drop: shadows.filter((part) => !part.includes("inset") && part !== "rgba(0, 0, 0, 0) 0px 0px 0px 0px"),
                 background: rgba(style.backgroundColor),
               };
             });
@@ -405,7 +528,7 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
               await page.mouse.move(5, 890);
               await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
               if (state === "focus") await element.evaluate((node: HTMLElement) => node.focus({ focusVisible: true } as FocusOptions));
-              if (state === "hover") await element.hover();
+              if (state === "hover") await hoverInPlace(element);
               await settled(page);
               seen[state] = await measure(element);
               if (shots) {

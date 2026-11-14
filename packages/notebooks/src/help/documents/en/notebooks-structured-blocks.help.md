@@ -204,7 +204,7 @@ Book evaluates the same table formulas as the editor, including computed columns
 
 Type `/map` in a writable note to insert a map block. Search for a place above the map, choose a result, then link the pin to a note, a heading or a website. **Cancel** closes the link editor without adding the pin. A map holds up to 20 pins.
 
-Select a pin in the list or on the map. In the list, use the arrow keys or Home and End to change the selection. In **Map actions**, **Edit link** changes its destination; **Remove pin** removes it from this map. Read-only and locked notes show the saved map without editing controls.
+Select a pin in the list below the map. In the list, use the arrow keys or Home and End to change the selection. Select the map to open it large: there you can zoom, pick pins on the map, and follow their links. Back or **Close** returns you to the note. In **Map actions**, **Edit link** changes its destination; **Remove pin** removes it from this map. Read-only and locked notes show the saved map without editing controls.
 
 With two or more pins, open **Map actions**, choose **Save route through pins**, then choose the travel mode and confirm. The route follows the list order and stays saved with its distance, estimated time and calculation date. Reading the note does not recalculate the route. A saved route may also arrive from the Assistant.
 

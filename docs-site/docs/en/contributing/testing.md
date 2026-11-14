@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-11-02
+updated: 2026-11-07
 ---
 
 # Testing
@@ -257,6 +257,25 @@ WebKit can apply `:hover` after `mouse.move()` resolves, and a reveal that only
 changes `visibility` starts no animation for `settled()` to wait for. See
 `hover()` in `packages/ui/src/layout/sidebar-row-label-room.browser.test.ts`.
 
+A test that reads geometry before and after a hover moves the pointer with
+`hoverInPlace(target, position)` from `packages/ui/test/browser.ts`, not with
+`Locator.hover()`. When an actionability check fails, `hover()` tries again
+and first scrolls the target with `scrollIntoView`, `block: "end"` on the
+first retry. One retry on a busy runner moves the page, and every viewport box
+read after it moves too. `hoverInPlace()` keeps only the first attempt's
+scroll: a target that is not fully in view scrolls in once, and one in view
+stays where it is. It waits until no view transition runs in the target's
+frame, because `<html>` takes all pointer input during one. Then it checks that
+the target is at the point and moves the mouse there. Any other cover fails at
+once. Without a position, it points at the center of the target's first line
+box, as `hover()` does, and it also works for a target in a frame
+([#3013](https://github.com/k2b-dev/cloud/issues/3013)). The `hover-in-place`
+check reports a `hover()` that has a `boundingBox()` or a page callback with
+`getBoundingClientRect()`, `getClientRects()` or `elementFromPoint()` before
+and after it in the same flow. Helpers of the same file count. A line comment
+`// hover: <reason>` on the same line or directly above allows a hover whose
+reads do not depend on the scroll position.
+
 A browser test that opens its own context or page gives itself a budget, as
 the Chat suites do (`test(name, run, 30_000)`), and keeps the page's shorter
 limit for each step (`page.setDefaultTimeout(5_000)`). Bun's default of 5 s
@@ -342,9 +361,12 @@ kept across tests closes with its browser.
 
 `browser.close()` from `launchBrowser()` is bounded. It asks the browser to
 exit and waits up to 2 s, then kills its process group and waits up to 2 s until
-every process is gone. This keeps `afterAll` inside Bun's 5 s hook timeout
-even when exit hangs, so the next file never starts beside a browser still
-shutting down ([#1473](https://github.com/k2b-dev/cloud/issues/1473)). A
+no living member remains. Zombies and dead processes awaiting reaping count
+as exited; signal 0 alone cannot distinguish them from living members. A
+living child still counts after its group leader exits. This keeps `afterAll`
+inside Bun's 5 s hook timeout even when exit hangs, so the next file never
+starts beside a browser still shutting down
+([#1473](https://github.com/k2b-dev/cloud/issues/1473)). A
 browser from `TEST_BROWSER_ENDPOINT` runs elsewhere and only gets the 2 s
 graceful close.
 A close that needed the kill and a launch still pending after 4 s print a
@@ -352,7 +374,8 @@ A close that needed the kill and a launch still pending after 4 s print a
 launch carries its duration in the error. A process group still alive after
 the kill fails the hook with those timings.
 `packages/ui/test/browser.browser.test.ts` guards a hung close and the next
-launch.
+launch. `packages/ui/scripts/browser-process.test.ts` guards zombie-only groups
+and living orphans with real Linux processes.
 
 `bun run test --browser` first runs `packages/ui/test/browser-warmup.ts`. It
 draws real `@k2b/ui` surfaces once, so a fresh engine's one-time costs, such as
@@ -696,18 +719,16 @@ branch:
   then for one frame:
   `await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))`.
   Waiting for the content alone is not a frame: a test that read focus after
-  it failed in WebKit CI (#1456). Where keys must reach the target at once, as
-  in the Notebooks attachment preview, the target carries `autofocus`, and the
-  test reads focus in the same `page.evaluate` that opens the dialog, before
-  any frame can pass.
-- Neither engine shows a PDF in a frame. Chromium's headless shell reports
-  `navigator.pdfViewerEnabled === false`, so `PdfPreview` shows its
-  missing-viewer hint instead of the frame, and an automatic preview requests
-  nothing; Playwright's WebKit reports a viewer but never loads the document,
-  so the loading state stays over the frame. A test therefore defines
-  `pdfViewerEnabled` on `Navigator.prototype` in an init script: `true` where
-  it measures the frame, `false` where it checks the hint. Where it needs the
-  loaded document, it dispatches the frame's `load` event itself.
+  it failed in WebKit CI (#1456). Where keys must reach the target at once,
+  the target carries `autofocus` or, as in the `Lightbox`, the component
+  focuses it while it opens, and the test reads focus in the same
+  `page.evaluate` that opens the dialog, before any frame can pass.
+- `PdfViewer` draws with pdf.js in both engines, so a browser test that needs
+  pages gives it a real PDF, such as `pdfFixture()` from
+  `packages/ui/test/pdf-fixture.ts`. A few bytes that only start with
+  `%PDF` end in the viewer's "This PDF cannot be shown here" state, which
+  suits a test of the area's states. Behavior tests in happy-dom mock
+  `pdf-document` instead, because pdf.js needs a real browser.
 - Fonts differ between machines and engines. A test that expects text to wrap
   or fit uses text that is clearly too long or clearly short enough.
 - Playwright's WebKit on Linux can stop a video for good when `play()` arrives
@@ -1100,6 +1121,33 @@ Never cut a random UUID or `Math.random()` to short-ID length: the small space
 repeats and fails a unique index at random. `bun run check` flags this with the
 `test-short-ids` rule.
 
+### Statement budgets for hot paths
+
+A path that runs per message, keystroke, delivery, or ordinary request gets
+a test that pins its number of SQL statements (DATA-13). `meterSql()` from
+`scripts/fixtures/sql-meter` puts a loopback proxy in front of the test
+database and rebinds the platform's `sql` handle through it. `during(run)`
+returns the statements the process ran while `run` was pending, as SQL text
+without parameters:
+
+```ts
+const meter = await meterSql();
+try {
+  const statements = await meter.during(() => editTenTimes());
+  expect({ perEdit: statements.length / 10, statements }).toEqual({ perEdit: 0, statements: expect.any(Array) });
+} finally {
+  await meter.close();
+}
+```
+
+Warm the caches with one event before the measured window. Keep the window to
+the events under test, because timers that fire inside it count too. Pin the
+number you measured, and name the issue when it is above the target. A fix
+lowers the number in the same pull request. Current budgets:
+`packages/cloud/src/server/middleware/request-budget.integration.test.ts`
+(2 per signed-in request) and
+`packages/notebooks/src/ws-edit-budget.integration.test.ts` (8 per edit, target 0).
+
 ## Measure the public-site example
 
 `bun scripts/lighthouse-public-site.ts` builds
@@ -1134,7 +1182,7 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in nine shards, WebKit tests in fifteen, and integration tests in
+Unit tests run in nine shards, WebKit tests in nineteen, and integration tests in
 five. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
@@ -1170,6 +1218,8 @@ excluding Grids from integration.
 It reports the smallest shard count whose predicted slowest shard fits 11
 minutes for WebKit, or 15 for unit and integration. For example, refresh WebKit
 with `bun scripts/test-weights.ts --mode browser --run <id> <id>`.
+Leave measured room below the target for new files. A recommendation that only
+just fits can fail the runner guard as soon as another browser file is added.
 If one suite alone exceeds that target, split the suite: `test:part:<name>`
 scripts in the package become the suites `<package> <name>` in place of its `test`
 script, and together they must run the same files. Commit the
@@ -1188,7 +1238,7 @@ when the selected runs are faster. Actual times still depend on the runner: a wh
 job running several times slower cannot be bounded by historical file weights.
 
 The WebKit target comes from the November 7 measurements for
-[#1998](https://github.com/k2b-dev/cloud/issues/1998). The refresh includes all
+[#1998](https://github.com/k2b-dev/cloud/issues/1998). That first refresh used all
 33 WebKit job logs from runs
 [42371812311](https://github.com/k2b-dev/cloud/actions/runs/42371812311),
 [42373338426](https://github.com/k2b-dev/cloud/actions/runs/42373338426), and
@@ -1201,17 +1251,28 @@ was 1.610 (sort the ratios, take observation `ceil(0.95 * 65)`). This is evidenc
 of a job-wide slowdown; its hardware or process cause remains unconfirmed.
 
 Reserve the full 2-minute browser warm-up limit, then allow that measured
-slowdown: `11 * 1.61 + 2 = 19.71 < 20` minutes. The refreshed table covers all
-380 files, up from 289. With these same measurements, the old shard membership
-needs up to 20.43 minutes. Rebalancing gives 14.95 minutes with eleven shards,
-11.75 with fourteen, and 10.97 with fifteen,
-so fifteen is the smallest matrix that meets the target. These are historical
-planning estimates, not new CI wall times. The largest file is ChatWorkspace
-at 447.6 seconds; text-editor-component took 29.5 seconds in the green shard
-and 36.8 in the first failed one. Neither needs splitting to meet this target.
-Keep contexts isolated between tests, as required above. Refresh the weights
-and reconsider the matrix when the measured workload grows; keep the execution
-budget at 20 minutes.
+slowdown: `11 * 1.61 + 2 = 19.71 < 20` minutes. The first refresh selected
+fifteen shards at 10.97 minutes, leaving too little room for new browser files:
+adding one file in [#2810](https://github.com/k2b-dev/cloud/pull/2810) tipped
+the runner guard to 660.45 seconds against its 660-second target.
+
+The current browser weights use maxima from the WebKit jobs of runs
+[43605465168](https://github.com/k2b-dev/cloud/actions/runs/43605465168),
+[43604064299](https://github.com/k2b-dev/cloud/actions/runs/43604064299),
+[43600763560](https://github.com/k2b-dev/cloud/actions/runs/43600763560),
+[43593953102](https://github.com/k2b-dev/cloud/actions/runs/43593953102),
+[43588358082](https://github.com/k2b-dev/cloud/actions/runs/43588358082), and
+[43563379904](https://github.com/k2b-dev/cloud/actions/runs/43563379904),
+two of them failed runs. The table covers all 443 current files. Seventeen
+shards predict 681.5 seconds, above the target, and eighteen predict 643.6
+seconds, only 16.4 seconds below it. Nineteen predict 609.5 seconds
+(10.16 minutes), leaving 50.5 seconds (7.7%) below the target. Replaying the
+plan with ten additional unmeasured files at the table's 11.9-second median
+gives 616.2 seconds, still 43.8 seconds below the target.
+These are historical planning estimates, not new CI wall times or a guarantee
+for files of any size. Keep contexts isolated between tests, as required above.
+Refresh the weights and reconsider the matrix when the measured workload grows;
+keep the execution budget at 20 minutes.
 
 Inspect a selection without
 starting services with `bun run test --integration --exclude grids --shard 1/3 --list`.
@@ -1479,7 +1540,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in fifteen shards with `bun run test --browser`, against
+them again in WebKit in nineteen shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the

@@ -30,7 +30,7 @@ describe("Notebook table escaped pipes", () => {
   for (const sourceVisible of [false, true]) {
     test(`escaped pipes preserve ${sourceVisible ? "inline" : "block"} formula previews`, async () => {
       const dom = createDomTestHarness();
-      const { markdownExtension, refreshMarkdownDecorationsEffect } = await import("@k2b/editor/markdown");
+      const { markdownEditorFocused, markdownExtension, refreshMarkdownDecorationsEffect } = await import("@k2b/editor/markdown");
       document.documentElement.lang = "en";
       const { tablesExtension } = await import("./tables");
       const doc = "Intro\n\n\n| Name | Result |\n| --- | --- |\n| Ada \\| Grace | =LEN(Name) |";
@@ -39,7 +39,8 @@ describe("Notebook table escaped pipes", () => {
         state: EditorState.create({
           doc,
           selection: { anchor: sourceVisible ? doc.indexOf("=LEN") + 4 : 0 },
-          extensions: [markdownExtension(), tablesExtension()],
+          // The person put the caret in the formula cell or at the start.
+          extensions: [markdownEditorFocused.init(() => true), markdownExtension(), tablesExtension()],
         }),
       });
       // Table widgets follow the syntax tree. CodeMirror parses it within a small time budget, so on a busy runner

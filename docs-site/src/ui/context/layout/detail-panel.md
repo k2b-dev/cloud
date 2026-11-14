@@ -11,7 +11,7 @@ changes, reserves no space, and is disabled in forced-color mode.
 ## Import
 
 ```tsx
-import { DescriptionList, DetailPanel, NumberInput } from "@k2b/ui";
+import { DescriptionList, DetailPanel, NumberInput, Section } from "@k2b/ui";
 ```
 
 ## Use DetailPanel
@@ -21,8 +21,8 @@ import { DescriptionList, DetailPanel, NumberInput } from "@k2b/ui";
 A details panel follows one order of use, so it reads the same in every app.
 Each app leaves out what its object does not have:
 
-1. **Header** with the title, a short meta line, and the actions on the
-   item.
+1. **Header** with the name first, beside close, then a short meta line
+   and the actions on the item. Nothing stands above the name.
 2. **Here now** (`DetailPresence`), only for objects several people have
    open live, such as a note: who is here, who writes where, and you.
 3. **Fields people edit** as quiet rows: name, then value. A click on an
@@ -51,7 +51,13 @@ another host when the same inspector content is reused. The host owns opening,
 closing, sizing, and persistence. An `AppWorkspace.Detail` column shares the
 workspace surface; a waiting Detail opens as a raised drawer with a soft
 shadow toward the content it covers. Its sections and
-groups have no boxes of their own. The application owns data, permissions,
+groups have no boxes of their own.
+
+A detail panel is a docked column (layer 0 of
+[Layers and shadows](/en/ui/surfaces/elevation)) and flat inside: sections are
+a heading and one subtle hairline between topics, never cards, and a `Paper`, `ResourceCard`, or framed
+`Section` inside casts no shadow. The panel sets this itself; an application
+adds no shadow and no frame. The application owns data, permissions,
 mutations, and which sections are present. See
 [Detail and panel](/en/ui/layout/workspace#detail-and-panel).
 
@@ -63,15 +69,19 @@ spacing as `AppWorkspace.Detail`. Omit it to keep the default section surfaces.
 <DetailPanel surface="plain">
   <DetailPanel.Header title="In this chat" />
   <DetailPanel.Body>
-    <DetailPanel.Section title="Results" count={0} />
+    <Section title="Results" count={0} />
   </DetailPanel.Body>
 </DetailPanel>
 ```
 
-`DetailPanel.Header` keeps identity and actions in one compact region. Pass
-`kind` for a short line above the title that names what the panel shows, such
-as "Conversation" or "Task", followed by its state badge; it shares the first
-row with the compact `actions`. Pass
+`DetailPanel.Header` keeps identity and actions in one compact region. The
+name is the first line and shares its row with the compact `actions`, such as
+close; nothing stands above it. Pass `kind` for the item's state, such as a
+"Done" or "Read only" badge: it leads the line below the title, before the
+subtitle. Do not repeat the object's type there: the person opened the item
+from a list that already says what it is, and the subtitle's facts ("PDF ·
+248 KB") say the rest. Name a type only where one list mixes types that the
+title and subtitle do not tell apart, such as "Query" and "Action". Pass
 `icon` for the standard accent-tinted identity tile or `leading` for an avatar
 or another custom identity; they are mutually exclusive. Pass the resource's
 less frequent commands as `menu` (`DropdownItem[]`): the header shows one
@@ -84,7 +94,8 @@ commands below the identity row. On touch devices, primary
 actions keep 0.625rem from the identity row and between wrapped lines, so
 their [tap areas](/en/ui/actions/buttons#touch-targets) stay clear of a
 `meta` action or the line above.
-The title wraps to at most two lines, with the full string in its native hint.
+The title never wraps: it stays on one line and ends with an ellipsis, with the
+full string in its native hint and in its accessible text.
 The subtitle stays on one line and ends with an ellipsis; `meta` sits at its
 trailing edge instead of competing with the title. The subtitle keeps at least
 6rem, so a `meta` too wide for that moves below it, still on the trailing edge,
@@ -112,27 +123,34 @@ and aligns with the header title. Do not repeat the summary for every group.
 The panel uses `--k2b-detail-panel-accent` for restrained identity and action
 accents, with the portable UI accent as its fallback. Text actions in section
 and summary headings fall back to the theme's action color instead, so they
-keep their contrast in dark mode. A host may map that hook to its own theme
-token; `DetailPanel` does not know how the host derives it.
+keep their contrast in dark mode. On hover they darken to
+`--k2b-detail-panel-accent-hover`, which falls back to `--k2b-action-hover`;
+they never take the body ink. A host may map both hooks to its own theme
+tokens; `DetailPanel` does not know how the host derives them.
 
-`DetailPanel.Section` draws no frame of its own. It groups content through
-spacing and a sentence-case title, not a card, divider, or decorative
-background; the group or the body frames it. Pass `icon` for a fixed section icon slot and `tone` to distinguish
-portable `accent`, `neutral`, `success`, `warning`, or `danger` roles through
-text color only. Pass `description` for short supporting context, `count` for
+Every topic of a panel is a [`Section`](/en/ui/surfaces/section), the same
+component that frames the topics of a full page. Inside `DetailPanel` a section
+draws no frame of its own: the panel sets its default `frame` to `"none"`, and
+the section groups content through spacing and a sentence-case title, not a
+card or decorative background; the group or the body frames it, and the
+panel draws one hairline between topics. Do
+not pass `frame="line"` inside a panel. Pass `icon` for a fixed section icon
+slot and `tone` (`neutral`, `success`, `warning`, `danger`, `info`, or `ai`) for
+a status that the heading also says in words; in a panel a tone colors the
+title and icon only. Pass `restricted` with the app's words, such as "Only with
+permission", when only some people see the section. Pass `description` for short supporting context, `count` for
 a numeric count chip, and `meta` for short state text such as “2 of 4 done”.
 Both sit immediately after the title. A zero `count` reads “None yet”,
 localized through the inherited UI locale. A stream such as activity has no
 count. Give a normal section at most one trailing control through `actions`.
 Only the description is muted: a field in `actions` keeps its own description and error styles. A normal section may omit
 its body to represent a compact, actionable empty group. Set `collapsible` for
-secondary content. Closed sections show a compact action row; open sections show
-a heading with a collapse button on the right. Both states share one geometry
-with the other section headings: the icon, title, meta, and chevron keep their
-columns and the row its height when the section opens or closes. Hover colors
-the title and chevron, and its fill bleeds 0.5rem into the panel gutter.
-Keyboard focus adds the
-shared focus ring, drawn inside the row where the panel would clip it. Their
+secondary content. The whole heading row is then one disclosure button inside
+the section's heading: its chevron points down while the section is closed and
+up while it is open. Both states share one geometry with the other section
+headings: the icon, title, meta, and chevron keep their columns and the row its
+height when the section opens or closes. Hover colors the title and chevron.
+Keyboard focus adds the shared focus ring and stays on the same button. Their
 content stays mounted when
 closed, preserving unsaved input and child state. Collapsible sections reserve
 the header action for collapsing.
@@ -140,8 +158,9 @@ the header action for collapsing.
 Use `defaultOpen` for an initially expanded section, or control it with `open`
 and `onOpenChange`. Controlled state is authoritative: the callback requests a
 change but does not open or close the section itself. This lets an editor open
-the relevant section after validation fails. `disabled` disables both toggle
-buttons; it does not disable the child controls. Use a fieldset for that.
+the relevant section after validation fails. When a parent closes the section
+while focus is inside its body, focus returns to its heading button. `disabled`
+disables the toggle; it does not disable the child controls. Use a fieldset for that.
 The content owns its layout: wrap form controls in a column with a gap.
 
 Pass `summary` to a collapsible section for one line that says what it
@@ -154,8 +173,8 @@ its body.
 Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
 adjacent sections when they belong to that same context. Outside
-`AppWorkspace.Detail`, the group owns the same quiet surface as the summary. Inside it, or with `surface="plain"`, the group is transparent. Spacing and section headings
-separate its sections without borders or lines. Pass `label` when the
+`AppWorkspace.Detail`, the group owns the same quiet surface as the summary. Inside it, or with `surface="plain"`, the group is transparent. Its sections
+stand together, separated by spacing and their headings, without lines. Pass `label` when the
 shared context benefits from an accessible group name. Pass `title` for a
 visible quiet title, such as "More about this conversation": it names the
 group, and its sections stand flush below it as rows. Use it for collapsed
@@ -189,6 +208,17 @@ message, start at the content edge without their own horizontal padding. A
 left-aligned `Placeholder` in a section does the same on its own. Do not
 add domain variants such as `record`, `mail`, or `workflow` to `DetailPanel`.
 
+### One hairline between topics
+
+Inside `AppWorkspace.Detail` and with `surface="plain"`, the panel separates
+its topics with one subtle hairline in `--k2b-border`: every section,
+discussion, or group after the first element of the body starts below a line
+with space above and below it. The line spans the body's content width. A
+group's own sections stay together without lines, so related sections read as
+one topic. The panel draws the line itself; an application adds no border,
+divider, box, or shadow around or between its sections. With the default
+surface, sections keep their own surfaces and draw no line.
+
 ### One edge per section
 
 A section heading is its icon, title, and count. Everything below it starts
@@ -197,7 +227,7 @@ with their icons and avatars, comments, properties, and the summary of a
 closed section, which follows the title on its row. Nothing sits under the
 section icon. Only a real sub-level, such as an H3 in an outline, indents
 further. Hover fills may reach past the edge into the panel gutter; text and
-icons never do. `DetailPanel.Section`, `Discussion`, `DetailPanel.Action`,
+icons never do. `Section`, `Discussion`, `DetailPanel.Action`,
 `DetailPanel.Row`, `FileGrid` in a section, and the shared sections below
 keep this edge on their own; app content inside a section must not add an
 indent or step back from it. To check it, measure: the left edge of every
@@ -207,7 +237,7 @@ its title text, at desktop and phone width.
 ### Shared sections
 
 The common sections of an object's panel are shared components on top of
-`DetailPanel.Section`. Apps pass data; the components own the icon, title,
+`Section`. Apps pass data; the components own the icon, title,
 count, states, and the edge. Each keeps its height while its data changes, so
 nothing moves when people come, go, or a list loads.
 
@@ -313,6 +343,16 @@ click. The application confirms destructive work, performs it, and refreshes
 the list. When that removes the focused row, the application moves focus to
 the row that takes its place. Keep further commands in `menuItems`.
 
+When a row carries a state that people toggle without opening it, such as "done"
+for a task, pass `checkbox` with `checked`, an accessible `label`, and
+`onChange`. Name the label after the row, such as `Done: Call Mrs. Weber`. The
+checkbox renders as a sibling control before the row, in the icon column on the
+section's text edge, so the row itself still opens the task. Unlike a secondary
+action, it always shows, because it carries the row's state. Do not use
+`secondaryAction` with a check icon for this: it hides until hover and cannot
+show whether the task is done. The application owns the change and any style of
+a done title, such as a muted color.
+
 ## API reference
 
 ```ts
@@ -349,44 +389,20 @@ type DetailPanelGroupProps = {
   children: JSX.Element; label?: string; title?: JSX.Element; class?: string;
 };
 
-type DetailPanelTone = "accent" | "neutral" | "success" | "warning" | "danger";
-
-type DetailPanelSectionBaseProps = {
-  title: JSX.Element; icon?: string; tone?: DetailPanelTone; description?: JSX.Element; count?: number; meta?: JSX.Element;
-  class?: string;
-};
-
-type DetailPanelSectionProps = DetailPanelSectionBaseProps &
-  (
-    | {
-        children?: JSX.Element;
-        actions?: JSX.Element;
-        collapsible?: false;
-        summary?: never;
-        defaultOpen?: never;
-        open?: never;
-        onOpenChange?: never;
-        disabled?: never;
-      }
-    | {
-        children: JSX.Element;
-        actions?: never;
-        collapsible: true;
-        summary?: JSX.Element;
-        defaultOpen?: boolean;
-        open?: boolean;
-        onOpenChange?: (open: boolean) => void;
-        disabled?: boolean;
-      }
-  );
+// The panel's topics are `Section`s; see SectionProps on /en/ui/surfaces/section.
 
 type DetailPanelActionSecondary = {
   icon: string; label: string; onClick: () => void; variant?: "danger";
 };
 
+type DetailPanelActionCheckbox = {
+  checked: boolean; label: string; onChange: (checked: boolean) => void; disabled?: boolean;
+};
+
 type DetailPanelActionBaseProps = {
   title: JSX.Element; description?: JSX.Element; leading?: JSX.Element; trailing?: JSX.Element;
-  secondaryAction?: DetailPanelActionSecondary; current?: boolean; wrap?: boolean; class?: string;
+  secondaryAction?: DetailPanelActionSecondary; checkbox?: DetailPanelActionCheckbox;
+  current?: boolean; wrap?: boolean; class?: string;
 };
 
 type DetailPanelActionMenuProps =
@@ -573,7 +589,7 @@ state and remain mounted when the section closes.
           ]}
         />
       </DetailPanel.Summary>
-      <DetailPanel.Section
+      <Section
         title="Notes"
         icon="ti ti-notes"
         count={0}
@@ -581,7 +597,7 @@ state and remain mounted when the section closes.
         actions={<Button variant="ghost" size="xs">Add note</Button>}
       />
       <DetailPanel.Group label="Inventory context">
-        <DetailPanel.Section title="Related records" icon="ti ti-link" tone="accent">
+        <Section title="Related records" icon="ti ti-link">
           <DetailPanel.Action
             href="/app/grids/locations/records/st-02"
             leading={<i class="ti ti-building-warehouse" aria-hidden="true" />}
@@ -589,12 +605,12 @@ state and remain mounted when the section closes.
             description="Room · ST-02"
             trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
           />
-        </DetailPanel.Section>
-        <DetailPanel.Section title="Attachments" icon="ti ti-paperclip" tone="neutral" count={2} />
+        </Section>
+        <Section title="Attachments" icon="ti ti-paperclip" count={2} />
       </DetailPanel.Group>
-      <DetailPanel.Section title="History" icon="ti ti-history" collapsible>
+      <Section title="History" icon="ti ti-history" collapsible>
         …
-      </DetailPanel.Section>
+      </Section>
     </DetailPanel.Body>
   </DetailPanel>
 </AppWorkspace.Detail>

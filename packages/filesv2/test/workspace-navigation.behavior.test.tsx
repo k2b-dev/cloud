@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { createComponent, createRoot, createSignal } from "solid-js";
+import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import { createWorkspaceState, type WorkspaceSnapshot } from "../src/frontend/workspace-state";
@@ -15,7 +15,11 @@ if (!isServer) {
       shares: { $get: request("shares") },
       recent: { $get: request("recent") },
       favorites: { $get: request("favorites") },
-      bases: { $get: request("bases"), ":baseId": { entries: { $get: request("entries") }, trash: { $get: request("trash") } } },
+      activity: { $get: request("activity") },
+      bases: {
+        $get: request("bases"),
+        ":baseId": { entries: { $get: request("entries") }, trash: { $get: request("trash") }, favorite: { $post: request("favorite") } },
+      },
     },
   }));
 }
@@ -354,7 +358,7 @@ describe("Filesv2 progressive navigation", () => {
     assertListing();
   });
 
-  test("overview navigation loads no directory, Recent loads itself, and failed tile navigation offers retry", async () => {
+  test("overview navigation loads no directory, its sections load themselves, and failed tile navigation offers retry", async () => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", initial.source);
     const { Workspace } = modules!;
@@ -385,42 +389,45 @@ describe("Filesv2 progressive navigation", () => {
     expect(apiRequests[0]!.kind).toBe("bases");
     apiRequests[0]!.resolve(Response.json(bases));
     await flush();
-    expect(apiRequests[1]!.kind).toBe("recent");
+    // Favorites, then the person's own changes and opened files for "Recently by you"; no directory.
+    expect(apiRequests.slice(1).map((request) => request.kind)).toEqual(["favorites", "activity", "recent"]);
     apiRequests[1]!.resolve(Response.json([]));
+    apiRequests[2]!.resolve(Response.json({ items: [], next: null, visibleCount: 0, batches: [], exhausted: true }));
+    apiRequests[3]!.resolve(Response.json([]));
     await flush();
-    expect(apiRequests).toHaveLength(2);
+    expect(apiRequests).toHaveLength(4);
+    expect(apiRequests[2]!.input).toEqual({ query: { actor: "me", limit: "5" } });
     expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/filesv2");
     expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
     expect(dom.root.querySelector(".filesv2-browser__header")).toBeNull();
-    const search = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.includes("Search all storage"),
-    )!;
-    search.click();
-    expect(searches).toEqual([{ query: "", scope: { appId: "filesv2", tag: "file", label: "Files", icon: "ti ti-folders" } }]);
+    // The overview has no search button of its own any more; the sidebar's Search is the one way.
+    expect([...dom.root.querySelectorAll(".filesv2-overview button")].some((button) => button.textContent?.includes("Search"))).toBe(false);
+    expect(dom.root.textContent).toContain("No favorites yet.");
+    expect(dom.root.textContent).toContain("No activity of yours yet.");
+    const pending = (kind: string, after: number) => apiRequests.find((request, index) => index > after && request.kind === kind)!;
     dom.root.querySelector<HTMLAnchorElement>('.k2b-link-card[href="/app/filesv2?base=home"]')!.click();
     await flush();
-    apiRequests[2]!.resolve(Response.json(bases));
+    pending("bases", 3).resolve(Response.json(bases));
     await flush();
-    expect(apiRequests[3]!.kind).toBe("entries");
-    apiRequests[3]!.resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
+    pending("entries", 3).resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
     await flush();
     expect(dom.window.location.search).toBe("");
     expect(dom.root.querySelector(".k2b-link-card")).toBeNull();
     const error = dom.root.querySelector(".k2b-app-workspace__main .k2b-placeholder")!;
     expect(error.textContent).toContain("Storage unavailable");
     expect(error.querySelector("a")!.getAttribute("href")).toBe("/app/filesv2?base=home");
+    const before = apiRequests.length - 1;
     error.querySelector<HTMLAnchorElement>("a")!.click();
     await flush();
-    const pending = (kind: string) => apiRequests.find((request, index) => index > 3 && request.kind === kind)!;
-    pending("bases").resolve(Response.json(bases));
+    pending("bases", before).resolve(Response.json(bases));
     await flush();
-    pending("entries").resolve(Response.json(directory));
+    pending("entries", before).resolve(Response.json(directory));
     await flush();
     expect(dom.window.location.search).toBe("?base=home");
     expect(dom.root.querySelector(".filesv2-list__row--up")!.textContent).toContain("All storage");
   });
 
-  test("a failing Recent stays inside the overview; tiles and the way into storage keep working", async () => {
+  test("a failing section stays inside the overview and retries; tiles and the way into storage keep working", async () => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", "/app/filesv2");
     const { Workspace } = modules!;
@@ -442,23 +449,29 @@ describe("Filesv2 progressive navigation", () => {
       dom.cleanup();
     };
     await flush();
-    // The tiles come from the bases alone; Recent asks for itself once the overview is on screen.
+    // The storage entries come from the bases alone; favorites and "Recently by you" ask for themselves.
     expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
-    expect(apiRequests.map((request) => request.kind)).toEqual(["recent"]);
-    expect(dom.root.querySelector('.filesv2-overview section .k2b-placeholder[data-state="loading"]')).not.toBeNull();
-    apiRequests[0]!.resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
+    expect(apiRequests.map((request) => request.kind)).toEqual(["favorites", "activity", "recent"]);
+    expect(dom.root.querySelectorAll(".filesv2-overview__skeleton-card")).toHaveLength(6);
+    const unavailable = () => Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 });
+    apiRequests[0]!.resolve(unavailable());
+    apiRequests[1]!.resolve(unavailable());
+    apiRequests[2]!.resolve(Response.json([]));
     await flush();
     expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
-    const section = dom.root.querySelector(".filesv2-overview section")!;
-    expect(section.querySelector('.k2b-placeholder[data-state="error"]')).not.toBeNull();
-    const retry = [...section.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Try again"))!;
-    retry.click();
+    const sections = [...dom.root.querySelectorAll(".filesv2-overview__section")];
+    expect(sections.map((section) => !!section.querySelector('.k2b-placeholder[data-state="error"]'))).toEqual([true, false, true]);
+    for (const section of [sections[0]!, sections[2]!])
+      [...section.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Try again"))!.click();
     await flush();
-    expect(apiRequests[1]!.kind).toBe("recent");
-    apiRequests[1]!.resolve(Response.json([]));
+    expect(apiRequests.slice(3).map((request) => request.kind)).toEqual(["favorites", "activity", "recent"]);
+    apiRequests[3]!.resolve(Response.json([]));
+    apiRequests[4]!.resolve(Response.json({ items: [], next: null, visibleCount: 0, batches: [], exhausted: true }));
+    apiRequests[5]!.resolve(Response.json([]));
     await flush();
-    expect(section.querySelector('.k2b-placeholder[data-state="error"]')).toBeNull();
-    expect(section.textContent).toContain("Files you open or download appear here.");
+    expect(dom.root.querySelector('.filesv2-overview .k2b-placeholder[data-state="error"]')).toBeNull();
+    expect(sections[0]!.textContent).toContain("No favorites yet.");
+    expect(sections[2]!.textContent).toContain("No activity of yours yet.");
     expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
   });
 
@@ -513,8 +526,10 @@ describe("Filesv2 progressive navigation", () => {
     const places = dom.root.querySelector(".k2b-app-workspace__sidebar-section")!;
     expect(
       [...places.querySelectorAll<HTMLElement>(".k2b-app-workspace__sidebar-item-label")].map((item) => item.textContent?.trim()),
-    ).toEqual(["All storage", "Recent", "Favorites", "Shares", "Activity"]);
-    expect(link("Activity").getAttribute("href")).toBe("/app/filesv2?view=activity&base=home");
+    ).toEqual(["All storage", "Activity", "Favorites", "Shares"]);
+    // Activity took Recent's place and always opens "Me" across all storage, even from inside one.
+    expect(link("Activity").getAttribute("href")).toBe("/app/filesv2?view=activity&who=me");
+    expect(link("Favorites").getAttribute("href")).toBe("/app/filesv2?view=favorites");
     const search = footer.querySelector<HTMLButtonElement>("button")!;
     expect(search.getAttribute("title")).toBe("Search files");
     search.click();
@@ -716,20 +731,24 @@ describe("Filesv2 progressive navigation", () => {
     expect(dom.root.textContent).toContain("No storage available");
     expect(dom.root.textContent).not.toContain("disabled");
   });
-  test("marks load only while open, abort on close, refresh on reopen and use one compact ordered catalog", async () => {
+  test("the favorites page loads, opens, removes at once and brings a favorite back when removing fails", async () => {
     const dom = createDomTestHarness();
-    const { MarksMenu, openMarksDialog } = await import("../src/frontend/MarksMenu");
-    const [open, setOpen] = createSignal(false);
+    const { default: FavoritesPage } = await import("../src/frontend/FavoritesPage");
+    const { LocaleProvider } = modules!.ui;
     const opened: string[] = [];
     const dispose = render(
       () =>
-        createComponent(MarksMenu, {
-          kind: "recent",
-          get open() {
-            return open();
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(FavoritesPage, {
+              initial: null,
+              bases: [{ id: "home", label: "Persönlich" }],
+              timeZone: "Europe/Berlin",
+              now: "2026-10-20T12:30:00.000Z",
+              onOpen: (entry) => opened.push(entry.entry.path),
+            });
           },
-          close: () => setOpen(false),
-          onOpen: (entry) => opened.push(entry.entry.path),
         }),
       dom.root,
     );
@@ -738,48 +757,37 @@ describe("Filesv2 progressive navigation", () => {
       dom.cleanup();
     };
     await flush();
-    expect(apiRequests).toHaveLength(0);
-    setOpen(true);
-    await flush();
-    expect(apiRequests[0]!.kind).toBe("recent");
-    setOpen(false);
-    await flush();
-    expect(apiRequests[0]!.signal?.aborted).toBe(true);
-    setOpen(true);
-    await flush();
-    const make = (path: string, at: string) => ({
+    expect(apiRequests.map((request) => request.kind)).toEqual(["favorites"]);
+    expect(dom.root.querySelectorAll(".filesv2-favorites__skeleton-row")).toHaveLength(6);
+    const make = (path: string) => ({
       base: { id: "home", name: "Home", kind: "users", area: "cloud" },
-      entry: { path, name: "Notes", directory: false, size: 1, modified: at },
-      markedAt: at,
+      entry: { path, name: path.split("/").at(-1), directory: false, size: 1, modified: "2026-10-20T10:00:00.000Z" },
+      markedAt: "2026-10-20T10:00:00.000Z",
     });
-    apiRequests[1]!.resolve(Response.json([make("old/Notes", "2026-01-01T00:00:00Z"), make("new/Notes", new Date().toISOString())]));
+    apiRequests[0]!.resolve(Response.json([make("Planung/Budget.xlsx"), make("Notizen.md")]));
     await flush();
-    apiRequests[0]!.resolve(Response.json([]));
+    expect(dom.root.textContent).toContain("Budget.xlsx");
+    expect(dom.root.textContent).toContain("Persönlich / Planung · heute, 12:00");
+    [...dom.root.querySelectorAll<HTMLElement>(".k2b-file-grid__row")]
+      .find((row) => row.textContent?.includes("Budget.xlsx"))!
+      .querySelector<HTMLButtonElement>(".k2b-file-grid__open")!
+      .click();
+    expect(opened).toEqual(["Planung/Budget.xlsx"]);
+    const star = () => [...dom.root.querySelectorAll<HTMLButtonElement>('button[aria-label="Aus Favoriten entfernen"]')];
+    star()[0]!.click();
     await flush();
-    const entries = [...dom.root.querySelectorAll<HTMLButtonElement>("button")];
-    expect(entries).toHaveLength(2);
-    expect(entries[0]!.textContent).toContain("Personal / new/Notes");
-    expect(entries[0]!.textContent).not.toContain("Home /");
-    expect(entries[0]!.querySelector("time")).not.toBeNull();
-    entries[0]!.click();
+    // Gone at once; the failed request brings it back.
+    expect(dom.root.textContent).not.toContain("Budget.xlsx");
+    expect(apiRequests[1]!.kind).toBe("favorite");
+    expect(apiRequests[1]!.input).toEqual({ param: { baseId: "home" }, json: { path: "Planung/Budget.xlsx", favorite: false } });
+    apiRequests[1]!.resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
     await flush();
-    expect(open()).toBe(false);
-    expect(opened).toEqual(["new/Notes"]);
-    const modal = openMarksDialog({ kind: "favorites", title: "Favorites", onOpen: (entry) => opened.push(entry.entry.path) });
+    expect(dom.root.textContent).toContain("Budget.xlsx");
+    for (const button of star()) button.click();
     await flush();
-    expect(apiRequests[2]!.kind).toBe("favorites");
-    const loadingViewport = dom.document.querySelector("dialog .k2b-scroll-area[data-viewport-size=compact]");
-    expect(loadingViewport).not.toBeNull();
-    apiRequests[2]!.resolve(Response.json([]));
+    for (const request of apiRequests.slice(2)) request.resolve(Response.json({ favorite: false }));
     await flush();
-    const dialog = dom.document.querySelector<HTMLDialogElement>("dialog")!;
-    // The empty catalog is one line where the first favorite row would be.
-    const empty = dialog.querySelector<HTMLElement>('.k2b-placeholder[data-variant="inline"][data-align="left"]');
-    expect(empty?.textContent).toBe("Mark files or folders as favorites from their details panel.");
-    expect(empty?.querySelector(".k2b-placeholder__icon > i")?.className).toBe("ti ti-star");
-    expect(dialog.querySelector(".k2b-scroll-area")).toBe(loadingViewport);
-    dialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true }));
-    await modal;
+    expect(dom.root.textContent).toContain("Noch keine Favoriten");
   });
 
   test("an unchanged current page still refreshes a visible expanded browser branch without navigation", async () => {

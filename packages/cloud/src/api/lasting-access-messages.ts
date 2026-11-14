@@ -5,11 +5,13 @@ export const lastingAccessApiMessages = i18n.define({
   messages: {
     en: {
       browserSignInRequired: "Create API keys and passkeys in the browser.",
+      sshKeysInBrowser: "Change SSH keys in the browser.",
       reauthenticate: "Sign in again to confirm it is you.",
       forbidden: "This account cannot create new access.",
     },
     de: {
       browserSignInRequired: "API Keys und Passkeys legst du im Browser an.",
+      sshKeysInBrowser: "SSH-Schlüssel änderst du im Browser.",
       reauthenticate: "Melde dich erneut an, um zu bestätigen, dass du es bist.",
       forbidden: "Dieses Konto kann keinen neuen Zugang anlegen.",
     },

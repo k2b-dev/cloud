@@ -140,8 +140,6 @@ const BulkQueryLauncherInvocationSchema = z
   })
   .strict();
 
-const BulkLauncherInvocationSchema = z.union([BulkRecordIdsLauncherInvocationSchema, BulkQueryLauncherInvocationSchema]);
-
 const RecordLauncherInvocationSchema = z
   .object({
     ...invocationFields,
@@ -549,7 +547,12 @@ export const invokeBulkLauncher = async (
   rawInput: unknown,
   deps: WorkflowLauncherInvocationDeps = defaultDeps,
 ): Promise<Result<WorkflowInvocationReceipt>> => {
-  const input = BulkLauncherInvocationSchema.safeParse(rawInput);
+  // Validate the supplied selector directly so union errors cannot hide its field and limit diagnostics.
+  const schema =
+    typeof rawInput === "object" && rawInput !== null && "recordIds" in rawInput
+      ? BulkRecordIdsLauncherInvocationSchema
+      : BulkQueryLauncherInvocationSchema;
+  const input = schema.safeParse(rawInput);
   if (!input.success)
     return fail(
       err.badInput(

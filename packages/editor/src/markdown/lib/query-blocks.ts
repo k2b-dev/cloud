@@ -72,6 +72,7 @@ export type NotebookBlockDiagnosticCode =
   | "unknown-column"
   | "not-a-number"
   | "chart-x-type"
+  | "chart-balance-period"
   | "chart-one-series"
   | "chart-unsupported";
 

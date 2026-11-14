@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { composeSafetyApprovalSchema } from "../contracts";
 import type { ComposeSafetySource } from "./compose-safety";
 import { evaluateComposeSafety } from "./compose-safety";
 
@@ -11,6 +12,7 @@ const source = (overrides: Partial<ComposeSafetySource> = {}): ComposeSafetySour
   to: [{ address: "alex@example.org" }],
   cc: [],
   bcc: [],
+  subject: "Hello",
   body: "Hello",
   format: "markdown",
   attachmentNames: [],
@@ -20,6 +22,44 @@ const source = (overrides: Partial<ComposeSafetySource> = {}): ComposeSafetySour
 });
 
 describe("compose safety", () => {
+  test.each(["new", "reply", "reply_all", "forward"] as const)("warns about blank subjects for %s", (intent) => {
+    for (const subject of ["", " \t\n ", "\u00a0"]) {
+      expect(evaluateComposeSafety(source({ intent, subject })).warnings).toEqual([
+        { id: "missing_subject", title: "No subject", description: "The message has no subject. Send anyway?" },
+      ]);
+    }
+    for (const subject of ["Hello", " Re: ", "Fwd:"]) {
+      expect(evaluateComposeSafety(source({ intent, subject })).warnings).toEqual([]);
+    }
+  });
+
+  test("localizes the missing subject warning", () => {
+    expect(evaluateComposeSafety(source({ subject: "" }), "de-CH").warnings[0]).toEqual({
+      id: "missing_subject",
+      title: "Kein Betreff",
+      description: "Die E-Mail hat keinen Betreff. Trotzdem senden?",
+    });
+  });
+
+  test("all seven warnings can be approved together", () => {
+    const review = evaluateComposeSafety(
+      source({
+        subject: "",
+        intent: "reply_all",
+        to: Array.from({ length: 20 }, (_, index) => ({ address: `person${index}@outside.example` })),
+        body: "Attached: {{ file }} [https://example.org](https://outside.example)",
+      }),
+    );
+    expect(review.warnings).toHaveLength(7);
+    expect(
+      composeSafetyApprovalSchema.parse({
+        revision: review.revision,
+        fingerprint: review.fingerprint,
+        warningIds: review.warnings.map((warning) => warning.id),
+      }).warningIds,
+    ).toHaveLength(7);
+  });
+
   test("warns when attachment language has no attachment", () => {
     expect(evaluateComposeSafety(source({ body: "I attached the report." })).warnings.map((warning) => warning.id)).toContain(
       "missing_attachment",
@@ -91,6 +131,7 @@ describe("compose safety", () => {
 
   test("fingerprint changes with reviewed content and configuration", () => {
     const initial = evaluateComposeSafety(source());
+    expect(evaluateComposeSafety(source({ subject: "Changed" })).fingerprint).not.toBe(initial.fingerprint);
     expect(evaluateComposeSafety(source({ body: "Changed" })).fingerprint).not.toBe(initial.fingerprint);
     expect(evaluateComposeSafety(source({ config: { internalDomains: [], largeRecipientThreshold: 20 } })).fingerprint).not.toBe(
       initial.fingerprint,

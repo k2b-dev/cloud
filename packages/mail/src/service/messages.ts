@@ -1091,6 +1091,7 @@ export const mapMessageDetail = (row: DbMessageDetail): MessageDetail => ({
   remoteContent: {
     imageIds: [],
     allowedByRule: false,
+    allowRules: [],
     sender: null,
     domain: null,
   },

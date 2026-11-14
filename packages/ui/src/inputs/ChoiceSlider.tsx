@@ -242,3 +242,28 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
     </div>
   );
 }
+
+export type ChoiceSliderIndicatorProps = {
+  /** How many stops the slider it stands for has. */
+  count: number;
+  /** The chosen stop's index, or `null` (or a negative index) for a choice that is none of the stops. */
+  index: number | null;
+  class?: string;
+};
+
+/**
+ * The slider in small and without interaction, 24 px wide: rail, fill and thumb in the same look, for a trigger that
+ * opens the real slider. It is decoration; the trigger's own label says the value.
+ */
+export function ChoiceSliderIndicator(props: ChoiceSliderIndicatorProps): JSX.Element {
+  const at = () => (props.index === null || props.index < 0 ? null : position(Math.min(props.index, props.count - 1), props.count));
+  return (
+    <span class={["k2b-choice-slider", props.class].filter(Boolean).join(" ")} data-size="indicator" aria-hidden="true">
+      <span class="k2b-choice-slider__track" style={{ "--k2b-choice-slider-at": `${at() ?? 0}%` }}>
+        <span class="k2b-choice-slider__rail" />
+        <span class="k2b-choice-slider__fill" hidden={at() === null} />
+        <span class="k2b-choice-slider__thumb" hidden={at() === null} />
+      </span>
+    </span>
+  );
+}

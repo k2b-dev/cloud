@@ -3756,6 +3756,7 @@
                 "id": {
                   "type": "string",
                   "enum": [
+                    "missing_subject",
                     "missing_attachment",
                     "large_recipient_set",
                     "external_recipients",
@@ -3783,7 +3784,7 @@
         "required": ["draftId", "revision", "fingerprint", "warnings", "contentHash"],
         "additionalProperties": false
       },
-      "schemaHash": "dc904f7146485dff5cbe6d48a919051d4386303d25dfe016752c514f6f8dda03",
+      "schemaHash": "d11c4663cbcb8b2021a4c9226b336b4f49e7e06538f8cf1cfa5867bfaa732f18",
       "openWorld": false
     },
     {
@@ -7982,11 +7983,12 @@
                 "description": "Exact review fingerprint."
               },
               "warningIds": {
-                "maxItems": 6,
+                "maxItems": 7,
                 "type": "array",
                 "items": {
                   "type": "string",
                   "enum": [
+                    "missing_subject",
                     "missing_attachment",
                     "large_recipient_set",
                     "external_recipients",
@@ -8039,7 +8041,7 @@
         "required": ["commandId", "state", "draftId", "conversationId"],
         "additionalProperties": false
       },
-      "schemaHash": "ae5c3ff8cad5baac4642525e9f6e1716dec34ba318bf9610c5c70e4f0b792e91",
+      "schemaHash": "1410aac83f97c537daa18023a5339ac216e6c53e77789c88df421aeba2521a1f",
       "destructive": true,
       "openWorld": true,
       "idempotency": "required",

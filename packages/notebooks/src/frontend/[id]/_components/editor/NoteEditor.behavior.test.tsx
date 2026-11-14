@@ -39,7 +39,9 @@ const mount = async (markdown: string) => {
     return {
       connect() {},
       reconnectNow() {},
-      resume() {},
+      resume() {
+        return "resumed";
+      },
       dispose() {},
       hasUnsentChanges: () => false,
       restoreRevision: () => opts.initialRestoreRevision ?? null,

@@ -35,6 +35,7 @@ const draft: MailDraft = {
   sourceMessageId: null,
   derivedFromMessageId: null,
   derivationKind: null,
+  quoteSource: null,
   senderIdentityId: "66666666-6666-4666-8666-666666666666",
   to: [{ name: "Ada Customer", address: "customer@example.test" }],
   cc: [{ name: null, address: "copy@example.test" }],
@@ -46,6 +47,8 @@ const draft: MailDraft = {
   requestDeliveryReceipt: false,
   requestReadReceipt: false,
   attachments: [],
+  suggestion: false,
+  suggestedBy: null,
   createdBy: { kind: "user", userId },
   lastEditedBy: { kind: "user", userId },
   lastEditedByDisplayName: "Test Writer",
@@ -71,7 +74,15 @@ beforeEach(() => {
       data: { userId, sid: "test", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
     }),
   );
-  spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
+  spies.push(
+    spyOn(rail, "readRailSnapshot").mockResolvedValue({
+      revision: 0,
+      visibility: {},
+      shortcuts: [],
+      showNames: true,
+      managedShortcuts: [],
+    }),
+  );
   spies.push(spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId));
   spies.push(spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(draftId));
   spies.push(
@@ -86,6 +97,7 @@ beforeEach(() => {
         syncEnabled: true,
         searchBackend: "postgres",
         automaticReplyManagementPermission: "admin",
+        draftEditMode: "lock",
         composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
         createdAt: "2026-10-01T00:00:00.000Z",
         updatedAt: "2026-10-01T00:00:00.000Z",

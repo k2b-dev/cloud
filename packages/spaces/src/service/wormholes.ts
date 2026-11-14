@@ -11,7 +11,7 @@ import type {
   User,
   WormholeTransferResult,
 } from "@/contracts";
-import { publishItemEvent } from "../app-events";
+import { itemEventState, publishItemEvent, publishItemUpdated } from "../app-events";
 import { withShortId } from "../lib/short-id";
 import { buildSpacePrincipalCondition, getSpacePermission } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
@@ -395,6 +395,7 @@ export const transfer = async (params: {
     const claim = await taskWork.checkClaim(params.itemId, workActor, params.claimId, tx, params.force);
     if (!claim.ok) return claim;
 
+    const eventBefore = await itemEventState(tx, params.itemId);
     const [tagCount] = await tx<{ count: number }[]>`
       SELECT COUNT(*)::int AS count FROM spaces.item_tags WHERE item_id = ${params.itemId}::uuid
     `;
@@ -486,6 +487,7 @@ export const transfer = async (params: {
         { spaceId: params.sourceSpaceId, itemId: params.itemId, itemTitle: locked.title, actor: workActor, claim: claim.data },
         tx,
       );
+    await publishItemUpdated(tx, params.itemId, eventBefore);
     if (locked.target_is_done && locked.completed_at === null) {
       await publishItemEvent(tx, "item.completed", updated.id, locked.target_space_id);
     }

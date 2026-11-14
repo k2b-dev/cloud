@@ -69,9 +69,8 @@
   border: 0;
   border-radius: var(--ui-dropdown-menu-radius);
   background: var(--ui-dropdown-menu-surface);
+  /* Menus are solid: their entries must read without the page showing through. */
   box-shadow: var(--ui-dropdown-menu-shadow);
-  backdrop-filter: blur(14px) saturate(1.12);
-  -webkit-backdrop-filter: blur(14px) saturate(1.12);
 }
 
 @utility menu-item {

@@ -12,6 +12,11 @@ export type DescriptionListProps = {
   layout?: "grid" | "rows" | "compact";
   size?: "sm" | "md";
   actionVisibility?: "always" | "progressive";
+  /**
+   * Joins each term to its right-aligned value with a dotted leader, for `rows` or `compact` lists that must span a
+   * very wide container. A fallback, never the default: first keep rows within the row measure.
+   */
+  leader?: "dotted";
   class?: string;
 };
 
@@ -25,6 +30,7 @@ export function DescriptionList(props: DescriptionListProps): JSX.Element {
       data-layout={props.layout ?? "grid"}
       data-size={props.size ?? "md"}
       data-action-visibility={props.actionVisibility ?? "always"}
+      data-leader={props.leader}
     >
       <For each={props.items}>
         {(item) => (

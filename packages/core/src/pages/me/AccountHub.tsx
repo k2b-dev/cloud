@@ -42,9 +42,10 @@ export default function AccountHub(props: {
 
   // The identity and the section tabs sit on the page background; the active section's
   // content is the only framed surface. Every tab renders the same avatar size, so
-  // switching tabs never moves the tabs or the content.
+  // switching tabs never moves the tabs or the content. Account pages are settings, so the area is quiet (layers
+  // and shadows): the frame stands flat, only charts and key figures would lift.
   return (
-    <div class="mx-auto flex w-full max-w-6xl flex-col gap-4 px-2 pt-2">
+    <div class="mx-auto flex w-full max-w-6xl flex-col gap-4 px-2 pt-2" data-k2b-layer="quiet">
       <header class="flex items-center gap-4 px-3" style="view-transition-name: account-hub">
         {props.avatar ?? (
           <Avatar

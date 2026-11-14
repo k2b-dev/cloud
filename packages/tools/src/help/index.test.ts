@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { registryMessages } from "../frontend/tools/registry";
+import { categoryOrder, registryMessages, resolveRegistry } from "../frontend/tools/registry";
 import { toolsHelp } from ".";
 
 describe("toolsHelp", () => {
@@ -8,6 +8,7 @@ describe("toolsHelp", () => {
       "tools-start",
       "tools-choose",
       "tools-document-markdown",
+      "tools-speedtest",
       "tools-markdown-pdf",
       "tools-image-converter",
       "tools-safety",
@@ -15,7 +16,6 @@ describe("toolsHelp", () => {
 
     expect(toolsHelp.getMarkdown("tools-start")).toContain("Tools is a workspace for small generators");
     expect(toolsHelp.getMarkdown("tools-start")).toContain("The tester redacts sensitive headers");
-    expect(toolsHelp.getMarkdown("tools-choose")).toContain("The Tools overview groups utilities");
     expect(toolsHelp.getMarkdown("tools-document-markdown")).toContain("does not perform OCR");
     expect(toolsHelp.getMarkdown("tools-document-markdown")).toContain("does not persist either the upload or the Markdown result");
     expect(toolsHelp.getMarkdown("tools-document-markdown")).toContain("no dedicated `cld tools` command");
@@ -26,6 +26,15 @@ describe("toolsHelp", () => {
     expect(toolsHelp.getMarkdown("tools-image-converter")).toContain("does not upload or persist them");
     expect(toolsHelp.getMarkdown("tools-image-converter")).toContain("Multiple files download together");
     expect(toolsHelp.getMarkdown("tools-safety")).toContain("Generators, Base64, Hex, Base32, color conversion");
+  });
+
+  test("the tool guide names every current group and tool in both languages", () => {
+    for (const locale of ["en", "de"] as const) {
+      const registry = resolveRegistry(locale);
+      const guide = toolsHelp.getMarkdown("tools-choose", locale);
+      for (const category of categoryOrder) expect(guide).toContain(`**${registry.categories[category].label}**`);
+      for (const tool of registry.tools) expect(guide).toContain(`**${tool.name}**`);
+    }
   });
 
   test("names every tool that sends data to the server in the safety article", () => {
@@ -51,7 +60,6 @@ describe("toolsHelp", () => {
     }
 
     expect(toolsHelp.getMarkdown("tools-start", "de")).toContain("Tools ist ein Arbeitsbereich");
-    expect(toolsHelp.getMarkdown("tools-choose", "de")).toContain("Die Tools-Übersicht gruppiert die Werkzeuge");
     expect(toolsHelp.getMarkdown("tools-document-markdown", "de")).toContain("führt keine OCR aus");
     expect(toolsHelp.getMarkdown("tools-markdown-pdf", "de")).toContain("kein eigenes `cld tools`-Kommando");
     expect(toolsHelp.getMarkdown("tools-image-converter", "de")).toContain("ohne sie hochzuladen");

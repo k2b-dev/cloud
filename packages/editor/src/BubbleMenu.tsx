@@ -1,4 +1,4 @@
-import { Prec } from "@codemirror/state";
+import { Prec, type SelectionRange } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { SelectionToolbar, Toolbar, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
@@ -40,12 +40,12 @@ export function BubbleMenu(props: BubbleMenuProps) {
   const locale = useLocale();
   const t = () => editorMessages.resolve([locale()]).t;
   const [dragging, setDragging] = createSignal(false);
-  const [dismissed, setDismissed] = createSignal<unknown>();
+  const [dismissed, setDismissed] = createSignal<SelectionRange>();
   const [geometry, setGeometry] = createSignal(0);
   // Focus that moves from the text into the menu, such as Tab to a button or a host input, keeps it open.
   const [menuFocused, setMenuFocused] = createSignal(false);
   const dismiss = () => {
-    setDismissed(props.editor.state()?.selection);
+    setDismissed(props.editor.state()?.selection.main);
     props.editor.view()?.focus();
   };
 
@@ -65,6 +65,13 @@ export function BubbleMenu(props: BubbleMenuProps) {
     }),
     EditorView.updateListener.of((update) => {
       if (update.geometryChanged || update.viewportChanged) setGeometry((value) => value + 1);
+      // An edit elsewhere, such as a collaborator typing, moves the dismissed selection along: it stays dismissed. A
+      // selection of the person's own ends the dismissal, also when they later select the same text again.
+      if (update.docChanged || update.selectionSet)
+        setDismissed((range) => {
+          const mapped = update.docChanged ? range?.map(update.changes) : range;
+          return mapped?.eq(update.state.selection.main) ? mapped : undefined;
+        });
     }),
     // Escape in the text closes an open menu first; with no menu, the key keeps its other meanings.
     Prec.high(
@@ -88,7 +95,7 @@ export function BubbleMenu(props: BubbleMenuProps) {
     if (!view || !state || dragging() || !(props.editor.focused() || menuFocused())) return null;
     if (state.readOnly && !props.readOnly) return null;
     const range = state.selection.main;
-    if (range.empty || dismissed() === state.selection) return null;
+    if (range.empty || dismissed()?.eq(range)) return null;
     return selectionBox(view, range.from, range.to);
   };
   const coarse = () => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;

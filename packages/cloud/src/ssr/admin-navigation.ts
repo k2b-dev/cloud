@@ -55,7 +55,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
       label: t.adminSetup,
       links: [
         { href: "/admin/base", icon: "ti-adjustments", label: t.baseSettings },
-        { href: "/admin/settings?tab=storage", icon: "ti-database", label: t.storage },
+        { href: "/admin/storage", icon: "ti-database", label: t.storage },
         { href: "/admin/signin", icon: "ti-shield-lock", label: t.signinSecurity },
         { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
         { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },

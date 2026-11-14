@@ -1,7 +1,14 @@
 import { sql } from "@k2b/cloud";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { MAX_MAILBOX_PREFERENCES } from "../contracts";
+import {
+  MAIL_WORKSPACE_HINT_IDS,
+  MAX_MAILBOX_PREFERENCES,
+  type MailWorkspaceHintId,
+  type MailWorkspacePreference,
+  mailWorkspaceHintIdSchema,
+  mailWorkspacePreferenceChangeSchema,
+} from "../contracts";
 import {
   DEFAULT_MAIL_VIEW,
   type MailViewPreference,
@@ -135,6 +142,7 @@ export const setMailboxPreference = async (
         DELETE FROM mail.personal_mailbox_preferences preference
         WHERE ${principalMatches(principal)} AND preference.mailbox_id = ${mailboxId}::uuid
           AND preference.large_view IS NULL AND preference.phone_view IS NULL
+          AND preference.list_share IS NULL AND cardinality(preference.seen_hints) = 0
       `;
     }
     return ok({ pinned: stored?.pinned_at != null, hidden: stored?.hidden_at != null });
@@ -200,15 +208,16 @@ export const importBrowserMailboxPreferences = async (
   });
 };
 
-/** Remove only the view on lost access; pins keep their existing restore-on-return behavior. */
+/** Clear personal workspace choices on lost access; pins keep their restore-on-return behavior. */
 const requireViewAccess = async (context: MailRequestContext, mailboxId: string) => {
   const allowed = await requireMailboxAccess(context, mailboxId, "read");
   if (!allowed.ok && capByCredentialScopes(context, "read") === "read" && isResourceBoundToMailbox(context, mailboxId)) {
-    await sql`UPDATE mail.personal_mailbox_preferences preference SET large_view = NULL, phone_view = NULL
+    await sql`UPDATE mail.personal_mailbox_preferences preference SET large_view = NULL, phone_view = NULL, list_share = NULL, seen_hints = '{}'
       WHERE ${principalMatches(personalPrincipal(context))} AND mailbox_id = ${mailboxId}::uuid`;
     await sql`DELETE FROM mail.personal_mailbox_preferences preference
       WHERE ${principalMatches(personalPrincipal(context))} AND mailbox_id = ${mailboxId}::uuid
-        AND pinned_at IS NULL AND hidden_at IS NULL AND large_view IS NULL AND phone_view IS NULL`;
+        AND pinned_at IS NULL AND hidden_at IS NULL AND large_view IS NULL AND phone_view IS NULL
+        AND list_share IS NULL AND cardinality(seen_hints) = 0`;
   }
   return allowed;
 };
@@ -273,4 +282,72 @@ export const dismissFocusNotice = async (context: MailRequestContext): Promise<R
     VALUES (${user.id}::uuid, now())
     ON CONFLICT (user_id) DO UPDATE SET focus_notice_dismissed_at = COALESCE(preference.focus_notice_dismissed_at, now())`;
   return ok({ dismissed: true });
+};
+
+/** Preferences belong to this principal and mailbox, including assigned-only readers. */
+export const getMailboxWorkspacePreference = async (
+  context: MailRequestContext,
+  mailboxId: string,
+): Promise<Result<MailWorkspacePreference>> => {
+  const allowed = await requireViewAccess(context, mailboxId);
+  if (!allowed.ok) return allowed;
+  const [row] = await sql<{ list_share: number | null; seen_hints: string[] }[]>`
+    SELECT list_share, seen_hints FROM mail.personal_mailbox_preferences preference
+    WHERE ${principalMatches(personalPrincipal(context))} AND mailbox_id = ${mailboxId}::uuid`;
+  return ok({
+    listShare: row?.list_share ?? null,
+    seenHints: MAIL_WORKSPACE_HINT_IDS.filter((id) => row?.seen_hints.includes(id)),
+  });
+};
+
+const writeWorkspacePreference = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  change: { listShare: number | null } | { hintId: MailWorkspaceHintId },
+): Promise<Result<MailWorkspacePreference>> => {
+  const allowed = await requireViewAccess(context, mailboxId);
+  if (!allowed.ok) return allowed;
+  const principal = personalPrincipal(context);
+  const { userId, serviceAccountId } = principalColumns(principal);
+  const changesShare = "listShare" in change;
+  const share = changesShare ? change.listShare : null;
+  const hintId = "hintId" in change ? change.hintId : null;
+  return sql.begin(async (tx) => {
+    const [mailbox] = await tx`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid AND deleted_at IS NULL FOR SHARE`;
+    if (!mailbox) return fail(err.notFound("Mailbox"));
+    const locked = await requireMailboxAccess(context, mailboxId, "read", tx);
+    if (!locked.ok) return locked;
+    await lockPrincipal(tx, principal);
+    const [row] = await tx<{ list_share: number | null; seen_hints: string[] }[]>`
+      INSERT INTO mail.personal_mailbox_preferences AS preference (mailbox_id, user_id, service_account_id, list_share, seen_hints)
+      VALUES (${mailboxId}::uuid, ${userId}::uuid, ${serviceAccountId}::uuid, ${share},
+        CASE WHEN ${hintId}::text IS NULL THEN '{}'::text[] ELSE ARRAY[${hintId}::text] END)
+      ON CONFLICT (user_id, service_account_id, mailbox_id) DO UPDATE SET
+        list_share = CASE WHEN ${changesShare} THEN EXCLUDED.list_share ELSE preference.list_share END,
+        seen_hints = CASE WHEN ${hintId}::text IS NULL OR ${hintId} = ANY(preference.seen_hints)
+          THEN preference.seen_hints ELSE array_append(preference.seen_hints, ${hintId}::text) END
+      RETURNING list_share, seen_hints`;
+    if (!row) throw new Error("Mailbox workspace preference insert returned no row");
+    return ok({ listShare: row.list_share, seenHints: MAIL_WORKSPACE_HINT_IDS.filter((id) => row.seen_hints.includes(id)) });
+  });
+};
+
+export const setMailboxWorkspacePreference = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  change: { listShare: number | null },
+): Promise<Result<MailWorkspacePreference>> => {
+  const parsed = mailWorkspacePreferenceChangeSchema.safeParse(change);
+  return parsed.success ? writeWorkspacePreference(context, mailboxId, parsed.data) : fail(err.badInput("Invalid list share"));
+};
+
+export const markMailboxWorkspaceHintSeen = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  hintId: MailWorkspaceHintId,
+): Promise<Result<MailWorkspacePreference>> => {
+  const parsed = mailWorkspaceHintIdSchema.safeParse(hintId);
+  return parsed.success
+    ? writeWorkspacePreference(context, mailboxId, { hintId: parsed.data })
+    : fail(err.badInput("Unknown workspace hint"));
 };

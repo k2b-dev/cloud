@@ -59,6 +59,11 @@ Cloud generates a transparent favicon with a theme-adaptive Cloud gradient for
 rendered application pages from `icon`: blue in light mode and blue-white in
 dark mode. Core pages keep the operator-configured Cloud favicon.
 
+`icon` also accepts the glyphs that `@k2b/ui` adds to the Tabler set, such as
+`ti ti-feat-code`, the sign of feat/code. The rail, app grid, navigation, and
+favicon show it like any other icon. Headers and labels that name feat/code
+use its wordmark, `FeatCodeMark`, instead of the icon.
+
 Declare only prefixes the application serves. See
 [Routes and discovery](/en/docs/build/routing).
 
@@ -267,6 +272,10 @@ fills for light and dark mode. Any six-digit hex accent is accepted. A light
 accent such as yellow is darkened only as far as needed.
 The accent colors the app ink, selected navigation and content rows, selected
 tabs, view tabs and segments, active filter chips, and the app's icon tiles.
+The app's icon in the app bar takes the accent too. It lies on the open app's
+gradient, so Cloud darkens it in light mode and lightens it in dark mode only
+until it keeps 3:1 against every part of that gradient. An app without an
+`appearance` gets a palette tone, the same as its tile in the app grid.
 It never colors buttons, inputs, checkboxes, switches, focus rings, or status;
 link text stays body ink, and only its underline takes the app ink. See
 [Colors and selection](/en/ui/surfaces/color).

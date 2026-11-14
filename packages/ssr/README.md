@@ -19,7 +19,9 @@ under a Content Security Policy without `'unsafe-eval'`. Two consequences of
 re-rendering follow:
 
 - state that exists only in the server HTML inside an island, such as a typed
-  input value, focus, or a scroll position, is replaced on mount;
+  input value or a scroll position, is replaced on mount. Focus is kept: an
+  element focused before the island mounted passes its focus to the element
+  at the same place in the new markup, which hears the focus like any other;
 - server and client must render the same markup from the same props, or the
   page shifts when the island mounts.
 
@@ -93,6 +95,8 @@ bun add hono
 # or
 bun add elysia
 ```
+
+`@k2b/ssr` brings its own JSX transform (`babel-preset-solid`) and serializer (`seroval`) as dependencies; you only add `solid-js` and an adapter.
 
 ### Package scope migration
 

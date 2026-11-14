@@ -5,9 +5,7 @@ import {
   renderLiquidTemplate,
   validateLiquidTemplate,
 } from "@k2b/cloud/shared";
-import type { WorkflowActionContext, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { withMailWorkflowBodyGuard } from "./workflow-body-fields";
 
 const MAX_MAIL_TEMPLATE_BYTES = 200_000;
 const MAX_MAIL_TEMPLATE_OUTPUT_BYTES = 3 * 1024 * 1024;
@@ -158,35 +156,6 @@ export const renderMailLiquidTemplate = (
     return fail(err.badInput(error instanceof Error ? error.message : "Mail template could not be rendered"));
   }
 };
-
-export const mailWorkflowTemplateData = (
-  context: Pick<WorkflowActionContext, "invocation" | "variableSnapshot">,
-): Record<string, WorkflowJsonValue> => ({
-  inputs: context.invocation.inputs,
-  context: {
-    ...(context.invocation.context ?? {}),
-    actor: context.invocation.actor,
-    occurredAt: context.invocation.occurredAt,
-  },
-  ...context.variableSnapshot(),
-});
-
-export const renderMailWorkflowTemplate = (
-  context: Pick<WorkflowActionContext, "invocation" | "variableSnapshot">,
-  source: string,
-  output: MailTemplateOutput = "text",
-): string => {
-  const guarded = withMailWorkflowBodyGuard(context.invocation.inputs, () =>
-    renderMailLiquidTemplate(source, mailWorkflowTemplateData(context), output),
-  );
-  // The step loads every body its template reads before it runs; a body still missing here fails visibly.
-  if (guarded.unloaded !== undefined) throw new Error(`Mail workflow value was not loaded: ${guarded.unloaded}`);
-  if (!guarded.result.ok) throw guarded.result.error;
-  return guarded.result.data;
-};
-
-export const migrateWorkflowTextTemplateToLiquid = (source: string): string =>
-  source.replace(/\$\{\{([^{}]+)\}\}/g, (_match, expression: string) => `{{ ${expression.trim()} }}`);
 
 export const migrateReferenceTemplateToLiquid = (source: string): string =>
   source.replace(/{{[\s\S]*?}}|{%[\s\S]*?%}|\{sequence:([1-9]\d?)\}|\{sequence\}|\{year\}/g, (match, width: string | undefined) => {

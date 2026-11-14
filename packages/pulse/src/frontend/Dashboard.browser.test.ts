@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { launchBrowser } from "../../../ui/test/browser";
-import type { Dashboard } from "../dashboard-contracts";
+import { hoverInPlace, launchBrowser, pageErrors } from "../../../ui/test/browser";
+import { sqlCatalogData, sqlCatalogFixtures, sqlCatalogPanel } from "../dashboard-catalog.test-fixture";
+import { type Dashboard, DashboardPanelSchema } from "../dashboard-contracts";
+import type { DashboardPanelData } from "../dashboard-result";
+import { savedChartFixtures } from "../dashboard-saved.test-fixture";
 import {
   baseOverviewFixture,
   buildWorkspaceHarness,
@@ -47,6 +50,7 @@ const open = async (
     width?: number;
     dark?: boolean;
     dashboard?: Dashboard;
+    panelData?: Record<string, DashboardPanelData>;
     public?: boolean;
     empty?: boolean;
     deferred?: Promise<void>;
@@ -58,6 +62,7 @@ const open = async (
     now?: string;
     paginated?: boolean;
     browserZone?: string;
+    touch?: boolean;
   } = {},
 ) => {
   const dashboard = options.dashboard ?? dashboardTestDashboard;
@@ -84,7 +89,11 @@ const open = async (
   };
   let listResponse: Reply = { json: dashboardTestSnapshot };
   let overviewResponse: Reply = { json: overview };
-  const tab = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 1000 }, timezoneId: options.browserZone });
+  const tab = await browser.newPage({
+    viewport: { width: options.width ?? 1440, height: 1000 },
+    timezoneId: options.browserZone,
+    hasTouch: options.touch,
+  });
   await pauseWorkspaceClock(tab.clock, new Date(options.now ?? dashboardTestNow));
   const requests: { path: string; body: unknown; key: string | undefined }[] = [];
   const panels = new Map<string, Reply>();
@@ -101,7 +110,9 @@ const open = async (
       const id = decodeURIComponent(path.split("/").at(-1)!);
       const panel = dashboard.definition.panels.find((panel) => panel.id === id);
       if (!panel) return route.fulfill({ status: 404, json: { code: "NOT_FOUND" } });
-      const reply = panels.get(id) ?? { json: dashboardTestPanelResult(panel) };
+      const fixture = dashboardTestPanelResult(panel);
+      if (fixture.lastGood && options.panelData?.[id]) fixture.lastGood.data = options.panelData[id]!;
+      const reply = panels.get(id) ?? { json: fixture };
       if (reply.wait) await reply.wait;
       if (reply.abort) return route.abort("failed");
       return route.fulfill({ status: reply.status, json: reply.json });
@@ -194,6 +205,147 @@ const ready = async (tab: Awaited<ReturnType<typeof open>>["tab"]) => {
   await tab.locator('.pulse-dashboard__band[data-loading="false"]').waitFor();
   await tab.evaluate(() => document.fonts.ready);
 };
+
+// Each variant draws all 17 kinds through every state within its own bounded test.
+for (const [width, dark] of [
+  [1440, false],
+  [390, false],
+  [390, true],
+] as const) {
+  test(`SQL catalog additions keep exact frames and Pareto names at ${width}px, dark=${dark}`, async () => {
+    const panels = sqlCatalogFixtures.map(sqlCatalogPanel);
+    const dashboard = { ...dashboardTestKinds, name: "SQL chart catalog", definition: { panels } };
+    const panelData = Object.fromEntries(sqlCatalogFixtures.map((fixture) => [fixture.kind, sqlCatalogData(fixture)]));
+    const view = await open({ dashboard, panelData, width, dark, touch: true });
+    const errors = pageErrors(view.tab);
+    const good = (panel: (typeof panels)[number]) => {
+      const result = dashboardTestPanelResult(panel);
+      return { ...result, lastGood: { ...result.lastGood!, data: panelData[panel.id]! } };
+    };
+    const boxes = () =>
+      view.tab.locator(".pulse-dashboard__panel").evaluateAll((elements) =>
+        elements.map((element) => {
+          const box = element.getBoundingClientRect();
+          return { width: box.width, height: box.height };
+        }),
+      );
+    try {
+      await ready(view.tab);
+      const charts = view.tab.locator(".pulse-dashboard__plot .k2b-chart");
+      expect(await charts.count()).toBe(panels.length);
+      expect(await view.tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const before = await boxes();
+      const pareto = view.tab.locator('[data-panel="pareto"]');
+      const chart = pareto.getByRole("group", { name: "Orders by category", exact: true });
+      await pareto.scrollIntoViewIfNeeded();
+      await chart.focus();
+      await chart.press("ArrowRight");
+      await view.tab.clock.runFor(300);
+      const tooltip = pareto.locator('[role="tooltip"]:popover-open');
+      await tooltip.waitFor();
+      expect(await tooltip.textContent()).toContain("booked");
+      expect(await tooltip.textContent()).toContain("planned");
+      if (width === 390) {
+        await chart.press("Escape");
+        await pareto.locator(".k2b-chart-pareto-current").first().tap();
+        await view.tab.clock.runFor(300);
+        await tooltip.waitFor();
+        expect(await tooltip.textContent()).toContain("booked");
+        expect(await tooltip.textContent()).toContain("planned");
+      }
+      const layout = await view.tab.locator(".k2b-dashboard-section__grid").evaluate((grid) => {
+        const wide = grid.querySelector('[data-panel="pareto"]')!.getBoundingClientRect();
+        const third = grid.querySelector('[data-panel="barGrouped"]')!.getBoundingClientRect();
+        const full = grid.getBoundingClientRect();
+        return { wide: wide.width, third: third.width, full: full.width };
+      });
+      expect(width === 1440 ? Math.abs(layout.wide - layout.third * 2 - 16) < 1 : layout.wide === layout.full).toBe(true);
+      const loading = Promise.withResolvers<void>();
+      for (const panel of panels)
+        view.panels.set(panel.id, {
+          wait: loading.promise,
+          json: { ...good(panel), status: "error", error: "PANEL_RESULT_INVALID", lastGood: null },
+        });
+      try {
+        await view.tab.reload();
+        await view.tab.locator('.pulse-dashboard__band[data-loading="true"]').waitFor();
+        expect(await boxes()).toEqual(before);
+      } finally {
+        loading.resolve();
+      }
+      await ready(view.tab);
+      expect(await view.tab.locator('.pulse-dashboard__feedback[role="alert"]').count()).toBe(panels.length);
+      expect(await boxes()).toEqual(before);
+      for (const panel of panels)
+        view.panels.set(panel.id, {
+          json: { ...good(panel), lastGood: { ...good(panel).lastGood!, data: { ...panelData[panel.id]!, rows: [] } } },
+        });
+      await view.tab.reload();
+      await ready(view.tab);
+      expect(await view.tab.getByText("Keine Werte in diesem Zeitraum", { exact: true }).count()).toBe(panels.length);
+      expect(await boxes()).toEqual(before);
+      for (const panel of panels) view.panels.set(panel.id, { json: good(panel) });
+      await view.tab.reload();
+      await ready(view.tab);
+      expect(await charts.count()).toBe(panels.length);
+      expect(await boxes()).toEqual(before);
+      expect(errors).toEqual([]);
+    } finally {
+      await view.tab.close();
+    }
+  }, 30_000);
+}
+
+test("saved bars keep flattened series, multiple values and duplicate rows in the actual panel view", async () => {
+  const fixtures = savedChartFixtures.filter((fixture) => fixture.kind === "bar" && fixture.id);
+  const panels = fixtures.map((fixture) =>
+    DashboardPanelSchema.parse({
+      id: fixture.id,
+      title: fixture.id,
+      kind: fixture.kind,
+      columns: fixture.columns,
+      x: fixture.x,
+      series: fixture.series,
+      sql: "SELECT 1",
+    }),
+  );
+  const panelData = Object.fromEntries(
+    fixtures.map((fixture) => [
+      fixture.id!,
+      {
+        columns: fixture.columns.map((name) => ({ name, type: "Float64" })),
+        rows: fixture.rows,
+      },
+    ]),
+  );
+  const { tab } = await open({ dashboard: { ...dashboardTestKinds, definition: { panels } }, panelData });
+  const errors = pageErrors(tab);
+  try {
+    await ready(tab);
+    for (const width of [1440, 390]) {
+      await tab.setViewportSize({ width, height: 1000 });
+      for (const fixture of fixtures) {
+        const panel = tab.locator(`[data-panel="${fixture.id}"]`);
+        const chart = panel.locator(".k2b-chart");
+        expect(await chart.count()).toBe(1);
+        expect(await chart.locator("[data-chart-datum]").count()).toBe(fixture.id === "bar-series" ? 2 : 3);
+        expect(await chart.locator(".stdlib-chart-legend").count()).toBe(0);
+        expect(await panel.getByRole("alert").count()).toBe(0);
+        await chart.scrollIntoViewIfNeeded();
+        await tab.clock.runFor(32);
+        await chart.focus();
+        await chart.press("Home");
+        const tooltip = panel.locator('[role="tooltip"]:popover-open');
+        await tooltip.waitFor();
+        expect(await tooltip.textContent()).toContain("Visit · first");
+        await chart.press("Escape");
+      }
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await tab.close();
+  }
+}, 30_000);
 
 test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tablet and dark", async () => {
   for (const [width, dark] of [
@@ -645,7 +797,7 @@ test("a map panel shades countries, names them, and answers a tap on a phone in 
       const box = await panel.boundingBox();
       expect(box!.x + box!.width).toBeLessThanOrEqual(options.width);
       const before = await panel.locator(".k2b-country-map").boundingBox();
-      await panel.locator('path[data-country="DE"]').hover();
+      await hoverInPlace(panel.locator('path[data-country="DE"]'));
       await panel.locator(".k2b-country-map__readout", { hasText: "Deutschland" }).waitFor();
       expect((await panel.locator(".k2b-country-map").boundingBox())!.height).toBe(before!.height);
       // DB-IP Lite (CC BY 4.0) needs its link beside the results; panels without countries carry none.
@@ -1414,5 +1566,247 @@ test("a dashboard-change 404 clears old values and reloads without claiming acce
     expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(1);
   } finally {
     await tab.close();
+  }
+}, 30_000);
+
+test("catalog SQL charts keep their frame through empty, invalid and recovered results", async () => {
+  const source = dashboardTestKinds.definition.panels[1]!;
+  const panels = (["pie", "donut", "scatter", "histogram", "boxplot", "heatmap", "gauge", "barGauge", "sparkline"] as const).map(
+    (kind) => ({
+      ...source,
+      id: kind,
+      title: kind,
+      kind,
+      columns: kind === "heatmap" ? ["x", "row", "value"] : ["histogram", "gauge", "sparkline"].includes(kind) ? ["value"] : ["x", "value"],
+      x: ["histogram", "gauge", "sparkline"].includes(kind) ? undefined : "x",
+      series: kind === "heatmap" ? "row" : undefined,
+    }),
+  );
+  const fixture = { ...dashboardTestKinds, id: "Catalog", definition: { panels } };
+  const panelData = Object.fromEntries(
+    panels.map((panel) => [
+      panel.id,
+      {
+        columns: panel.columns.map((name) => ({ name, type: "Float64" })),
+        rows:
+          panel.kind === "heatmap"
+            ? [
+                ["A", "North", 4],
+                ["B", "North", null],
+                ["A", "South", 8],
+              ]
+            : panel.kind === "gauge"
+              ? [[42]]
+              : panel.columns.length === 1
+                ? [[1], [2], [3]]
+                : panel.kind === "scatter"
+                  ? [
+                      [1, 2],
+                      [2, null],
+                      [3, 4],
+                    ]
+                  : [
+                      ["A", 4],
+                      ["B", 8],
+                    ],
+      },
+    ]),
+  );
+  for (const [width, dark] of [
+    [1440, false],
+    [390, false],
+    [390, true],
+  ] as const) {
+    const view = await open({ width, dark, dashboard: fixture, panelData });
+    const errors = pageErrors(view.tab);
+    try {
+      await ready(view.tab);
+      expect(await view.tab.locator(".pulse-dashboard__plot .k2b-chart").count()).toBe(panels.length);
+      expect(await view.tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+      const target = view.tab.locator('[data-panel="pie"]');
+      await target.scrollIntoViewIfNeeded();
+      const readyBox = await target.boundingBox();
+      const chart = target.locator(".k2b-chart");
+      await chart.focus();
+      await chart.press("ArrowRight");
+      await target.locator('[role="tooltip"]:popover-open').waitFor();
+      const good = {
+        ...dashboardTestPanelResult(panels[0]!),
+        lastGood: { ...dashboardTestPanelResult(panels[0]!).lastGood!, data: panelData.pie! },
+      };
+      view.panels.set("pie", { json: { ...good, status: "error", error: "PANEL_RESULT_INVALID", lastGood: null } });
+      await view.tab.reload();
+      await target.getByRole("alert").waitFor();
+      expect((await target.boundingBox())!.height).toBe(readyBox!.height);
+      view.panels.set("pie", { json: { ...good, lastGood: { ...good.lastGood!, data: { ...panelData.pie!, rows: [] } } } });
+      await target.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+      await target.getByText("Keine Werte in diesem Zeitraum").waitFor();
+      expect((await target.boundingBox())!.height).toBe(readyBox!.height);
+      view.panels.set("pie", { json: good });
+      await view.tab.reload();
+      await target.locator(".k2b-chart").waitFor();
+      expect((await target.boundingBox())!.height).toBe(readyBox!.height);
+      expect(errors).toEqual([]);
+    } finally {
+      await view.tab.close();
+    }
+  }
+}, 30_000);
+
+test("area and money SQL panels preserve frames and keyboard access across desktop, phone and dark", async () => {
+  const source = dashboardTestKinds.definition.panels[1]!;
+  const panels = [
+    {
+      ...source,
+      id: "area",
+      title: "Stacked requests",
+      kind: "area" as const,
+      columns: ["day", "North", "South"],
+      x: "day",
+      series: undefined,
+    },
+    {
+      ...source,
+      id: "areaPercent",
+      title: "Request shares",
+      kind: "areaPercent" as const,
+      columns: ["day", "North", "South"],
+      x: "day",
+      series: undefined,
+    },
+    {
+      ...source,
+      id: "budget",
+      title: "Operating budgets",
+      kind: "budget" as const,
+      columns: ["name", "used", "expected", "limit"],
+      x: "name",
+      series: undefined,
+      unit: "EUR",
+    },
+    {
+      ...source,
+      id: "balance",
+      title: "Cash movement",
+      kind: "balance" as const,
+      columns: ["start", "in", "out"],
+      x: undefined,
+      series: undefined,
+      unit: "EUR",
+    },
+  ];
+  const rows: Record<string, unknown[][]> = {
+    area: [
+      ["Mon", 4, 2],
+      ["Tue", 5, null],
+      ["Wed", 7, 3],
+    ],
+    areaPercent: [
+      ["Mon", 4, 2],
+      ["Tue", 0, 0],
+      ["Wed", 7, 3],
+    ],
+    budget: [
+      ["Office", 80, 30, 100],
+      ["Travel", 30, 10, 100],
+    ],
+    balance: [[18800, 29260, 29520]],
+  };
+  const panelData = Object.fromEntries(
+    panels.map((panel) => [
+      panel.id,
+      {
+        columns: panel.columns.map((name) => ({ name, type: name === "name" || name === "day" ? "String" : "Float64" })),
+        rows: rows[panel.id]!,
+      },
+    ]),
+  );
+  const fixture = { ...dashboardTestKinds, id: "AreaMoney", definition: { panels } };
+  const options = { dashboard: fixture, panelData, dark: false };
+  const view = await open(options);
+  const errors = pageErrors(view.tab);
+  try {
+    for (const [width, dark] of [
+      [1440, false],
+      [390, false],
+      [390, true],
+    ] as const) {
+      options.dark = dark;
+      await view.tab.setViewportSize({ width, height: 1000 });
+      await view.tab.evaluate((dark) => {
+        document.documentElement.classList.toggle("dark", dark);
+        document.documentElement.classList.toggle("light", !dark);
+      }, dark);
+      await ready(view.tab);
+      expect(await view.tab.locator(".pulse-dashboard__plot .k2b-chart").count()).toBe(2);
+      expect(await view.tab.locator('[data-panel="budget"] [role="progressbar"]').count()).toBe(2);
+      expect(await view.tab.locator('[data-panel="balance"] .k2b-balance').count()).toBe(1);
+      expect(await view.tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+      const chart = view.tab.locator('[data-panel="area"] .k2b-chart');
+      await chart.scrollIntoViewIfNeeded();
+      await view.tab.clock.runFor(32);
+      await chart.focus();
+      await chart.press("ArrowRight");
+      await view.tab.locator('[data-panel="area"] [role="tooltip"]:popover-open').waitFor();
+      const budget = view.tab.locator('[data-panel="budget"]');
+      const budgetAnchor = budget.locator(".k2b-budget__anchor").first();
+      // Scroll before opening: a later scroll dismisses the shared tooltip, particularly in a phone column.
+      await budgetAnchor.scrollIntoViewIfNeeded();
+      await view.tab.clock.runFor(32);
+      // Reach the first row with a real keyboard event so :focus-visible is independent of pointer history.
+      await budget
+        .locator(".k2b-budget__anchor")
+        .last()
+        .evaluate((node) => {
+          if (!(node instanceof HTMLElement)) throw new Error("Expected a budget keyboard anchor");
+          node.focus({ preventScroll: true });
+        });
+      await view.tab.keyboard.press("Shift+Tab");
+      expect(await budgetAnchor.evaluate((node) => node === document.activeElement && node.matches(":focus-visible"))).toBe(true);
+      // The fixture pauses timers as well as Date; the shared tooltip opens after its normal focus delay.
+      expect(await budget.locator('[role="tooltip"]:popover-open').count()).toBe(0);
+      await view.tab.clock.runFor(250);
+      await budget.locator('[role="tooltip"]:popover-open').waitFor();
+      expect(await budget.locator('[role="tooltip"]:popover-open').textContent()).toContain("Office");
+      const heights = new Map<string, number>();
+      const goodResults = new Map<string, DashboardPanelResult>();
+      for (const panel of panels) {
+        const target = view.tab.locator(`[data-panel="${panel.id}"]`);
+        heights.set(panel.id, (await target.boundingBox())!.height);
+        const good = {
+          ...dashboardTestPanelResult(panel),
+          lastGood: { ...dashboardTestPanelResult(panel).lastGood!, data: panelData[panel.id]! },
+        };
+        goodResults.set(panel.id, good);
+        view.panels.set(panel.id, { json: { ...good, status: "error", error: "PANEL_RESULT_INVALID", lastGood: null } });
+      }
+      // One cold load tests every panel's error frame; retry still runs through each panel's own control.
+      await view.tab.reload();
+      await ready(view.tab);
+      for (const panel of panels) {
+        const target = view.tab.locator(`[data-panel="${panel.id}"]`);
+        await target.getByRole("alert").waitFor();
+        expect((await target.boundingBox())!.height).toBe(heights.get(panel.id)!);
+        const good = goodResults.get(panel.id)!;
+        view.panels.set(panel.id, { json: { ...good, lastGood: { ...good.lastGood!, data: { ...panelData[panel.id]!, rows: [] } } } });
+        await target.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+        await target.getByText("Keine Werte in diesem Zeitraum").waitFor();
+        expect((await target.boundingBox())!.height).toBe(heights.get(panel.id)!);
+        view.panels.set(panel.id, { json: good });
+      }
+      await view.tab.reload();
+      await ready(view.tab);
+      for (const panel of panels) {
+        const target = view.tab.locator(`[data-panel="${panel.id}"]`);
+        await target
+          .locator(panel.id === "budget" ? '[role="progressbar"]' : panel.id === "balance" ? ".k2b-balance" : ".k2b-chart")
+          .first()
+          .waitFor();
+        expect((await target.boundingBox())!.height).toBe(heights.get(panel.id)!);
+      }
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await view.tab.close();
   }
 }, 30_000);

@@ -12,3 +12,29 @@
   display: inline-block;
   width: 1em;
 }
+
+/*
+ * The feat/code brand glyph, which the Tabler font does not contain, joins the
+ * set under the same class name, so `<i class="ti ti-feat-code">` and the icon
+ * name in navigation work as for every other icon. It is the slash of the
+ * wordmark as a small commit graph, an origin commit (ring) and a new commit
+ * (dot), in the logo's drawing for small sizes, on Tabler's 24-unit grid with
+ * its 2-unit stroke and padding. Like a Tabler outline icon it is drawn with
+ * strokes only (the dot is a stroke as wide as its radius), so Cloud can also
+ * render it as an app favicon from this drawing. The pseudo-element holds a
+ * Tabler glyph (that of `ti-code`) with transparent ink, so its box is that of
+ * every Tabler icon in each size, engine, and font state; a mask paints the
+ * drawing on that box in the text colour. Forced colours and print keep the
+ * text colour: both would otherwise drop the background the mask cuts out.
+ */
+.ti-feat-code::before {
+  --k2b-ti-feat-code: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 14.5l4.8 -6' stroke-width='2.5'/%3E%3Ccircle cx='8' cy='17' r='3.4'/%3E%3Ccircle cx='16' cy='7' r='2.2' stroke-width='4.4'/%3E%3C/svg%3E");
+  content: "\ea77";
+  -webkit-text-fill-color: transparent;
+  background-color: currentColor;
+  forced-color-adjust: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  -webkit-mask: var(--k2b-ti-feat-code) center / contain no-repeat;
+  mask: var(--k2b-ti-feat-code) center / contain no-repeat;
+}

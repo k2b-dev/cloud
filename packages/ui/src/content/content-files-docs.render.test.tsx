@@ -31,7 +31,7 @@ const { default: FileTree } = await import("./FileTree");
 const { default: FileView } = await import("./FileView");
 const { default: Lightbox } = await import("./Lightbox");
 const { default: MarkdownView } = await import("./MarkdownView");
-const { default: PdfPreview } = await import("./PdfPreview");
+const { default: PdfViewer } = await import("./PdfViewer");
 const { default: StructuredDataPreview, isStructuredDataValue } = await import("./StructuredDataPreview");
 const { default: VideoPlayer } = await import("./VideoPlayer");
 
@@ -113,10 +113,18 @@ describe("@k2b/ui content style coverage", () => {
       createComponent(StructuredDataPreview, { data: { ok: true }, defaultMode: "raw", copy: true }),
     );
     const pdf = renderToString(() =>
-      createComponent(PdfPreview, { request: async () => new Blob([], { type: "application/pdf" }), title: "Report" }),
+      createComponent(PdfViewer, { request: async () => new Blob([], { type: "application/pdf" }), title: "Report" }),
     );
     const lightbox = renderToString(() =>
-      createComponent(Lightbox, { images: [{ src: "/a.png", alt: "A", downloadUrl: "/a.png" }, { src: "/b.png" }], onClose: () => {} }),
+      createComponent(Lightbox, {
+        items: [
+          { src: "/a.png", name: "A.png", downloadUrl: "/a.png" },
+          { src: "/b.png", name: "B.png" },
+        ],
+        index: 0,
+        onIndexChange: () => {},
+        onClose: () => {},
+      }),
     );
     const source = await renderFileView({
       file: { path: "/src/app.ts", mediaType: "text/plain" },

@@ -72,7 +72,6 @@ export const pauseDeletedMailboxExecution = async (mailboxId: string, db: SqlCli
     ), reset_drafts AS (
       UPDATE mail.drafts draft
       SET state = 'draft', updated_at = now(),
-        doc_generation = doc_generation + CASE WHEN edit_mode = 'shared' THEN 1 ELSE 0 END,
         doc_frozen_cursor = NULL, doc_frozen_state = NULL, doc_frozen_generation = NULL, doc_frozen_revision = NULL,
         revision = revision + CASE WHEN edit_mode = 'shared' THEN 1 ELSE 0 END
       WHERE draft.id IN (SELECT draft_id FROM changed WHERE state = 'cancelled')

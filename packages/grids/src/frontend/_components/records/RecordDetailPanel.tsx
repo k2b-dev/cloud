@@ -5,13 +5,13 @@ import {
   Button,
   DescriptionList,
   DetailAccess,
-  DetailPanel,
   Dropdown,
   type DropdownItem,
   IconButton,
   NoticeCard,
   Placeholder,
   prompts,
+  Section,
   Tooltip,
   toast,
   useLocale,
@@ -812,7 +812,7 @@ export default function RecordDetailPanel(props: Props) {
                   </Show>
                   <Show when={props.detail()?.combinedOrigin}>
                     {(origin) => (
-                      <DetailPanel.Section
+                      <Section
                         title={t().combinedSource}
                         icon="ti ti-git-merge"
                         collapsible
@@ -840,7 +840,7 @@ export default function RecordDetailPanel(props: Props) {
                             },
                           ]}
                         />
-                      </DetailPanel.Section>
+                      </Section>
                     )}
                   </Show>
                   <Show when={mode() === "live" && !props.detail()?.combinedOrigin}>

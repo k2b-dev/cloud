@@ -1,5 +1,6 @@
 import type { Node } from "@k2b/filegate";
 import type { BaseSummary, FileEntry } from "../contracts";
+import { markdownRevision } from "../document-assets";
 import { stableEntryRefId } from "../resource-ref";
 
 /**
@@ -14,7 +15,7 @@ export function fileEntry(base: Pick<BaseSummary, "id" | "stableIds">, relative:
     directory: node.directory,
     size: node.size,
     modified: node.modified,
-    revision: node.revision,
+    revision: node.directory ? node.revision : markdownRevision(node),
     ...(resourceId ? { resourceId } : {}),
   };
 }

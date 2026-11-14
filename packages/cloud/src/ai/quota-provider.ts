@@ -8,6 +8,7 @@ import { logger } from "../services/logging";
 import type { AiResolvedModelRef } from "../shared/ai-models";
 import { isAssistantChatTurn } from "./assistant-models";
 import { AiBackgroundAdmissionError, type AiCallContext, type AiCallDetails, beginAiCall, finishAiCall } from "./inference-calls";
+import { aiOutputBudget } from "./output-budget";
 import { observeTransport, transportRefused } from "./provider-transport";
 import type { AiModelProfile } from "./types";
 
@@ -56,13 +57,7 @@ export function inferenceProvider(
       for (;;) {
         request.signal?.throwIfAborted();
         try {
-          return await lifecycle.begin(
-            profile,
-            ctx,
-            inputTokens,
-            request.maxOutputTokens ?? profile.maxOutputTokens,
-            provider.contextWindow,
-          );
+          return await lifecycle.begin(profile, ctx, inputTokens, aiOutputBudget(profile, inputTokens, request), provider.contextWindow);
         } catch (error) {
           if (!(error instanceof AiBackgroundAdmissionError) || !error.retryable || Date.now() >= deadline) throw error;
           await delay(1_000, undefined, { signal: request.signal });

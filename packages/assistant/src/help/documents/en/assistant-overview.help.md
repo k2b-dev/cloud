@@ -39,6 +39,8 @@ Assistant also works in editors such as T3 Code and Zed through `cld acp`. Sendi
 - **Keep the useful thread:** Rename the chat or add a description when the conversation should be easy to find later.
 - **Search inside a chat:** Use `/search` to find visible messages or inspect the structured Cloud resources used in this chat or across your active chats.
 - **Schedule future work:** Ask Assistant for a routine. It continues a chat once at a specific local date and time or on a recurring schedule. Assistant shows an Action review before creating or changing the routine.
+- **Suggested message:** After an answer, a short suggestion can appear in the empty message field when a next step helps. Accept it with **Tab** or **Accept**. This inserts the text without sending it, so you can edit it. Typing replaces it; **Esc** dismisses it for that answer, including after a reload. Failed or stopped answers and pending questions or approvals have no suggestion.
+- **Turn suggestions off:** Use **Settings → Chat → Suggest next message**. It is on by default. Suggestions stay in the same chat and use the same model.
 - **Next steps:** When a concrete follow-up would save you work, Assistant may end its answer with one offer, such as drafting the reply. Answer yes to accept it. If you do not want such offers, tell Assistant.
 - **Working files:** Assistant keeps intermediate files in the chat folder `temp/` and saves results outside it, together with the Markdown or HTML source a PDF was made from.
 :::

@@ -4,6 +4,7 @@ import ChartGallery from "./ChartGallery.island";
 import ChartKindPlayground from "./ChartKindPlayground.island";
 import { showcaseDashboards } from "./demo-sections/charts/dashboards";
 import { chartShowcaseKind, chartShowcaseKinds, chartShowcaseQuestions } from "./demo-sections/charts/examples";
+import { kindGuidance } from "./demo-sections/charts/guidance";
 
 const DashboardLinks = (props: { base: string; current?: string }) => (
   <nav class="ui-charts-dashboards" aria-label="Example dashboards">
@@ -65,10 +66,7 @@ export function ChartKindPage(props: { locale: string; kind: string }) {
   const base = `/${props.locale}/ui/charts`;
   const kind = chartShowcaseKind(props.kind)!;
   const question = chartShowcaseQuestions.find((entry) => entry.id === kind.question)!;
-  const options = [...new Map(kind.examples.flatMap((example) => example.options).map((option) => [option.name, option])).values()];
-  const useFor = [...new Set(kind.examples.flatMap((example) => example.useFor))];
-  const avoidFor = [...new Set(kind.examples.flatMap((example) => example.avoidFor))];
-  const a11y = [...new Set(kind.examples.flatMap((example) => example.a11y))];
+  const { options, useFor, avoidFor, a11y } = kindGuidance(kind);
   const related = chartShowcaseKinds.filter((entry) => entry.question === kind.question && entry.kind !== kind.kind);
   return (
     <article class="ui-showcase ui-charts-page">

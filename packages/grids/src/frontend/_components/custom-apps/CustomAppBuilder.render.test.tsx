@@ -578,7 +578,7 @@ describe("CustomAppBuilder", () => {
     expect(always).not.toContain("Open large editor");
     expect(custom).toContain("Custom rule");
     expect(custom).toContain("Open large editor");
-    expect(custom).toMatch(/<section class="k2b-detail-panel__section"[^>]*data-open="true"/);
+    expect(custom).toMatch(/<section class="k2b-section[^"]*"[^>]*data-open="true"/);
   });
 
   test("keeps compact Markdown editing focused and moves placeholder browsing to the large editor", () => {
@@ -635,7 +635,7 @@ describe("CustomAppBuilder", () => {
     expect(html).toContain("k2b-app-workspace__detail");
     expect(html).toContain('class="k2b-detail-panel__kind"><span>Page settings</span>');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("k2b-section__icon");
     expect(html).toContain("Add block");
     expect(html).toContain("New page");
     expect(html).toContain("New action");
@@ -880,7 +880,7 @@ describe("CustomAppBuilder", () => {
         groupDepth -= 1;
       } else if (token.startsWith("<DetailPanel.Group")) {
         groupDepth += 1;
-      } else if (token.startsWith("<DetailPanel.Section")) {
+      } else if (token.startsWith("<Section")) {
         expect(groupDepth).toBeGreaterThan(0);
       }
     }

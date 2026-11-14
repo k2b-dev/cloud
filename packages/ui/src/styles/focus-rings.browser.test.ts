@@ -29,6 +29,7 @@ const { Switch } = await import("../inputs/Switch");
 const { default: TextInput } = await import("../inputs/TextInput");
 const { default: AppWorkspace } = await import("../layout/AppWorkspace");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
+const { Section } = await import("../surfaces/Section");
 const { ScrollArea } = await import("../layout/ScrollArea");
 const { SettingsGroup } = await import("../layout/Settings");
 const { default: SettingsModal } = await import("../layout/SettingsModal");
@@ -230,7 +231,7 @@ const detail = () =>
         createComponent(DetailPanel.Body, {
           get children() {
             return [
-              createComponent(DetailPanel.Section, {
+              createComponent(Section, {
                 title: "Actions",
                 get children() {
                   return [
@@ -240,13 +241,13 @@ const detail = () =>
                 },
               }),
               // Standalone collapsible sections sit flush with the scrolling body, closed and open.
-              createComponent(DetailPanel.Section, {
+              createComponent(Section, {
                 title: "Recent activity",
                 icon: "ti ti-history",
                 collapsible: true,
                 children: "Edited",
               }),
-              createComponent(DetailPanel.Section, {
+              createComponent(Section, {
                 title: "Information",
                 icon: "ti ti-info-circle",
                 collapsible: true,
@@ -658,7 +659,7 @@ describe("@k2b/ui focus ring colours inside clipping containers", () => {
       await target.setContent(page(picker));
       await target.evaluate(() => document.querySelector<HTMLElement>(".k2b-date-popover")?.showPopover());
       // A key press first, so focus from script shows its ring like focus from the keyboard.
-      await target.keyboard.press("Shift");
+      await target.keyboard.press("KeyA");
       const rings = await target.evaluate(() => {
         const probe = document.createElement("span");
         probe.style.color = getComputedStyle(document.body).getPropertyValue("--k2b-focus-ring").trim();
@@ -736,6 +737,39 @@ describe("@k2b/ui focus rings outside clipping containers", () => {
       await target.close();
     }
   });
+
+  test("a landing point that code focuses draws no ring; a roving item with tabindex -1 keeps its ring", async () => {
+    const target = await browser.newPage(viewports.desktop);
+    try {
+      await target.setContent(
+        page(
+          `<button type="button">Open</button><main tabindex="-1" style="border-radius:1rem"><h1 tabindex="-1">Project planning</h1>` +
+            `<div data-scroll-page="" tabindex="-1">Page</div>` +
+            `<div role="listbox" aria-label="People"><div role="option" tabindex="-1" aria-selected="true">Ada</div></div></main>`,
+        ),
+      );
+      // Tab to a control first: focus that code moves from a keyboard-focused control stays keyboard focus (:focus-visible).
+      await target.keyboard.press("Tab");
+      await settled(target);
+      const rings = await target.evaluate(() =>
+        ["main", "h1", "[data-scroll-page]", '[role="option"]'].map((selector) => {
+          const element = document.querySelector<HTMLElement>(selector)!;
+          document.querySelector<HTMLElement>("button")!.focus();
+          element.focus();
+          const style = getComputedStyle(element);
+          return [selector, style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0];
+        }),
+      );
+      expect(rings).toEqual([
+        ["main", false],
+        ["h1", false],
+        ["[data-scroll-page]", false],
+        ['[role="option"]', true],
+      ]);
+    } finally {
+      await target.close();
+    }
+  });
 });
 
 for (const viewport of ["desktop", "phone"] as const)
@@ -758,18 +792,22 @@ for (const viewport of ["desktop", "phone"] as const)
             const style = getComputedStyle(shell);
             const probe = document.createElement("span");
             // Focus turns the field edge blue, also on an invalid field (its message stays).
-            probe.style.boxShadow = "inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-focus)";
+            probe.style.color = "var(--k2b-edge-focus)";
             shell.append(probe);
-            const expected = getComputedStyle(probe).boxShadow;
+            const expected = getComputedStyle(probe).color;
             probe.remove();
             return {
+              edge: style.borderTopColor,
+              edgeWidth: style.borderTopWidth,
               shadow: style.boxShadow,
               expected,
               height: shell.getBoundingClientRect().height,
               width: style.getPropertyValue("--k2b-focus-width").trim(),
             };
           });
-          expect(normal.shadow).toBe(normal.expected);
+          expect(normal.edge).toBe(normal.expected);
+          expect(normal.edgeWidth).toBe("2px");
+          expect(normal.shadow).toBe("none");
           expect(normal.height).toBe(26);
           await target.emulateMedia({ forcedColors: "active" });
           await settled(target);

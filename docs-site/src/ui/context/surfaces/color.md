@@ -21,7 +21,9 @@ Color goes only where it means something.
   colored surface it is white. Only the one main action of a view is fully
   filled, so two accent fills never sit side by side.
 - **No fake depth.** No paper, stone, grooves, or decorative shadows. A
-  surface is flat; depth comes from inset space and the shared surface roles.
+  shadow appears only between layers, from the shared tokens: an island in the
+  main content casts a soft one, and everything else is flat
+  ([Layers and shadows](/en/ui/surfaces/elevation)).
 
 ## Contrast
 
@@ -46,9 +48,12 @@ Selection keeps its fill independently of unread emphasis.
 Every control a person fills in shares one edge: text fields, number fields,
 selects, comboboxes, tag and date fields, colour fields, input buttons, the
 Markdown editor, and the signature pad. The field is white, and its edge is
-always `--k2b-edge-width` (2 px) wide, drawn inside the box as a 1 px border
-plus a 1 px inset in the same colour. A state changes only the colour or the
-fill, so the box and the text never move:
+always `--k2b-edge-width` (2 px) wide, drawn inside the box as one border and
+nothing else. A second source beside it, such as an inset shadow or an
+outline, leaves a lighter seam at fractional zoom. Parts inside the field, such
+as number steppers, fill up to that border and part from the value with one
+1 px line in `--k2b-edge`. A state changes only the colour or the fill, so the
+box and the text never move:
 
 | State | Edge | Fill |
 | --- | --- | --- |
@@ -61,9 +66,8 @@ fill, so the box and the text never move:
 
 The focus blue keeps 3:1 against the grey edge it replaces, so focus shows
 without a second width. No field casts a shadow. A control with its own edge
-reads `--k2b-edge-color`, the colour of the current state, for example a
-stepper that fills to the border. In forced-colors mode the border takes the
-system colour and focus adds the system outline.
+reads `--k2b-edge-color`, the colour of the current state. In forced-colors
+mode the border takes the system colour and focus adds the system outline.
 
 ### Filters, buttons, and clickable cards
 
@@ -130,7 +134,8 @@ read as controls (see
 | Current view | `ViewTabs` | `k2b-view-tabs` |
 | Selected segment | `SegmentedControl` | `k2b-segmented-control` |
 | Active filter | `FilterChip`, `FilterToggle` | `k2b-filter-chip` |
-| Selected choice in a menu's segment row | `Dropdown` | `k2b-dropdown` |
+| Selected choice in a menu's segment row or tiles | `Dropdown` | `k2b-dropdown` |
+| Active tab of a pane group | `Panes` | `k2b-panes` |
 
 Do not draw a chosen view, range, or filter as a filled primary button such
 as `variant={chosen ? "primary" : "secondary"}`. That makes a choice look like
@@ -168,8 +173,10 @@ and checked cards.
 | Chosen icon of a few | `IconChoices` | `k2b-icon-choices` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
+| Chosen page of a PDF | `PdfThumbnails` | `k2b-pdf-thumbnails` |
 | Selected date, month, or duration | `DatePicker` | `k2b-date-grid`, `k2b-date-months`, `k2b-date-durations` |
 | Selected range | `RangePicker` | `k2b-range-picker` |
+| Selected period preset | `PeriodPicker` | `k2b-period-picker` |
 | Selected tone or emoji group | `EmojiPicker` | `k2b-emoji-picker` |
 | Pressed toolbar button | `Toolbar` | `k2b-toolbar` |
 | Pressed formatting tool | `MarkdownEditor` | `k2b-markdown-editor` |
@@ -207,8 +214,13 @@ Drop targets and other control states keep the platform fill.
 | Files over a page or region | `FileDropTarget` | `k2b-file-drop` |
 | Item over a folder | `FileTree` | `k2b-content-file-tree` |
 | Event over a day while it moves | `Calendar` | `k2b-calendar-month` |
+| Insertion line where a moved row lands | `SortableList` | `k2b-sortable-list` |
 
 ### Links
+
+Blue text, such as a `link` or heading `text` button, stays blue on hover:
+`--k2b-action-hover` is one darker blue (accent 900 in light, accent 100 in
+dark), never the body ink and never an added underline.
 
 Link text in content stays body ink. Its underline, and the arrow of a web
 link, use `--k2b-link-accent`, which defaults to `var(--k2b-action)`. It is a
@@ -250,6 +262,15 @@ light accent, such as yellow `#eab308`, is darkened only as far as needed. Any
 six-digit accent works. See
 [Define an application](/en/docs/build/define-app#set-the-application-appearance) and
 [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#keep-color-roles-independent).
+
+Each app's icon in the app bar carries a third derived color, the color on
+the canvas. It lies directly on the open app's tinted gradient, so Cloud
+darkens the accent in light mode and lightens it in dark mode only until it
+keeps 3:1 (WCAG 1.4.11) against every stop of that gradient, the tablet bar's
+gradient, and the hover fill on them. An app without an accent uses the same
+palette tone as its tile in the app grid. The app bar editor's tiles keep the
+same 3:1 for their glyphs. Names, counts, and the bar's own controls stay
+neutral.
 
 Plum means AI. `--k2b-ai-accent` (`#8e1b6f` light, `#f0abdc` dark) and
 `--k2b-ai-surface` mark AI surfaces, which also carry ✦ or the

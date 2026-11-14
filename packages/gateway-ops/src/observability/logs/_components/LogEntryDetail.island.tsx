@@ -26,7 +26,8 @@ function MetadataDetail(props: { metadata: Record<string, unknown> | null }) {
           </div>
         }
       >
-        <div class="bg-zinc-100 dark:bg-zinc-800 rounded-md px-3 py-2">
+        {/* A key list in an open log row is flat text, not a grey box; the raw JSON above is a code block. */}
+        <div>
           <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
             {entries.map(([key, value]) => {
               const isComplex = typeof value === "object" && value !== null;

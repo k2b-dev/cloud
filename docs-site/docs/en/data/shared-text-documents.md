@@ -5,15 +5,17 @@ section: Data
 order: 430
 description: Let people and agents edit the same text through a retained log and application-owned snapshots.
 tags: [data, text, collaboration, sync, yjs]
-updated: 2026-10-31
+updated: 2026-11-13
 ---
 
 # Shared text documents
 
 Use `@k2b/cloud/shared-text` for text that people and agents write at the same
 time. One retained log carries updates; a snapshot in the application's own
-Postgres table holds durable state. This is a server-only API. Callers must
-authorize access before calling `read`, `edit`, `change`, `inverse`, or `accept`.
+Postgres table holds durable state. The server API owns logs and rooms;
+`@k2b/cloud/browser/shared-text` owns browser providers and device journals. Callers must
+authorize each HTTP action. Rooms check access at connect or join and revoke
+connections through events; edits and awareness use that bound access.
 
 ## Declare one log per kind of document
 
@@ -34,14 +36,42 @@ Sync tenants. JetStream reserves `retention.maxBytes` plus
 even when empty. Changing these values later is a resource change: a mismatch
 with the installed declaration raises `ResourceDriftError`.
 
-Size retention for updates waiting for a covering snapshot. Once a snapshot
-covers them, updates are no longer needed; retention eventually removes them.
-The platform snapshot pipeline saves documents and keeps idle cursors inside
-the retained window. The application queues work and schedules reconciliation. See [Topics and live events](/en/docs/automation/topics-and-live-events).
+Size retention for updates waiting for a covering snapshot. With an age limit,
+updates can expire before a snapshot covers them. The platform snapshot
+pipeline saves documents and keeps idle cursors inside the retained window.
+The application queues work and schedules reconciliation. See
+[Topics and live events](/en/docs/automation/topics-and-live-events).
+
+For a log that must retain accepted updates until snapshot coverage, pass
+`whenFull: "reject"` and omit `retention.maxAgeMs`. Sync 7.1 rejects new
+publishes with `StoreFullError` at its byte or message limit. After snapshots
+commit, `log.topic().prune({ through })` removes the inclusive stream prefix
+through the minimum persisted snapshot cursor across **all documents** in the
+log. A missing snapshot contributes sequence zero. The application owns this
+watermark and must serialize it with restores and lifecycle changes; the
+snapshot pipeline does not prune automatically. A stalled snapshot holds back
+pruning and can block writes. Keep rejected input available for retry, and
+keep snapshot work independent of new writes. Existing log declarations
+retain their current policies.
+
+When a log opts in later, Cloud changes its existing event stream in place on
+first use: it stops discarding the oldest events and removes the age limit.
+The stream keeps its name and sequences, so persisted cursors stay valid. Any
+other difference still raises `ResourceDriftError`. Updates that the old
+policy already expired stay gone. Before the application prunes or tolerates
+a retention gap, it must send every document whose snapshot is older than the
+retained window to recovery, even when none of its events is retained any
+more. Use `log.firstSequence()` to find that window. Run this step once,
+after the application has started, and record its completion durably. Run it
+after startup because a declared log that Cloud cannot prepare would
+otherwise fail the readiness of the whole application.
 
 `log.id` identifies the resource. `log.topicConfig` exposes the exact readonly
 Sync declaration, passed through unchanged. `log.topic()` returns a fresh
 Sync handle per call. Use handles after Cloud has connected Sync at startup.
+`await log.ready()` prepares the topic and, when configured, lifecycle storage
+without reading or writing a document. Use it during application startup when
+lifecycle budget expansion must complete before the first edit or send.
 
 ## Bind the application's store
 
@@ -269,14 +299,18 @@ Dispose the controller when the editor closes.
 
 ## Admit delayed browser input before acknowledging it
 
-Use `documents.accept(docId, { actor, update, baseCursor, restoreRevision,
+Use `documents.accept(docId, { snapshot, actor, update, baseCursor, restoreRevision,
 originNodeId, originPeerId, maxLength?, signal? })` for browser updates when structural
 history is enabled. `baseCursor` is the state the browser had observed when it
 made the edit. Keep that cursor with pending bytes across reconnects; assigning
 a newer replay cursor to old input would erase the check's context.
 
-The service reconstructs current state and checks structural changes since
-that base before publishing against the captured document head. Ordinary
+Supply the authorized snapshot from join or resync as `snapshot`, or a
+synchronous function that reads the room's in-memory base after admission
+ownership is acquired; admission never loads the store. The room advances its
+base with live events and local publications. Admission reuses covered state and structural history, reads only
+the missing log tail, and checks changes since that base before publishing
+against the captured document head. Ordinary
 Markdown input and server `edit` calls receive the same classification: edits
 that preserve table scaffolding remain concurrently mergeable, while changes
 to that scaffolding require conservative recovery. Stale input crossing such
@@ -300,7 +334,8 @@ update based on the current head remain safe to accept.
 `recoveryRequired` publishes nothing. Preserve the unconfirmed bytes and readable
 local text, stop automatic resubmission, and offer recovery before reopening.
 This also covers missing provenance and an incompatible restored revision.
-`notFound` means the application store no longer has the document. Other
+`notFound` means the authorized snapshot is null. `frozen` and `closed` retain
+the unconfirmed bytes and follow the room lifecycle close semantics. Other
 publication errors propagate; a known head conflict may be revalidated, while
 an unknown publication outcome must be reconciled before another attempt.
 
@@ -317,7 +352,7 @@ snapshot revision. Omitting it for a versioned event raises an error.
 Custom browser transports must retain this metadata and start from a snapshot
 with its matching revision. Browser writes must carry their originating revision,
 including full-state reconnects and retries. Validate it against the joined
-session and current store before publishing; retain that originating revision
+session and ordered generation markers before publishing; retain that originating revision
 in the log event to cover a restore during publication. Never assign the current
 store revision to bytes from a different document. A client holding a different document version must
 preserve unsent text and reopen the current version. Do not merge a replacement
@@ -325,13 +360,13 @@ snapshot into the old Y.Doc. Upgrade all log readers and browser transports
 before enabling these server actions or automatic repair; older readers do not
 understand this revision fence.
 
-An authoritative socket receipt or replay-ready message must also be ordered
-against store-only replacement. Notebooks validates and sends it synchronously
-under a shared lock on the note row. Replacement takes the exclusive lock and
-checks accepted live content through the captured log head before replacing an
-empty target. Snapshot text alone cannot establish that the target is empty.
-Transports and replacement writers must both follow this ordering before it
-can be relied on during a rollout.
+Replacement writes a generation marker into the document log before committing
+the restored SQL state. The marker and publication CAS reject old admissions
+even before the workspace outbox event arrives; delivery needs no SQL row fence.
+Replacement checks accepted live content through the captured log head before
+replacing an empty target. Snapshot text alone cannot establish that the target
+is empty. Upgrade all admission readers before enabling replacement markers;
+old nodes cannot enforce this boundary.
 
 ## Connect a browser editor
 
@@ -349,7 +384,10 @@ A populated document or `initialCursor` also requires `initialGeneration`,
 the opaque token belonging to that snapshot, including historical deletes.
 
 The transport supplies an absolute WebSocket `url`, `encode(request)`,
-`decode(packet)`, and `closeError(code, reason)`. Encoding maps normalized
+`decode(packet)`, and `closeError(code, reason)`. A busy server or proxy is
+never terminal: close code 1013 (try again later) and a `BACKPRESSURE` error
+message reconnect with `reconnectDelayMs`, keep unsent input, and resend it
+after replay; `closeError` never sees 1013. Encoding maps normalized
 `replayRequest`, `syncPublish`, `awarenessPublish`, and optional event-stream
 `subscribe` requests to the application's protocol. Decoding validates unknown
 JSON and maps it to `SharedTextProviderMessage`, or returns null to ignore it.
@@ -364,8 +402,17 @@ input and local awareness are sent. `onReady` runs at that boundary;
 `onConnectionChange` reports the socket connection. `onError` reports errors,
 and `onFatal` means the session has stopped. A generation mismatch retains
 recovery input and requires a fresh editor; `resume()` cannot revive it.
+`resume()` returns `resumed`, `reopen`, or `unavailable`. Clear a terminal UI
+state only after `resumed`; `reopen` requires preserving the input and opening
+a fresh editor. Local queue overflow also requires reopening.
 `isEarlierGeneration` is only for ordered revisions whose retired events
 must advance the replay cursor without applying their bytes.
+
+An update without a transport echo for `SHARED_TEXT_ACK_TIMEOUT_MS` closes
+the socket and reconnects with the original pending input and base cursors.
+The deadline is the awareness expiry window, currently 30 seconds. New edits
+do not extend an older update's deadline. `onError` reports `SYNC_TIMEOUT`;
+the application keeps a visible retry or copy action. Dispose cancels the timer.
 
 The returned handle provides `reconnectNow()` for dropped connections,
 `resume()` for recoverable terminal sessions, `hasUnsentChanges()`,
@@ -387,13 +434,23 @@ Hydration preserves original bases and waits for replay before resending.
 Keep incompatible stored input available for recovery outside the new editor.
 
 `onUnsentChange` and `hasUnsentChanges()` describe transport acknowledgements.
-An echo does not prove that a database snapshot covers local input. Do not
-delete durable local storage on echo or overwrite its original base with a
-newer replay cursor. `onSnapshot({ docId, generation, state, cursor })` reports
+An echo does not prove that a database snapshot covers local input. Keep
+device input until the application's declared durable store covers its exact
+bytes; do not overwrite its original base with a newer replay cursor.
+`onSnapshot({ docId, generation, state, cursor })` reports
 only validated server snapshot bytes, excluding unsnapshotted local edits.
 Compare those bytes with stored input before clearing covered storage. The
 provider does not read or delete IndexedDB records. Storage callbacks own
 visible error reporting and recovery if persistence fails.
+
+An application may treat the retained log as its durable store only when it
+rejects new input at capacity and retains accepted events until committed
+snapshot coverage. Its transport must emit acknowledgements only after the
+JetStream publish acknowledgement. In that case, validated retained updates
+covering all pending input can establish durability before SQL persistence.
+This stronger transport contract is application-owned; an arbitrary echo or
+replay-ready message does not provide it. The standard browser document
+wrapper continues to use snapshot receipts.
 
 ## Snapshots
 
@@ -613,8 +670,9 @@ An existing Sync topic can reserve an ID with an empty awareness publication
 (`AA==`): add `2 ** 32` to its returned `streamSequence`. Keep that topic's
 sequence across process and broker restarts.
 
-Authorize document access before each `publish(bytes)` call and apply the
-transport's existing payload limits. The method accepts exactly one local
+Bind document access at connect or join, revoke it through the relevant source
+events, and apply the transport's existing payload limits to `publish(bytes)`.
+Awareness uses the bound connection identity and needs no SQL access lookup. The method accepts exactly one local
 state with an optional relative-position `cursor: { anchor, head }` or null.
 Both positions must name `textName`, with a null or absent `type`; item IDs,
 null items, and association values retain their Yjs meaning. It returns an
@@ -627,6 +685,13 @@ only against the editor's existing text root. Invalid input throws
 publish its returned bytes when non-null.
 
 The browser publishes only its local awareness state, including on reconnect.
+It sends a changed cursor at once and then at most one frame with the latest
+state per 100 ms, so a selection drag cannot flood the server. On the server,
+keep at most one unprocessed awareness message per connection: a later one
+replaces it, it does not count against the connection's message limit, and any
+other message ends the replacement, so a cursor never overtakes an edit sent
+before it. Check in-memory document membership for every awareness message;
+access changes close the connection through events.
 Return the connection's peer ID in the replay-ready response and include it
 as the origin of cursor updates, so the browser can skip its own rewritten
 echo. Remote timeout removals stay local. A new connection receives a fresh
@@ -679,8 +744,8 @@ substitute a newly read server head for the base of older offline input. An
 unknown base remains null and requires conservative history validation. `session.acknowledgeSnapshot({ identity, state, durability:
 "durable" })` removes stored input only when the supplied snapshot covers
 all its structs and deletions. The application must establish that these
-exact bytes were committed to its durable store; a socket echo or completed
-replay does not establish durability.
+exact bytes were committed to its declared durable store; a socket echo or
+completed replay alone does not establish durability.
 
 Observe `session.signal` and expose storage failures with retry and a way to
 copy pending text. Call `close()` on disposal. `forget()` explicitly removes
@@ -744,6 +809,8 @@ validates a copy of the full state and publishes a generation-scoped freeze
 marker with a compare-and-set against that head. It returns the exact
 `{ state, text, cursor, restoreRevision }`, or null for a missing document.
 It does not change the application's lifecycle or save its snapshot.
+Rooms expose a distributed lifecycle boundary in
+[Freeze, submit, thaw or close](#freeze-submit-thaw-or-close).
 
 The application must serialize admission and sending through the same
 persistent document lock. In the send transaction, store the marker,
@@ -759,3 +826,457 @@ The older send snapshot alone does not cover that state.
 This boundary does not change the topic's retention policy. Do not activate
 an application that promises retention until snapshot coverage while its
 installed Sync topic can still expire or evict uncovered updates.
+
+## Connect a collaboration room
+
+`createSharedTextRoom({ protocol, adapter, log, awarenessTopic, snapshots,
+logger?, maxLength?, validateState?, deliveryBudget? })` owns join, catch-up, live delivery,
+trusted awareness, resync and snapshot queueing. Import it and
+`createSharedTextRoomContext` from `@k2b/cloud/shared-text`. Create one room
+per document kind, then one context and connection per socket:
+
+```ts
+const context = createSharedTextRoomContext(socket, credential, messages);
+const connection = room.connect(context);
+// Forward each text frame to connection.receive(frame).
+// connection.settled() waits for frames already queued, for ingress accounting.
+// Await connection.close() when the socket ends; await room.drain() on shutdown.
+```
+
+The socket supplies `send(string)` and `close(code, reason)`. The optional
+connection extension handles application messages on the same socket and
+releases application subscriptions on close. It does not participate in
+collaboration admission. `protocol` supplies message names, document-ID
+validation, cursor validation, the payload limit, and `decode`/`encode` to
+map application wire keys to `docId`. `protocol.encode(type, payload, ctx)`
+and `validateState(state, ctx)` receive the actual connection/adapter context,
+so one room per process can validate sender scope or map envelope fields
+without closing over a single connection. Keep validation free of SQL; capture
+the required scope at join and update it only through invalidation. Existing callbacks may ignore the
+trailing argument. Room extensions also pass the context to
+`room.send(ctx, type, payload)` and `room.warn(ctx, code, message, docId?)`.
+Room restore revisions are canonical
+nonnegative PostgreSQL bigint strings. Keep existing wire names, log and
+awareness declarations, snapshot job IDs and codecs during migration so
+older tabs and pods can continue using the same resources.
+
+Implement `SharedTextRoomAdapter<User, Messages, Context>`:
+
+| Adapter member | Application responsibility |
+| --- | --- |
+| `authenticate(credential)` | Resolve the current principal at join; return null for an invalid credential. |
+| `authorize(publicDocId, user, messages)` | Check read/write access once and return the canonical `resolvedDocId`, `canWrite`, optional scope and invalidation cursor. |
+| `load(docId)` | Load one anchored snapshot with state, text, cursor and restore revision. |
+| `actor(user)`, `awarenessUser(user)` | Supply trusted audit and awareness identities; never trust names or IDs from client frames. |
+| `revalidate(context)` | Recheck only after an invalidation; return lost access, lock, deletion or changed generation. |
+| `invalidations(context, signal)` | Subscribe to relevant committed permission and lifecycle events; abort releases the subscription. |
+| `recover(docId, cause, signal)` | Required: repair an uncovered stored base before the room requests resync, so the next join can replay. |
+| `join(context)`, `leave(context)` | Optional application presence hooks. |
+
+Capture an invalidation cursor before checking access and subscribe from it
+after joining. This covers mutations between authorization and subscription
+without a second scheduled check. Forward identity invalidations with
+`subscribeIdentityAccessChanged(callback, { userId, sid, serviceAccountId })`
+from `@k2b/cloud/events` to `room.revalidate(context)`, and release that
+subscription when the socket ends. Subjects restrict delivery to affected
+principals/sessions; only settings and signing-key revocation are global.
+Revalidation is single-flight per context, and reads permission and revision
+metadata rather than the text snapshot. It remembers an event during join and checks it before replay starts.
+For the application-entry socket guard, pass
+`guardAppAccessSocket(context, appId, handlers, { eventOnly: true })`.
+
+### Check access at connect or join, revoke through events
+
+Access is checked once when connecting or joining a document. Reconnects
+check again. The room performs no access polling, periodic revalidation,
+or SQL on edits, awareness messages, live delivery or an idle connection.
+Only a revocation/lifecycle event may cause the adapter to query current
+access. A lost write grant closes an existing writer too. A reader gaining
+write access reconnects to load its writer base. Applications must
+publish invalidations for every mutation that changes access or generation.
+An unavailable invalidation stream closes the room; reconnect establishes
+current access and a new stream.
+
+Core publishes `identity.access.changed` through its existing live topic and
+transactional outbox for these sources:
+
+- User, nested-group, service-account membership and group-manager changes,
+  including FreeIPA synchronization and its effective-group projection.
+- Account authentication epoch, category/admin status, expiration or deletion;
+  FreeIPA account locks; category-enabled and administrator-group settings.
+- Session revocation, replacement, expiration or deletion; signing-key state
+  changes or deletion; service-account status and credential revocation, scope
+  or expiry changes. Extending a signing key's verification window and writing
+  an unchanged directory lock do not emit invalidations.
+- Session consent state and first-use acceptance changes.
+- Account and session expiry deadlines, and shared-workstation idle deadlines.
+  Deadline rows are queued at the source and delivered when due; real input
+  replaces the idle deadline; an idle-policy change reschedules existing
+  families. A replacement session keeps both its absolute expiry and its
+  inherited `last_input_at + idle limit` deadline. Ending other sign-ins or
+  changing a password does not restart that idle limit.
+  Authentication does not rewrite these deadlines. This adds no
+  access scan. The application socket guard also sets one local timeout for
+  the credential's known expiry (session proof/account/credential deadline),
+  closing with `1008 SESSION_EXPIRED` even when Core is unavailable. This
+  timeout performs no SQL and is cancelled when the socket ends.
+
+Notebooks supplies its existing `workspace.invalidated`, `note.updated` and
+`note.deleted` events for grants, locks, restores, moves and deletion. A restore
+also CAS-publishes a generation marker before committing its snapshot, so old
+rooms cannot acknowledge edits while outbox delivery is delayed. A rollback
+compensates the marker; if the restoring process crashes before commit, retry
+that restore to replace the conservative fence before reopening the document.
+
+External directory changes become effective when the existing directory sync
+writes them locally; the room introduces no new directory polling.
+
+Mail's room adapter publishes and consumes access hints for mailbox grants,
+assigned-only access, conversation assignments and moves, mailbox soft/hard
+deletion, draft lifecycle/generation, sender and template changes. Referenced
+grant changes also produce Core identity invalidations. The current schema has no separate restricted-member
+relation or persistent mailbox lock; adding either must include its source
+event. An adapter accepting other credentials must supply a known expiry to
+its socket guard or publish token-expiry events; account/session deadlines
+do not represent every credential lifetime.
+
+Before accepting event-only rooms, call `requireIdentityAccessEvents()` from
+`@k2b/cloud/events` during application startup. It refuses startup until Core
+has installed the scoped event sources. Deploy Core first, with live delivery
+running, then the application. Notebooks applies this guard. Existing
+Notebooks browser-session cases continue to take effect without polling.
+
+### Bound each connection
+
+The room queues at most 200 non-awareness frames. Awareness coalesces to the
+latest waiting state without overtaking edits. Sync delivery flushes after
+100 updates, 256,000 encoded payload characters, or 25 ms. Awareness payloads
+are limited to 256,000 characters; sync frames use the declared protocol
+limit plus 1,000 characters of framing. Applications supply their document
+length/validation budget and the retained log and awareness topic budgets.
+An optional process-wide `deliveryBudget` supplies `claim(bytes)` and
+`release(bytes)` for queued outbound batches. A failed claim closes the
+connection with backpressure; every claimed batch releases its reservation
+after delivery or cancellation.
+
+Backpressure closes with 1013. A retention gap during join or prefix replay
+reloads the stored snapshot. When its cursor covers the missing prefix
+(at least the first retained sequence minus one) and its restore revision
+still matches, the room sends that snapshot and replays the remaining log
+without closing the socket. Readiness waits for this replay and is sent once.
+For an uncovered gap, the required adapter `recover` repairs the stored base
+before the room requests `RESYNC_REQUIRED` and closes with 1012, so the next
+join can replay the repaired snapshot. As with snapshot-job recovery, the
+adapter preserves valid retained updates and reports incomplete history;
+missing bytes remain missing.
+A gap in the live hub closes with retryable `STREAM_FAILED`: the browser backs
+off, reconnects and resends pending input after join replay. A covering snapshot
+cannot replace the publish echo that acknowledges that input. This reconnect
+also works with browsers from before the deployment. Snapshot reloads occur
+only on recovery, not edits. Cursor mismatches request resync with 1012.
+Transient stream/storage failures also use 1012, internal
+errors use 1011, and access failures use 1008. Error codes remain stable;
+applications supply localized messages, including `busy` for admission
+contention and `tooManyMessages` for the pending-message limit.
+Dirty documents queue a snapshot every
+8 seconds by default and on leave/shutdown, using the existing ordered snapshot pipeline.
+An application can supply synchronous, SQL-free
+`snapshots.markDirty({ docId, targetCursor })` to own its debounce instead;
+`snapshots.queue` still runs on leave. Mail uses three seconds of quiet with
+a thirty-second maximum delay.
+A failed final enqueue makes drain retry instead of discarding accepted work.
+Stream shutdown, base release and context reset still run if enqueueing or an
+application leave hook fails. Rejoining stops the old stream before attaching
+the new base.
+
+A room adopts an accepted update only while it still owns the same document,
+live stream and writer base. If admission was cancelled or timed out while a
+publication was in flight, its eventual receipt cannot advance a room that
+has since opened another document, even when both use the same restore revision.
+An admission timeout alone still permits confirmation of a retained update
+while its caller and room owner remain active. Cancelling the caller prevents
+that confirmation. The broker may retain the update; replay and snapshot
+persistence still own its durable result.
+
+### Scale and flush before a durable action
+
+Fan-out and acknowledgements travel through NATS, including back to the
+publishing socket. Each node keeps one disposable live `Y.Doc` per document
+with local writers, shared across those sockets and released with its last
+writer. Readers keep no admission base. Live events apply once without full
+state encoding. Admission reads the base lazily after acquiring ownership,
+reuses its cached encoding and applies only the accepted delta when current.
+A base behind the admission target catches up from the fully replayed result.
+A warm admission encodes its candidate state once. A reconnect replays from
+the base cursor even when its client cursor is newer than SQL, delivering
+only events beyond the client cursor. Any pod can accept a reconnect. Snapshot jobs retain their existing partitioned
+ordering; synchronous flush and background writers additionally share one
+per-document distributed lease. A background job waiting for that lease
+occupies its job slot for up to 120 seconds (601 attempts, 200 ms apart),
+within its cancellation signal. Stores must still fence generation and
+non-newer cursors atomically, including during rolling upgrades.
+Each connection advances its disposable authorized replay base as retained
+updates arrive, so pruning covered history does not require SQL on delivery.
+Generation changes require a fresh editor. A known tenant-head conflict
+revalidates the same Yjs input for at most thirty seconds; an unknown publish
+outcome is never blindly retried. `StoreFullError` produces
+`STORAGE_EXHAUSTED`, preserving rejected input for retry.
+
+Call the snapshot pipeline's `flushNow(docId, { signal?, restoreRevision?,
+targetCursor? })` before an action that needs committed text. It captures the
+latest accepted cursor, waits for the document's writer lease within the
+caller signal and a 120-second deadline, and returns the stored
+`{ state, text, cursor, restoreRevision }`. It returns null for a missing
+document and throws on cancellation, a changed generation, a skipped save
+or an uncovered cursor. A target cursor can require coverage beyond the
+captured head. A flush alone permits later edits.
+
+### Freeze, submit, thaw or close
+
+For freeze/close, declare `lifecycle: { maxBytes }` on `sharedText.define`,
+in addition to `whenFull: "reject"` and retention without `maxAgeMs`.
+`maxBytes` (at least 4096) budgets one compacted broker stream per log, with
+one durable lifecycle value per document, using the document log's replica
+count. It reserves that additional budget on every replica. All nodes using
+the log must deploy the same declaration before enabling these methods;
+older nodes without lifecycle support must be drained first. A full
+lifecycle store rejects changes rather than evicting another document's fence.
+Allow roughly 250–300 bytes per untouched freeze/close entry, plus subject,
+header and broker overhead; thaw retry metadata and long revision/cursor values
+need more. Size for the peak number of retained documents with headroom, using
+the stream's measured `state.bytes`. For example, one million 300-byte entries
+need at least 300 MB per replica before headroom. This reservation is separate
+from the document log. Increasing `maxBytes` or changing the document log's
+replica count updates the lifecycle stream on initialization without clearing
+its entries. Older pods and rollback versions tolerate a larger existing byte
+budget, keep it unchanged and log once per initialized handle; they never shrink
+it. A full store fails new freezes/changes visibly and leaves existing
+fences intact; expand its budget before retrying. Closed lifecycle entries
+remain durable; there is no deletion or retirement API. Budget for cumulative
+closed documents, monitor `state.bytes` and raise `maxBytes` before exhaustion.
+Preserve this stream alongside document snapshots and the log in backups.
+
+#### Operate the lifecycle stream
+
+The lifecycle stream is a JetStream stream named
+`cloud_text_lifecycle_<hash>`. `<hash>` is the hex SHA-256 of the JSON array
+`[namespace, id]`: the installation's `SYNC_NAMESPACE` and the document log
+`id` passed to `sharedText.define`. Its subjects are
+`cloud_text_lifecycle_<hash>.<document hash>`, with the hex SHA-256 of the
+document ID, and it keeps one last value per document: the freeze, thaw or
+close state that admission checks. The stream is file-backed, rejects new
+values when full, has no age limit and uses the document log's replica count.
+Its metadata names the log in `cloud.shared-text.lifecycle` and the namespace
+in `sync.namespace`.
+
+Its storage budget is the declared `lifecycle.maxBytes`, reserved on every
+replica. Mail declares 512 MiB for `cloud:mail:draft-documents`; see
+[Mail collaborative drafts](../operations/mail-collaborative-drafts.md#capacity-and-deployment).
+Closed entries are retained and nothing cleans them up yet; safe retirement
+is tracked in [#3254](https://github.com/k2b-dev/cloud/issues/3254).
+Back up this stream together with the document log and the SQL snapshots.
+
+Gateway Ops identifies lifecycle streams by their existing metadata. At 80%
+of their installed `max_bytes`, it raises a shared broker health warning with
+the log ID, usage and limit. Existing health webhooks include this warning;
+there is no SQL or capacity inspection per edit. The NATS administration page
+and CLI include these streams in the **Problems only** filter. A larger
+operator-set limit is used when calculating usage.
+
+The stream carries no Sync owner metadata, so leave `--app` empty. Its
+namespace and document-log ID are available as filters:
+
+```bash
+cld admin nats streams list --namespace <namespace> --resource draft-documents --problems --json
+```
+
+With the NATS CLI, list and inspect it directly:
+
+```bash
+nats stream ls --names | grep cloud_text_lifecycle_
+nats stream info cloud_text_lifecycle_<hash>
+```
+
+Size for cumulative closed documents plus active lifecycle entries and
+operating headroom. Sample the increase in `state.bytes` across representative
+transitions; multiply bytes per entry by expected closes per day and the
+planning horizon. Include retained headers and subject overhead, not just the
+JSON payload. Reserve the resulting `max_bytes` on every replica and enough
+JetStream account capacity for all streams.
+
+Before raising a limit, verify the stream's lifecycle and namespace metadata,
+its installed limit, the account reservation and free disk capacity. Raise the
+application's declared `lifecycle.maxBytes` and call `log.ready()` after startup,
+or have the operator raise that exact stream's `max_bytes` with the NATS CLI.
+Initialization preserves a larger installed limit. Never purge, expire or
+delete lifecycle entries to recover space; expand the budget instead.
+
+A room configured with this lifecycle store and `snapshots.flushNow` exposes:
+
+```ts
+room.freeze(docId, { signal? }): Promise<SharedTextRoomFreeze | null>
+room.thaw(docId, { signal?, freezeCursor? }): Promise<string | null>
+room.closeDocument(docId, { freezeCursor, signal? }): Promise<string | null>
+// SharedTextRoomFreeze:
+// { state: Uint8Array, text: string, cursor: string,
+//   restoreRevision: string, expiresAt: number }
+```
+
+First wait for the browser's visible input to be accepted. `freeze` publishes
+an ordered marker using the document log's expected-head CAS, drains all
+accepted input through that marker, persists it through `flushNow`, and returns
+that exact state and marker cursor. Persistence verifies text, state vector
+and delete set; equivalent Yjs encodings are accepted. It fails on a competing publication; retry
+the bounded action from the new head. Across nodes, an edit is either ordered
+before the marker or rejected without an acknowledgement as `DOCUMENT_FROZEN`
+(close 1013). The browser keeps its input/journal and reconnects to resend it.
+Snapshot repair cannot change the frozen state. If authority changes during
+repair publication, that repair attempt returns without saving tentative state;
+the retained update remains available to a subsequent snapshot replay. An
+unavailable authority still fails the job for retry.
+
+The freeze is a nonrenewing 60-second lease starting just before marker
+publication. A crashed owner cannot block admission beyond 60 seconds plus
+the operator's inter-node clock skew. Keep the clock difference between nodes
+below five seconds. The returned `expiresAt` reserves that five-second safety
+margin, leaving at most 55 seconds, less admission and persistence time.
+`freeze` rejects an expired safe window. Complete the application's durable
+submit/send transition before the returned `expiresAt`; if too little time
+remains, thaw and retry.
+
+Use this sequence:
+
+1. Freeze and use its returned state as the exact submitted content.
+2. Commit the domain transition and a retryable close intent containing
+   `freezeCursor: frozen.cursor` in the application's SQL transaction.
+3. After commit, call `closeDocument(docId, { freezeCursor: frozen.cursor })`.
+   Retry that intent after a crash or uncertain response, including on restart.
+4. On cancellation or SQL rollback, call `thaw(docId, { freezeCursor: frozen.cursor })`.
+
+Close requires that matching frozen token, becomes permanent, and is
+idempotent for that token. It returns the same close cursor even after its
+log marker was pruned. A different token conflicts. A crash after durable
+close but before its notification is completed by retrying the same close.
+Close publishes a terminal notification and closes sockets on every node
+with `1008 DOCUMENT_CLOSED`; fresh joins read the durable authority too.
+The browser stops reconnecting. Thaw requires the matching cursor while
+frozen and publishes an open notification; it cannot reopen a closed document.
+Retrying thaw with the same token returns its original marker, including after
+a crash between opening authority and notification. An already open document
+without a token is a no-op returning null; a stale token conflicts.
+
+After durable domain retirement, complete the close intent and deny future
+joins and edits in the application. Keep the lifecycle entry: close notifications
+alone cannot prove that every stalled producer has drained. Removing authority
+after pruning can make an old expected-empty-head publication appear valid
+again. Safe retirement is tracked in [#3254](https://github.com/k2b-dev/cloud/issues/3254).
+Do not manually delete closed entries or reuse document IDs.
+
+The durable frozen value survives its 60-second admission lease. After expiry,
+the next admission atomically invalidates that token before reopening the
+edit path. A post-commit close can still use an expired token if no later
+admission or thaw has invalidated it; it cannot close a newer freeze or
+silently discard resumed input. The committed domain state must deny edits
+and publish its usual lock/retirement invalidation, while the durable close
+intent completes. If an expired token has already been invalidated, reconcile
+that conflict against the committed domain state rather than blindly closing
+with a different token. There is no renewal, polling, or recovery worker.
+
+Lifecycle authority lives outside the prunable document log. Prefix pruning
+through a covering snapshot may remove active freeze and terminal markers;
+active freezes remain enforced and closed documents never pin the prefix.
+If a marker was definitely rejected, freeze CAS-reverts preparation to the
+previous value, allowing immediate retry. After the marker is published, a
+definite application `save()` rejection during the standard snapshot drain
+thaws that freeze with its matching token and publishes an open marker, so
+editors and a new freeze can proceed immediately. A newer freeze or close is
+never released by this cleanup. A crash, cancellation, timeout, transport
+failure, or uncertain broker outcome keeps admission fenced until the lease
+expires. Lifecycle calls reject an expiring or evicting
+log or a declaration without lifecycle storage. Notebooks keeps its existing
+declaration and does not use these optional methods. Its restore marker
+changes generation without a room lifecycle check. An adapter combining
+restore with lifecycle must check the durable authority under the same
+document admission lease and reject restore while frozen or closed.
+
+Validation and publication run under the same per-document NATS admission
+lease on every node, including server edits, freeze, thaw and close. Editors
+therefore queue behind one owner instead of repeatedly racing the head CAS.
+The lease lasts 10 seconds; acquisition and admission share a 5-second
+cancellation budget. Admissions queue FIFO per document on each node. Broker
+contention uses exponential backoff from 25 ms to 400 ms with ±50% jitter,
+at most 16 attempts within that budget. Busy or timed-out admission responds
+with `BUSY` without closing the socket or acknowledging the edit. The browser
+keeps its journal, pauses publication and retries the full document state on
+the same socket after its configured backoff with ±50% jitter. Full-state
+retries carry optional `retry: true` on `syncPublish`; custom wire adapters
+must forward it. After BUSY the server rejects already queued deltas
+immediately, without acquiring admission again. A marked retry can acquire
+admission; missing causal dependencies remain BUSY, while incompatible
+revision or structural history still requires recovery. An accepted retry
+clears the gate. Ordinary publication packets are unchanged. During a rolling
+deploy, older browser providers do not recognize BUSY: after a CAS conflict
+they retain their edits until `SYNC_TIMEOUT` (about 30 seconds), then reconnect
+and resend without losing input.
+A stalled or expired owner still has to pass expected-head CAS. A prune to an
+empty tenant can make that CAS match again. Every lifecycle-enabled content writer
+therefore rereads the authoritative lifecycle revision after publication and
+before acknowledging or returning success. A changed revision rejects the
+acknowledgement as frozen (or closed), even if a thaw already followed it.
+The publisher's live echo waits for this check too. A late event that passed
+the emptied-subject CAS remains in the log: rejection does not roll it back.
+Snapshot replay preserves it, repair stays fenced, and the next freeze drains
+a state that includes it. Applications must compare the frozen state with the
+visible content they intend to submit and retry/reconcile any difference,
+including when verifying a prior snapshot. Do not prune beyond a covering
+persisted snapshot or silently submit a previous freeze's state.
+Ordinary server edits retry at most three CAS conflicts, with 25/50 ms backoff,
+reusing the prepared update identities. Freeze releases admission after its
+marker and drains persistence outside that lease.
+
+Lifecycle preparation records its required byte budget on the document topic
+before reserving storage. Gateway Ops Health and health webhooks warn when that
+reservation is missing or too small. Applications must retry failed preparation;
+Mail does so automatically with bounded backoff. Broker outages also appear as
+incomplete Sync inventory. See [Mail collaborative drafts](/en/docs/operations/mail-collaborative-drafts)
+for capacity recovery.
+
+An uncontended edit adds four NATS KV operations for admission acquisition
+and release, plus the existing head lookup and CAS publication: **zero SQL
+per edit**. Opting into lifecycle adds two authoritative JetStream last-value
+reads per successful edit (before validation and after publication), without a
+replay consumer. Each process caches at most 128 decoded entries per log,
+independently of `lifecycle.maxBytes`: a 2 MiB working allowance derived from
+the 4 KiB broker message limit with fourfold headroom for decoded objects and
+keys. This is an entry bound, not an exact JavaScript heap limit. An expired freeze adds one CAS
+write to invalidate its token. Notifications never substitute for those reads, so a delayed event or a pruned
+marker cannot bypass acknowledgement fencing. Awareness and fan-out add no
+lifecycle lookups. Logs without lifecycle storage, including
+Notebooks, keep their existing hot-path cost.
+
+A disposable per-context state and head cache advances with live input and
+successful local publications. An up-to-date edit needs no state replay.
+Structural history and uncovered state share a contiguous replay cache,
+capped at one declared log payload budget per binding (128 KiB if omitted).
+Covered history and local receipts need no new replay consumer; a miss reads
+only uncovered history. Evicted history is read from the retained log again.
+An admission retention gap requests a clean resync instead of an internal-error
+close.
+
+## Open a browser document
+
+`createSharedTextProvider` remains the transport-independent provider. Use
+`openSharedTextDocument` from `@k2b/cloud/browser/shared-text` to add the device
+journal, generation recovery, durable receipts and provider lifecycle.
+Supply the authorization endpoint adapter, generation parser/comparator,
+`createProvider`, document/user/journal IDs, localized messages and callbacks.
+Its returned client exposes `provider`, `refresh`, `retry`, `discard`, `flush`
+and `dispose`. Browser `flush()` writes pending input to the device journal;
+server `flushNow()` commits accepted text to Postgres.
+
+The device journal is cleared only by a covering durable receipt, never by a
+transport echo. Only pending, accepted input requests durable receipts at the
+snapshot cadence; this is separate from room access validation. Call `refresh`
+for application snapshot/lifecycle events. Preserve journal namespaces during
+migration. `changesBetween`, `rebaseOnto` and `applyToYText` support the lazy
+first-edit transition without loading an editor-specific application package.

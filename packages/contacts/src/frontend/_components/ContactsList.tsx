@@ -110,12 +110,7 @@ export default function ContactsList(props: Props) {
         />
       }
     >
-      <ul
-        ref={listRef}
-        class="contacts-list flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5"
-        aria-label={t().contactsListLabel}
-        onKeyDown={moveFocus}
-      >
+      <ul ref={listRef} class="contacts-list flex flex-col gap-1" aria-label={t().contactsListLabel} onKeyDown={moveFocus}>
         <For each={props.contacts}>
           {(contact) => {
             const name = () => resolveContactName(contact, t().unnamedContact);

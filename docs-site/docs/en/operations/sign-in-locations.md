@@ -5,7 +5,7 @@ section: Operations
 order: 1146
 description: Manage bundled and uploaded sign-in location databases, updates, proxy requirements, and privacy limits.
 tags: [operations, identity, privacy]
-updated: 2026-11-06
+updated: 2026-11-11
 ---
 
 # Sign-in locations
@@ -117,6 +117,10 @@ until reset. Every Core instance checks for changes on lookups about once a
 minute and switches to the replacement. A restarted Core also starts a refresh without delaying
 startup. Uploads and resets have audit entries with the type, build date,
 checksum, size, and administrator; file contents are not included in the audit.
+
+On upgrade, Core repairs earlier uploads whose metadata was stored as a JSON
+string, restoring their size, description, and DB-IP attribution in the status
+response. The uploaded database, checksum, uploader, and upload time stay unchanged.
 
 Each active database is held in each Core process's memory, using about its
 unpacked file size. Bundled files load on first use; the current City and ASN

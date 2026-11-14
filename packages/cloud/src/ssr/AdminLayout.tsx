@@ -20,6 +20,8 @@ type AdminLayoutContext = {
   get(key: "runtime"): RuntimeContext;
   get(key: "settings"): Record<string, any>;
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
+  get(key: "sessionIdle"): AuthContext["Variables"]["sessionIdle"];
+  get(key: "credentialProof"): AuthContext["Variables"]["credentialProof"];
   req: { raw: { headers: Headers; url: string } };
 };
 type Props = {
@@ -47,7 +49,8 @@ export default function AdminLayout(props: Props) {
   const breadcrumbs: Breadcrumb[] = [{ title: t.start, href: "/" }, { title: overview ? t.admin : title }];
   return (
     <Layout c={c} fullWidth fullPage title={breadcrumbs}>
-      <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
+      {/* Settings and administration are quiet: flat, only charts, dashboard frames, and key figures lift. */}
+      <AppWorkspace mobileSurface="flush" layer="quiet" class="min-h-0 flex-1">
         <AdminSidebar currentPath={currentPath} apps={runtime.apps} />
         <AppWorkspace.Content>
           {props.ownMain ? (

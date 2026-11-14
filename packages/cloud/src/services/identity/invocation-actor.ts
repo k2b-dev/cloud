@@ -2,7 +2,7 @@ import { sql } from "../../runtime/clients";
 
 import type { RequestActor } from "../../server/middleware/auth";
 import type { AccessSubject } from "../../server/services/access";
-import { isAccountCategoryAllowed } from "../account-category-policy";
+import { isAccountAllowed } from "../account-category-policy";
 import { isAccountExpired } from "../account-model";
 import { isServiceAccountOAuthAuthorityCurrent } from "../oauth-tokens";
 import type { ServiceAccount } from "../service-accounts";
@@ -144,7 +144,7 @@ export const resolveInvocationAuthority = async (
     if (claims.access_subject_type !== "user" || claims.access_subject_id !== claims.sub) return null;
     const current = await loadCurrentUser({ userId: claims.sub, groupsAdmin }, query);
     if (!current || isAccountExpired(current.accountExpires)) return null;
-    if (!(await isAccountCategoryAllowed(current, query))) return null;
+    if (!(await isAccountAllowed(current, query))) return null;
     // The mobile app's session never acts as an installation administrator, also not through another app.
     const app = claims.session_kind === "app";
     const user = app ? withoutAdminRole(current) : current;
@@ -181,7 +181,7 @@ export const resolveInvocationAuthority = async (
   const serviceAccount = mapServiceAccount(row);
   const delegatedUser = serviceAccount.delegatedUserId ? buildProjectedUser(row) : null;
   if (serviceAccount.kind === "user_delegated" && (!delegatedUser || isAccountExpired(delegatedUser.accountExpires))) return null;
-  if (delegatedUser && !(await isAccountCategoryAllowed(delegatedUser, query))) return null;
+  if (delegatedUser && !(await isAccountAllowed(delegatedUser, query))) return null;
 
   if (
     claims.access_subject_type !== (delegatedUser ? "user" : "service_account") ||

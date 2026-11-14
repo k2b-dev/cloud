@@ -162,8 +162,11 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         tags: ["Auth"],
         summary: "Logout",
         description:
-          "Idempotent: clears the session cookie and revokes the current credential if present. No authentication required. An optional X-Cloud-Logout-User header binds revocation to that user UUID (or none) without writing the shared browser cookie; a changed account returns 409 without revocation.",
-        parameters: [{ in: "header", name: "X-Cloud-Logout-User", required: false, schema: { type: "string" } }],
+          "Idempotent: clears the session cookie and revokes the current credential if present. No authentication required. An optional X-Cloud-Logout-User header binds revocation to that user UUID (or none) without writing the shared browser cookie; a changed account returns 409 without revocation. With it, an optional X-Cloud-Logout-Session header also binds revocation to that session id; a newer sign-in returns 409.",
+        parameters: [
+          { in: "header", name: "X-Cloud-Logout-User", required: false, schema: { type: "string" } },
+          { in: "header", name: "X-Cloud-Logout-Session", required: false, schema: { type: "string" } },
+        ],
         responses: {
           200: jsonResponse(MessageResponseSchema, "Session invalidated"),
           400: jsonResponse(ErrorResponseSchema, "Invalid expected account"),
@@ -174,7 +177,10 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         const expected = c.req.header("x-cloud-logout-user");
         if (expected !== undefined && expected !== "none" && !z.string().uuid().safeParse(expected).success)
           return c.json({ message: "Invalid expected account" }, 400);
-        if (!(await auth.session.delete(c, expected === "none" ? null : expected)))
+        const expectedSession = c.req.header("x-cloud-logout-session");
+        if (expectedSession !== undefined && (expected === undefined || !z.string().uuid().safeParse(expectedSession).success))
+          return c.json({ message: "Invalid expected account" }, 400);
+        if (!(await auth.session.delete(c, expected === "none" ? null : expected, expectedSession)))
           return c.json({ message: "Browser account changed; reload before signing out" }, 409);
         log.info("Logout");
         return c.json({ message: "Logged out" });

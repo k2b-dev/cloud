@@ -13,8 +13,27 @@ import { filesUrl } from "./urls";
  * a stored history entry is never used as authority for a place.
  */
 
-export async function loadActivity(request: ActivityRequest & { cursor?: string }, signal: AbortSignal, fallback: string) {
+export async function loadActivity(
+  /** `limit` travels as a query string; the route coerces and bounds it like every page size. */
+  request: ActivityRequest & { cursor?: string; limit?: string },
+  signal: AbortSignal,
+  fallback: string,
+) {
   const response = await apiClient.activity.$get({ query: request }, { init: { signal } });
+  if (!response.ok) return apiFailure(response, fallback);
+  return response.json();
+}
+
+/** Files this person opened, each resolved against current access on the server. */
+export async function loadRecent(signal: AbortSignal, fallback: string) {
+  const response = await apiClient.recent.$get({}, { init: { signal } });
+  if (!response.ok) return apiFailure(response, fallback);
+  return response.json();
+}
+
+/** This person's favorites, each resolved against current access on the server. */
+export async function loadFavorites(signal: AbortSignal, fallback: string) {
+  const response = await apiClient.favorites.$get({}, { init: { signal } });
   if (!response.ok) return apiFailure(response, fallback);
   return response.json();
 }

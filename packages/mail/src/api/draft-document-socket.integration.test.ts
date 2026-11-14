@@ -1,34 +1,48 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { getProcessSync, sql } from "@k2b/cloud";
+import { defineLive, subscribeIdentityAccessChanged } from "@k2b/cloud/events";
+import { startLiveOutbox } from "@k2b/cloud/events/testing";
 import { auth } from "@k2b/cloud/server";
-import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
+import { fromBase64, MalformedSharedTextEventError, toBase64 } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
+import { RetentionGapError, StoreFullError, type TopicConfig } from "@k2b/sync";
 import type { Server } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { z } from "zod";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { prepareDraftSendBinding } from "../../test/fixtures/draft-send";
+import { useRegisteredMailTestApp } from "../../test/fixtures/registered-app.test-fixture";
 import { draftEditableContentInputSchema } from "../contracts";
 import { createDraftRevisionUpdate, readDraftDocument as readModel } from "../lib/draft-document";
 import { type MailDraftDocumentMessage, mailDraftDocumentMessageSchema } from "../lib/draft-document-protocol";
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
-import * as draftDocumentService from "../service/draft-documents";
+import { createActorCommand } from "../service/commands";
+import { reviewDraftComposeSafety } from "../service/compose-safety";
+import { mailDraftRoom } from "../service/draft-document-room";
 import {
-  acceptDraftDocumentUpdate,
-  lockDraftDocumentInTransaction,
-  mailDraftDocumentLog,
-  readDraftDocument,
-} from "../service/draft-documents";
+  draftDocumentSnapshotStore,
+  draftDocumentSnapshots,
+  flushDraftDocumentSnapshot,
+  stopDraftDocumentSnapshots,
+} from "../service/draft-document-snapshots";
+import * as draftDocumentService from "../service/draft-documents";
+import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
+import { enqueueMailInvalidation, mailLive } from "../service/live";
 import { createMailbox } from "../service/mailboxes";
+import { cancelScheduledSend } from "../service/scheduled-sends";
 import { stopMailDraftConnections, upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import type { MailApiContext } from "./public-resource-boundary";
 
 // Bun accepts headers; lib.dom's global constructor omits Bun's options overload.
 const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
 
+useRegisteredMailTestApp();
 const suite = suiteFor("database", "nats");
 const value = <T>(result: Result<T>): T => {
   if (!result.ok) throw new Error(result.error.message);
@@ -46,13 +60,19 @@ const decode = (bytes: Uint8Array) => {
 
 suite("Mail document socket with real SQL, retained topic and WebSockets", () => {
   let server: Server<unknown>;
+  let app: Hono<MailApiContext>;
+  const startServer = () => {
+    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request, runtime) => app.fetch(request, runtime), websocket });
+  };
   let context: MailRequestContext;
   let otherContext: MailRequestContext;
   let requestContext: MailRequestContext;
   let mailboxId: string;
   let identity: { id: string; short_id: string };
   let currentDraft: { id: string; short_id: string };
+  let stopLive: (() => Promise<void>) | null = null;
   let authentication: { mockRestore(): void };
+  let authenticationReads = 0;
   let activeSession: Awaited<ReturnType<typeof auth.session.authenticate>>;
   const sockets = new Set<WebSocket>();
   const token = "socket-fixture-browser-session";
@@ -95,10 +115,11 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       user: context.actor.user,
     };
     // Identity middleware is tested by Cloud. This fixture replaces ONLY credential verification;
-    // cookie selection, socket transport, service admission, SQL fences and NATS remain real.
-    authentication = spyOn(auth.session, "authenticate").mockImplementation(async (credential) =>
-      credential === token ? activeSession : null,
-    );
+    // cookie selection, socket transport, room admission, SQL snapshots and NATS remain real.
+    authentication = spyOn(auth.session, "authenticate").mockImplementation(async (credential) => {
+      authenticationReads++;
+      return credential === token ? activeSession : null;
+    });
     mailboxId = value(await createMailbox(context, { name: `Socket ${newShortId()}`, description: "Transport fixture" })).id;
     const otherUid = `mail-socket-${newShortId()}`;
     const [other] = await sql<{ id: string }[]>`
@@ -118,7 +139,8 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     `;
     if (!sender) throw new Error("Missing socket sender");
     identity = sender;
-    const app = new Hono<MailApiContext>()
+    await prepareDraftSendBinding(mailboxId, identity.id);
+    app = new Hono<MailApiContext>()
       .use("*", async (c, next) => {
         c.set("actor", requestContext.actor);
         c.set("accessSubject", requestContext.accessSubject);
@@ -128,7 +150,9 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         await next();
       })
       .get("/mailboxes/:mailboxId/drafts/:draftId/document/socket", upgradeMailDraftDocumentSocket);
-    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request, runtime) => app.fetch(request, runtime), websocket });
+    startServer();
+    await draftDocumentSnapshots.start();
+    stopLive = await startLiveOutbox("mail");
   });
   afterEach(async () => {
     for (const socket of sockets) socket.close();
@@ -137,8 +161,16 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
   });
   afterAll(async () => {
     await stopMailDraftConnections();
+    await stopDraftDocumentSnapshots();
+    await stopLive?.();
     await server?.stop(true);
     authentication?.mockRestore();
+    // A cancelled join must finish rollback before fixture deletion/pool close.
+    // Report a leaked transaction here, instead of timing out in a later hook.
+    expect(
+      await sql`SELECT pid, state, left(query, 160) AS query FROM pg_stat_activity
+      WHERE datname = current_database() AND state LIKE 'idle in transaction%'`,
+    ).toHaveLength(0);
     if (mailboxId) {
       const access = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
@@ -150,6 +182,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
 
   const draft = async () => {
     const content = draftEditableContentInputSchema.parse({
+      quoteSource: null,
       senderIdentityId: identity.short_id,
       signatureTemplateId: null,
       to: [{ address: "recipient@example.test", name: null }],
@@ -229,7 +262,436 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     return { socket, messages, send, wait, ready };
   };
 
-  // R48 source-only guard: cookie B also has real write permission to the same draft.
+  const publish = (client: Awaited<ReturnType<typeof connect>>, base: Awaited<ReturnType<typeof read>>, update: Uint8Array) => {
+    client.send({
+      type: "syncPublish",
+      payload: { docId: currentDraft.short_id, generation: base.generation, baseCursor: base.durable.cursor, payload: toBase64(update) },
+    });
+  };
+
+  test("room joins and rejects a packet targeting another draft", async () => {
+    await draft();
+    const client = await connect();
+    await client.ready();
+    client.send({ type: "syncPublish", payload: { docId: newShortId(), generation: "1", baseCursor: null, payload: "AAA=" } });
+    await client.wait((packet) => packet.type === "error");
+    expect((await read()).durable.content.body).toBe("Original");
+  });
+
+  test("undo continues the same generation and admits an edit while the thaw marker is retained", async () => {
+    const created = await draft();
+    const base = await read();
+    const schedule = async () => {
+      const current = await read();
+      const checked = value(
+        await reviewDraftComposeSafety({ context, mailboxId, draftId: created.id, expectedRevision: current.revision }),
+      );
+      return value(
+        await createActorCommand({
+          context,
+          mailboxId,
+          enqueue: false,
+          input: {
+            kind: "send",
+            draftId: created.id,
+            senderIdentityId: identity.id,
+            expectedDraftRevision: checked.revision,
+            expectedContentHash: checked.contentHash,
+            undoSeconds: 60,
+            idempotencyKey: crypto.randomUUID(),
+            safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
+          },
+        }),
+      );
+    };
+    const command = await schedule();
+    const [outbox] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+    if (!outbox) throw new Error("Missing send submission");
+    value(await cancelScheduledSend({ context, mailboxId, scheduledSendId: outbox.id, input: { disposition: "draft" } }));
+    const restored = await read();
+    expect(restored.generation).toBe(base.generation);
+    const topic = mailDraftDocumentLog.topic();
+    const head = await topic.latestCursor({ tenantId: created.id });
+    expect(head).not.toBeNull();
+    const client = await connect();
+    await client.ready();
+    const update = await createDraftRevisionUpdate(
+      restored.fresh.state,
+      { ...restored.fresh.content, body: "Editing after undo" },
+      {
+        deadline: Date.now() + 10000,
+      },
+    );
+    publish(client, restored, update);
+    await client.wait((packet) => packet.type === "syncPush" && packet.payload.updates.some((u) => u.payload === toBase64(update)));
+    expect(client.messages.filter((packet) => packet.type === "error")).toEqual([]);
+    await flushDraftDocumentSnapshot(created.id);
+    const next = await schedule();
+    const [receipt] = await sql<{ state: Uint8Array; sent_state: Uint8Array }[]>`
+      SELECT receipt.state, sent.state AS sent_state FROM mail.draft_document_freezes receipt
+      JOIN mail.draft_document_sends sent ON sent.draft_id = receipt.draft_id AND sent.generation = receipt.generation
+      WHERE sent.command_id = ${next.id}::uuid`;
+    expect(receipt).toBeDefined();
+    expect(receipt?.state).toEqual(receipt?.sent_state);
+    if (!receipt) throw new Error("Missing second send receipt");
+    expect(decode(receipt.state).body).toBe("Editing after undo");
+  });
+
+  test("SQL budget: real room edits, delivery to another socket and cursor updates each cost zero", async () => {
+    const meter = await meterSql();
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    try {
+      // Fixtures and join are deliberately outside the hot-path windows.
+      const created = await draft();
+      const base = await read();
+      Y.applyUpdate(doc, base.fresh.state);
+      const publisher = await connect();
+      await publisher.ready();
+      const receiver = await connect();
+      await receiver.ready();
+      const update = await createDraftRevisionUpdate(
+        base.fresh.state,
+        { ...base.fresh.content, body: "Metered edit" },
+        { deadline: Date.now() + 10000 },
+      );
+      const delivered = (packet: MailDraftDocumentMessage) =>
+        packet.type === "syncPush" && !packet.payload.snapshot && packet.payload.updates.some((u) => u.payload === toBase64(update));
+      const statements = await meter.during(async () => {
+        publish(publisher, base, update);
+        await Promise.all([publisher.wait(delivered), receiver.wait(delivered)]);
+      });
+      expect({ perEdit: statements.length, perDelivery: statements.length, statements }).toEqual({
+        perEdit: 0,
+        perDelivery: 0,
+        statements: [],
+      });
+      Y.applyUpdate(doc, update);
+      const position = Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(doc.getText("codemirror"), 1));
+      awareness.setLocalState({ cursor: { anchor: position, head: position } });
+      const cursorStatements = await meter.during(async () => {
+        publisher.send({
+          type: "awarenessPublish",
+          payload: {
+            docId: created.short_id,
+            generation: base.generation,
+            payload: toBase64(encodeAwarenessUpdate(awareness, [doc.clientID])),
+          },
+        });
+        await receiver.wait((packet) => packet.type === "awarenessPush" && packet.payload.updates.some((u) => u.payload !== "AA=="));
+      });
+      expect({ perAwareness: cursorStatements.length, statements: cursorStatements }).toEqual({ perAwareness: 0, statements: [] });
+    } finally {
+      for (const socket of sockets) socket.close();
+      await stopMailDraftConnections();
+      awareness.destroy();
+      doc.destroy();
+      await meter.close();
+    }
+  });
+
+  test("JetStream echo precedes lazy SQL and a snapshot projects body, headers, adoption and provider export", async () => {
+    await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const update = await createDraftRevisionUpdate(
+      base.fresh.state,
+      { ...base.fresh.content, body: "Human text", subject: "Lazy subject" },
+      { deadline: Date.now() + 10000 },
+    );
+    publish(client, base, update);
+    await client.wait(
+      (packet) =>
+        packet.type === "syncPush" && !packet.payload.snapshot && packet.payload.updates.some((u) => u.payload === toBase64(update)),
+    );
+    const [before] = await sql<
+      { body_markdown: string; subject: string }[]
+    >`SELECT body_markdown, subject FROM mail.drafts WHERE id = ${currentDraft.id}::uuid`;
+    expect(before).toEqual({ body_markdown: "Original", subject: "Subject" });
+    await flushDraftDocumentSnapshot(currentDraft.id);
+    const [after] = await sql<
+      { body_markdown: string; subject: string; adopted_at: Date | null }[]
+    >`SELECT body_markdown, subject, adopted_at FROM mail.drafts WHERE id = ${currentDraft.id}::uuid`;
+    expect(after?.body_markdown).toBe("Human text");
+    expect(after?.subject).toBe("Lazy subject");
+    expect(after?.adopted_at).not.toBeNull();
+    const projections = await sql`SELECT id FROM mail.draft_provider_snapshots WHERE draft_id = ${currentDraft.id}::uuid`;
+    expect(projections.length).toBeGreaterThan(0);
+  });
+
+  test("identity events skip another account and close this account's revoked session", async () => {
+    if (otherContext.actor.kind !== "user" || context.actor.kind !== "user") throw new Error("User fixture required");
+    const coreLive = defineLive({ appId: "core", event: z.object({ type: z.literal("identity.access.changed"), userId: z.string() }) });
+    const stopCore = await startLiveOutbox("core");
+    const previous = activeSession;
+    let stopObserved = () => {};
+    try {
+      const deadline = Date.now() + 5000;
+      while ((await sql`SELECT 1 FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND next_attempt_at <= now() LIMIT 1`).length) {
+        if (Date.now() > deadline) throw new Error("Core fixture outbox did not drain");
+        await Bun.sleep(10);
+      }
+      await draft();
+      const client = await connect();
+      await client.ready();
+      const before = authenticationReads;
+      const observed = Promise.withResolvers<void>();
+      stopObserved = subscribeIdentityAccessChanged(() => observed.resolve(), { userId: otherContext.actor.user.id });
+      await sql.begin((tx) =>
+        coreLive.publish(tx, {
+          key: "identity.scope-fixture",
+          data: { type: "identity.access.changed", userId: otherContext.actor.kind === "user" ? otherContext.actor.user.id : "" },
+        }),
+      );
+      coreLive.wake();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          observed.promise,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("Core identity event was not delivered")), 5000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+      expect(authenticationReads).toBe(before);
+      activeSession = null;
+      await sql.begin((tx) =>
+        coreLive.publish(tx, {
+          key: "identity.scope-fixture",
+          data: { type: "identity.access.changed", userId: context.actor.kind === "user" ? context.actor.user.id : "" },
+        }),
+      );
+      coreLive.wake();
+      const message = await client.wait((packet) => packet.type === "error");
+      expect(message.type === "error" && message.payload.code).toBe("SESSION_EXPIRED");
+    } finally {
+      activeSession = previous;
+      stopObserved();
+      await stopCore?.();
+    }
+  });
+
+  test("event-only grant revocation closes an existing socket", async () => {
+    await draft();
+    const client = await connect();
+    await client.ready();
+    await sql`DELETE FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid AND access_id IN
+      (SELECT id FROM auth.access WHERE user_id = ${context.accessSubject.type === "user" ? context.accessSubject.userId : ""}::uuid)`;
+    mailLive.wake();
+    const message = await client.wait((packet) => packet.type === "error");
+    expect(message.type === "error" && message.payload.code).toBe("ACCESS_DENIED");
+    // Restore fixture ownership for later tests, using the other manager.
+    await sql`INSERT INTO mail.mailbox_access(mailbox_id, access_id)
+      SELECT ${mailboxId}::uuid, id FROM auth.access WHERE user_id = ${context.accessSubject.type === "user" ? context.accessSubject.userId : ""}::uuid AND permission = 'admin'
+      ON CONFLICT DO NOTHING`;
+    mailLive.wake();
+  });
+
+  for (const change of ["assignment removed", "draft moved"])
+    test(`assigned-only editor joins its conversation and closes when ${change}`, async () => {
+      await draft();
+      if (!activeSession || otherContext.actor.kind !== "user") throw new Error("Second session fixture missing");
+      const previous = activeSession;
+      const other = otherContext.actor.user;
+      const [grant] = await sql<{ access_id: string }[]>`DELETE FROM mail.mailbox_access
+        WHERE mailbox_id = ${mailboxId}::uuid AND access_id IN (SELECT id FROM auth.access WHERE user_id = ${other.id}::uuid)
+        RETURNING access_id`;
+      if (!grant) throw new Error("Missing fixture grant");
+      const conversation = crypto.randomUUID(),
+        targetConversation = crypto.randomUUID(),
+        source = crypto.randomUUID();
+      try {
+        await sql`INSERT INTO mail.mailbox_assigned_access(mailbox_id, access_id) VALUES (${mailboxId}::uuid, ${grant.access_id}::uuid)`;
+        await sql`INSERT INTO mail.conversations(id, short_id, mailbox_id, latest_message_at)
+          VALUES (${conversation}::uuid, ${newShortId()}, ${mailboxId}::uuid, '2026-11-12T12:00:00Z')`;
+        await sql`INSERT INTO mail.conversations(id, short_id, mailbox_id, latest_message_at)
+          VALUES (${targetConversation}::uuid, ${newShortId()}, ${mailboxId}::uuid, '2026-11-12T12:00:00Z')`;
+        await sql`INSERT INTO mail.message_contents(id, short_id, mailbox_id, subject, internal_date, content_hash)
+          VALUES (${source}::uuid, ${newShortId()}, ${mailboxId}::uuid, 'Assigned draft', '2026-11-12T12:00:00Z', ${(change === "draft moved" ? "b" : "a").repeat(64)})`;
+        await sql`INSERT INTO mail.conversation_messages(conversation_id, message_id, position) VALUES (${conversation}::uuid, ${source}::uuid, 0)`;
+        await sql`UPDATE mail.drafts SET intent = 'reply', conversation_id = ${conversation}::uuid,
+          source_message_id = ${source}::uuid WHERE id = ${currentDraft.id}::uuid`;
+        requestContext = otherContext;
+        activeSession = { ...previous, user: other, data: { ...previous.data, userId: other.id } };
+        const denied = await connect(`session_token=${token}`, other.id);
+        denied.send({ type: "replayRequest", payload: { docId: currentDraft.short_id, generation: null, fromCursor: null } });
+        expect(await denied.wait((packet) => packet.type === "error")).toMatchObject({
+          type: "error",
+          payload: { code: "ACCESS_DENIED" },
+        });
+        await sql`INSERT INTO mail.conversation_assignees(conversation_id, user_id) VALUES (${conversation}::uuid, ${other.id}::uuid)`;
+        const allowed = await connect(`session_token=${token}`, other.id);
+        await allowed.ready();
+        const readBeforeMove = draftDocumentService.readDraftDocument;
+        // Move between the room's initial access check and its transaction-bound read.
+        const moveDuringRead =
+          change === "draft moved"
+            ? spyOn(draftDocumentService, "readDraftDocument").mockImplementationOnce(async (params) => {
+                await sql`UPDATE mail.drafts SET conversation_id = ${targetConversation}::uuid WHERE id = ${currentDraft.id}::uuid`;
+                return readBeforeMove(params);
+              })
+            : null;
+        try {
+          if (change === "assignment removed")
+            await sql`DELETE FROM mail.conversation_assignees WHERE conversation_id = ${conversation}::uuid`;
+          else await sql.begin((db) => enqueueMailInvalidation(db, { mailboxId }));
+          mailLive.wake();
+          expect(await allowed.wait((packet) => packet.type === "error")).toMatchObject({
+            type: "error",
+            payload: { code: "ACCESS_DENIED" },
+          });
+        } finally {
+          moveDuringRead?.mockRestore();
+        }
+      } finally {
+        activeSession = previous;
+        requestContext = context;
+        await stopMailDraftConnections();
+        await sql`DELETE FROM mail.mailbox_assigned_access WHERE mailbox_id = ${mailboxId}::uuid AND access_id = ${grant.access_id}::uuid`;
+        await sql`INSERT INTO mail.mailbox_access(mailbox_id, access_id) VALUES (${mailboxId}::uuid, ${grant.access_id}::uuid)`;
+      }
+    });
+  const persistedBody = async (client: Awaited<ReturnType<typeof connect>>, body: string) => {
+    await client.wait((packet) => packet.type === "syncPush" && !packet.payload.snapshot);
+    await flushDraftDocumentSnapshot(currentDraft.id);
+    expect((await read()).durable.content.body).toBe(body);
+  };
+
+  test("bounded reconnect storm preserves every admitted edit and replayed input is idempotent", async () => {
+    await draft();
+    const initial = await read();
+    const local = new Y.Doc();
+    local.clientID = 101;
+    Y.applyUpdate(local, initial.durable.state);
+    try {
+      let expected = "Original";
+      for (let index = 0; index < 8; index++) {
+        const client = await connect();
+        await client.ready();
+        const base = await read();
+        Y.applyUpdate(local, base.durable.state);
+        const text = ` [${index}]`;
+        local.getText("codemirror").insert(local.getText("codemirror").length, text);
+        expected += text;
+        const update = Y.encodeStateAsUpdate(local);
+        publish(client, base, update);
+        await persistedBody(client, expected);
+        // A lost response may make a tab resend the same admitted identities on reconnect.
+        client.socket.close();
+        await stopMailDraftConnections();
+        const retried = value(
+          await acceptDraftDocumentUpdate({
+            context,
+            mailboxId,
+            draftId: currentDraft.id,
+            generation: base.generation,
+            baseCursor: base.durable.cursor,
+            update,
+          }),
+        );
+        expect(retried.status).toBe("accepted");
+      }
+      const final = await read();
+      expect(final.durable.content.body).toBe(expected);
+      expect(Buffer.from(final.fresh.state)).toEqual(Buffer.from(final.durable.state));
+    } finally {
+      local.destroy();
+    }
+  }, 30_000);
+
+  test("full stream rejection exposes a stable retry error while the exact local input remains recoverable", async () => {
+    await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const local = new Y.Doc();
+    local.clientID = 103;
+    Y.applyUpdate(local, base.durable.state);
+    local.getText("codemirror").insert(0, "Unsent ");
+    const update = Y.encodeStateAsUpdate(local);
+    // Sync creates a new handle per topic() call, including inside withStore().
+    // Reject the real admission's publication, not an unused sibling handle.
+    const rejected = new StoreFullError("Fixture: reject full stream");
+    const sync = getProcessSync();
+    const topic = sync.topic.bind(sync);
+    let rejectedPublications = 0;
+    const publications: { mockRestore(): void }[] = [];
+    const handles = spyOn(sync, "topic").mockImplementation(<T>(config: TopicConfig) => {
+      const handle = topic<T>(config);
+      if (config.id === mailDraftDocumentLog.id) {
+        const publish = handle.publish.bind(handle);
+        publications.push(
+          spyOn(handle, "publish").mockImplementation((input) => {
+            if (input.tenantId === currentDraft.id && rejectedPublications === 0) {
+              rejectedPublications++;
+              return Promise.reject(rejected);
+            }
+            return publish(input);
+          }),
+        );
+      }
+      return handle;
+    });
+    try {
+      try {
+        publish(client, base, update);
+        const error = await client.wait((packet) => packet.type === "error");
+        expect(rejectedPublications).toBe(1);
+        expect(error).toMatchObject({ type: "error", payload: { code: "STORAGE_EXHAUSTED" } });
+        expect(error.type === "error" && error.payload.message).toContain("retry");
+        expect(decode(Y.encodeStateAsUpdate(local)).body).toBe("Unsent Original");
+        const unchanged = await read();
+        expect(unchanged.durable.content.body).toBe("Original");
+        expect(unchanged.durable.cursor).toBe(base.durable.cursor);
+        expect(unchanged.fresh.content.body).toBe("Original");
+        expect(client.messages.some((packet) => packet.type === "syncPush" && !packet.payload.snapshot)).toBe(false);
+      } finally {
+        handles.mockRestore();
+        for (const publication of publications) publication.mockRestore();
+      }
+      const retry = await connect();
+      await retry.ready();
+      publish(retry, base, update);
+      await persistedBody(retry, "Unsent Original");
+      expect((await read()).durable.content.body).toBe("Unsent Original");
+    } finally {
+      local.destroy();
+    }
+  }, 15_000);
+
+  test("socket server restart resynchronizes committed state and admits offline edits without loss", async () => {
+    await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const local = new Y.Doc();
+    local.clientID = 102;
+    Y.applyUpdate(local, base.durable.state);
+    try {
+      local.getText("codemirror").insert(8, " before");
+      publish(client, base, Y.encodeStateAsUpdate(local));
+      await persistedBody(client, "Original before");
+      await stopMailDraftConnections();
+      await server.stop(true);
+      // Document service handles are transaction-scoped; shutdown leaves no cached document to reuse.
+      local.getText("codemirror").insert(local.getText("codemirror").length, " offline");
+      startServer();
+      const restarted = await connect();
+      await restarted.ready();
+      const restored = await read();
+      expect(restored.durable.content.body).toBe("Original before");
+      Y.applyUpdate(local, restored.durable.state);
+      publish(restarted, restored, Y.encodeStateAsUpdate(local));
+      await persistedBody(restarted, "Original before offline");
+      expect((await read()).fresh.content.body).toBe("Original before offline");
+    } finally {
+      local.destroy();
+    }
+  }, 15_000);
+
   test("reconnect after switching A to B refuses A's expected account before opening the document", async () => {
     await draft();
     const first = await connect();
@@ -261,256 +723,6 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       writes.mockRestore();
       activeSession = previous;
       requestContext = context;
-    }
-  });
-
-  const waitForLock = async (holderPid: number, queryPart: string): Promise<number> => {
-    const deadline = Date.now() + 1000;
-    while (Date.now() < deadline) {
-      const [waiter] = await sql<{ pid: number }[]>`
-        SELECT pid FROM pg_stat_activity
-        WHERE datname = current_database() AND wait_event_type = 'Lock'
-          AND ${holderPid}::int = ANY(pg_blocking_pids(pid))
-          AND position(${queryPart} IN query) > 0
-      `;
-      if (waiter) return waiter.pid;
-      await Bun.sleep(10);
-    }
-    throw new Error(`Socket never waited on the held row: ${queryPart}`);
-  };
-
-  // A test guard only: failure releases the fixture's blocker, then the caller
-  // still awaits stop in finally. Production cleanup never races its SQL work.
-  const stopWithinFixtureBudget = async (stopping: Promise<void>) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        stopping,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error("Socket stop still waits on the held SQL row")), 1000);
-        }),
-      ]);
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
-  const expectTransactionEnded = async (holder: typeof sql, pid: number) => {
-    // Inspect from the holder, so the pool cannot reuse the cancelled backend
-    // for this observation and make our own SELECT look like unfinished work.
-    const [backend] = await holder<{ state: string; xact_start: Date | null; blocked: boolean }[]>`
-      SELECT state, xact_start, cardinality(pg_blocking_pids(pid)) > 0 AS blocked
-      FROM pg_stat_activity WHERE pid = ${pid}
-    `;
-    // The pool may have closed the connection or returned it idle after ROLLBACK.
-    if (backend) {
-      expect(backend.blocked).toBe(false);
-      expect(backend.state).toBe("idle");
-      expect(backend.xact_start).toBeNull();
-    }
-  };
-
-  // R44-3 integration witnesses. Source only until 2026-10-24 10:00 UTC.
-  for (const direction of ["delivery", "admission"] as const) {
-    test(`stop cancels ${direction} SQL and rolls back while another transaction still holds the row`, async () => {
-      const created = await draft();
-      const base = await read();
-      const update = await createDraftRevisionUpdate(
-        base.fresh.state,
-        { ...created.content, body: "Blocked socket work" },
-        { deadline: Date.now() + 5000 },
-      );
-      const client = await connect();
-      await client.ready();
-      let stopping: Promise<void> | undefined;
-      try {
-        await sql.begin(async (holder) => {
-          await holder`SELECT id FROM mail.drafts WHERE id = ${created.id}::uuid FOR UPDATE`;
-          const [backend] = await holder<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-          if (!backend) throw new Error("Missing blocker backend");
-          if (direction === "delivery") {
-            await mailDraftDocumentLog.topic().publish({
-              tenantId: created.id,
-              data: {
-                kind: "sync",
-                payload: toBase64(update),
-                restoreRevision: base.generation,
-                originNodeId: "fixture",
-                originPeerId: null,
-              },
-            });
-          } else {
-            client.send({
-              type: "syncPublish",
-              payload: { docId: created.short_id, generation: base.generation, baseCursor: base.fresh.cursor, payload: toBase64(update) },
-            });
-          }
-          const waiter = await waitForLock(backend.pid, direction === "delivery" ? "SELECT state, edit_mode" : "FOR UPDATE OF d");
-          stopping = stopMailDraftConnections();
-          await stopWithinFixtureBudget(stopping);
-          await expectTransactionEnded(holder, waiter);
-          expect(client.messages.some((packet) => packet.type === "syncPush" && !packet.payload.snapshot)).toBe(false);
-          const [unchanged] = await holder<
-            { revision: string | number }[]
-          >`SELECT revision FROM mail.drafts WHERE id = ${created.id}::uuid`;
-          expect(Number(unchanged?.revision)).toBe(base.revision);
-        });
-      } finally {
-        // Even a failed regression releases the blocker before draining cleanup.
-        await stopping;
-      }
-    });
-  }
-
-  test("stop cancels the initial service read after the first outbound fence", async () => {
-    const created = await draft();
-    const client = await connect();
-    const entered = Promise.withResolvers<void>();
-    const proceed = Promise.withResolvers<void>();
-    const originalRead = draftDocumentService.readDraftDocument;
-    const initialRead = spyOn(draftDocumentService, "readDraftDocument").mockImplementationOnce(async (params) => {
-      entered.resolve();
-      await proceed.promise;
-      return originalRead(params);
-    });
-    let stopping: Promise<void> | undefined;
-    try {
-      client.send({ type: "replayRequest", payload: { docId: created.short_id, generation: null, fromCursor: null } });
-      await entered.promise;
-      await sql.begin(async (holder) => {
-        await holder`SELECT id FROM mail.drafts WHERE id = ${created.id}::uuid FOR UPDATE`;
-        const [backend] = await holder<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-        if (!backend) throw new Error("Missing blocker backend");
-        proceed.resolve();
-        const waiter = await waitForLock(backend.pid, "FOR UPDATE OF d");
-        stopping = stopMailDraftConnections();
-        await stopWithinFixtureBudget(stopping);
-        await expectTransactionEnded(holder, waiter);
-        expect(client.messages.some((packet) => packet.type === "syncPush" || packet.type === "replayReady")).toBe(false);
-        const [unchanged] = await holder<
-          { doc_state: Uint8Array | null }[]
-        >`SELECT doc_state FROM mail.drafts WHERE id = ${created.id}::uuid`;
-        expect(unchanged?.doc_state).toBeNull();
-      });
-    } finally {
-      proceed.resolve();
-      initialRead.mockRestore();
-      await stopping;
-    }
-  });
-
-  test("snapshot, replay and ready use the public draft ID; accepted echo precedes full durable snapshot", async () => {
-    const created = await draft();
-    const base = await read();
-    const client = await connect();
-    await client.ready();
-    expect(client.messages.map((packet) => packet.type)).toEqual(["syncPush", "replayReady"]);
-    expect(client.messages.every((packet) => packet.payload.docId === created.short_id)).toBe(true);
-    const bytes = await createDraftRevisionUpdate(
-      base.fresh.state,
-      { ...created.content, body: "Changed via socket" },
-      { deadline: Date.now() + 5000 },
-    );
-    client.send({
-      type: "syncPublish",
-      payload: { docId: created.short_id, generation: base.generation, baseCursor: base.fresh.cursor, payload: toBase64(bytes) },
-    });
-    const echo = await client.wait((packet) => packet.type === "syncPush" && !packet.payload.snapshot);
-    expect(echo.type === "syncPush" && echo.payload.updates[0]?.payload).toBe(toBase64(bytes));
-    const persisted = await client.wait(
-      (packet) =>
-        packet.type === "syncPush" &&
-        packet.payload.snapshot === true &&
-        decode(fromBase64(packet.payload.updates[0]!.payload)).body === "Changed via socket",
-    );
-    expect(client.messages.indexOf(persisted)).toBeGreaterThan(client.messages.indexOf(echo));
-    expect((await read()).durable.content.body).toBe("Changed via socket");
-  });
-
-  test("replay-only fresh state is never advertised as a durable snapshot", async () => {
-    const created = await draft();
-    const base = await read();
-    const bytes = await createDraftRevisionUpdate(
-      base.fresh.state,
-      { ...created.content, body: "Retained only" },
-      { deadline: Date.now() + 5000 },
-    );
-    await sql.begin(async (db) => {
-      const locked = value(await lockDraftDocumentInTransaction({ db, context, mailboxId, draftId: created.id }));
-      const broken = spyOn(locked.store, "save").mockRejectedValueOnce(new Error("Fixture persistence failure"));
-      try {
-        expect(value(await locked.accept({ generation: base.generation, baseCursor: base.fresh.cursor, update: bytes })).status).toBe(
-          "pendingPersistence",
-        );
-      } finally {
-        broken.mockRestore();
-      }
-    });
-    const client = await connect();
-    await client.ready();
-    expect(client.messages.map((packet) => packet.type)).toEqual(["syncPush", "syncPush", "replayReady"]);
-    const snapshot = client.messages[0];
-    expect(snapshot?.type === "syncPush" && snapshot.payload.snapshot).toBe(true);
-    if (snapshot?.type !== "syncPush") throw new Error("Snapshot missing");
-    expect(decode(fromBase64(snapshot.payload.updates[0]!.payload)).body).toBe("Original");
-    expect(client.messages[1]?.type === "syncPush" && client.messages[1].payload.snapshot).toBeUndefined();
-    expect((await read()).fresh.content.body).toBe("Retained only");
-    expect((await read()).durable.content.body).toBe("Original");
-  });
-
-  test("rolled-back freeze markers are inert; a committed freeze requires reopen", async () => {
-    const created = await draft();
-    const base = await read();
-    const client = await connect();
-    await client.ready();
-    const rolledBack = new Error("roll back fixture send");
-    await expect(
-      sql.begin(async (db) => {
-        const locked = value(await lockDraftDocumentInTransaction({ db, context, mailboxId, draftId: created.id }));
-        value(await locked.freeze({ generation: base.generation }));
-        throw rolledBack;
-      }),
-    ).rejects.toThrow("roll back fixture send");
-    const bytes = await createDraftRevisionUpdate(
-      base.fresh.state,
-      { ...created.content, body: "After inert marker" },
-      { deadline: Date.now() + 5000 },
-    );
-    expect(
-      value(
-        await acceptDraftDocumentUpdate({
-          context,
-          mailboxId,
-          draftId: created.id,
-          generation: base.generation,
-          baseCursor: base.fresh.cursor,
-          update: bytes,
-        }),
-      ).status,
-    ).toBe("accepted");
-    await client.wait((packet) => packet.type === "syncPush" && !packet.payload.snapshot);
-    expect(client.messages.some((packet) => packet.type === "error")).toBe(false);
-    await sql.begin(async (db) => {
-      const locked = value(await lockDraftDocumentInTransaction({ db, context, mailboxId, draftId: created.id }));
-      value(await locked.freeze({ generation: base.generation }));
-    });
-    expect(await client.wait((packet) => packet.type === "error")).toMatchObject({
-      type: "error",
-      payload: { code: "RESYNC_REQUIRED", reopen: true },
-    });
-  });
-
-  test("fresh session reauthentication rejects a revoked session before write", async () => {
-    const created = await draft();
-    const client = await connect();
-    await client.ready();
-    const previous = activeSession;
-    activeSession = null;
-    try {
-      client.send({ type: "awarenessPublish", payload: { docId: created.short_id, generation: "1", payload: "AA==" } });
-      expect(await client.wait((packet) => packet.type === "error")).toMatchObject({ type: "error", payload: { code: "SESSION_EXPIRED" } });
-    } finally {
-      activeSession = previous;
     }
   });
 
@@ -566,6 +778,46 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     }
   });
 
+  test("a cursor flood waits as one message, keeps the socket open and lets the edit through", async () => {
+    const created = await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const sourceDoc = new Y.Doc();
+    sourceDoc.clientID = 555;
+    const source = new Awareness(sourceDoc);
+    try {
+      const cursorMessage = () => {
+        // Each state change raises the awareness clock, like every pointer move of a selection drag.
+        source.setLocalState({ cursor: null });
+        return {
+          type: "awarenessPublish",
+          payload: { docId: created.short_id, generation: base.generation, payload: toBase64(encodeAwarenessUpdate(source, [555])) },
+        };
+      };
+      // Far more than the 200 queued messages a socket accepts, sent at once with one edit in the middle.
+      for (let index = 0; index < 300; index++) client.send(cursorMessage());
+      const bytes = await createDraftRevisionUpdate(
+        base.fresh.state,
+        { ...created.content, body: "Typed during a drag" },
+        { deadline: Date.now() + 5000 },
+      );
+      client.send({
+        type: "syncPublish",
+        payload: { docId: created.short_id, generation: base.generation, baseCursor: base.fresh.cursor, payload: toBase64(bytes) },
+      });
+      for (let index = 0; index < 300; index++) client.send(cursorMessage());
+      const echo = await client.wait((packet) => packet.type === "syncPush" && !packet.payload.snapshot);
+      expect(echo.type === "syncPush" && echo.payload.updates[0]?.payload).toBe(toBase64(bytes));
+      await persistedBody(client, "Typed during a drag");
+      expect(client.messages.some((packet) => packet.type === "error" && packet.payload.code === "BACKPRESSURE")).toBe(false);
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      source.destroy();
+      sourceDoc.destroy();
+    }
+  });
+
   test("app-session cookie uses the same trusted session and replay contract", async () => {
     await draft();
     const previous = activeSession;
@@ -580,82 +832,145 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     }
   });
 
-  test("a generation changed under the SQL row lock cannot deliver queued old bytes", async () => {
-    const created = await draft();
+  test("retention recovery rebuilds the stored base at head and preserves the original before resync", async () => {
+    await draft();
     const base = await read();
-    const client = await connect();
-    await client.ready();
-    const bytes = await createDraftRevisionUpdate(
+    const lost = await createDraftRevisionUpdate(
       base.fresh.state,
-      { ...created.content, body: "Obsolete generation" },
+      { ...base.fresh.content, subject: "Lost header" },
       { deadline: Date.now() + 5000 },
     );
-    await sql.begin(async (db) => {
-      await db`SELECT id FROM mail.drafts WHERE id = ${created.id}::uuid FOR UPDATE`;
-      await mailDraftDocumentLog.topic().publish({
-        tenantId: created.id,
+    const retained = await createDraftRevisionUpdate(
+      base.fresh.state,
+      { ...base.fresh.content, body: "Retained after gap" },
+      { deadline: Date.now() + 5000 },
+    );
+    const topic = mailDraftDocumentLog.topic();
+    const append = (update: Uint8Array) =>
+      topic.publish({
+        tenantId: currentDraft.id,
+        data: { kind: "sync", payload: toBase64(update), restoreRevision: base.generation, originNodeId: "fixture", originPeerId: null },
+      });
+    const missing = await append(lost);
+    const head = (await append(retained)).cursor;
+    await topic.prune({ through: missing.cursor });
+    // The platform room's native prune suite verifies that an uncovered join
+    // calls adapter.recover. Exercise Mail's actual store with the real gap.
+    let cause: unknown;
+    try {
+      for await (const _event of topic.replay({ tenantId: currentDraft.id, after: base.durable.cursor!, until: head })) {
+        // Retention must reject this uncovered prefix before any event is read.
+      }
+    } catch (error) {
+      cause = error;
+    }
+    expect(cause).toBeInstanceOf(RetentionGapError);
+    if (!(cause instanceof RetentionGapError)) throw new Error("Native replay did not report the uncovered gap", { cause });
+    await draftDocumentSnapshotStore.recover(currentDraft.id, cause, {});
+    const [row] = await sql<
+      { doc_state: Uint8Array; doc_cursor: string; doc_history_complete: boolean; body_markdown: string; revision: number }[]
+    >`SELECT doc_state, doc_cursor, doc_history_complete, body_markdown, revision::int AS revision
+      FROM mail.drafts WHERE id = ${currentDraft.id}::uuid`;
+    expect(row).toMatchObject({ doc_cursor: head, doc_history_complete: false, body_markdown: "Original", revision: base.revision + 1 });
+    expect(decode(row!.doc_state)).toMatchObject({ body: "Retained after gap", subject: "Subject" });
+    const [original] = await sql<{ state: Uint8Array }[]>`SELECT state FROM mail.draft_document_revisions
+      WHERE draft_id = ${currentDraft.id}::uuid AND revision = ${base.revision}`;
+    expect(Buffer.from(original!.state)).toEqual(Buffer.from(base.durable.state));
+    // Lost bytes remain lost: joining cannot make this draft editable or sendable.
+    expect(value(await readDraftDocument({ context, mailboxId, draftId: currentDraft.id })).historyComplete).toBe(false);
+    const client = await connect();
+    client.send({ type: "replayRequest", payload: { docId: currentDraft.short_id, generation: null, fromCursor: null } });
+    const message = await client.wait((packet) => packet.type === "error");
+    expect(message.type === "error" && message.payload.code).toBe("RESYNC_REQUIRED");
+    expect(client.messages.some((packet) => packet.type === "replayReady")).toBe(false);
+  });
+
+  test("malformed history recovery preserves valid updates, unresolved dependencies and the original base", async () => {
+    await draft();
+    const base = await read();
+    const valid = await createDraftRevisionUpdate(
+      base.fresh.state,
+      { ...base.fresh.content, body: "Recovered valid text" },
+      { deadline: Date.now() + 5000 },
+    );
+    const missing = new Y.Doc();
+    missing.clientID = 991;
+    missing.getText("codemirror").insert(0, "missing-parent");
+    const vector = Y.encodeStateVector(missing);
+    missing.getText("codemirror").insert(missing.getText("codemirror").length, "pending-child");
+    const pending = Y.encodeStateAsUpdate(missing, vector);
+    const topic = mailDraftDocumentLog.topic();
+    const append = (payload: string) =>
+      topic.publish({
+        tenantId: currentDraft.id,
         data: {
           kind: "sync",
-          payload: toBase64(bytes),
+          payload,
           restoreRevision: base.generation,
           originNodeId: "fixture",
           originPeerId: null,
         },
       });
-      await db`UPDATE mail.drafts SET doc_generation = doc_generation + 1 WHERE id = ${created.id}::uuid`;
-    });
-    expect(await client.wait((packet) => packet.type === "error")).toMatchObject({
-      type: "error",
-      payload: { code: "RESYNC_REQUIRED", reopen: true },
-    });
-    expect(client.messages.some((packet) => packet.type === "syncPush" && !packet.payload.snapshot)).toBe(false);
-  });
-
-  test("an idle socket reauthenticates without waiting for a browser write", async () => {
-    await draft();
-    const client = await connect();
-    await client.ready();
-    const previous = activeSession;
-    activeSession = null;
     try {
-      expect(await client.wait((packet) => packet.type === "error", 12500)).toMatchObject({
-        type: "error",
-        payload: { code: "SESSION_EXPIRED" },
-      });
+      await append(toBase64(valid));
+      const poison = await append("AAAA");
+      await append(toBase64(pending));
+      await draftDocumentSnapshotStore.recover(
+        currentDraft.id,
+        new MalformedSharedTextEventError(currentDraft.id, poison.cursor, "fixture"),
+        {},
+      );
+      const [row] = await sql<{ doc_state: Uint8Array; doc_history_complete: boolean; body_markdown: string }[]>`
+        SELECT doc_state, doc_history_complete, body_markdown FROM mail.drafts WHERE id = ${currentDraft.id}::uuid`;
+      expect(row?.doc_history_complete).toBe(false);
+      expect(row?.body_markdown).toBe("Original");
+      const recovered = new Y.Doc();
+      try {
+        Y.applyUpdate(recovered, row!.doc_state);
+        expect(recovered.getText("codemirror").toString()).toBe("Recovered valid text");
+        expect(recovered.store.pendingStructs).not.toBeNull();
+        Y.applyUpdate(recovered, Y.encodeStateAsUpdate(missing));
+        expect(recovered.store.pendingStructs).toBeNull();
+        expect(recovered.getText("codemirror").toString()).toContain("pending-child");
+      } finally {
+        recovered.destroy();
+      }
+      const originals = await sql<{ state: Uint8Array }[]>`SELECT state FROM mail.draft_document_revisions
+        WHERE draft_id = ${currentDraft.id}::uuid AND revision = ${base.revision}`;
+      expect(Buffer.from(originals[0]!.state)).toEqual(Buffer.from(base.durable.state));
     } finally {
-      activeSession = previous;
+      missing.destroy();
     }
-  }, 15000);
-
-  test("a packet cannot switch the authorized draft", async () => {
-    await draft();
-    const client = await connect();
-    await client.ready();
-    client.send({ type: "syncPublish", payload: { docId: "Other1", generation: "1", payload: "AAA=", baseCursor: null } });
-    expect(await client.wait((packet) => packet.type === "error")).toMatchObject({ type: "error", payload: { code: "INVALID_PAYLOAD" } });
   });
-  test("withdrawn write permission stops retained deliveries before exposing their bytes", async () => {
-    const created = await draft();
+  test("freeze survives pruning and a second live editor receives no edit ack", async () => {
+    await draft();
     const base = await read();
-    const client = await connect();
-    await client.ready();
-    const bytes = await createDraftRevisionUpdate(
+    const publisher = await connect();
+    await publisher.ready();
+    const other = await connect();
+    await other.ready();
+    const frozen = await mailDraftRoom.freeze(currentDraft.id);
+    if (!frozen) throw new Error("Missing frozen draft");
+    await mailDraftDocumentLog.topic().prune({ through: frozen.cursor });
+    const update = await createDraftRevisionUpdate(
       base.fresh.state,
-      { ...created.content, body: "Must not be delivered" },
-      { deadline: Date.now() + 5000 },
+      { ...base.fresh.content, body: "Must not be acknowledged" },
+      { deadline: Date.now() + 10000 },
     );
-    await sql`UPDATE auth.access SET permission = 'read' WHERE id IN (SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid)`;
-    await mailDraftDocumentLog.topic().publish({
-      tenantId: created.id,
-      data: {
-        kind: "sync",
-        payload: toBase64(bytes),
-        restoreRevision: base.generation,
-        originNodeId: "fixture",
-        originPeerId: null,
-      },
-    });
-    expect(await client.wait((packet) => packet.type === "error")).toMatchObject({ type: "error", payload: { code: "ACCESS_DENIED" } });
-    expect(client.messages.some((packet) => packet.type === "syncPush" && !packet.payload.snapshot)).toBe(false);
+    publish(other, base, update);
+    const refused = await other.wait((packet) => packet.type === "error");
+    expect(refused.type).toBe("error");
+    if (refused.type !== "error") throw new Error("Missing refusal");
+    expect(["DOCUMENT_FROZEN", "RESYNC_REQUIRED"]).toContain(refused.payload.code);
+    expect((await mailDraftDocumentLog.lifecycle!.get(currentDraft.id))?.value.state).toBe("frozen");
+    for (const client of [publisher, other])
+      expect(
+        client.messages.some(
+          (packet) => packet.type === "syncPush" && packet.payload.updates.some((entry) => entry.payload === toBase64(update)),
+        ),
+      ).toBe(false);
+    const persisted = await draftDocumentSnapshotStore.load(currentDraft.id, {});
+    expect(decode(persisted!.state!).body).toBe("Original");
+    await mailDraftRoom.thaw(currentDraft.id, { freezeCursor: frozen.cursor });
   });
 });

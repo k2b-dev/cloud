@@ -624,36 +624,43 @@ describe("floating workspace detail", () => {
       const page = await load(1366, 900, "table=1", { reducedMotion });
       try {
         await page.waitForSelector("[data-workspace-motion]");
+        // The slide's length is read from the panel's own transitions, not from
+        // the wall clock: a loaded runner delivers frames late, which says
+        // nothing about how long the slide is declared to take.
+        type Frame = { width: number; x: number; display: string; translate: number };
         const sample = (action: "open" | "close") =>
           page.evaluate(
             (action) =>
-              new Promise<{ time: number; width: number; x: number; display: string; translate: number }[]>((resolve) => {
+              new Promise<{ frames: Frame[]; duration: number }>((resolve) => {
                 const panel = document.querySelector<HTMLElement>(".k2b-app-workspace__detail")!;
                 const wrap = document.querySelector<HTMLElement>(".k2b-table-wrap")!;
-                const samples: { time: number; width: number; x: number; display: string; translate: number }[] = [];
-                let start: number;
+                const frames: Frame[] = [];
+                const slides = new Set<Animation>();
                 const frame = () => {
                   const width = wrap.clientWidth;
                   const x = panel.getBoundingClientRect().x;
                   const style = getComputedStyle(panel);
-                  samples.push({
-                    time: performance.now() - start,
+                  panel.getAnimations().forEach((animation) => slides.add(animation));
+                  frames.push({
                     width,
                     x,
                     display: style.display,
                     translate: style.transform === "none" ? 0 : new DOMMatrix(style.transform).m41,
                   });
                   // An ease-out slide comes close to its end long before it reaches it; the open sample stops only there.
-                  if ((action === "close" && style.display === "none") || (action === "open" && samples.at(-1)!.translate === 0))
-                    resolve(samples);
-                  else if (performance.now() - start > 300) resolve(samples);
-                  else requestAnimationFrame(frame);
+                  // A panel without running transitions will not move again, so its last frame ends the sample too.
+                  const done =
+                    (action === "close" && style.display === "none") ||
+                    (action === "open" && frames.at(-1)!.translate === 0) ||
+                    panel.getAnimations().length === 0;
+                  if (!done) return requestAnimationFrame(frame);
+                  const ends = [...slides].map((animation) => Number(animation.effect?.getComputedTiming().endTime ?? 0));
+                  resolve({ frames, duration: Math.max(0, ...ends) });
                 };
                 requestAnimationFrame(() => {
-                  // Start the action in a rendering frame so the sample measures
-                  // the transition rather than waiting for the browser to wake up.
+                  // Start the action in a rendering frame so the first sample
+                  // shows the transition's start rather than a late wake-up.
                   getComputedStyle(panel).transform;
-                  start = performance.now();
                   document.getElementById(action === "open" ? "row-0" : "close")!.click();
                   frame();
                 });
@@ -661,7 +668,7 @@ describe("floating workspace detail", () => {
             action,
           );
         const wide = await page.locator(".k2b-table-wrap").evaluate((wrap) => wrap.clientWidth);
-        const opening = await sample("open");
+        const { frames: opening } = await sample("open");
         const narrow = opening[0]!.width;
         expect(narrow).toBeLessThan(wide);
         if (reducedMotion === "no-preference") expect(opening[0]!.translate).toBeGreaterThan(0);
@@ -671,7 +678,7 @@ describe("floating workspace detail", () => {
         }
         expect(opening.at(-1)!.translate).toBeCloseTo(0, 1);
         await settlePanel(page);
-        const closing = await sample("close");
+        const { frames: closing, duration } = await sample("close");
         let previousX = closing[0]!.x;
         for (const frame of closing) {
           if (frame.display !== "none") {
@@ -683,8 +690,13 @@ describe("floating workspace detail", () => {
         }
         expect(closing.at(-1)!.display).toBe("none");
         expect(closing.at(-1)!.width).toBe(wide);
-        expect(closing.at(-1)!.time).toBeLessThanOrEqual(300);
-        if (reducedMotion === "reduce") expect(closing).toHaveLength(1);
+        if (reducedMotion === "no-preference") {
+          expect(duration).toBeGreaterThan(0);
+          expect(duration).toBeLessThanOrEqual(300);
+        } else {
+          expect(duration).toBe(0);
+          expect(closing).toHaveLength(1);
+        }
       } finally {
         await page.close();
       }

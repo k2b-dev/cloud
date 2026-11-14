@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-10-31
+updated: 2026-11-11
 ---
 
 # OAuth clients and flows
@@ -437,10 +437,12 @@ Supported scopes:
 openid profile email groups offline_access read write admin
 ```
 
-Automatic discovery advertises only the delegated dynamic-client subset:
-`openid profile email offline_access read write`. The privacy-sensitive
-`groups` scope and privileged `admin` scope remain available only to explicitly
-configured managed or first-party clients.
+Both `/.well-known/openid-configuration` and
+`/.well-known/oauth-authorization-server` advertise all supported scopes,
+including `groups` and `admin`. Discovery does not grant scopes: each client
+can request only its configured scopes. The privacy-sensitive `groups` scope
+and privileged `admin` scope remain available only to explicitly configured
+managed or first-party clients.
 
 Scope, audience, redirect, user, and group lists accept at most 50 entries.
 
@@ -474,7 +476,7 @@ invalidates existing access and refresh tokens. Abandoned dynamic registrations
 that never start authorization are cleaned up automatically.
 
 When registration includes `scope`, Cloud registers exactly that allowed
-subset. When it omits `scope`, Cloud uses the advertised delegated default:
+subset. When it omits `scope`, Cloud uses the delegated registration default:
 `openid profile email offline_access read write`.
 
 ## Restrict authorization

@@ -14,7 +14,7 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import adminApiRoutes from "../api";
-import type { OAuthAllowedProfile, OAuthClient, OAuthScope } from "../contracts";
+import { type OAuthAllowedProfile, type OAuthClient, type OAuthScope, OAuthScopeSchema } from "../contracts";
 import { ConsentDecisionSchema, completeConsent } from "../frontend/consent-action";
 import { migrate } from "../migrate";
 import oauthRoutes from "../oauth";
@@ -872,8 +872,7 @@ suite("OAuth resource access tokens", () => {
     expect(configuration.grant_types_supported).toContain("authorization_code");
     expect(configuration.grant_types_supported).toContain("refresh_token");
     expect(configuration.scopes_supported).toContain("offline_access");
-    expect(configuration.scopes_supported).not.toContain("groups");
-    expect(configuration.scopes_supported).not.toContain("admin");
+    expect(configuration.scopes_supported).toEqual(OAuthScopeSchema.options);
     expect(configuration.token_endpoint_auth_methods_supported).toContain("none");
     expect(configuration.registration_endpoint).toBe("https://cloud.example.test/oauth/register");
     expect(configuration.revocation_endpoint).toBe("https://cloud.example.test/oauth/revoke");

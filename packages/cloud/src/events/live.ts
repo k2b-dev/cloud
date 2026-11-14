@@ -2,12 +2,14 @@ import type { ServerWebSocket } from "bun";
 import { type Context, Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import type { z } from "zod";
-import { guardAppAccessSocket } from "../server/middleware/app-access";
+import { userFromActor } from "../server/actor";
+import { credentialExpiresAt, guardAppAccessSocket, watchCredentialExpiry } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { rateLimit } from "../server/middleware/rate-limit";
 import { hasRefusedSessionOrigin } from "../server/middleware/session-origin";
 import * as settings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
+import { subscribeIdentityAccessChanged } from "./app-access";
 import { defineLivePublisher, liveTopic, startLiveDelivery } from "./live-delivery";
 import { createLiveEngine, type LiveChannel, type LiveConnectionHandle, type LiveEngine, type LiveViewer } from "./live-engine";
 
@@ -63,7 +65,12 @@ const viewerOf = <Env extends AuthContext>(c: Context<Env>): LiveViewer => {
         ? ":app"
         : ""
       : `:scopes=${[...new Set(scopes)].sort().join(",")}`;
-  return { id: `${principal}${credential}`, actor: c.get("actor"), accessSubject, scopes };
+  return {
+    id: `${principal}${credential}`,
+    actor: c.get("actor"),
+    accessSubject,
+    scopes,
+  };
 };
 
 type ProbeEnv = AuthContext & { Bindings: { found: (viewer: LiveViewer) => void } };
@@ -134,6 +141,14 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
   const { appId } = definition;
   return {
     ...defineLivePublisher(definition),
+    /** Server-side access hints for the application's other long-lived transports.
+     * Capture cursor() before authorization, then subscribe from that cursor.
+     * The process hub shares one broker follower; hints never grant access. */
+    accessChanges: async function* (options: { after: string; signal: AbortSignal }) {
+      for await (const event of liveTopic(appId).hub().subscribe(options)) {
+        if (event.data.a) yield { key: event.data.k, cursor: event.cursor };
+      }
+    },
     /**
      * The live socket with these channels. Mount it once, at `/api/<app>/live`,
      * in the application's own process: `app.start()` of another application fails.
@@ -148,7 +163,7 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
       let engine: LiveEngine | null = null;
       const serve = (): LiveEngine => {
         if (engine && engines.has(engine)) return engine;
-        engine = createLiveEngine({ appId, topic: () => liveTopic(appId), channels });
+        engine = createLiveEngine({ appId, topic: () => liveTopic(appId), channels, subscribeAccess: subscribeIdentityAccessChanged });
         engines.add(engine);
         // A socket that opens while the application stops closes with 1012 and starts nothing.
         if (stopped) engine.stop();
@@ -171,13 +186,31 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
           const viewer = viewerOf(c);
           const revalidate = revalidator(c);
           let connection: LiveConnectionHandle | null = null;
-          return guardAppAccessSocket(c, appId, {
-            onOpen: (_event, ws) => {
-              connection = serve().open(ws.raw as ServerWebSocket<unknown>, viewer, revalidate);
+          const proof = c.get("credentialProof");
+          const actor = c.get("actor");
+          const expiresAt = credentialExpiresAt(c);
+          return guardAppAccessSocket(
+            c,
+            appId,
+            {
+              onOpen: (_event, ws) => {
+                connection = serve().open(
+                  ws.raw as ServerWebSocket<unknown>,
+                  viewer,
+                  revalidate,
+                  expiresAt !== undefined ? (expired) => watchCredentialExpiry(expiresAt, expired) : undefined,
+                  {
+                    userId: userFromActor(viewer.actor)?.id,
+                    sid: proof?.kind === "session" ? proof.sid : undefined,
+                    serviceAccountId: actor.kind === "service_account" ? actor.serviceAccount.id : undefined,
+                  },
+                );
+              },
+              onMessage: (message) => connection?.message(message.data),
+              onClose: () => connection?.closed(),
             },
-            onMessage: (message) => connection?.message(message.data),
-            onClose: () => connection?.closed(),
-          });
+            { eventOnly: Object.values(channels).every((channel) => channel.eventOnly === true) },
+          );
         }),
       );
     },

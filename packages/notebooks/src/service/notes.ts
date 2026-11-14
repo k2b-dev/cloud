@@ -7,6 +7,8 @@ import {
   prepareTableActionFocus,
   SHARED_TEXT_NAME,
   type SharedTextEditResult,
+  type SharedTextStoredState,
+  sharedTextNodeId,
   TableActionLimitError,
   TableActionRejectedError,
   type TableFocusWitness,
@@ -1699,6 +1701,7 @@ export const tableAction = async (params: {
 
 /** Socket has authenticated actor/write access; canonical admission still fences targets and lineage. */
 export const acceptYjsUpdate = (params: {
+  snapshot: SharedTextStoredState | null;
   noteId: string;
   actor: { kind: "user" | "service_account"; id: string };
   update: Uint8Array;
@@ -1710,9 +1713,15 @@ export const acceptYjsUpdate = (params: {
   validate?: () => Promise<boolean>;
 }) => noteDocuments.accept(params.noteId, { ...params, maxLength: NOTE_TABLE_ACTION_MAX_LENGTH });
 
-/**
- * Get the stored Yjs state for a note.
- */
+/** Access invalidations read lineage without loading the Yjs blob. */
+export const getRoomAccessState = async ({ noteId }: { noteId: string }) => {
+  const [row] = await sql<{ id: string; notebookId: string; lockedAt: Date | null; restoreRevision: string }[]>`
+    SELECT id, notebook_id AS "notebookId", locked_at AS "lockedAt", yjs_restore_revision::text AS "restoreRevision"
+    FROM notebooks.notes WHERE id = ${noteId}::uuid`;
+  return row ? { ...row, lockedAt: row.lockedAt?.toISOString() ?? null } : null;
+};
+
+/** Get the stored Yjs state for a note. */
 export const getYjsStateWithCursor = async (params: {
   noteId: string;
 }): Promise<{
@@ -2148,6 +2157,7 @@ export const restoreFromSnapshot = async (params: {
   const restoreTopic = createYjsTopic();
   const legacyTopic = await legacyYjsTopicInfo(noteId);
 
+  let pendingRestoreMarker: { cursor: string; revision: string } | undefined;
   const restored = await workspaceTransaction(async (tx): Promise<MutationResult<{ versionId: string }>> => {
     await tx`SELECT id FROM notebooks.notebooks WHERE id = ${existing.notebookId}::uuid FOR KEY SHARE`;
     const [current] = await tx<(DbYjsState & { locked_at: Date | null })[]>`
@@ -2162,13 +2172,11 @@ export const restoreFromSnapshot = async (params: {
     signal.throwIfAborted();
     // Matches SQL `IS DISTINCT FROM`: only a changed projection counts as an update.
     const changed = current.content_md !== restoredContentMd;
-    // Capture the final replacement boundary only after excluding socket
-    // receipts. An edit acknowledged before this lock is in this replay;
-    // an edit published during it cannot be acknowledged on the old revision.
-    const restoreHead = await restoreTopic.head();
+    // Capture live content before the ordered generation marker. Its CAS
+    // rejects a concurrent old-generation publication; admission after the
+    // marker rejects old input without taking a SQL delivery lock.
     const restoreLatest = await restoreTopic.latestCursor({ tenantId: noteId });
-    const restoreCursor = restoreLatest && compareStreamCursor(restoreLatest, restoreHead) > 0 ? restoreLatest : restoreHead;
-    const restoreSequence = restoreTopic.cursorSequence(restoreCursor);
+
     const live = new Y.Doc({ gc: true });
     try {
       try {
@@ -2198,11 +2206,25 @@ export const restoreFromSnapshot = async (params: {
     } finally {
       live.destroy();
     }
+    // The CAS excludes every old-generation publication before the row commits.
+    // Live sessions reopen on this marker, even if outbox delivery is delayed.
+    const marker = await restoreTopic.publish({
+      tenantId: noteId,
+      expectedAfter: restoreLatest,
+      data: {
+        kind: "freeze",
+        payload: "",
+        restoreRevision: (BigInt(current.yjs_restore_revision) + 1n).toString(),
+        originNodeId: sharedTextNodeId,
+        originPeerId: null,
+      },
+    });
+    pendingRestoreMarker = { cursor: marker.cursor, revision: current.yjs_restore_revision };
     const result = await tx`
       UPDATE notebooks.notes
       SET yjs_snapshot = ${snapshotBuffer},
-          yjs_stream_cursor = ${restoreCursor},
-          yjs_stream_seq = ${restoreSequence},
+          yjs_stream_cursor = ${marker.cursor},
+          yjs_stream_seq = ${restoreTopic.cursorSequence(marker.cursor)},
           yjs_restore_revision = yjs_restore_revision + 1,
           yjs_legacy_seq = CASE WHEN ${legacyTopic?.lastSequence ?? null}::bigint IS NULL THEN yjs_legacy_seq
             ELSE GREATEST(COALESCE(yjs_legacy_seq, 0), ${legacyTopic?.lastSequence ?? null}::bigint) END,
@@ -2244,6 +2266,25 @@ export const restoreFromSnapshot = async (params: {
     );
     await noteUpdated(existing, tx);
     return { ok: true, data: { versionId: version.id } };
+  }).catch(async (error) => {
+    if (pendingRestoreMarker) {
+      const committed = await getRoomAccessState({ noteId });
+      if (committed?.restoreRevision === pendingRestoreMarker.revision)
+        await restoreTopic.publish({
+          tenantId: noteId,
+          expectedAfter: pendingRestoreMarker.cursor,
+          data: {
+            kind: "freeze",
+            payload: "",
+            restoreRevision: committed.restoreRevision,
+            originNodeId: sharedTextNodeId,
+            originPeerId: null,
+          },
+        });
+    }
+    if (error instanceof ConflictError)
+      return { ok: false as const, error: "Note changed during restore; retry from its current state", status: 409 as const };
+    throw error;
   });
 
   if (!restored.ok) return restored;

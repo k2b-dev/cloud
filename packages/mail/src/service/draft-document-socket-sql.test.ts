@@ -41,12 +41,12 @@ test("abort cancels the actual query and waits for it to settle", async () => {
   expect(settled).toBe(true);
 });
 
-test("an already-aborted signal cancels a lazy query before awaiting it", async () => {
+test("an already-aborted signal leaves a lazy query unstarted instead of cancelling it", async () => {
   const controller = new AbortController();
   controller.abort();
   const fixture = queryFixture();
   const work = awaitDraftDocumentQuery(fixture.query, controller.signal);
-  expect(fixture.cancelled).toBe(1);
+  expect(fixture.cancelled).toBe(0);
   fixture.resolve("late result");
   await expect(work).rejects.toBe(controller.signal.reason);
 });

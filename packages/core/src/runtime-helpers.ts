@@ -42,6 +42,7 @@ import { migrate as migrateAuth } from "./migrate/core/auth";
 import { migrate as migrateDeviceTrust } from "./migrate/core/device-trust";
 import { migrate as migrateEvents } from "./migrate/core/events";
 import { migrate as migrateExtensions } from "./migrate/core/extensions";
+import { migrate as migrateFileChooserPlaces } from "./migrate/core/file-chooser-places";
 import { migrate as migrateGeoIp } from "./migrate/core/geoip";
 import { migrateKnownApps } from "./migrate/core/known-apps";
 import { migrate as migrateLogging } from "./migrate/core/logging";
@@ -52,7 +53,10 @@ import { migratePersonalGroupHistory, startPersonalGroupHistory } from "./migrat
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
+import { migrate as migrateRoomAccessEvents } from "./migrate/core/room-access-events";
+import { migrate as migrateScreenPreferences } from "./migrate/core/screen-preferences";
 import { migrate as migrateSettings } from "./migrate/core/settings";
+import { migrate as migrateStorageBuckets } from "./migrate/core/storage-buckets";
 import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
 import { outgoingMailBounceRuntime } from "./outgoing-mail-bounces/runtime";
@@ -124,7 +128,9 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "help", run: migrateHelp },
     { name: "rail-preferences", run: migrateRailPreferences },
     { name: "panel-context-consent", run: migratePanelContextConsent },
+    { name: "file-chooser-places", run: migrateFileChooserPlaces },
     { name: "rail-shortcuts", run: migrateRailShortcuts },
+    { name: "screen-preferences", run: migrateScreenPreferences },
     { name: "app-approval", run: migrateAppApproval },
     { name: "pwa", run: migratePwa },
     { name: "device-trust", run: migrateDeviceTrust },
@@ -134,11 +140,13 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
     { name: "settings", run: migrateSettings },
+    { name: "storage-buckets", run: migrateStorageBuckets },
     { name: "app-domains", run: migrateAppDomains },
     { name: "outgoing-mail", run: migrateOutgoingMail },
     { name: "logging", run: migrateLogging },
     { name: "workflows", run: migrateWorkflows },
     { name: "events", run: migrateEvents },
+    { name: "room-access-events", run: migrateRoomAccessEvents },
     { name: "app-events", run: migrateAppEvents },
     { name: "weather", run: migrateWeather },
     { name: "geo", run: migrateGeo },

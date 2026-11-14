@@ -324,7 +324,7 @@ const [permission, setPermission] = createSignal("read");
 
 ## API reference
 
-See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`. `Select` takes a [suggestion](/en/ui/input/field-suggestion) as an option value; give it a `label` when the option comes from a remote list.
 
 ```ts
 type ChoiceOption<T extends string = string> = {

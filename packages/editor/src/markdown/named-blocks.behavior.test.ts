@@ -4,6 +4,7 @@ import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { markdownEditorFocused } from "./_lib/cursor-zone-field";
 
 describe("named block anchors", () => {
   if (isServer) {
@@ -16,7 +17,13 @@ describe("named block anchors", () => {
     const { markdownExtension } = await import("./markdown");
     const { namedBlocksExtension } = await import("./named-blocks");
     const { dataBlocksExtension } = await import("./data-blocks");
-    const extensions: Extension[] = [markdownExtension(), namedBlocksExtension(), withDataBlocks ? dataBlocksExtension() : []];
+    // The person put the caret at the end of the note.
+    const extensions: Extension[] = [
+      markdownEditorFocused.init(() => true),
+      markdownExtension(),
+      namedBlocksExtension(),
+      withDataBlocks ? dataBlocksExtension() : [],
+    ];
     const view = new EditorView({ parent: dom.root, state: EditorState.create({ doc, selection: { anchor: doc.length }, extensions }) });
     forceParsing(view, doc.length, 5000);
     return {

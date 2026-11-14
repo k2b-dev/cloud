@@ -176,7 +176,7 @@ export default function SpacesListRoute(props: Props) {
           {content()}
         </div>
       ) : (
-        <ScrollArea ref={scrollArea} class="flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>
+        <ScrollArea ref={scrollArea} class="k2b-quiet-scrollbar flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>
           {content()}
         </ScrollArea>
       )}

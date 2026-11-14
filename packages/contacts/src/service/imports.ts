@@ -83,6 +83,8 @@ export const commit = async (config: {
   candidates: unknown[];
   validateCandidate: (candidate: unknown) => Result<CreateContactInput>;
 }): Promise<{ created: number; failures: string[] }> => {
+  if (config.candidates.length > MAX_IMPORT_CONTACTS)
+    return { created: 0, failures: [`Import is limited to ${MAX_IMPORT_CONTACTS} contacts at a time`] };
   let created = 0;
   const failures: string[] = [];
 

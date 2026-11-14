@@ -37,7 +37,9 @@ Use `AppOverview.Main` for the collection. Its `toolbar` slot suits a search fie
 Use `AppOverview.Cards` when the collection is a small set of objects. It lays
 out as many columns of at least 19rem as fit and collapses to one column on
 narrow screens. Put one `LinkCard` per object in it: a title, one secondary
-fact, and at most one trailing count or badge.
+fact, and at most one trailing count or badge. For a quiet page with several
+short sections, such as a start page, use `surface="plain"` on the grid and on
+each `LinkCard`: flat entries in columns of at least 17rem, without frames.
 
 Use `AppOverview.Aside` for short supporting content, such as a status or
 reference panel. Do not repeat the primary action there.
@@ -80,7 +82,7 @@ type AppOverviewPanelProps = {
 };
 
 type AppOverviewCardsProps = {
-  class?: string; children: JSX.Element;
+  class?: string; surface?: "paper" | "plain"; children: JSX.Element;
 };
 
 type AppOverviewEmptyStateProps = {

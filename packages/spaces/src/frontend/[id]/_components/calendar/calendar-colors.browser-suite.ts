@@ -8,7 +8,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceColumn, SpaceItemAssignee, SpaceTag } from "@/contracts";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
 import { defaultFilter } from "../filter/types";
 import { buildSpacesItemLinkBaseUrl } from "../workspace/workspace-types";
 import { calendarPersonColor } from "./colors";
@@ -357,7 +357,7 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       expect(tagged.Item10).toMatchObject({ accent: "#f59e0b", flag: true });
       expect(tagged.Item03!.fill).not.toBe("rgba(0, 0, 0, 0)");
       // A task is a marker on the plain surface; hovering it tints it and moves nothing.
-      await page.locator('[data-space-item-id="Item05"]').hover();
+      await hoverInPlace(page.locator('[data-space-item-id="Item05"]'));
       await settle(page);
       expect((await looks(page)).Item05!.fill).not.toBe("rgba(0, 0, 0, 0)");
       expect(await layout(page)).toEqual(before);

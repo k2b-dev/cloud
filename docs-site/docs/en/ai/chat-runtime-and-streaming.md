@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-11-04
+updated: 2026-11-13
 ---
 
 # Chat runtime and streaming
@@ -392,8 +392,10 @@ buffer `text/event-stream` responses.
 The portable chart helpers come from `@k2b/editor/charts`. Their existing Cloud
 exports remain available; Cloud owns AI validation and size limits.
 
-An open SSE stream re-checks its credential and the conversation every 5
-seconds. A revoked session or API key, an expired account, or a conversation
+An open SSE stream checks its credential and conversation at admission and
+on Identity-Access or conversation access events. Its five-second heartbeat
+and ordinary live deltas run no SQL. Known account and credential expiry
+times also have local timers. A revoked session or API key, an expired account, or a conversation
 that is archived or no longer the caller's ends the stream. The next
 connection attempt then receives 401, 403, or 404. The controller's default
 SSE transport does not retry these statuses. It stops the stream:

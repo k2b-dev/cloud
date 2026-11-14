@@ -20,7 +20,6 @@ import { authorizeMailWorkflowExecution, MAIL_WORKFLOW_ACTIONS } from "../workfl
 import { MAIL_WORKFLOW_APP_ID } from "../workflows/events";
 import { mailWorkflows } from "../workflows/module";
 import { recordMailWorkflowAudit } from "./automation-log-recording";
-import { renderMailWorkflowTemplate } from "./template-rendering";
 import { publishMailWorkflowCollaborationEventFromOutput } from "./workflow-collaboration-events";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 import {
@@ -34,6 +33,7 @@ import {
   projectMailWorkflowFrozenMessage,
 } from "./workflow-runtime-values";
 import { startMailWorkflowScheduleRuntime, stopMailWorkflowScheduleRuntime } from "./workflow-schedule-runtime";
+import { renderMailWorkflowTemplate } from "./workflow-template-rendering";
 import { resolveMailWorkflowTemplateBodies } from "./workflow-template-values";
 
 const auditLog = logger("mail:automation-log");

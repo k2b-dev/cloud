@@ -31,6 +31,16 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
   },
   translations: {
     de: {
+      events: {
+        "entry.created": {
+          title: "Datei hochgeladen",
+          description: "Ein Upload zum Anlegen einer Datei in einem Ordner wurde abgeschlossen.",
+        },
+        "entry.replaced": {
+          title: "Datei durch Upload ersetzt",
+          description: "Ein Upload zum Ersetzen einer bestehenden Datei in einem Ordner wurde abgeschlossen.",
+        },
+      },
       types: {
         entry: { title: "Datei oder Ordner", description: "Eine Datei oder ein Ordner in einer zugänglichen Cloud- oder FreeIPA-Ablage." },
       },

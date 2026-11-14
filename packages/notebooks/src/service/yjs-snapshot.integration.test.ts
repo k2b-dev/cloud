@@ -63,7 +63,7 @@ if (!databaseName) {
       const workspace = await import("./workspace-events");
       spyOn(workspace, "noteUpdated").mockResolvedValue(undefined);
       const notes = await import("./notes");
-      const { createYjsTopic } = await import("./yjs-sync");
+      const { createYjsTopic, notebooksTextLog } = await import("./yjs-sync");
       const Y = await import("yjs");
       const encode = (content: string) => {
         const doc = new Y.Doc();
@@ -142,7 +142,9 @@ if (!databaseName) {
       expect(stale.ok).toBe(true);
       const [restored] = await sql<{ content_md: string; yjs_stream_cursor: string | null }[]>`
         SELECT content_md, yjs_stream_cursor FROM notebooks.notes WHERE id = ${restoreId}::uuid`;
-      expect(restored).toEqual({ content_md: "restored", yjs_stream_cursor: pending.cursor });
+      const restoreMarker = await restoreTopic.latestCursor({ tenantId: restoreId });
+      expect(restoreMarker).not.toBe(pending.cursor);
+      expect(restored).toEqual({ content_md: "restored", yjs_stream_cursor: restoreMarker });
       // An old connected browser can finish publication after a store-only restore.
       // Its originating revision must travel through the real NATS log and SQL read.
       const lineageId = crypto.randomUUID();
@@ -165,6 +167,35 @@ if (!databaseName) {
           createdBy: null,
         });
         expect(restoredResult.ok).toBe(true);
+        // This room still has its join-time base, and no workspace outbox event.
+        // The broker marker alone must reject it without touching SQL.
+        const cached = notebooksTextLog.withStore({
+          load: async () => ({
+            state: beforeRestore!.yjsState,
+            text: beforeRestore!.contentMd,
+            cursor: beforeRestore!.streamCursor,
+            restoreRevision: beforeRestore!.restoreRevision,
+          }),
+          save: async () => {
+            throw new Error("Admission must not save");
+          },
+        });
+        expect(
+          await cached.accept(lineageId, {
+            snapshot: {
+              state: beforeRestore!.yjsState,
+              text: beforeRestore!.contentMd,
+              cursor: beforeRestore!.streamCursor,
+              restoreRevision: "0",
+            },
+            actor: { kind: "user", id: "old-user" },
+            update: Y.encodeStateAsUpdate(oldBrowser),
+            baseCursor: beforeRestore!.streamCursor,
+            restoreRevision: "0",
+            originNodeId: "old-node",
+            originPeerId: "old-peer",
+          }),
+        ).toEqual({ status: "recoveryRequired" });
         const stalePublication = await restoreTopic.publish({
           tenantId: lineageId,
           data: {
@@ -250,25 +281,26 @@ if (!databaseName) {
         expect(versions?.count).toBe(0);
       }
 
-      // Pause after capture of the final boundary under the actual exclusive
-      // lock. An update appended now cannot get a receipt before replacement;
-      // the waiting SHARE lock must wake to revision 1 and reject its echo.
+      // Pause after the restore marker, before its SQL commit. A room on
+      // another node must reject old input without SQL, and the legacy
+      // SHARE-lock delivery helper must still reject it after commit.
       const lockedId = crypto.randomUUID();
       await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title, content_md)
         VALUES (${lockedId}::uuid, 'ack003', ${notebookId}::uuid, '', '')`;
-      await notes.getAnchoredYjsState({ noteId: lockedId });
-      const { notebooksTextLog } = await import("./yjs-sync");
+      const lockedBase = await notes.getAnchoredYjsState({ noteId: lockedId });
       const rowLocked = Promise.withResolvers<void>();
       const releaseRestore = Promise.withResolvers<void>();
       const originalTopic = notebooksTextLog.topic;
       const pausedTopic = spyOn(notebooksTextLog, "topic").mockImplementation(() => {
         const topic = originalTopic();
-        const latest = topic.latestCursor.bind(topic);
-        topic.latestCursor = async (options) => {
-          const captured = await latest(options);
-          rowLocked.resolve();
-          await releaseRestore.promise;
-          return captured;
+        const publish = topic.publish.bind(topic);
+        topic.publish = async (input) => {
+          const marker = await publish(input);
+          if (input.tenantId === lockedId && input.data.kind === "freeze") {
+            rowLocked.resolve();
+            await releaseRestore.promise;
+          }
+          return marker;
         };
         return topic;
       });
@@ -281,16 +313,28 @@ if (!databaseName) {
       });
       try {
         await rowLocked.promise;
-        await restoreTopic.publish({
-          tenantId: lockedId,
-          data: {
-            kind: "sync",
-            payload: Buffer.from(encode("AFTER")).toString("base64"),
+        const oldRoom = notebooksTextLog.withStore({
+          load: async () => ({
+            state: lockedBase!.yjsState,
+            text: lockedBase!.contentMd,
+            cursor: lockedBase!.streamCursor,
             restoreRevision: "0",
-            originNodeId: "old-browser",
-            originPeerId: "old-browser",
+          }),
+          save: async () => {
+            throw new Error("Admission must not save");
           },
         });
+        expect(
+          await oldRoom.accept(lockedId, {
+            snapshot: { state: lockedBase!.yjsState, text: lockedBase!.contentMd, cursor: lockedBase!.streamCursor, restoreRevision: "0" },
+            actor: { kind: "user", id: "old-user" },
+            update: encode("AFTER"),
+            baseCursor: lockedBase!.streamCursor,
+            restoreRevision: "0",
+            originNodeId: "old-node",
+            originPeerId: "old-peer",
+          }),
+        ).toEqual({ status: "recoveryRequired" });
         const pendingReceipt = notes
           .deliverAtRestoreRevision({
             noteId: lockedId,
@@ -413,7 +457,8 @@ if (!databaseName) {
           await Bun.sleep(50);
         }
         expect(persisted).toBe(true);
-        expect(saveCalls.mock.calls.map(([input]) => input.restoreRevision)).toEqual(["0", "1"]);
+        // The retained marker rejects revision 0 before a stale SQL save is attempted.
+        expect(saveCalls.mock.calls.map(([input]) => input.restoreRevision)).toEqual(["1"]);
       } finally {
         await yjsSnapshotWorker.stop();
         readState.mockRestore();

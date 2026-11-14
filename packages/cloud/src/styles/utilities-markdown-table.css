@@ -251,3 +251,62 @@
   color: rgb(248 113 113); /* red-400 */
   background-color: rgb(127 29 29 / 0.25); /* red-900 / 25% */
 }
+
+/* In a chat or assistant answer a table is a data result, not part of a
+   document: it takes the framed look of DataTable, the view table it sits
+   next to. The frame is an island (layers and shadows): the island surface
+   and shadow in the main content, flat in a side panel. A grey head band with
+   a stronger line, a line under every row, lighter column lines, DataTable's
+   cell padding, and digits of one width. Documents (Notebooks pages, help,
+   Fibel, mail bodies) keep the hairline style above. */
+.k2b-ui .assistant-markdown-block .md-table-wrap {
+  --md-table-bleed: 0.75rem;
+  overflow-x: auto;
+  margin: 0.5rem 0 1rem;
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
+}
+.k2b-ui .assistant-markdown-block .md-table {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.k2b-ui .assistant-markdown-block .md-table :is(thead tr, tbody tr:not(:last-child)) {
+  border-bottom: 0;
+}
+.k2b-ui .assistant-markdown-block .md-table th {
+  color: var(--k2b-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1rem;
+  background: var(--k2b-surface-muted);
+  box-shadow: inset 0 -1px 0 var(--k2b-border-strong);
+}
+.k2b-ui .assistant-markdown-block .md-table th + th {
+  box-shadow:
+    inset 1px 0 0 var(--k2b-border),
+    inset 0 -1px 0 var(--k2b-border-strong);
+}
+.k2b-ui .assistant-markdown-block .md-table tbody tr:not(:last-child) > td {
+  box-shadow: inset 0 -1px 0 var(--k2b-border);
+}
+.k2b-ui .assistant-markdown-block .md-table tbody tr:not(:last-child) > td + td {
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent),
+    inset 0 -1px 0 var(--k2b-border);
+}
+.k2b-ui .assistant-markdown-block .md-table tbody tr:last-child > td + td {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+}
+.k2b-ui .assistant-markdown-block .md-table th .md-table-cell {
+  min-height: 2.125rem;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+}
+/* The view table in a chat answer is compact, so its Markdown sibling is too. */
+.k2b-ui .assistant-markdown-block .md-table td .md-table-cell {
+  min-height: 2.5rem;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+}

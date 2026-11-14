@@ -1756,10 +1756,8 @@ export const listActivity = async (params: {
     LEFT JOIN auth.users actor_user ON activity.actor_kind = 'user' AND actor_user.id = activity.actor_id
     LEFT JOIN auth.service_accounts actor_service
       ON activity.actor_kind = 'service_account' AND actor_service.id = activity.actor_id
-    LEFT JOIN workflows.version actor_workflow_version
-      ON activity.actor_kind = 'workflow' AND actor_workflow_version.id = activity.actor_id
-    LEFT JOIN workflows.workflow actor_workflow
-      ON actor_workflow.id = actor_workflow_version.workflow_id
+    LEFT JOIN mail.workflow_source_names actor_workflow
+      ON activity.actor_kind = 'workflow' AND actor_workflow.version_id = activity.actor_id
     WHERE activity.mailbox_id = ${params.mailboxId}::uuid
       AND (${params.conversationId ?? null}::uuid IS NULL OR activity.conversation_id = ${params.conversationId ?? null}::uuid)
       AND (${visibility.scope === "mailbox"} OR (

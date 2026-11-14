@@ -12,6 +12,7 @@ import {
 } from "@simplewebauthn/server";
 import type { User, WebAuthnPasskey } from "../contracts/shared";
 import { redis, sql } from "../runtime/clients";
+import { isAccountLocked } from "./account-lock";
 import { accounts } from "./accounts";
 import { audit } from "./audit";
 import { logger } from "./logging";
@@ -336,6 +337,7 @@ export const finishAuthentication = async (params: {
   if (user.accountExpires && new Date(user.accountExpires).getTime() <= Date.now()) {
     return fail(err.forbidden("Your account has expired. Contact an administrator."));
   }
+  if (await isAccountLocked(user.id)) return fail(err.forbidden("Your account is locked. Contact an administrator."));
 
   return sql.begin(async (tx) => {
     const [updated] = await tx<DbPasskeyRow[]>`

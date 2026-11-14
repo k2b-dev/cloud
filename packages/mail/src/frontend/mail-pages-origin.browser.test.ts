@@ -44,7 +44,15 @@ beforeAll(async () => {
   spies.push(
     spyOn(services.announcements.active, "forState").mockResolvedValue({ banners: [], announcements: [], latestAnnouncementVersion: 0 }),
   );
-  spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
+  spies.push(
+    spyOn(rail, "readRailSnapshot").mockResolvedValue({
+      revision: 0,
+      visibility: {},
+      shortcuts: [],
+      showNames: true,
+      managedShortcuts: [],
+    }),
+  );
   spies.push(spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId));
   spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
   for (const [, loader] of pages) spies.push(spyOn(automationWorkspace, loader).mockResolvedValue(fail(err.forbidden("Access denied"))));

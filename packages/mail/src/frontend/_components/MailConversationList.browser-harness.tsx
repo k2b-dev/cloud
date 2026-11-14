@@ -9,10 +9,23 @@ import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationReader from "./MailConversationReader";
-import { MailSearchInput, MailSearchOptions, MailSearchTrigger } from "./MailWorkspaceSearch";
-import type { MailConversationToolbarActionId } from "./mail-conversation-toolbar";
+import { MailSearchFilter } from "./MailWorkspaceHead";
+import { MailSearchInput } from "./MailWorkspaceSearch";
 import type { MailListItem } from "./mail-navigation";
 import { createMailboxSearch } from "./mailbox-search";
+
+const NO_DETAIL_ERRORS = {
+  collaboration: null,
+  tags: null,
+  comments: null,
+  assignableUsers: null,
+  activity: null,
+  reminder: null,
+  keep: null,
+  reference: null,
+  summary: null,
+  drafts: null,
+};
 
 export type MailListHarnessOptions = {
   locale: "en" | "de";
@@ -32,13 +45,12 @@ export type MailListHarnessOptions = {
   /** Starts the list at this route and lets it navigate through the history, as the workspace does. */
   requestUrl?: string;
   /** The reader's toolbar; Reply by default. */
-  toolbarActions?: MailConversationToolbarActionId[];
   /** The mail server deleted the messages of kept conversations, so the reader shows Cloud's copies. */
   deletedOnServer?: boolean;
   /** Makes plain text conversations a reply with this body, for example quoted text, after an earlier message. */
   plainText?: string;
-  /** Draws the columns view (F2) of a shared or a personal mailbox. */
-  columns?: "shared" | "personal";
+  /** A shared mailbox: rows show who is responsible. */
+  shared?: boolean;
 };
 
 declare global {
@@ -48,11 +60,15 @@ declare global {
     setMailItems: (items: MailListItem[]) => void;
     /** Marks rows as leaving, as the workspace does while an action takes them out of the list. */
     setMailLeaving: (keys: string[]) => void;
+    /** Marks the view as loading, as the workspace does while it refreshes the list in the background. */
+    setMailLoading: (loading: boolean) => void;
     mountMailQuickLook: (item: MailListItem, preview: MailConversationPreview) => void;
     setMailActive: (id: string | null) => void;
     setMailChecked: (ids: string[]) => void;
     mailItems: () => MailListItem[];
     mailNavigations: string[];
+    /** Row actions the list asked for, such as the star's flag, by conversation. */
+    mailItemActions: string[];
     folderHintDismissed: boolean;
   }
 }
@@ -78,14 +94,27 @@ function HarnessHead(props: { requestUrl: string; onOpenHref: (href: string, rep
   });
   return (
     <AppWorkspace.Head
-      views={search.opened() ? <MailSearchInput search={search} mailboxName="Example Club" /> : "Inbox"}
-      filters={search.opened() ? <MailSearchOptions search={search} count={0} /> : undefined}
-      actions={!search.opened() ? <MailSearchTrigger search={search} /> : undefined}
+      views={
+        <MailSearchInput search={search} mailboxName="Example Club">
+          <MailSearchFilter
+            requestUrl={props.requestUrl}
+            search={resolveMailSearchRoute(new URL(props.requestUrl, location.origin))}
+            folders={[]}
+            folderId={null}
+            localTags={[]}
+            quickSearch={search}
+            onOpenHref={(href) => props.onOpenHref(href)}
+            onEditSearch={(state, source) => search.edit(state, source)}
+            hint={{ open: false, onDismiss: () => {} }}
+          />
+        </MailSearchInput>
+      }
     />
   );
 }
 
 window.mailNavigations = [];
+window.mailItemActions = [];
 window.folderHintDismissed = false;
 
 const mailbox = { id: "Box001", name: "Example Club", health: "healthy" } as unknown as Mailbox;
@@ -121,7 +150,7 @@ const detailFor = (item: MailListItem | undefined, deletedOnServer = false, plai
     selectedHeaders: {},
     sourceAvailable: true,
     mailingList: null,
-    remoteContent: { imageIds: [], allowedByRule: false, sender: "person@example.test", domain: "example.test" },
+    remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "person@example.test", domain: "example.test" },
     delivery: null,
     attachments: [],
   };
@@ -152,6 +181,8 @@ window.mountMailList = (options) => {
   window.setMailItems = (items) => setList("items", reconcile(items));
   const [leaving, setLeaving] = createSignal<ReadonlySet<string>>(new Set());
   window.setMailLeaving = (keys) => setLeaving(new Set(keys));
+  const [loading, setLoading] = createSignal(false);
+  window.setMailLoading = setLoading;
   window.mailItems = () => [...list.items];
   const [selected, setSelected] = createSignal(options.selectedConversationId);
   window.setMailActive = setSelected;
@@ -239,7 +270,7 @@ window.mountMailList = (options) => {
                 open
                 defaultSize={options.listSize ?? 430}
                 minSize={300}
-                // The workspace's wide columns list fills the main area; a listSize above the pane's 620 stands in for it.
+                // A listSize above the pane's 620 stands in for a wide list, as without an open conversation.
                 maxSize={Math.max(620, options.listSize ?? 0)}
               >
                 <MailConversationList
@@ -279,9 +310,8 @@ window.mountMailList = (options) => {
                       : null;
                   })()}
                   listMode="conversations"
-                  loading={false}
+                  loading={loading()}
                   liveDegraded={false}
-                  onCollapse={noop}
                   onOpenHealth={noop}
                   onOpenDeliverySettings={noop}
                   onNavigate={(nav) => {
@@ -296,13 +326,14 @@ window.mountMailList = (options) => {
                     history.pushState(null, "", href);
                     open(new URL(href, location.href).searchParams.get("conversation"));
                   }}
-                  onToggleSelectionMode={noop}
                   onToggleSelection={noop}
                   onClearSelection={noop}
                   onAddTags={noop}
                   onAssign={noop}
                   onBulkAction={noop}
-                  onItemAction={noop}
+                  onItemAction={(item, actionId) => {
+                    window.mailItemActions.push(`${item.conversationId}:${actionId}`);
+                  }}
                   onManageTags={noop}
                   onRespondItem={noop}
                   onSetItemCompletion={noop}
@@ -312,14 +343,7 @@ window.mountMailList = (options) => {
                   onOpenHref={openHref}
                   onLoadMore={() => false}
                   onRefresh={async () => {}}
-                  columns={
-                    options.columns
-                      ? {
-                          shared: options.columns === "shared",
-                          assignees: (ids) => ids.map((id) => ({ id, name: id.replace("user-", "") })),
-                        }
-                      : undefined
-                  }
+                  assignees={options.shared ? (ids) => ids.map((id) => ({ id, name: id.replace("user-", "") })) : undefined}
                 />
               </AppWorkspace.MainPane>
               <div id="reader" class="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-surface-raised)]">
@@ -352,11 +376,18 @@ window.mountMailList = (options) => {
                     readingFormat="automatic"
                     theme="light"
                     calendarIntegrationAvailable={false}
-                    listAway={false}
-                    detailsOpen={false}
-                    toolbarActions={options.toolbarActions ?? ["reply"]}
-                    onToggleDetails={noop}
-                    onToolbarActionsChange={noop}
+                    collaboration={null}
+                    reminder={null}
+                    assignableUsers={[]}
+                    onCollaborationChange={noop}
+                    tags={[]}
+                    comments={[]}
+                    commentsCursor={null}
+                    detailErrors={NO_DETAIL_ERRORS}
+                    presence={[]}
+                    hintSeen={(hint) => hint === "reader-head-moved"}
+                    toolbarCustomized={false}
+                    onHintSeen={noop}
                     actionPending={false}
                     structurePending={false}
                     onAction={noop}
@@ -381,6 +412,7 @@ window.mountMailList = (options) => {
                     onReconcile={async () => {}}
                     onReconcileAfterWrite={async () => {}}
                     onClose={noop}
+                    replyPosition="bottom"
                   />
                 </Show>
               </div>

@@ -1,4 +1,5 @@
 import { createEffect, createSignal, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import { placeAtAnchor, SHEET_QUERY } from "../internal/anchor-placement";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 
 export type AnchoredPopoverProps = {
@@ -30,10 +31,6 @@ export type AnchoredPopoverProps = {
   class?: string;
 };
 
-const GAP = 6;
-const MARGIN = 8;
-const sheetQuery = "(max-width: 47.999rem)";
-
 /**
  * A panel anchored to a control, for content that is more than a menu, such as a card with a slider. It opens on the
  * side with room and keeps that side while open, so a panel that changes its content never jumps to the other side.
@@ -63,27 +60,14 @@ export function AnchoredPopover(props: AnchoredPopoverProps): JSX.Element {
       surface.style.top = "";
       return;
     }
-    const viewport = window.visualViewport;
-    const view = {
-      top: (viewport?.offsetTop ?? 0) + MARGIN,
-      bottom: (viewport ? viewport.offsetTop + viewport.height : window.innerHeight) - MARGIN,
-      left: (viewport?.offsetLeft ?? 0) + MARGIN,
-      right: (viewport ? viewport.offsetLeft + viewport.width : window.innerWidth) - MARGIN,
-    };
-    const box = anchor.getBoundingClientRect();
-    const size = surface.getBoundingClientRect();
-    const roomAbove = box.top - GAP - view.top;
-    const roomBelow = view.bottom - box.bottom - GAP;
-    if (openedAbove === undefined) {
-      const planned = Math.max(size.height, props.plannedHeight ?? 0);
-      openedAbove =
-        (props.side ?? "below") === "above" ? planned <= roomAbove || roomAbove > roomBelow : planned > roomBelow && roomAbove > roomBelow;
-    }
-    surface.style.setProperty("--k2b-anchored-popover-room", `${Math.round(Math.max(120, openedAbove ? roomAbove : roomBelow))}px`);
-    const top = openedAbove ? box.top - GAP - size.height : box.bottom + GAP;
-    const left = (props.align ?? "end") === "end" ? box.right - size.width : box.left;
-    surface.style.left = `${Math.round(Math.max(view.left, Math.min(left, view.right - size.width)))}px`;
-    surface.style.top = `${Math.round(Math.max(view.top, Math.min(top, view.bottom - size.height)))}px`;
+    const placed = placeAtAnchor(surface, anchor, {
+      side: props.side,
+      align: props.align ?? "end",
+      above: openedAbove,
+      plannedHeight: props.plannedHeight,
+    });
+    openedAbove = placed.above;
+    surface.style.setProperty("--k2b-anchored-popover-room", `${Math.round(Math.max(120, placed.room))}px`);
   };
 
   const restoreFocus = () => {
@@ -128,7 +112,7 @@ export function AnchoredPopover(props: AnchoredPopoverProps): JSX.Element {
         previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         ring = ringOnReturn(previous ?? anchor);
       }
-      setSheet(props.sheet !== false && typeof matchMedia === "function" && matchMedia(sheetQuery).matches);
+      setSheet(props.sheet !== false && typeof matchMedia === "function" && matchMedia(SHEET_QUERY).matches);
       setShown(anchor);
       // Without the popover API, as in test DOMs, the panel stays in the flow instead of the top layer.
       if (!surface.matches(":popover-open") && typeof surface.showPopover === "function") surface.showPopover();

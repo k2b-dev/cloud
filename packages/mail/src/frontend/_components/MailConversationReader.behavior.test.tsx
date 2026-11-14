@@ -2,7 +2,7 @@ import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { type ComponentProps, createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import type { MailDraftSeed, SenderIdentity } from "../../contracts";
+import type { SenderIdentity } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import type MailConversationReaderComponent from "./MailConversationReader";
 import { summaryState } from "./mail-summary-fixtures";
@@ -46,7 +46,7 @@ const envelopeOnly: MessageDetail = {
   selectedHeaders: {},
   sourceAvailable: false,
   mailingList: null,
-  remoteContent: { imageIds: [], allowedByRule: false, sender: "ada@example.com", domain: "example.com" },
+  remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "ada@example.com", domain: "example.com" },
   delivery: null,
   attachments: [],
 };
@@ -127,11 +127,29 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   readingFormat: "automatic",
   theme: "light",
   calendarIntegrationAvailable: false,
-  listAway: false,
-  detailsOpen: false,
-  toolbarActions: ["reply"],
-  onToggleDetails: () => undefined,
-  onToolbarActionsChange: () => undefined,
+  collaboration: null,
+  reminder: null,
+  assignableUsers: [],
+  onCollaborationChange: () => undefined,
+  tags: [],
+  comments: [],
+  commentsCursor: null,
+  detailErrors: {
+    collaboration: null,
+    tags: null,
+    comments: null,
+    assignableUsers: null,
+    activity: null,
+    reminder: null,
+    keep: null,
+    reference: null,
+    summary: null,
+    drafts: null,
+  },
+  presence: [],
+  hintSeen: (hint) => hint === "reader-head-moved",
+  toolbarCustomized: false,
+  onHintSeen: () => undefined,
   actionPending: false,
   structurePending: false,
   onAction: () => undefined,
@@ -156,6 +174,8 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   onReconcile: async () => undefined,
   onReconcileAfterWrite: async () => undefined,
   onClose: () => undefined,
+  // The tests above the reply-position block were written for the box under the conversation.
+  replyPosition: "bottom",
 };
 
 test.skipIf(isServer)("jumping to newest reads the person's motion choice at click time", async () => {
@@ -179,6 +199,9 @@ test.skipIf(isServer)("jumping to newest reads the person's motion choice at cli
   try {
     expect(dom.window.matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false);
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    // The person reads far above the end of the conversation, where new messages arrive.
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, get: () => 2_000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, get: () => 600 });
     for (const [index, behavior] of ["auto", "smooth"].entries()) {
       scroller.scrollTop = 200;
       scroller.dispatchEvent(new Event("scroll"));
@@ -288,7 +311,7 @@ test.skipIf(isServer)(
       expect(card().querySelector(".mail-message-body")?.textContent).toContain("The numbers are attached.");
       expect(card().textContent).not.toContain("Refresh message");
       expect(dom.root.querySelector("[data-mail-print-root]")).toBe(reader);
-      expect(card().querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe("true");
+      expect(card().querySelector("[data-mail-message-header]")?.getAttribute("aria-expanded")).toBe("true");
       expect(bodyRequests.requests).toHaveLength(2);
     } finally {
       dispose();
@@ -543,7 +566,7 @@ test.skipIf(isServer)("a retained message card follows live delivery updates", a
   );
   try {
     const card = () => dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"]')!;
-    const header = () => card().querySelector("button[aria-expanded]")!.textContent ?? "";
+    const header = () => card().querySelector(".mail-message-head")!.textContent ?? "";
     await waitFor(() => card() !== null);
     const mounted = card();
     expect(header()).not.toContain("Sending");
@@ -610,6 +633,8 @@ test.skipIf(isServer)("a saved summary is announced to screen readers, with no t
     dom.root,
   );
   try {
+    // The summary is one row; its tools show once it is open.
+    dom.root.querySelector<HTMLButtonElement>(".mail-summary-row__toggle")!.click();
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit summary"]')!.click();
     await waitFor(() => saved);
     await Bun.sleep(150);
@@ -734,143 +759,6 @@ test.skipIf(isServer)("a reply without a verified sender names the reason and le
   }
 });
 
-test.skipIf(isServer)("changing the conversation during the seed-store import drops the stale reply", async () => {
-  const dom = createDomTestHarness();
-  const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
-  const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
-  const reload = await import("@k2b/cloud/browser/reload");
-  const nav = await import("@k2b/ssr/nav");
-  const store = await import("./mail-draft-seed-store");
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let imported = false;
-  const load = spyOn(reload, "importOnDemand").mockImplementation(async (loader) => {
-    await pending;
-    const module = await loader();
-    imported = true;
-    return module;
-  });
-  const navigate = spyOn(nav, "documentNavigate").mockImplementation(() => {});
-  const storing = spyOn(store, "storeMailDraftSeed").mockImplementation(() => {});
-  const identity: SenderIdentity = {
-    id: "Send01",
-    mailboxId: "Box001",
-    label: "Support",
-    displayName: "Support",
-    fromAddress: "support@example.com",
-    replyTo: null,
-    defaultCc: [],
-    defaultBcc: [],
-    defaultFormat: "markdown",
-    defaultPriority: "normal",
-    defaultDeliveryReceipt: false,
-    defaultReadReceipt: false,
-    vcard: null,
-    envelopeSender: null,
-    defaultSignatureTemplateId: null,
-    transport: {
-      mode: "mailbox",
-      host: null,
-      port: null,
-      tlsMode: null,
-      username: null,
-      secret: { kind: null, isSet: false },
-      revision: 0,
-      status: "active",
-      capabilities: { dsn: false, size: false, maxMessageBytes: null },
-      lastVerifiedAt: null,
-      lastError: null,
-    },
-    authenticationPolicy: { automation: "mailbox" },
-    sentFolderId: null,
-    draftsFolderId: null,
-    isDefault: true,
-    status: "verified",
-    statusReason: null,
-    pendingVerificationCommandId: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-  const seed: MailDraftSeed = {
-    id: "20000000-0000-4000-8000-000000000002",
-    mailboxId: "Box001",
-    conversationId: "Conv01",
-    intent: "reply",
-    sourceMessageId: "Msg001",
-    derivedFromMessageId: null,
-    derivationKind: null,
-    content: {
-      senderIdentityId: "Send01",
-      to: [],
-      cc: [],
-      bcc: [],
-      subject: "Re: Quarterly review",
-      body: "",
-      format: "markdown",
-      priority: "normal",
-      requestDeliveryReceipt: false,
-      requestReadReceipt: false,
-    },
-    attachments: [],
-    origin: { kind: "compose", input: { senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "Re: Quarterly review", body: "" } },
-    createdAt: now,
-  };
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = Object.assign(
-    async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === "POST" ? seed : []),
-    { preconnect: originalFetch.preconnect },
-  );
-  const [conversationId, setConversationId] = createSignal("Conv01");
-  const { MailConversationReader } = modules!;
-  const dispose = render(
-    () =>
-      createComponent(MailConversationReader, {
-        ...readerProps,
-        identities: [identity],
-        get selectionKey() {
-          return conversationId();
-        },
-        get selectedConversationId() {
-          return conversationId();
-        },
-        get messages() {
-          return [
-            { ...envelopeOnly, id: conversationId() === "Conv01" ? "Msg001" : "Msg002", hydrationStatus: "complete", plainText: "Hello" },
-          ];
-        },
-      }),
-    dom.root,
-  );
-  try {
-    await waitFor(() => collectContextAwareCommands().some((command) => command.id.endsWith(".reply")));
-    const action = collectContextAwareCommands().find((command) => command.id.endsWith(".reply"))?.action;
-    if (typeof action !== "function") throw new Error("The reader registers no Reply command");
-    await action();
-    await waitFor(() => load.mock.calls.length === 1);
-    expect(storing).not.toHaveBeenCalled();
-    expect(navigate).not.toHaveBeenCalled();
-    setConversationId("Conv02");
-    release();
-    await waitFor(() => imported);
-    await Bun.sleep(0);
-    expect(storing).not.toHaveBeenCalled();
-    expect(navigate).not.toHaveBeenCalled();
-  } finally {
-    release();
-    dispose();
-    globalThis.fetch = originalFetch;
-    load.mockRestore();
-    navigate.mockRestore();
-    storing.mockRestore();
-    if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
-    else Reflect.deleteProperty(globalThis, "localStorage");
-    dom.cleanup();
-  }
-});
-
 test.skipIf(isServer)("under Automatic the HTML frame stays mounted while the theme changes light to dark and back", async () => {
   const dom = createDomTestHarness();
   const { MailConversationReader } = modules!;
@@ -924,15 +812,13 @@ test.skipIf(isServer)("queued actions keep triage available while structure cont
         canWrite: true,
         actionPending: false,
         structurePending: true,
-        toolbarActions: ["trash", "keep", "tags"],
       }),
     dom.root,
   );
   try {
     const button = (label: string) => dom.root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
-    expect(button("Move to Trash")?.disabled).toBe(false);
-    expect(button("Keep")?.disabled).toBe(true);
-    expect(button("Tags")?.disabled).toBe(true);
+    expect(button("Delete")?.disabled).toBe(false);
+    expect(button("Archive")?.disabled).toBe(false);
     const menuItem = (label: string) =>
       [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === label);
     expect(menuItem("Move to Trash")?.disabled).toBe(false);
@@ -1152,12 +1038,12 @@ test.skipIf(isServer)("a conversation keeps the messages a live arrival showed w
     await waitFor(() => shown().length === 3);
     setSelected({ ...first, messages: [...first.messages, message(7)] });
     await waitFor(() => shown().includes("Msg007"));
-    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+    expect(shown()).toEqual(["Msg004", "Msg005", "Msg006", "Msg007"]);
     setSelected({ selectionKey: "Conv02", messages: [{ ...message(8), id: "Msg099" }] });
     await waitFor(() => shown().includes("Msg099"));
     setSelected({ ...first, messages: [...first.messages, message(7)] });
     await waitFor(() => shown().includes("Msg007"));
-    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+    expect(shown()).toEqual(["Msg004", "Msg005", "Msg006", "Msg007"]);
   } finally {
     dispose();
     dom.cleanup();
@@ -1191,39 +1077,6 @@ test.skipIf(isServer)("the fifth message folds none of the four shown messages a
     expect(header.isConnected).toBe(true);
     expect(dom.document.activeElement).toBe(header);
     expect(dom.root.querySelector("[data-mail-older-messages]")).toBeNull();
-  } finally {
-    dispose();
-    dom.cleanup();
-  }
-});
-
-test.skipIf(isServer)("the reply box names whom Reply writes to, also when this mailbox sent the newest message", async () => {
-  const dom = createDomTestHarness();
-  const { MailConversationReader } = modules!;
-  const later = new Date(Date.parse(now) + 60_000).toISOString();
-  const dispose = render(
-    () =>
-      createComponent(MailConversationReader, {
-        ...readerProps,
-        identities: [supportIdentity],
-        messages: [
-          envelopeOnly,
-          {
-            ...envelopeOnly,
-            id: "Msg002",
-            internalDate: later,
-            sentAt: later,
-            from: [{ name: "Support", address: "support@example.com" }],
-            to: [{ name: "Grace Hopper", address: "grace@example.com" }],
-          },
-        ],
-      }),
-    dom.root,
-  );
-  try {
-    const box = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-box]");
-    await waitFor(() => box() !== null);
-    expect(box()!.textContent?.trim()).toBe("Reply to Grace Hopper…");
   } finally {
     dispose();
     dom.cleanup();
@@ -1275,6 +1128,8 @@ test.skipIf(isServer)("an abandoned summary form cannot write into a new A sessi
     dom.root,
   );
   try {
+    // The summary is one row; its tools show once it is open.
+    dom.root.querySelector<HTMLButtonElement>(".mail-summary-row__toggle")!.click();
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit summary"]')!.click();
     expect(form).toHaveBeenCalledTimes(1);
     setMailboxId("Box002");
@@ -1325,7 +1180,11 @@ test.skipIf(isServer)("summary generation cancels the earlier A session after A 
       }),
     dom.root,
   );
-  const generate = () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Write again"]')!.click();
+  const generate = () => {
+    const toggle = dom.root.querySelector<HTMLButtonElement>(".mail-summary-row__toggle")!;
+    if (toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Write again"]')!.click();
+  };
   try {
     generate();
     await waitFor(() => pending.length === 1);
@@ -1347,5 +1206,233 @@ test.skipIf(isServer)("summary generation cancels the earlier A session after A 
     globalThis.fetch = originalFetch;
     dom.cleanup();
     setSystemTime();
+  }
+});
+
+test.skipIf(isServer)("every reply path lands in the reply box: arrows, menus, quotes, commands, and a returned draft", async () => {
+  const dom = createDomTestHarness();
+  const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
+  const card = await import("./MailMessageCard");
+  const box = await import("./MailReplyBox");
+  const { prompts } = await import("@k2b/ui");
+  const dialog = spyOn(prompts, "dialog");
+  let actions: ComponentProps<typeof card.default>["actions"] | undefined;
+  const message = { ...envelopeOnly, hydrationStatus: "complete" as const, plainText: "Selected source text" };
+  const cardMock = spyOn(card, "default").mockImplementation((props) => {
+    actions = props.actions;
+    return null;
+  });
+  const calls: unknown[][] = [];
+  const boxMock = spyOn(box, "default").mockImplementation((props) => {
+    props.register({
+      open: (...args) => void calls.push(["open", ...args]),
+      openDraft: (draftId) => void calls.push(["openDraft", draftId]),
+    });
+    return null;
+  });
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      requests.push(String(input instanceof Request ? input.url : input));
+      return Response.json([]);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { MailConversationReader } = modules!;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        messages: [message],
+        identities: [{ ...supportIdentity, status: "verified", statusReason: null }],
+        conversationDrafts: [
+          {
+            id: "Draft1",
+            intent: "reply",
+            subject: "Re: x",
+            updatedAt: now,
+            suggestion: false,
+            bodyPreview: "",
+            createdByDisplayName: "Ada",
+          },
+          {
+            id: "Draft2",
+            intent: "forward",
+            subject: "Fwd: x",
+            updatedAt: now,
+            suggestion: false,
+            bodyPreview: "",
+            createdByDisplayName: "Ada",
+          },
+        ],
+      }),
+    dom.root,
+  );
+  try {
+    await waitFor(() => actions !== undefined && calls.length === 0);
+    actions!.compose("reply_all", message);
+    actions!.compose("reply", message, "> Selected source text");
+    actions!.compose("forward", message, "forwarded text");
+    actions!.openDraft?.("Draft9");
+    await waitFor(() => collectContextAwareCommands().some((command) => command.id.endsWith(".reply")));
+    const reply = collectContextAwareCommands().find((command) => command.id.endsWith(".reply"))?.action;
+    if (typeof reply !== "function") throw new Error("The reader registers no Reply command");
+    await reply();
+    expect(calls).toEqual([
+      ["open", "reply_all", { message, quote: undefined }],
+      ["open", "reply", { message, quote: "> Selected source text" }],
+      ["open", "forward", { message, quote: "forwarded text" }],
+      ["openDraft", "Draft9"],
+      ["open", "reply"],
+    ]);
+    // The pill, the "Continue draft?" dialog, the draft rows, and full screen are gone; nothing created a draft.
+    expect(dom.root.querySelector("[data-mail-reply-pill], [data-mail-draft-row], [data-mail-draft-bar]")).toBeNull();
+    expect(dialog).not.toHaveBeenCalled();
+    expect(requests.some((url) => url.includes("/draft-seeds") || url.includes("/drafts"))).toBe(false);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dialog.mockRestore();
+    cardMock.mockRestore();
+    boxMock.mockRestore();
+    dom.cleanup();
+  }
+});
+
+// The reply box on top (the default since 0.76): the newest message comes right below it, older ones further down.
+const timed = (index: number): MessageDetail => {
+  const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+  return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+};
+const shownIds = (root: HTMLElement) =>
+  [...root.querySelectorAll("[data-mail-message-id], [data-mail-older-messages]")].map(
+    (element) => element.getAttribute("data-mail-message-id") ?? "older",
+  );
+
+test.skipIf(isServer)(
+  "with the box on top, a conversation opens at its start and folds its older messages below the newest three",
+  async () => {
+    const dom = createDomTestHarness();
+    const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+    const { MailConversationReader } = modules!;
+    const scrollTo = spyOn(dom.window.HTMLElement.prototype, "scrollTo").mockImplementation(() => {});
+    const dispose = render(
+      () => createComponent(MailConversationReader, { ...readerProps, replyPosition: "top", messages: [1, 2, 3, 4, 5, 6].map(timed) }),
+      dom.root,
+    );
+    try {
+      await waitFor(() => shownIds(dom.root).length === 4);
+      expect(shownIds(dom.root)).toEqual(["Msg006", "Msg005", "Msg004", "older"]);
+      // The reading column says where the box stands, for the phone and the "new messages" button.
+      expect(dom.root.querySelector("[data-mail-reading-column]")!.getAttribute("data-reply-position")).toBe("top");
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      // The newest message is the target; the start of the reader shows the box and that message below it.
+      expect(scrollTo.mock.calls.at(-1)?.[0]).toMatchObject({ top: 0 });
+      // Showing the older ones focuses the newest of them, right below the messages the person read.
+      dom.root.querySelector<HTMLButtonElement>("[data-mail-older-messages]")!.click();
+      await waitFor(() => shownIds(dom.root).length === 6);
+      expect(shownIds(dom.root)).toEqual(["Msg006", "Msg005", "Msg004", "Msg003", "Msg002", "Msg001"]);
+      await waitFor(() => dom.document.activeElement?.closest("[data-mail-message-id]")?.getAttribute("data-mail-message-id") === "Msg003");
+    } finally {
+      scrollTo.mockRestore();
+      dispose();
+      if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss);
+      else Reflect.deleteProperty(globalThis, "CSS");
+      dom.cleanup();
+    }
+  },
+);
+
+test.skipIf(isServer)("with the box on top, new messages show at once at the start; further down, a button points up to them", async () => {
+  const dom = createDomTestHarness();
+  const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+  const { MailConversationReader } = modules!;
+  const [messages, setMessages] = createSignal<MessageDetail[]>([timed(1)]);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        replyPosition: "top",
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  const scroller = dom.root.querySelector<HTMLElement>('[data-scroll-preserve="mail-reader-Conv01"]')!;
+  const scrollTo = spyOn(scroller, "scrollTo").mockImplementation(() => {});
+  const jump = () =>
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.classList.contains("mail-reader-new-below"));
+  try {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    // At the start, a new message takes its place below the box at once, open, with no button.
+    scroller.scrollTop = 0;
+    scroller.dispatchEvent(new Event("scroll"));
+    setMessages((current) => [...current, timed(2)]);
+    await waitFor(() => shownIds(dom.root)[0] === "Msg002");
+    expect(jump()).toBeUndefined();
+    expect(dom.root.querySelector('[data-mail-message-id="Msg002"] [data-mail-message-header]')!.getAttribute("aria-expanded")).not.toBe(
+      "false",
+    );
+    // Further down, the next one waits behind a button at the top that points up and returns to the start.
+    scroller.scrollTop = 400;
+    scroller.dispatchEvent(new Event("scroll"));
+    setMessages((current) => [...current, timed(3)]);
+    await waitFor(() => jump() !== undefined);
+    expect(jump()!.getAttribute("data-reply-position")).toBe("top");
+    expect(jump()!.querySelector(".ti-arrow-up")).not.toBeNull();
+    scrollTo.mockClear();
+    jump()!.click();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(scrollTo.mock.calls[0]?.[0]).toMatchObject({ top: 0 });
+  } finally {
+    scrollTo.mockRestore();
+    dispose();
+    if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss);
+    else Reflect.deleteProperty(globalThis, "CSS");
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("switching the place keeps one reply box and moves it before or after the messages", async () => {
+  const dom = createDomTestHarness();
+  const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+  const { MailConversationReader } = modules!;
+  const [position, setPosition] = createSignal<"top" | "bottom">("top");
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        messages: [timed(1), timed(2)],
+        get replyPosition() {
+          return position();
+        },
+        onReplyPositionChange: setPosition,
+      }),
+    dom.root,
+  );
+  const order = () =>
+    [...dom.root.querySelectorAll("[data-mail-reply-box-frame], [data-mail-message-id]")].map(
+      (element) => element.getAttribute("data-mail-message-id") ?? "box",
+    );
+  try {
+    await waitFor(() => order().length === 3);
+    expect(order()).toEqual(["box", "Msg002", "Msg001"]);
+    setPosition("bottom");
+    await waitFor(() => order()[0] === "Msg001");
+    expect(order()).toEqual(["Msg001", "Msg002", "box"]);
+    expect(dom.root.querySelectorAll("[data-mail-reply-box-frame]")).toHaveLength(1);
+    setPosition("top");
+    await waitFor(() => order()[0] === "box");
+    expect(dom.root.querySelectorAll("[data-mail-reply-box-frame]")).toHaveLength(1);
+  } finally {
+    dispose();
+    if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss);
+    else Reflect.deleteProperty(globalThis, "CSS");
+    dom.cleanup();
   }
 });

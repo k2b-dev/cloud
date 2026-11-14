@@ -311,9 +311,10 @@ Im Editor erscheinen die Bedienelemente, wenn du auf das Diagramm zeigst oder es
 - **Datei in einer eigenen Zeile:** Der Link zeigt zusätzlich die Dateigröße.
 - **Websites und E-Mail-Adressen:** Diese Links bleiben Teil des Textes mit einer dünnen Unterstreichung. Website-Links enden mit einem kleinen ↗.
 - **Wo Links so aussehen:** Buchansicht und PDF-Export zeigen Links so an. Der Editor nutzt dasselbe Aussehen mit drei Unterschieden. Er zeigt bei einer Überschrift nur den Linktext, liest die Art einer Datei aus ihrem Linktext und zeigt keine Dateigrößen.
-- **Anhang öffnen:** Wähle ein Bild aus, um es im Vollbild zu sehen. Wähle eine PDF-, Markdown-, Text-, JSON- oder CSV-Datei aus, um ihre Vorschau zu öffnen.
-- **Aktionen der Vorschau:** Die Vorschau bietet **Herunterladen**. PDFs bieten zusätzlich **In neuem Tab öffnen**, Text- und JSON-Dateien **Kopieren**.
-- **Andere Dateien:** Notebooks lädt andere Dateien wie Archive, Audio und Video nach einer Bestätigung herunter. Das gilt auch für sehr große Dateien und für Bilder, die die Notiz nicht anzeigen kann.
+- **Anhang öffnen:** Wähle ein Bild, ein PDF oder eine Markdown-, Text-, JSON- oder CSV-Datei aus, um es in der Vollbild-Vorschau zu sehen.
+- **Aktionen der Vorschau:** Die Vorschau bietet oben rechts **Speichern in** und **Herunterladen**. PDFs bieten zusätzlich **In neuem Tab öffnen**, Text- und JSON-Dateien **Text kopieren**.
+- **Zwischen Dateien wechseln:** Öffnest du eine Datei im Detailbereich oder in der Anhangsübersicht, enthält die Vorschau alle Dateien dieser Liste. Wechsle mit den Pfeiltasten, den Schaltflächen am Rand oder dem Streifen unten. Auf dem Telefon wischst du zur Seite.
+- **Andere Dateien:** Notebooks lädt andere Dateien wie Archive, Audio und Video nach einer Bestätigung herunter. Das gilt auch für sehr große Dateien und für Bilder, die die Notiz nicht anzeigen kann. In der Vorschau zeigen solche Dateien **Herunterladen**.
 - **Wo das funktioniert:** Du öffnest Anhänge im Editor, in der Buchansicht, im Detailbereich und in der Anhangsübersicht.
 - **Alle Dateien des Notizbuchs:** Öffne **Anhänge** unten in der Seitenleiste des Notizbuchs. Dort siehst und durchsuchst du alle Dateien des Notizbuchs.
 :::

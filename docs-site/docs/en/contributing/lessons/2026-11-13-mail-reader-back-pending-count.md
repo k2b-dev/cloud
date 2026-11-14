@@ -1,0 +1,6 @@
+### A Mail reader test counted message cards while Back was still loading
+
+- **What happened:** In CI, the Chromium case "reader: a link to an older message shows the whole conversation, also after collapsing that message" sometimes expected 6 message cards after Back and found 1. The failure was random and also blocked pull requests that changed no Mail code.
+- **Root cause:** Back to a `message=` link loads the workspace snapshot again. The URL changes at once, but the reader keeps the conversation it showed before, with `aria-busy="true"`, until the snapshot arrives. The test waited only for the URL and for `settled(page)`, which checks fonts, animations and frames, not network loads. On a slow runner it counted the single card of the previous conversation. When the answer took 400 ms, the old test failed on every run. The product then showed all six messages, unfolded.
+- **Error class:** A browser test treats a URL change, or a settled frame, as proof that a client-side navigation has applied its data.
+- **Guard:** After a navigation in the Mail shell suite, wait with `ready(page)`. It waits until no workspace main is `aria-busy` and then for `settled(page)`. The reader case now holds the Back answer and checks that the pending Back is `aria-busy`, so the signal that `ready(page)` waits for is tested on every run.

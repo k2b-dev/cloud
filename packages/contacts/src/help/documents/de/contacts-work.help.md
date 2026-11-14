@@ -45,8 +45,8 @@ Wähle dann **Kontakt neu laden** und übertrage sie in die aktuelle Fassung.
 - **Eigene Eingabe:** Behalte den Text so, wie du ihn geschrieben hast. Wähle dafür die eigene Eingabe in der Liste oder drücke Escape.
 - **Land:** Gib den Ländernamen in der Sprache der Seite oder den zweistelligen Code ein, zum Beispiel **Deutschland** oder **DE**.
 - **Lage:** Ein gewählter Vorschlag speichert die Lage der Adresse. Wenn du die Adresse später änderst, sucht Cloud die Lage neu. Für Adressen ohne Lage sucht Cloud die Lage, wenn du den Kontakt öffnest.
-- **Karte und Route:** Unter der Adresse zeigt der Kontakt eine kleine Karte. **Route planen** öffnet die Karten-App deines Geräts.
-- **Ohne Karte:** Wenn Karten nicht eingerichtet sind oder das Kartenbudget aufgebraucht ist, bleibt die Adresse ohne Karte. **Route planen** nutzt dann den Adresstext.
+- **Karte und Route:** Unter der Adresse zeigt der Kontakt eine kleine Karte. Wähle die Karte, um sie groß zu öffnen. Dort öffnet **In OpenStreetMap öffnen**, **In Apple Karten öffnen** oder **In Navi-App öffnen** die Karten-App deines Geräts. Zurück oder **Schließen** bringt dich zum Kontakt.
+- **Ohne Karte:** Wenn Karten nicht eingerichtet sind, das Kartenbudget aufgebraucht ist oder Cloud keine Lage findet, bleibt die Adresse ohne Karte. **Route planen** unter der Adresse nutzt dann den Adresstext.
 :::
 
 ## Kontakte nützlich halten {icon="table"}

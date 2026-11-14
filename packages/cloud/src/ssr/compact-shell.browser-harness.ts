@@ -44,6 +44,28 @@ const extraApps = ["Amber", "Birch", "Cedar", "Dune", "Elm"].map((name) => ({
   routes: [`/app/${name.toLowerCase()}`],
   nav: { href: `/app/${name.toLowerCase()}`, section: "primary" },
 }));
+// `?colors=` gives the catalog app colours, as installations declare them: the open Mail on its teal canvas
+// (`teal`) or on a yellow one (`yellow`, the hardest ground for light app colours). One app declares none and keeps
+// a palette tone. Invented apps.
+const colorApps = [
+  { id: "orders", name: "Orders", icon: "ti ti-clipboard-list", accent: "#9a3412", from: "#c2410c", to: "#f59e0b" },
+  { id: "customers", name: "Customers", icon: "ti ti-users", accent: "#4f46e5", from: "#6366f1", to: "#8b5cf6" },
+  { id: "invoices", name: "Invoices", icon: "ti ti-file-invoice", accent: "#166534", from: "#16a34a", to: "#0d9488" },
+  { id: "files", name: "Files", icon: "ti ti-files", accent: "#1d4ed8", from: "#2563eb", to: "#60a5fa" },
+  { id: "notebooks", name: "Notebooks", icon: "ti ti-notebook", accent: "#eab308", from: "#ffd60a", to: "#ffcc00" },
+  { id: "spaces", name: "Spaces", icon: "ti ti-layout-kanban", accent: "#4d7c0f", from: "#65a30d", to: "#84cc16" },
+  { id: "rental", name: "Tool rental and loan devices", icon: "ti ti-tool" },
+].map(({ accent, from, to, ...app }) => ({
+  ...app,
+  description: app.name,
+  routes: [`/app/${app.id}`],
+  nav: { href: `/app/${app.id}`, section: "primary" },
+  ...(accent ? { appearance: { accent, background: { from: from!, to: to! } } } : {}),
+}));
+const mailCanvas = {
+  teal: { accent: "#0f766e", background: { from: "#0f766e", to: "#2563eb" } },
+  yellow: { accent: "#eab308", background: { from: "#ffd60a", to: "#ffcc00", angle: 145, strength: 24 } },
+} as const;
 const apps = [
   {
     id: "mail",
@@ -227,7 +249,13 @@ const server = new Hono()
     async (c, next) => {
       // `?name=` renames Mail, for a long app name in the phone header.
       const name = c.req.query("name");
-      const catalog = c.req.query("catalog") ? [...extraApps, ...apps] : apps;
+      const colors = c.req.query("colors");
+      const appearance = colors === "teal" || colors === "yellow" ? mailCanvas[colors] : undefined;
+      const catalog = appearance
+        ? [...colorApps, ...apps.map((app) => (app.id === "mail" ? { ...app, appearance } : app))]
+        : c.req.query("catalog")
+          ? [...extraApps, ...apps]
+          : apps;
       c.set("runtime" as never, { apps: name ? catalog.map((app) => (app.id === "mail" ? { ...app, name } : app)) : catalog } as never);
       // A missing last name shows the profile notice above the app.
       c.set("user" as never, (c.req.query("notice") ? { ...person, sn: "" } : person) as never);
@@ -354,6 +382,12 @@ let browser: Browser;
 let css: string;
 let controller: string;
 const spies: { mockRestore(): void }[] = [];
+// The shell geometry suites measure the icon app bar, which the names setting keeps at every width when it is off;
+// rail-names.browser.test.ts turns it on.
+let railNames = false;
+export const setRailNames = (on: boolean) => {
+  railNames = on;
+};
 // Register hooks in each importing test file; Bun caches this module across files.
 // Keeping hooks at module scope would leave the second file with a closed browser.
 /**
@@ -366,7 +400,7 @@ export function installCompactShellHarness(launch: typeof launchBrowser) {
   setDefaultTimeout(30_000);
   beforeAll(async () => {
     spies.push(
-      spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+      spyOn(railSnapshot, "readRailSnapshot").mockImplementation(async () => ({ ...defaultRailPreferences(), showNames: railNames })),
       spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
       spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
     );

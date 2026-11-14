@@ -74,7 +74,9 @@ else
       dom.root,
     );
     try {
-      // DataTable requests more when its end is visible in the DOM harness.
+      // The DOM harness has no layout, so nothing comes within reach: the reader asks with the table's Load more button.
+      await flush();
+      dom.root.querySelector<HTMLButtonElement>(".k2b-load-more button")!.click();
       await flush();
       expect(requests).toHaveLength(1);
       expect(requests[0]!.searchParams.get("cursor")).toBe("old-cursor");

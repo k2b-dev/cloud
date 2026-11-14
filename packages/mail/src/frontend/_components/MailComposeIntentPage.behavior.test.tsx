@@ -3,7 +3,7 @@ import { commandPath } from "@k2b/cloud/contracts";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
-import type { MailDraftSeed, SenderIdentity } from "../../contracts";
+import type { MailDraft, MailDraftSeed, SenderIdentity } from "../../contracts";
 
 if (!isServer)
   test("contact Commands read with current authority, never create a draft, and recover from denied access", async () => {
@@ -269,6 +269,7 @@ const intentSeed = (mailboxId: string, senderIdentityId: string): MailDraftSeed 
   derivedFromMessageId: null,
   derivationKind: null,
   content: {
+    quoteSource: null,
     senderIdentityId,
     to: [{ name: null, address: "ada@example.test" }],
     cc: [],
@@ -281,8 +282,43 @@ const intentSeed = (mailboxId: string, senderIdentityId: string): MailDraftSeed 
     requestReadReceipt: false,
   },
   attachments: [],
-  origin: { kind: "compose", input: { senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" } },
+  origin: { kind: "compose", input: { quoteSource: null, senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" } },
   createdAt: "2026-11-06T10:00:00.000Z",
+});
+
+/** The draft the server materializes from the seed; Mail then opens it as a window (`?draft=`). */
+const materializedDraft = (mailboxId: string, senderIdentityId: string): MailDraft => ({
+  id: "Drf0New1",
+  mailboxId,
+  conversationId: null,
+  intent: "new",
+  sourceMessageId: null,
+  derivedFromMessageId: null,
+  derivationKind: null,
+  quoteSource: null,
+  senderIdentityId,
+  to: [{ name: null, address: "ada@example.test" }],
+  cc: [],
+  bcc: [],
+  subject: "Hello",
+  body: "",
+  format: "markdown",
+  priority: "normal",
+  requestDeliveryReceipt: false,
+  requestReadReceipt: false,
+  attachments: [],
+  suggestion: false,
+  suggestedBy: null,
+  createdBy: { kind: "user", userId: "Usr001" },
+  lastEditedBy: { kind: "user", userId: "Usr001" },
+  lastEditedByDisplayName: "Reader",
+  recoveryCopyCount: 0,
+  revision: 1,
+  state: "draft",
+  deliveryClass: "normal",
+  signatureTemplateId: null,
+  createdAt: "2026-11-06T10:00:00.000Z",
+  updatedAt: "2026-11-06T10:00:00.000Z",
 });
 
 /** Renders the compose page against a fake Mail API and records each request and the final redirect. */
@@ -337,6 +373,10 @@ const renderIntentPage = async (
           ? Response.json({ code: "INTERNAL", message: "Mail is unavailable" }, { status: api.seedStatus })
           : Response.json(intentSeed(mailboxId, senderIdentityId));
       }
+      if (url.endsWith("/draft-seeds/materialize")) {
+        const mailboxId = url.split("/").at(-3)!;
+        return Response.json(materializedDraft(mailboxId, (body as { draft: { senderIdentityId: string } }).draft.senderIdentityId));
+      }
       throw new Error(`Unexpected request: ${url}`);
     },
     { preconnect: originalFetch.preconnect },
@@ -371,6 +411,7 @@ const renderIntentPage = async (
     releaseSeed,
     waitFor,
     seedPosts: () => requests.filter((request) => request.url.endsWith("/draft-seeds")),
+    materializePosts: () => requests.filter((request) => request.url.endsWith("/draft-seeds/materialize")),
     labels: () => Array.from(dom.root.querySelectorAll("label")).map((label) => label.textContent),
     button: (name: string) =>
       Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes(name)),
@@ -405,13 +446,15 @@ if (!isServer)
 
       page.releaseSeed();
       await page.waitFor(() => page.replace.mock.calls.length === 1);
-      // Replacing the history entry keeps the intent page out of Back and makes a reload reopen the same local draft.
-      const destination = new URL(String(page.replace.mock.calls[0]![0]), "http://localhost");
-      expect(destination.pathname).toBe("/app/mail/mail01/compose/local/20000000-0000-4000-8000-000000000002");
-      expect(destination.searchParams.get("return")).toBe("/app/contacts?contact=cont01");
+      // The draft exists before Mail opens it as a window (`?draft=`). Replacing the history entry keeps the intent page
+      // out of Back, so Back from Mail returns to the origin.
+      expect(page.materializePosts()).toHaveLength(1);
+      expect(page.materializePosts()[0]!.body).toMatchObject({ idempotencyKey: "20000000-0000-4000-8000-000000000002" });
+      expect(String(page.replace.mock.calls[0]![0])).toBe("/app/mail/mail01?draft=Drf0New1");
       expect(localStorage.getItem("cloud:mail:last-sender:mail01")).toBe("Send01");
       await Bun.sleep(20);
       expect(page.seedPosts()).toHaveLength(1);
+      expect(page.materializePosts()).toHaveLength(1);
     } finally {
       page.cleanup();
     }
@@ -454,8 +497,10 @@ if (!isServer)
       page.releaseSeed();
       await page.waitFor(() => page.replace.mock.calls.length === 1);
       expect(page.seedPosts()).toHaveLength(1);
+      expect(page.materializePosts()).toHaveLength(1);
       expect(page.seedPosts()[0]!.body).toMatchObject({ origin: { input: { senderIdentityId: "Send02" } } });
-      expect(new URL(String(page.replace.mock.calls[0]![0]), "http://localhost").searchParams.get("return")).toBe("/app/mail/mail01");
+      expect(page.materializePosts()[0]!.body).toMatchObject({ draft: { senderIdentityId: "Send02" } });
+      expect(String(page.replace.mock.calls[0]![0])).toBe("/app/mail/mail01?draft=Drf0New1");
     } finally {
       page.cleanup();
     }

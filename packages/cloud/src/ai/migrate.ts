@@ -5,6 +5,7 @@ import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
+import { migrateAiNextMessages } from "./next-message-store";
 import { migrateAiQuotas } from "./quotas-migrate";
 import { withAiShortId } from "./short-id";
 
@@ -2259,6 +2260,18 @@ export const migrateCloudAi = async (): Promise<void> => {
         gen_random_uuid(), row_data.created_by_user_id, row_data.short_id, project_short,
         ARRAY['conversation-list', 'conversation-detail']::text[]
       );
+      -- Domain access changes use the existing Core live outbox. No output/message
+      -- update emits this hint: only changes that can end an admitted stream.
+      IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND (
+        OLD.archived_at IS DISTINCT FROM NEW.archived_at
+        OR OLD.created_by_user_id IS DISTINCT FROM NEW.created_by_user_id
+      )) THEN
+        PERFORM events.enqueue(
+          gen_random_uuid(), 'core', 'live', 'ai.conversation:' || row_data.id::text,
+          jsonb_build_object('v', 1, 'k', 'ai.conversation:' || row_data.id::text, 'a', true),
+          'ai.conversation.access:' || row_data.id::text
+        );
+      END IF;
       RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
     END
     $$ LANGUAGE plpgsql
@@ -2640,6 +2653,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`CREATE INDEX IF NOT EXISTS idx_ai_messages_submitted_draft
     ON ai.messages (conversation_id, (meta->>'submittedDraftRevision')) WHERE role = 'user'`.simple();
   console.log("  ✓ ai conversation tables");
+  await migrateAiNextMessages();
 };
 
 const backfillApprovalRequests = async (): Promise<void> => {
@@ -2763,6 +2777,21 @@ export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promis
       updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL, UNIQUE(model_id,slug),
       CHECK(id = CASE WHEN slug = 'standard' THEN model_id ELSE model_id || ':' || slug END)
     )`;
+  // Older services parse to_jsonb(ai.models) strictly, so new metadata lives separately.
+  await db`CREATE TABLE IF NOT EXISTS ai.model_output_limits (
+      model_id TEXT PRIMARY KEY REFERENCES ai.models(id) ON DELETE CASCADE,
+      output_token_limit INTEGER NOT NULL CHECK(output_token_limit > 0)
+    )`;
+  // Repair databases that ran the unreleased column migration, atomically preserving its values.
+  await db`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ai' AND table_name='models' AND column_name='output_token_limit') THEN
+        LOCK TABLE ai.models IN ACCESS EXCLUSIVE MODE;
+        INSERT INTO ai.model_output_limits(model_id,output_token_limit)
+          SELECT id,output_token_limit FROM ai.models WHERE output_token_limit IS NOT NULL
+          ON CONFLICT(model_id) DO UPDATE SET output_token_limit=EXCLUDED.output_token_limit;
+        ALTER TABLE ai.models DROP COLUMN output_token_limit;
+      END IF;
+    END $$`;
   await db`CREATE TABLE IF NOT EXISTS ai.model_assignments (
       slot TEXT PRIMARY KEY CHECK(slot IN ('fast','balanced','thorough','maximum','vision','audio','liveAudio','decision')),
       variant_id TEXT REFERENCES ai.model_variants(id), revision INTEGER NOT NULL DEFAULT 1,
