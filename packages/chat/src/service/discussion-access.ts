@@ -2,18 +2,19 @@ import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/cloud/server";
 import type { z } from "zod";
 import type { DiscussionItemSchema } from "../capability-contracts";
-import { type ChatContext, messages } from "./access";
+import { type ChatContext, credentialScopeLimit, messages } from "./access";
 import { providerFor } from "./discussion-read";
 import { readResource } from "./resource-access";
 
 /** Check the credential ceiling before looking up any message or owner. */
 export const checkDiscussionCredentialScope = (context: CapabilityExecutionContext, write = false) => {
-  const scopes =
-    context.actor.kind === "service_account"
-      ? context.actor.scopes
-      : context.authority?.credentialKind === "oauth" || context.actor.delegation?.credentialKind === "oauth"
+  const scopes = credentialScopeLimit({
+    actor: context.actor,
+    credentialScopes:
+      context.authority?.credentialKind === "oauth" || context.actor.delegation?.credentialKind === "oauth"
         ? (context.authority?.scopes ?? [])
-        : undefined;
+        : undefined,
+  });
   if (scopes && !scopes.some((scope) => scope === "admin" || scope === "write" || (!write && scope === "read")))
     return fail(err.forbidden(messages(context).forbidden));
   return ok(scopes);

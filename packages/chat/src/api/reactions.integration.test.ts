@@ -169,7 +169,7 @@ suiteFor(
     expect(participants).toEqual([]);
   });
 
-  test("service and agent credentials require write scope but only a read grant; delegated read tokens cannot react", async () => {
+  test("service and agent credentials require write scope but only a read grant; personal keys follow the person's grants", async () => {
     const owner = await f.person();
     const chat = await f.fixture(owner);
     const message = await send(owner, chat.shortId);
@@ -194,7 +194,7 @@ suiteFor(
         expect((await f.request(headers, path(chat.shortId, message.id))).status).toBe(200);
       }
     }
-    expect((await f.request(await f.credential(owner), path(chat.shortId, message.id, "👍"), "PUT")).status).toBe(403);
+    expect((await f.request(await f.credential(owner), path(chat.shortId, message.id, "👍"), "PUT")).status).toBe(204);
   });
 
   test("a reactor whose account was deleted is named a former account and still counts", async () => {

@@ -43,6 +43,13 @@ attachment's download and shared-list entry require the current container and
 item visibility of its message.
 
 System conversations have `kind: "system"` and a container `resource` ref.
+
+For sending, editing, deleting and reacting, personal API keys have the same
+access as the person's browser session, without a scope cap. Edit and delete
+require write access; readers, including guests and channel audiences, may
+react. OAuth tokens and machine credentials additionally require `write` or
+`admin` scope for these mutations. See [Resource authorization](/en/docs/identity/authorization#limit-resource-bound-credentials).
+
 Their message views include the same viewer-specific `reactions` as ordinary
 chat messages. Reaction live events carry a refresh hint on the item thread
 key; clients read the current reactions over HTTP.
@@ -282,7 +289,7 @@ Chat uses the public capability transport to Core with the requesting person's
 cookie or account credential. Core exchanges that credential for a restricted
 invocation; Chat sends credentials only to Core. The standard view supplies
 `read`, `write`, or `admin` permission.
-Service accounts and agents retain their existing scope and resource caps.
+Machine accounts retain their scope and resource caps.
 
 Valkey stores decisions for 60 seconds, separately for each principal,
 credential scope, resource, and display locale. Live authorization uses a

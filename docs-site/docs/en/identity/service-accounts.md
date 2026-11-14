@@ -100,9 +100,13 @@ includes them, while CLI and administrator API lists always include them.
 
 New **Full access** keys act as their account. Send `access: "full"` and omit
 `scopes`; issuance stores `read`, `write`, and `admin`. The lower of the
-account's grant and the key's scope applies on each resource. A key can also
-enter applications open to every signed-in account and create resources where
-the account is eligible.
+account's grant and the key's scope applies on each resource. A machine key can
+also enter applications open to every signed-in account and create resources
+where the account is eligible.
+
+These scope limits apply to machine accounts.
+[Personal API keys](/en/docs/identity/authorization#limit-resource-bound-credentials)
+use the person's grants without a scope cap.
 
 The API still accepts explicit `scopes` and stores them unchanged; an empty
 list is refused with `400`. This input is deprecated for new keys: omit it. Issuing a key never
