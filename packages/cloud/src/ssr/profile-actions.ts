@@ -61,11 +61,10 @@ export function createSharedWorkstationSwitch(userId: string | undefined, locale
           detail: { userId, idle: state.sharedWorkstation ? state.idle : null },
         }),
       );
-      toast.success(
-        state.sharedWorkstation && state.idle
-          ? messages().marked({ minutes: Math.round(state.idle.timeoutSeconds / 60) })
-          : messages().unmarked,
-      );
+      // The title names the new state in a few words; the message under it says what that means.
+      if (state.sharedWorkstation && state.idle)
+        toast.success(messages().marked({ minutes: Math.round(state.idle.timeoutSeconds / 60) }), { title: messages().markedTitle });
+      else toast.success(messages().unmarked);
     } catch {
       setShared(!next);
       toast.error(messages().failed);

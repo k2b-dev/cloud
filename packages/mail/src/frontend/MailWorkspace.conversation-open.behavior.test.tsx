@@ -628,6 +628,8 @@ describe("Mail workspace conversation open", () => {
     release();
     await until(() => routeRequests.length === 2, "the catch-up refresh");
     await until(() => dom.document.body.textContent?.includes("Could not refresh this mailbox yet") === true, "the failure notice");
+    // A short title names the state; the explanation is the message under it, not a second headline.
+    expect([...dom.document.querySelectorAll(".k2b-toast__title")].map((title) => title.textContent)).toContain("Mailbox not refreshed");
     expect(shows(rowId(10))).toBe(true);
   });
 
