@@ -112,6 +112,21 @@ describe("ChatWorkspace interactions", () => {
     return;
   }
   let dom: DomTestHarness;
+  const untilAnchor = (selector: string) =>
+    new Promise<HTMLAnchorElement>((resolve, reject) => {
+      const ready = () => {
+        const link = dom.root.querySelector<HTMLAnchorElement>(selector);
+        const error = dom.root.querySelector('.chat-deferred-feedback [role="alert"]');
+        if (!link && !error) return;
+        observer.disconnect();
+        if (link) resolve(link);
+        else reject(new Error(error?.textContent ?? "Deferred chat view failed"));
+      };
+      const observer = new MutationObserver(ready);
+      observer.observe(dom.root, { childList: true, subtree: true });
+      ready();
+    });
+
   let dispose = () => {};
   const originalFetch = globalThis.fetch;
   const originalWebSocket = Object.getOwnPropertyDescriptor(globalThis, "WebSocket");
@@ -468,10 +483,11 @@ describe("ChatWorkspace interactions", () => {
     expect(backToThreads?.getAttribute("href")).toBe("/pwa/chat/c/Chat01/threads");
     const length = dom.window.history.length;
     backToThreads!.click();
-    await settle();
+    // The URL commits before the deferred directory module renders its Back link.
+    // Observe the destination itself; a cold import can outlast any fixed pause.
+    const backToChats = await untilAnchor(".chat-threads-page .chat-conversation__back a");
     expect(dom.window.location.pathname).toBe("/pwa/chat/c/Chat01/threads");
     expect(dom.window.history.length).toBe(length);
-    const backToChats = dom.root.querySelector<HTMLAnchorElement>(".chat-threads-page .chat-conversation__back a");
     expect(backToChats?.getAttribute("href")).toBe("/pwa/chat");
     expect(backToChats?.getAttribute("aria-label")).toBe("Back to chats, 40 unread");
     expect(backToChats?.querySelector(".chat-conversation__back-count")?.textContent).toBe("40");
@@ -547,7 +563,9 @@ describe("ChatWorkspace interactions", () => {
           const directory = `${base}/c/Chat01/threads`;
           expect(dom.window.location.pathname).toBe(phone ? directory : `${base}/c/Chat01`);
           if (phone) {
-            dom.root.querySelector<HTMLAnchorElement>(`.chat-threads-page__list a[href="${base}/c/Chat01"]`)!.click();
+            const thread = await untilAnchor(".chat-threads-page__list a");
+            expect(thread.getAttribute("href")).toBe(`${base}/c/Chat01`);
+            thread.click();
             await settle();
           }
           expect(dom.window.location.pathname).toBe(`${base}/c/Chat01`);
@@ -619,10 +637,11 @@ describe("ChatWorkspace interactions", () => {
         expect(back.getAttribute("href")).toBe("/pwa/chat/c/Chat01/threads");
         expect(back.getAttribute("aria-label")).toBe("Back to the threads");
         back.click();
-        await settle();
+        const backToChats = await untilAnchor(".chat-threads-page .chat-conversation__back a");
         expect(dom.window.location.pathname + dom.window.location.search).toBe("/pwa/chat/c/Chat01/threads");
         expect(dom.window.history.length).toBe(length);
-        dom.root.querySelector<HTMLAnchorElement>(".chat-threads-page .chat-conversation__back a")!.click();
+        expect(backToChats.getAttribute("href")).toBe("/pwa/chat");
+        backToChats.click();
         await settle();
         expect(dom.window.location.pathname).toBe("/pwa/chat");
         expect(dom.window.history.length).toBe(length);
