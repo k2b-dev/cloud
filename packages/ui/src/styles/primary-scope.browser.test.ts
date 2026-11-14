@@ -492,12 +492,33 @@ for (const theme of ["light", "dark"] as const) {
           const area = `[data-demo-section="${section}"] .ui-demo-card__preview`;
           await page.evaluate((demo) => document.dispatchEvent(new CustomEvent("primary-scope-demo", { detail: demo })), { section, slug });
           await page.locator(area).first().waitFor();
-          if (section === "input" && slug === "emoji-picker") await page.locator(`${area} .k2b-emoji-picker__option`).last().waitFor();
+          // The emoji catalogue repeats one option ~1,800 times, each a roving focus target; focusing and reading every
+          // one costs most of a WebKit test budget (#3373). The picker's own chrome (search, skin tones, the category
+          // toolbar, the preview) and its first two sections (recent and the first group, with the active option) carry
+          // every colour role it has, so the audit reads those and leaves the identical rest of the catalogue.
+          const emoji = section === "input" && slug === "emoji-picker";
+          const scope = emoji ? `${area}, ${area} *:not(.k2b-emoji-picker__section:nth-child(n + 3) *)` : `${area}, ${area} *`;
+          if (emoji) await page.locator(`${area} .k2b-emoji-picker__section:nth-child(2) .k2b-emoji-picker__option`).first().waitFor();
           // Establish keyboard modality; focus() keeps focus-visible semantics
           // and lets roving/composite controls choose their actual focus target.
           await page.keyboard.press("Tab");
           await settled(page);
-          expect(await page.evaluate(auditPrimaryColors, { selector: `${area}, ${area} *`, focus: true })).toEqual([]);
+          if (emoji) {
+            const covered = await page.evaluate((scope) => {
+              const audited = new Set(document.querySelectorAll(scope));
+              const all = (selector: string) => [...document.querySelectorAll(selector)].every((node) => audited.has(node));
+              return {
+                size: audited.size,
+                chrome: all(".k2b-emoji-picker__search *, .k2b-emoji-picker__tones *, .k2b-emoji-picker__groups *"),
+                active: [...document.querySelectorAll(".k2b-emoji-picker__option[aria-selected='true']")].some((node) => audited.has(node)),
+              };
+            }, scope);
+            expect(covered.chrome).toBe(true);
+            expect(covered.active).toBe(true);
+            // Guard: the audit stays a bounded slice instead of the whole catalogue (~2,000 nodes).
+            expect(covered.size).toBeLessThan(600);
+          }
+          expect(await page.evaluate(auditPrimaryColors, { selector: scope, focus: true })).toEqual([]);
           if (section === "ai" && slug === "chat") {
             // The person's own message stays neutral grey; the scope colours actions, not their words.
             const bubble = page.locator(`${area} .k2b-chat-message[data-role="user"] .k2b-chat-message__bubble`).first();
