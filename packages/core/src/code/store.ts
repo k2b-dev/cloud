@@ -32,6 +32,7 @@ import {
 } from "./contracts";
 import { createCodeServiceAccount } from "./service-account";
 import { CODE_SETTINGS, codeSettings } from "./settings";
+import { requireCodeSourcePermission } from "./source-access";
 import { codeVersionMessages } from "./version-messages";
 
 /** C8/C13 pass their transaction for domain-row operations; admission settings use the registered settings API. */
@@ -387,7 +388,8 @@ export const readCodeVersion = async (
   },
   context: CodeContext,
 ) => {
-  await readCode(input.codeId, context);
+  const { code } = await readCode(input.codeId, context);
+  if (input.content?.kind === "source" || input.content?.kind === "bundle") await requireCodeSourcePermission(code, context);
   const [row] = await sql<VersionRow[]>`SELECT * FROM code.versions WHERE code_id = ${input.codeId} AND id = ${input.versionId}::uuid`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code version not found.");
   let text: string | undefined;
@@ -614,6 +616,8 @@ export const finishCodeCall = async (
     state: "succeeded" | "failed";
     result: CodeCall["result"];
     refusalKind?: CodeCallRefusalKind | null;
+    replayed?: boolean;
+    confirmedEffect?: boolean;
     endedAt: Date;
     receiptTransactionId?: string;
   },
@@ -621,15 +625,27 @@ export const finishCodeCall = async (
 ): Promise<void> => {
   // Match settlement's run-before-call lock order, including late authoritative results.
   let encoded: string;
+  let storable = true;
   try {
     encoded = jsonText(input.result);
   } catch (error) {
     if (!(error instanceof CodeDataError)) throw error;
+    storable = false;
     encoded = jsonText({ code: "code_result_not_storable", message: error.message });
   }
   // Postgres json preserves exact text, including numeric exponents and escaped NUL.
   const size = bytes(encoded);
   const stored = size > CODE_RESULT_STORAGE_BYTES ? jsonText({ code: "code_result_exceeds_capability_contract", bytes: size }) : encoded;
+  const confirmed =
+    input.confirmedEffect === true &&
+    input.state === "succeeded" &&
+    !input.replayed &&
+    storable &&
+    size <= CODE_RESULT_STORAGE_BYTES &&
+    input.result !== null &&
+    typeof input.result === "object" &&
+    !Array.isArray(input.result) &&
+    input.result.ok === true;
   const refusalKind = input.state === "failed" ? (input.refusalKind ?? null) : null;
   const [result] = await db<{ count: number; receipt_committed: boolean }[]>`
     WITH run AS MATERIALIZED (SELECT id FROM code.runs WHERE id=${input.runId}::uuid FOR UPDATE),
@@ -637,12 +653,15 @@ export const finishCodeCall = async (
       SELECT ${input.receiptTransactionId ?? null}::xid8 IS NULL
         OR pg_xact_status(${input.receiptTransactionId ?? null}::xid8)='committed' AS committed
     ), completed AS (
-      UPDATE code.calls SET refusal_kind=${refusalKind},state=${input.state},result=${stored}::text::json,ended_at=${input.endedAt}
+      UPDATE code.calls SET refusal_kind=${refusalKind},state=${input.state},result=${stored}::text::json,ended_at=${input.endedAt},
+        replayed=${input.replayed ?? false},confirmed_effect=${confirmed} AND kind='action'
       FROM run,receipt WHERE receipt.committed AND run_id=run.id AND ordinal=${input.ordinal} AND state IN ('running','uncertain')
       RETURNING run_id,ordinal
     ), refused AS (
-      UPDATE code.runs SET first_refused_call_ordinal=LEAST(COALESCE(first_refused_call_ordinal,completed.ordinal),completed.ordinal)
-      FROM completed WHERE code.runs.id=completed.run_id AND ${refusalKind}::text='target_refused'
+      UPDATE code.runs SET first_refused_call_ordinal=CASE WHEN ${refusalKind}::text='target_refused'
+          THEN LEAST(COALESCE(first_refused_call_ordinal,completed.ordinal),completed.ordinal) ELSE first_refused_call_ordinal END,
+        effects_recorded=CASE WHEN ${confirmed} AND ended_at IS NOT NULL THEN FALSE ELSE effects_recorded END
+      FROM completed WHERE code.runs.id=completed.run_id AND (${refusalKind}::text='target_refused' OR (${confirmed} AND ended_at IS NOT NULL))
     ) SELECT count(*)::int AS count,(SELECT committed FROM receipt) AS receipt_committed FROM completed`;
   if (result && !result.receipt_committed) throw new CodeReceiptNotCommittedError();
   if (result?.count !== 1) throw new CodeDataError("CONFLICT", "Call is missing or already finished.");

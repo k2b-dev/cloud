@@ -267,7 +267,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "code.version.read": {
           title: "Code-Version lesen",
-          description: "Liest unveränderliche Versionen und Quelltext, Bundle oder Manifest in Teilen.",
+          description: "Liest Versionsmetadaten und das Manifest; Quelltext und Bundle sind nur für Bearbeitende lesbar.",
           input: {
             codeId: "Stabile Code-ID aus core.code.list oder core.code.read.",
             versionId: "UUID der unveränderlichen Version dieses Codes.",
@@ -277,6 +277,23 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             offset: "Position in UTF-16-Codeeinheiten: nullbasiert oder nextOffset des vorherigen Abschnitts.",
             length: "Gewünschte Anzahl an UTF-16-Codeeinheiten, höchstens 16.384; ein einzelnes Surrogatpaar kann zwei Einheiten belegen.",
           },
+        },
+        "code.source.tab": {
+          title: "Tab Code lesen",
+          description:
+            "Liest für Bearbeitende den Quelltext der eingeschalteten Version, einen gewählten Unterschied und die Versionsdaten in begrenzten Abschnitten.",
+        },
+        "code.run.words": {
+          title: "Code-Lauf in Worten lesen",
+          description: "Liest bestätigte Beobachtungen und den übersetzten Fehlgrund ohne private Eingaben oder Ausgaben.",
+        },
+        "code.activity.words": {
+          title: "Code-Wirkungen in Worten lesen",
+          description: "Liest bestätigte Aktionen der Woche, letzte Ergebnisse und den begrenzten Zeitstrahl eines Tages.",
+        },
+        "code.version.words": {
+          title: "Code-Version in Worten lesen",
+          description: "Liest übersetzte Fakten und getrennt markierte Modelltexte mit Zielnamen und Links, die diese Person lesen darf.",
         },
         "code.run.list": {
           title: "Code-Läufe auflisten",

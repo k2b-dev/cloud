@@ -21,7 +21,7 @@ number of open Code-version approvals for the signed-in Cloud administrator.
 | Section | What it shows | Source of truth |
 | --- | --- | --- |
 | Approvals | Versions that wait for a Cloud administrator, and recently decided versions | [Code versions](/en/docs/platform/code-versions) |
-| Code in this Cloud | Every Code with owner, status and last run. A resource owner shows the name its app's reader gives you, or its ID when you may not read it | [Code data model](/en/docs/platform/code-data-model) |
+| Code in this Cloud | Every Code with owner, status and last run. A resource owner shows the name its app's reader gives you, or a generic type label when you may not read it | [Code data model](/en/docs/platform/code-data-model) |
 | Policies › Default, Groups, Effective for …, History | The policy table, group rules, the resolved table for one person, and recent changes from the audit log | [Code policy](/en/docs/platform/code-policy) |
 | Operations › Cleanup | Pending Code deletion jobs, with status, attempts and the last error | [Code lifecycle](/en/docs/platform/code-lifecycle) |
 | Operations › Limits | Registered Code execution and storage settings | [Code policy operations](/en/docs/operations/code-policy) |
@@ -167,3 +167,14 @@ under **Limits**, or use `core.code.database_unused_days` with
 `cld admin settings apply`; zero switches automatic deletion off. See
 [Code storage](/en/docs/operations/code-storage#database-lifecycle) before
 shortening the period.
+
+## Source access for automation review
+
+Source text, executable bundles and source differences require editor rights
+on the automation. This also applies to Cloud administrators using the
+ordinary Code APIs, the Code tab and `cld code pull`. Reader access continues
+to allow version metadata, checked facts and confirmed activity.
+
+The separate `readCodeAdminVersionSource` service is the sole administration
+exception: Cloud administrators may read source for approval review through
+that read-only path. It does not confer editorship or authorize CLI downloads.

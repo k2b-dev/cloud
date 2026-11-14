@@ -58,6 +58,7 @@ import { generatedFileQueries } from "./code/files/capabilities";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
+import { codeReadModelQueries } from "./code/read-model/capabilities";
 import { startCodeRun } from "./code/scheduling";
 import { codeSchedulingContracts } from "./code/scheduling-contracts";
 import { codeSecretContracts } from "./code/secret-contracts";
@@ -616,6 +617,7 @@ export const aiCapabilities = defineCapabilities({
   },
   queries: {
     ...generatedFileQueries,
+    ...codeReadModelQueries,
     "code.event.catchup.read": {
       title: "Read Code catch-up",
       description: "Read durable catch-up admission progress for one operation. Execution outcomes appear in Code runs.",
@@ -651,14 +653,15 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.version.diff.read": {
       title: "Read complete Code comparison",
-      description: "Read bounded chunks of complete CodeDiff JSON for two immutable versions. Assemble all chunks before rendering.",
+      description:
+        "Editors read bounded chunks of complete CodeDiff JSON for two immutable versions. Assemble all chunks before rendering.",
       ...codeVersionContracts.diffRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersionDiff(input, ctx)),
     },
     "code.version.diff": {
       title: "Compare Code version",
-      description: "Read full file rows against the last approved or activated version, with exact decision binding.",
+      description: "Editors read full file rows against the last approved or activated version, with exact decision binding.",
       ...codeVersionContracts.diff,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => diffCodeVersion(input, ctx)),
@@ -725,7 +728,7 @@ export const aiCapabilities = defineCapabilities({
     "code.version.read": {
       title: "Read a Code version",
       description:
-        "Read immutable version metadata or a source, bundle or manifest text chunk. Follow nextOffset to obtain the full content.",
+        "Read immutable version metadata or manifest text. Source and bundle chunks require editor rights. Follow nextOffset for full content.",
       ...codeQueryContracts.versionRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersion(input, ctx)),

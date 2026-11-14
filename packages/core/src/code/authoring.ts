@@ -28,6 +28,7 @@ import { type CodePolicyRow, codePolicyRow } from "./policy-contracts";
 import { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
 import { startCodeRun } from "./scheduling";
 import { checkCodeSecretBinding, currentCodeSecretBindings, deleteCodeSecret, listCodeSecrets, setCodeSecret } from "./secrets";
+import { requireCodeSourcePermission } from "./source-access";
 import { codeSourceHash, createCode, listCodes, readCode, readCodeRun, readCodeVersion } from "./store";
 import { simulateCode, testCode } from "./testing";
 import { codeVersionReadiness, diffCodeVersion, listCodeVersions, setCodePaused, submitCodeVersion } from "./versions";
@@ -52,6 +53,7 @@ async function versionText(
 }
 async function pull(codeId: string, context: CodeContext): Promise<CodeAuthoringData<"pull">> {
   const { code } = await readCode(codeId, context);
+  await requireCodeSourcePermission(code, context);
   const latest = (await listCodeVersions({ codeId, limit: 1 }, context)).items[0];
   const files: Record<string, string> = {};
   let entry = "code.ts";
@@ -193,7 +195,17 @@ export const codeAuthoringServices = {
     // One resource Code per page bounds source material; other owner kinds are excluded in the store.
     const page = await listCodes({ ownerKind: "resource", cursor: input.cursor, limit: 1 }, context);
     const items = [];
-    for (const code of page.items) if (code.owner.kind === "resource") items.push(await pull(code.id, context));
+    for (const code of page.items) {
+      if (code.owner.kind !== "resource") continue;
+      // Unfiltered lists intentionally skip live owner providers. Resolve editorship at the source boundary.
+      try {
+        await requireCodeSourcePermission(code, context);
+      } catch (error) {
+        if (error instanceof CodeDataError && error.code === "NOT_FOUND") continue;
+        throw error;
+      }
+      items.push(await pull(code.id, context));
+    }
     return { version: 1, items, nextCursor: page.nextCursor };
   },
   async status(input: CodeAuthoringInput<"status">, context: CodeContext): Promise<CodeAuthoringData<"status">> {

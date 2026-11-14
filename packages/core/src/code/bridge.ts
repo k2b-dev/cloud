@@ -284,6 +284,7 @@ export function createCodeBridgeHost(
     if (!deferredReceipt) ({ ordinal, manifest, receiptTransactionId } = await sql.begin((tx) => recordReceipt(tx)));
     let response: Response;
     let refusalKind: CodeBridgeRefusalKind = "bridge";
+    let replayed = false;
     let issuanceRefusal: CodeBridgeRefusal | undefined;
     let aiReservation: string | null = null;
     let aiProfiles: AiModelProfile[] = [];
@@ -391,6 +392,9 @@ export function createCodeBridgeHost(
           onRefusal: (kind) => {
             refusalKind = kind;
           },
+          onReplay: () => {
+            replayed = true;
+          },
           onFailure: (error) => {
             aiFailure = error;
           },
@@ -456,6 +460,8 @@ export function createCodeBridgeHost(
           receiptTransactionId: transactionId,
           state: success ? "succeeded" : "failed",
           result,
+          replayed,
+          confirmedEffect: call.kind === "action" && success && !replayed,
           refusalKind: success ? null : refusalKind,
           endedAt: new Date(),
         },
