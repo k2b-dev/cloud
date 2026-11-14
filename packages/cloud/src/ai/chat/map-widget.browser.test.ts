@@ -3,7 +3,7 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { mapAddress } from "../map.test-fixture";
 import { startMapBrowserFixture } from "../map-browser.test-fixture";
-import type { AiMapCommand } from "../map-contracts";
+import { type AiMapCommand, AiMapSchema } from "../map-contracts";
 
 // Each case opens the map dialog and runs a flow through it, some with a reload; one step keeps Playwright's own wait.
 setDefaultTimeout(30_000);
@@ -658,9 +658,15 @@ test("ambiguous address recovery after an overrun explains further costs before 
         exact: true,
       })
       .waitFor();
+    // Loading also detaches the candidate list; only the completed action confirms recovery.
+    const recovered = page.waitForResponse(async (response) => {
+      if (!response.url().endsWith("/action") || response.request().method() !== "POST") return false;
+      return AiMapSchema.parse((await response.json()).map).issue === undefined;
+    });
     await dialog(page)
       .getByRole("button", { name: / · Als Stopp übernehmen$/, exact: false })
       .click();
+    await recovered;
     await dialog(page).getByRole("listbox", { name: "Welcher Ort ist gemeint?" }).waitFor({ state: "detached" });
     expect(fixture.get(scenario).map.issue).toBeUndefined();
     expect(fixture.get(scenario).map.route).toBeDefined();
