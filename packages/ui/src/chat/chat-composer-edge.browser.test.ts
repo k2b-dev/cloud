@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // The assistant prompt carries the AI colour: a light plum edge at rest, the full plum edge with a soft glow outside on
 // focus, red with an error and a quiet grey edge when disabled. The edge stays 2 px in every state and the glow lies
@@ -181,7 +181,7 @@ const enter = async (page: Page, name: string, state: State) => {
   await settled(page);
   const cell = page.locator(`[data-composer="${name}"]`);
   if (state.focus) await cell.locator(FIELD).evaluate((node: HTMLElement) => node.focus({ focusVisible: true } as FocusOptions));
-  if (state.hover) await cell.locator(".k2b-chat-composer").hover({ position: { x: 4, y: 4 } });
+  if (state.hover) await hoverInPlace(cell.locator(".k2b-chat-composer"), { x: 4, y: 4 });
   await settled(page);
 };
 

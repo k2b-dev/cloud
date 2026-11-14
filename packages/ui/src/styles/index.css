@@ -51,6 +51,7 @@
   /* The assistant composer's edge: the AI border (#c4519f) at 60 % on white at rest (2.2:1 on the surface, 3.6:1
      against the accent it turns into on focus) and a soft plum glow outside while it has focus. */
   --k2b-ai-edge-rest: #dc97c5;
+  /* shadow-tokens: allow the approved glow outside the assistant composer (Composer v3), the one control exception. */
   --k2b-ai-glow: 0 0 0 4px rgb(142 27 111 / 0.1), 0 6px 22px rgb(142 27 111 / 0.12);
 
   --k2b-surface-canvas: var(--k2b-neutral-50);
@@ -399,6 +400,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-ai-on-solid: #3a0f2e;
   /* Rest edge 4.7:1 against the focus accent. */
   --k2b-ai-edge-rest: #6e3a61;
+  /* shadow-tokens: allow the approved glow outside the assistant composer (Composer v3), the one control exception. */
   --k2b-ai-glow: 0 0 0 4px rgb(240 171 220 / 0.16), 0 6px 22px rgb(240 171 220 / 0.1);
   --k2b-shadow-surface: none;
   --k2b-shadow-frame:
