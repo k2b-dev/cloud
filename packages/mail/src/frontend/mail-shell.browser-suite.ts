@@ -4680,8 +4680,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             "the arrangement is stored",
           );
 
-          // Esc leaves the large window: the draft stands in the box again, with its text.
-          await largeWindow(page).locator(".mail-large-panes .cm-content").click();
+          // Esc leaves the large window, also after a click into the preview's mail: the draft stands in the box
+          // again, with its text.
+          await panes.getByRole("tab", { name: "Preview" }).click();
+          await largeWindow(page).frameLocator(".mail-large-preview iframe").locator("body").click();
+          expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("IFRAME");
           await page.keyboard.press("Escape");
           await largeWindow(page).waitFor({ state: "detached" });
           await page.locator("[data-mail-reply-box='mail'] .cm-content", { hasText: "Saturday at 11 works." }).waitFor();
@@ -4707,7 +4710,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.locator("[data-mail-reply-box='mail'] [data-mail-write-large]").click();
           const panes = page.locator('.mail-compose-window .mail-large-panes[data-narrow="true"]');
           await panes.waitFor();
-          expect(await panes.locator('[role="tab"]').allTextContents()).toEqual(["Draft", "History", "Preview"]);
+          // The mockup's order on a phone: the draft, how it arrives, then the conversation.
+          expect(await panes.locator('[role="tab"]').allTextContents()).toEqual(["Draft", "Preview", "History"]);
           expect(await panes.locator(".k2b-panes__arrange, .k2b-panes__separator").count()).toBe(0);
           if (screenshots) {
             await settled(page);

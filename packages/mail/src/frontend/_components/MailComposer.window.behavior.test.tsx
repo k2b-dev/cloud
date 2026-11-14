@@ -446,4 +446,24 @@ describe("MailComposer in a floating window", () => {
     expect(text.textContent).toContain("Good morning");
     await waitFor(() => dom.document.activeElement === text);
   });
+
+  test("on a phone sheet the large draft shows Draft, Preview, History in the mockup's order and keeps the stored layout", async () => {
+    documentResponse = (path) => {
+      if (path.endsWith("/compose-preview"))
+        return Response.json({ html: "<p>Good morning</p>", text: "Good morning", formattingWarnings: [] });
+      if (path.includes("/conversations/Conv01/")) return Response.json({ items: [], nextCursor: null });
+      return null;
+    };
+    const { createDefaultMailComposerPanesLayout } = await import("./mail-composer-panes");
+    await mount({
+      fullscreen: () => true,
+      sheet: true,
+      panes: createDefaultMailComposerPanesLayout(),
+      draft: { ...initialDraft, intent: "reply", conversationId: "Conv01" },
+    });
+    const panes = dom.root.querySelector<HTMLElement>(".mail-large-panes")!;
+    expect([...panes.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim())).toEqual(["Draft", "Preview", "History"]);
+    expect(panes.querySelectorAll(".k2b-panes__group")).toHaveLength(1);
+    expect(dom.document.cookie).not.toContain("settings-app-mail-composer-panes");
+  });
 });

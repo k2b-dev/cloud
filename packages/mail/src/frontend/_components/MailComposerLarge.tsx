@@ -21,8 +21,20 @@ function MailLargePreview(props: {
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
+  let section!: HTMLElement;
+  // A click into the mail moves the keyboard into the frame, where Esc would no longer reach the window. The frame
+  // runs no script (no `allow-scripts`); same origin only lets the composer hear Esc there and pass it on, so Esc
+  // still makes the window smaller. A text selection in the preview stays.
+  const forwardEscape = (frame: HTMLIFrameElement) => {
+    frame.contentDocument?.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || event.isComposing) return;
+      event.preventDefault();
+      section.focus({ preventScroll: true });
+      section.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    });
+  };
   return (
-    <section class="mail-large-preview" aria-label={t().preview}>
+    <section ref={section} class="mail-large-preview" aria-label={t().preview} tabIndex={-1}>
       <p class="mail-large-preview-status" data-stale={props.error() ? "" : undefined} role="status">
         <i class={`ti ${props.error() ? "ti-alert-triangle" : "ti-mail"}`} aria-hidden="true" />
         <span class="min-w-0 flex-1 truncate">{props.error() ? t().previewStale : t().previewLive}</span>
@@ -55,11 +67,12 @@ function MailLargePreview(props: {
       >
         {(value) => (
           <div class="mail-large-preview-frame">
-            {/* Not a tab stop: inside the sandboxed frame no key, also not Esc, would reach the composer. */}
+            {/* Not a tab stop: the frame shows the mail, nothing in it takes input. */}
             <iframe
               tabIndex={-1}
               class="mail-large-preview-mail"
-              sandbox=""
+              sandbox="allow-same-origin"
+              onLoad={(event) => forwardEscape(event.currentTarget)}
               srcdoc={`${PREVIEW_POLICY}<style>body{margin:0}</style>${value().html}`}
               title={t().emailPreview}
             />
@@ -88,6 +101,8 @@ export default function MailComposerLarge(props: {
   previewPending: Accessor<boolean>;
   onRetryPreview: () => void;
   arrangeHint?: { open: boolean; onDismiss: () => void };
+  /** A phone's full-screen sheet: one row of tabs in the order Draft, Preview, History; the stored layout stays. */
+  sheet?: Accessor<boolean>;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -108,9 +123,13 @@ export default function MailComposerLarge(props: {
       ),
     },
   ]);
+  const sheetLayout = (): PanesLayout => ({
+    version: 2,
+    root: { type: "group", items: ["editor", "preview", ...(props.history ? ["history"] : [])], active: "editor" },
+  });
   return (
     <Panes
-      layout={props.layout()}
+      layout={props.sheet?.() ? sheetLayout() : props.layout()}
       onLayoutChange={props.onLayoutChange}
       defaultLayout={props.defaultLayout()}
       arrangeHint={props.arrangeHint}

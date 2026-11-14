@@ -283,6 +283,8 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
           <FloatingWindow
             title={title() || t().newMessage}
             class="mail-compose-window"
+            // "Verkleinern" as words: written large, the window holds the draft, its conversation, and the preview.
+            sizeControl="text"
             placement="dock"
             area={props.area}
             state={entry.state()}

@@ -2556,3 +2556,7 @@
   border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface-muted);
 }
+/* Esc from inside the preview frame passes through this pane on its way to the window; it shows no ring of its own. */
+.k2b-ui .mail-large-preview:focus {
+  outline: none;
+}

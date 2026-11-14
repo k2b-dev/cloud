@@ -5,6 +5,7 @@ import { navigateTo, onBeforeLeave } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query, timed } from "@k2b/stdlib/solid";
 import {
+  activatePanesItem,
   Button,
   ButtonLink,
   CheckboxCard,
@@ -2666,7 +2667,10 @@ export default function MailComposer(props: {
         (next) => {
           // Moving an element drops its focus; what had it gets it back in the new place.
           const focused = draftBlock.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
-          if (next) setInlinePreview(false);
+          if (next) {
+            setInlinePreview(false);
+            showDraftPane();
+          }
           setShownLarge(next);
           if (focused) queueMicrotask(() => focused.isConnected && focused.focus({ preventScroll: true }));
         },
@@ -2674,6 +2678,14 @@ export default function MailComposer(props: {
       ),
     );
     const largeLayout = createMemo(() => reconcileLargeMailComposerPanes(composerPanes(), Boolean(conversationId())));
+    // Written large, the draft opens in front, also in a tab layout where another pane was chosen last time; the stored
+    // arrangement stays as it is.
+    const showDraftPane = () => {
+      const current = untrack(largeLayout);
+      const next = activatePanesItem(current, "editor");
+      if (next !== current) setComposerPanes(next);
+    };
+    if (untrack(large)) showDraftPane();
     createEffect(() => setLargePreview(shownLarge() && isPanesItemVisible(largeLayout(), "preview")));
     /** "Attach to reply": the file of a message joins the draft through the same upload as a dropped file. */
     const attachFromConversation = async (attachment: { id: string; filename: string | null; contentType: string }, messageId: string) => {
@@ -3182,6 +3194,7 @@ export default function MailComposer(props: {
         />
         <Show when={shownLarge()} fallback={draftBlockElement}>
           <MailComposerLarge
+            sheet={() => Boolean(windowSlots?.sheet())}
             layout={largeLayout}
             defaultLayout={largeDefault}
             onLayoutChange={updateComposerPanes}
