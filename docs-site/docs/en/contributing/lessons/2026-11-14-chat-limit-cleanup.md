@@ -1,0 +1,6 @@
+### A cached recipient plan rescanned memberships for every person
+
+- **What happened:** Chat's 5,001st-participant integration case exceeded its unchanged cleanup hook deadline (#3304). Bulk setup and deletion statements still triggered expensive Core identity invalidations.
+- **Root cause:** Core's structural identity trigger selected users with correlated membership queries under `OR`. A generic plan cached with four users kept scanning the membership relation for each user after a 5,000-person bulk write. A controlled PostgreSQL reproduction performed 5,000 membership scans and read about 25 million membership tuples for one grant.
+- **Error class:** A correlated recipient query depends on a cached small-table plan remaining suitable after a bulk write.
+- **Guard:** Core's `room-access-events.integration.test.ts` primes the generic plan before the bulk write and limits a group grant to at most two membership scans (`pg_stat_xact_user_tables`). It also records the single client grant statement with `meterSql`; the server-side scan count catches the trigger regression. It fails with 5,000 scans on the original trigger and passes with set-based recipient unions. It also checks exact, deduplicated local, nested, and directory recipient sets. No timeout or operational budget increases.
