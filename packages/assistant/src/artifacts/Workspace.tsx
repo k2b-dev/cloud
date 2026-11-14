@@ -745,6 +745,7 @@ export function ArtifactWorkspace(props: {
         conversationId={tab.conversationId}
         url={tab.url}
         onTitle={(title) => props.controller.rename(key, title)}
+        onDismiss={() => props.controller.close(key)}
         menu={(url) => webMenu(tab, url)}
         menuLabel={w().moreNamed({ title: title(tab) })}
       />

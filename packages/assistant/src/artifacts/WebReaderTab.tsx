@@ -29,6 +29,8 @@ export function WebReaderTab(props: {
   conversationId: string;
   url: string;
   onTitle: (title: string) => void;
+  /** "Don't fetch" on the page the tab opened with: the tab closes. */
+  onDismiss: () => void;
   /** The menu "…" of the pane, with what Cloud can do with the page. */
   menu: (url: string) => DropdownItem[];
   menuLabel: string;
@@ -156,7 +158,7 @@ export function WebReaderTab(props: {
                   <i class="ti ti-info-circle" aria-hidden="true" />
                   {t().askRemember}
                 </p>
-                <Button variant="secondary" onClick={() => step(-1)} disabled={history().index === 0}>
+                <Button variant="secondary" onClick={() => (history().index === 0 ? props.onDismiss() : step(-1))}>
                   {t().dontFetch}
                 </Button>
                 <Button variant="primary" onClick={() => setConfirmed(current())}>
