@@ -16205,8 +16205,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-chat-composer__suggestion-accept:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 @media (any-pointer: coarse) and (not (any-pointer: fine)) {
