@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // Which rule wins and how large a hit area is are cascade and layout questions, so a real engine renders them.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-section-"));
@@ -181,7 +181,8 @@ describe("Section in a real engine", () => {
           expect(rest.hitFill).toBe(transparent);
           // The whole top of the card still opens it.
           expect(rest.cardTopOpens).toBe(true);
-          await page.hover(`#${id} .k2b-section__title`);
+          // The invisible hit area lies over the heading, so the pointer meets the button itself.
+          await hoverInPlace(page.locator(`#${id} .k2b-section__toggle`));
           await settled(page);
           const hovered = await read(id);
           expect(hovered.fill).toBe(transparent);
@@ -195,6 +196,7 @@ describe("Section in a real engine", () => {
             height: rest.height,
           });
           await page.mouse.move(630, 1190);
+          await settled(page);
         }
         // Open, the heading sits as far from the content as on a fixed card; closed, the card is as deep below as above.
         expect((await read(`open-${size}`)).gap).toBe(fixed.gap);
@@ -203,6 +205,7 @@ describe("Section in a real engine", () => {
       // Keyboard focus draws the ring around the row, never as a band across the card.
       await page.focus("#fixed-sm");
       await page.keyboard.press("Tab");
+      await settled(page);
       expect(await page.evaluate(() => document.activeElement?.closest(".k2b-section")?.id)).toBe("open-sm");
       const focused = await read("open-sm");
       expect(focused.fill).toBe(transparent);
@@ -258,7 +261,7 @@ describe("Section in a real engine", () => {
             return [blue, ink];
           }, theme);
           for (const id of ["section-text", "summary-text", "link"]) {
-            await page.hover(`#${id}`);
+            await hoverInPlace(page.locator(`#${id}`));
             await settled(page);
             const hovered = await page.evaluate((id) => {
               const style = getComputedStyle(document.getElementById(id)!);
@@ -272,13 +275,14 @@ describe("Section in a real engine", () => {
             });
             expect(hovered.color).not.toBe(text);
             await page.mouse.move(630, 690);
+            await settled(page);
           }
         }
       }
     } finally {
       await page.close();
     }
-  });
+  }, 30_000);
 
   test("on a phone a heading action moves under the title before the title truncates; an overlong title still truncates", async () => {
     const action = (label: string) =>

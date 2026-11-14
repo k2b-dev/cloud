@@ -170,6 +170,7 @@ describe("@k2b/ui a busy button keeps its box", () => {
         // The pointer leaves the link the previous theme hovered, so the resting ink is read at rest.
         await page.mouse.move(0, 0);
         await settle(page);
+        await settled(page);
         const ink = await link.evaluate((button) => {
           const reference = document.createElement("span");
           reference.style.color = "var(--k2b-action)";
