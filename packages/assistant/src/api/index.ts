@@ -5,6 +5,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { artifactApi } from "../artifacts/api";
 import { loadAssistantChatContextSnapshot, loadAssistantChatSources } from "../chat-context";
+import { SaveChatWorkspaceSchema } from "../chat-workspace";
+import { loadAssistantChatWorkspace, saveAssistantChatWorkspace } from "../chat-workspace-service";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
 import { loadAssistantSidebarPreview } from "../sidebar-preview";
@@ -69,6 +71,14 @@ const app = new Hono<AuthContext>()
       { timeZone: getTimeZone(c) },
     );
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Conversation")));
+  })
+  .get("/workspace/conversations/:conversationId/tabs", async (c) => {
+    const workspace = await loadAssistantChatWorkspace(auth.getAuthority(c), c.req.param("conversationId"));
+    return workspace ? respond(c, ok(workspace)) : respond(c, fail(err.notFound("Conversation")));
+  })
+  .put("/workspace/conversations/:conversationId/tabs", v("json", SaveChatWorkspaceSchema), async (c) => {
+    const result = await saveAssistantChatWorkspace(auth.getAuthority(c), c.req.param("conversationId")!, c.req.valid("json"));
+    return result ? respond(c, ok(result)) : respond(c, fail(err.notFound("Conversation")));
   })
   .get("/workspace/conversations/:conversationId/sources", v("query", ChatSourcesQuery), async (c) => {
     const user = actorUser(c);

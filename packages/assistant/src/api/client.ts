@@ -31,6 +31,7 @@ type AiEditableMemoryKind = Exclude<AiMemoryKind, "workflow">;
 
 import { api } from "@k2b/cloud/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
+import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput, SaveChatWorkspaceResult } from "../chat-workspace";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
 import type { ApiType } from ".";
@@ -315,6 +316,21 @@ export const assistantApi = {
       { init: { signal: input.signal } },
     );
     if (!response.ok) throw new Error(await readError(response, "Failed to load chat resources"));
+    return response.json();
+  },
+
+  getChatTabs: async (conversationId: string): Promise<ChatWorkspaceSnapshot> => {
+    const response = await assistantClient.workspace.conversations[":conversationId"].tabs.$get({ param: { conversationId } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load chat tabs"));
+    return response.json();
+  },
+
+  saveChatTabs: async (conversationId: string, body: SaveChatWorkspaceInput): Promise<SaveChatWorkspaceResult> => {
+    const response = await assistantClient.workspace.conversations[":conversationId"].tabs.$put({
+      param: { conversationId },
+      json: body,
+    });
+    if (!response.ok) throw new Error(await readError(response, "Failed to save chat tabs"));
     return response.json();
   },
 
