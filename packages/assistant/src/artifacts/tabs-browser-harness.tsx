@@ -3,7 +3,7 @@ import { render } from "solid-js/web";
 import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput } from "../chat-workspace";
 import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
 import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
-import { contextTab, fileTab } from "./workspace-state";
+import { contextTab, fileTab, webTab } from "./workspace-state";
 
 /**
  * The chat with its tabs as the Assistant island lays them out, for browser tests and screenshots: a fake chat on the
@@ -32,6 +32,8 @@ const controller = createArtifactWorkspace(location.href, {
   report: () => controller.open(fileTab(chatId, "/Lieferavis Kern 11-2026.txt")),
   table: () => controller.open(fileTab(chatId, "/Offene Rückfragen Kern.csv")),
   sources: () => controller.open(contextTab(chatId, "sources", "Quellen")),
+  web: () => controller.open(webTab(chatId, "https://paketdienst-beispiel.de/versand/frankreich", "Versand nach Frankreich")),
+  ask: () => controller.open(webTab(chatId, "https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon")),
 };
 const locale = new URL(location.href).searchParams.get("lang") ?? "de";
 
@@ -66,6 +68,7 @@ render(
                   onAsk={(title) => ((window as unknown as { asked?: string }).asked = title)}
                   onAdd={() => controller.open(contextTab(chatId, "files", "In diesem Chat"))}
                   arrangeHint={{ open: false, onDismiss: () => {} }}
+                  webReader
                 />
               </AppWorkspace.MainPane>
             </AppWorkspace.Main>
