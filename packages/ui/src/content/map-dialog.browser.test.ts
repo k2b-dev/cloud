@@ -176,7 +176,7 @@ test("a reload with the map in the URL opens it again once its places loaded", a
     await dialog(page).waitFor();
     expect(await page.locator(".k2b-map-dialog__place").count()).toBe(4);
     await page.keyboard.press("Escape");
-    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    await page.waitForFunction(() => !document.querySelector("dialog[open]") && !new URL(location.href).searchParams.has("map"));
     expect(new URL(page.url()).searchParams.get("conversation")).toBe("c1");
     expect(new URL(page.url()).searchParams.has("map")).toBe(false);
     await tileFocused(page);
@@ -191,6 +191,15 @@ test("an open map survives a reload in its own history entry; closing leaves no 
     await tile(page).click();
     await dialog(page).waitFor();
     expect(new URL(page.url()).searchParams.get("map")).toBe("tour-7");
+    // History traversal is asynchronous. Hold it across focus restoration to exercise a slow browser deterministically.
+    await page.addInitScript(() => {
+      const go = history.go.bind(history);
+      let resume = () => {};
+      history.go = (delta) => {
+        resume = () => go(delta);
+      };
+      Object.assign(window, { resumeMapHistory: () => resume() });
+    });
     await page.reload();
     await page.waitForFunction(() => "mountScene" in window);
     await page.evaluate(() =>
@@ -200,6 +209,10 @@ test("an open map survives a reload in its own history entry; closing leaves no 
     await page.locator(".k2b-map-dialog__close").click();
     await page.waitForFunction(() => !document.querySelector("dialog[open]"));
     await tileFocused(page);
+    expect(new URL(page.url()).searchParams.get("map")).toBe("tour-7");
+    await page.evaluate(() => (window as unknown as { resumeMapHistory: () => void }).resumeMapHistory());
+    // Focus can return before history.go() arrives. The address, rather than focus, proves that closing settled.
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has("map"));
     expect(new URL(page.url()).searchParams.get("conversation")).toBe("c1");
     expect(new URL(page.url()).searchParams.has("map")).toBe(false);
     // The resumed entry was the dialog's own: one Back leaves the page.
@@ -221,8 +234,9 @@ test("a tile that goes away takes its dialog along; the remounted tile opens one
     await page.waitForFunction(() => document.querySelectorAll("dialog[open] .k2b-map-dialog").length === 1);
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    // The address proves closing settled; animation frames do not wait for a history traversal.
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has("map"));
     // No second dialog waits behind the closed one.
-    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     expect(await page.locator("dialog[open]").count()).toBe(0);
     expect(new URL(page.url()).searchParams.has("map")).toBe(false);
   } finally {
