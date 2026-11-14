@@ -482,6 +482,7 @@ export default function QueryWorkspace(props: Props) {
       <Panes
         layout={layout()}
         onLayoutChange={setLayout}
+        defaultLayout={createQueryWorkspacePanesLayout()}
         class="h-full w-full flex-1"
         items={[
           {
