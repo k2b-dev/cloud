@@ -287,7 +287,7 @@
 .chat-list-pins { max-height: calc(15 * 3.25rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: auto; }
 /* The pins sit in the sidebar, whose own track already takes its inset; an empty second track would narrow the pinned
    rows beside the other rows. The list scrolls only past fifteen pins, when a new pin changes it anyway. */
-.k2b-ui .chat-list-pins.k2b-scroll-area { overflow-y: auto; }
+.k2b-ui .k2b-scroll-area.chat-list-pins[data-orientation] { overflow-y: auto; }
 .chat-list-filters { display: flex; gap: .25rem; padding: .25rem; }
 .chat-list-search { padding: .25rem; }
 .chat-list-error, .chat-list-status { padding: .5rem; font-size: .875rem; }
