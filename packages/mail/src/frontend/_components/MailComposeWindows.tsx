@@ -159,6 +159,7 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
         duration: delivery.undoSeconds * 1000,
         action: {
           label: t().undo,
+          variant: "ghost",
           onClick: () => {
             notice.dismiss();
             void reopenFromDelivery(submissionId);

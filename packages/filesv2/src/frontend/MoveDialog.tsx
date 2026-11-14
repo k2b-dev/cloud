@@ -1,5 +1,15 @@
-import { Button, dialogCore, InlineGuidance, PanelDialog, Placeholder, panelDialogOptions, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import {
+  BottomSheet,
+  Button,
+  bottomSheetOptions,
+  dialogCore,
+  InlineGuidance,
+  PanelDialog,
+  Placeholder,
+  panelDialogOptions,
+  useLocale,
+} from "@k2b/ui";
+import { createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import { type BaseSummary, ErrorSchema, type FileEntry } from "../contracts";
 import { baseLabel } from "./base-label";
@@ -10,7 +20,13 @@ import { useFilesMessages } from "./messages";
 export type Destination = { baseId: string; folder: string };
 type Location = { baseId: string | null; folder: string };
 
-/** Folder picker for move and copy. Storage locations are the first level of folders; another location always means a copy. */
+/** Phones, where the picker is a bottom sheet with detents, as `@k2b/ui` sheets switch. */
+const PHONE_QUERY = "(max-width: 47.999rem)";
+
+/**
+ * Folder picker for move and copy. Storage locations are the first level of folders; another location always means a
+ * copy. On a phone it is a bottom sheet that opens at half height as a preview of the folders; elsewhere a dialog.
+ */
 export function openDestinationDialog(options: {
   bases: readonly BaseSummary[];
   sourceBaseId: string;
@@ -18,8 +34,12 @@ export function openDestinationDialog(options: {
   initialFolder: string;
   copyOnly?: boolean;
 }): Promise<(Destination & { copy: boolean }) | null> {
+  const phone = typeof matchMedia === "function" && matchMedia(PHONE_QUERY).matches;
   return dialogCore
-    .open<(Destination & { copy: boolean }) | null>((close) => <DestinationPicker {...options} close={close} />, panelDialogOptions)
+    .open<(Destination & { copy: boolean }) | null>(
+      (close, context) => <DestinationPicker {...options} close={close} sheet={phone ? () => void context.requestDismiss() : undefined} />,
+      phone ? { ...bottomSheetOptions, history: true } : panelDialogOptions,
+    )
     .then((value) => value ?? null);
 }
 
@@ -30,6 +50,8 @@ function DestinationPicker(props: {
   initialFolder: string;
   copyOnly?: boolean;
   close: (value: (Destination & { copy: boolean }) | null) => void;
+  /** On a phone: the sheet's dismiss, which keeps dialogCore's dismiss path. */
+  sheet?: () => void;
 }) {
   const b = useBrowserMessages();
   const locale = useLocale();
@@ -111,8 +133,16 @@ function DestinationPicker(props: {
       </span>
     </button>
   );
-  return (
-    <PanelDialog>
+  const frame = (children: JSX.Element) =>
+    props.sheet ? (
+      <BottomSheet detents onDismiss={props.sheet}>
+        {children}
+      </BottomSheet>
+    ) : (
+      <PanelDialog>{children}</PanelDialog>
+    );
+  return frame(
+    <>
       <PanelDialog.Header title={b().chooseDestination} icon="ti ti-folder-symlink" close={() => props.close(null)} />
       <PanelDialog.Body>
         <Show when={reset()}>
@@ -223,6 +253,6 @@ function DestinationPicker(props: {
           {copy() ? b().copyHere : b().moveHere}
         </Button>
       </PanelDialog.Footer>
-    </PanelDialog>
+    </>,
   );
 }

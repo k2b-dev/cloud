@@ -152,7 +152,7 @@ export default function PwaRuntime(props: PwaRuntimeProps) {
       if (disposed) return;
       if (otherAccount && !otherAccountShown) {
         otherAccountShown = true;
-        toast(t().otherAccount({ cloud: props.cloud, name: otherAccount.name }), { duration: 0, iconClass: "ti ti-alert-triangle" });
+        toast(t().otherAccount({ cloud: props.cloud, name: otherAccount.name }), { duration: 0, variant: "warning" });
       }
       const changed = ok && Object.entries(props.builds ?? {}).some(([id, build]) => builds?.[id] !== undefined && builds[id] !== build);
       if (!changed || reloading || document.visibilityState !== "visible") return;

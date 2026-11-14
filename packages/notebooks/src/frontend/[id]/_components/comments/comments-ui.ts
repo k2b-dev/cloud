@@ -127,7 +127,7 @@ export const createCommentsUi = (options: {
         await store.reload();
         if (resolved)
           toast(options.t().resolvedToast, {
-            action: { label: options.t().undo, onClick: () => void resolve(item, false) },
+            action: { label: options.t().undo, variant: "ghost", onClick: () => void resolve(item, false) },
           });
         else setActive(item.id);
       } catch (error) {
@@ -147,6 +147,7 @@ export const createCommentsUi = (options: {
         toast(options.t().deleted, {
           action: {
             label: options.t().undo,
+            variant: "ghost",
             onClick: () =>
               void store
                 .restore(item.id)
@@ -206,7 +207,7 @@ export const createCommentsUi = (options: {
         await store.reload();
         if (active() === item.id) setActive(null);
         announce(options.t().accepted);
-        toast(options.t().accepted, { action: { label: options.t().undo, onClick: () => void undoAccept(item) } });
+        toast(options.t().accepted, { action: { label: options.t().undo, variant: "ghost", onClick: () => void undoAccept(item) } });
       } catch (error) {
         if (uncertain(error)) return void retryToast(() => void accept(item, expectedText, replyId));
         operations.delete(key);
@@ -231,7 +232,9 @@ export const createCommentsUi = (options: {
         await store.reject(item.id, rejected, replyId);
         await store.reload();
         if (rejected)
-          toast(options.t().rejected, { action: { label: options.t().undo, onClick: () => void reject(item, replyId, false) } });
+          toast(options.t().rejected, {
+            action: { label: options.t().undo, variant: "ghost", onClick: () => void reject(item, replyId, false) },
+          });
       } catch (error) {
         failed(error);
       }

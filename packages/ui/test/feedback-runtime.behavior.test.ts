@@ -482,13 +482,16 @@ describe("@k2b/ui feedback runtime", () => {
     // The card is not a live region of its own; the rail's persistent regions announce it.
     expect(card?.querySelector("[role], [aria-live]")).toBeNull();
 
-    handle.update("Publish failed", {
-      variant: "error",
-      title: "Could not publish",
-      duration: 0,
-      iconClass: "ti ti-alert-triangle",
-      action: { label: "Retry", href: "/retry" },
-    });
+    // update() reports that it changed the toast in place.
+    expect(
+      handle.update("Publish failed", {
+        variant: "error",
+        title: "Could not publish",
+        duration: 0,
+        iconClass: "ti ti-alert-triangle",
+        action: { label: "Retry", href: "/retry" },
+      }),
+    ).toBe(true);
     expect(card?.dataset.tone).toBe("danger");
     expect(card?.querySelector(".k2b-toast__icon i")?.className).toBe("ti ti-alert-triangle");
     expect(card?.textContent).toContain("Could not publish");
@@ -503,6 +506,8 @@ describe("@k2b/ui feedback runtime", () => {
     toast.dismissAll();
     await Bun.sleep(220);
     expect(rail?.childElementCount).toBe(0);
+    // A closed toast cannot carry a late result; the caller learns it and shows a new toast instead.
+    expect(handle.update("Published", { variant: "success" })).toBe(false);
 
     dom.cleanup();
   });

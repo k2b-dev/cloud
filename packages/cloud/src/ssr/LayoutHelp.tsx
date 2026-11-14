@@ -517,14 +517,16 @@ const HelpShell = (props: {
       );
       if (!(await allHelpClipboard.copy(formatHelpBundleMarkdown(documents))))
         throw allHelpClipboard.error() ?? new Error(t().copyFallback);
-      progress.dismiss();
-      toast.success(t().helpCopied);
+      // The preparing toast turns into its result in place; when the person closed it, the result is a new toast.
+      if (progress.update(t().helpCopied, { variant: "success", progress: null, duration: undefined }) === false)
+        toast.success(t().helpCopied);
     } catch (error) {
-      progress.dismiss();
-      if (!(error instanceof DOMException && error.name === "AbortError")) {
-        toast.error(t().copyAllFailed({ message: error instanceof Error ? error.message : t().copyFallback }), {
-          action: { label: t().tryAgain, onClick: () => void copyAllHelp() },
-        });
+      if (error instanceof DOMException && error.name === "AbortError") progress.dismiss();
+      else {
+        const message = t().copyAllFailed({ message: error instanceof Error ? error.message : t().copyFallback });
+        const retry = { label: t().tryAgain, onClick: () => void copyAllHelp() };
+        if (progress.update(message, { variant: "error", progress: null, duration: undefined, action: retry }) === false)
+          toast.error(message, { action: retry });
       }
     } finally {
       if (copyAllController === controller) {
