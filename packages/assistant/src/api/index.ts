@@ -1,5 +1,18 @@
-import { isConversationResourceCursor } from "@k2b/cloud/ai";
-import { type AuthContext, auth, err, fail, getLocale, getTimeZone, ok, rateLimit, respond, v } from "@k2b/cloud/server";
+import { aiConversations, isCloudAiFirecrawlConfigured, isConversationResourceCursor, readWebPageForPerson } from "@k2b/cloud/ai";
+import {
+  type AuthContext,
+  auth,
+  err,
+  fail,
+  getLocale,
+  getTimeZone,
+  ok,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  rateLimit,
+  respond,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -97,6 +110,33 @@ const app = new Hono<AuthContext>()
     );
     return page ? respond(c, ok(page)) : respond(c, fail(err.notFound("Conversation")));
   })
+  .get("/workspace/web-reader", async (c) => respond(c, ok({ available: await isCloudAiFirecrawlConfigured() })))
+  .post(
+    "/workspace/conversations/:conversationId/web-reader",
+    auth.readOnly,
+    v("json", z.object({ url: z.string().min(1).max(2_048), confirmed: z.boolean().optional() }).strict()),
+    async (c) => {
+      const user = actorUser(c);
+      if (!user) return respond(c, fail(err.forbidden("Assistant requires a user-backed actor")));
+      const conversation = await aiConversations.getConversationByShortId({
+        shortId: c.req.param("conversationId")!,
+        ownerUserId: user.id,
+      });
+      if (!conversation) return respond(c, fail(err.notFound("Conversation")));
+      setRequestTimeout(c, 120);
+      try {
+        const result = await readWebPageForPerson({
+          actor: c.get("actor"),
+          conversationId: conversation.id,
+          ...c.req.valid("json"),
+          signal: c.req.raw.signal,
+        });
+        return respond(c, ok(result));
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    },
+  )
   .get("/workspace/projects/:projectId/context", async (c) => {
     const snapshot = await loadAssistantProjectContextSnapshot(auth.getAuthority(c), c.req.param("projectId")!);
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Project")));

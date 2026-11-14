@@ -515,3 +515,4 @@ export {
   type CloudAiViewImageOutput,
   CloudAiViewImageOutputSchema,
 } from "./vision-tool";
+export { readWebPageForPerson, type WebReaderResult, WebReaderResultSchema } from "./web-reader";
