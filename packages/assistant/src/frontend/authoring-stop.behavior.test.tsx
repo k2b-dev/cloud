@@ -75,17 +75,11 @@ for (const locale of ["de", "en"]) {
       expect(lists.map(label)).toEqual(locale === "de" ? ["Erledigt", "Noch offen"] : ["Done", "Still open"]);
       expect(lists.map(items)).toEqual(
         locale === "de"
-          ? [
-              ["2 Arbeitsschritte", "Entwurf geschrieben", "Entwurf geprüft"],
-              ["Mit Beispielen testen", "Version speichern"],
-            ]
-          : [
-              ["2 work steps", "Draft written", "Draft checked"],
-              ["Test with examples", "Save a version"],
-            ],
+          ? [["Entwurf geprüft"], ["Mit Beispielen testen", "Version speichern"]]
+          : [["Draft checked"], ["Test with examples", "Save a version"]],
       );
       expect(lists.map((list) => Array.from(list.querySelectorAll("li > i"), (icon) => icon.className))).toEqual([
-        ["ti ti-check", "ti ti-check", "ti ti-check"],
+        ["ti ti-check"],
         ["ti ti-circle", "ti ti-circle"],
       ]);
       expect(dom.root.textContent).toContain(locale === "de" ? "Der Entwurf ist gespeichert." : "The draft is saved.");
@@ -131,26 +125,42 @@ for (const [name, state, reason, done, open, saved] of [
   [
     "a stop before a confirmed draft says what remains and never claims a saved result",
     { reason: "input_tokens", completedSteps: 0, drafts: 0, unchecked: 0, untested: 0, unsubmitted: 0 },
-    "More work would have made this run too costly.",
+    "More attempts would have cost too much.",
     null,
-    ["Write and check a draft"],
-    "No draft is saved yet.",
+    ["Prepare and check the draft"],
+    "No saved draft was confirmed in this pass.",
   ],
   [
     "an attempt limit with several drafts counts what each step still needs",
     { reason: "model_calls", completedSteps: 7, drafts: 2, unchecked: 1, untested: 2, unsubmitted: 2 },
-    "This run reached its maximum number of attempts.",
-    ["7 work steps", "2 drafts written"],
+    "Gustav used all attempts for this pass.",
+    null,
     ["Check 1 draft", "Test 2 drafts with examples", "Save 2 versions"],
     "The drafts are saved.",
   ],
   [
-    "a stop after the version is saved leaves only the review open",
+    "a submitted version claims no check or test the receipt cannot prove and leaves only the review open",
     { reason: "input_tokens", completedSteps: 1, drafts: 1, unchecked: 0, untested: 0, unsubmitted: 0 },
-    "More work would have made this run too costly.",
-    ["1 work step", "Draft written", "Draft checked", "Tested with examples", "Version saved"],
+    "More attempts would have cost too much.",
+    null,
     ["Review the saved result"],
     "The version is saved.",
+  ],
+  [
+    "mixed submitted and open drafts claim nothing for the submitted one",
+    { reason: "repeated_error", completedSteps: 4, drafts: 2, unchecked: 0, untested: 0, unsubmitted: 1 },
+    "The same problem remained after several attempts.",
+    null,
+    ["Save 1 version"],
+    "The drafts are saved.",
+  ],
+  [
+    "a checked and tested draft lists both as done and only the version as open",
+    { reason: "model_calls", completedSteps: 3, drafts: 1, unchecked: 0, untested: 0, unsubmitted: 1 },
+    "Gustav used all attempts for this pass.",
+    ["Draft checked", "Tested with examples"],
+    ["Save a version"],
+    "The draft is saved.",
   ],
 ] as const) {
   domTest(name, async () => {

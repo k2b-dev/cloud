@@ -936,8 +936,9 @@ At a bound, Gustav completes the current tool, skips remaining authoring tools
 in that response when the repair allowance is spent, and ends with a short
 persisted receipt in the chat. Assistant renders it in English or German as one
 notice: the reason (the same problem repeated, the attempt limit or the input
-budget), what is done (confirmed steps, written and checked drafts) and what is
-still open (checks, example tests and version saves). This summary comes from settled tool results,
+budget), what the receipt confirms as done (checks and example tests of drafts
+not yet submitted) and what is still open (checks, example tests and version
+saves), and whether a draft or version is saved. This summary comes from settled tool results,
 not model prose; a later draft edit invalidates earlier passing checks. No
 additional model call writes the notice. Saved results and the server-held
 draft remain available. The receipt describes the state at the stop, rather

@@ -126,23 +126,19 @@ describe("Gustav's authoring stop", () => {
         try {
           const de = locale === "de";
           const card = page.locator(".assistant-authoring-stop");
-          await expect(card.locator(".k2b-notice-card__title").textContent()).resolves.toBe(
-            de ? "Gustav hat angehalten" : "Gustav stopped",
-          );
-          await expect(card.locator(".k2b-notice-card__description").textContent()).resolves.toBe(
+          expect(await card.locator(".k2b-notice-card__title").textContent()).toBe(de ? "Gustav hat angehalten" : "Gustav stopped");
+          expect(await card.locator(".k2b-notice-card__description").textContent()).toBe(
             de ? "Dasselbe Problem blieb nach mehreren Versuchen." : "The same problem remained after several attempts.",
           );
           const done = page.getByRole("list", { name: de ? "Erledigt" : "Done" });
           const open = page.getByRole("list", { name: de ? "Noch offen" : "Still open" });
-          await expect(done.locator("li").allTextContents()).resolves.toEqual(
-            de ? ["2 Arbeitsschritte", "Entwurf geschrieben", "Entwurf geprüft"] : ["2 work steps", "Draft written", "Draft checked"],
-          );
-          await expect(open.locator("li").allTextContents()).resolves.toEqual(
+          expect(await done.locator("li").allTextContents()).toEqual(de ? ["Entwurf geprüft"] : ["Draft checked"]);
+          expect(await open.locator("li").allTextContents()).toEqual(
             de ? ["Mit Beispielen testen", "Version speichern"] : ["Test with examples", "Save a version"],
           );
-          expect(await done.locator("li > i.ti-check").count()).toBe(3);
+          expect(await done.locator("li > i.ti-check").count()).toBe(1);
           expect(await open.locator("li > i.ti-circle").count()).toBe(2);
-          await expect(card.locator(".assistant-authoring-stop__meta").innerText()).resolves.toBe(
+          expect(await card.locator(".assistant-authoring-stop__meta").innerText()).toBe(
             de ? "Der Entwurf ist gespeichert." : "The draft is saved.",
           );
           const button = page.getByRole("button", { name: de ? "Weiterarbeiten" : "Continue" });
@@ -215,12 +211,51 @@ describe("Gustav's authoring stop", () => {
         near(sending.button, initial.button);
 
         await page.evaluate(() => (window as unknown as { settleSend: (ok: boolean) => void }).settleSend(false));
-        await expect(page.getByRole("alert").innerText()).resolves.toBe("Das ging nicht. Versuch es noch einmal.");
+        expect(await page.getByRole("alert").innerText()).toBe("Das ging nicht. Versuch es noch einmal.");
         await settled(page);
         const failed = await boxes(page);
         near(failed.card, initial.card);
         near(failed.button, initial.button);
         expect(await button.isEnabled()).toBe(true);
+        // The recovery line reads on the warning surface: at least 4.5:1, measured from the painted colors.
+        const contrast = await page.evaluate(() => {
+          const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+          const rgb = (color: string) => {
+            canvas.clearRect(0, 0, 1, 1);
+            canvas.fillStyle = color;
+            canvas.fillRect(0, 0, 1, 1);
+            return [...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+          };
+          const luminance = (color: string) => {
+            const [r, g, b] = rgb(color).map((value) => {
+              const channel = value / 255;
+              return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+            });
+            return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+          };
+          // The card's tint over the page behind it, as painted.
+          const card = getComputedStyle(document.querySelector(".assistant-authoring-stop")!).backgroundColor;
+          for (const layer of [
+            "#fff",
+            getComputedStyle(document.documentElement).backgroundColor,
+            getComputedStyle(document.body).backgroundColor,
+          ]) {
+            canvas.fillStyle = layer;
+            canvas.fillRect(0, 0, 1, 1);
+          }
+          canvas.fillStyle = card;
+          canvas.fillRect(0, 0, 1, 1);
+          const surface = `rgb(${[...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)].join(",")})`;
+          const [light, dark] = [luminance(getComputedStyle(document.querySelector('[role="alert"]')!).color), luminance(surface)].sort(
+            (a, b) => b - a,
+          );
+          return (light! + 0.05) / (dark! + 0.05);
+        });
+        expect(contrast).toBeGreaterThanOrEqual(4.5);
+        if (shots) {
+          mkdirSync(shots, { recursive: true });
+          await page.screenshot({ path: resolve(shots, `budget-stop-failed-de-light-${width}.png`) });
+        }
 
         // The keyboard path: focus and Enter send once; the new request lands below the card.
         await button.focus();
@@ -233,7 +268,7 @@ describe("Gustav's authoring stop", () => {
         near(after.card, initial.card);
         near(after.button, initial.button);
         expect(await button.isDisabled()).toBe(true);
-        await expect(page.getByRole("alert").innerText()).resolves.toBe("");
+        expect(await page.getByRole("alert").innerText()).toBe("");
         expect(errors).toEqual([]);
       } finally {
         await close();

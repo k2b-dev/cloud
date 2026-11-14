@@ -6,17 +6,14 @@ export const assistantMessages = i18n.define({
     en: {
       authoringStopTitle: "Gustav stopped",
       authoringStopRepeated: "The same problem remained after several attempts.",
-      authoringStopAttempts: "This run reached its maximum number of attempts.",
-      authoringStopBudget: "More work would have made this run too costly.",
+      authoringStopAttempts: "Gustav used all attempts for this pass.",
+      authoringStopBudget: "More attempts would have cost too much.",
       authoringStopDoneLabel: "Done",
       authoringStopOpenLabel: "Still open",
-      authoringStopSteps: ({ steps }: { steps: number }): string => `${steps} ${steps === 1 ? "work step" : "work steps"}`,
-      authoringStopWritten: ({ drafts }: { drafts: number }): string => (drafts === 1 ? "Draft written" : `${drafts} drafts written`),
       authoringStopChecked: ({ drafts }: { drafts: number }): string => (drafts === 1 ? "Draft checked" : "Drafts checked"),
       authoringStopTested: ({ drafts }: { drafts: number }): string =>
         drafts === 1 ? "Tested with examples" : "Drafts tested with examples",
-      authoringStopVersionSaved: ({ drafts }: { drafts: number }): string => (drafts === 1 ? "Version saved" : "Versions saved"),
-      authoringStopWrite: "Write and check a draft",
+      authoringStopPrepare: "Prepare and check the draft",
       authoringStopCheck: ({ count, drafts }: { count: number; drafts: number }): string =>
         drafts === 1 ? "Check the draft" : `Check ${count} ${count === 1 ? "draft" : "drafts"}`,
       authoringStopTest: ({ count, drafts }: { count: number; drafts: number }): string =>
@@ -24,7 +21,7 @@ export const assistantMessages = i18n.define({
       authoringStopSave: ({ count, drafts }: { count: number; drafts: number }): string =>
         drafts === 1 ? "Save a version" : `Save ${count} ${count === 1 ? "version" : "versions"}`,
       authoringStopReview: "Review the saved result",
-      authoringStopNoDraft: "No draft is saved yet.",
+      authoringStopNoDraft: "No saved draft was confirmed in this pass.",
       authoringStopSaved: ({ drafts }: { drafts: number }): string => (drafts === 1 ? "The draft is saved." : "The drafts are saved."),
       authoringStopSubmitted: ({ drafts }: { drafts: number }): string =>
         drafts === 1 ? "The version is saved." : "The versions are saved.",
@@ -326,17 +323,14 @@ export const assistantMessages = i18n.define({
     de: {
       authoringStopTitle: "Gustav hat angehalten",
       authoringStopRepeated: "Dasselbe Problem blieb nach mehreren Versuchen.",
-      authoringStopAttempts: "Der Lauf hat die Höchstzahl an Versuchen erreicht.",
-      authoringStopBudget: "Mehr Arbeit hätte diesen Lauf zu teuer gemacht.",
+      authoringStopAttempts: "Gustav hat alle Versuche für diesen Durchgang genutzt.",
+      authoringStopBudget: "Weitere Versuche wären zu teuer geworden.",
       authoringStopDoneLabel: "Erledigt",
       authoringStopOpenLabel: "Noch offen",
-      authoringStopSteps: ({ steps }: { steps: number }) => `${steps} ${steps === 1 ? "Arbeitsschritt" : "Arbeitsschritte"}`,
-      authoringStopWritten: ({ drafts }: { drafts: number }) => (drafts === 1 ? "Entwurf geschrieben" : `${drafts} Entwürfe geschrieben`),
       authoringStopChecked: ({ drafts }: { drafts: number }) => (drafts === 1 ? "Entwurf geprüft" : "Entwürfe geprüft"),
       authoringStopTested: ({ drafts }: { drafts: number }) =>
         drafts === 1 ? "Mit Beispielen getestet" : "Entwürfe mit Beispielen getestet",
-      authoringStopVersionSaved: ({ drafts }: { drafts: number }) => (drafts === 1 ? "Version gespeichert" : "Versionen gespeichert"),
-      authoringStopWrite: "Entwurf schreiben und prüfen",
+      authoringStopPrepare: "Entwurf vorbereiten und prüfen",
       authoringStopCheck: ({ count, drafts }: { count: number; drafts: number }) =>
         drafts === 1 ? "Entwurf prüfen" : `${count} ${count === 1 ? "Entwurf" : "Entwürfe"} prüfen`,
       authoringStopTest: ({ count, drafts }: { count: number; drafts: number }) =>
@@ -344,7 +338,7 @@ export const assistantMessages = i18n.define({
       authoringStopSave: ({ count, drafts }: { count: number; drafts: number }) =>
         drafts === 1 ? "Version speichern" : `${count} ${count === 1 ? "Version" : "Versionen"} speichern`,
       authoringStopReview: "Gespeichertes Ergebnis ansehen",
-      authoringStopNoDraft: "Noch ist kein Entwurf gespeichert.",
+      authoringStopNoDraft: "In diesem Durchgang wurde kein gespeicherter Entwurf bestätigt.",
       authoringStopSaved: ({ drafts }: { drafts: number }) =>
         drafts === 1 ? "Der Entwurf ist gespeichert." : "Die Entwürfe sind gespeichert.",
       authoringStopSubmitted: ({ drafts }: { drafts: number }) =>

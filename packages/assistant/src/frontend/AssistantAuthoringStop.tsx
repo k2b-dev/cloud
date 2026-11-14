@@ -6,20 +6,22 @@ import { assistantMessages } from "./messages";
 
 type Messages = ReturnType<typeof assistantMessages.resolve>["t"];
 
-/** What the receipt confirms and what remains, in the order the work runs: write, check, test, save a version. */
+/**
+ * What the receipt confirms and what remains, in the order the work runs: check, test, save a version. The receipt
+ * counts a submitted draft as neither unchecked nor untested, so checks and tests count as done only while no draft of
+ * the turn is submitted. That the draft or version is saved is said once, by the quiet line below the lists.
+ */
 function authoringProgress(state: AiCodeAuthoringStop, t: Messages) {
   const drafts = state.drafts;
   const done: string[] = [];
   const open: string[] = [];
-  if (state.completedSteps > 0) done.push(t.authoringStopSteps({ steps: state.completedSteps }));
-  if (drafts === 0) return { done, open: [t.authoringStopWrite] };
-  done.push(t.authoringStopWritten({ drafts }));
-  if (state.unchecked === 0) done.push(t.authoringStopChecked({ drafts }));
-  else open.push(t.authoringStopCheck({ count: state.unchecked, drafts }));
-  if (state.untested === 0) done.push(t.authoringStopTested({ drafts }));
-  else open.push(t.authoringStopTest({ count: state.untested, drafts }));
-  if (state.unsubmitted === 0) done.push(t.authoringStopVersionSaved({ drafts }));
-  else open.push(t.authoringStopSave({ count: state.unsubmitted, drafts }));
+  if (drafts === 0) return { done, open: [t.authoringStopPrepare] };
+  const noneSubmitted = state.unsubmitted === drafts;
+  if (state.unchecked > 0) open.push(t.authoringStopCheck({ count: state.unchecked, drafts }));
+  else if (noneSubmitted) done.push(t.authoringStopChecked({ drafts }));
+  if (state.untested > 0) open.push(t.authoringStopTest({ count: state.untested, drafts }));
+  else if (noneSubmitted) done.push(t.authoringStopTested({ drafts }));
+  if (state.unsubmitted > 0) open.push(t.authoringStopSave({ count: state.unsubmitted, drafts }));
   return { done, open: open.length ? open : [t.authoringStopReview] };
 }
 
@@ -86,8 +88,6 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
     <NoticeCard
       tone="warning"
       class="ai-turn__notice assistant-authoring-stop"
-      role="status"
-      aria-live="polite"
       title={t().authoringStopTitle}
       detail={reason()}
       actions={
@@ -96,8 +96,11 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
         </Button>
       }
     >
-      {list("done", t().authoringStopDoneLabel, progress().done)}
-      {list("open", t().authoringStopOpenLabel, progress().open)}
+      {/* Only the receipt's text is a live region; the button and the recovery line announce themselves. */}
+      <div role="status" aria-live="polite">
+        {list("done", t().authoringStopDoneLabel, progress().done)}
+        {list("open", t().authoringStopOpenLabel, progress().open)}
+      </div>
       {/* The recovery line shares the saved line's space, so neither the card nor the button moves. */}
       <p class="assistant-authoring-stop__meta">
         <span data-hidden={failed() ? "" : undefined} aria-hidden={failed()}>
