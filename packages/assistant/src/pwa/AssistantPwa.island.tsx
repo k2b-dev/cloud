@@ -45,6 +45,7 @@ import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/A
 import { createAssistantDictation } from "../frontend/assistant-dictation";
 import { createAssistantLiveHub, followAssistantLive, matchesAssistantInvalidation } from "../frontend/assistant-live";
 import { audioMessages } from "../frontend/audio-messages";
+import { assistantMessages } from "../frontend/messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
 import { pwaMessages } from "./messages";
@@ -654,6 +655,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
    * Questions beyond the strip's bounded list belong to chats that wait for the person but show none of their questions
    * in the strip; "more" opens the next of them.
    */
+  const waitingMoreLabel = () => assistantMessages.resolve([locale()]).t.waitingMore({ count: waiting().more });
   const showMoreQuestions = () => {
     const listed = new Set(waiting().entries.map((question) => question.conversationId));
     const next = list()?.conversations.find((entry) => entry.runStatus === "needs_attention" && !listed.has(entry.id));
@@ -752,6 +754,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
               quiet={waitingFocus.quiet()}
               onJump={jump}
               onShowMore={showMoreQuestions}
+              more={{ label: waitingMoreLabel(), always: false }}
             />
           </Show>
           <Recording />

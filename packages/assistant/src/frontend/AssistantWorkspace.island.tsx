@@ -1523,6 +1523,8 @@ export default function AssistantWorkspace(props: Props) {
       /* Without storage the choice holds until the chat changes. */
     }
   };
+  /** A finished plan shows when it just finished here or when the person opened it in this chat. */
+  const completedPlanShown = () => showCompletedTodos() || todoChoice() === "open";
   /** "2 of 4": done tasks of those that count; cancelled ones do not. */
   const todoProgress = () => {
     const counted = todoItems().filter((item) => item.status !== "cancelled");
@@ -2278,7 +2280,7 @@ export default function AssistantWorkspace(props: Props) {
           addOpensCommands
           accessory={
             <>
-              <Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
+              <Show when={!projectComposer() && (hasOpenTodos() || completedPlanShown())}>
                 <Chat.Tasks
                   items={todoItems()}
                   open={todoOpen()}
@@ -2539,17 +2541,17 @@ export default function AssistantWorkspace(props: Props) {
                     id: "toggle-completed-tasks",
                     icon: "ti ti-list-check",
                     label: locale().startsWith("de")
-                      ? showCompletedTodos()
+                      ? completedPlanShown()
                         ? "Aufgaben ausblenden"
                         : "Aufgaben anzeigen"
-                      : showCompletedTodos()
+                      : completedPlanShown()
                         ? "Hide tasks"
                         : "Show tasks",
-                    pressed: showCompletedTodos(),
+                    pressed: completedPlanShown(),
                     onSelect: () => {
-                      const visible = !showCompletedTodos();
+                      const visible = !completedPlanShown();
                       setShowCompletedTodos(visible);
-                      if (visible) setTodoOpen(true);
+                      setTodoOpen(visible);
                     },
                   },
                 ]

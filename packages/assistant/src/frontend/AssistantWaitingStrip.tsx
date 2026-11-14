@@ -1,6 +1,6 @@
 import type { AiOpenQuestion } from "@k2b/cloud/ai";
 import { Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 import type { WaitingAttention, WaitingQuestionsView } from "./waiting-questions";
 
@@ -39,10 +39,15 @@ export function AssistantWaitingStrip(props: {
   quiet: boolean;
   onJump: (question: AiOpenQuestion) => void;
   onShowMore: () => void;
+  /**
+   * The list's last entry. Assistant opens Approvals there, always, as "See all"; the PWA goes to the next waiting
+   * chat and names it after the questions the read left out, only while there are such.
+   */
+  more?: { label: string; always: boolean };
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
-  const entries = (): Entry[] => [
+  const entryList = createMemo((): Entry[] => [
     ...props.view.attention.map((item) => ({ key: item.key, kind: item.kind, short: item.short, where: null, open: item.open })),
     ...props.view.entries.map((question) => ({
       key: question.id,
@@ -56,8 +61,20 @@ export function AssistantWaitingStrip(props: {
             : t().waitingInOtherChat,
       open: () => props.onJump(question),
     })),
-  ];
-  const shown = () => entries().slice(0, WAITING_CHIPS);
+  ]);
+  const entries = entryList;
+  const byKey = createMemo(() => new Map(entries().map((entry) => [entry.key, entry])));
+  // Chips are keyed by their entry, so a live update that leaves an entry in place keeps its element and focus.
+  const shownKeys = createMemo(
+    () =>
+      entries()
+        .slice(0, WAITING_CHIPS)
+        .map((entry) => entry.key),
+    undefined,
+    {
+      equals: (a, b) => a.length === b.length && a.every((key, index) => key === b[index]),
+    },
+  );
   /** Behind "+n": what the row leaves out, and what the server's bounded read did not send. */
   const hidden = (visible: number) => Math.max(0, entries().length - visible) + props.view.more;
   const menu = (): DropdownItem[] => {
@@ -72,7 +89,9 @@ export function AssistantWaitingStrip(props: {
     return [
       ...(here.length ? [{ sectionLabel: t().waitingHere, items: here.map(item) }] : []),
       ...(elsewhere.length ? [{ sectionLabel: t().waitingElsewhere, items: elsewhere.map(item) }] : []),
-      { items: [{ label: t().waitingAll, action: () => props.onShowMore() }] },
+      ...((props.more?.always ?? true) || props.view.more > 0
+        ? [{ items: [{ label: props.more?.label ?? t().waitingAll, action: () => props.onShowMore() }] }]
+        : []),
     ];
   };
   return (
@@ -82,29 +101,36 @@ export function AssistantWaitingStrip(props: {
         <span class="assistant-waiting__title">{t().needsAttention}</span>
       </span>
       <ul class="assistant-waiting__list">
-        <For each={shown()}>
-          {(entry) => (
-            <li class="assistant-waiting__item">
-              <button
-                type="button"
-                class="assistant-waiting__entry"
-                data-kind={entry.kind}
-                data-entry={entry.key}
-                title={entry.where ? `${entry.short} ${entry.where}` : entry.short}
-                onClick={() => entry.open()}
-              >
-                <i class={`assistant-waiting__icon ${KIND_ICON[entry.kind]}`} aria-hidden="true" />
-                <span class="assistant-waiting__short k2b-truncate-fade">{entry.short}</span>
-                <Show when={entry.where}>
-                  {(where) => (
-                    <>
-                      {/* Read as one name, "… in Team Ops"; the chip's gap sets the visible space. */}{" "}
-                      <small class="assistant-waiting__chat k2b-truncate-fade">{where()}</small>
-                    </>
-                  )}
-                </Show>
-              </button>
-            </li>
+        <For each={shownKeys()}>
+          {(key) => (
+            <Show when={byKey().get(key)}>
+              {(current) => {
+                const entry = current();
+                return (
+                  <li class="assistant-waiting__item">
+                    <button
+                      type="button"
+                      class="assistant-waiting__entry"
+                      data-kind={entry.kind}
+                      data-entry={entry.key}
+                      title={entry.where ? `${entry.short} ${entry.where}` : entry.short}
+                      onClick={() => entry.open()}
+                    >
+                      <i class={`assistant-waiting__icon ${KIND_ICON[entry.kind]}`} aria-hidden="true" />
+                      <span class="assistant-waiting__short k2b-truncate-fade">{entry.short}</span>
+                      <Show when={entry.where}>
+                        {(where) => (
+                          <>
+                            {/* Read as one name, "… in Team Ops"; the chip's gap sets the visible space. */}{" "}
+                            <small class="assistant-waiting__chat k2b-truncate-fade">{where()}</small>
+                          </>
+                        )}
+                      </Show>
+                    </button>
+                  </li>
+                );
+              }}
+            </Show>
           )}
         </For>
       </ul>
