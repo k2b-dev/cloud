@@ -38,7 +38,13 @@ never reaches a real app. Nothing is sent, saved or charged.
   operations) and lists `replies` in order: `{ "ok": true, "data": … }` or
   `{ "ok": false, "error": "not_ready" }`. Optional `input` or `refs` make a
   mock more specific; the most specific one wins, a tie fails with
-  `code_test_ambiguous_mock`. Used-up replies fail with `code_test_mock_exhausted`.
+  `code_test_ambiguous_mock`. Each reply serves exactly one call, even if
+  another call has identical input. Calls that select a mock advance its
+  reply cursor across runs in the same fixture. Successful idempotency
+  replays and calls refused before mock selection consume no new reply.
+  Used-up replies fail with `code_test_mock_exhausted`;
+  its located `detail` names the operation and the missing reply, and
+  `reason` gives the non-replayed call count and configured reply count.
 - Inputs and reply data must match the operation's schemas, otherwise the
   test fails with `code_test_invalid_input` or `code_test_invalid_fixture`.
   A fixture refusal includes `detail` on the failed call's `result`, or on
@@ -80,6 +86,92 @@ tests. Submit only after the corrected draft's tests pass. If the test
 service is unavailable, explain the blocker without claiming the tests passed.
 Keep codes, fixture paths and schema details in tool work; tell the person
 which behavior was checked and whether it passed.
+
+## Two calls need two replies
+
+This schedule calls `notebooks.notebook.browse` twice. Use one mock with two
+replies, even when both calls return the same data. There is no `repeat`
+fixture option; duplicate mock entries with the same matcher are ambiguous.
+
+<!-- check: personal -->
+```ts
+import { app, notebooks } from "@sdk";
+
+app.schedule({ cron: "0 8 * * *", name: "browse-twice" }, async () => {
+  await notebooks.notebook.browse({});
+  await notebooks.notebook.browse({});
+});
+export default app;
+```
+
+<!-- fixture -->
+```json
+{
+  "version": 1,
+  "name": "two notebook queries consume two replies",
+  "now": 1794211200000,
+  "seed": 42,
+  "mocks": [{
+    "operation": "notebooks.notebook.browse",
+    "target": null,
+    "replies": [
+      { "ok": true, "data": [] },
+      { "ok": true, "data": [] }
+    ]
+  }],
+  "runs": [{
+    "entrypoint": "browse-twice",
+    "expect": { "ok": true, "calls": [
+      { "operation": "notebooks.notebook.browse" },
+      { "operation": "notebooks.notebook.browse" }
+    ] }
+  }]
+}
+```
+
+## Form request bodies
+
+In Code, build a form body with `new URLSearchParams(values).toString()`
+([Internet requests](access.md#internet-requests-and-secrets)). Fixture JSON
+cannot run that expression: put its encoded string in the request's `body`
+and set `contentType` to `application/x-www-form-urlencoded`. A literal `+`
+in an unencoded body means a space. Here `A+B & C` becomes
+`title=A%2BB+%26+C` and the handler receives the original text.
+
+<!-- check: personal -->
+```ts
+import { app } from "@sdk";
+
+app.post("/form-echo", async c => {
+  const form = await c.req.formData();
+  return c.json({ title: String(form.get("title") ?? "") });
+});
+export default app;
+```
+
+<!-- fixture -->
+```json
+{
+  "version": 1,
+  "name": "form preserves a plus, a space and an ampersand",
+  "now": 1794211200000,
+  "seed": 42,
+  "mocks": [],
+  "runs": [{
+    "entrypoint": "route:POST:/form-echo",
+    "input": {
+      "method": "POST", "path": "/form-echo", "query": "", "params": {},
+      "contentType": "application/x-www-form-urlencoded",
+      "body": "title=A%2BB+%26+C", "user": null
+    },
+    "expect": {
+      "ok": true,
+      "value": { "kind": "json", "status": 200, "body": "{\"title\":\"A+B & C\"}" },
+      "calls": []
+    }
+  }]
+}
+```
 
 ## Test a schedule
 

@@ -41,6 +41,7 @@ export const CodeTestMockSchema = z
     /** Optional exact input/refs matcher. More specific matches take precedence; ambiguity fails. */
     input: z.json().optional(),
     refs: z.record(z.string(), CloudResourceRefSchema).optional(),
+    /** Each reply serves exactly one non-replayed call; cursors continue across runs in the same case. */
     replies: z
       .array(
         z.discriminatedUnion("ok", [
