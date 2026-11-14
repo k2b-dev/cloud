@@ -96,7 +96,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     for (const id of [authorId, reviewerId])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',true)`;
     settings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);
-    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue([]);
     ownOrigins = spyOn(origins, "readCodeOwnOrigins").mockResolvedValue(["https://cloud.example"]);
     app = spyOn(registry, "getApp").mockImplementation(async (id) => ({
       id,

@@ -3,6 +3,8 @@ import * as cloudRuntime from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
@@ -11,9 +13,14 @@ import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateEvents } from "../migrate/core/events";
 import * as access from "./access";
+import { readCodeAdminVersionSource } from "./admin";
 import { clearCodeAttentionCache, readCodeAttention } from "./attention";
+import { codeAuthoringServices } from "./authoring";
 import { type Code, codeQueryContracts } from "./contracts";
+import { loadCodeActivityReadModel, readCodeActivityData } from "./read-model/activity";
+import { loadCodeRunReadModel } from "./read-model/run";
 import { CODE_SETTINGS, codeSettings } from "./settings";
+import { loadCodeSourceTab } from "./source-tab";
 import {
   addCodeShare,
   appendCodeCall,
@@ -31,6 +38,7 @@ import {
   readCodeVersion,
   removeCodeShare,
 } from "./store";
+import { diffCodeVersion, readCodeVersionDiff } from "./versions";
 
 const ids = {
   owner: "11111111-1111-4111-8111-111111111111",
@@ -155,6 +163,72 @@ databaseSuite()("Core Code data and Query authorization", () => {
     setSystemTime();
   });
 
+  test("confirmed weekly effects settle atomically once per run, excluding replays and unknown results", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "activity", input: null });
+    await sql`UPDATE code.runs SET state='running',started_at=${fixed} WHERE id=${id}::uuid`;
+    await sql.begin(async (tx) => {
+      for (const replayed of [false, true]) {
+        const ordinal = await appendCodeCall(
+          { runId: id, kind: "action", call: { capability: "example.item.update", target: null, refs: {}, input: { requested: 900 } } },
+          tx,
+        );
+        await finishCodeCall(
+          { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, replayed, endedAt: fixed },
+          tx,
+        );
+      }
+      const ordinal = await appendCodeCall(
+        { runId: id, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: {} } },
+        tx,
+      );
+      await finishCodeCall(
+        { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, endedAt: fixed },
+        tx,
+      );
+    });
+    // An aborted settlement must not leave a weekly counter behind.
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
+        throw new Error("rollback settlement");
+      }),
+    ).rejects.toThrow("rollback settlement");
+    expect(await sql`SELECT 1 FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='activity'`).toHaveLength(0);
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
+    await sql`UPDATE code.runs SET outcome=NULL WHERE id=${id}::uuid`;
+    const [counter] = await sql<
+      { counts: Record<string, number> }[]
+    >`SELECT counts FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='activity'`;
+    expect(counter?.counts).toEqual({ "example.item.update": 1 });
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(async () => {
+        const data = await readCodeActivityData({ codeId: code.id, day: "2026-10-31", timeZone: "Europe/Berlin" });
+        expect(data.recent.length).toBeLessThanOrEqual(6);
+        expect(data.counters.find((row) => row.automationKey === "activity")?.count).toBe(1);
+        expect(data.marks.length).toBeLessThanOrEqual(200);
+      });
+      expect(statements).toHaveLength(1);
+    } finally {
+      await meter.close();
+    }
+  });
+
+  test("the complete Code activity loader has three statements for a personal Code, independent of run volume", async () => {
+    const empty = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Meter fixture" }, ctx(ids.owner));
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(() =>
+        loadCodeActivityReadModel({ codeId: empty.id, day: "2026-11-16", timeZone: "Europe/Berlin" }, ctx(ids.owner)),
+      );
+      expect(statements).toHaveLength(3);
+      const monday = await readCodeActivityData({ codeId: empty.id, day: "2026-11-16", timeZone: "Europe/Berlin" });
+      expect(monday.week.toISOString()).toBe("2026-11-16T00:00:00.000Z");
+    } finally {
+      await meter.close();
+      await sql`DELETE FROM code.codes WHERE id=${empty.id}`;
+    }
+  });
   test("forward migration is idempotent on a filled DB and preserves pre-existing accounts", async () => {
     const before = await sql`SELECT * FROM code.codes ORDER BY id`;
     // Upgrade a database that already applied the earlier pre-release four-kind constraint.
@@ -186,7 +260,8 @@ databaseSuite()("Core Code data and Query authorization", () => {
       );
       const runs = await aiCapabilities.queries["code.run.list"].run({ codeId: code.id, limit: 20 }, c);
       const run = await aiCapabilities.queries["code.run.read"].run({ codeId: code.id, runId, cursor: 0, offset: 0, length: 16384 }, c);
-      for (const response of [read, version, runs, run]) expect(response.ok).toBe(allowed);
+      for (const response of [read, runs, run]) expect(response.ok).toBe(allowed);
+      expect(version.ok).toBe(id === ids.owner || id === ids.editor);
       if (run.ok) {
         expect(codeQueryContracts.runRead.data.safeParse(run.data.data).success).toBe(true);
         if (id === ids.reader || id === ids.admin) {
@@ -209,6 +284,84 @@ databaseSuite()("Core Code data and Query authorization", () => {
       context(ids.owner),
     );
     expect(second.ok && second.data.data.contents?.calls[0]?.ordinal).toBe(2);
+  });
+  test("source, bundles, diffs and CLI pulls require editorship; only the admin review source reader is exempt", async () => {
+    for (const viewer of [ctx(ids.reader), ctx(ids.admin, true)]) {
+      expect((await readCode(code.id, viewer)).permission).toBe("reader");
+      for (const content of [{ kind: "source" as const, path: "code.ts" }, { kind: "bundle" as const }])
+        await expect(readCodeVersion({ codeId: code.id, versionId, content, offset: 0, length: 100 }, viewer)).rejects.toMatchObject({
+          code: "NOT_FOUND",
+        });
+      await expect(diffCodeVersion({ codeId: code.id, versionId }, viewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(
+        readCodeVersionDiff({ codeId: code.id, versionId, comparisonVersionId: null, offset: 0, length: 100 }, viewer),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(codeAuthoringServices.pull({ codeId: code.id }, viewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(loadCodeSourceTab({ codeId: code.id }, viewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      const show = await codeAuthoringServices.show({ codeId: code.id }, viewer);
+      expect(JSON.stringify(show)).not.toContain("export default");
+    }
+    await expect(readCodeAdminVersionSource(code.id, versionId, ctx(ids.reader))).rejects.toThrow();
+    expect((await readCodeAdminVersionSource(code.id, versionId, ctx(ids.admin, true))).files[0]?.lines[0]?.text).toContain(
+      "export default",
+    );
+    const readScopedEditor = {
+      ...ctx(ids.editor),
+      authority: { ...ctx(ids.editor).authority, credentialKind: "oauth" as const, scopes: ["core:read"] },
+    };
+    expect(
+      (
+        await readCodeVersion(
+          { codeId: code.id, versionId, content: { kind: "source", path: "code.ts" }, offset: 0, length: 100 },
+          readScopedEditor,
+        )
+      ).content?.text,
+    ).toContain("export default");
+  });
+  test("confirmed NUL results finish, late confirmations update the same weekly snapshot once", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "late-effect", input: null });
+    const ordinal = await sql.begin(async (tx) =>
+      appendCodeCall({ runId: id, kind: "action", call: { capability: "example.item.update", target: null, refs: {}, input: {} } }, tx),
+    );
+    await sql`UPDATE code.calls SET state='uncertain' WHERE run_id=${id}::uuid`;
+    await sql`UPDATE code.runs SET state='failed',ended_at=${fixed} WHERE id=${id}::uuid`;
+    await finishCodeCall(
+      { runId: id, ordinal, state: "succeeded", result: { ok: true, data: "\u0000" }, confirmedEffect: true, endedAt: fixed },
+      sql,
+    );
+    await sql`UPDATE code.runs SET outcome='late' WHERE id=${id}::uuid`;
+    const [row] = await sql<
+      { counts: Record<string, number> }[]
+    >`SELECT counts FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='late-effect'`;
+    expect(row?.counts).toEqual({ "example.item.update": 1 });
+    const [call] = await sql`SELECT state,confirmed_effect FROM code.calls WHERE run_id=${id}::uuid`;
+    expect(call).toEqual({ state: "succeeded", confirmed_effect: true });
+  });
+  test("real structured application failures distinguish refusal from unknown and hide both counts from readers", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "failure-words", input: null });
+    await sql.begin(async (tx) => {
+      for (const error of [
+        { code: "CONFLICT", status: 409 },
+        { code: "code_result_unknown", status: 503 },
+      ]) {
+        const ordinal = await appendCodeCall(
+          { runId: id, kind: "action", call: { capability: "example.item.update", target: null, refs: {}, input: {} } },
+          tx,
+        );
+        await finishCodeCall({ runId: id, ordinal, state: "failed", result: { ok: false, error }, endedAt: fixed }, tx);
+      }
+    });
+    await sql`UPDATE code.runs SET state='failed',ended_at=${fixed} WHERE id=${id}::uuid`;
+    const timeZone = spyOn(coreSettings, "get").mockResolvedValue("Europe/Berlin");
+    try {
+      const editor = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.owner));
+      expect(editor.untilThen.items.map((row) => row.text)).toEqual(["1 call refused", "1 call with an unknown outcome"]);
+      const reader = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
+      expect(JSON.stringify(reader.untilThen)).not.toContain("call refused");
+      expect(JSON.stringify(reader.untilThen)).not.toContain("unknown outcome");
+    } finally {
+      timeZone.mockRestore();
+    }
   });
   test("A3a commits the first target refusal with its call and restricts target coordinates to editors", async () => {
     const refusedRun = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "weekly", input: null });

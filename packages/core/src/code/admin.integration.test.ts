@@ -32,7 +32,7 @@ import * as runnerJobs from "./runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, insertCodeRun, listCodeRuns, readCodeRun } from "./store";
 import type { CodeCheckedVersionManifest } from "./version-contracts";
-import { decideCodeVersion, startCodeVersionApprovals, submitCodeVersion } from "./versions";
+import { decideCodeVersion, diffCodeVersion, startCodeVersionApprovals, submitCodeVersion } from "./versions";
 import { readCodeWorkload } from "./workload-reader";
 
 const operation = {
@@ -137,7 +137,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
       if (!definition) throw new Error(`Unexpected setting ${key}`);
       return definition.default;
     });
-    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue([]);
     catalogSpy = spyOn(provider, "getCapabilityCatalogApp").mockResolvedValue({
       ok: true,
       data: { appId: "example", appName: "Example", appIcon: "ti ti-code", appDescription: "Fixture", manifest: catalog },
@@ -203,6 +203,9 @@ databaseSuite()("C22 Administration › Code read model", () => {
     });
     expect(review.binding).toEqual(first.binding);
     expect(review.files?.[0]?.lines.map((line) => line.kind)).toEqual(["add", "add"]);
+    await expect(diffCodeVersion({ codeId: first.version.codeId, versionId: first.version.id }, reviewer)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
     // Two admins: the author sees their own version but cannot approve it.
     expect(await readCodeAdminApproval(first.version.id, author)).toMatchObject({ own: true, canApprove: false });
 
@@ -363,7 +366,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
     check.mockRestore();
     host.mockRestore();
     const detail = await readCodeAdminApproval(tested.version.id, reviewer);
-    expect(detail.evidence).toEqual({
+    expect(detail.evidence).toMatchObject({
       version: 1,
       tests: { state: "passed", passed: 1, total: 1, error: null },
       trial: { runs: 1, calls: [] },
@@ -374,6 +377,10 @@ databaseSuite()("C22 Administration › Code read model", () => {
     const plain = await submitCodeVersion(submission("c_check1", "export const b = 2;\nexample.item.change();", tested.version.id), author);
     expect((await readCodeAdminApproval(plain.version.id, reviewer)).evidence?.tests.state).toBe("none");
 
+    const reader = spyOn(provider, "invokeCapabilityWithDataSchema").mockResolvedValue({
+      ok: true,
+      data: { data: { view: { title: "Fixture item", permission: "read" } }, links: [{ rel: "open", href: "/example/items/item_1" }] },
+    });
     // One explanation per version and language: the second read costs nothing, and a failure stores nothing.
     let asked = 0;
     const generate = (async () => {
@@ -388,7 +395,10 @@ databaseSuite()("C22 Administration › Code read model", () => {
     expect(await explainCodeVersion(plain.version.id, reviewer, generate)).toEqual({ text: "Zählt einmal pro Woche." });
     expect(await explainCodeVersion(plain.version.id, reviewer, generate)).toEqual({ text: "Zählt einmal pro Woche." });
     expect(asked).toBe(1);
-    expect((await readCodeAdminApproval(plain.version.id, reviewer)).explanation).toBe("Zählt einmal pro Woche.");
+    reader.mockRestore();
+    expect((await readCodeAdminApproval(plain.version.id, reviewer)).explanation).toBe(
+      "Die Beschreibung nennt Ziele, die du nicht sehen darfst",
+    );
 
     // Source reads with the version bound to its Code; another Code's version is not found.
     expect(await readCodeAdminVersionSource("c_check1", tested.version.id, reviewer)).toMatchObject({

@@ -207,3 +207,17 @@ test("simulate passes fixture input to a manual entrypoint and returns its JSON 
     cases: [{ file: null, runs: [{ value: { count: 4, at: now } }] }],
   });
 }, 15_000);
+
+test("failed assertions retain bounded expected and actual pairs", async () => {
+  const source = `import { app } from "@sdk"; app.schedule({ cron: "0 8 * * *", name: "weekly" }, async () => 2); export default app;`;
+  const fixtureCase: CodeTestCase = {
+    version: 1,
+    name: "comparison",
+    now,
+    seed: 42,
+    mocks: [],
+    runs: [{ entrypoint: "weekly", input: null, expect: { value: 3 } }],
+  };
+  const result = await createCodeTestExecutor(config, limits)(await execution(source, [fixtureCase]));
+  expect(result.cases[0]?.runs[0]?.differences).toEqual([{ path: "value", expected: "3", actual: "2" }]);
+});

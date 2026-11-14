@@ -9,6 +9,7 @@ import {
   CodeTestResultSchema,
   CodeVersionManifestSchema,
   codeSdkHash,
+  codeTestDifference,
   codeTestFailure,
   createCodeTestBridge,
 } from "@k2b/cloud/code";
@@ -208,13 +209,20 @@ export function createCodeTestExecutor(config: RunnerConfig, suppliedLimits: Cod
           const expected = run.expect;
           if (expected) {
             for (const key of ["ok", "error", "value"] as const) {
-              if (Object.hasOwn(expected, key) && !equal(expected[key], row[key])) row.failures.push(key);
+              if (Object.hasOwn(expected, key) && !equal(expected[key], row[key])) {
+                row.failures.push(key);
+                row.differences ??= [];
+                row.differences.push(codeTestDifference(key, expected[key], row[key]));
+              }
             }
             if (
               expected.calls &&
               (expected.calls.length !== row.calls.length || expected.calls.some((call, i) => !subset(call, row.calls[i])))
-            )
+            ) {
               row.failures.push("calls");
+              row.differences ??= [];
+              row.differences.push(codeTestDifference("calls", expected.calls, row.calls));
+            }
           }
           if (expected?.ok === false && !expected.error) row.failures.push("error");
           // An explicitly expected domain error may pass. Missing/invalid fixtures and budgets always fail the case.

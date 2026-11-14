@@ -21,6 +21,7 @@ import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateSecrets } from "../migrate/core/code-secrets";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
+import * as access from "./access";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { previewCodeActivation } from "./activation";
 import { codeAuthoringServices } from "./authoring";
@@ -945,7 +946,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     const stale = await codeAuthoringServices.status({ config, files }, context);
     expect(stale.items[0]).toMatchObject({ baseCurrent: false, modified: false });
   });
-  test("pullAll is Cloud-admin-only and contains resource Code, never personal or app Code", async () => {
+  test("pullAll is Cloud-admin-only and skips resource Code without editor rights", async () => {
     const nonAdmin = { ...context, authority: { ...context.authority, actor: { kind: "user" as const, user: { ...user, roles: [] } } } };
     await expect(codeAuthoringServices.pullAll({}, nonAdmin)).rejects.toThrow("Cloud administration");
     const [account] = await sql<
@@ -963,7 +964,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       ok: false,
       error: { code: "NOT_FOUND", message: "not installed", status: 404 },
     });
-    try {
+    const collect = async () => {
       const items: CodeAuthoringData<"pullAll">["items"] = [];
       let cursor: string | undefined;
       do {
@@ -971,10 +972,21 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
         items.push(...page.items);
         cursor = page.nextCursor ?? undefined;
       } while (cursor);
+      return items;
+    };
+    try {
+      const items = await collect();
       const ids = items.map((item) => item.config.codeId);
-      expect(ids).toContain("c_allresource");
+      expect(ids).not.toContain("c_allresource");
       for (const id of ids) expect(id.startsWith("c_allperson") || id.startsWith("c_allapp")).toBe(false);
-      expect(items[0]?.config.owner.kind).toBe("resource");
+      for (const item of items) expect(item.config.owner.kind).toBe("resource");
+      const owner = spyOn(access, "readCodeOwner").mockResolvedValue({ title: "Resource", admin: true });
+      try {
+        // The ordinary list carries no live owner grant; pullAll must resolve it before excluding this Code.
+        expect((await collect()).map((item) => item.config.codeId)).toContain("c_allresource");
+      } finally {
+        owner.mockRestore();
+      }
     } finally {
       reader.mockRestore();
     }

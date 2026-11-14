@@ -1,5 +1,5 @@
 import { listCapabilityCatalog } from "@k2b/cloud/capabilities/server";
-import { CODE_CHECK_LIMITS, type CodeCheckRequest, type CodeSdkOptions, generateCodeSdk } from "@k2b/cloud/code";
+import { CODE_CHECK_LIMITS, type CodeCheckDiagnostic, type CodeCheckRequest, type CodeSdkOptions, generateCodeSdk } from "@k2b/cloud/code";
 import type { CapabilityManifest, CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { type CodeContext, CodeDataError, requireCodePermission } from "./access";
@@ -63,7 +63,7 @@ export async function createCodeCheckRequest(
 export async function verifyCodeSubmission(
   input: { codeId: string; sourceFiles: Record<string, string>; bundle: string; manifest: CodeCheckedVersionManifest },
   context: CodeContext,
-): Promise<void> {
+): Promise<CodeCheckDiagnostic[]> {
   const request = await createCodeCheckRequest(input.codeId, input.sourceFiles, input.manifest.entry, context);
   const checked = await createRunnerCodeCheckHost(context).check(request, context.signal);
   if (!checked.ok) throw new CodeDataError("BAD_INPUT", "The authoritative server check failed. Run check again.");
@@ -71,4 +71,5 @@ export async function verifyCodeSubmission(
   const { entry: _entry, policyRows: _policyRows, secrets: _secrets, ...evidence } = input.manifest;
   if (input.bundle !== checked.bundle || approvalArgsDigest(evidence) !== approvalArgsDigest(checked.manifest))
     throw new CodeDataError("CONFLICT", "The server check differs from the submitted bundle or manifest. Refresh the SDK and check again.");
+  return checked.warnings ?? [];
 }

@@ -198,7 +198,7 @@ databaseSuite()("durable Code activation", () => {
   });
   beforeAll(async () => {
     // These checked fixtures exercise activation; scheduling integration covers the binding runner check.
-    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue([]);
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
     await migrateAuth();

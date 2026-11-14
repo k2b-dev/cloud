@@ -30,6 +30,7 @@ import * as authoringChecks from "./authoring-check";
 import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
+import { loadCodeSourceTab } from "./source-tab";
 import { addCodeShare, codeBundleHash, codeSourceHash, createCode, findCode, readCode, readCodeVersion } from "./store";
 import type { CodeCheckedVersionManifest, CodeVersionSubmission } from "./version-contracts";
 import { codeVersionDiff } from "./version-diff";
@@ -165,7 +166,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   beforeAll(async () => {
     // Transaction/policy suite uses immutable checker fixtures; runner transport is covered by C13b.
-    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue([]);
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_versions");
     await migrateAuth();
@@ -252,7 +253,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       expect(await sql`SELECT version_id FROM code.version_submissions WHERE code_id=${code.id}`).toHaveLength(0);
     } finally {
       serverCheck.mockReset();
-      serverCheck.mockResolvedValue();
+      serverCheck.mockResolvedValue([]);
     }
   });
   test("version submission accepts FileRef reads and generic file writes, but refuses other write streams", async () => {
@@ -392,7 +393,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     const next = await submitCodeVersion(input(code, "first\nnew\nlast\n", first.version.id), author);
     expect(next.status).toBe("pending");
     expect(await findCode(code.id)).toMatchObject({ state: "active", activeVersionId: first.version.id });
-    const diff = await diffCodeVersion({ codeId: code.id, versionId: next.version.id }, reviewer);
+    const diff = await diffCodeVersion({ codeId: code.id, versionId: next.version.id }, author);
     expect(diff.binding.comparisonVersionId).toBe(first.version.id);
     expect(diff.staleComparison).toBe(false);
     expect(diff.files).toEqual([
@@ -566,7 +567,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     const next = await submitCodeVersion(input(code, "next", first.version.id), author);
     expect(next.binding.comparisonVersionId).toBe(null);
     await activate(code, first);
-    const changed = await diffCodeVersion({ codeId: code.id, versionId: next.version.id }, reviewer);
+    const changed = await diffCodeVersion({ codeId: code.id, versionId: next.version.id }, author);
     expect(changed).toMatchObject({ staleComparison: true, binding: { comparisonVersionId: first.version.id } });
     await expect(decideCodeVersion(next.binding, true, reviewer)).rejects.toMatchObject({ code: "code_comparison_stale" });
     await expect(decideCodeVersion(changed.binding, true, reviewer)).rejects.toMatchObject({ code: "code_comparison_stale" });
@@ -581,9 +582,9 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       first = await submitCodeVersion(input(code, "before", null, ["read"]), author);
     await activate(code, first);
     const next = await submitCodeVersion(input(code, "after", first.version.id), author);
-    const before = await diffCodeVersion({ codeId: code.id, versionId: next.version.id }, reviewer);
+    const before = await diffCodeVersion({ codeId: code.id, versionId: next.version.id }, author);
     await decideCodeVersion(next.binding, true, reviewer);
-    expect(await diffCodeVersion({ codeId: code.id, versionId: next.version.id }, reviewer)).toEqual(before);
+    expect(await diffCodeVersion({ codeId: code.id, versionId: next.version.id }, author)).toEqual(before);
   });
   test("deleting Code returns an expected decision conflict and preserves the pending request", async () => {
     const code = await newCode(),
@@ -821,6 +822,21 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await setCodePaused(code.id, true, author);
     await sql`UPDATE auth.app_devices SET revoked_at=now() WHERE id=${deviceId}::uuid`;
     await expect(setCodePaused(code.id, false, author)).rejects.toMatchObject({ code: "code_approval_revoked" });
+  });
+  test("the Code tab reads the enabled version while a newer submission waits, and compares any chosen version", async () => {
+    const code = await newCode();
+    const first = await submitCodeVersion(input(code, "enabled source", null, ["read"]), author);
+    await activate(code, first);
+    const pending = await submitCodeVersion(input(code, "pending source", first.version.id, ["read"]), author);
+    const data = await loadCodeSourceTab({ codeId: code.id, comparisonVersionId: pending.version.id }, author);
+    expect(data.enabled?.id).toBe(first.version.id);
+    expect(data.source?.text).toBe("enabled source");
+    expect(data.difference?.text).toContain("pending source");
+    expect(data.versions.map((v) => v.number)).toEqual([2, 1]);
+    expect(data.versions[0]?.submittedAt).toBe(fixed.toISOString());
+    await setCodePaused(code.id, true, author);
+    expect((await loadCodeSourceTab({ codeId: code.id }, author)).enabled?.id).toBe(first.version.id);
+    await expect(loadCodeSourceTab({ codeId: code.id }, reviewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
   test("strangers cannot read full diffs, submit, or pause; explicit editors can submit", async () => {
     const code = await newCode(),

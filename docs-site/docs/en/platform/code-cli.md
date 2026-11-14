@@ -176,8 +176,13 @@ cld code pull --all --out ./instance-code --json
 cld code status ./instance-code --json
 ```
 
-`pull --all` requires a Cloud administrator and downloads every resource-owned
-Code through the same source reader as a single pull. Personal and
+`pull` requires editor rights on the automation, including for Cloud
+administrators. `show` returns metadata and grants no source access. Source
+comparisons require the same editor right.
+
+`pull --all` requires a Cloud administrator and downloads resource-owned
+Code that this person may edit, through the same source reader as a single pull.
+It skips Code for which the administrator has only reader visibility. Personal and
 application-owned Code are excluded. Resource folders use short IDs, for
 example `mail/box_1234`; titles and owners remain in `code.json`. If an ID
 cannot be used as a filesystem segment or two resource types share the same

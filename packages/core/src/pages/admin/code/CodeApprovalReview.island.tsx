@@ -492,7 +492,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           </Show>
         </section>
 
-        <section class="grid gap-2" aria-labelledby="code-review-diff">
+        <section class="grid gap-2" aria-labelledby="code-review-diff" data-code-source-region="admin-approval">
           <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h3 id="code-review-diff" class="text-base font-semibold">
               {t().diff}
