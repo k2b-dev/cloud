@@ -47,7 +47,7 @@ For two pills at the start and end edge of one column, wrap both in `ToolbarDock
 </ToolbarDock>
 ```
 
-Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min-height: 0`, then the toolbar. The column reserves the toolbar's height, keeping the final row clear. It can also be the last child inside a scroll container: the strip sticks to the bottom and reserves its own height after the rows. It never leaves its column: when the column is taller than the screen, the toolbar stays at the bottom of the visible part of the column.
+Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min-height: 0`, then the toolbar. The column reserves the toolbar's height, keeping the final row clear. It can also be the last child inside a scroll container that is a flex column: the strip stands at the container's end however few rows there are, sticks to the bottom while the rows scroll beneath, and reserves its own height after them. In a block container it would follow the last row instead. A pill that comes and goes with a selection stays rendered and is only hidden without one, so its reserved height never changes and no row moves when it appears or goes. It never leaves its column: when the column is taller than the screen, the toolbar stays at the bottom of the visible part of the column.
 
 Render it in an island. The browser measures it before its first paint, so it never rearranges after it appears; until then it is invisible but keeps its space. A toolbar under a hidden ancestor waits until it is shown. Without scripting, the server layout stays visible.
 
