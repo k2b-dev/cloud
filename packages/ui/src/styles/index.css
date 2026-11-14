@@ -19074,7 +19074,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-tasks__header {
   display: flex;
   align-items: center;
-  gap: 0.5625rem;
+  gap: 0.625rem;
   width: 100%;
   min-height: 2.125rem;
   padding: 0 0.5rem;
@@ -19127,7 +19127,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   visibility: hidden;
   transition:
     grid-template-rows var(--k2b-motion-fold) var(--k2b-ease-glide),
-    visibility 0s linear var(--k2b-motion-fold);
+    visibility 0s var(--k2b-motion-fold);
 }
 .k2b-ui .k2b-chat-tasks__clip { min-height: 0; overflow: hidden; }
 /* About six rows, then the list scrolls inside itself. */
@@ -19149,8 +19149,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface);
   pointer-events: none;
 }
+.k2b-ui .k2b-chat-tasks__glide[data-hidden] { opacity: 0; }
 /* Only the place glides; a taller wrapped row takes its height at once. */
-.k2b-ui .k2b-chat-tasks__glide[data-ready] { transition: transform var(--k2b-motion-glide) var(--k2b-ease-glide); }
+.k2b-ui .k2b-chat-tasks__glide[data-ready] {
+  transition:
+    transform var(--k2b-motion-glide) var(--k2b-ease-glide),
+    opacity var(--k2b-motion-ink) var(--k2b-ease-settle);
+}
 /* Before the highlight is measured (server HTML, first client frame) the current row carries it in place. */
 .k2b-ui .k2b-chat-tasks__list:not(:has(> .k2b-chat-tasks__glide)) > .k2b-chat-task[data-status="in_progress"] {
   border-radius: 0.5625rem;

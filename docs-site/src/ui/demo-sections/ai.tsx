@@ -141,7 +141,7 @@ const ChatDemo = () => {
     onValueChange={setDraft}
     mentions={mentions()}
     onMentionsChange={setMentions}
-    accessory={<Chat.Tasks items={tasks} open={tasksOpen()} onOpenChange={setTasksOpen} />}
+    accessory={<Chat.Tasks items={tasks} open={tasksOpen()} onOpenChange={setTasksOpen} label="Tasks" progressLabel="0 of 1" statusLabels={taskLabels} />}
     placeholder="Write a message…"
     onSubmit={sendMessage}
     models={models}

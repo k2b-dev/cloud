@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
@@ -10,6 +10,9 @@ const ui = resolve(import.meta.dir, "../..");
 const assets = "http://k2b-ui.test/";
 const fonts = readFileSync(resolve(ui, "dist/plex.css"), "utf8").replace(/url\((["']?)(?:\.\/)?(?!data:|https?:)/g, `url($1${assets}`);
 const icons = readFileSync(resolve(ui, "dist/tabler.css"), "utf8").replace(/url\((["']?)(?:\.\/)?(?!data:|https?:)/g, `url($1${assets}`);
+
+// Each case opens its own page and waits for real transitions.
+setDefaultTimeout(20_000);
 
 let browser: Browser;
 let bundle: string;
@@ -133,6 +136,37 @@ for (const width of [1440, 390]) {
       }
     });
 
+    test("a step that starts after the last one finished glides from the old place", async () => {
+      const page = await open(width);
+      try {
+        await page.locator(".k2b-chat-tasks__glide").evaluate((node) => node.setAttribute("data-probe", "same"));
+        await setTasks(page, ["completed", "pending", "pending", "pending"]);
+        expect(await page.locator(".k2b-chat-tasks__glide").getAttribute("data-hidden")).toBe("");
+        await setTasks(page, ["completed", "in_progress", "pending", "pending"]);
+        const glide = page.locator(".k2b-chat-tasks__glide");
+        expect(await glide.getAttribute("data-probe")).toBe("same");
+        expect(await glide.getAttribute("data-hidden")).toBeNull();
+        expect(await glide.evaluate((node) => getComputedStyle(node).transitionProperty)).toContain("transform");
+        await still(page);
+        expect(await box(page, ".k2b-chat-tasks__glide")).toEqual(
+          await box(page, '.k2b-chat-tasks .k2b-chat-task[data-status="in_progress"]'),
+        );
+      } finally {
+        await page.close();
+      }
+    });
+
+    test("header text and row text share one edge", async () => {
+      const page = await open(width);
+      try {
+        const title = await box(page, ".k2b-chat-tasks__title");
+        const row = await box(page, ".k2b-chat-tasks .k2b-chat-task__content");
+        expect(title.x).toBe(row.x);
+      } finally {
+        await page.close();
+      }
+    });
+
     test("finishing a step changes no row and moves nothing outside the plan (0 px)", async () => {
       const page = await open(width);
       try {
@@ -148,7 +182,8 @@ for (const width of [1440, 390]) {
           expect(await Promise.all(watched.map((selector) => box(page, selector)))).toEqual(before);
         }
         expect(await page.locator(".k2b-chat-tasks__title").textContent()).toBe("All tasks done");
-        expect(await page.locator(".k2b-chat-tasks__glide").count()).toBe(0);
+        // With no current step the highlight keeps its last place, hidden.
+        expect(await page.locator(".k2b-chat-tasks__glide").getAttribute("data-hidden")).toBe("");
       } finally {
         await page.close();
       }

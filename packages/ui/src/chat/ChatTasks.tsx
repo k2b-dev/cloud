@@ -66,11 +66,14 @@ export function ChatTasks(props: ChatTasksProps) {
   };
   let list: HTMLOListElement | undefined;
   // The white highlight follows the measured current row; rows wrap, so their height is read, never assumed.
+  // Between two steps it keeps its last place, hidden, so the next step glides to it instead of appearing anew.
   const [glide, setGlide] = createSignal<{ top: number; height: number }>();
+  const [glideShown, setGlideShown] = createSignal(false);
   const [glideReady, setGlideReady] = createSignal(false);
   const measure = () => {
     const row = list?.querySelector<HTMLElement>(':scope > li[data-status="in_progress"]');
-    if (!list || !row || !row.offsetHeight) return setGlide(undefined);
+    setGlideShown(Boolean(row?.offsetHeight));
+    if (!list || !row || !row.offsetHeight) return;
     const next = { top: row.offsetTop, height: row.offsetHeight };
     const current = glide();
     if (current?.top !== next.top || current.height !== next.height) setGlide(next);
@@ -120,11 +123,13 @@ export function ChatTasks(props: ChatTasksProps) {
         <div class="k2b-chat-tasks__fold" id={id} inert={!props.open}>
           <div class="k2b-chat-tasks__clip">
             <ol ref={list} class="k2b-chat-tasks__list">
-              <Show when={active() && glide()}>
+              <Show when={glide()}>
                 {(place) => (
-                  <span
+                  <li
                     class="k2b-chat-tasks__glide"
+                    role="none"
                     data-ready={glideReady() ? "" : undefined}
+                    data-hidden={glideShown() ? undefined : ""}
                     style={{ transform: `translateY(${place().top}px)`, height: `${place().height}px` }}
                     aria-hidden="true"
                   />
