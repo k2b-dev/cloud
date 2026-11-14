@@ -5,6 +5,9 @@ import type { CloudResourceRef } from "../contracts";
 /** What the preview column shows for the active hit: its reader's view, or the search facts when there is none. */
 export type SearchPreviewState = { state: "idle" } | { state: "loading" } | { state: "view"; view: BoundBlockView } | { state: "facts" };
 
+/** Previews kept while the dialog is open; the oldest gives way, so a long session holds a bounded number of views. */
+export const SEARCH_PREVIEW_CACHE_SIZE = 50;
+
 /** Arrow keys move fast through hits; only a hit the person rests on asks its reader. */
 export const SEARCH_PREVIEW_DELAY_MS = 150;
 
@@ -51,6 +54,7 @@ export function createSearchPreview(ref: Accessor<CloudResourceRef | undefined>)
         .then((view) => {
           if (view === undefined || controller.signal.aborted) return;
           cache.set(key(current), view);
+          if (cache.size > SEARCH_PREVIEW_CACHE_SIZE) cache.delete(cache.keys().next().value!);
           setState(view ? { state: "view", view } : { state: "facts" });
         });
     }, SEARCH_PREVIEW_DELAY_MS);

@@ -27,6 +27,8 @@ test("Chat.Decision draws only inside ApprovalFrame", () => {
   expect(checkSource("/repo/packages/cloud/src/approvals/ApprovalCard.tsx", "<Chat.Decision state='open' />")).toHaveLength(1);
   expect(checkSource("/repo/packages/cloud/src/approvals/ApprovalFrame.tsx", "<Chat.Decision state='open' />")).toEqual([]);
   expect(checkSource(place, "type S = ChatDecisionState;")).toEqual([]);
+  expect(checkSource(place, 'import { Chat as C } from "@k2b/ui";\n<C.Decision state="open" />')).toHaveLength(1);
+  expect(checkSource(place, 'import { ChatDecision as D } from "@k2b/ui";\n<D state="open" />')).not.toHaveLength(0);
   expect(checkSource("/repo/packages/ui/src/chat/ChatDecision.tsx", "export function ChatDecision() {}")).toEqual([]);
 });
 

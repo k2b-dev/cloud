@@ -70,8 +70,14 @@ export const checkSource = (file: string, source: string): Finding[] => {
         message: `${tag.text.startsWith("<ApprovalFrame") ? "ApprovalFrame" : "ApprovalCard"} takes no look props (${look}): approvals look the same in every place.`,
       });
   }
+  // A renamed import (`Chat as C`, `ChatDecision as D`) draws the same decision under another name.
+  const aliases = [...source.matchAll(/\b(?:Chat|ChatDecision)\s+as\s+([A-Za-z_$][\w$]*)/g)].map((match) => match[1]!);
+  const drawn = new RegExp(
+    `<Chat\\.Decision\\b|\\bChatDecision\\b(?!Props|State|Answer|Reason|Fact)${aliases.map((alias) => `|<${alias}(?:\\.Decision)?\\b`).join("")}`,
+    "g",
+  );
   if (!file.endsWith(FRAME_FILE))
-    for (const match of source.matchAll(/<Chat\.Decision\b|\bChatDecision\b(?!Props|State|Answer|Reason)/g))
+    for (const match of source.matchAll(drawn))
       findings.push({
         file,
         line: line(source, match.index),

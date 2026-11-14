@@ -69,7 +69,9 @@ type Person = { name: string | null; address: string };
 type Formatting = { locale?: string; timeZone: string };
 
 const words = (locale?: string) => readerViewMessages.resolve([locale ?? "en"]).t;
-const person = (entry: Person) => (entry.name?.trim() ? `${entry.name.trim()} <${entry.address}>` : entry.address);
+// Every line is bounded like the reader's data, so a hostile name or file name never pushes a view past its result.
+const line = (value: string, limit = 320) => within(value, limit).text;
+const person = (entry: Person) => (entry.name?.trim() ? `${line(entry.name.trim(), 200)} <${line(entry.address)}>` : line(entry.address));
 const people = (entries: readonly Person[], locale?: string) =>
   i18n.formatList(entries.slice(0, 20).map(person), locale ?? "en") + (entries.length > 20 ? ` +${entries.length - 20}` : "");
 const when = (value: string, format: Formatting) => dates.formatDateTime(value, { locale: format.locale, timeZone: format.timeZone });
@@ -99,7 +101,7 @@ export type MessageReaderViewSource = Formatting & {
 export const messageReaderView = (source: MessageReaderViewSource): BlockView => {
   const t = words(source.locale);
   const body = source.text === null ? null : within(source.text.trim(), READER_VIEW_TEXT_BYTES);
-  const attachments = source.attachments.map((entry) => entry.filename?.trim() || "—");
+  const attachments = source.attachments.slice(0, 50).map((entry) => line(entry.filename?.trim() || "—", 255));
   return {
     version: 1,
     blocks: [
@@ -111,7 +113,14 @@ export const messageReaderView = (source: MessageReaderViewSource): BlockView =>
           { label: t.to, value: people(source.to, source.locale) || "—" },
           ...(source.cc.length ? [{ label: "Cc", value: people(source.cc, source.locale) }] : []),
           { label: t.date, value: when(source.sentAt ?? source.internalDate, source) },
-          ...(attachments.length ? [{ label: t.attachments, value: attachments.slice(0, 50).join("\n") }] : []),
+          ...(attachments.length
+            ? [
+                {
+                  label: t.attachments,
+                  value: attachments.join("\n") + (source.attachments.length > 50 ? `\n+${source.attachments.length - 50}` : ""),
+                },
+              ]
+            : []),
         ],
       },
       ...(body === null
@@ -150,12 +159,22 @@ export const conversationReaderView = (source: ConversationReaderViewSource): Bl
             label: t.assigned,
             value: source.assignees.length
               ? i18n.formatList(
-                  source.assignees.slice(0, 5).map((entry) => entry.displayName),
+                  source.assignees.slice(0, 5).map((entry) => line(entry.displayName, 200)),
                   source.locale ?? "en",
                 )
               : t.nobody,
           },
-          ...(source.tags.length ? [{ label: t.tags, value: source.tags.map((tag) => tag.name).join(", ") }] : []),
+          ...(source.tags.length
+            ? [
+                {
+                  label: t.tags,
+                  value: source.tags
+                    .slice(0, 20)
+                    .map((tag) => line(tag.name, 120))
+                    .join(", "),
+                },
+              ]
+            : []),
         ],
       },
       ...(summary ? [{ kind: "Section" as const, title: t.summary, children: [{ kind: "Text" as const, text: summary }] }] : []),
@@ -170,8 +189,12 @@ export const conversationReaderView = (source: ConversationReaderViewSource): Bl
                 { path: ["subject"], label: t.subject },
                 { path: ["sent"], label: t.sent },
               ],
-              rows: source.messages.map((message) => ({
-                from: message.from.map((entry) => entry.name?.trim() || entry.address).join(", ") || "—",
+              rows: source.messages.slice(0, 20).map((message) => ({
+                from:
+                  message.from
+                    .slice(0, 3)
+                    .map((entry) => line(entry.name?.trim() || entry.address, 200))
+                    .join(", ") || "—",
                 subject: within(message.preview?.trim() || message.subject.trim() || t.noSubject, 600).text,
                 sent: when(message.sentAt ?? message.internalDate, source),
               })),

@@ -88,3 +88,23 @@ test("a conversation preview shows its state, summary and latest messages", () =
   expect(JSON.stringify(view)).toContain("Zu bearbeiten");
   expect(view.blocks[2]).toMatchObject({ subtitle: "Weitere in Mail", rows: [{ from: "Ruth Albers", subject: "Anbei das Foto" }] });
 });
+
+test("hostile names and file names never push a message view past its share of the result", () => {
+  const huge = "x".repeat(8192);
+  const people = Array.from({ length: 200 }, () => ({ name: huge, address: `${huge}@example.org` }));
+  const view = messageReaderView({
+    locale: "en",
+    timeZone: "UTC",
+    from: people,
+    to: people,
+    cc: people,
+    sentAt: null,
+    internalDate: "2026-11-13T09:12:05Z",
+    attachments: Array.from({ length: 300 }, () => ({ filename: huge })),
+    text: "é".repeat(200_000),
+    textTruncated: false,
+  });
+  check(view);
+  expect(new TextEncoder().encode(JSON.stringify(view)).byteLength).toBeLessThan(96 * 1024);
+  expect(JSON.stringify(view)).toContain("+250");
+});
