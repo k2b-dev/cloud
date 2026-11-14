@@ -218,10 +218,6 @@ Drop targets and other control states keep the platform fill.
 
 ### Links
 
-Blue text, such as a `link` or heading `text` button, stays blue on hover:
-`--k2b-action-hover` is one darker blue (accent 900 in light, accent 100 in
-dark), never the body ink and never an added underline.
-
 Link text in content stays body ink. Its underline, and the arrow of a web
 link, use `--k2b-link-accent`, which defaults to `var(--k2b-action)`. It is a
 separate host hook; the selection hooks do not change it. Cloud maps it to the

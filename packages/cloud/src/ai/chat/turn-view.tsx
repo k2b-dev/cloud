@@ -1,9 +1,10 @@
-import { announce, Button, Chat, NoticeCard, useLocale } from "@k2b/ui";
+import { announce, Button, Chat, IconButton, NoticeCard, useLocale } from "@k2b/ui";
 import {
   type Accessor,
   createEffect,
   createMemo,
   createSignal,
+  createUniqueId,
   For,
   type JSX,
   Match,
@@ -334,6 +335,88 @@ function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry
   );
 }
 
+/**
+ * The height of a clamped text: `--ai-turn-clamp-lines` (effects.css) lines of its Markdown block. A status in place 3
+ * keeps at most this height.
+ */
+const clampedHeight = (block: Element): number => {
+  const style = getComputedStyle(block);
+  return Number.parseFloat(style.getPropertyValue("--ai-turn-clamp-lines")) * Number.parseFloat(style.lineHeight);
+};
+
+/**
+ * Text between steps. With `clamp`, a text longer than three lines shows three, its last line fading, and a chevron beside
+ * its first line shows the rest; the chevron stays where it is when the text opens or closes. The limit comes from `clamp`
+ * itself, so the server render is already short; measuring only decides the chevron and the fade. Without `clamp` (the
+ * answer) it shows whole. A keyboard user who reaches a link in the faded or hidden part gets the whole text, with the
+ * link in view. A new `reset` closes it.
+ */
+function AiClampedText(props: { html: string; clamp: boolean; reset?: unknown }) {
+  const locale = useLocale();
+  const id = createUniqueId();
+  const [open, setOpen] = createSignal(false);
+  const [long, setLong] = createSignal(false);
+  let block: HTMLDivElement | undefined;
+  const measure = () => {
+    if (!block) return;
+    setLong(props.clamp && block.scrollHeight > clampedHeight(block) + 1);
+  };
+  // A clamped text keeps its height while it grows, so the new text is measured, not only a new size.
+  createEffect(on([() => props.html, () => props.clamp], measure));
+  createEffect(
+    on(
+      () => props.reset,
+      () => setOpen(false),
+      { defer: true },
+    ),
+  );
+  onMount(() => {
+    if (typeof ResizeObserver === "undefined" || !block) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(block);
+    onCleanup(() => observer.disconnect());
+  });
+  const t = () => aiChatMessages(locale());
+  return (
+    <div
+      class="ai-turn-clamp"
+      data-clamp={props.clamp ? "" : undefined}
+      data-long={long() ? "" : undefined}
+      data-open={open() ? "" : undefined}
+      onFocusIn={(event) => {
+        const target = event.target;
+        if (!block || !long() || open() || !(target instanceof Element) || !block.contains(target)) return;
+        // Links in the visible lines keep the text closed; only the faded last line and the clipped rest open it.
+        const fade = block.getBoundingClientRect().bottom - Number.parseFloat(getComputedStyle(block).lineHeight);
+        if (target.getBoundingClientRect().bottom <= fade) return;
+        setOpen(true);
+        // A timeline that follows its end moves the opened text up in the next frame; bring the link back afterwards.
+        requestAnimationFrame(() => requestAnimationFrame(() => target.scrollIntoView({ block: "nearest" })));
+      }}
+    >
+      <AssistantMarkdownBlock
+        id={id}
+        ref={(element) => {
+          block = element;
+        }}
+        html={props.html}
+      />
+      <Show when={long()}>
+        <IconButton
+          size="xs"
+          class="ai-turn-clamp__toggle"
+          label={open() ? t().textShowLess : t().textShowAll}
+          aria-expanded={open() ? "true" : "false"}
+          aria-controls={id}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <i class={open() ? "ti ti-chevron-up" : "ti ti-chevron-down"} aria-hidden="true" />
+        </IconButton>
+      </Show>
+    </div>
+  );
+}
+
 function WorkText(props: { text: string }) {
   const locale = useLocale();
   // Render Markdown only when the text itself changes, not on every update of the turn around it.
@@ -341,7 +424,7 @@ function WorkText(props: { text: string }) {
   const html = createMemo(() => markdown.renderSync(text(), { locale: locale() }));
   return (
     <div class="ai-turn-steps__text">
-      <AssistantMarkdownBlock html={html()} />
+      <AiClampedText html={html()} clamp />
     </div>
   );
 }
@@ -603,10 +686,11 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) 
 }
 
 /**
- * Place 3. Live it is a status that switches in this same element; it keeps its height until the turn ends. Once a step
- * started after it, it reads quietly like the texts in the expanded work; a trailing text may still be the answer and
- * keeps answer typography. A status is not read token by token: screen readers hear each status once it is complete,
- * and that the answer is ready.
+ * Place 3. Live it is a status that switches in this same element. Once a step started after it, it reads quietly like
+ * the texts in the expanded work, at most three lines with a chevron for the rest; a trailing text may still be the answer
+ * and keeps answer typography and its whole length. While the turn runs, the place keeps the height of the text before,
+ * up to a clamped status, so short statuses do not jump and a long one leaves no empty space behind. A status is not read
+ * token by token: screen readers hear each status once it is complete, and that the answer is ready.
  */
 function AiTurnText(props: {
   blocks: Accessor<Extract<AiTurnBlock, { kind: "text" }>[]>;
@@ -640,19 +724,29 @@ function AiTurnText(props: {
     observer.observe(element);
     onCleanup(() => observer.disconnect());
   });
-  /** The quiet text's height in answer typography, measured in place before the browser paints. */
+  /** The quiet text's height in answer typography, whole, measured in place before the browser paints. */
   const answerHeight = () => {
+    const clamp = element.querySelector(".ai-turn-clamp");
+    const marks = ["data-clamp", "data-long"].filter((name) => clamp?.hasAttribute(name));
     element.classList.remove("ai-turn__text--status");
+    for (const name of marks) clamp?.removeAttribute(name);
     const height = element.offsetHeight;
     element.classList.add("ai-turn__text--status");
+    for (const name of marks) clamp?.setAttribute(name, "");
     return height;
   };
-  // A new status keeps the height of the one before it. A quiet status keeps the height it has as the answer, also when
-  // it first shows quietly after a reload, so nothing below moves when it is replaced or becomes the answer again.
+  /** The height of a clamped status: no reserve is larger, so a long text leaves no empty space when it is replaced. */
+  const statusLimit = () => {
+    const block = element.querySelector(".assistant-markdown-block");
+    return block ? clampedHeight(block) : 0;
+  };
+  // A new status keeps the height of the one before it, and a quiet status the height it has as the answer, also when it
+  // first shows quietly after a reload; both only up to a clamped status. So short statuses and a short answer move
+  // nothing below, and a long text that is replaced or folds to three lines leaves no empty space.
   createEffect(
     on([shownId, quiet], ([id, isQuiet], previous) => {
       if (!props.live()) return;
-      const height = Math.max(previous && previous[0] !== id ? lastHeight : 0, isQuiet ? answerHeight() : 0);
+      const height = Math.min(statusLimit(), Math.max(previous && previous[0] !== id ? lastHeight : 0, isQuiet ? answerHeight() : 0));
       if (height > 0) setMinHeight((current) => Math.max(current ?? 0, height));
     }),
   );
@@ -679,7 +773,7 @@ function AiTurnText(props: {
       aria-live={status() ? "off" : undefined}
       style={minHeight() ? { "min-height": `${minHeight()}px` } : undefined}
     >
-      <AssistantMarkdownBlock html={html()} />
+      <AiClampedText html={html()} clamp={quiet()} reset={shownId()} />
     </div>
   );
 }

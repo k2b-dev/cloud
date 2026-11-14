@@ -57,10 +57,8 @@ control, such as "+", so people learn what the topic can hold.
 ### Collapsible sections
 
 Set `collapsible` for secondary topics. The whole heading row is one
-disclosure button. It never draws a fill: hover colors only the title and
-chevron in the accent, and keyboard focus draws the ring around the row. On a
-card the whole top of the card stays clickable, and the gaps around the heading
-are those of a fixed section. Pass `summary` for one line that says what a
+disclosure button. On a card it fills the card's top on hover; flat, hover
+colors the title and chevron. Pass `summary` for one line that says what a
 closed section holds. Opening moves only what lies below the heading row. The
 content stays mounted while closed, so unsaved input survives. Control the
 state with `open` and `onOpenChange`, or start it open with `defaultOpen`.

@@ -17,7 +17,6 @@ packages/assistant/src/frontend/AssistantTasks.behavior.test.tsx | 1
 packages/assistant/src/frontend/assistant-live.behavior.test.tsx | 2
 packages/cloud/src/access/PermissionEditor.browser.test.ts | 1
 packages/cloud/src/ai/chat/action-question.browser.test.ts | 1
-packages/cloud/src/ai/chat/live-turn.browser.test.ts | 10
 packages/cloud/src/approvals/Approvals.behavior.test.tsx | 2
 packages/cloud/src/browser/choose-files.browser.test.ts | 1
 packages/cloud/src/browser/save-files.behavior.test.tsx | 1

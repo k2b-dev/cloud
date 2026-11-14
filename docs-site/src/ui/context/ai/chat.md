@@ -88,7 +88,7 @@ stay on one horizontally scrollable row, and the controlled text field grows
 up to approximately fifteen visible lines. The conversation variant grows
 differently; see [Conversations between people](#conversations-between-people).
 
-`Chat.Timeline` follows new messages and growing rich content while the reader remains near the bottom. Content and viewport resizing keep the latest item visible without overriding a reader who has scrolled upward. A reader who opens or closes an expandable row in the timeline keeps that row where it was: the timeline does not follow the end for that change, and it keeps following new content only if the end is still in view afterwards. Set `hasMore` and `onLoadOlder` to load history while preserving the visible scroll position.
+`Chat.Timeline` follows new messages and growing rich content while the reader remains near the bottom. Content and viewport resizing keep the latest item visible without overriding a reader who has scrolled upward. A reader who opens or closes an expandable row in the timeline (a `summary`, or a button with `aria-expanded` and `aria-controls` that is not a popup trigger with `aria-haspopup`) keeps that row where it was: the timeline does not follow the end for that change, and it keeps following new content only if the end is still in view afterwards. Set `hasMore` and `onLoadOlder` to load history while preserving the visible scroll position.
 
 Use `scrollToAnchorRef` to receive a function that scrolls to a rendered `anchorId` and pauses following. It returns `false` if the anchor is not rendered yet; load the relevant history first. This also works behind an open dialog where browser focus is blocked. Following resumes when the reader returns to the bottom.
 

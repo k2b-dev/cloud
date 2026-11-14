@@ -2237,3 +2237,23 @@ test("the series filter shows chart colors only when the shown view colors its s
   // Without a series column every line is one region mix, so a region color would describe nothing the chart draws.
   expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count" }])).toBe(0);
 });
+
+test("the server renders a quiet status already limited, and the answer whole", () => {
+  const read = (id: string, status: "running" | "completed" = "completed"): AiTurnBlock => ({
+    id,
+    kind: "tool",
+    callId: id,
+    name: "read_file",
+    args: { path: "/notes.json" },
+    status,
+    result: status === "completed" ? "{}" : undefined,
+  });
+  const text: AiTurnBlock = { id: "text-1", kind: "text", text: "The check passed.\n\nThen I compare the notes with the orders." };
+  // A reload while a step runs after the text: the status is limited before the browser measures anything.
+  const live = renderSegment([read("tool-1"), text, read("tool-2", "running")], { phase: "running" });
+  expect(live).toMatch(/class="ai-turn__text ai-turn__text--status"[^>]*><div class="ai-turn-clamp" data-clamp=""/);
+  // Finished, the same text is the answer: no limit.
+  const done = renderSegment([read("tool-1"), text, read("tool-2")]);
+  expect(done).toContain('class="ai-turn-clamp"');
+  expect(done).not.toContain("data-clamp");
+});

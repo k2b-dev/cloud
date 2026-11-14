@@ -58,8 +58,9 @@
   flex-direction: column;
 }
 
+/* The clamp trims its text's outer margins, so the padding carries them: the same space as before. */
 .k2b-ui .ai-turn-steps__text {
-  padding-block: 0.25rem;
+  padding-block: 0.625rem;
 }
 
 /* A live status in place 3 reads like those texts. It keeps the place's line height, so a status and the text that
@@ -89,6 +90,43 @@
 
 .k2b-ui .ai-turn__text--status .assistant-markdown-block > :where(:last-child) {
   margin-bottom: 0;
+}
+
+/* Text between steps: longer than three lines, it shows three with its last line fading, and a chevron beside the first
+   line shows the rest. The chevron takes its column only then, and it stays where it is when the text opens or closes. */
+.k2b-ui .ai-turn-clamp {
+  /* turn-view.tsx reads this limit to measure the text and cap the status reserve. */
+  --ai-turn-clamp-lines: 3;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.k2b-ui .ai-turn-clamp[data-long] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.25rem;
+}
+
+/* The limit holds from the first render, also on the server; the fade only marks a text that goes on. */
+.k2b-ui .ai-turn-clamp[data-clamp]:not([data-open]) > .assistant-markdown-block {
+  max-height: calc(var(--ai-turn-clamp-lines) * 1lh);
+  overflow: hidden;
+}
+
+.k2b-ui .ai-turn-clamp[data-long]:not([data-open]) > .assistant-markdown-block {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1lh), transparent);
+}
+
+.k2b-ui .ai-turn-clamp > .assistant-markdown-block > :where(:first-child) {
+  margin-top: 0;
+}
+
+.k2b-ui .ai-turn-clamp > .assistant-markdown-block > :where(:last-child) {
+  margin-bottom: 0;
+}
+
+.k2b-ui .ai-turn-clamp__toggle {
+  align-self: start;
 }
 
 .k2b-ui .ai-turn-steps__thought {

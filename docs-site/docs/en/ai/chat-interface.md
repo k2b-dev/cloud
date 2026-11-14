@@ -300,8 +300,9 @@ order:
    after a stop. A failed turn reads "Worked 4 min" too and says why in a
    notice at its end; a failed turn from an earlier release, which recorded no
    reason, reads "Worked 4 min · interrupted". Expanding it shows work at the
-   same left edge as the line: intermediate texts as quiet paragraphs and the
-   steps between them directly, each with its input and output on demand in
+   same left edge as the line: intermediate texts as quiet paragraphs, each
+   limited to three lines with a chevron for the rest like a quiet status, and
+   the steps between them directly, each with its input and output on demand in
    place. Housekeeping, loading tools, skills, and knowledge and reading a
    loaded skill's files, folds into one row such as
    "Loaded tools and guidance · 4 steps" at step level, with the reasoning
@@ -444,16 +445,23 @@ order:
    value visible (first 100 rows).
    [Tools and approvals](/en/docs/ai/tools-and-approvals) defines these contracts.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
-   the previous one in the same element once its first sentence has streamed,
-   and the place keeps its height until the turn ends. A text that ends the
+   the previous one in the same element once its first sentence has streamed.
+   A text that ends the
    turn so far may still be the answer and keeps answer typography. As soon as
    a step starts after it, it reads quietly in the muted, smaller style of the
    intermediate texts in the expanded work line, also while an approval or
    survey waits for the user; its card says what is asked. It changes together
-   with the work line's new step and keeps its line height. The place keeps the
-   height the text has as the answer, also when the chat opens while a step
-   runs, so nothing moves when the text turns quiet, is replaced, or becomes
-   the final message.
+   with the work line's new step and keeps its line height. A quiet text
+   longer than three lines shows three, its last line fading, and a chevron
+   beside its first line shows the rest; the chevron keeps its place when the
+   text opens or closes, and a new status starts closed. Keyboard focus on a
+   link in the fading or hidden part opens the text and keeps the link in view. While the turn runs,
+   the place keeps the height of the text before it and the height a quiet
+   text has as the answer, also when the chat opens while a step runs, but
+   never more than a three-line status: short statuses and short answers move
+   nothing, and a long text that is replaced or turns quiet leaves no empty
+   space behind. A long quiet text that becomes the final message unfolds
+   below its first lines.
    Finished, it is the final message in answer typography: the turn's last
    text, even if a tool call followed it. A stopped or failed turn has no final
    message; its texts stay in the work line.
