@@ -19,13 +19,17 @@ Choose by what the card does:
 | One line that names or explains a control | `Tooltip` |
 | Rich details about one control's value | `HoverCard` |
 | A quick look at list items, one card for the whole list | `HoverPreview` |
-| Content with controls, such as a slider or links | `AnchoredPopover` |
+| Details with a few links or buttons, opened on purpose | `HoverCard.Trigger` with `actions` |
+| Content with controls, such as a slider or a form | `AnchoredPopover` |
 
-Keep the card to information. It holds no links, buttons, or fields: nobody can
-reach them with the keyboard without opening it some other way, and on a phone
-the card closes on the next tap. When the details need an action, put the
-action on the control itself, as a place that filters on click, and say so in
-`hint`. Use `AnchoredPopover` when the card must hold controls.
+Keep a card that opens on hover to information. It holds no links, buttons, or
+fields: nobody can reach them with the keyboard without opening it some other
+way, and on a phone the card closes on the next tap. When the details need an
+action, put the action on the control itself, as a place that filters on click,
+and say so in `hint`. When the card itself needs a few actions, such as "Report
+page" or "Try again", give `HoverCard.Trigger` its `actions`: the card becomes
+a small dialog that only a press opens. Use `AnchoredPopover` for richer
+controls, such as a slider or a form.
 
 ## Import
 
@@ -62,6 +66,7 @@ import { HoverCard, type HoverCardProps, type HoverCardTriggerProps, ProgressPat
 | `delay` | `number` | `400` | Milliseconds a resting pointer waits before the card opens. |
 | `disabled` | `boolean` | `false` | Keeps the card closed; an open card closes. |
 | `class` | `string` | none | Extra class on the card. |
+| `actions` | `JSX.Element` | none | `HoverCard.Trigger` only: links or buttons at the start of the last line, with `hint` at its end. Makes the card a non-modal dialog. |
 
 `HoverCard` passes other attributes to its wrapping `span`.
 `HoverCard.Trigger` passes them to its `button`; `triggerClass` styles the
@@ -82,8 +87,30 @@ the focus ring; on a coarse pointer its hit area grows to 2.75rem.
 - A card that the pointer opened closes when the page scrolls. A pinned or
   focused card follows its control, also when pinch zoom moves the visible
   area.
-- The card is never taller than the screen minus 1rem; a longer body scrolls
-  inside the card while the title and the hint stay.
+- The card is never taller than the room on its side: between the control and
+  the edge of the visible area, less the 6px gap and the 8px margin, and at
+  least 120px. It never covers its own control. A longer body scrolls inside
+  the card and fades out below while more follows; the title and the last line
+  stay. A sheet is at most the screen height less 3rem.
+
+## A card with actions
+
+`HoverCard.Trigger` with `actions` behaves like `AnchoredPopover`:
+
+- Resting the pointer or keyboard focus on the trigger opens nothing. A click,
+  a tap, Enter, or Space opens the card and moves the focus into it; Tab
+  reaches its links and buttons.
+- Escape, another press of the trigger, or a press outside closes it, and the
+  focus returns to the trigger when it was inside. Moving the focus on to the
+  page closes it too. Moving the pointer away keeps it open.
+- The card is a `dialog` named by its `title`; the trigger reports
+  `aria-haspopup="dialog"`, `aria-controls`, and `aria-expanded` instead of a
+  description.
+- The last line holds the actions at its start and `hint` at its end, in the
+  12px meta step. Controls in the body, such as "Try again" after a failed
+  load, count as actions as well; the card must then have `actions`.
+
+A card without `actions` behaves exactly as before.
 
 ## Placement
 
@@ -100,7 +127,7 @@ its control at every width.
 
 ## Accessibility
 
-The card is a `tooltip` that describes its control: `HoverCard` adds its id to
+Without actions, the card is a `tooltip` that describes its control: `HoverCard` adds its id to
 the `aria-describedby` of the first focusable element inside, after any
 description the control already has, and `HoverCard.Trigger` sets it on its
 button. The control keeps its own role and name, and screen readers read the

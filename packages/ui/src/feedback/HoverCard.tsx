@@ -1,5 +1,6 @@
 import { createEffect, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
 import { placeAtAnchor, SHEET_QUERY } from "../internal/anchor-placement";
+import { createScrollFade } from "../layout/scroll-fade";
 import { AnchorContext } from "./Tooltip";
 
 /** Milliseconds a resting pointer waits before the card opens; a little longer than a tooltip, as the card is larger. */
@@ -38,6 +39,12 @@ export type HoverCardTriggerProps = HoverCardOptions &
   Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, "content" | "title" | "class"> & {
     /** Class of the trigger button; `class` styles the card. */
     triggerClass?: string;
+    /**
+     * Links or buttons of the card, at the start of its last line, with `hint` at the end. A card with actions is a
+     * non-modal dialog: only a press or Enter opens it, the focus moves into it, and Escape returns the focus to the
+     * trigger. Its body may then hold controls too, such as "Try again". Resting the pointer opens nothing.
+     */
+    actions?: JSX.Element;
   };
 
 type Mode = "anchor" | "trigger";
@@ -47,8 +54,16 @@ type Mode = "anchor" | "trigger";
  * open while the pointer is on the control or the card. A trigger also opens it with a press, which pins it open; on a
  * phone a tap opens it as a bottom sheet.
  */
-function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLElement | undefined) {
+function useHoverCard(options: HoverCardOptions & { actions?: JSX.Element }, mode: Mode, target: () => HTMLElement | undefined) {
   const id = `k2b-hover-card-${createUniqueId()}`;
+  const titleId = `${id}-title`;
+  /** A card with actions is a dialog the person opens on purpose, not a hint. */
+  const interactive = () => mode === "trigger" && options.actions != null;
+  let body: HTMLDivElement | undefined;
+  createScrollFade(
+    () => body,
+    () => true,
+  );
   const [open, setOpen] = createSignal(false);
   const [sheet, setSheet] = createSignal(false);
   let surface: HTMLDivElement | undefined;
@@ -81,10 +96,17 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     if (sheet()) {
       surface.style.left = "";
       surface.style.top = "";
+      surface.style.removeProperty("--k2b-hover-card-room");
       return;
     }
-    above = placeAtAnchor(surface, anchor, { side: options.side, align: options.align ?? "start", above }).above;
+    const placement = { side: options.side, align: options.align ?? "start" } as const;
+    const placed = placeAtAnchor(surface, anchor, { ...placement, above });
+    above = placed.above;
     surface.dataset.side = above ? "above" : "below";
+    // The card is never taller than the room on its side, so it never covers its own control; the body scrolls.
+    const height = surface.offsetHeight;
+    surface.style.setProperty("--k2b-hover-card-room", `${Math.round(Math.max(120, placed.room))}px`);
+    if (surface.offsetHeight !== height) placeAtAnchor(surface, anchor, { ...placement, above });
   };
 
   const keyDown = (event: KeyboardEvent) => {
@@ -143,9 +165,12 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     }
     setOpen(true);
     above = undefined;
+    // The side is chosen for the card's full height; the room of that side caps it afterwards.
+    surface.style.removeProperty("--k2b-hover-card-room");
     // Placed in the same task as it opens, so it never paints at a wrong place first.
     place();
     listen(true);
+    if (interactive()) queueMicrotask(() => surface?.focus({ preventScroll: true }));
   };
 
   const hide = () => {
@@ -156,6 +181,8 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     if (!open()) return;
     setOpen(false);
     listen(false);
+    // A dialog gives the focus back to its trigger when the focus was inside it.
+    if (interactive() && surface?.contains(document.activeElement)) target()?.focus({ preventScroll: true });
     try {
       if (surface?.matches(":popover-open")) surface.hidePopover();
     } catch {
@@ -182,7 +209,7 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     if (event.pointerType === "touch") return;
     onControl = true;
     clearTimeout(closeTimer);
-    if (open() || dismissed || options.disabled) return;
+    if (open() || dismissed || options.disabled || interactive()) return;
     clearTimeout(openTimer);
     const delay = options.delay ?? OPEN_DELAY;
     if (delay <= 0) show(false);
@@ -208,11 +235,18 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     onCard = false;
     left();
   };
+  // A dialog closes when the focus moves on to the page; it stays when the focus goes back to its trigger.
+  const surfaceFocusOut = (event: FocusEvent) => {
+    if (!interactive()) return;
+    const next = event.relatedTarget;
+    if (!(next instanceof Node) || surface?.contains(next) || target()?.contains(next)) return;
+    hide();
+  };
 
   const focusIn = (event: FocusEvent) => {
     // Only visible focus, as from the keyboard, opens the card; focus from a click or a tap does not.
     const element = event.target instanceof Element ? event.target : null;
-    if (!element?.matches(":focus-visible")) return;
+    if (interactive() || !element?.matches(":focus-visible")) return;
     focused = true;
     show(false);
   };
@@ -308,32 +342,55 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
         surface = element;
       }}
       id={id}
-      role="tooltip"
+      {...(interactive() ? { role: "dialog", "aria-labelledby": options.title ? titleId : undefined, tabIndex: -1 } : { role: "tooltip" })}
       popover="manual"
       class={options.class ? `k2b-hover-card ${options.class}` : "k2b-hover-card"}
       data-sheet={sheet() ? "" : undefined}
       style={options.width ? { "--k2b-hover-card-width": options.width } : undefined}
       onPointerEnter={surfaceEnter}
       onPointerLeave={surfaceLeave}
+      onFocusOut={surfaceFocusOut}
     >
       <Show when={options.title || options.detail}>
         <div class="k2b-hover-card__head">
           <Show when={options.title}>
-            <strong class="k2b-hover-card__title">{options.title}</strong>
+            <strong class="k2b-hover-card__title" id={titleId}>
+              {options.title}
+            </strong>
           </Show>
           <Show when={options.detail}>
             <span class="k2b-hover-card__detail">{options.detail}</span>
           </Show>
         </div>
       </Show>
-      <div class="k2b-hover-card__body">{options.content}</div>
-      <Show when={options.hint}>
-        <p class="k2b-hover-card__hint">{options.hint}</p>
+      <div
+        ref={(element) => {
+          body = element;
+        }}
+        class="k2b-hover-card__body"
+        data-scroll-fade-mode="bottom"
+      >
+        {options.content}
+      </div>
+      <Show
+        when={interactive()}
+        fallback={
+          <Show when={options.hint}>
+            <p class="k2b-hover-card__hint">{options.hint}</p>
+          </Show>
+        }
+      >
+        <div class="k2b-hover-card__foot">
+          <div class="k2b-hover-card__actions">{options.actions}</div>
+          <Show when={options.hint}>
+            <p class="k2b-hover-card__hint">{options.hint}</p>
+          </Show>
+        </div>
       </Show>
     </div>
   );
 
-  return { id, open, Card };
+  return { id, open, interactive, Card };
 }
 
 const OPTION_KEYS = ["content", "title", "detail", "hint", "side", "align", "width", "delay", "disabled", "class"] as const;
@@ -361,7 +418,7 @@ function HoverCardAnchor(props: HoverCardProps): JSX.Element {
  * keyboard focus open the card, a press pins it open, and a tap on a phone opens it as a bottom sheet.
  */
 function HoverCardTrigger(props: HoverCardTriggerProps): JSX.Element {
-  const [options, local, rest] = splitProps(props, OPTION_KEYS, ["children", "triggerClass", "ref"]);
+  const [options, local, rest] = splitProps(props, [...OPTION_KEYS, "actions"], ["children", "triggerClass", "ref"]);
   let button: HTMLButtonElement | undefined;
   const card = useHoverCard(options, "trigger", () => button);
   const register = (element: HTMLButtonElement) => {
@@ -375,7 +432,9 @@ function HoverCardTrigger(props: HoverCardTriggerProps): JSX.Element {
         {...rest}
         ref={register}
         class={local.triggerClass ? `k2b-hover-card-trigger ${local.triggerClass}` : "k2b-hover-card-trigger"}
-        aria-describedby={card.id}
+        aria-describedby={card.interactive() ? undefined : card.id}
+        aria-haspopup={card.interactive() ? "dialog" : undefined}
+        aria-controls={card.interactive() ? card.id : undefined}
         aria-expanded={card.open()}
         data-open={card.open() ? "" : undefined}
       >
