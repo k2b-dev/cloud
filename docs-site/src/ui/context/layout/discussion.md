@@ -78,22 +78,34 @@ Applications still decide whether the composer is present, map domain records to
 `Discussion.Thread` is a compact thread for a place that is already a surface,
 such as a comment on a line of code. It has no surface of its own: one 1px line
 in `--k2b-control-border-soft` runs at its start and turns 2px in
-`--k2b-edge-focus` while someone writes, drawn inside so no text moves.
+`--k2b-edge-focus` while someone writes; the padding gives the pixel back, so no
+text moves. The line is the logical start edge, so it follows the reading
+direction and shows in forced colours.
 
 - Every entry is a `Discussion.Item` with the same form: an 18px avatar, name
   and time in one line (pass the role as `meta` on the first entry), and the
   text below. All entries stand flush on one edge 11px from the line, 8px
-  apart; replies are not indented, a reply to a reply simply follows.
+  apart; replies are not indented, a reply to a reply simply follows. An item
+  action, such as "Delete" on someone's own comment, sits at the end of the
+  header line without making it taller.
 - The last line is a real field with the `placeholder`, such as "Reply …", on
-  the avatars' edge. Focus or the first character opens the writing field in
-  the same place.
+  the avatars' edge; the placeholder also names both fields. A click, Enter,
+  the first character, or focus from outside the thread opens the writing
+  field in the same place. Tab from the thread itself, as after cancelling,
+  reaches the field without opening it. An input method finishes composing
+  first.
 - The writing field has at least two lines and grows with its text, always one
-  line more than it holds. With its action row it is exactly as high as the
-  comment it becomes plus the reply line, so posting changes no height. The
-  row holds `hint` at its start, such as who will see the comment and when,
-  and "Cancel" and `submitLabel` at its end. An empty comment cannot be posted.
-- Escape cancels, Cmd/Ctrl+Enter posts. When posting fails, the text stays, the
-  hint line names the cause as an alert, and the button reads "Retry"; nothing
+  line more than it holds, measured at the width the comment will have after
+  its avatar, and again when the column gets narrower. With its action row it
+  is exactly as high as the comment it becomes plus the reply line, so posting
+  changes no height. The row holds `hint` at its start, at most two lines, such
+  as who will see the comment and when, and "Cancel" and `submitLabel` at its
+  end. An empty comment cannot be posted.
+- Cmd/Ctrl+Enter posts. Escape leaves an empty field; written text stays until
+  "Cancel". An empty field also closes when the focus leaves the thread, so
+  moving through a page leaves no thread open. When posting fails, the text
+  stays, the focus stays in the field, the hint line names the cause through an
+  alert region that is always there, and the button reads "Retry"; nothing
   moves. After posting or cancelling, the focus stays on the thread.
 - Without `onSubmit` the thread is read only, as after a decision: no reply
   field and no writing.
@@ -101,8 +113,9 @@ in `--k2b-control-border-soft` runs at its start and turns 2px in
 
 Control the writing state with `writing` and `onWritingChange`, or open a new
 thread on a line with `defaultWriting`. The host still owns the entries,
-permissions, deleting (as an item action), and paging; wrap long threads in
-`Discussion.List` with `fold` or `onLoadMore` as elsewhere.
+permissions, deleting (as an item action), and paging: with `hasMore`, "Load
+earlier" above the first entry calls `onLoadMore`; it never loads by itself.
+Pass the entries directly; do not wrap them in `Discussion.List`.
 
 ```tsx
 <Discussion.Thread
@@ -155,8 +168,9 @@ type DiscussionItemProps = Omit<JSX.LiHTMLAttributes<HTMLLIElement>, "children" 
 };
 type DiscussionThreadProps = {
   label: string; children?: JSX.Element; onSubmit?: (message: string) => boolean | void | Promise<boolean | void>;
-  placeholder?: string; hint?: JSX.Element; submitLabel: string; cancelLabel?: string;
+  placeholder: string; hint?: JSX.Element; submitLabel: string; cancelLabel?: string;
   writing?: boolean; onWritingChange?: (writing: boolean) => void; defaultWriting?: boolean;
+  hasMore?: boolean; onLoadMore?: () => boolean | void | Promise<boolean | void>; loadMoreLabel?: string;
 };
 ```
 

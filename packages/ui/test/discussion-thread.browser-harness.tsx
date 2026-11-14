@@ -1,6 +1,6 @@
 import { createSignal, For } from "solid-js";
 import { render } from "solid-js/web";
-import { Avatar, Discussion } from "../src/index";
+import { Avatar, Discussion, IconButton } from "../src/index";
 
 declare global {
   interface Window {
@@ -8,7 +8,7 @@ declare global {
   }
 }
 
-type Entry = { id: string; name: string; initials: string; role?: string; time: string; text: string };
+type Entry = { id: string; name: string; initials: string; role?: string; time: string; text: string; deletable?: boolean };
 
 const entry = (item: Entry) => (
   <Discussion.Item
@@ -16,6 +16,13 @@ const entry = (item: Entry) => (
     author={item.name}
     meta={item.role}
     timestamp={item.time}
+    actions={
+      item.deletable ? (
+        <IconButton label="Delete comment" size="sm" variant="ghost">
+          <i class="ti ti-trash" aria-hidden="true" />
+        </IconButton>
+      ) : undefined
+    }
   >
     {item.text}
   </Discussion.Item>
@@ -68,7 +75,7 @@ render(
             text: "Every unread mail gets a task, not only a callback request.",
           },
           { id: "b", name: "Jana Probe", initials: "JP", time: "5 min ago", text: "I see it the same way. I will ask for changes." },
-          { id: "c", name: "Ben Schulz", initials: "BS", time: "2 min ago", text: "Thanks." },
+          { id: "c", name: "Ben Schulz", initials: "BS", time: "2 min ago", text: "Thanks.", deletable: true },
         ]}
       />
       <p id="after-many">Line 4</p>

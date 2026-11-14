@@ -1,4 +1,4 @@
-import { children, createEffect, createSignal, createUniqueId, type JSX, on, onCleanup, Show, splitProps } from "solid-js";
+import { children, createEffect, createSignal, createUniqueId, type JSX, on, onCleanup, onMount, Show, splitProps } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { useChatMessages } from "../chat/chat-messages";
 import { LoadMore } from "../content/LoadMore";
@@ -70,8 +70,8 @@ export type DiscussionThreadProps = {
   children?: JSX.Element;
   /** Without it the thread is read only: no reply field and no writing. */
   onSubmit?: (message: string) => boolean | void | Promise<boolean | void>;
-  /** The reply field's placeholder and the writing field's name, such as "Reply …" or "Comment on line 5 …". */
-  placeholder?: string;
+  /** The reply field's placeholder and both fields' name, such as "Reply …" or "Comment on line 5 …". */
+  placeholder: string;
   /** A quiet line beside the buttons while writing, such as who will see the comment and when. */
   hint?: JSX.Element;
   /** Label of the button that posts, such as "Comment". */
@@ -82,6 +82,10 @@ export type DiscussionThreadProps = {
   onWritingChange?: (writing: boolean) => void;
   /** Opens with the writing field, such as a new thread on a line. */
   defaultWriting?: boolean;
+  /** Older entries exist: "Load earlier" above the first entry calls `onLoadMore`. */
+  hasMore?: boolean;
+  onLoadMore?: () => boolean | void | Promise<boolean | void>;
+  loadMoreLabel?: string;
 };
 
 type DiscussionComponent = ((props: DiscussionProps) => JSX.Element) & {
@@ -361,14 +365,11 @@ const DiscussionItem = (props: DiscussionItemProps): JSX.Element => {
   );
 };
 
-/** Line height of thread text: a short comment and the reply line are as high as the writing field. */
-const THREAD_LINE = 19;
-
 /**
  * A compact thread, as beside a line of code: no surface, one line at the start that turns into the focus colour while
- * writing, every entry flush with the others, and a real "Reply …" field as its last line. Focus or the first
- * character opens the writing field in the same place; it is exactly as high as a short comment with the reply line,
- * so posting changes no height.
+ * writing, every entry flush with the others, and a real reply field as its last line. A click, a key, or focus from
+ * outside opens the writing field in the same place; it is exactly as high as the comment it becomes with the reply
+ * line, so posting changes no height.
  */
 const DiscussionThread = (props: DiscussionThreadProps): JSX.Element => {
   const messages = useUiMessages();
@@ -385,16 +386,20 @@ const DiscussionThread = (props: DiscussionThreadProps): JSX.Element => {
   const [failed, setFailed] = createSignal<string | null>(null);
   let thread: HTMLDivElement | undefined;
   let field: HTMLTextAreaElement | undefined;
+  const entries = children(() => props.children);
 
-  // The field grows with its text and keeps one line more than it holds, the header line of the comment it becomes.
+  // The field grows with its text and keeps one line more than it holds: the header line of the comment it becomes.
+  // It is measured at the width of that comment's text, which starts after the avatar.
   const fit = () => {
     if (!field) return;
-    // Measured without the minimum, which would count as a line of text.
+    const line = Number.parseFloat(getComputedStyle(field).lineHeight) || 19;
     field.style.minHeight = "0px";
     field.style.height = "0px";
-    const lines = Math.max(1, Math.round(field.scrollHeight / THREAD_LINE));
+    field.style.paddingInlineEnd = "var(--k2b-discussion-thread-indent)";
+    const lines = Math.max(1, Math.round(field.scrollHeight / line));
+    field.style.paddingInlineEnd = "";
     field.style.minHeight = "";
-    field.style.height = `${(lines + 1) * THREAD_LINE}px`;
+    field.style.height = `${(lines + 1) * line}px`;
   };
   createEffect(
     on(writing, (open) => {
@@ -407,6 +412,20 @@ const DiscussionThread = (props: DiscussionThreadProps): JSX.Element => {
       });
     }),
   );
+  onMount(() => {
+    if (typeof ResizeObserver === "undefined" || !thread) return;
+    // A narrower column wraps the text again; the field follows.
+    let width = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      const next = entry?.contentRect.width ?? 0;
+      if (next !== width) {
+        width = next;
+        fit();
+      }
+    });
+    observer.observe(thread);
+    onCleanup(() => observer.disconnect());
+  });
 
   const close = () => {
     setText("");
@@ -426,9 +445,15 @@ const DiscussionThread = (props: DiscussionThreadProps): JSX.Element => {
       if ((await props.onSubmit(message)) !== false) close();
     } catch (error) {
       setFailed(error instanceof Error ? error.message : chatMessages().couldNotPostMessage);
+      field?.focus({ preventScroll: true });
     } finally {
       setSubmitting(false);
     }
+  };
+  // Opens the writing field with what was typed so far, once an input method has finished composing.
+  const openWith = (value: string) => {
+    setText(value);
+    setWriting(true);
   };
 
   return (
@@ -439,8 +464,29 @@ const DiscussionThread = (props: DiscussionThreadProps): JSX.Element => {
       aria-label={props.label}
       tabIndex={-1}
       data-writing={writing() ? "" : undefined}
+      onFocusOut={(event) => {
+        // An empty field closes once the focus leaves the thread, so moving through a page leaves no thread open.
+        const next = event.relatedTarget;
+        if (writing() && !text().trim() && !submitting() && next instanceof Node && !thread?.contains(next)) {
+          setFailed(null);
+          setWriting(false);
+        }
+      }}
     >
-      <ol class="k2b-discussion-thread__list">{props.children}</ol>
+      <Show when={props.hasMore && props.onLoadMore}>
+        <LoadMore
+          side="start"
+          class="k2b-discussion-thread__older"
+          hasMore
+          auto={false}
+          count={entries.toArray().length}
+          onLoadMore={() => props.onLoadMore?.()}
+          label={props.loadMoreLabel ?? chatMessages().loadEarlier}
+          loadingLabel={chatMessages().loadingMessages}
+          errorLabel={chatMessages().couldNotLoadEarlierMessages}
+        />
+      </Show>
+      <ol class="k2b-discussion-thread__list">{entries()}</ol>
       <Show when={props.onSubmit}>
         <Show
           when={writing()}
@@ -452,12 +498,27 @@ const DiscussionThread = (props: DiscussionThreadProps): JSX.Element => {
               aria-label={props.placeholder}
               autocomplete="off"
               value=""
-              onFocus={() => setWriting(true)}
+              onFocus={(event) => {
+                // Focus handed back to the thread (after cancelling) and moved on by Tab opens nothing.
+                if (event.relatedTarget !== thread) setWriting(true);
+              }}
+              onPointerDown={() => setWriting(true)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setWriting(true);
+                }
+              }}
               onInput={(event) => {
-                // The first character opens the writing field and moves there.
-                setText(event.currentTarget.value);
+                if (event.isComposing) return;
+                const value = event.currentTarget.value;
                 event.currentTarget.value = "";
-                setWriting(true);
+                openWith(value);
+              }}
+              onCompositionEnd={(event) => {
+                const value = event.currentTarget.value;
+                event.currentTarget.value = "";
+                openWith(value);
               }}
             />
           }
@@ -475,17 +536,18 @@ const DiscussionThread = (props: DiscussionThreadProps): JSX.Element => {
               class="k2b-discussion-thread__field"
               placeholder={props.placeholder}
               aria-label={props.placeholder}
-              aria-invalid={failed() ? "true" : undefined}
               aria-describedby={`${fieldId}-status`}
               value={text()}
-              disabled={submitting()}
+              readOnly={submitting()}
               onInput={(event) => {
                 setText(event.currentTarget.value);
                 if (failed()) setFailed(null);
                 fit();
               }}
               onKeyDown={(event) => {
-                if (event.key === "Escape") {
+                if (event.isComposing) return;
+                // Escape leaves an empty field; written text stays until "Cancel".
+                if (event.key === "Escape" && !text().trim()) {
                   event.preventDefault();
                   close();
                 } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -495,14 +557,12 @@ const DiscussionThread = (props: DiscussionThreadProps): JSX.Element => {
               }}
             />
             <div class="k2b-discussion-thread__actions">
-              {/* The status line is always there: the hint, or why posting failed. */}
-              <p
-                id={`${fieldId}-status`}
-                class="k2b-discussion-thread__status"
-                role={failed() ? "alert" : undefined}
-                data-tone={failed() ? "danger" : undefined}
-              >
-                {failed() ?? props.hint}
+              {/* Hint and failure share one cell, so neither moves the buttons; the alert region is always there. */}
+              <p id={`${fieldId}-status`} class="k2b-discussion-thread__status">
+                <span aria-hidden={failed() ? "true" : undefined} data-hidden={failed() ? "" : undefined}>
+                  {props.hint}
+                </span>
+                <span role="alert">{failed()}</span>
               </p>
               <Button type="button" variant="ghost" size="sm" disabled={submitting()} onClick={close}>
                 {props.cancelLabel ?? messages().cancel}

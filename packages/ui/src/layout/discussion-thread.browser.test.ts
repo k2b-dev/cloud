@@ -28,6 +28,8 @@ beforeAll(async () => {
       {
         name: "discussion-thread-dom",
         setup(builder) {
+          // The harness runs against the shipped browser build, so only the harness itself goes through Babel.
+          builder.onResolve({ filter: /\/src\/index$/ }, () => ({ path: resolve(ui, "dist/browser/index.js") }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -89,18 +91,29 @@ for (const width of [1440, 390]) {
         const thread = await box(page, "#many .k2b-discussion-thread");
         const avatars = await lefts(page, "#many .k2b-discussion__avatar");
         expect(new Set(avatars).size).toBe(1);
-        expect(avatars[0]).toBe(thread.x + 11);
+        // The 1 px line, then 11 px to the avatars.
+        expect(avatars[0]).toBe(thread.x + 12);
         expect((await box(page, "#many .k2b-discussion-thread__reply")).x).toBe(avatars[0]!);
         const rows = await page
           .locator("#many .k2b-discussion__item")
           .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect()).map((rect) => [rect.top, rect.bottom]));
         for (let index = 1; index < rows.length; index++) expect(rows[index]![0]! - rows[index - 1]![1]!).toBe(8);
         // No surface: the thread is transparent, only its 1 px line is drawn.
-        const paint = await page
-          .locator("#many .k2b-discussion-thread")
-          .evaluate((node) => ({ background: getComputedStyle(node).backgroundColor, line: getComputedStyle(node).boxShadow }));
-        expect(paint.background).toBe("rgba(0, 0, 0, 0)");
-        expect(paint.line).toMatch(/ 1px 0px 0px 0px inset$/);
+        const paint = await page.locator("#many .k2b-discussion-thread").evaluate((node) => {
+          const style = getComputedStyle(node);
+          return {
+            background: style.backgroundColor,
+            width: style.borderLeftWidth,
+            colour: style.borderLeftColor,
+            radius: style.borderRadius,
+          };
+        });
+        expect(paint).toEqual({ background: "rgba(0, 0, 0, 0)", width: "1px", colour: "rgb(200, 200, 208)", radius: "0px" });
+        // An action such as "Delete" keeps its header line at 19 px.
+        const headers = await page
+          .locator("#many .k2b-discussion__entry > header")
+          .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+        expect(headers).toEqual([19, 19, 19]);
       } finally {
         await page.close();
       }
@@ -117,16 +130,35 @@ for (const width of [1440, 390]) {
         expect(await field.evaluate((node) => node === document.activeElement)).toBe(true);
         expect((await box(page, "#one .k2b-discussion-thread__field")).x).toBe(reply.x);
         expect(await box(page, "#one .k2b-discussion__content")).toEqual(entryText);
-        expect(await page.locator("#one .k2b-discussion-thread").evaluate((node) => getComputedStyle(node).boxShadow)).toMatch(
-          /^rgb\(29, 78, 216\) 2px 0px 0px 0px inset$/,
-        );
+        expect(
+          await page
+            .locator("#one .k2b-discussion-thread")
+            .evaluate((node) => [getComputedStyle(node).borderLeftWidth, getComputedStyle(node).borderLeftColor]),
+        ).toEqual(["2px", "rgb(29, 78, 216)"]);
         // An empty comment cannot be posted.
         expect(await page.locator("#one .k2b-discussion-thread__actions button[type=submit]").isDisabled()).toBe(true);
-        expect(await page.locator("#one .k2b-discussion-thread__status").textContent()).toBe("Visible with your decision");
+        expect(await page.locator("#one .k2b-discussion-thread__status > :not([role=alert])").textContent()).toBe(
+          "Visible with your decision",
+        );
         await page.keyboard.press("Escape");
         await settled(page);
         expect(await page.locator("#one .k2b-discussion-thread__field").count()).toBe(0);
         expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-discussion-thread"))).toBe(true);
+        // Tab from the thread reaches the reply field without opening it; Enter opens it.
+        await page.keyboard.press("Tab");
+        expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-discussion-thread__reply"))).toBe(true);
+        expect(await page.locator("#one .k2b-discussion-thread__field").count()).toBe(0);
+        await page.keyboard.press("Enter");
+        await settled(page);
+        expect(await page.locator("#one .k2b-discussion-thread__field").count()).toBe(1);
+        // Written text survives Escape; an empty field closes when the focus moves on.
+        await page.keyboard.type("Keep me");
+        await page.keyboard.press("Escape");
+        expect(await page.locator("#one .k2b-discussion-thread__field").inputValue()).toBe("Keep me");
+        await page.locator("#one .k2b-discussion-thread__field").fill("");
+        for (let step = 0; step < 3; step++) await page.keyboard.press("Tab");
+        await settled(page);
+        expect(await page.locator("#one .k2b-discussion-thread__field").count()).toBe(0);
       } finally {
         await page.close();
       }
@@ -142,6 +174,23 @@ for (const width of [1440, 390]) {
         });
         await settled(page);
         expect(await page.locator("#many .k2b-discussion-thread__field").inputValue()).toBe("O");
+      } finally {
+        await page.close();
+      }
+    });
+
+    test("a comment of several lines posts without a jump: the field held one line more than its text", async () => {
+      const page = await open(width);
+      try {
+        const text = "Every unread mail gets a task, not only a callback request, and the folder name must match the old one exactly.";
+        await page.locator("#new .k2b-discussion-thread__field").fill(text);
+        await settled(page);
+        const thread = await box(page, "#new .k2b-discussion-thread");
+        await page.locator("#new .k2b-discussion-thread__field").press("Control+Enter");
+        await settled(page);
+        expect(await page.locator("#new .k2b-discussion__item").count()).toBe(1);
+        expect((await box(page, "#new .k2b-discussion__content")).height).toBeGreaterThan(19);
+        expect(await box(page, "#new .k2b-discussion-thread")).toEqual(thread);
       } finally {
         await page.close();
       }
@@ -181,9 +230,9 @@ for (const width of [1440, 390]) {
         await page.locator("#new .k2b-discussion-thread__actions button[type=submit]").click();
         await settled(page);
         expect(await page.locator("#new .k2b-discussion-thread__field").inputValue()).toBe("Check the folder name.");
-        const status = page.locator("#new .k2b-discussion-thread__status");
-        expect(await status.textContent()).toBe("The comment was not saved.");
-        expect(await status.getAttribute("role")).toBe("alert");
+        expect(await page.locator("#new .k2b-discussion-thread__status [role=alert]").textContent()).toBe("The comment was not saved.");
+        // The keyboard stays in the field to retry.
+        expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-discussion-thread__field"))).toBe(true);
         expect(await page.locator("#new .k2b-discussion-thread__actions button[type=submit]").textContent()).toBe("Retry");
         expect(await box(page, "#new .k2b-discussion-thread")).toEqual(thread);
         await page.locator("#new .k2b-discussion-thread__actions button[type=submit]").click();
