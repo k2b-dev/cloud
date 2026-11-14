@@ -67,10 +67,24 @@ attribute.
 - `--k2b-text`: content, titles, and values.
 - `--k2b-text-secondary`: labels, field and sidebar section titles, supporting lines, descriptions, and secondary buttons.
 - `--k2b-text-muted`: metadata, timestamps, and quiet hints.
+- `--k2b-text-subtle`: a third grey for meta lines, axes, and times beside muted
+  text on calm surfaces (`#71717a`, dark `#8d8d98`).
 
 Secondary ink keeps at least 10:1 contrast and muted ink at least 7:1 on both
-`--k2b-surface` and `--k2b-surface-muted`, in light and dark themes. Placeholder
-color stays separate in `--k2b-placeholder-color`.
+`--k2b-surface` and `--k2b-surface-muted`, in light and dark themes. Subtle ink
+keeps 4.5:1 on `--k2b-surface`; use it on the surface, not on muted or tinted
+fills. Placeholder color stays separate in `--k2b-placeholder-color`.
+
+## Type steps of calm surfaces
+
+`--k2b-type-12`, `--k2b-type-13`, `--k2b-type-14`, and `--k2b-type-18` are the
+only sizes of the calm surfaces (the working plan, approvals, comment threads,
+and the surfaces built on them). A box or section uses at most two text styles,
+title and entry, plus one quiet meta style; a style is size plus weight, and a
+status word in its colour is no style of its own. The leading signs of its rows
+stand on one axis. Typical pairs are title 13/600 or 14/600, entry 13/400, and
+meta 12/400; a question in an approval uses 18 px. Browser tests hold a surface
+to the rule with `meterType` from `scripts/fixtures/type-meter.ts`.
 
 Buttons and labels use 13px semibold type, sidebar rows 13px regular type;
 small buttons and sidebar section titles use 12px. Descriptions and supporting

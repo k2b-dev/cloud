@@ -710,13 +710,29 @@ user input is a separate state.
 Use `Chat.Tasks` above the composer for a compact working plan. Pass `items`
 with stable `id`, `content`, and `status` (`pending`, `in_progress`, `completed`,
 `cancelled`), controlled `open`/`onOpenChange`, a `label`, a `progressLabel`,
-and localized `statusLabels`. The component renders one colored segment per
-item and a bounded, scrollable disclosure. Status symbols and labels complement
-color; cancelled work has a striped segment and a struck-through description.
+and localized `statusLabels`. Set `paused` while the work is interrupted.
+
+The plan is a plum-tinted tray without edge or shadow. Its header lies at the
+composer and holds a progress ring, the title, the current step (only while
+folded), and the count with tabular figures. The list opens upwards from the
+header; folding changes only the list's height, so the composer and the
+conversation stay where they are. Rows are 32 px high and never change their
+height with their status: a circle for open work, a turning ring and bold text
+for the current step on a white highlight that glides to the next row, a check
+and grey text for done work, and a cross with struck-through text for dropped
+work. Long text wraps; about six rows show, then the list scrolls inside
+itself and keeps the current row in view. Dropped work does not count towards
+the ring. Each status is read out as its word; folded rows leave the tab order.
+
+`Chat.TaskList` shows the same rows still, without header, ring, or fold, on
+its container's text edge: use it for a plan that stopped, such as a notice
+that lists what is done and what is open. Name it with `aria-label` or
+`aria-labelledby`.
 
 The host decides when a plan exists, persists it, counts cancelled work
-separately, and translates execution state into labels. Do not label a paused
-current step as running. This component does not start tasks or infer progress.
+separately, translates execution state into labels, and titles a finished plan
+("All tasks done"). Do not label a paused current step as running. This
+component does not start tasks or infer progress.
 
 Message file attachments use compact horizontal chips with an icon and a single
 filename line. Long filenames truncate; the attachment row wraps when needed.

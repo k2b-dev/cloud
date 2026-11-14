@@ -55,6 +55,7 @@
     --k2b-text: light-dark(#09090b, #fafafa);
     --k2b-text-secondary: light-dark(#27272a, #f1f1f3);
     --k2b-text-muted: light-dark(#45454e, #bdbdc6);
+    --k2b-text-subtle: light-dark(#71717a, #8d8d98);
     --k2b-placeholder-color: light-dark(#71717a, color-mix(in srgb, #a1a1aa 70%, #71717a));
     --k2b-border: light-dark(#e4e4e7, #29313a);
     --k2b-border-strong: light-dark(#d4d4d8, #3a4552);
