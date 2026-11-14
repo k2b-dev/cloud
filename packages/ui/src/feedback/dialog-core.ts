@@ -2,6 +2,7 @@ import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
+import { applyUiScope, readUiScope } from "../internal/portal-scope";
 import { RenderErrorBoundary } from "../internal/render-error";
 import { resolveUiMessages } from "../intl/messages";
 import { isPointInsideToast } from "./toast-hit";
@@ -59,6 +60,7 @@ export type DialogCore = {
 };
 
 type DialogStackEntry = {
+  uiScope: ReturnType<typeof readUiScope>;
   container: HTMLDivElement;
   dispose?: () => void;
   resolve?: (value: unknown) => void;
@@ -372,7 +374,6 @@ export const createDialogCore = () => {
   };
 
   const ensureDialogElement = () => {
-    if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
     // Reuse the shared element whenever it is still in the document. Resolving
     // the portal root first would create a second <dialog> when focus has moved
     // into another `.k2b-ui` scope, orphaning the levels already on the stack.
@@ -388,7 +389,8 @@ export const createDialogCore = () => {
       else element.show();
       resolveInitialFocusTarget(top, element)?.focus();
     };
-    getK2bPortalRoot().appendChild(element);
+    // Each stack level carries its own palette, independently of the first opener.
+    getK2bPortalRoot(undefined, document.body).appendChild(element);
     state.element = element;
     return element;
   };
@@ -414,6 +416,8 @@ export const createDialogCore = () => {
   const applyPresentation = (entry: DialogStackEntry) => {
     const dialog = state.element;
     if (!dialog || state.stack[state.stack.length - 1] !== entry) return;
+    if (dialog.className !== entry.panelClassName) dialog.className = entry.panelClassName;
+    applyUiScope(dialog, entry.uiScope);
     const position = entry.position;
     dialog.style.position = position ? "fixed" : "";
     dialog.style.inset = position ? `${position.y}px auto auto ${position.x}px` : "";
@@ -503,7 +507,6 @@ export const createDialogCore = () => {
     const previous = state.stack[state.stack.length - 1];
     if (previous && dialog) {
       previous.container.style.display = "";
-      dialog.className = previous.panelClassName;
       applyPresentation(previous);
       applyAccessibleName(dialog, previous);
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
@@ -559,15 +562,21 @@ export const createDialogCore = () => {
   };
 
   const open = <T>(view: DialogRender<T>, options: OpenDialogOptions = {}): Promise<T | undefined> => {
-    return openAfter(view, options, disposals);
+    if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
+    return openAfter(view, options, disposals, readUiScope());
   };
 
-  const openAfter = <T>(view: DialogRender<T>, options: OpenDialogOptions, requested: number): Promise<T | undefined> => {
+  const openAfter = <T>(
+    view: DialogRender<T>,
+    options: OpenDialogOptions,
+    requested: number,
+    uiScope: ReturnType<typeof readUiScope>,
+  ): Promise<T | undefined> => {
     if (options.signal?.aborted) return Promise.resolve(undefined);
     if (options.history) {
       // Dialogs closed just now leave the history first, or this dialog's entry would be the one removed.
       if (historySyncScheduled) syncHistory();
-      if (returning) return returning.then(() => openAfter(view, options, requested));
+      if (returning) return returning.then(() => openAfter(view, options, requested, uiScope));
     }
     // A dialog that waited for history while islands were disposed would open over content it was never meant for.
     if (disposals !== requested) return Promise.resolve(undefined);
@@ -580,13 +589,13 @@ export const createDialogCore = () => {
     const panelClassName = options.panelClassName ?? DEFAULT_PANEL_CLASS;
     const cancelBehavior = options.cancelBehavior ?? "resolve-undefined";
     const initialFocus = options.initialFocus ?? "first-input";
-    dialog.className = panelClassName;
 
     const container = document.createElement("div");
     container.className = options.contentClassName ?? DEFAULT_CONTENT_CLASS;
     dialog.appendChild(container);
 
     const entry: DialogStackEntry = {
+      uiScope,
       container,
       panelClassName,
       cancelBehavior,
@@ -630,6 +639,7 @@ export const createDialogCore = () => {
       if (options.history) pushHistory(entry, options.historyUrl);
       state.stack.push(entry);
       try {
+        applyPresentation(entry);
         entry.dispose = render(
           () =>
             createComponent(RenderErrorBoundary, {
@@ -654,7 +664,7 @@ export const createDialogCore = () => {
               onError: () => {
                 entry.panelClassName = RENDER_ERROR_PANEL_CLASS;
                 container.className = DEFAULT_CONTENT_CLASS;
-                if (state.stack[state.stack.length - 1] === entry) dialog.className = RENDER_ERROR_PANEL_CLASS;
+                applyPresentation(entry);
               },
             }),
           container,

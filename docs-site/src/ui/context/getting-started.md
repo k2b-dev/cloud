@@ -45,6 +45,7 @@ export function ProfileForm() {
 ```
 
 Portalled surfaces such as prompts, menus, and tooltips preserve the scope automatically.
+Use [Primary scope](./primary-scope) to give an AI area plum primary actions, selection, and focus.
 
 ## Fonts and icons
 
