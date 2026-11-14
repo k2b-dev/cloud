@@ -330,7 +330,12 @@ catalog does not fit its hard prompt budget, Cloud selects whole entries relevan
 request and exposes the omitted entries through `search_skills`. The slash menu and
 `search_skills` share a permission-aware search over Skill names and descriptions.
 It supports partial words and minor typos, prioritizes name matches, and excludes
-disabled Skills before limiting results. Skill instructions and references are
+disabled Skills before limiting results. In the slash menu, built-in Skills have
+titles and descriptions in the person's interface language. The menu also searches
+these translated labels. Skills without a menu translation keep their own name
+and description. Customized app descriptions also keep their own text. English
+always shows the installed Skill text. Menu translations do not change the source
+descriptions used for model discovery. Skill instructions and references are
 not searched or loaded during discovery. Server callers use
 `aiSkills.search({ actor, accessSubject }, query, limit, { modelInvocableOnly })` and receive
 `{ skills, more }`. Set `modelInvocableOnly: true` for model discovery; omit it
