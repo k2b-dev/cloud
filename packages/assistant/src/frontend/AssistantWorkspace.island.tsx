@@ -98,7 +98,7 @@ import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
 import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
-import { AssistantWaitingStrip, createWaitingQuestionFocus, type WaitingAttention } from "./AssistantWaitingStrip";
+import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
@@ -1552,30 +1552,7 @@ export default function AssistantWorkspace(props: Props) {
         </LocaleProvider>
       ),
     });
-  // What stopped in this chat and waits for the person shows beside the open questions, with the same target as before.
-  const chatAttention = (): WaitingAttention[] => {
-    const snapshot = contextState.snapshot();
-    if (!snapshot || snapshot.chatId !== chat.activeConversationId()) return [];
-    const copy = sidebarCopy();
-    return [
-      ...snapshot.tasks
-        .filter((task) => task.state === "needs_attention")
-        .map((task) => ({
-          key: `task:${task.id}`,
-          label: copy.taskNeedsAttention({ title: assistantTaskTitle(task) }),
-          icon: "ti ti-calendar-time",
-          onClick: () => sidebarActions().onOpenTask?.(task),
-        })),
-      ...snapshot.results
-        .filter((result) => result.app?.lastRun === "error")
-        .map((result) => ({
-          key: `app:${result.key}`,
-          label: copy.appRunFailed({ title: result.title }),
-          icon: "ti ti-alert-circle",
-          onClick: () => artifactWorkspace.open(appTab(result.app!.id, result.title)),
-        })),
-    ];
-  };
+
   const [emptyProjectId, setEmptyProjectId] = createSignal<string | null>(activeConversation()?.projectId ?? null);
   const [choosingProject, setChoosingProject] = createSignal(false);
   let emptyProjectConversationId: string | null = null;
@@ -2249,14 +2226,13 @@ export default function AssistantWorkspace(props: Props) {
                 />
               </Show>
               {/* Right above the field, under the thumb on phones. */}
-              <Show when={waiting().total > 0 || chatAttention().length > 0}>
+              <Show when={waiting().total > 0}>
                 <AssistantWaitingStrip
                   view={waiting()}
                   conversationId={waitingConversationId()}
-                  quiet={waitingFocus.quiet() && chatAttention().length === 0}
+                  quiet={waitingFocus.quiet()}
                   onJump={(question) => void jumpToQuestion(question)}
                   onShowMore={openApprovals}
-                  attention={chatAttention()}
                 />
               </Show>
             </>

@@ -608,8 +608,8 @@ fixed place (download for files, show in chat otherwise), never on touch. The
 box keeps what someone reads while the pointer or focus is inside, and always
 while it is open under its button or as a sheet; news raise **New · n** in its
 head. What stopped in the chat and waits for the person (a routine that needs
-attention, a failed app run) shows in **Waiting for you** above the composer,
-with the same target as before. Empty, the box says what will appear; loading
+attention, a failed app run) shows at the top of the tab **In this chat**, with
+the same target as before. Empty, the box says what will appear; loading
 shows placeholder rows; a failed load offers **Retry** and leaves the chat
 untouched.
 
@@ -621,7 +621,7 @@ button opens a bottom sheet that Back closes. The former sidebar column, its
 drawer, and the `assistant_context` cookie are gone.
 
 **Open as tab** and **Show all** open the tab **In this chat** with the chat's
-whole list, in this order: **Results** (files, Studio apps, and
+whole list, in this order: what needs attention, **Results** (files, Studio apps, and
 visualizations the assistant delivered, each with the sentence it gave),
 **Your files** (uploads and voice recordings; an upload the assistant hands
 over with `present` stays here), **Sources** (read web pages,
