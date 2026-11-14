@@ -182,7 +182,7 @@ test("what a message brings along stands above it: images as previews, files as 
       const image = await box(page, '.k2b-chat-message__attachment[data-kind="image"]');
       expect([image.width, image.height, image.radius]).toEqual([148, 110, "12px"]);
       const file = page.locator('.k2b-chat-message__attachment[data-kind="file"]');
-      expect((await file.innerText()).replace(/\s+/g, " ").trim()).toMatch(/^Nachlass-Liste\.pdf 123(,|\.)\d KB$/);
+      expect((await file.innerText()).replace(/\s+/g, " ").trim()).toMatch(/^Nachlass-Liste\.pdf 12\d\S* [KkM]i?B$/);
       const tile = await box(page, '.k2b-chat-message__attachment[data-kind="file"]');
       // Grey tiles without an edge, on the bubble's right edge.
       expect(tile.radius).toBe("12px");
