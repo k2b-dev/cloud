@@ -1272,13 +1272,12 @@ suite("AI executor integration", () => {
         frontendModes: new Map(),
         streamArgs: new Map(),
       };
+      // A view too large to stay inline: Cloud keeps it complete behind a content reference.
       const content = {
-        kind: "page" as const,
-        title: "Unsaved proposal",
-        body: `${"x".repeat(80_000)}\u0000END`,
-        format: "plain" as const,
+        version: 1 as const,
+        blocks: [{ kind: "Text" as const, text: `Unsaved proposal\n\n${"x".repeat(80_000)}\u0000END` }],
       };
-      const fullReview = { ...reviewFixture(), ask: "app_asks" as const, content };
+      const fullReview = { ...reviewFixture(), ask: "app_asks" as const, view: content };
       const reviews = new Map<string, CapabilityActionReviewData>();
       pipeline.setApprovalReviews(reviews, new Map());
       const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "linked-approval-test" });

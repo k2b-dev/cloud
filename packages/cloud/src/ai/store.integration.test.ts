@@ -1530,8 +1530,6 @@ suite("AI conversation store integration", () => {
       expect(await aiConversations.listPendingTurnActions({ conversationId: conversation.id, turnId: turn.id })).toEqual([
         {
           type: "approval_request",
-          // Without a platform approval request there is no request id and no review digest yet.
-          digest: null,
           turnId: turn.id,
           conversationId: conversation.id,
           callId: "call-1",

@@ -14,7 +14,7 @@ import {
   steerAppliedBlockId,
   steerMessageBlockId,
 } from "./protocol";
-import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
+import { messagesNeedChoiceContext, projectPublicAiStoredMessages, publicAiStoredMessages, viewHasChoice } from "./public-projection";
 import { capabilityResultView } from "./result-view";
 import { aiConversations } from "./store";
 import type { AiConversation } from "./types";
@@ -168,9 +168,16 @@ const loadStreamSnapshot = async (conversation: AiConversation, viewerUserId?: s
     aiConversations.getActiveTurn({ conversationId: conversation.id }),
   ]);
   const snapshot = active ? turnSnapshotFromActive(active) : null;
-  if (snapshot) {
-    const context = await aiConversations.listChoiceMessages({ conversationId: conversation.id });
-    const choices = projectAiChoices(context);
+  // The choice history is read at most once, and only when the page or the running turn shows a choice.
+  const choiceContext =
+    messagesNeedChoiceContext(page.messages) ||
+    snapshot?.blocks.some(
+      (block) => block.kind === "tool" && (viewHasChoice(block.view) || viewHasChoice(Reflect.get(Object(block.result), "view"))),
+    )
+      ? await aiConversations.listChoiceMessages({ conversationId: conversation.id })
+      : [];
+  if (snapshot && choiceContext.length) {
+    const choices = projectAiChoices(choiceContext);
     const byCall = new Map(
       choices.flatMap((stored) =>
         stored.loopId === active!.turn.id && stored.message.role === "tool_result" && stored.meta?.resultChoice
@@ -207,7 +214,7 @@ const loadStreamSnapshot = async (conversation: AiConversation, viewerUserId?: s
     state: {
       type: "state",
       conversation: { ...conversation, id: conversation.shortId },
-      messages: await publicAiStoredMessages(page.messages, conversation, viewerUserId),
+      messages: await publicAiStoredMessages(page.messages, conversation, viewerUserId, choiceContext),
       hasMoreMessages: page.hasMore,
       activeTurn: snapshot,
     },

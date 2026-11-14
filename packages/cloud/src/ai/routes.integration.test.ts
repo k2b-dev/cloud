@@ -1208,6 +1208,9 @@ suite("local client actions and preview", () => {
         expect(await response.json()).toEqual([
           {
             type: "approval_request",
+            // The platform request and its review digest let a client edit a draft against exactly this request.
+            requestId: request?.id,
+            digest: expect.stringMatching(/^[a-f0-9]{64}$/),
             conversationId: chat.shortId,
             turnId: turn.shortId,
             callId,
@@ -1301,6 +1304,8 @@ suite("local client actions and preview", () => {
       expect(await response.json()).toEqual([
         {
           type: "approval_request",
+          requestId: request?.id,
+          digest: expect.stringMatching(/^[a-f0-9]{64}$/),
           conversationId: chat.shortId,
           turnId: turn.shortId,
           callId,

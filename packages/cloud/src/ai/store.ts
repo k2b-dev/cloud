@@ -808,7 +808,7 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
     : {
         type: "approval_request",
         requestId: row.approval_id ?? undefined,
-        digest: row.review_digest,
+        digest: row.review_digest ?? undefined,
         turnId: row.turn_id,
         conversationId: row.conversation_id,
         callId: row.call_id,
@@ -832,7 +832,7 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
 
 const rowToPendingActionRecord = (row: PendingActionRow): AiPendingTurnActionRecord => ({
   approvalId: row.approval_id ?? undefined,
-  digest: row.review_digest,
+  digest: row.review_digest ?? undefined,
   turnId: row.turn_id,
   conversationId: row.conversation_id,
   callId: row.call_id,

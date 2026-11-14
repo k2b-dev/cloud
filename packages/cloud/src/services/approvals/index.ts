@@ -192,7 +192,7 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
         kind, approver_role, author_user_id, requester_href)
       VALUES (${input.appId}, ${input.action}, ${input.approvalScope ?? null}, ${input.requester.kind}, ${input.requester.ref},
         ${input.requester.appId}, ${input.requester.title ?? null}, ${subjectId}::uuid, ${recipient}::uuid,
-        (SELECT auth_epoch FROM auth.users WHERE id=${recipient}::uuid), ${role ? "confirm" : input.assurance}, ${input.sentence}, ${serializeReviewSnapshot(input.review ?? null)}::text::jsonb,
+        (SELECT auth_epoch FROM auth.users WHERE id=${recipient}::uuid), ${role ? "confirm" : input.assurance}, ${storableText(input.sentence)}, ${serializeReviewSnapshot(input.review ?? null)}::text::jsonb,
         ${approvalArgsDigest(input.input)}, ${approvalReviewDigest(input.review)}, now() + (${expiresInMs} * interval '1 millisecond'),
         ${input.kind ?? "action"}, ${role ? input.approverRole : null}, ${role ? input.authorUserId : null}::uuid, ${role ? input.requester.href : null})
       ON CONFLICT (requester_kind, requester_ref) DO NOTHING
@@ -210,6 +210,9 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
     return open ? { ok: true, id: open.id } : { ok: false, code: "CONFLICT" };
   });
 };
+
+/** Postgres text holds no NUL; an app's words may. The sentence keeps every other character as it was. */
+const storableText = (value: string) => value.replaceAll("\u0000", "\uFFFD");
 
 /** Read the recorded snapshot for trusted server-side callers; HTTP readers must check the recipient. */
 export const get = async (id: string, db?: SQL, compactReview = false): Promise<ApprovalRequest | null> =>
