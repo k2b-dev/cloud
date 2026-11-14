@@ -1,0 +1,6 @@
+### A browser geometry timeout reached the test deadline before reporting media state
+
+- **What happened:** The WebKit QR camera rotation test reached its 30-second limit in the geometry wait. Its error arrived between tests without a video-state report, leaving the camera-rotation cause unknown.
+- **Root cause:** The geometry wait used Playwright's default 30-second timeout, equal to the enclosing test's deadline. Only the later decode wait carried media diagnostics. The CI trace identifies `expectCentred(360)` but cannot tell whether video dimensions or the rendered aspect ratio failed.
+- **Error class:** A nested asynchronous wait reaches its enclosing test deadline before its failure diagnostics can run.
+- **Guard:** Geometry waits now fail within five seconds and use the existing bounded media-state reporter. The report includes expected picture width, canvas dimensions and paint count, delivered video frames, video and track dimensions, layout size, player state, and bounded media events without pixels or decoded content. A browser regression deliberately waits for a picture size that never arrives and asserts the diagnostic payload; omitting the reporter makes it fail. The underlying WebKit rotation failure remains open in #3364; this change supplies evidence rather than claiming a cause fix.

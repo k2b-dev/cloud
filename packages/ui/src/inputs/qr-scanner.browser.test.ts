@@ -52,6 +52,8 @@ type Probe = {
   turned: boolean;
   /** Media events of the preview and play() calls, for the report of a scan that never ends (#2187). */
   media: string[];
+  cameraPicture: { width: number; height: number; paints: number } | null;
+  videoFrames: number | null;
 };
 
 /**
@@ -74,6 +76,23 @@ function stubDevice({
 }) {
   const probe = globalThis as unknown as Probe;
   probe.media = [];
+  probe.cameraPicture = null;
+  probe.videoFrames = null;
+  const observed = new WeakSet<HTMLVideoElement>();
+  document.addEventListener(
+    "loadedmetadata",
+    ({ target }) => {
+      if (!(target instanceof HTMLVideoElement) || observed.has(target) || !("requestVideoFrameCallback" in target)) return;
+      observed.add(target);
+      probe.videoFrames = 0;
+      const delivered = () => {
+        probe.videoFrames = (probe.videoFrames ?? 0) + 1;
+        target.requestVideoFrameCallback(delivered);
+      };
+      target.requestVideoFrameCallback(delivered);
+    },
+    true,
+  );
   const note = (entry: string) => {
     if (probe.media.length < 60) probe.media.push(`${Math.round(performance.now())} ${entry}`);
   };
@@ -170,9 +189,12 @@ function stubDevice({
     canvas.height = camera === "turning" ? 360 : 640;
     const context = canvas.getContext("2d")!;
     const modules = new Path2D(code.path);
+    const picture = { width: canvas.width, height: canvas.height, paints: 0 };
+    probe.cameraPicture = picture;
     const draw = () => {
       if (camera === "turning" && probe.turned && canvas.width !== 360) [canvas.width, canvas.height] = [360, 640];
       const { width, height } = canvas;
+      Object.assign(picture, { width, height, paints: picture.paints + 1 });
       context.setTransform(1, 0, 0, 1, 0, 0);
       context.fillStyle = "#fff";
       context.fillRect(0, 0, width, height);
@@ -261,6 +283,60 @@ const probe = (page: Page) =>
     return { detects, requests };
   });
 const calls = (page: Page) => page.evaluate(() => (globalThis as unknown as Probe).scanner);
+/** Geometry and decoder failures both need the media trace, without recording camera pixels or decoded text. */
+const reportScannerState = async (page: Page, error: unknown) => {
+  const state = await Promise.race([
+    page.evaluate(() => {
+      const probe = globalThis as unknown as Probe;
+      const video = document.querySelector("video");
+      return {
+        status: document.querySelector('[role="status"]')?.textContent,
+        retryShown: document.querySelector(".k2b-qr-scanner__retry") !== null,
+        video: video && {
+          paused: video.paused,
+          readyState: video.readyState,
+          size: `${video.videoWidth}x${video.videoHeight}`,
+          stream: video.srcObject instanceof MediaStream ? video.srcObject.active : null,
+          box: { width: video.getBoundingClientRect().width, height: video.getBoundingClientRect().height },
+          tracks:
+            video.srcObject instanceof MediaStream
+              ? video.srcObject.getVideoTracks().map((track) => ({
+                  readyState: track.readyState,
+                  muted: track.muted,
+                  width: track.getSettings().width,
+                  height: track.getSettings().height,
+                }))
+              : [],
+        },
+        detects: probe.detects,
+        cameraPicture: probe.cameraPicture,
+        videoFrames: probe.videoFrames,
+        media: probe.media,
+      };
+    }),
+    Bun.sleep(1_000).then(() => "no answer within 1 s"),
+  ]).catch((reason: unknown) => `unreadable: ${String(reason)}`);
+  if (error instanceof Error) error.message += `\n\nScanner state: ${JSON.stringify(state, null, 1)}`;
+};
+/** Wait for both the camera dimensions and the corresponding layout, with evidence if either stalls. */
+const waitForPicture = async (page: Page, pictureWidth: number) => {
+  // Fail with the media trace before the enclosing 30-second test deadline can cancel this diagnostic.
+  try {
+    await page.waitForFunction(
+      (width) => {
+        const video = document.querySelector("video")!;
+        const box = video.getBoundingClientRect();
+        return video.videoWidth === width && Math.abs(box.width / box.height - video.videoWidth / video.videoHeight) < 0.01;
+      },
+      pictureWidth,
+      { timeout: 5_000 },
+    );
+  } catch (error) {
+    if (error instanceof Error) error.message += `\nExpected picture width: ${pictureWidth}`;
+    await reportScannerState(page, error);
+    throw error;
+  }
+};
 /** Waits until the scanner reports a code or an error; without one, the error says what the preview and scanner did. */
 const settled = async (page: Page) => {
   try {
@@ -273,26 +349,7 @@ const settled = async (page: Page) => {
       { timeout: 15_000 },
     );
   } catch (error) {
-    const state = await Promise.race([
-      page.evaluate(() => {
-        const probe = globalThis as unknown as Probe;
-        const video = document.querySelector("video");
-        return {
-          status: document.querySelector('[role="status"]')?.textContent,
-          retryShown: document.querySelector(".k2b-qr-scanner__retry") !== null,
-          video: video && {
-            paused: video.paused,
-            readyState: video.readyState,
-            size: `${video.videoWidth}x${video.videoHeight}`,
-            stream: video.srcObject instanceof MediaStream ? video.srcObject.active : null,
-          },
-          detects: probe.detects,
-          media: probe.media,
-        };
-      }),
-      Bun.sleep(1_000).then(() => "no answer within 1 s"),
-    ]).catch((reason: unknown) => `unreadable: ${String(reason)}`);
-    if (error instanceof Error) error.message += `\n\nScanner state: ${JSON.stringify(state, null, 1)}`;
+    await reportScannerState(page, error);
     throw error;
   }
 };
@@ -406,6 +463,37 @@ describe("@k2b/ui QrScanner in a browser", () => {
     }, 30_000);
   }
 
+  test("reports camera, player and layout state when a picture size never arrives", async () => {
+    const page = await open({ detector: "none", camera: "turning" });
+    try {
+      await waitForPicture(page, 640);
+      // Keep filming landscape while waiting for portrait: exercise the real geometry timeout without a decoder failure.
+      let failure: unknown;
+      try {
+        await waitForPicture(page, 360);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      if (!(failure instanceof Error)) throw new Error("The missing portrait picture must time out.");
+      expect(failure.message).toContain("Expected picture width: 360");
+      const state = JSON.parse(failure.message.split("Scanner state: ")[1]!);
+      expect(state.video.size).toBe("640x360");
+      expect(state.video.box.width).toBeGreaterThan(0);
+      expect(state.video.box.height).toBeGreaterThan(0);
+      expect(state.video.tracks).toHaveLength(1);
+      expect(state.video.tracks[0].readyState).toBe("live");
+      expect(state.cameraPicture).toMatchObject({ width: 640, height: 360 });
+      expect(state.cameraPicture.paints).toBeGreaterThan(0);
+      expect(state.videoFrames).toBeGreaterThan(0);
+      expect(Array.isArray(state.media)).toBe(true);
+      expect(failure.message).not.toContain(CODE);
+      expect(await calls(page)).toEqual({ results: [], errors: [], stops: 0 });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("keeps the scan frame centred on the picture when the camera turns with the device, then reads the code", async () => {
     const page = await open({ detector: "none", camera: "turning" });
     /**
@@ -429,11 +517,7 @@ describe("@k2b/ui QrScanner in a browser", () => {
      * event, so the frame gets a second to settle.
      */
     const expectCentred = async (pictureWidth: number) => {
-      await page.waitForFunction((width) => {
-        const video = document.querySelector("video")!;
-        const box = video.getBoundingClientRect();
-        return video.videoWidth === width && Math.abs(box.width / box.height - video.videoWidth / video.videoHeight) < 0.01;
-      }, pictureWidth);
+      await waitForPicture(page, pictureWidth);
       let placed = await frame();
       for (let tries = 0; tries < 20 && offCentre(placed); tries++) {
         await page.waitForTimeout(50);
