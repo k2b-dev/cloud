@@ -3,6 +3,7 @@ import { Portal, render } from "solid-js/web";
 import { Button, IconButton } from "../actions/Button";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
+import { inheritUiScope } from "../internal/portal-scope";
 import { RenderErrorBoundary } from "../internal/render-error";
 import { suppressTextSelection } from "../internal/text-selection";
 import { showTruncatedTitle } from "../internal/truncated-title";
@@ -548,6 +549,7 @@ export const openFloatingWindow = (
   const previousRing = ringOnReturn(previousFocus);
   const owner = document.createElement("div");
   owner.className = "k2b-ui";
+  inheritUiScope(owner);
   document.body.appendChild(owner);
   let dispose: (() => void) | undefined;
   let closed = false;

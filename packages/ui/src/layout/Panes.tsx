@@ -36,6 +36,7 @@ import {
   samePanesSizes,
 } from "./panes-layout";
 import { type PanesMessages, usePanesMessages } from "./panes-messages";
+import { preservePanesPreviewScope } from "./panes-preview-scope";
 import { assertUniqueStableUiIds } from "./stable-id";
 
 export type PanesItem = {
@@ -303,6 +304,7 @@ export default function Panes(props: PanesProps): JSX.Element {
     buildIntent: ({ over }) => over?.meta.target.intent ?? null,
     isSameIntent: samePanesIntent,
     onDragStart: ({ active, mode }) => {
+      if (mode === "pointer") preservePanesPreviewScope(active.element);
       setDragMode(mode);
       setDraggedItemId(active.meta.itemId);
     },
