@@ -1,7 +1,7 @@
 import { Chat, LocaleProvider } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { type GalleryScene, galleryScenes } from "./chat-gallery.fixtures";
+import { type GalleryChat, type GalleryScene, galleryScenes } from "./chat-gallery.fixtures";
 import { AiChatActionsProvider, createAiChatTimeline } from "./presentation";
 
 /**
@@ -35,8 +35,8 @@ render(
         }}
       >
         {(() => {
-          const messages = galleryScenes[scene]();
-          const items = createAiChatTimeline({ messages: () => messages, activeTurn: () => null });
+          const chat: GalleryChat = galleryScenes[scene]();
+          const items = createAiChatTimeline({ messages: () => chat.messages, activeTurn: () => chat.active ?? null });
           return (
             <>
               <div class="assistant-chat-messages">
