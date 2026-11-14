@@ -1226,7 +1226,9 @@ export class AiTurnExecutor {
       );
       return;
     }
+    let authoringBudget: ReturnType<typeof createCodeAuthoringTurnBudget> | undefined;
     const store = aiConversations.createSessionStore({
+      codeAuthoringStop: () => authoringBudget?.stopped() ?? null,
       onMessage: async (message) => {
         if (message.message.role === "assistant") await pipeline.timing.finishGeneration();
         await pipeline.emitMessage(message);
@@ -1560,7 +1562,7 @@ export class AiTurnExecutor {
       failureReason.current = reason;
     };
     const usage = await readAiTurnCallUsage(turnId);
-    const authoringBudget = createCodeAuthoringTurnBudget({
+    authoringBudget = createCodeAuthoringTurnBudget({
       priorCalls: {
         calls: usage.calls,
         inputTokens: usage.inputTokens + usage.unknownCalls * CODE_AUTHORING_TURN_BUDGET.unknownInputTokens,
@@ -1571,7 +1573,6 @@ export class AiTurnExecutor {
           : [],
       ),
       selected: loadedSkills.some((skill) => skill.name === "code-authoring"),
-      locale: promptLocale,
       onStop: (reason) => log.info("AI authoring turn reached its safety budget", { conversationId, turnId, reason }),
     });
     const turnPolicy = applyAiTurnPolicy({

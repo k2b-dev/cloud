@@ -278,8 +278,12 @@ Compare matching app IDs and hop timings across processes to locate the delay.
 
 A message saying that work is repeating or growing too large means the
 [Code authoring safety budget](/en/docs/ai/chat-runtime-and-streaming#code-authoring-safety-budget)
-ended the turn. Results and the draft are kept. Continue with a new message;
-inspect the failed check before repeating it.
+ended the turn. The chat shows confirmed completed work, saved drafts and
+remaining checks or version saves. The draft was saved at the stop; continuing
+checks its current state. Choose **Continue**
+(**Weiterarbeiten** in German) to start a new turn; nothing resumes automatically.
+If sending fails, the notice offers the same action again. Inspect the failed
+check before repeating it.
 
 For diagnosis, filter Core logs by `ai:executor` and
 `AI authoring turn reached its safety budget`. The event includes conversation

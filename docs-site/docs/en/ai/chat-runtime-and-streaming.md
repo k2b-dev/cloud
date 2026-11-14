@@ -934,9 +934,20 @@ run more identical failing checks than this allowance.
 
 At a bound, Gustav completes the current tool, skips remaining authoring tools
 in that response when the repair allowance is spent, and ends with a short
-message in the turn's language. It makes no additional model call to write
-that message. Saved results and the server-held draft remain available; a new
-message can continue. Stopping does not submit or activate the draft.
+persisted receipt in the chat. Assistant renders its explanation in English or
+German, with confirmed completed steps, saved drafts and remaining checks,
+example tests and version saves. This summary comes from settled tool results,
+not model prose; a later draft edit invalidates earlier passing checks. No
+additional model call writes the notice. Saved results and the server-held
+draft remain available. The receipt describes the state at the stop, rather
+than promising indefinite draft retention. Forks omit this conversation-bound
+receipt because they do not copy its draft. **Continue** starts a new turn through the normal
+message send path only after a click; rendering, reconnecting and reloading
+never resume work. The action is disabled during other work and while sending;
+a failed send keeps the notice with a retry explanation. Stopping does not
+submit or activate the draft. Hosts of `createAiChatTimeline` provide localized
+presentation with `AiChatActions.renderCodeAuthoringStop` and use
+`useAiChatActions()` from `@k2b/cloud/ai/ui` for the shared continuation action.
 Worker recovery restores provider usage and check failures for the whole turn,
 including archived messages. Missing provider input usage reserves 64,000
 estimated tokens per call on recovery, rather than spending the entire turn

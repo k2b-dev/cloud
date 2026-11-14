@@ -1,10 +1,14 @@
 import { type CompactFn, estimateTokens, type Message, type Provider, type ProviderRequest, type Tool } from "@k2b/nessi";
 import type { AiTurnPolicyToolCall } from "./turn-policy";
+import type { AiCodeAuthoringStop } from "./types";
 
 /**
  * Authoring has no F7 attempt allowance: F7 covers AI invoked BY saved Code.
- * Allocate four 128k request windows per interactive authoring turn. Reserve a
- * half-window for missing usage/compaction, and allow 16 quarter-window requests.
+ * Coordinator-confirmed operational allocation (#3323): four 128k request
+ * windows = 512k input per interactive turn. A representative request gets a
+ * quarter-window (32k), hence 512k / 32k = 16 provider attempts, including
+ * retries and compaction. Reserve half a window (64k) for unknown usage and
+ * compaction admission. These are operational allocations, not model limits.
  * This independent safety budget also covers free/unpriced models; ordinary
  * Assistant cost admission still applies to every actual provider attempt.
  */
@@ -112,16 +116,64 @@ export function createCodeAuthoringTurnBudget(input: {
   priorCalls: { calls: number; inputTokens: number };
   finishedToolCalls: readonly AiTurnPolicyToolCall[];
   selected: boolean;
-  locale: string;
   onStop?: (reason: "model_calls" | "input_tokens" | "repeated_error") => void;
 }) {
   let active = input.selected;
+  let stopped: AiCodeAuthoringStop | null = null;
+  const receipts = new Map<string | number, AiTurnPolicyToolCall>();
+  const progress = () => {
+    let completedSteps = 0;
+    const drafts = new Map<string, { checked: boolean; tested: boolean; submitted: boolean }>();
+    for (const call of receipts.values()) {
+      const result = record(call.result);
+      const args = record(call.args);
+      const config = record(result?.config);
+      const summary = record(result?.draft);
+      const codeId = args?.codeId ?? config?.codeId ?? summary?.codeId;
+      const successful =
+        call.status === "completed" && Boolean(result) && !result?.error && result?.ok !== false && record(result?.result)?.ok !== false;
+      if (successful && authoringNames.has(call.name)) completedSteps++;
+      const saved = successful && (summary || (config && record(result?.files)));
+      // These operations require the conversation's persisted draft before producing
+      // a domain result. They also establish its existence on a continuation turn.
+      const draftOperation = ["code_check", "code_test", "code_simulate", "code_submit"].includes(call.name);
+      const domainResult =
+        call.status === "completed" &&
+        Boolean(result) &&
+        !record(result?.error) &&
+        (call.name === "code_check"
+          ? Boolean(record(result?.result))
+          : call.name === "code_submit"
+            ? Boolean(record(result?.submission))
+            : typeof result?.ok === "boolean");
+      const confirmedEdit =
+        (successful && ["code_init", "code_pull", "code_write"].includes(call.name)) ||
+        (draftOperation && domainResult && (args?.files !== undefined || args?.tests !== undefined || args?.entry !== undefined));
+      if (typeof codeId !== "string") continue;
+      if (saved || confirmedEdit || (draftOperation && domainResult && !drafts.has(codeId)))
+        drafts.set(codeId, { checked: false, tested: false, submitted: false });
+      const draft = drafts.get(codeId);
+      if (draft && call.name === "code_check") draft.checked = successful && record(result?.result)?.ok === true;
+      if (draft && ["code_test", "code_simulate"].includes(call.name)) draft.tested = successful && result?.ok === true;
+      if (draft && call.name === "code_submit") draft.submitted = successful && Boolean(record(result?.submission));
+    }
+    return {
+      completedSteps,
+      drafts: drafts.size,
+      unchecked: [...drafts.values()].filter((draft) => !draft.submitted && !draft.checked).length,
+      untested: [...drafts.values()].filter((draft) => !draft.submitted && !draft.tested).length,
+      unsubmitted: [...drafts.values()].filter((draft) => !draft.submitted).length,
+    };
+  };
   let calls = input.priorCalls.calls;
   let inputTokens = input.priorCalls.inputTokens;
   const errors = new Map<string, number>();
   const seenCalls = new Set<string>();
   const noteToolCall = (call: AiTurnPolicyToolCall & { callId?: string }) => {
     if (call.status !== "completed" && call.status !== "failed") return;
+    // Keep the final receipt, including an output-validation failure that
+    // supersedes the wrapper's provisional success, for the stop snapshot.
+    receipts.set(call.callId ?? receipts.size, call);
     if (call.callId && seenCalls.has(call.callId)) return;
     if (authoringNames.has(call.name) || (call.name === "load_skill" && record(call.result)?.name === "code-authoring")) active = true;
     if (!active) return;
@@ -142,6 +194,7 @@ export function createCodeAuthoringTurnBudget(input: {
           : null;
   return {
     noteToolCall,
+    stopped: () => stopped,
     // Compaction's source is bounded to 60k characters; a half-window reserves
     // room for that source, its instructions, and the next chat admission.
     // Never let a locally generated stop become a persisted conversation summary.
@@ -187,14 +240,17 @@ export function createCodeAuthoringTurnBudget(input: {
         if (reason) {
           // An oversized custom compaction prompt must never persist the stop as a summary.
           if (purpose === "compaction") return;
+          stopped = {
+            reason,
+            ...progress(),
+          };
           input.onStop?.(reason);
           // A local terminal response costs no additional model call and cannot request more tools.
           // This boundary runs only after all tools of the previous response have settled.
-          const text = input.locale.startsWith("de")
-            ? "Ich halte hier an, damit sich die Arbeit nicht weiter im Kreis dreht oder zu groß wird. Die bisherigen Ergebnisse bleiben erhalten. Mit einer neuen Nachricht kannst du hier weiterarbeiten."
-            : "I’m stopping here to keep this work from repeating or growing too large. The results so far are kept. You can continue here with a new message.";
+          // Persist an empty terminal message with structured metadata. The host
+          // renders its localized notice atomically; no streamed prose is replaced.
+          const text = "";
           yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
-          yield { type: "block_delta", blockId: "authoring-limit", delta: text };
           yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text } };
           return;
         }

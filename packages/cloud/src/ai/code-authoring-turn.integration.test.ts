@@ -56,7 +56,6 @@ suite("Code authoring usage recovery", () => {
       },
       finishedToolCalls: [],
       selected: true,
-      locale: "en",
     });
     const provider = guard.wrap({
       name: "fixture",

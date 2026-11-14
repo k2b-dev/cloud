@@ -40,7 +40,6 @@ const budget = (input: Partial<Parameters<typeof createCodeAuthoringTurnBudget>[
     priorCalls: { calls: 0, inputTokens: 0 },
     finishedToolCalls: [],
     selected: true,
-    locale: "de-DE",
     ...input,
   });
 const consume = async (provider: Provider, request: ProviderRequest = { messages: [] }) => {
@@ -141,13 +140,14 @@ test("the executor ends a model that keeps changing failing fixtures, after two 
       failureReason: { current: null },
     });
     expect(outcome).toMatchObject({ kind: "finished", status: "completed", failure: null });
+    expect(guard.stopped()).toMatchObject({ reason: "repeated_error", completedSteps: 0 });
     expect(executions).toBe(3);
     expect(requests).toHaveLength(3);
     const messages = (await store.load()).map((entry) => entry.message);
     expect(messages.filter((message) => message.role === "tool_result")).toHaveLength(3);
     expect(messages.at(-1)).toMatchObject({
       role: "assistant",
-      content: [{ type: "text", text: expect.stringContaining("neuen Nachricht") }],
+      content: [],
     });
     expect(
       messages.some(
@@ -505,7 +505,7 @@ test("provider retries use the final available attempt and stop before another d
   };
   const events = await consume(retryTransientProviderErrors(guard.wrap(failing), { deadline: null, delaysMs: [0, 0] }));
   expect(attempts).toBe(1);
-  expect(events.at(-1)).toMatchObject({ type: "block_end", block: { type: "text", text: expect.stringContaining("neuen Nachricht") } });
+  expect(events.at(-1)).toMatchObject({ type: "block_end", block: { type: "text", text: "" } });
 });
 
 test("passed expected-error runs in a mixed fixture do not spend the repair allowance", async () => {
@@ -547,4 +547,49 @@ test("identical failed tool validation text is bounded without merging different
   }
   await consume(guard.wrap(provider(requests)));
   expect(requests).toHaveLength(1);
+});
+
+test("stop receipts invalidate earlier checks after edits and final validation supersedes provisional success", async () => {
+  const guard = budget({ priorCalls: { calls: 16, inputTokens: 100 } });
+  guard.noteToolCall({ ...check("code_write", { version: 1, draft: { codeId } }), callId: "write" });
+  guard.noteToolCall({ ...check("code_check", { result: { ok: true } }), callId: "check" });
+  guard.noteToolCall({ ...check("code_test", { ok: true }), callId: "test" });
+  guard.noteToolCall({ ...check("code_write", { version: 1, draft: { codeId } }), callId: "edit" });
+  guard.noteToolCall({ ...check("code_check", { result: { ok: true } }), callId: "invalid" });
+  guard.noteToolCall({ ...check("code_check", "Invalid tool result"), status: "failed", callId: "invalid" });
+  await consume(guard.wrap(provider([])));
+  expect(guard.stopped()).toEqual({ reason: "model_calls", completedSteps: 4, drafts: 1, unchecked: 1, untested: 1, unsubmitted: 1 });
+});
+
+test("continuation receipts confirm an existing draft without a new read or write", async () => {
+  const guard = budget({ priorCalls: { calls: 16, inputTokens: 100 } });
+  guard.noteToolCall(check("code_check", { version: 1, result: { ok: true } }));
+  guard.noteToolCall(check("code_test", { version: 1, ok: false, error: "code_test_invalid_fixture" }, { codeId, tests: {} }));
+  await consume(guard.wrap(provider([])));
+  expect(guard.stopped()).toEqual({ reason: "model_calls", completedSteps: 1, drafts: 1, unchecked: 1, untested: 1, unsubmitted: 1 });
+});
+
+test("failed or skipped writes preserve confirmed draft checks", async () => {
+  const guard = budget({ priorCalls: { calls: 16, inputTokens: 100 } });
+  guard.noteToolCall(check("code_check", { version: 1, result: { ok: true } }));
+  guard.noteToolCall(check("code_test", { version: 1, ok: true }));
+  for (const code of ["BAD_INPUT", "code_authoring_turn_limit"]) guard.noteToolCall(check("code_write", { version: 1, error: { code } }));
+  await consume(guard.wrap(provider([])));
+  expect(guard.stopped()).toEqual({ reason: "model_calls", completedSteps: 2, drafts: 1, unchecked: 0, untested: 0, unsubmitted: 1 });
+});
+
+test("a continuation that submits an existing draft reports no unfinished validation", async () => {
+  const guard = budget({ priorCalls: { calls: 16, inputTokens: 100 } });
+  guard.noteToolCall(check("code_submit", { version: 1, submission: { version: { id: "saved" } } }));
+  await consume(guard.wrap(provider([])));
+  expect(guard.stopped()).toEqual({ reason: "model_calls", completedSteps: 1, drafts: 1, unchecked: 0, untested: 0, unsubmitted: 0 });
+});
+
+test("the authoring loop persists a structured stop after two identical repair retries", async () => {
+  const { createStoppedAuthoringFixture } = await import("./code-authoring-stop.fixtures");
+  const { messages, calls, state } = await createStoppedAuthoringFixture();
+  expect(calls).toBe(3);
+  expect(state).toEqual({ reason: "repeated_error", completedSteps: 2, drafts: 1, unchecked: 0, untested: 1, unsubmitted: 1 });
+  expect(messages.at(-1)?.meta?.codeAuthoringStop).toEqual(state!);
+  expect(messages.at(-1)?.message).toMatchObject({ role: "assistant", content: [] });
 });

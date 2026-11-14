@@ -4123,7 +4123,9 @@ export const aiConversations: AiConversationService = {
     append: async (message, opts) => {
       // Initial input and durable steering are already persisted transactionally before Nessi appends them.
       if (message.role === "user") return;
-      const meta = toolMessageMeta(message, input.toolPresentations, input.rejectedToolCallIds, input.approvedToolCallIds);
+      const stop = message.role === "assistant" && opts?.kind !== "summary" ? input.codeAuthoringStop?.() : null;
+      const toolMeta = toolMessageMeta(message, input.toolPresentations, input.rejectedToolCallIds, input.approvedToolCallIds);
+      const meta = stop ? { ...toolMeta, codeAuthoringStop: stop } : toolMeta;
 
       if (input.turnId && input.leaseOwner) {
         const appended = await appendTurnOwnedMessage({

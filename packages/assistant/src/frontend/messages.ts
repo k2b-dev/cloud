@@ -4,6 +4,30 @@ export const assistantMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      authoringStopBudget: "Gustav stopped here to keep this run from becoming too costly.",
+      authoringStopRepeated: "Gustav stopped because the same problem remains after several attempts.",
+      authoringStopDone: ({ steps, drafts }: { steps: number; drafts: number }) =>
+        `Completed: ${steps} ${steps === 1 ? "work step" : "work steps"}. Saved: ${drafts} ${drafts === 1 ? "draft" : "drafts"}.`,
+      authoringStopOpen: ({ checks, tests, versions }: { checks: number; tests: number; versions: number }) =>
+        `Still open: ${
+          [
+            ...(checks ? [`check ${checks} ${checks === 1 ? "draft" : "drafts"}`] : []),
+            ...(tests ? [`test ${tests} ${tests === 1 ? "draft" : "drafts"} with examples`] : []),
+            ...(versions ? [`save ${versions} ${versions === 1 ? "version" : "versions"}`] : []),
+          ].join(", ") || "review the saved result"
+        }.`,
+      authoringStopNoDraft: "A saved draft has not been confirmed yet. Preparing and checking the result remains open.",
+      authoringStopSaved: ({ drafts }: { drafts: number }): string =>
+        drafts === 1
+          ? "The draft was saved when Gustav stopped. Continue checks its current state."
+          : "The drafts were saved when Gustav stopped. Continue checks their current state.",
+      authoringStopSubmitted: ({ versions }: { versions: number }): string =>
+        versions === 1
+          ? "The confirmed version is saved. Review it before deciding whether more work is needed."
+          : "The confirmed versions are saved. Review them before deciding whether more work is needed.",
+      authoringContinue: "Continue",
+      authoringContinueMessage: "Continue the remaining work. Check the current saved state first.",
+      authoringContinueFailed: "The work could not be continued. Check your connection and try again.",
       panelUnsaved: "Draft not saved yet",
       panelSaveHint: "Save drafts before closing or switching the panel. Then repeat your navigation.",
       panelSave: "Save drafts",
@@ -258,6 +282,31 @@ export const assistantMessages = i18n.define({
       codeViewRetry: "Try again",
     },
     de: {
+      authoringStopBudget: "Gustav hat hier angehalten, damit der Lauf nicht zu teuer wird.",
+      authoringStopRepeated: "Gustav hat angehalten, weil dasselbe Problem nach mehreren Versuchen weiter besteht.",
+      authoringStopDone: ({ steps, drafts }: { steps: number; drafts: number }) =>
+        `Erledigt: ${steps} ${steps === 1 ? "Arbeitsschritt" : "Arbeitsschritte"}. Gespeichert: ${drafts} ${drafts === 1 ? "Entwurf" : "Entwürfe"}.`,
+      authoringStopOpen: ({ checks, tests, versions }: { checks: number; tests: number; versions: number }) =>
+        `Noch offen: ${
+          [
+            ...(checks ? [`${checks} ${checks === 1 ? "Entwurf" : "Entwürfe"} prüfen`] : []),
+            ...(tests ? [`${tests} ${tests === 1 ? "Entwurf" : "Entwürfe"} mit Beispielen testen`] : []),
+            ...(versions ? [`${versions} ${versions === 1 ? "Version" : "Versionen"} speichern`] : []),
+          ].join(", ") || "gespeichertes Ergebnis ansehen"
+        }.`,
+      authoringStopNoDraft:
+        "Ein gespeicherter Entwurf wurde noch nicht bestätigt. Das Vorbereiten und Prüfen des Ergebnisses ist noch offen.",
+      authoringStopSaved: ({ drafts }: { drafts: number }): string =>
+        drafts === 1
+          ? "Der Entwurf wurde beim Anhalten gespeichert. Weiterarbeiten prüft seinen aktuellen Stand."
+          : "Die Entwürfe wurden beim Anhalten gespeichert. Weiterarbeiten prüft ihren aktuellen Stand.",
+      authoringStopSubmitted: ({ versions }: { versions: number }): string =>
+        versions === 1
+          ? "Die bestätigte Version ist gespeichert. Prüfe sie, bevor du über weitere Arbeit entscheidest."
+          : "Die bestätigten Versionen sind gespeichert. Prüfe sie, bevor du über weitere Arbeit entscheidest.",
+      authoringContinue: "Weiterarbeiten",
+      authoringContinueMessage: "Setze die offene Arbeit fort. Prüfe zuerst den aktuellen gespeicherten Stand.",
+      authoringContinueFailed: "Die Arbeit konnte nicht fortgesetzt werden. Prüfe deine Verbindung und versuche es erneut.",
       panelUnsaved: "Entwurf noch nicht gespeichert",
       panelSaveHint: "Speichere die Entwürfe vor dem Schließen oder Wechseln des Panels. Wiederhole danach den Wechsel.",
       panelSave: "Entwürfe speichern",
