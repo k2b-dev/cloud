@@ -4645,14 +4645,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           const panes = largeWindow(page).locator(".mail-large-panes");
           // F3: draft on the left; on the right the conversation above the preview.
           expect(await panes.locator('[role="tab"]').allTextContents()).toEqual(["Draft", "History", "Preview"]);
-          const [draft, history, preview] = await Promise.all(
-            ["Draft", "History", "Preview"].map(
-              async (name) =>
-                (await panes
-                  .locator(`[role="tabpanel"][aria-labelledby="${await panes.getByRole("tab", { name }).getAttribute("id")}"]`)
-                  .boundingBox())!,
-            ),
-          );
+          const panel = async (name: string) =>
+            (await panes
+              .locator(`[role="tabpanel"][aria-labelledby="${await panes.getByRole("tab", { name }).getAttribute("id")}"]`)
+              .boundingBox())!;
+          const [draft, history, preview] = [await panel("Draft"), await panel("History"), await panel("Preview")];
           expect(draft.x + draft.width).toBeLessThanOrEqual(history.x);
           expect(history.y + history.height).toBeLessThanOrEqual(preview.y);
           expect(Math.abs(history.x - preview.x)).toBeLessThan(1);
