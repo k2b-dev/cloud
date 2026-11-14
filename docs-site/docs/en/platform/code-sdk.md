@@ -365,7 +365,7 @@ belong to those views; forms and buttons belong to Code pages.
 | `Page` | `title`, optional `eyebrow`, `subtitle`, `asOf`, `icon`, `color`, `follow`; the root of every page | blocks |
 | `Section` | `title`, optional `description`, `icon`, `color` | blocks |
 | `Stats` | none | 1–6 `Stat` |
-| `Stat` | `label`, `value` (number, text or `null`), optional `format`, `icon`, `tone`, `delta`, `compare`, `trend` | none |
+| `Stat` | `label`, `value` (number, text or `null`), optional `format`, `icon`, `tone`, `delta`, `compare`, `note`, `trend` | none |
 | `Text` | none | text |
 | `Heading` | optional `level: 2 \| 3 \| 4` | text |
 | `Table` | `title`, `rows` of scalar values, optional `subtitle`, `search`, `empty` text and `width` | 1–20 `Column` |
@@ -419,8 +419,10 @@ the whole row.
 a `delta` with the change since the comparison (`value` is a share,
 `0.082` for 8.2 %; with `unit: "points"` it is percentage points), its
 `better` direction (`up` or `down`, which colours the change), a `compare`
-with `label` and `value`, and a `trend` of up to 60 numbers. `icon` sits in a
-chip of its `tone` colour.
+with `label` and `value`, a `note` (one quiet line under the figure, up to 80
+characters), and a `trend` of up to 60 numbers. `icon` sits in a chip of its
+`tone` colour. In a capability view the key figures stand flat, without tiles,
+and a negative figure reads in the danger colour.
 
 A `Column`'s `type` says what it holds: `text`, `number`, `date`, `status`,
 `bar`, `amount`, `flow` or `delta`. It decides alignment, the shown text and
