@@ -13,8 +13,8 @@ export const validateCodeOwners = (definitions: CapabilityDefinitions): void => 
   }
   for (const [id, type] of Object.entries(definitions.types ?? {})) {
     for (const [key, value] of Object.entries(type.access ?? {})) {
-      if (key !== "readable") throw new Error(`Resource type ${id} access: unsupported function ${key}`);
-      if (typeof value !== "function") throw new Error(`Resource type ${id} access.readable must be a function`);
+      if (key !== "readable" && key !== "managers") throw new Error(`Resource type ${id} access: unsupported function ${key}`);
+      if (typeof value !== "function") throw new Error(`Resource type ${id} access.${key} must be a function`);
     }
   }
   for (const id of code?.owners ?? []) {

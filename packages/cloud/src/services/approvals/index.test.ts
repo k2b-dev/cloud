@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { capabilityRequestHash } from "../../capabilities/claims";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "../../contracts/approvals";
 import type { RequestActor } from "../../server/middleware/auth";
-import { approvalArgsDigest, approvalDecisionChannel, approvalReviewDigest, approvalScopeFromToolName, request } from ".";
+import { approvalArgsDigest, approvalDecisionChannel, approvalReviewDigest, approvalScopeFromToolName, decide, request } from ".";
 
 const actor: RequestActor = {
   kind: "user",
@@ -72,4 +72,15 @@ test("Code requests reject unrepresentable lifetimes before writing a request", 
       }),
     ).rejects.toThrow("Code approval expiry must be finite and fit in a JavaScript Date.");
   }
+});
+
+test("decision detail is finite JSON with a bounded transport size before a database call", async () => {
+  for (const detail of [{ message: "x".repeat(32 * 1024) }, { invalid: undefined }])
+    await expect(
+      decide(
+        "11111111-1111-4111-8111-111111111111",
+        { approved: true, detail },
+        { userId: "11111111-1111-4111-8111-111111111111", via: "web_session" },
+      ),
+    ).rejects.toThrow();
 });

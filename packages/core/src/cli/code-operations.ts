@@ -115,7 +115,7 @@ export function codeOperationCommands(locale?: string) {
           if (!items.length) ctx.print(t("No local Code projects.", "Keine lokalen Code-Projekte."));
           for (const item of items) {
             ctx.print(
-              `${item.code.id} · ${t("base", "Basis")} ${item.baseVersionId ?? "—"} · ${t("latest", "aktuell")} ${item.latest?.version.id ?? "—"} · ${t("approval", "Freigabe")} ${item.latest?.status ?? "—"} · ${t("active", "aktiv")} ${item.code.activeVersionId ?? "—"} · ${item.code.state}${item.code.pauseReason ? ` (${item.code.pauseReason})` : ""} · ${item.modified ? t("local edits", "lokal geändert") : t("unchanged", "unverändert")}${item.baseCurrent ? "" : t(" · newer server base", " · neuerer Serverstand")}`,
+              `${item.code.id} · ${t("base", "Basis")} ${item.baseVersionId ?? "—"} · ${t("latest", "aktuell")} ${item.latest?.version.id ?? "—"} · ${t("approval", "Freigabe")} ${item.latest?.status === "changes_requested" ? t("Changes requested", "Änderungen angefordert") : (item.latest?.status ?? "—")} · ${t("active", "aktiv")} ${item.code.activeVersionId ?? "—"} · ${item.code.state}${item.code.pauseReason ? ` (${item.code.pauseReason})` : ""} · ${item.modified ? t("local edits", "lokal geändert") : t("unchanged", "unverändert")}${item.baseCurrent ? "" : t(" · newer server base", " · neuerer Serverstand")}`,
             );
           }
         }

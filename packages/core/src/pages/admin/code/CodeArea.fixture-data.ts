@@ -265,6 +265,8 @@ export const fixtureApprovalDetail = (
       variant === "approved"
         ? {
             approved: true,
+            outcome: "approved",
+            comment: null,
             soleAdmin: false,
             decidedBy: FIXTURE_PEOPLE.ben,
             decidedAt: "2026-11-01T12:20:00.000Z",
@@ -464,6 +466,8 @@ export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
         approvalId: null,
         decision: {
           approved: true,
+          outcome: "approved",
+          comment: null,
           soleAdmin: true,
           decidedBy: FIXTURE_PEOPLE.ben,
           decidedAt: "2026-10-20T10:00:00.000Z",

@@ -4,6 +4,8 @@ import { getAppWorkloadCredential } from "../_internal/workload-credential";
 import { env } from "../config/env";
 import {
   CloudResourceRefSchema,
+  ResourceManagersDataSchema,
+  ResourceManagersInputSchema,
   type ResourcePrincipal,
   ResourceReadableDataSchema,
   ResourceReadableInputSchema,
@@ -67,3 +69,33 @@ export const readResourcePrincipals = async (options: {
   }
   return { state: "checked", readable: result.data.data.readable };
 };
+
+/** Uses the application's own workload identity; never manufactures a recipient session. */
+export async function listResourceManagers(options: {
+  ref: { type: string; id: string };
+  afterId?: string;
+  userId?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<string[]> {
+  const ref = CloudResourceRefSchema.parse(options.ref);
+  const input = ResourceManagersInputSchema.parse({ id: ref.id, afterId: options.afterId, userId: options.userId, limit: options.limit });
+  const callerAppId = getProcessApplicationId();
+  const credential = getAppWorkloadCredential();
+  if (!callerAppId || (!env.CLOUD_APP_KEY && !credential) || !env.CLOUD_CORE_INTERNAL_ORIGIN)
+    throw new Error("Resource manager workload identity unavailable");
+  const separator = ref.type.indexOf(".");
+  const appId = ref.type.slice(0, separator),
+    capabilityId = `${ref.type.slice(separator + 1)}.managers`;
+  const entry = await getCapability(appId);
+  if (!entry) throw new Error("Resource manager provider registry entry unavailable");
+  // An optional contract absent from a healthy manifest cannot recover through retries.
+  if (!entry.manifest.queries.some((query) => query.localId === capabilityId && query.appOnly)) return [];
+  const result = await invokeCapabilityWithDataSchema({ appId, capabilityId, kind: "query", input }, ResourceManagersDataSchema, {
+    workload: { appId: callerAppId },
+    ...(credential ? { authorization: `Bearer ${credential}` } : {}),
+    signal: options.signal,
+  });
+  if (!result.ok) throw new Error(`Resource manager resolution unavailable: ${result.error.code}`);
+  return result.data.data.userIds;
+}

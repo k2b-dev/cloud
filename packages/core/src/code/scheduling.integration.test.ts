@@ -361,6 +361,10 @@ suiteFor(
       };
       const publisher = createCodeRunOutbox(() => queue);
       const runner = new Runner(bridge, new FixtureEngine(async () => {}));
+      // HTTP admission compares its JS deadline with Postgres's advancing clock.
+      // A suite-wide frozen snapshot may already be older than the eight-second request budget.
+      const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
+      setSystemTime(clock!.now);
       publisher.start();
       const running = runner.start();
       try {
@@ -412,6 +416,7 @@ suiteFor(
         await publisher.stop();
         registry.mockRestore();
         title.mockRestore();
+        setSystemTime(slot);
       }
     }, 15_000);
   test("HTTP failure never requeues even before the first effect", async () => {
@@ -1058,6 +1063,7 @@ suiteFor(
     const manifest = compileCapabilityManifest("core", {
       protocolVersion: 2,
       types: { code: aiCapabilities.types.code },
+      queries: { "code.resource.read": aiCapabilities.queries["code.resource.read"] },
       actions: { "code.run": aiCapabilities.actions["code.run"] },
     });
     expect(manifest.actions[0]?.localId).toBe("code.run");

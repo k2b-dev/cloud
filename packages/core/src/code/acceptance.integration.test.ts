@@ -10,6 +10,7 @@ import {
   NormalizedCapabilityCallSchema,
   type User,
 } from "@k2b/cloud/contracts";
+import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
 import { type AuthContext, userFromActor } from "@k2b/cloud/server";
 import { accounts, session } from "@k2b/cloud/services";
 import { appKeys } from "@k2b/cloud/services/app-keys";
@@ -115,6 +116,7 @@ suiteFor(
     lea = await person("Lea");
     ben = await person("Ben");
     reviewer = await person("Ari", true);
+    createAppEventTestHarness("core", aiCapabilities);
     restores.push(startCodeVersionApprovals());
     author = context(lea);
     manager = context(ben);
@@ -314,7 +316,7 @@ suiteFor(
     setSystemTime();
   });
   async function approve(submission: CodeVersionSubmission) {
-    if (submission.status === "pending") await decideCodeVersion(submission.binding, true, context(reviewer));
+    if (submission.status === "pending") await decideCodeVersion(submission.binding, { outcome: "approved" }, context(reviewer));
   }
   const proof = (ctx: ReturnType<typeof context>) => ({
     ...ctx,

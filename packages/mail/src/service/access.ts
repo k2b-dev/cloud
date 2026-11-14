@@ -9,6 +9,7 @@ import {
   getEffectivePermission,
   getEffectivePermissions,
   hasPermission,
+  listUsersWithAccess,
   lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
@@ -850,3 +851,19 @@ export const draftReviewAudience = async (
   `;
   return row ?? { name: "—", shared: true };
 };
+
+/** Only full mailbox administration grants confer Code management; assigned conversations never do. */
+export async function listMailboxManagers(mailboxId: string, page: { afterId?: string; userId?: string; limit: number }) {
+  const rows = await sql<{ access_id: string }[]>`SELECT ma.access_id FROM mail.mailbox_access ma
+    JOIN mail.mailboxes m ON m.id=ma.mailbox_id WHERE m.id=${mailboxId}::uuid AND m.deleted_at IS NULL`;
+  return (
+    await listUsersWithAccess({
+      accessIds: rows.map((row) => row.access_id),
+      minimumPermission: "admin",
+      profile: "user", // Mail's appAccess.noGuests applies to background manager projection too.
+      afterId: page.afterId ?? "00000000-0000-0000-0000-000000000000",
+      userIds: page.userId ? [page.userId] : undefined,
+      limit: page.limit,
+    })
+  ).map((user) => user.id);
+}

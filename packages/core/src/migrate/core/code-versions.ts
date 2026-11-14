@@ -13,6 +13,12 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS version_submission_approval ON code.version_submissions(approval_id) WHERE approval_id IS NOT NULL`.simple();
     // What Core saw at submission; null on versions submitted before it recorded this.
     await tx`ALTER TABLE code.version_submissions ADD COLUMN IF NOT EXISTS evidence JSONB`.simple();
+    await tx`ALTER TABLE code.version_submissions ADD COLUMN IF NOT EXISTS origin JSONB NOT NULL DEFAULT '{"kind":"cli"}'::jsonb`.simple();
+    await tx`CREATE TABLE IF NOT EXISTS code.version_withdrawals (
+      version_id UUID PRIMARY KEY REFERENCES code.version_submissions(version_id) ON DELETE CASCADE,
+      withdrawn_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      withdrawn_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`.simple();
     // No FK to approvals.requests: pruning transient questions must not erase durable decision evidence.
     await tx`CREATE TABLE IF NOT EXISTS code.version_decisions (
       version_id UUID PRIMARY KEY REFERENCES code.version_submissions(version_id) ON DELETE CASCADE,
@@ -21,6 +27,37 @@ export async function migrate(db: SQL = sql): Promise<void> {
       decided_at TIMESTAMPTZ NOT NULL DEFAULT now(), decided_via TEXT NOT NULL,
       decided_device_id UUID, auth_epoch BIGINT NOT NULL
     )`.simple();
+    // Backfill once before reinstalling the immutable-evidence guard.
+    await tx`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='code' AND table_name='version_decisions' AND column_name='outcome') THEN
+        DROP TRIGGER IF EXISTS immutable_decision ON code.version_decisions;
+        ALTER TABLE code.version_decisions ADD COLUMN outcome TEXT, ADD COLUMN comment TEXT;
+        UPDATE code.version_decisions SET outcome=CASE WHEN approved THEN 'approved' ELSE 'rejected' END;
+        ALTER TABLE code.version_decisions ALTER COLUMN outcome SET NOT NULL;
+        ALTER TABLE code.version_decisions ADD CONSTRAINT version_decision_outcome CHECK (
+          outcome IN ('approved','changes_requested','rejected') AND approved=(outcome='approved'));
+      END IF;
+    END $$`.simple();
+    await tx`CREATE TABLE IF NOT EXISTS code.version_comments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      version_id UUID NOT NULL REFERENCES code.version_submissions(version_id) ON DELETE CASCADE,
+      author_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      path TEXT NOT NULL, line INTEGER NOT NULL CHECK(line>0), body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 5000),
+      parent_id UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(id,version_id), FOREIGN KEY(parent_id,version_id) REFERENCES code.version_comments(id,version_id)
+    )`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS version_comments_page ON code.version_comments(version_id,created_at DESC,id DESC)`.simple();
+    await tx`ALTER TABLE code.version_submissions ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'en'`.simple();
+    await tx`CREATE TABLE IF NOT EXISTS code.review_notification_outbox (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(), version_id UUID NOT NULL REFERENCES code.version_submissions(version_id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK(kind IN ('submitted','decided')),
+      recipient_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+      recipient_cursor UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', sequence BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
+      attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(), claimed_until TIMESTAMPTZ, last_error TEXT
+    )`.simple();
+    await tx`CREATE UNIQUE INDEX IF NOT EXISTS review_notice_once ON code.review_notification_outbox(version_id,kind,recipient_cursor,COALESCE(recipient_id,'00000000-0000-0000-0000-000000000000'::uuid))`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS review_notice_order ON code.review_notification_outbox(version_id,sequence)`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS review_notice_busy ON code.review_notification_outbox(version_id,sequence) WHERE claimed_until IS NOT NULL OR attempts>0`.simple();
     // Last approved OR successfully self-activated snapshot, independent of whether it is still running.
     await tx`CREATE TABLE IF NOT EXISTS code.version_baselines (
       code_id TEXT PRIMARY KEY REFERENCES code.codes(id) ON DELETE CASCADE,

@@ -729,16 +729,14 @@ test("every declared Type has a reader open-link case or an explicit reason", as
   };
   expect(Object.keys(cases).sort()).toEqual(
     Object.entries(aiCapabilities.types)
-      // The Code behind a change links only for those who may read its owner; its integration test covers that.
-      .filter(([id, type]) => "reader" in type && id !== "code.version")
+      // Code and version readers are covered with live grants/revocation in code/versions.integration.test.ts.
+      .filter(([id, type]) => "reader" in type && id !== "code.version" && id !== "code")
       .map(([id]) => id)
       .sort(),
   );
   for (const [typeId, type] of Object.entries(aiCapabilities.types)) {
-    if (typeId === "code.version") continue;
+    if (typeId === "code.version" || typeId === "code") continue;
     if (!("reader" in type)) {
-      // Code is embedded in its owner's editor and has no standalone resource page.
-      if (typeId === "code") continue;
       expect(typeId).toBe("user");
       expect(String(aiCapabilities.events["user.created"].subject)).toBe(typeId);
       continue;
@@ -779,6 +777,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.policy.preview",
     "code.policy.read",
     "code.read",
+    "code.resource.read",
     "code.run.count",
     "code.run.list",
     "code.run.read",
@@ -789,6 +788,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.version.list",
     "code.version.origin",
     "code.version.read",
+    "code.version.review",
     "entities.search",
     // The six versioned file generators are published read Queries; storage stays in destination Actions.
     "file.chart.render.v1",
@@ -827,6 +827,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.secret.set",
     "code.version.approve",
     "code.version.reject",
+    "code.version.request_changes",
     "code.version.submit",
   ];
   expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual([
@@ -837,7 +838,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "core.user",
   ]);
   expect(Object.keys(aiCapabilities.queries).sort()).toEqual(queries);
-  expect(manifest.queries.map((query) => query.localId).sort()).toEqual(queries);
+  expect(manifest.queries.map((query) => query.localId).sort()).toEqual([...queries, "code.readable"].sort());
   expect(
     manifest.queries
       .filter((query) => query.openWorld)
@@ -877,6 +878,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.secret.set": { destructive: false, idempotency: "none" },
     "code.version.approve": { destructive: false, idempotency: "required" },
     "code.version.reject": { destructive: false, idempotency: "required" },
+    "code.version.request_changes": { destructive: false, idempotency: "required" },
     "code.version.submit": { destructive: false, idempotency: "required" },
     "ai.chat.deliver": { destructive: false, idempotency: "required" },
     "ai.chat.message": { destructive: false, idempotency: "required" },

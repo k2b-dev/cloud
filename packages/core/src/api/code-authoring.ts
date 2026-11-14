@@ -200,6 +200,9 @@ export function createCodeAuthoringRoutes() {
       }
     },
   );
+  register("review", codeAuthoringContracts.review, codeAuthoringServices.review);
+  register("reviewWait", codeAuthoringContracts.reviewWait, codeAuthoringServices.reviewWait);
+  register("withdraw", codeAuthoringContracts.withdraw, codeAuthoringServices.withdraw, true);
   register("init", codeAuthoringContracts.init, codeAuthoringServices.init, true);
   register("show", codeAuthoringContracts.show, codeAuthoringServices.show);
   register("pull", codeAuthoringContracts.pull, codeAuthoringServices.pull);

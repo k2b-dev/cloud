@@ -6,7 +6,7 @@ import * as registry from "../_internal/registry";
 import { formatAppKey } from "../app-key";
 import { env } from "../config/env";
 import { CloudResourceReaderViewSchema } from "../contracts/capabilities";
-import { ResourceReaderRateLimited, readResourcePrincipals } from "./resource-readers";
+import { listResourceManagers, ResourceReaderRateLimited, readResourcePrincipals } from "./resource-readers";
 import * as client from "./server-invoke";
 import { compileCapabilityManifest } from "./testing";
 
@@ -123,4 +123,32 @@ test("an app key enables resource checks without a reusable workload credential"
   } finally {
     Object.defineProperty(env, "CLOUD_APP_KEY", originalKey);
   }
+});
+
+test("manager notices use workload authority and bounded recipient pages without impersonating a person", async () => {
+  const managersManifest = compileCapabilityManifest("inventory", {
+    protocolVersion: 2,
+    queries: { "item.read": reader },
+    types: { item: { title: "Item", description: "An item.", reader: "item.read", access: { managers: () => [] } } },
+  });
+  lookup.mockResolvedValue({ ...entry, manifest: managersManifest });
+  const userId = "22222222-2222-4222-8222-222222222222";
+  invoke.mockResolvedValue({ ok: true, data: { data: { userIds: [userId] } } });
+  expect(await listResourceManagers({ ref: input.ref, userId, limit: 1 })).toEqual([userId]);
+  expect(invoke.mock.calls[0]?.[0]).toEqual({
+    appId: "inventory",
+    capabilityId: "item.managers",
+    kind: "query",
+    input: { id: "item-1", userId, limit: 1 },
+  });
+  expect(invoke.mock.calls[0]?.[2]).toMatchObject({ workload: { appId: "consumer" }, authorization: "Bearer fixture-workload" });
+  expect(invoke.mock.calls[0]?.[2]?.authority).toBeUndefined();
+  await expect(listResourceManagers({ ref: input.ref, limit: 51 })).rejects.toThrow();
+  expect(invoke).toHaveBeenCalledTimes(1);
+  invoke.mockResolvedValue({ ok: false, error: { code: "APP_UNAVAILABLE", message: "Retry", status: 503 } });
+  await expect(listResourceManagers({ ref: input.ref })).rejects.toThrow("APP_UNAVAILABLE");
+  lookup.mockResolvedValue(entry);
+  expect(await listResourceManagers({ ref: input.ref })).toEqual([]);
+  lookup.mockResolvedValue(null);
+  await expect(listResourceManagers({ ref: input.ref })).rejects.toThrow("registry entry unavailable");
 });

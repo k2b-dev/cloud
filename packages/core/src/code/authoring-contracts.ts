@@ -5,6 +5,7 @@ import { z } from "zod";
 import { codeActivationContracts } from "./activation-contracts";
 import { CodeIdSchema, type CodeOwner, CodeOwnerSchema, CodeSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
 import { codePolicyContracts } from "./policy-contracts";
+import { CodeReviewInputSchema, CodeReviewSchema, CodeReviewWaitInputSchema } from "./review-contracts";
 import { codeSchedulingContracts } from "./scheduling-contracts";
 import { codeSecretContracts } from "./secret-contracts";
 import { CodeVersionDiffFileSchema, codeVersionContracts } from "./version-contracts";
@@ -185,6 +186,9 @@ export const CodeWorkspaceStatusSchema = z.object({ version: z.literal(1), items
  * HTTP authoring endpoints use POST /api/code/authoring/<key>; failures use CodeAuthoringErrorSchema.
  */
 export const codeAuthoringContracts = {
+  review: { input: CodeReviewInputSchema, data: CodeReviewSchema },
+  reviewWait: { input: CodeReviewWaitInputSchema, data: CodeReviewSchema },
+  withdraw: { input: CodeReviewInputSchema.omit({ before: true }), data: codeVersionContracts.submit.data },
   init: {
     input: z.object({ title: z.string().min(1).max(200), owner: CodeOwnerSchema.optional() }).strict(),
     data: pulled,
