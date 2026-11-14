@@ -1,5 +1,5 @@
 import { Chat, useLocale } from "@k2b/ui";
-import { type JSX, Show } from "solid-js";
+import { createContext, type JSX, Show, useContext } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import { AiAppTile } from "./answer-sources";
@@ -8,7 +8,7 @@ import { aiChatMessages } from "./messages";
 import { AiToolActivity } from "./tool-disclosure";
 import { isFailedTool } from "./tool-groups";
 import { WebsiteReceipts, websiteReceipts } from "./web-tools";
-import { isAccessDenied } from "./work-summary";
+import { stepFailure } from "./work-summary";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
@@ -23,25 +23,23 @@ const resultSummary = (block: ToolBlock): string => {
   return typeof value === "string" && value.trim().length <= 500 ? value.trim() : "";
 };
 
-/**
- * Why a call did not go through, in words: "No access." when it was refused, else the app's own message without its
- * error code, else a plain "This did not work."
- */
+/** Why a call did not go through, in the reader's words; the app's codes and messages stay in the data. */
 const failureReason = (block: ToolBlock, t: ReturnType<typeof aiChatMessages>): string => {
-  if (isAccessDenied(block)) return t.stepNoAccess;
-  const result = block.result;
-  const raw =
-    typeof result === "string"
-      ? result
-      : isRecord(result) && isRecord(result.error) && typeof result.error.message === "string"
-        ? result.error.message
-        : isRecord(result) && typeof result.message === "string"
-          ? result.message
-          : "";
-  const message = raw.replace(/^[A-Z][A-Z0-9_]{2,}:\s*/, "").trim();
-  if (!message || message.length > 200 || message.includes("\n")) return t.stepDidNotWork;
-  return /[.!?…]$/.test(message) ? message : `${message}.`;
+  const kind = stepFailure(block);
+  return kind === "denied"
+    ? t.stepNoAccess
+    : kind === "not_found"
+      ? t.stepNotFound
+      : kind === "timeout"
+        ? t.stepTimedOut
+        : t.stepDidNotWork;
 };
+
+/**
+ * Whether the turn went on after a step: some later block exists. Given by the opened work list, so a failed step says
+ * "Went on without this result" only when something really followed it.
+ */
+export const AiWorkFollowedContext = createContext<(id: string) => boolean>(() => false);
 
 /** What a call acts on when it has no sentence of its own: the path, name, query, or title it was given. */
 const target = (block: ToolBlock): string => {
@@ -57,10 +55,11 @@ export function AiStepTile(props: { block: ToolBlock }): JSX.Element {
 
 /**
  * One step of the opened work, in words: the app tile, what the step did, and below it what came of it. A step that did
- * not go through says why and, once the turn went on, that it went on without the result.
+ * not go through says why and, when the turn went on after it, that it went on without the result.
  */
-export function AiWorkStep(props: { block: ToolBlock; busy: boolean; ended: boolean }): JSX.Element {
+export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Element {
   const locale = useLocale();
+  const followed = useContext(AiWorkFollowedContext);
   const timeZone = useReaderTimeZone();
   const t = () => aiChatMessages(locale());
   const failed = () => props.block.status !== "rejected" && isFailedTool(props.block);
@@ -76,7 +75,7 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean; ended: bool
   };
   const label = () => sentence() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale());
   const detail = () => {
-    if (failed()) return [failureReason(props.block, t()), props.ended ? t().stepWentOn : ""].join(" ").trim();
+    if (failed()) return [failureReason(props.block, t()), followed(props.block.id) ? t().stepWentOn : ""].join(" ").trim();
     const waiting = props.block.status === "awaiting_client" || props.block.status === "awaiting_approval";
     return [
       sentence() ? "" : target(props.block),

@@ -44,18 +44,18 @@
   white-space: nowrap;
 }
 
-/* The work line (Gustav chat v12): ✦ and the app tiles, then one sentence in 13 px, the time in 12 px tabular figures,
-   and the chevron right after them. It is as wide as its content, with a quiet hover surface that reaches 4 px past
-   the text edge, and the same height whether the turn runs or has ended. */
+/* The work line (Gustav chat v12): ✦ and the app tiles, one sentence in 13 px, the time in 12 px tabular figures, and
+   the chevron. One line in every state and the same height whether the turn runs or has ended (Bauplan 6b). */
 .k2b-ui .ai-turn-work {
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
 }
 
-/* The row keeps the full width, so nothing in it depends on the changing words: the time stands on the right in
-   tabular figures and the chevron ends the row (Bauplan 6b). The hover surface reaches 4 px past the text edge. */
+/* The row has a fixed width, at most the row measure, so nothing in it depends on the changing words: the time stands
+   on the right in a fixed-width cell, close to the sentence, and the chevron ends the row. The hover surface reaches
+   4 px past the text edge. */
 .k2b-ui .ai-turn-work > .k2b-chat-activity__row {
-  width: calc(100% + 0.25rem);
+  width: min(calc(100% + 0.25rem), var(--k2b-row-measure, 40rem));
   min-height: 1.75rem;
   margin-inline-start: -0.25rem;
   padding: 0.1875rem 0.5rem 0.1875rem 0.25rem;
@@ -67,23 +67,39 @@
   background: var(--k2b-edge-hover-bg);
 }
 
-/* One line in every state, also on a phone, so the line never grows when the turn ends; a long sentence fades at its
-   end and stays whole in the accessible name. */
+/* Before the first step there is nothing to open; the chevron's place stays, so the time does not move when it comes. */
+.k2b-ui .ai-turn-work > div.k2b-chat-activity__row::after {
+  width: 1em;
+  flex: none;
+  content: "";
+}
+
 .k2b-ui .ai-turn-work .k2b-chat-activity__copy strong {
   min-width: 0;
   overflow: hidden;
   color: inherit;
-  text-overflow: clip;
   white-space: nowrap;
+}
+
+/* The sentence gives way first: it fades at its end, while the step count and what did not go through stay whole. */
+.k2b-ui .ai-turn-work__text {
+  display: flex;
+  min-width: 0;
+}
+
+.k2b-ui .ai-turn-work__sentence {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.k2b-ui .ai-turn-work__steps {
+  flex: none;
+  white-space: pre;
 }
 
 /* A step that goes on reads that way: "Thinking …". */
 .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence::after {
   content: " …";
-}
-
-.k2b-ui .ai-turn-work__text {
-  display: block;
 }
 
 .k2b-ui .ai-turn-work__lead {
@@ -98,22 +114,33 @@
   font-size: 0.9375rem;
 }
 
-.k2b-ui .ai-turn-work__meta {
-  font-size: 0.75rem;
+.k2b-ui .ai-turn-work .k2b-chat-activity__trailing {
+  margin-inline-start: auto;
 }
 
-/* Only the sentence shimmers while Gustav works: a plum light runs over it every 2.2 s. Tiles and the ✦ keep their
-   colours. With reduced motion the sentence stands still in its own colour. The selectors repeat the shared busy rule's
-   conditions and add this line's class, so they win over it. */
+.k2b-ui .ai-turn-work__meta {
+  min-width: 3.25rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-align: end;
+}
+
+/* Only the sentence shimmers while Gustav works: a plum light runs over it every 2.2 s, on the sentence itself so its
+   fade still applies. Tiles, ✦ and the step count keep their colours; with reduced motion nothing moves. The selectors
+   repeat the shared busy rule's conditions, so they win over it. */
 .k2b-ui
   .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
-  .k2b-chat-activity__leading:has(.ai-app-tile, .ai-turn-work__lead) {
+  .k2b-chat-activity__leading:has(.ai-app-tile, .ai-turn-work__lead),
+.k2b-ui
+  .k2b-chat-activity.ai-turn-work[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
+  .k2b-chat-activity__copy
+  strong {
   background-image: none;
   -webkit-text-fill-color: currentColor;
   animation: none;
 }
 
-.k2b-ui .k2b-chat-activity.ai-turn-work[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong {
+.k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence {
   background-image: linear-gradient(
     90deg,
     var(--k2b-text-secondary) 0 40%,
@@ -121,18 +148,21 @@
     var(--k2b-text-secondary) 60% 100%
   );
   background-size: 220% 100%;
-  animation-duration: 2.2s;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: k2b-chat-activity-shimmer 2.2s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .k2b-ui .k2b-chat-activity.ai-turn-work[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong {
+  .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence {
     background-image: none;
     -webkit-text-fill-color: currentColor;
     animation: none;
   }
 }
 
-:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity.ai-turn-work[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong {
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence {
   background-image: none;
   -webkit-text-fill-color: currentColor;
   animation: none;
@@ -155,6 +185,12 @@
 
 .k2b-ui .ai-work-step .k2b-chat-activity__row {
   gap: 0.625rem;
+}
+
+/* A step that opens, such as thinking, ends its row where the work line ends its own, chevron under chevron. */
+.k2b-ui .ai-turn-steps > .ai-work-step > summary.k2b-chat-activity__row {
+  width: min(100%, calc(var(--k2b-row-measure, 40rem) - 0.25rem));
+  padding-inline-end: 0.5rem;
 }
 
 .k2b-ui .ai-work-step .k2b-chat-activity__copy strong {

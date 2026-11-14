@@ -178,9 +178,12 @@ for (const width of [1440, 390])
     const { page, close } = await open("antwort", width);
     try {
       const line = ".ai-turn-work > summary";
-      expect(await page.locator(`${line} .ai-turn-work__text`).innerText()).toBe(
+      expect(await page.locator(`${line} .ai-turn-work__text`).textContent()).toBe(
         "In Mail und Dateien nachgesehen · 5 Schritte, 1 ohne Zugriff",
       );
+      // The sentence gives way first: the step count and what did not go through are never cut.
+      const whole = await page.locator(`${line} .ai-turn-work__steps`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5);
+      expect(whole).toBe(true);
       // ✦ in the AI colour, then one 20 px tile per app that went through, in the app's colour on its tint.
       const spark = await page.locator(`${line} .ai-turn-work__lead > i`).evaluate((node) => getComputedStyle(node).color);
       const plum = await page.evaluate(() => {
@@ -242,6 +245,14 @@ test("the running work line has the finished line's height, shimmers in 2.2 s, a
   const finished = await open("antwort", 1440);
   const height = (await box(finished.page, ".ai-turn-work > *")).height;
   await finished.close();
+  // Before the first step the line cannot open yet, but its time stands where it stands once it can.
+  const timeEdge = async (scene: string) => {
+    const view = await open(scene, 1440);
+    const right = await view.page.locator(".ai-turn-work .ai-turn-work__meta").evaluate((node) => node.getBoundingClientRect().right);
+    await view.close();
+    return right;
+  };
+  expect(await timeEdge("denkt")).toBe(await timeEdge("arbeitet"));
   for (const motion of ["no-preference", "reduce"] as const) {
     const { page, close } = await open("arbeitet", 1440, "light", motion);
     try {
@@ -250,7 +261,7 @@ test("the running work line has the finished line's height, shimmers in 2.2 s, a
       expect(await page.locator(`${line} .ai-turn-work__sentence`).innerText()).toContain("Nutzt Dateien");
       // The message's progress dots give way to the work line.
       expect(await page.locator(".k2b-chat-progress-dots").evaluate((node) => getComputedStyle(node).visibility)).toBe("hidden");
-      const sentence = await page.locator(`${line} .k2b-chat-activity__copy strong`).evaluate((node) => ({
+      const sentence = await page.locator(`${line} .ai-turn-work__sentence`).evaluate((node) => ({
         name: getComputedStyle(node).animationName,
         duration: getComputedStyle(node).animationDuration,
       }));

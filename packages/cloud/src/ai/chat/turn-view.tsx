@@ -36,7 +36,7 @@ import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } fr
 import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
 import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
-import { AiThoughtStep, AiWorkStep, keepsStepDetail } from "./work-steps";
+import { AiThoughtStep, AiWorkFollowedContext, AiWorkStep, keepsStepDetail } from "./work-steps";
 import { AI_WORK_APP_TILES, workApps, workStepLine, workSummary } from "./work-summary";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -217,7 +217,13 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     return summary() ? `${summary()}. ${label}` : label;
   };
   const hasSteps = createMemo(() => layout().work.length > 0);
-  const steps = () => <AiWorkSteps blocks={layout().work} active={working()} ended={!isLive(segment().phase)} />;
+  // The turn went on after a step when a later step, its answer, or its normal end followed.
+  const followed = (id: string) => {
+    const work = layout().work;
+    const index = work.findIndex((block) => block.id === id);
+    return (index >= 0 && index < work.length - 1) || layout().text.length > 0 || segment().phase === "completed";
+  };
+  const steps = () => <AiWorkSteps blocks={layout().work} active={working()} followed={followed} />;
   /** The time beside the sentence, in tabular figures: the work time while it runs, how long it waits, or the total. */
   const time = () => {
     const duration = segment().duration();
@@ -232,8 +238,8 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
       blockId={`work:${segment().id}`}
       class="ai-turn-work"
       label={
-        <span class="ai-turn-work__text k2b-truncate-fade">
-          <span class="ai-turn-work__sentence">{sentence()}</span>
+        <span class="ai-turn-work__text">
+          <span class="ai-turn-work__sentence k2b-truncate-fade">{sentence()}</span>
           <Show when={stepLine()}>
             <span class="ai-turn-work__steps"> · {stepLine()}</span>
           </Show>
@@ -261,16 +267,14 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
   );
 }
 
-function WorkEntryRow(props: { entry: AiWorkEntry; busy: boolean; ended?: boolean }) {
+function WorkEntryRow(props: { entry: AiWorkEntry; busy: boolean }) {
   const locale = useLocale();
   return (
     <Switch>
       <Match when={props.entry.kind === "tool" && keepsStepDetail(props.entry.name) && props.entry}>
         {(tool) => <CompactToolRow block={tool()} busy={props.busy} />}
       </Match>
-      <Match when={props.entry.kind === "tool" && props.entry}>
-        {(tool) => <AiWorkStep block={tool()} busy={props.busy} ended={props.ended === true} />}
-      </Match>
+      <Match when={props.entry.kind === "tool" && props.entry}>{(tool) => <AiWorkStep block={tool()} busy={props.busy} />}</Match>
       <Match when={props.entry.kind === "thinking" && props.entry}>
         {(thought) => <AiThoughtStep block={thought()} busy={props.busy} />}
       </Match>
@@ -368,7 +372,7 @@ const workItemKey = (item: AiWorkItem): string =>
  * folds away under the reader, also when reasoning or arguments that would fold it arrive later; the next time it
  * opens, it folds like in history.
  */
-function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; ended: boolean }) {
+function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; followed: (id: string) => boolean }) {
   const shown = new Set<string>();
   const items = createMemo(() => {
     const work = groupWorkBlocks(props.blocks, shown);
@@ -377,40 +381,42 @@ function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; ended: boo
   });
   const keys = createMemo(() => [...items().keys()]);
   return (
-    <div class="ai-turn-steps">
-      <For each={keys()}>
-        {(key, index) => {
-          const item = () => items().get(key);
-          const text = () => {
-            const value = item();
-            return value?.kind === "text" ? value.block.text : undefined;
-          };
-          const step = () => {
-            const value = item();
-            return value?.kind === "step" ? value.entry : undefined;
-          };
-          const group = () => {
-            const value = item();
-            return value?.kind === "housekeeping" ? value : undefined;
-          };
-          const repeat = () => {
-            const value = item();
-            return value?.kind === "repeat" ? value : undefined;
-          };
-          const active = () => props.active && index() === keys().length - 1;
-          return (
-            <Switch>
-              <Match when={text()}>{(value) => <WorkText text={value()} />}</Match>
-              <Match when={step()}>{(entry) => <WorkEntryRow entry={entry()} busy={active()} ended={props.ended} />}</Match>
-              <Match when={group()}>{(value) => <HousekeepingGroup id={value().id} entries={value().entries} active={active()} />}</Match>
-              <Match when={repeat()}>
-                {(value) => <RepeatedSteps id={value().id} target={value().target} entries={value().entries} active={active()} />}
-              </Match>
-            </Switch>
-          );
-        }}
-      </For>
-    </div>
+    <AiWorkFollowedContext.Provider value={props.followed}>
+      <div class="ai-turn-steps">
+        <For each={keys()}>
+          {(key, index) => {
+            const item = () => items().get(key);
+            const text = () => {
+              const value = item();
+              return value?.kind === "text" ? value.block.text : undefined;
+            };
+            const step = () => {
+              const value = item();
+              return value?.kind === "step" ? value.entry : undefined;
+            };
+            const group = () => {
+              const value = item();
+              return value?.kind === "housekeeping" ? value : undefined;
+            };
+            const repeat = () => {
+              const value = item();
+              return value?.kind === "repeat" ? value : undefined;
+            };
+            const active = () => props.active && index() === keys().length - 1;
+            return (
+              <Switch>
+                <Match when={text()}>{(value) => <WorkText text={value()} />}</Match>
+                <Match when={step()}>{(entry) => <WorkEntryRow entry={entry()} busy={active()} />}</Match>
+                <Match when={group()}>{(value) => <HousekeepingGroup id={value().id} entries={value().entries} active={active()} />}</Match>
+                <Match when={repeat()}>
+                  {(value) => <RepeatedSteps id={value().id} target={value().target} entries={value().entries} active={active()} />}
+                </Match>
+              </Switch>
+            );
+          }}
+        </For>
+      </div>
+    </AiWorkFollowedContext.Provider>
   );
 }
 

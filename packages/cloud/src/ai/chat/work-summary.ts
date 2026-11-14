@@ -20,8 +20,11 @@ const tools = (blocks: AiTurnBlock[]): ToolBlock[] => blocks.filter((block): blo
 /** The apps a turn worked in, in order of first use: an app's own tile, or the web's for web tools. */
 export const workApps = (blocks: AiTurnBlock[]): AiWorkApp[] => {
   const apps = new Map<string, AiWorkApp>();
-  // An app shows once a call there runs or went through; one Gustav could not use is named in the steps instead.
-  for (const tool of tools(blocks).filter((block) => block.status !== "rejected" && !isFailedTool(block))) {
+  // An app shows once a call there runs or went through; one waiting for a decision, refused, or failed is named in the
+  // steps instead.
+  for (const tool of tools(blocks).filter(
+    (block) => (block.status === "running" || block.status === "completed") && !isFailedTool(block),
+  )) {
     const presentation = tool.presentation;
     if (presentation?.kind === "capability") {
       const key = `app:${presentation.appId}`;
@@ -31,14 +34,34 @@ export const workApps = (blocks: AiTurnBlock[]): AiWorkApp[] => {
   return [...apps.values()];
 };
 
-/** A failed call that Cloud or the app refused for lack of access, as far as its result says so. */
-export const isAccessDenied = (tool: ToolBlock): boolean => {
-  if (!isFailedTool(tool)) return false;
+/** The error code of a failed call: `CODE: message` as persisted, or `code` in a structured error result. */
+const failureCode = (tool: ToolBlock): string | null => {
   const result = tool.result;
-  const code = typeof result === "string" ? /^([A-Z][A-Z0-9_]{2,})\b/.exec(result.trim())?.[1] : undefined;
-  const nested = isRecord(result) && isRecord(result.error) ? result.error.code : isRecord(result) ? result.code : undefined;
-  return [code, nested].some((value) => typeof value === "string" && /^(?:FORBIDDEN|UNAUTHORIZED|ACCESS_DENIED|forbidden)$/.test(value));
+  const code =
+    typeof result === "string"
+      ? /^([A-Z][A-Z0-9_]{2,})\b/.exec(result.trim())?.[1]
+      : isRecord(result) && isRecord(result.error)
+        ? result.error.code
+        : isRecord(result)
+          ? result.code
+          : undefined;
+  return typeof code === "string" ? code.toUpperCase() : null;
 };
+
+/** Why a failed call did not go through, as a kind the chat words itself; codes and messages never reach the person. */
+export type AiStepFailure = "denied" | "not_found" | "timeout" | "other";
+
+export const stepFailure = (tool: ToolBlock): AiStepFailure | null => {
+  if (!isFailedTool(tool)) return null;
+  const code = failureCode(tool) ?? "";
+  if (/^(?:FORBIDDEN|UNAUTHORIZED|ACCESS_DENIED|PERMISSION_DENIED)$/.test(code)) return "denied";
+  if (/^(?:NOT_FOUND|GONE)$/.test(code)) return "not_found";
+  if (/TIMEOUT|DEADLINE/.test(code)) return "timeout";
+  return "other";
+};
+
+/** A failed call that Cloud or the app refused for lack of access, as far as its result says so. */
+export const isAccessDenied = (tool: ToolBlock): boolean => stepFailure(tool) === "denied";
 
 /**
  * What a finished turn did, as one sentence in words: where it looked, where it changed something, and what it did with
