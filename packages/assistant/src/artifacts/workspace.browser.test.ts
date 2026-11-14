@@ -57,7 +57,7 @@ test("source tabs preserve drafts and history, guard closing, and fill the works
     expect(await input.inputValue()).toBe("export default () => 99;");
     await page.waitForFunction(() => document.querySelector(".k2b-autocomplete__preview")?.textContent?.includes("99"));
     expect(await page.locator(".artifact-code .hl-keyword").count()).toBeGreaterThan(0);
-    await page.getByRole("button", { name: "Close tab: main.js", exact: true }).click();
+    await page.getByRole("button", { name: "Close main.js", exact: true }).click();
     await page.getByRole("dialog").waitFor();
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     expect(await input.inputValue()).toBe("export default () => 99;");

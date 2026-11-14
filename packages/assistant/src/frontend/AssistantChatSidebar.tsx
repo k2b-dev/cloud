@@ -80,6 +80,8 @@ export type ChatSidebarActions = {
   /** Opens a shared Project file, read-only here. */
   onOpenProjectFile?: (file: AiProjectFile) => void;
   onFileDeleted?: (file: { conversationId: string; path: string }) => void;
+  /** Opens a web page of the chat in the reading view; without it, links open in the person's own browser. */
+  onOpenWebPage?: (url: string, title: string) => void;
 };
 
 /** The live chat snapshot with the controls the sidebar needs; see `createAssistantChatContextState`. */
@@ -1183,7 +1185,13 @@ function SourceRow(props: { entry: SourceEntry; actions: ChatSidebarActions; gro
             leading={<i class="ti ti-world" aria-hidden="true" />}
             title={source.title}
             description={[hostOf(source.href), props.when].filter(Boolean).join(" · ")}
-            onClick={() => (source.href ? void confirmOpenAssistantLink(source.title, source.href) : undefined)}
+            onClick={() =>
+              source.href
+                ? props.actions.onOpenWebPage
+                  ? props.actions.onOpenWebPage(source.href, source.title)
+                  : void confirmOpenAssistantLink(source.title, source.href)
+                : undefined
+            }
             menuItems={jumpItems(source)}
             menuLabel={copy().fileActions({ name: source.title })}
           />

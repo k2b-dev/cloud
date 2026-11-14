@@ -1,7 +1,45 @@
 import type { AiChatTaskView, AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
-import { Button, Dropdown, FileTree, FileView, NoticeCard, Placeholder, prompts, Tabs, useLocale } from "@k2b/ui";
-import { createEffect, createResource, createSignal, ErrorBoundary, For, onCleanup, Show } from "solid-js";
+import { SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
+import {
+  activatePanesItem,
+  addPanesItem,
+  Button,
+  createPanesLayout,
+  Dropdown,
+  type DropdownItem,
+  FileTree,
+  FileView,
+  formatFileViewSize,
+  IconButtonLink,
+  isPanesItemVisible,
+  NoticeCard,
+  Panes,
+  type PanesItem,
+  type PanesLayout,
+  Placeholder,
+  prompts,
+  reconcilePanesLayout,
+  removePanesItem,
+  toast,
+  useLocale,
+} from "@k2b/ui";
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createResource,
+  createRoot,
+  createSignal,
+  ErrorBoundary,
+  getOwner,
+  type JSX,
+  on,
+  onCleanup,
+  Show,
+} from "solid-js";
+import type { AssistantChatContextSnapshot, AssistantChatResult } from "../chat-context";
+import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput, SaveChatWorkspaceResult } from "../chat-workspace";
 import { openAssistantTaskRun } from "../frontend/AssistantActivitiesDialog";
 import { AssistantChatContextContent, type ContextView } from "../frontend/AssistantChatContext";
 import type { ChatSidebarJump } from "../frontend/AssistantChatSidebar";
@@ -12,6 +50,8 @@ import { ArtifactPanel } from "./ArtifactPanel";
 import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
 import { artifactSourceRenderers, readOnlySourceRenderers } from "./SourceRenderer";
+import { WebReaderTab } from "./WebReaderTab";
+import { workspaceMessages } from "./workspace-messages";
 import {
   appTab,
   closeWorkspaceTab,
@@ -20,12 +60,12 @@ import {
   sourceTab,
   type WorkspaceState,
   type WorkspaceTab,
+  webTab,
   workspaceSelectionFromHref,
   workspaceSelectionHref,
   workspaceTabFromKey,
   workspaceTabId,
 } from "./workspace-state";
-import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput, SaveChatWorkspaceResult } from "../chat-workspace";
 
 /** Where the open tabs of a chat are kept for the person; the server's, so they follow to every device. */
 export type ChatTabsStore = {
@@ -89,7 +129,8 @@ export function createArtifactWorkspace(
   const empty = (): TabsState => ({ tabs: [], active: null, layout: null, pinned: [] });
   const initialTab = initialHref ? workspaceSelectionFromHref(initialHref) : null;
   const cache = new Map<string, { state: TabsState; revision: number }>();
-  if (options.initial) cache.set(options.initial.chatId, { state: tabsFromSnapshot(options.initial.snapshot), revision: options.initial.snapshot.revision });
+  if (options.initial)
+    cache.set(options.initial.chatId, { state: tabsFromSnapshot(options.initial.snapshot), revision: options.initial.snapshot.revision });
   const start = (): TabsState => {
     const stored = options.initial ? cache.get(options.initial.chatId)!.state : empty();
     if (!initialTab) return stored;
@@ -152,7 +193,10 @@ export function createArtifactWorkspace(
       let layout = current.layout;
       if (!layout?.root) layout = createPanesLayout([id]);
       else if (!current.tabs.some((existing) => existing.key === tab.key))
-        layout = addPanesItem(layout, { itemId: id, targetItemId: frontId ?? panesItemOrder(layout)[0] ?? null });
+        layout = addPanesItem(layout, {
+          itemId: id,
+          targetItemId: frontId ?? (current.tabs[0] ? workspaceTabId(current.tabs[0].key) : null),
+        });
       layout = fitLayout(layout, opened.tabs);
       return { ...current, ...opened, layout: layout && activatePanesItem(layout, id) };
     });
@@ -387,21 +431,78 @@ function SourceDirectory(props: { artifactId: string; open: (path: string) => vo
   );
 }
 
+const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+const extensionOf = (path: string) => {
+  const name = fileName(path);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot + 1).toUpperCase() : "";
+};
+
+const tabIcon = (tab: WorkspaceTab) =>
+  tab.kind === "task"
+    ? "ti ti-calendar-time"
+    : tab.kind === "app"
+      ? "ti ti-app-window"
+      : tab.kind === "context"
+        ? tab.category === "files"
+          ? "ti ti-layout-list"
+          : tab.category === "sources"
+            ? "ti ti-world"
+            : tab.category === "context"
+              ? "ti ti-adjustments"
+              : "ti ti-stack-2"
+        : tab.kind === "file"
+          ? "ti ti-file"
+          : tab.kind === "web"
+            ? "ti ti-world"
+            : "ti ti-file-code";
+
+/** The head of every pane: title, one meta line, at most two actions, and "…" with what Cloud can do with the thing. */
+function PaneHead(props: { title: string; meta?: string | null; actions?: JSX.Element; menu: DropdownItem[]; menuLabel: string }) {
+  return (
+    <header class="artifact-pane__head">
+      <div class="artifact-pane__heading">
+        <h2 class="artifact-pane__title k2b-truncate-fade" title={props.title}>
+          {props.title}
+        </h2>
+        <p class="artifact-pane__meta k2b-truncate-fade">{props.meta ?? ""}</p>
+      </div>
+      <div class="artifact-pane__actions">
+        {props.actions}
+        <Dropdown.Root items={props.menu} align="end" label={props.menuLabel}>
+          <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={props.menuLabel} class="artifact-pane__more">
+            <i class="ti ti-dots" aria-hidden="true" />
+          </Dropdown.Trigger>
+        </Dropdown.Root>
+      </div>
+    </header>
+  );
+}
+
 export function ArtifactWorkspace(props: {
   controller: ArtifactWorkspaceController;
   userId: string;
   refreshKey: string;
   onEditTask: (task: AiChatTaskView, repair: boolean) => void;
-  menuItems?: import("@k2b/ui").DropdownItem[];
   project?: AiProject | null;
   conversationId?: string | null;
   onOpenView?: (view: ContextView) => void;
-  /** Jumps to a message of the current chat, for results listed in its Files tab. */
+  /** Jumps to a message of the current chat, for results listed in its tabs. */
   onJump?: (target: ChatSidebarJump) => void;
   onOpenSecrets?: () => void;
+  /** What the chat holds, for the meta line and the menu of its files and results. */
+  snapshot?: Accessor<AssistantChatContextSnapshot | null>;
+  /** "Ask Gustav about it": hands the thing to the next message. */
+  onAsk?: (title: string) => void;
+  /** "Add pane": the chat's whole list. */
+  onAdd?: () => void;
+  arrangeHint?: { open: boolean; onDismiss: () => void };
+  /** The operator set up reading web pages: web links of the chat open as reading-view tabs. */
+  webReader?: boolean;
 }) {
   const locale = useLocale(),
-    t = () => artifactMessages.resolve([locale()]).t;
+    t = () => artifactMessages.resolve([locale()]).t,
+    w = () => workspaceMessages.resolve([locale()]).t;
   const state = props.controller.state;
   const live = useAssistantLive();
   // The chat's whole list carries the name of the box it opens from.
@@ -413,42 +514,229 @@ export function ArtifactWorkspace(props: {
       return;
     props.controller.close(key);
   }
-  return (
-    <div class="artifact-workspace">
-      <div class="artifact-workspace__tabs">
-        <Tabs
-          variant="pill"
-          trailing={
-            <Show when={props.menuItems?.length}>
-              <Dropdown.Root items={props.menuItems ?? []}>
-                <Dropdown.Trigger iconOnly label={t().open}>
-                  <i class="ti ti-plus" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-            </Show>
+  const closeOthers = async (key: string) => {
+    for (const tab of state().tabs) if (tab.key !== key && !props.controller.isPinned(tab.key)) await close(tab.key);
+  };
+  const copyLink = async (tab: WorkspaceTab) => {
+    try {
+      await navigator.clipboard.writeText(new URL(workspaceSelectionHref(window.location.href, tab), window.location.href).href);
+      toast.success(w().linkCopied);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const resultOf = (path: string) => props.snapshot?.()?.results.find((result) => result.file?.path === path) ?? null;
+  const jumpOf = (result: AssistantChatResult | null): ChatSidebarJump | null =>
+    result && result.messageSeq !== null
+      ? { messageSeq: result.messageSeq, callId: result.callId, presentationId: result.presentationId ?? null }
+      : null;
+  const meta = (tab: WorkspaceTab): string | null => {
+    if (tab.kind === "file") {
+      const result = resultOf(tab.path);
+      const file = result?.file ?? props.snapshot?.()?.files.find((entry) => entry.path === tab.path) ?? null;
+      const facts = [extensionOf(tab.path), file ? formatFileViewSize(file.size, locale()) : null].filter(Boolean).join(" · ");
+      return result?.description ? `${facts} · ${result.description}` : facts;
+    }
+    if (tab.kind === "app") return w().metaApp;
+    if (tab.kind === "task") return w().metaRoutine;
+    if (tab.kind === "source") return w().metaSource;
+    if (tab.kind === "context") return w().metaContext({ category: tab.category });
+    return null;
+  };
+  const menu = (tab: WorkspaceTab): DropdownItem[] => {
+    const copy = w();
+    const items: DropdownItem[] = [];
+    const result =
+      tab.kind === "file"
+        ? resultOf(tab.path)
+        : tab.kind === "app"
+          ? (props.snapshot?.()?.results.find((entry) => entry.app?.id === tab.artifactId) ?? null)
+          : null;
+    const jump = tab.kind === "file" || tab.kind === "app" ? jumpOf(result) : null;
+    if (jump && props.onJump) items.push({ label: copy.showInChat, icon: "ti ti-corner-left-up", action: () => props.onJump!(jump) });
+    if (props.onAsk && tab.kind !== "context")
+      items.push({ label: copy.ask, icon: "ti ti-sparkles", action: () => props.onAsk!(title(tab)) });
+    if (tab.kind !== "view") items.push({ label: copy.copyLink, icon: "ti ti-link", action: () => void copyLink(tab) });
+    if (tab.kind === "file") {
+      const source = conversationFileSource("/api/ai", tab.conversationId);
+      const href = source.downloadHref?.(tab.path) ?? null;
+      if (href) {
+        items.push({
+          label: copy.download,
+          icon: "ti ti-download",
+          action: () => {
+            const link = document.createElement("a");
+            link.href = href;
+            link.download = fileName(tab.path);
+            link.click();
+          },
+        });
+        const file = result?.file ?? props.snapshot?.()?.files.find((entry) => entry.path === tab.path);
+        if (file)
+          items.push({
+            label: saveFilesLabel(locale()),
+            icon: SAVE_FILES_ICON,
+            action: () => void saveFiles([{ name: fileName(tab.path), content: href, mediaType: file.mediaType, size: file.size }]),
+          });
+      }
+      if (source.remove)
+        items.push({
+          label: copy.deleteFromChat,
+          icon: "ti ti-trash",
+          variant: "danger",
+          action: async () => {
+            const confirmed = await prompts.confirm(copy.deleteConfirm({ name: fileName(tab.path) }), {
+              title: copy.deleteFromChat,
+              confirmText: copy.delete,
+              variant: "danger",
+            });
+            if (!confirmed) return;
+            try {
+              await source.remove!(tab.path);
+              props.controller.close(tab.key);
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : String(error));
+            }
+          },
+        });
+    }
+    if (tab.kind === "web")
+      items.push({ label: copy.openOwn, icon: "ti ti-external-link", action: () => window.open(tab.url, "_blank", "noopener,noreferrer") });
+    if (tab.kind === "app")
+      items.push({
+        label: copy.openOwn,
+        icon: "ti ti-external-link",
+        action: () => window.open(`/app/assistant/apps/${tab.artifactId}`, "_blank", "noopener"),
+      });
+    const pinned = props.controller.isPinned(tab.key);
+    items.push({
+      sectionLabel: undefined,
+      items: [
+        {
+          label: pinned ? copy.unpin : copy.pin,
+          icon: pinned ? "ti ti-pinned-off" : "ti ti-pin",
+          trailing: <span class="artifact-pane__hint">{copy.pinHint}</span>,
+          action: () => props.controller.togglePin(tab.key),
+        },
+        { label: copy.close, icon: "ti ti-x", action: () => void close(tab.key) },
+        {
+          label: copy.closeOthers,
+          icon: "ti ti-square-x",
+          disabled: state().tabs.length < 2 || undefined,
+          action: () => void closeOthers(tab.key),
+        },
+      ],
+    } as DropdownItem);
+    return items;
+  };
+  /** "…" of a web page: ask about it, copy its address, open it outside, pin, close. */
+  const webMenu = (tab: WorkspaceTab, url: string): DropdownItem[] =>
+    menu(tab).map((item) =>
+      "label" in item && item.label === w().copyLink
+        ? {
+            ...item,
+            action: async () => {
+              await navigator.clipboard.writeText(url).catch(() => undefined);
+              toast.success(w().linkCopied);
+            },
           }
-          value={() => state().active ?? ""}
-          onValueChange={props.controller.select}
-          ariaLabel={t().workspace}
-          options={state().tabs.map((tab) => ({
-            value: tab.key,
-            label: title(tab),
-            icon: tab.kind === "task" ? "ti ti-calendar-time" : tab.kind === "app" ? "ti ti-app-window" : "ti ti-file-code",
-            onClose: () => void close(tab.key),
-            closeLabel: `${t().close}: ${title(tab)}`,
-          }))}
-        />
-        <Button class="artifact-mobile-toggle" size="sm" variant="ghost" onClick={() => props.controller.setMobile("chat")}>
-          {t().chat}
-        </Button>
-      </div>
-      <For each={state().tabs.map((tab) => tab.key)}>
-        {(key) => {
-          // Key by identity, not by snapshot object. Switching tabs never remounts a run or editor.
-          const tab = state().tabs.find((tab) => tab.key === key)!;
-          onCleanup(() => props.controller.setDirty(key, false));
-          return (
-            <div class="artifact-workspace__tab" role="tabpanel" hidden={state().active !== key} aria-label={title(tab)}>
+        : item,
+    );
+  const actions = (tab: WorkspaceTab): JSX.Element => {
+    if (tab.kind !== "file") return undefined;
+    const href = conversationFileSource("/api/ai", tab.conversationId).downloadHref?.(tab.path);
+    return href ? (
+      <IconButtonLink
+        size="sm"
+        variant="ghost"
+        href={href}
+        download={fileName(tab.path)}
+        label={w().downloadNamed({ name: fileName(tab.path) })}
+        tooltip={w().download}
+      >
+        <i class="ti ti-download" aria-hidden="true" />
+      </IconButtonLink>
+    ) : undefined;
+  };
+  const content = (key: string, tab: WorkspaceTab): JSX.Element =>
+    tab.kind === "task" ? (
+      <AssistantTaskDetail
+        taskId={tab.taskId}
+        onEdit={props.onEditTask}
+        onTitle={(title) => props.controller.rename(key, title)}
+        onOpenRun={(taskId, occurrenceId) => void openAssistantTaskRun(taskId, occurrenceId, live)}
+      />
+    ) : tab.kind === "context" ? (
+      <AssistantChatContextContent
+        chatId={tab.conversationId}
+        project={tab.project !== undefined ? tab.project : tab.conversationId === props.conversationId ? props.project : undefined}
+        category={tab.category}
+        onOpenView={props.onOpenView}
+        onFileDeleted={(file) => props.controller.closeFile(file.conversationId, file.path)}
+        onOpenApp={(id, title, start) => props.controller.open(appTab(id, title, start))}
+        onJump={tab.conversationId === props.conversationId ? props.onJump : undefined}
+        onOpenSecrets={tab.conversationId === props.conversationId ? props.onOpenSecrets : undefined}
+        onOpenWebPage={props.webReader ? (url, title) => props.controller.open(webTab(tab.conversationId, url, title)) : undefined}
+      />
+    ) : tab.kind === "view" ? (
+      tab.render()
+    ) : tab.kind === "app" ? (
+      <ArtifactPanel
+        start={
+          state().tabs.some((candidate) => candidate.key === key && candidate.kind === "app" && candidate.autoStart) ? "now" : undefined
+        }
+        refreshKey={props.refreshKey}
+        artifactId={tab.artifactId}
+        userId={props.userId}
+        onTitle={(title) => props.controller.rename(key, title)}
+        browseSource={() =>
+          props.controller.open({
+            kind: "view",
+            key: `${tab.artifactId}:source`,
+            title: t().source,
+            render: () => (
+              <SourceDirectory artifactId={tab.artifactId} open={(path) => props.controller.open(sourceTab(tab.artifactId, path))} />
+            ),
+          })
+        }
+      />
+    ) : tab.kind === "file" ? (
+      <ChatFile tab={tab} refreshKey={props.refreshKey} dirty={(value) => props.controller.setDirty(key, value)} />
+    ) : tab.kind === "web" ? (
+      <WebReaderTab
+        conversationId={tab.conversationId}
+        url={tab.url}
+        onTitle={(title) => props.controller.rename(key, title)}
+        menu={(url) => webMenu(tab, url)}
+        menuLabel={w().moreNamed({ title: title(tab) })}
+      />
+    ) : (
+      <SourceFile tab={tab} dirty={(value) => props.controller.setDirty(key, value)} />
+    );
+  // Each tab's content is made once and moves between panes, so switching or arranging tabs keeps a run or an editor.
+  const owner = getOwner();
+  const panes = new Map<string, { element: JSX.Element; dispose: () => void }>();
+  const paneOf = (key: string): JSX.Element => {
+    let pane = panes.get(key);
+    if (!pane) {
+      pane = createRoot((dispose) => {
+        const tab = () => state().tabs.find((candidate) => candidate.key === key);
+        const initial = tab()!;
+        const element = (
+          <div class="artifact-pane" data-kind={initial.kind}>
+            {/* A web page brings its own head: the address bar with its mark and "…". */}
+            <Show when={initial.kind !== "web" && tab()}>
+              {(current) => (
+                <PaneHead
+                  title={title(current())}
+                  meta={meta(current())}
+                  actions={actions(current())}
+                  menu={menu(current())}
+                  menuLabel={w().moreNamed({ title: title(current()) })}
+                />
+              )}
+            </Show>
+            <div class="artifact-pane__body">
               <ErrorBoundary
                 fallback={(_error, reset) => (
                   <Placeholder
@@ -465,63 +753,60 @@ export function ArtifactWorkspace(props: {
                   />
                 )}
               >
-                {tab.kind === "task" ? (
-                  <AssistantTaskDetail
-                    taskId={tab.taskId}
-                    onEdit={props.onEditTask}
-                    onTitle={(title) => props.controller.rename(key, title)}
-                    onOpenRun={(taskId, occurrenceId) => void openAssistantTaskRun(taskId, occurrenceId, live)}
-                  />
-                ) : tab.kind === "context" ? (
-                  <AssistantChatContextContent
-                    chatId={tab.conversationId}
-                    project={
-                      tab.project !== undefined ? tab.project : tab.conversationId === props.conversationId ? props.project : undefined
-                    }
-                    category={tab.category}
-                    onOpenView={props.onOpenView}
-                    onFileDeleted={(file) => props.controller.closeFile(file.conversationId, file.path)}
-                    onOpenApp={(id, title, start) => props.controller.open(appTab(id, title, start))}
-                    onJump={tab.conversationId === props.conversationId ? props.onJump : undefined}
-                    onOpenSecrets={tab.conversationId === props.conversationId ? props.onOpenSecrets : undefined}
-                  />
-                ) : tab.kind === "view" ? (
-                  tab.render()
-                ) : tab.kind === "app" ? (
-                  <ArtifactPanel
-                    start={
-                      state().tabs.some((candidate) => candidate.key === key && candidate.kind === "app" && candidate.autoStart)
-                        ? "now"
-                        : undefined
-                    }
-                    refreshKey={props.refreshKey}
-                    artifactId={tab.artifactId}
-                    userId={props.userId}
-                    onTitle={(title) => props.controller.rename(key, title)}
-                    browseSource={() =>
-                      props.controller.open({
-                        kind: "view",
-                        key: `${tab.artifactId}:source`,
-                        title: t().source,
-                        render: () => (
-                          <SourceDirectory
-                            artifactId={tab.artifactId}
-                            open={(path) => props.controller.open(sourceTab(tab.artifactId, path))}
-                          />
-                        ),
-                      })
-                    }
-                  />
-                ) : tab.kind === "file" ? (
-                  <ChatFile tab={tab} refreshKey={props.refreshKey} dirty={(value) => props.controller.setDirty(key, value)} />
-                ) : (
-                  <SourceFile tab={tab} dirty={(value) => props.controller.setDirty(key, value)} />
-                )}
+                {content(key, initial)}
               </ErrorBoundary>
             </div>
-          );
-        }}
-      </For>
+          </div>
+        );
+        return { element, dispose };
+      }, owner ?? undefined);
+      panes.set(key, pane);
+    }
+    return pane.element;
+  };
+  createEffect(
+    on(
+      () => state().tabs.map((tab) => tab.key),
+      (keys) => {
+        for (const [key, pane] of panes)
+          if (!keys.includes(key)) {
+            pane.dispose();
+            panes.delete(key);
+            props.controller.setDirty(key, false);
+          }
+      },
+    ),
+  );
+  onCleanup(() => {
+    for (const pane of panes.values()) pane.dispose();
+    panes.clear();
+  });
+  const items = createMemo<PanesItem[]>(() =>
+    state().tabs.map((tab) => ({
+      id: workspaceTabId(tab.key),
+      title: title(tab),
+      icon: tabIcon(tab),
+      render: () => paneOf(tab.key),
+      onClose: () => void close(tab.key),
+    })),
+  );
+  const layout = createMemo(() => state().layout ?? { version: 2 as const, root: null });
+  return (
+    <div class="artifact-workspace" data-k2b-primary="ai">
+      <Button class="artifact-mobile-toggle" size="sm" variant="ghost" onClick={() => props.controller.setMobile("chat")}>
+        <i class="ti ti-arrow-left" aria-hidden="true" />
+        {w().backToChat}
+      </Button>
+      <Panes
+        class="artifact-workspace__panes"
+        ariaLabel={t().workspace}
+        layout={layout()}
+        items={items()}
+        onLayoutChange={props.controller.setLayout}
+        onActivate={props.controller.activateItem}
+        onAddItem={props.onAdd ? () => props.onAdd!() : undefined}
+        arrangeHint={props.arrangeHint}
+      />
     </div>
   );
 }

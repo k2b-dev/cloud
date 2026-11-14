@@ -75,7 +75,6 @@ render(() => {
                 refreshKey="initial"
                 onOpenView={open}
                 conversationId="chat-one"
-                menuItems={menuItems}
               />
             </AppWorkspace.MainPane>
           </AppWorkspace.Main>

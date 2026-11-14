@@ -20,7 +20,10 @@ const workspaceConversation = async (identity: AiResourceContext, chatShortId: s
 const readWorkspace = async (conversationId: string, userId: string): Promise<ChatWorkspaceSnapshot> => {
   const [row] = await sql<{ state: unknown; revision: number }[]>`SELECT state, revision::float8 AS revision
     FROM assistant.chat_workspaces WHERE conversation_id=${conversationId}::uuid AND user_id=${userId}::uuid`;
-  return row ? { state: ChatWorkspaceStateSchema.parse(row.state), revision: row.revision } : emptyWorkspace();
+  if (!row) return emptyWorkspace();
+  // A state an older or newer version stored that this one cannot read starts empty; the next save replaces it.
+  const parsed = ChatWorkspaceStateSchema.safeParse(row.state);
+  return { state: parsed.success ? parsed.data : emptyWorkspace().state, revision: row.revision };
 };
 
 export const loadAssistantChatWorkspace = async (

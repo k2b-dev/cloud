@@ -11,9 +11,8 @@ updated: 2026-11-14
 # Assistant chat workspace storage
 
 Assistant's tabs API stores open tabs, their Panes arrangement and the front
-tab for each chat and person in Postgres. A client can restore the saved state
-on another device. This backend contract does not change the chat interface by
-itself.
+tab for each chat and person in Postgres. The tabs beside a chat restore that
+state on every device; the server render of a chat already carries it.
 
 The normal Assistant setup creates `assistant.chat_workspaces` idempotently.
 Run that setup before serving the new tabs routes. Include the table in database

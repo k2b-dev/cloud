@@ -134,7 +134,10 @@ tabs in tree order, opening on the tab chosen last or the first group's
 active tab. It is a projection: it never calls `onLayoutChange`, offers no
 grips, Arrange, or boundaries, and the stored layout returns once the
 container is wide again. Many tabs scroll sideways. The width is measured
-after the first render, so server HTML and hydration agree.
+after the first render, so server HTML and hydration agree. Every choice of a
+tab, narrow or wide, also calls `onActivate(itemId)`; an application that
+names the front tab in its URL or keeps it across devices listens there,
+because the narrow row never changes the layout.
 
 ## Resize
 
@@ -186,7 +189,7 @@ type PanesItem = {
 type PanesProps = {
   layout: PanesLayout; onLayoutChange: (layout: PanesLayout) => void; items: readonly PanesItem[];
   movable?: boolean; resizable?: boolean; split?: false | "horizontal" | "vertical" | "both";
-  onAddItem?: (targetItemId: string | null) => void;
+  onAddItem?: (targetItemId: string | null) => void; onActivate?: (itemId: string) => void;
   defaultLayout?: PanesLayout; arrangeHint?: { open: boolean; onDismiss: () => void };
   ariaLabel?: string; class?: string;
 };
