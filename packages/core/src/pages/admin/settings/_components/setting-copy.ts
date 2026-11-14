@@ -9,7 +9,7 @@ const deOptions: Partial<Record<string, Record<string, string>>> = {
   },
   "freeipa.user_match_mode": {
     ignore: "Lokales Konto ignorieren",
-    migrate: "Passendes lokales Konto migrieren",
+    migrate: "Passendes lokales Konto vorschlagen",
   },
   "freeipa.account_transition_policy": {
     delete: "Konto löschen",
@@ -20,6 +20,10 @@ const deOptions: Partial<Record<string, Record<string, string>>> = {
 };
 
 const de: Record<string, SettingCopy> = {
+  "previews.max_bytes": {
+    label: "Speicherbudget für Vorschauen (Bytes)",
+    description: "Standard: 2 GiB für alle Anwendungen. Die Bereinigung entfernt zuerst die am längsten nicht angezeigten Vorschauen.",
+  },
   "ai.openai_api_enabled": {
     label: "OpenAI-kompatible API",
     description:
@@ -198,6 +202,11 @@ const de: Record<string, SettingCopy> = {
   },
   "user.abbr_length": { label: "Länge der Benutzerkürzel", description: "Länge zufällig erzeugter Benutzerkürzel für neue Konten." },
   "user.session.expiry_hours": { label: "Sitzungsdauer in Stunden", description: "Dauer, für die eine Anmeldung gültig bleibt." },
+  "user.session.shared_workstation_idle_minutes": {
+    label: "Abmelden am gemeinsam genutzten Arbeitsplatz nach Minuten",
+    description:
+      "Minuten ohne Tippen, Klicken, Scrollen oder Berühren, nach denen ein als gemeinsam genutzter Arbeitsplatz markierter Browser abmeldet. Hintergrundaktualisierungen zählen nicht. Gilt für jeden markierten Browser und für Sitzungen, die dort schon laufen.",
+  },
   "user.account.ipa_expires_days": {
     label: "Gültigkeit von IPA-Konten",
     description: "Tage bis zum Ablauf eines IPA-Kontos. Null bedeutet ohne Ablaufdatum.",

@@ -10,6 +10,24 @@ Use `Tabs` for one fixed tab group. Use `AppWorkspace.MainPane` for a fixed
 list-and-reader layout, with 12 px of space between regions. Their resize
 grips appear on hover, keyboard focus, or drag, without a separator line.
 
+## Look
+
+Panes are one surface. Every boundary carries the quiet column shade of the
+workspace, beside a column boundary as between list and reader and above a
+row boundary as at a drawer's edge. A resizable boundary shows a neutral grip,
+3 px by 2 rem, also at rest; hovering, focusing, or dragging it darkens the
+shade, and keyboard focus turns the grip blue. A fixed boundary keeps its
+shade and has no grip. There is no line and no colour at a boundary.
+
+A selected tab has the app colour's selection fill and 2 px edge, and every
+tab keeps one weight, so selecting or hovering never changes a tab's width. A
+movable tab shows a grip before its icon: on the selected tab, on hover and
+focus, and always on a touch screen. Its place is always kept.
+
+The drop previews while a tab is dragged (green targets, edge trapezoids, the
+centre "+", insertion marks between tabs, and the floating tab) are a finished
+design. They stay as they are, and nothing at a boundary paints over them.
+
 ## Import
 
 ```tsx
@@ -25,7 +43,9 @@ import {
   reconcilePanesLayout,
   removePanesItem,
   resizePanesSplit,
+  applyPanesPreset,
   type PanesItem,
+  type PanesPreset,
   type PanesLayout,
   type PanesNode,
 } from "@k2b/ui";
@@ -66,7 +86,7 @@ See `PanesItem` in the [API reference](#api-reference).
 
 The presence of `onClose` enables the close control. Its callback only reports intent; the application updates its domain state and layout. The close control is available on hover or keyboard focus and does not start a drag.
 
-Pass `onAddItem` to show a plus control in every group. It receives an item id from the target group, or `null` for an empty workspace. The application chooses or creates the item, then updates the layout with `addPanesItem`.
+An empty workspace shows a round mark and "No pane is open." without a box. Pass `onAddItem` to show a plus control in every group and below that sentence. It receives an item id from the target group, or `null` for an empty workspace. The application chooses or creates the item, then updates the layout with `addPanesItem`.
 
 ## Interaction
 
@@ -75,6 +95,48 @@ Pass `onAddItem` to show a plus control in every group. It receives an item id f
 Tab groups stay on one line and scroll horizontally when their tabs no longer fit. A thin overlay scrollbar appears while the tab row is hovered or contains keyboard focus without changing the row height.
 
 Once dragging starts, Panes shows every valid destination at the same time: exact tab insertion positions, add-to-group targets, and explicit Add left, right, top, and bottom targets. Duplicate and no-op destinations are not offered. Releasing elsewhere cancels the move.
+
+## Arrange
+
+A movable workspace with two or more open items has one **Arrange** text
+button, at the end of the top group on the trailing side. Its menu offers:
+
+- the presets **Two** (the first item beside the rest as tabs), **Three** (the
+  first two items beside the rest), **Stacked** (the first item beside the
+  second above the rest), and **Tabs** (one group), as tiles; a preset that
+  needs more items or a split direction that `split` forbids is left out;
+- for the tab chosen last, by click or focus, every place it can move to, each
+  naming its neighbour: Above, Below, Left of, and Right of an item, As a tab
+  with an item, and one step left or right within its own group. Every drop
+  target has an entry, so keyboard and screen reader users reach every
+  arrangement without dragging;
+- **Reset arrangement** when `defaultLayout` is set and names the same open
+  items; it is disabled while the layout already has that arrangement and
+  those sizes.
+
+The same menu opens with a right click on a tab, Shift+F10, or the context
+menu key. Presets arrange the open items in the order of `items`. Choosing
+the preset that matches `defaultLayout` restores its ratios, also when it is
+the current arrangement, and a double
+click or Enter on a boundary restores that boundary's ratio from
+`defaultLayout`, or 0.5 when the arrangement differs. Focus returns to the
+moved tab, and a screen reader hears where it went.
+
+Pass `arrangeHint` to show a one-time hint at the first tab grip, "Panes can
+be arranged", with an Arrange action. The application decides whether it was
+seen and stores `onDismiss`, as with every `MovedHint`. The hint steps aside
+while a tab is dragged, so it never covers a drop target.
+
+## Narrow containers
+
+Below 640 px of its own width, Panes shows every open item as one row of
+tabs in tree order, opening on the tab chosen last or the first group's
+active tab. It is a projection: it never calls `onLayoutChange`, offers no
+grips, Arrange, or boundaries, and the stored layout returns once the
+container is wide again. Many tabs scroll sideways. The width is measured
+after the first render, so server HTML and hydration agree.
+
+## Resize
 
 While resizing, a separator snaps to a nearby separator of the same direction in a neighboring pane. This aligns adjacent pane heights or widths without adding alignment metadata to the persisted layout. Pointer and keyboard resizing use the same visible geometry. A pointer resize never selects page text.
 
@@ -124,8 +186,12 @@ type PanesItem = {
 type PanesProps = {
   layout: PanesLayout; onLayoutChange: (layout: PanesLayout) => void; items: readonly PanesItem[];
   movable?: boolean; resizable?: boolean; split?: false | "horizontal" | "vertical" | "both";
-  onAddItem?: (targetItemId: string | null) => void; ariaLabel?: string; class?: string;
+  onAddItem?: (targetItemId: string | null) => void;
+  defaultLayout?: PanesLayout; arrangeHint?: { open: boolean; onDismiss: () => void };
+  ariaLabel?: string; class?: string;
 };
+
+type PanesPreset = "two" | "three" | "stacked" | "tabs";
 
 type AddPanesItemOptions = {
   itemId: string; targetItemId: string | null; beforeItemId?: string | null;
@@ -144,7 +210,17 @@ declare function reconcilePanesLayout(layout: PanesLayout, desiredOpenItemIds: r
 declare function applyPanesIntent(layout: PanesLayout, intent: PanesIntent): PanesLayout;
 declare function resizePanesSplit(layout: PanesLayout, path: PanesPath, ratio: number): PanesLayout;
 declare function isPanesItemVisible(layout: PanesLayout, itemId: string): boolean;
+declare function applyPanesPreset(
+  preset: PanesPreset,
+  itemIds: readonly string[],
+  options?: { active?: string; fallback?: PanesLayout },
+): PanesLayout | null;
 ```
+
+`applyPanesPreset` arranges the items in the given order as a preset, keeps
+`active` visible in its group, and takes the ratios of a `fallback` with the
+same arrangement. It returns `null` when there are too few items: Two and Tabs
+need two, Three and Stacked need three.
 
 A `PanesPath` locates a split through `first`/`second` edges; `[]` addresses the root. `AddPanesItemOptions.targetItemId` locates a target group by an existing item; it is not a group ID.
 
@@ -154,7 +230,7 @@ Give every item a concise title. Set `ariaLabel` when the surrounding context do
 
 Clicking or tapping a tab activates it. Left and Right Arrow move through the tabs; Home and End select the first and last tab. `Delete` and `Backspace` request closing the focused tab when `onClose` is available.
 
-Start a focused tab move with Space or Enter, select a visible target with the arrow keys, then confirm with Space or Enter; Escape cancels the move. Focus a separator and use the arrow keys for its orientation to resize the panes. Hold Shift for a larger step; Home and End move to the minimum and maximum supported ratio.
+Start a focused tab move with Space or Enter, select a visible target with the arrow keys, then confirm with Space or Enter; Escape cancels the move. Shift+F10 or the context menu key opens the Arrange menu for the focused tab, and Ctrl+Shift+Left or Right moves it one step within its group. Focus a separator and use the arrow keys for its orientation to resize the panes. Hold Shift for a larger step; Home and End move to the minimum and maximum supported ratio, and Enter restores the default ratio, as a double click does. Announcements while moving use the inherited locale.
 
 ## Runtime
 

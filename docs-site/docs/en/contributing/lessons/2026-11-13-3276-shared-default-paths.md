@@ -1,0 +1,6 @@
+### A new default must exercise the existing user journeys
+
+- **What happened:** Switching Mail's default to shared exposed nine failures in send projection. External edits became recovery copies even when they replaced the current draft, and first shared admission rejected legacy signatures or invalidated their approved send hash. Both-mode compose coverage also found legacy PUT normalization and recovery-retention defects.
+- **Root cause:** The shared import path rejected every replacement, while signature normalization ran after review or document publication. Recovery restoration retained the replaced version only in lock mode. Earlier local checks omitted sent projection and kept compose templates and persistence in lock mode.
+- **Error class:** An opt-in path becomes the default without exercising the established user journeys.
+- **Guard:** `sent-projection.integration.test.ts` runs the affected signature, logo, legacy-send and import scenarios in shared and lock modes, and checks shared replacement lineage and pending room input. `compose-templates.integration.test.ts`, `drafts.integration.test.ts` and `persistence.integration.test.ts` cover both modes; lease-specific assertions remain explicit and shared editing preserves offline input and retried saves.

@@ -270,6 +270,13 @@ describe("streamed search in a browser", () => {
         if (!view.touch) {
           const details = await page.locator(".cloud-resource-search__preview dd").allTextContents();
           expect(details).toEqual(["Anna Berger", "Team Verwaltung", "4. Nov. 2026, 14:31", "Posteingang", "Verwaltung", "2"]);
+          // The dialog is flat inside: the preview is a column behind a hairline, not a grey box.
+          expect(
+            await page.locator(".cloud-resource-search__preview").evaluate((element) => {
+              const style = getComputedStyle(element);
+              return { fill: style.backgroundColor, line: style.borderInlineStartWidth };
+            }),
+          ).toEqual({ fill: "rgba(0, 0, 0, 0)", line: "1px" });
         }
         const before = (await layout(page)).rows;
         await page.getByRole("button", { name: "Mehr aus Mail anzeigen" }).click();

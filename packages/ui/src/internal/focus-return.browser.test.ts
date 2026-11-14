@@ -62,7 +62,12 @@ render(
         return photo();
       },
       get children() {
-        return createComponent(Lightbox, { images: [{ src: image, alt: "Empty frame" }], onClose: () => setPhoto(false) });
+        return createComponent(Lightbox, {
+          items: [{ src: image, name: "Empty frame.svg" }],
+          index: 0,
+          onIndexChange: () => {},
+          onClose: () => setPhoto(false),
+        });
       },
     }),
     createComponent(AppWorkspace.SidebarItem, { icon: "ti ti-list", children: "Tasks", preview: { label: "Task details", trigger: "row", content: "Three open tasks" } }),
@@ -314,9 +319,9 @@ describe("@k2b/ui overlays return focus with the ring they were opened with", ()
       const page = await load(options);
       try {
         await pointerOpen(page, viewport, "lightbox", lightbox);
-        await page.evaluate(() => document.querySelector<HTMLDialogElement>("dialog.k2b-content-lightbox")?.requestClose());
+        await page.evaluate(() => document.querySelector<HTMLDialogElement>("dialog.k2b-lightbox")?.requestClose());
         await settle(page);
-        expect(await page.evaluate(() => document.querySelector(".k2b-content-lightbox") === null)).toBe(true);
+        expect(await page.evaluate(() => document.querySelector(".k2b-lightbox") === null)).toBe(true);
         expect(await hasFocus(lightbox.trigger(page))).toEqual({ focused: true, ring: false });
       } finally {
         await page.close();

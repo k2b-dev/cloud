@@ -5,7 +5,7 @@ section: Conventions
 order: 1283
 description: Look up authorization, persistence, and effect rules with their canonical owners and checks.
 tags: [conventions, identity, access, data, audit]
-updated: 2026-10-15
+updated: 2026-11-12
 ---
 
 # Access and data conventions
@@ -47,3 +47,4 @@ for the complete contract.
 | DATA-10 | Use one topic per kind of log with entity IDs as `tenantId`, rather than one topic per entity. | JetStream storage reservations do not multiply with entity count. | Manual: inspect topic declarations and verify tenant IDs on publications and reads. | [Shared log topics](/en/docs/automation/topics-and-live-events#keep-one-topic-per-kind-of-log) |
 | DATA-11 | Reload an authorized snapshot after a topic retention gap instead of saving partial replay as complete state. | Removed events cannot silently corrupt reconstructed data. | Manual: inspect gap handling and replay demo events from a cursor outside the retained window. | [Replay and resume](/en/docs/automation/topics-and-live-events#replay-and-resume) |
 | DATA-12 | Reconcile ambiguous workflow effects instead of repeating an effect that may already have happened. | A crash or lost response cannot duplicate an irreversible effect. | Manual: inspect effect classes and reconciliation hooks and simulate a provider success with a lost response. | [Ambiguous effects](/en/docs/automation/effects-retry-and-reconciliation#reconcile-ambiguous-effects) |
+| DATA-13 | Check access when a live socket opens and on access changes, fan out over NATS, and save lazily; run no SQL, row lock, or stored-document load per message, keystroke, or delivery. | Per-message database work multiplies with typing speed and readers and overloads Postgres. | Manual: trace each socket `onMessage` and delivery path to its database calls. Built-in apps pin the statement count in a test with `scripts/fixtures/sql-meter.ts`. | [Live path](/en/docs/automation/live-updates#keep-the-database-out-of-the-live-path) |

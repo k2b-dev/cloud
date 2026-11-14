@@ -1,51 +1,30 @@
-import type { MailActivityEvent } from "../../service/collaboration";
-import { type PresentedMailActivity, presentMailActivity, showMailActivityInline } from "./mail-activity-presentation";
-
 type TimelineMessage = { id: string; internalDate: string };
+type TimelineNote = { id: string; createdAt: string };
 
-export type MailConversationTimelineItem<T extends TimelineMessage> =
+/** One entry of the reader's timeline: a message, or an internal note at its own time. */
+export type MailConversationTimelineItem<T extends TimelineMessage, N extends TimelineNote> =
   | { kind: "message"; id: string; occurredAt: string; message: T }
-  | { kind: "activity"; id: string; occurredAt: string; activity: PresentedMailActivity };
+  | { kind: "note"; id: string; occurredAt: string; note: N };
 
 const timestamp = (value: string): number => {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-export const buildMailConversationTimeline = <T extends TimelineMessage>(
+/**
+ * The conversation in reading order (Mail v5): oldest first, the newest message at the bottom, each internal note
+ * between the messages at the time it was written. Equal times keep messages before notes, then a stable id order.
+ */
+export const buildMailConversationTimeline = <T extends TimelineMessage, N extends TimelineNote>(
   messages: readonly T[],
-  activity: readonly MailActivityEvent[],
-  locale = "en",
-): MailConversationTimelineItem<T>[] => {
-  const items: MailConversationTimelineItem<T>[] = [
-    ...messages.map((message) => ({
-      kind: "message" as const,
-      id: `message:${message.id}`,
-      occurredAt: message.internalDate,
-      message,
-    })),
-    ...activity.filter(showMailActivityInline).map((event) => ({
-      kind: "activity" as const,
-      id: `activity:${event.id}`,
-      occurredAt: event.createdAt,
-      activity: presentMailActivity([event], locale)[0]!,
-    })),
-  ].sort((left, right) => timestamp(right.occurredAt) - timestamp(left.occurredAt) || right.id.localeCompare(left.id));
-
-  const timeline: MailConversationTimelineItem<T>[] = [];
-  for (const item of items) {
-    const previous = timeline.at(-1);
-    if (
-      item.kind === "activity" &&
-      previous?.kind === "activity" &&
-      previous.activity.actor.kind === item.activity.actor.kind &&
-      previous.activity.actor.id === item.activity.actor.id &&
-      previous.activity.label === item.activity.label
-    ) {
-      previous.activity.count += item.activity.count;
-      continue;
-    }
-    timeline.push(item);
-  }
-  return timeline;
-};
+  notes: readonly N[],
+): MailConversationTimelineItem<T, N>[] =>
+  [
+    ...messages.map((message) => ({ kind: "message" as const, id: `message:${message.id}`, occurredAt: message.internalDate, message })),
+    ...notes.map((note) => ({ kind: "note" as const, id: `note:${note.id}`, occurredAt: note.createdAt, note })),
+  ].sort(
+    (left, right) =>
+      timestamp(left.occurredAt) - timestamp(right.occurredAt) ||
+      (left.kind === right.kind ? 0 : left.kind === "message" ? -1 : 1) ||
+      left.id.localeCompare(right.id),
+  );

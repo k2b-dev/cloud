@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser } from "../../../ui/test/browser";
 import { renderHelpMarkdown, renderMarkdownSync } from "../shared/markdown";
 
 // Cloud's rendered Markdown sits inside `MarkdownView` in Help, legal pages,
@@ -105,6 +105,7 @@ const tableSource = [
   "Danach folgt die Abstimmung.",
 ].join("\n");
 
+// Document tables only: a table in a chat answer takes the view table's frame (view-block.browser.test.ts).
 test("Markdown table lines, row hover and column bands share one width", async () => {
   const page = await browser.newPage({ viewport: { width: 720, height: 900 } });
   try {
@@ -112,10 +113,9 @@ test("Markdown table lines, row hover and column bands share one width", async (
       `<html lang="de"><head><meta charset="utf-8"><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:24px">` +
         `<div id="plain" class="k2b-content-markdown">${renderMarkdownSync(tableSource)}</div>` +
         `<div id="help" class="k2b-content-markdown help-document">${renderHelpMarkdown(tableSource)}</div>` +
-        `<div id="assistant" class="assistant-markdown-block">${renderMarkdownSync(tableSource)}</div>` +
         `</body></html>`,
     );
-    for (const host of ["#plain", "#help", "#assistant"]) {
+    for (const host of ["#plain", "#help"]) {
       const measure = () =>
         page.evaluate((host) => {
           // `+ 0` turns WebKit's sub-pixel `-0` into `0`.
@@ -182,7 +182,7 @@ test("Markdown table lines, row hover and column bands share one width", async (
       });
       // Hovering a cell fills its row and column without moving anything.
       const cell = page.locator(`${host} tbody tr`).last().locator("td").nth(1);
-      await cell.hover();
+      await hoverInPlace(cell);
       const fills = await cell.evaluate((element) => [
         getComputedStyle(element.parentElement!).backgroundColor,
         getComputedStyle(element, "::after").backgroundColor,

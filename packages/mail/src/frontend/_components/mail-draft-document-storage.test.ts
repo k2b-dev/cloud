@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
+import { expect, setSystemTime, test } from "bun:test";
+import { openMailUserDraftStorage, synchronizeMailDraftStorageUser } from "../../lib/mail-user-draft-storage";
 
 const memoryStorage = (): Storage => {
   const values = new Map<string, string>();
@@ -47,4 +47,55 @@ test("logout's persistent epoch fences old tab reads/writes, including delayed a
   const freshTab = openMailUserDraftStorage(storage, "Usr001");
   freshTab.setItem("seed", "new session");
   expect(freshTab.getItem("seed")).toBe("new session");
+});
+
+test("journals survive a short offline interval and expire after the recovery window, including legacy input", () => {
+  const storage = memoryStorage();
+  const start = Date.parse("2026-11-09T12:00:00Z");
+  setSystemTime(start);
+  try {
+    storage.setItem("cloud:user:Usr001:mail:legacy", "legacy body and Bcc");
+    const first = openMailUserDraftStorage(storage, "Usr001");
+    first.setItem("journal", JSON.stringify({ content: { body: "Pending text", bcc: ["private@example.test"] } }));
+    setSystemTime(start + 60 * 60 * 1000);
+    expect(openMailUserDraftStorage(storage, "Usr001").getItem("journal")).toContain("Pending text");
+    setSystemTime(start + 24 * 60 * 60 * 1000 + 1);
+    expect(openMailUserDraftStorage(storage, "Usr001").keys()).toEqual([]);
+    expect(storage.getItem("cloud:user:Usr001:mail:journal")).toBeNull();
+    expect(storage.getItem("cloud:user:Usr001:mail:legacy")).toBeNull();
+  } finally {
+    setSystemTime();
+  }
+});
+
+test("an authenticated account switch fences delayed journal writes", () => {
+  const storage = memoryStorage();
+  storage.setItem("cloud:mail:storage-user", "Usr001");
+  const old = openMailUserDraftStorage(storage, "Usr001");
+  old.setItem("journal", "private input");
+  expect(old.getItem("journal")).toBe("private input");
+  synchronizeMailDraftStorageUser(storage, "Usr002");
+  expect(storage.getItem("cloud:user:Usr001:mail:journal")).toBeNull();
+  expect(() => old.setItem("journal", "late callback")).toThrow("session ended");
+});
+
+test("a new account can open its own seed storage before its first draft authorization", () => {
+  const storage = memoryStorage();
+  synchronizeMailDraftStorageUser(storage, "Usr001");
+  const old = openMailUserDraftStorage(storage, "Usr001");
+  old.setItem("journal", "first account's text");
+  const next = openMailUserDraftStorage(storage, "Usr002");
+  next.setItem("seed", "new account's message");
+  synchronizeMailDraftStorageUser(storage, "Usr002");
+  expect(next.getItem("seed")).toBe("new account's message");
+  expect(() => old.setItem("journal", "late callback")).toThrow("session ended");
+});
+
+test("reading a legacy journal at storage quota preserves the recovery input", () => {
+  const storage = memoryStorage();
+  storage.setItem("cloud:user:Usr001:mail:legacy", "body and private Bcc");
+  storage.setItem = () => {
+    throw new DOMException("Storage full", "QuotaExceededError");
+  };
+  expect(openMailUserDraftStorage(storage, "Usr001").getItem("legacy")).toBe("body and private Bcc");
 });

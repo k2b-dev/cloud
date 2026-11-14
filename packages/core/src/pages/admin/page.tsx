@@ -16,7 +16,7 @@ const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
       color: "blue",
     },
     {
-      href: "/admin/settings?tab=storage",
+      href: "/admin/storage",
       title: t.storageSettings,
       description: t.storageSettingsDescription,
       icon: "ti ti-database",

@@ -274,7 +274,7 @@ export const buildBlocksFromMessages = (
           if (block.text.trim().length > 0) blocks.push({ id: messageBlockId(seq, index), kind: "text", text: block.text });
         } else if (block.type === "thinking") {
           blocks.push({ id: messageBlockId(seq, index), kind: "thinking", text: block.thinking });
-        } else if (block.type === "tool_call") {
+        } else if (block.type === "tool_call" && block.name !== "suggest_next_message") {
           const outcome = meta?.toolOutcomes?.[block.id];
           const receipts = orderedWebsiteReceipts(meta?.websiteReceipts?.[block.id]);
           toolIndex.set(block.id, blocks.length);

@@ -5,7 +5,7 @@ import { sessionOriginGuard } from "@k2b/cloud/server/middleware/session-origin"
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../../ui/test/browser";
 import { type AuthorizationState, authorizationStates, renderAuthorizationState } from "./authorization-page.test-fixture";
 
 // Where the card sits, whether it is framed or flat, and whether anything moves when a control is
@@ -331,7 +331,7 @@ describe("OAuth authorization pages in a browser", () => {
           const count = await controls.count();
           expect(count, state).toBeGreaterThan(0);
           for (let index = 0; index < count; index += 1) {
-            await controls.nth(index).hover();
+            await hoverInPlace(controls.nth(index));
             await settled(page);
             expect(await boxes(page), `${state}: hover on control ${index}`).toEqual(resting);
           }

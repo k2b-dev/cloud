@@ -30,8 +30,12 @@ import {
   LabelChip,
   Lightbox,
   LinkCard,
+  LoadMore,
   LocaleProvider,
   LogEntriesTable,
+  MapDialog,
+  type MapPlace,
+  MapTile,
   MapView,
   type MapViewHandle,
   type MapViewMarker,
@@ -47,12 +51,13 @@ import {
   type MessageRowStatus,
   MessageSystemRow,
   mapPalette,
-  NoticeCard,
   Pagination,
   PanelDialog,
   Paper,
-  PdfPreview,
+  PdfThumbnails,
+  PdfViewer,
   Placeholder,
+  ProgressPath,
   panelDialogFixedOptions,
   panelDialogOptions,
   ReactionBar,
@@ -65,6 +70,7 @@ import {
   TemplatePreview,
   TemplateSampleData,
   TextInput,
+  ThumbnailStrip,
   Timeline,
   type TimelineColor,
   type TimelineController,
@@ -291,6 +297,99 @@ const MapViewDemo = () => {
     </DemoCard>
   );
 };
+
+// Fictional stops of a short delivery in the demo geometry; note, source and links come from the host.
+const mapDialogDemoPlaces: MapPlace[] = [
+  {
+    id: "start",
+    mark: "A",
+    name: "Warehouse Lindner",
+    point: { lat: 48.398, lon: 9.982 },
+    subtitle: "Gewerbering 4",
+    trailing: "Start",
+    address: "Gewerbering 4, 89073 Ulm",
+    note: "Load the display cabinet and two chairs.",
+    source: { icon: "ti ti-box", label: "Stock app · Warehouse" },
+  },
+  {
+    id: "cafe",
+    mark: "B",
+    name: "Garden café",
+    point: { lat: 48.403, lon: 9.999 },
+    subtitle: "Am Park 2",
+    trailing: "6 min",
+    trailingDetail: "1.4 km",
+    address: "Am Park 2, 89073 Ulm",
+    note: "Use the side gate. Call 30 minutes ahead.",
+    source: { icon: "ti ti-user", label: "Contacts · Customers" },
+    links: [{ label: "Open contact", href: "#map-dialog", icon: "ti ti-user" }],
+  },
+  {
+    id: "museum",
+    mark: "C",
+    name: "Museum workshop",
+    point: { lat: 48.401, lon: 9.993 },
+    subtitle: "Hafengasse 5",
+    trailing: "4 min",
+    trailingDetail: "0.9 km",
+    address: "Hafengasse 5, 89073 Ulm",
+    source: { label: "Suggested by the assistant", tone: "ai" },
+  },
+];
+const mapDialogDemoLines = [
+  {
+    id: "route",
+    points: [
+      { lat: 48.398, lon: 9.982 },
+      { lat: 48.4005, lon: 9.99 },
+      { lat: 48.403, lon: 9.999 },
+      { lat: 48.401, lon: 9.993 },
+    ],
+  },
+];
+const MapDialogDemo = () => (
+  <DemoCard
+    id="map-dialog"
+    chip={[
+      { kind: "component", name: "MapTile", from: "@k2b/ui" },
+      { kind: "component", name: "MapDialog", from: "@k2b/ui" },
+    ]}
+    description="The tile is one button with a summary pill. It opens the full map: list and map share the selection, the selected stop shows the host's note, source and links, and a navigation link. On a phone the list is a sheet."
+    code={
+      '<MapTile label="Open map: Delivery, 2.3 km, 3 stops" summary="2.3 km · 10 min · A → B → C" dialog={(close) => <MapDialog title="Delivery" places={places} map={(view) => <MapView {...view} style={styles} attribution="Demo data" />} onClose={close} />}>\n  <MapView still height={240} style={styles} markers={markers} attribution="Demo data" />\n</MapTile>'
+    }
+  >
+    <MapTile
+      label="Open map: Delivery, 2.3 km, 3 stops"
+      summary="2.3 km · 10 min · A → B → C"
+      dialog={(close) => (
+        <MapDialog
+          title="Delivery"
+          facts={[
+            { value: "2.3 km", label: "Distance" },
+            { value: "10 min", label: "Driving time" },
+          ]}
+          listLabel="Stops"
+          places={mapDialogDemoPlaces}
+          lines={mapDialogDemoLines}
+          map={(view) => <MapView {...view} style={mapDemoStyles} attribution="Demo data" />}
+          menu={[{ label: "Optimise order", icon: "ti ti-route", onSelect: () => {} }]}
+          provenance="Demo data · times without traffic"
+          onClose={close}
+        />
+      )}
+    >
+      <MapView
+        still
+        height={240}
+        style={mapDemoStyles}
+        attribution="Demo data"
+        markers={mapDialogDemoPlaces.map((place) => ({ id: place.id, mark: place.mark, label: place.name, point: place.point! }))}
+        lines={mapDialogDemoLines}
+      />
+    </MapTile>
+  </DemoCard>
+);
 
 type Row = { id: string; name: string; owner: string; requests: number };
 const rows: Row[] = [
@@ -696,6 +795,153 @@ const VirtualFeedDemo = () => {
               </div>
             )}
           </VirtualFeed>
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
+// A work list: groups of requests, newest first, 300 in all; pages of 40 load below.
+type InboxRow = { id: string; group: string; title: string };
+const INBOX_TOTAL = 300;
+const inboxGroups = ["Needs action", "Waiting for the customer", "Done"];
+const inboxRow = (seq: number): InboxRow => ({
+  id: `request-${seq}`,
+  group: inboxGroups[Math.min(inboxGroups.length - 1, Math.floor(seq / 50))]!,
+  title: `#${seq + 1} ${feedPhrases[(seq * 5) % feedPhrases.length]}`,
+});
+
+const VirtualListDemo = () => {
+  const [rows, setRows] = createSignal(Array.from({ length: 60 }, (_, index) => inboxRow(index)));
+  let loaded = 60;
+  let fresh = 0;
+  let failNext = false;
+  let list: VirtualFeedController | undefined;
+  const loadMore = () =>
+    new Promise<void>((done, fail) =>
+      setTimeout(() => {
+        if (failNext) {
+          failNext = false;
+          fail(new Error("The server did not answer in time."));
+          return;
+        }
+        const page = Array.from({ length: Math.min(40, INBOX_TOTAL - loaded) }, (_, index) => inboxRow(loaded + index));
+        loaded += page.length;
+        setRows((current) => [...current, ...page]);
+        done();
+      }, 600),
+    );
+  const addAbove = () => setRows((current) => [{ id: `new-${++fresh}`, group: "Needs action", title: `New request ${fresh}` }, ...current]);
+  return (
+    <DemoCard
+      id="virtual-list-start"
+      chip={{ kind: "component", name: "VirtualFeed", from: "@k2b/ui" }}
+      description='A work list with anchor="start": it opens at the first request, keeps each group heading at the top, loads pages below, and keeps its place when requests arrive above.'
+      code={`<VirtualFeed
+  anchor="start"
+  items={rows()}
+  getKey={(row) => row.id}
+  estimateSize={() => 44}
+  label="Requests"
+  separator={(row, previous) => (previous?.group === row.group ? undefined : row.group)}
+  stickySeparators
+  hasMore={hasMore()}
+  onLoadMore={loadMore}
+>
+  {(row) => <RequestRow row={row} />}
+</VirtualFeed>`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem" }}>
+        <Toolbar label="List actions" wrap>
+          <Button size="sm" variant="subtle" onClick={addAbove}>
+            Add a request above
+          </Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => {
+              failNext = true;
+            }}
+          >
+            Fail the next page
+          </Button>
+          <Button size="sm" variant="subtle" onClick={() => list?.scrollToStart()}>
+            Back to the first request
+          </Button>
+        </Toolbar>
+        <div style={{ display: "flex", height: "26rem" }}>
+          <VirtualFeed
+            anchor="start"
+            items={rows()}
+            getKey={(row) => row.id}
+            estimateSize={() => 44}
+            label="Requests"
+            separator={(row, previous) => (previous?.group === row.group ? undefined : row.group)}
+            stickySeparators
+            hasMore={rows().length - fresh < INBOX_TOTAL}
+            onLoadMore={loadMore}
+            controller={(controller) => (list = controller)}
+          >
+            {(row) => <div style={{ padding: "0.625rem 1rem", "border-bottom": "1px solid var(--k2b-border)" }}>{row.title}</div>}
+          </VirtualFeed>
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
+const LoadMoreDemo = () => {
+  const [cards, setCards] = createSignal(Array.from({ length: 6 }, (_, index) => inboxRow(index)));
+  let failNext = false;
+  const loadMore = () =>
+    new Promise<void>((done, fail) =>
+      setTimeout(() => {
+        if (failNext) {
+          failNext = false;
+          fail(new Error("The server did not answer in time."));
+          return;
+        }
+        const from = cards().length;
+        setCards((current) => [...current, ...Array.from({ length: Math.min(6, 30 - from) }, (_, index) => inboxRow(from + index))]);
+        done();
+      }, 600),
+    );
+  return (
+    <DemoCard
+      id="load-more"
+      chip={{ kind: "component", name: "LoadMore", from: "@k2b/ui" }}
+      description="A list of cards that loads 6 more as its end comes into reach, 30 in all. Fail the next page to see the error with Try again; the row never changes its height."
+      code={`<For each={cards()}>{(card) => <Card card={card} />}</For>
+<LoadMore hasMore={cards().length < 30} onLoadMore={loadMore} />`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem" }}>
+        <Toolbar label="Edge actions" wrap>
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => {
+              failNext = true;
+            }}
+          >
+            Fail the next page
+          </Button>
+          <Button size="sm" variant="subtle" onClick={() => setCards((current) => current.slice(0, 6))}>
+            Start over
+          </Button>
+        </Toolbar>
+        <div
+          style={{ height: "18rem", overflow: "auto", border: "1px solid var(--k2b-border)", "border-radius": "var(--k2b-radius-surface)" }}
+        >
+          <div
+            style={{ display: "grid", "grid-template-columns": "repeat(auto-fill, minmax(12rem, 1fr))", gap: "0.5rem", padding: "0.5rem" }}
+          >
+            {cards().map((card) => (
+              <div style={{ padding: "0.75rem", border: "1px solid var(--k2b-border)", "border-radius": "var(--k2b-radius-control)" }}>
+                {card.title}
+              </div>
+            ))}
+          </div>
+          <LoadMore hasMore={cards().length < 30} onLoadMore={loadMore} />
         </div>
       </div>
     </DemoCard>
@@ -1454,43 +1700,79 @@ const StructuredDemo = () => (
   </DemoCard>
 );
 
-const gallery = [
-  {
-    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='540'%3E%3Crect width='960' height='540' fill='%2306b6d4'/%3E%3C/svg%3E",
-    alt: "Cyan field",
-  },
-  {
-    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='540'%3E%3Crect width='960' height='540' fill='%238b5cf6'/%3E%3C/svg%3E",
-    alt: "Purple field",
-  },
-];
+// Six pictures, so the Lightbox shows its film strip and steps with its edge buttons.
+const gallery = (
+  [
+    ["06b6d4", "Cyan field"],
+    ["8b5cf6", "Purple field"],
+    ["f59e0b", "Amber field"],
+    ["10b981", "Green field"],
+    ["ef4444", "Red field"],
+    ["64748b", "Slate field"],
+  ] as const
+).map(([color, alt]) => ({
+  src: `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='540'%3E%3Crect width='960' height='540' fill='%23${color}'/%3E%3C/svg%3E`,
+  alt,
+  name: `${alt}.svg`,
+  meta: "SVG · 960 × 540",
+}));
+/** A two-page sample PDF built in the browser, so the demo shows pdf.js drawing a real document. */
+const samplePdf = (): Blob => {
+  const objects = [
+    "",
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  for (const [page, title] of ["Sample report", "Appendix"].entries()) {
+    const stream = `BT /F1 28 Tf 72 740 Td (${title}) Tj ET\nBT /F1 12 Tf 72 700 Td (Page ${page + 1} of 2, drawn by pdf.js.) Tj ET`;
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>`,
+    );
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  }
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  for (let id = 1; id < objects.length; id++) {
+    offsets[id] = body.length;
+    body += `${id} 0 obj\n${objects[id]}\nendobj\n`;
+  }
+  const xref = body.length;
+  body += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let id = 1; id < objects.length; id++) body += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Blob([body], { type: "application/pdf" });
+};
+
 const MediaDemo = () => {
   const [open, setOpen] = createSignal(false);
+  const [shown, setShown] = createSignal(0);
+  const [strip, setStrip] = createSignal("0");
+  const [pickedPages, setPickedPages] = createSignal<ReadonlySet<number>>(new Set([0]));
+  const togglePage = (index: number) =>
+    setPickedPages((all) => {
+      const next = new Set(all);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
   const openPreview = () =>
     dialogCore.open<void>(
       (close) => (
-        <PdfPreview
-          autoLoad
-          title="Report preview"
-          request={async () => Response.json({ message: "Choose a reporting period before generating this document." }, { status: 400 })}
-          renderError={(message) => (
-            <NoticeCard role="alert" tone="warning" title="Preview is not available yet" detail={message}>
-              <Button variant="secondary" size="sm" onClick={() => close()}>
-                Back to report
-              </Button>
-            </NoticeCard>
-          )}
-        >
-          {(preview) => (
-            <PanelDialog>
-              <PanelDialog.Header title="Report preview" actions={preview.actions} close={close} />
-              <PanelDialog.Body>
-                <InlineGuidance icon="ti ti-info-circle">Preview of your saved report settings.</InlineGuidance>
-                {preview.content}
-              </PanelDialog.Body>
-            </PanelDialog>
-          )}
-        </PdfPreview>
+        <PanelDialog>
+          <PanelDialog.Header title="Report preview" close={close} />
+          <PanelDialog.Body>
+            <InlineGuidance icon="ti ti-info-circle">Preview of your saved report settings.</InlineGuidance>
+            <PdfViewer
+              autoLoad
+              open
+              title="Report preview"
+              request={async () =>
+                Response.json({ message: "Choose a reporting period before generating this document." }, { status: 400 })
+              }
+            />
+          </PanelDialog.Body>
+        </PanelDialog>
       ),
       panelDialogFixedOptions,
     );
@@ -1499,16 +1781,21 @@ const MediaDemo = () => {
       id="media"
       chip={[
         { kind: "component", name: "Lightbox", from: "@k2b/ui" },
-        { kind: "component", name: "PdfPreview", from: "@k2b/ui" },
+        { kind: "component", name: "PdfThumbnails", from: "@k2b/ui" },
+        { kind: "component", name: "PdfViewer", from: "@k2b/ui" },
+        { kind: "component", name: "ThumbnailStrip", from: "@k2b/ui" },
       ]}
-      description="Application-owned media, a standalone PDF preview, and a composed dialog with header actions and an actionable error."
+      description="Application-owned media: a Lightbox over six pictures with its film strip and edge buttons, the strip on its own with an unsaved dot and a + tile, a PDF rendered on demand, a PDF shown from its bytes with zoom and selectable text, and a report dialog whose viewer shows the server's reason with a retry."
       code={`const [open, setOpen] = createSignal(false);
+const [shown, setShown] = createSignal(0);
 
 <Button variant="secondary" onClick={() => setOpen(true)}>Open gallery</Button>
 <Show when={open()}>
-  <Lightbox images={images} initialIndex={0} onClose={() => setOpen(false)} />
+  <Lightbox items={items} index={shown()} onIndexChange={setShown} onClose={() => setOpen(false)} />
 </Show>
-<PdfPreview request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." />`}
+<PdfViewer request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." open />
+<PdfViewer data={pdfBlob} title="Report" />
+<ThumbnailStrip label="Images" items={items} currentItem={current()} onSelectItem={setCurrent} onAddItems={pickImages} />`}
     >
       <div class="ui-demo-row">
         <Button variant="secondary" onClick={() => setOpen(true)}>
@@ -1519,15 +1806,24 @@ const MediaDemo = () => {
         </Button>
       </div>
       <Show when={open()}>
-        <Lightbox images={gallery} initialIndex={0} onClose={() => setOpen(false)} />
+        <Lightbox items={gallery} index={shown()} onIndexChange={setShown} onClose={() => setOpen(false)} />
       </Show>
-      <div class="ui-pdf-demo">
-        <PdfPreview
-          request={async () => new Blob(["%PDF-1.4\n%%EOF"], { type: "application/pdf" })}
-          title="Sample report"
-          emptyText="Generate the local sample to inspect it."
+      <div class="ui-thumbnail-strip-demo">
+        <ThumbnailStrip
+          label="Images"
+          items={gallery.map((image, i) => ({ id: String(i), name: image.alt, thumbnail: image.src, dirty: i === 2 }))}
+          currentItem={strip()}
+          onSelectItem={setStrip}
+          onAddItems={() => void toast("The application opens its file picker.")}
         />
       </div>
+      <div class="ui-pdf-demo">
+        <PdfViewer request={async () => samplePdf()} title="Sample report" emptyText="Generate the local sample to inspect it." open />
+      </div>
+      <div class="ui-pdf-viewer-demo">
+        <PdfViewer data={samplePdf()} title="Sample report" />
+      </div>
+      <PdfThumbnails data={samplePdf()} title="Sample report" size="md" selected={pickedPages()} onToggle={togglePage} />
     </DemoCard>
   );
 };
@@ -2022,6 +2318,7 @@ const KbdHintDemo = () => {
 
 const demos: DemoSection = {
   "map-view": () => <MapViewDemo />,
+  "map-dialog": () => <MapDialogDemo />,
   kbd: () => (
     <DemoGrid>
       <DemoCard
@@ -2096,6 +2393,44 @@ const demos: DemoSection = {
         <p class="text-sm text-dimmed">
           <MatchText text="Kunden/Bäckerei Sonnenschein" ranges={[[0, 6]]} />
         </p>
+      </DemoCard>
+    </DemoGrid>
+  ),
+  "progress-path": () => (
+    <DemoGrid columns="one">
+      <DemoCard
+        id="progress-path"
+        chip={{ kind: "component", name: "ProgressPath", from: "@k2b/ui" }}
+        description="Where one order is on its way. Done stages carry a check and a green line; the words say the state too. A narrow container, such as a phone sheet, lists the stages one below the other."
+        code={`<ProgressPath
+  label="Order 2026-0418"
+  steps={[
+    { label: "Ordered", detail: "Nov 3", done: true },
+    { label: "Paid", detail: "Nov 3", done: true },
+    { label: "Shipped", detail: "Nov 5", done: true },
+    { label: "Delivered", detail: "expected Nov 8", icon: "ti ti-home" },
+  ]}
+/>`}
+      >
+        <ProgressPath
+          label="Order 2026-0418"
+          steps={[
+            { label: "Ordered", detail: "Nov 3", done: true },
+            { label: "Paid", detail: "Nov 3", done: true },
+            { label: "Shipped", detail: "Nov 5", done: true },
+            { label: "Delivered", detail: "expected Nov 8", icon: "ti ti-home" },
+          ]}
+        />
+        <div class="ui-progress-path-demo__narrow">
+          <ProgressPath
+            label="Order 2026-0419"
+            steps={[
+              { label: "Ordered", detail: "Nov 6", done: true },
+              { label: "Paid", detail: "not yet", icon: "ti ti-credit-card" },
+              { label: "Shipped", detail: "not yet", icon: "ti ti-truck" },
+            ]}
+          />
+        </div>
       </DemoCard>
     </DemoGrid>
   ),
@@ -2190,6 +2525,12 @@ const demos: DemoSection = {
   "virtual-feed": () => (
     <DemoGrid columns="one">
       <VirtualFeedDemo />
+      <VirtualListDemo />
+    </DemoGrid>
+  ),
+  "load-more": () => (
+    <DemoGrid columns="one">
+      <LoadMoreDemo />
     </DemoGrid>
   ),
   "message-rows": () => (

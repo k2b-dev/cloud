@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { hoverInPlace, launchBrowser } from "../../test/browser";
 
 // Row height and mark widths are results of layout with the real type, which
 // happy-dom does not model, so a real engine runs the shipped browser build.
@@ -510,7 +510,7 @@ describe("@k2b/ui sidebar item status", () => {
       const rest = await measure(page);
       for (const group of ["flat", "action"] as const) {
         for (const state of groups[group]) {
-          await page.locator(`[data-group="${group}"][data-state="${state}"]`).hover();
+          await hoverInPlace(page.locator(`[data-group="${group}"][data-state="${state}"]`));
           expect(await measure(page)).toEqual(rest);
         }
       }

@@ -1,4 +1,5 @@
 import { autocompletion, type CompletionContext } from "@codemirror/autocomplete";
+import { isolateHistory } from "@codemirror/commands";
 import { Transaction } from "@codemirror/state";
 import { createLiveDictationSource } from "@k2b/cloud/ai/browser";
 import { isolateYjsHistory } from "@k2b/editor/collab";
@@ -14,6 +15,12 @@ import { createMailDraftTableStructure, type UnknownTableAction } from "./mail-d
 
 const liveDictationSource = createLiveDictationSource({ app: "mail" });
 
+/** Edits the composer starts for the person, such as an inserted attachment link. */
+export type MailTextEditorActions = {
+  /** Appends text after a blank line, as one step of the person's undo history, also in a shared draft. */
+  appendText: (text: string) => void;
+};
+
 /** Mail owns templates, attachments and draft replacement; the shared editor owns text and tables. */
 export default function MailTextEditor(props: {
   shared?: MailDraftDocumentClient;
@@ -23,12 +30,20 @@ export default function MailTextEditor(props: {
   body: Accessor<string>;
   onBodyInput: (value: string) => void;
   editable: Accessor<boolean>;
+  /** Input waits for a moment; the text keeps its caret, focus, and toolbar. */
+  paused?: Accessor<boolean>;
   completions: Accessor<Completion[]>;
-  onEditorReady: (editor: TextEditorController) => void;
+  onEditorReady: (editor: TextEditorController, actions: MailTextEditorActions) => void;
   onAttachImages?: () => void;
   onDroppedImages?: (files: File[]) => void;
   /** Live dictation into the body, from the editor toolbar. */
   liveDictation?: boolean;
+  /** Whether the formatting bar shows; the draft inside a conversation toggles it from its own tools. */
+  toolbar?: Accessor<boolean>;
+  /** Inside a conversation the text grows with its content and the conversation scrolls, not the editor. */
+  inline?: boolean;
+  /** What the empty text says, such as the reply box's "Write a reply …". */
+  placeholder?: string;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -160,18 +175,14 @@ export default function MailTextEditor(props: {
     if (current.terminal || current.error) return current.message;
     if (current.structuring) return st().tablePending;
     if (current.message === st().retainedColumn) return current.message;
-    return !current.connected
-      ? st().offline.replace("{count}", String(current.changes))
-      : current.dirty
-        ? st().pending
-        : !current.ready
-          ? st().connecting
-          : st().saved;
+    if (!current.ready && current.connected) return st().connecting;
+    if (!current.connected) return `${st().offline} · ${current.locallySaved ? st().localSaved : st().pending}`;
+    return current.dirty ? st().saving : st().saved;
   };
   const copy = async () => {
     if (!binding) return;
     try {
-      const content = binding.content();
+      const content = binding.state().rejectedEdit ?? binding.content();
       await navigator.clipboard.writeText(
         `${content.to.map((entry) => entry.address).join(", ")}\nCc: ${content.cc.map((entry) => entry.address).join(", ")}\nBcc: ${content.bcc.map((entry) => entry.address).join(", ")}\n${content.subject}\n\n${content.body}`,
       );
@@ -182,14 +193,22 @@ export default function MailTextEditor(props: {
   const retry = () => {
     if (binding) void binding.retry().catch((error: unknown) => controls?.notify(error instanceof Error ? error.message : st().pending));
   };
+  const restoreProposal = () => {
+    try {
+      binding?.restoreRejectedEdit();
+    } catch (error) {
+      controls?.notify(error instanceof Error ? error.message : st().bodyEditFailed);
+    }
+  };
   return (
-    <div class="relative h-full min-h-72">
+    <div class={props.inline ? "mail-inline-text-editor relative" : "relative h-full min-h-72"}>
       {/* The message scrolls here, under the editor's toolbar; the notice below stays at the bottom of the pane. */}
-      <div class="h-full min-h-72 overflow-y-auto overscroll-contain">
+      <div class={props.inline ? undefined : "h-full min-h-72 overflow-y-auto overscroll-contain"}>
         <TextEditor
-          class="min-h-full"
+          class={props.inline ? undefined : "min-h-full"}
+          toolbar={props.toolbar ? props.toolbar() : undefined}
           label={t().messageBody}
-          placeholder={t().writeMessage}
+          placeholder={props.placeholder ?? t().writeMessage}
           initialValue={binding ? binding.doc.getText("codemirror").toString() : untrack(props.body)}
           onTableCheck={props.onTableCheck}
           status={
@@ -241,7 +260,8 @@ export default function MailTextEditor(props: {
           onModeChange={(next) => {
             if (next !== "plain") setMode(next);
           }}
-          readOnly={!props.editable()}
+          readOnly={!props.editable() && !props.paused?.()}
+          locked={props.paused?.()}
           dictation={props.liveDictation ? { source: liveDictationSource } : undefined}
           maxLength={2_097_152}
           extensions={[
@@ -271,7 +291,17 @@ export default function MailTextEditor(props: {
               value.view.dom.addEventListener("focusout", blur);
               onCleanup(() => value.view.dom.removeEventListener("focusout", blur));
             }
-            props.onEditorReady(value);
+            props.onEditorReady(value, {
+              appendText: (text) => {
+                const doc = value.view.state.doc;
+                const before = doc.toString();
+                value.view.dispatch({
+                  changes: { from: doc.length, insert: `${before.endsWith("\n") || !before ? "" : "\n\n"}${text}` },
+                  userEvent: "input.paste",
+                  annotations: isolateHistory.of("full"),
+                });
+              },
+            });
           }}
           onAttachImages={props.onAttachImages}
           onDroppedImages={(_count, files) => {
@@ -283,7 +313,7 @@ export default function MailTextEditor(props: {
       </div>
       <Show when={binding && (!props.sharedState?.()?.remembering || props.sharedState?.()?.error || unknownAction())}>
         <div
-          class="absolute inset-x-2 bottom-2 z-20 flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2 text-xs text-primary shadow-sm"
+          class="absolute inset-x-2 bottom-2 z-20 flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2 text-xs text-primary shadow-[var(--k2b-shadow-toolbar)]"
           role="status"
         >
           <span class="min-w-0 flex-1">
@@ -293,6 +323,14 @@ export default function MailTextEditor(props: {
             when={unknownAction()}
             fallback={
               <>
+                <Show when={props.sharedState?.()?.rejectedEdit}>
+                  <Button size="sm" variant="secondary" disabled={props.sharedState?.()?.terminal} onClick={restoreProposal}>
+                    {st().restoreProposal}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => binding?.discardRejectedEdit()}>
+                    {st().discardProposal}
+                  </Button>
+                </Show>
                 <Button size="sm" variant="secondary" onClick={retry}>
                   {st().retry}
                 </Button>

@@ -3,12 +3,19 @@ import {
   Button,
   ButtonLink,
   createHoverPreview,
+  DescriptionList,
   dialogCore,
+  HoverCard,
   HoverPreview,
   InlineGuidance,
   MovedHint,
   NoticeCard,
+  NoticeRow,
+  PanelDialog,
+  ProgressPath,
+  panelDialogOptions,
   prompts,
+  SplitButton,
   StatusBadge,
   TextInput,
   Tooltip,
@@ -87,6 +94,197 @@ const BlocksDemo = () => (
   </DemoCard>
 );
 
+const imageRuleItems = [
+  {
+    sectionLabel: "Load automatically",
+    items: [
+      { label: "Always from news@example.test", icon: "ti ti-user", action: () => {} },
+      { label: "Always from everyone at example.test", icon: "ti ti-world", action: () => {} },
+    ],
+  },
+  { label: "Rules for external images…", icon: "ti ti-settings", action: () => {} },
+];
+
+const NoticeActionsDemo = () => (
+  <DemoCard
+    id="notice-actions"
+    chip={[
+      { kind: "component", name: "NoticeCard", from: "@k2b/ui" },
+      { kind: "component", name: "Button", from: "@k2b/ui" },
+      { kind: "component", name: "ButtonLink", from: "@k2b/ui" },
+    ]}
+    description="A card with its icon beside the text and the direct next step below it. At most one primary action, in the tone's button variant; the actions wrap on narrow cards and share the bottom edge in a grid row."
+    code={`<NoticeCard.Grid items={notices}>
+  {(notice) => <NoticeCard {...notice} layout="card" />}
+</NoticeCard.Grid>
+
+<NoticeCard
+  tone="warning"
+  icon
+  layout="card"
+  title="Review needed"
+  meta="Due Friday"
+  detail="2 rows have no owner."
+  actions={
+    <>
+      <ButtonLink variant="warning" size="sm" href="/import/owners">Assign owners</ButtonLink>
+      <Button variant="secondary" size="sm" onClick={showRows}>Show rows</Button>
+    </>
+  }
+/>
+
+<NoticeCard
+  tone="danger"
+  icon
+  layout="card"
+  title="Source unavailable"
+  detail="Retrying in the background."
+  actions={<Button variant="danger" size="sm" onClick={retry}>Retry now</Button>}
+/>`}
+  >
+    <NoticeCard.Grid
+      items={[
+        {
+          tone: "neutral" as const,
+          icon: "ti ti-news",
+          title: "Release note",
+          detail: "Version 2.4 is available.",
+          actions: (
+            <ButtonLink variant="primary" size="sm" href="#notice-actions">
+              Read what changed
+            </ButtonLink>
+          ),
+        },
+        {
+          tone: "info" as const,
+          icon: "ti ti-file-import",
+          title: "Import ready",
+          detail: "12 rows validated.",
+          actions: (
+            <Button variant="primary" size="sm" onClick={() => toast("Import started")}>
+              Start import
+            </Button>
+          ),
+        },
+        {
+          tone: "success" as const,
+          icon: true as const,
+          title: "Import complete",
+          detail: "12 rows created.",
+          actions: (
+            <ButtonLink variant="success" size="sm" href="#notice-actions">
+              Open table
+            </ButtonLink>
+          ),
+        },
+        {
+          tone: "warning" as const,
+          icon: true as const,
+          title: "Review needed",
+          meta: "Due Friday",
+          detail: "2 rows have no owner.",
+          actions: (
+            <>
+              <ButtonLink variant="warning" size="sm" href="#notice-actions">
+                Assign owners
+              </ButtonLink>
+              <Button variant="secondary" size="sm" onClick={() => toast("Showing 2 rows")}>
+                Show rows
+              </Button>
+            </>
+          ),
+        },
+        {
+          tone: "danger" as const,
+          icon: true as const,
+          title: "Source unavailable",
+          detail: "Retrying in the background.",
+          actions: (
+            <Button variant="danger" size="sm" onClick={() => toast("Retrying now")}>
+              Retry now
+            </Button>
+          ),
+        },
+      ]}
+    >
+      {(notice) => <NoticeCard {...notice} layout="card" />}
+    </NoticeCard.Grid>
+  </DemoCard>
+);
+
+const NoticeRowDemo = () => (
+  <DemoCard
+    id="notice-row"
+    chip={[
+      { kind: "component", name: "NoticeRow", from: "@k2b/ui" },
+      { kind: "component", name: "SplitButton", from: "@k2b/ui" },
+    ]}
+    description="A notice as one 48 px row: a subject tile, one short line, and its next step at the end. The action never wraps; phones open the split button's menu as a sheet."
+    code={`<NoticeRow
+  aria-label="External images"
+  tile="ti ti-photo-shield"
+  tileColor="var(--k2b-reference-image)"
+  action={
+    <SplitButton
+      variant="secondary"
+      size="sm"
+      phone="sheet"
+      onClick={loadImages}
+      menuLabel="More options for external images"
+      menuNote="External images can tell the sender when you open the message."
+      items={rules}
+    >
+      Load images
+    </SplitButton>
+  }
+>
+  <p class="truncate"><strong>External images blocked</strong> · Protects against tracking</p>
+</NoticeRow>
+
+<NoticeRow tone="danger" tile="ti ti-photo-x" action={<Button variant="secondary" size="sm">Retry</Button>}>
+  <p class="truncate" role="alert"><strong>Images could not be loaded</strong></p>
+</NoticeRow>`}
+  >
+    <div class="flex flex-col gap-3">
+      <NoticeRow
+        aria-label="External images"
+        tile="ti ti-photo-shield"
+        tileColor="var(--k2b-reference-image)"
+        action={
+          <SplitButton
+            variant="secondary"
+            size="sm"
+            phone="sheet"
+            onClick={() => toast("Images loaded")}
+            menuLabel="More options for external images"
+            menuNote="External images can tell the sender when you open the message."
+            items={imageRuleItems}
+          >
+            Load images
+          </SplitButton>
+        }
+      >
+        <p class="truncate">
+          <strong>External images blocked</strong> · Protects against tracking
+        </p>
+      </NoticeRow>
+      <NoticeRow
+        tone="danger"
+        tile="ti ti-photo-x"
+        action={
+          <Button variant="secondary" size="sm">
+            Retry
+          </Button>
+        }
+      >
+        <p class="truncate">
+          <strong>Images could not be loaded</strong>
+        </p>
+      </NoticeRow>
+    </div>
+  </DemoCard>
+);
+
 const BadgesDemo = () => (
   <DemoCard
     id="badges"
@@ -141,21 +339,54 @@ const ToastDemo = () => {
     progressToast?.update(message, { title: undefined, progress: null, action: null });
   };
 
+  let savingTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(savingTimer));
+  const startSaving = (succeeds: boolean) => {
+    clearTimeout(savingTimer);
+    const saving = toast("Budget 2027.grid", {
+      title: "Saving …",
+      progress: "indeterminate",
+      action: { label: "Cancel", onClick: () => saving.dismiss() },
+    });
+    savingTimer = setTimeout(
+      () =>
+        saving.update(succeeds ? "Budget 2027.grid" : "The server is not reachable.", {
+          variant: succeeds ? "success" : "error",
+          title: succeeds ? "Saved" : "Not saved",
+          progress: null,
+          action: succeeds ? { label: "Open", href: "#toast" } : { label: "Try again", onClick: () => startSaving(true) },
+        }),
+      1600,
+    );
+  };
+
   return (
     <DemoCard
       id="toast"
       chip={{ kind: "component", name: "toast", from: "@k2b/ui" }}
-      description="One calm line per toast: tone glyph, message, an optional text action, and close. Titles only when passed, longer times for errors and actions, and progress in place."
+      description="A stack: the newest toast in front, up to two older edges behind it. It fans out under the pointer or with focus (Alt+T), and every timer waits meanwhile. Icon tile, title and message, one action beside them or two below, a link, and loading that turns into its result in place."
       code={`toast.success("Contact created");
-toast.success("Message archived", {
-  action: { label: "Undo", onClick: restore },
-});
+toast("1.2 GB of 50 GB free.", { title: "Storage almost full", variant: "warning" });
 toast.error("Could not save the draft. The server is not reachable.");
-toast("Reload the page to use it.", {
-  title: "New version available",
-  action: { label: "Reload", onClick: () => location.reload() },
-  duration: 0,
+toast.success("Budget 2027.xlsx · 48 KB", {
+  title: "Export finished",
+  action: { label: "Open", href: "/files/export" },
 });
+toast("3 notes moved to the trash", {
+  action: { label: "Undo", onClick: restore, variant: "ghost" },
+});
+toast("Request for “Budget 2027”, role Edit.", {
+  title: "Mara Example wants to collaborate",
+  action: { label: "Share", onClick: share },
+  secondaryAction: { label: "Later", onClick: later },
+});
+toast.success("Anyone with the link can view “Budget 2027”.", {
+  title: "Share link created",
+  link: { label: "Open settings", href: "/settings/sharing" },
+});
+
+const saving = toast("Budget 2027.grid", { title: "Saving …", progress: "indeterminate" });
+saving.update("Budget 2027.grid", { variant: "success", title: "Saved", progress: null });
 
 const exportToast = toast("0 of 12 files", {
   title: "Exporting archive",
@@ -176,9 +407,12 @@ exportToast.update("Archive ready", {
         </Button>
         <Button
           variant="secondary"
-          onClick={() => toast.success("Message archived", { action: { label: "Undo", onClick: () => toast("Message restored") } })}
+          onClick={() => toast("Cloud reloads the page the next time you open it.", { title: "New version available" })}
         >
-          With action
+          Info
+        </Button>
+        <Button variant="secondary" onClick={() => toast("1.2 GB of 50 GB free.", { title: "Storage almost full", variant: "warning" })}>
+          Warning
         </Button>
         <Button variant="secondary" onClick={() => toast.error("Could not save the draft. The server is not reachable.")}>
           Error
@@ -186,20 +420,129 @@ exportToast.update("Archive ready", {
         <Button
           variant="secondary"
           onClick={() =>
-            toast("Reload the page to use it.", {
-              title: "New version available",
-              action: { label: "Reload", onClick: () => window.location.reload() },
-              duration: 0,
+            toast.success("Anyone with the link can view “Budget 2027”.", {
+              title: "Share link created",
+              link: { label: "Open settings", href: "#toast" },
             })
           }
         >
-          Title, sticky
+          With link
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => toast.success("Budget 2027.xlsx · 48 KB", { title: "Export finished", action: { label: "Open", href: "#toast" } })}
+        >
+          One action
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            toast("3 notes moved to the trash", { action: { label: "Undo", onClick: () => toast("Notes restored"), variant: "ghost" } })
+          }
+        >
+          Undo
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            toast("Request for “Budget 2027”, role Edit.", {
+              title: "Mara Example wants to collaborate",
+              action: { label: "Share", onClick: () => toast.success("Shared with Mara Example") },
+              secondaryAction: { label: "Later", onClick: () => {} },
+            })
+          }
+        >
+          Two actions
+        </Button>
+        <Button variant="secondary" onClick={() => startSaving(true)}>
+          Loading → success
+        </Button>
+        <Button variant="secondary" onClick={() => startSaving(false)}>
+          Loading → error
         </Button>
         <Button variant="secondary" onClick={startProgress}>
           Progress
         </Button>
         <Button variant="secondary" onClick={() => toast.dismissAll()}>
           Dismiss all
+        </Button>
+      </div>
+    </DemoCard>
+  );
+};
+
+const SuccessCheckDemo = () => {
+  let sepaTimer: ReturnType<typeof setTimeout> | undefined;
+  // A run still in progress when the demo restarts or unmounts closes with its timer, so no spinner stays behind.
+  let pending: ReturnType<typeof toast> | undefined;
+  const cancelPending = () => {
+    clearTimeout(sepaTimer);
+    pending?.dismiss();
+    pending = undefined;
+  };
+  onCleanup(cancelPending);
+  const createSepaFile = () => {
+    cancelPending();
+    const sepa = toast("14 payments", { title: "Creating SEPA file …", progress: "indeterminate" });
+    pending = sepa;
+    sepaTimer = setTimeout(() => {
+      pending = undefined;
+      sepa.update("14 payments · 18,240.00 EUR", { variant: "success", title: "SEPA file created", progress: null, celebrate: true });
+    }, 1200);
+  };
+  const openCustomer = () =>
+    dialogCore.open<void>(
+      (close) => (
+        <PanelDialog tone="success" celebrate>
+          <PanelDialog.Header title="Customer K-1042 created" subtitle="Mueller Antik GmbH" close={() => close()} />
+          <PanelDialog.Body>The customer can now receive offers and invoices.</PanelDialog.Body>
+          <PanelDialog.Footer>
+            <Button onClick={() => close()}>Done</Button>
+          </PanelDialog.Footer>
+        </PanelDialog>
+      ),
+      panelDialogOptions,
+    );
+
+  return (
+    <DemoCard
+      id="success-check"
+      chip={[
+        { kind: "component", name: "toast", from: "@k2b/ui" },
+        { kind: "component", name: "prompts", from: "@k2b/ui" },
+        { kind: "component", name: "PanelDialog", from: "@k2b/ui" },
+      ]}
+      description="A finished success draws its check once: the ring closes, the check follows, and the mark springs up, in under a second. Only for final results such as an issued invoice; a routine save keeps the still check. With reduced motion the check is finished at once."
+      code={`toast.success("RE-2026-0142 · 1,480.00 EUR", { title: "Invoice issued", celebrate: true });
+
+const sepa = toast("14 payments", { title: "Creating SEPA file …", progress: "indeterminate" });
+sepa.update("14 payments · 18,240.00 EUR", { variant: "success", title: "SEPA file created", progress: null, celebrate: true });
+
+await prompts.success("The invoice is ready to send.", { title: "Invoice issued", celebrate: true });
+
+<PanelDialog tone="success" celebrate>
+  <PanelDialog.Header title="Customer K-1042 created" close={close} />
+  …
+</PanelDialog>`}
+    >
+      <div class="ui-demo-row">
+        <Button
+          variant="secondary"
+          onClick={() => toast.success("RE-2026-0142 · 1,480.00 EUR", { title: "Invoice issued", celebrate: true })}
+        >
+          Issue invoice
+        </Button>
+        <Button variant="secondary" onClick={createSepaFile}>
+          Create SEPA file
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => void prompts.success("The invoice is ready to send.", { title: "Invoice issued", celebrate: true })}
+        >
+          Success prompt
+        </Button>
+        <Button variant="secondary" onClick={() => void openCustomer()}>
+          Create customer
         </Button>
       </div>
     </DemoCard>
@@ -311,6 +654,162 @@ const TooltipDemo = () => (
     </div>
   </DemoCard>
 );
+
+const pathStages = [
+  { label: "Received", icon: "ti ti-flag" },
+  { label: "Brought to returns", icon: "ti ti-truck" },
+  { label: "Booked in", icon: "ti ti-package-import" },
+  { label: "Owner told", icon: "ti ti-mail" },
+  { label: "Back or gone", icon: "ti ti-circle-check" },
+];
+
+const returnItems = [
+  {
+    number: "B7A01",
+    title: "Cherry chest of drawers",
+    days: ["Nov 7", "Nov 9", "Nov 9", "Nov 10"],
+    next: "Dispose · owner agreed on Nov 11.",
+    detail: "You can dispose of the item or pass it on.",
+    place: "R4 › Bin 7",
+  },
+  {
+    number: "B7A02",
+    title: "Pewter jug with lid",
+    days: ["Nov 7", "Nov 9", "Nov 9"],
+    next: "Tell the owner.",
+    detail: "The item is booked in. Send the owner a note so they can collect it.",
+    place: "R4 › Bin 7",
+  },
+  {
+    number: "B7A05",
+    title: "Delft wall plate",
+    days: ["Nov 12"],
+    next: "Bring it to returns.",
+    detail: "The item still waits at the intake shelf.",
+    place: "Intake shelf",
+  },
+];
+
+const placeFacts: Record<string, { detail: string; items: { term: string; description: string }[] }> = {
+  "R4 › Bin 7": {
+    detail: "Return stack 1 of Lea Lorem",
+    items: [
+      { term: "From Lea Lorem", description: "22 items, the first since Nov 9" },
+      { term: "At this place", description: "22 items from 1 person" },
+    ],
+  },
+  "Intake shelf": {
+    detail: "Not in returns yet",
+    items: [
+      { term: "From Paul Probe", description: "1 item since Nov 12" },
+      { term: "At this place", description: "4 items from 3 people" },
+    ],
+  },
+};
+
+/** The small path in a row: one icon per stage and a bar for how far the item got. App-owned; the card shows it large. */
+const PathGlyph = (props: { done: number }) => (
+  <span class="ui-hover-card-demo__glyph" aria-hidden="true">
+    <span>
+      <For each={pathStages}>{(stage, index) => <i class={stage.icon} data-done={index() < props.done ? "" : undefined} />}</For>
+    </span>
+    <b style={{ width: `${(props.done / pathStages.length) * 100}%` }} />
+  </span>
+);
+
+const HoverCardDemo = () => {
+  const [filter, setFilter] = createSignal<string>();
+  return (
+    <DemoCard
+      id="hover-card"
+      chip={[
+        { kind: "component", name: "HoverCard", from: "@k2b/ui" },
+        { kind: "component", name: "HoverCard.Trigger", from: "@k2b/ui" },
+        { kind: "component", name: "ProgressPath", from: "@k2b/ui" },
+      ]}
+      description="Rest the mouse on a small path or a place, or move the keyboard focus there. The path opens large with a word and a day per stage; the place lists what lies there. A tap on a path opens it on a phone as a sheet; a click on a place filters."
+      code={`<HoverCard.Trigger
+  aria-label="Path of B7A02"
+  title="B7A02 Pewter jug with lid"
+  width="34rem"
+  content={<ProgressPath label="Path" steps={steps} />}
+>
+  <PathGlyph done={3} />
+</HoverCard.Trigger>
+
+<HoverCard
+  title="R4 › Bin 7"
+  detail="Return stack 1 of Lea Lorem"
+  content={<DescriptionList layout="compact" size="sm" items={facts} />}
+  hint="A click filters by this place."
+>
+  <Button size="xs" variant="secondary" onClick={() => filterBy("R4 › Bin 7")}>R4 › Bin 7</Button>
+</HoverCard>`}
+    >
+      <div class="ui-hover-card-demo" role="table" aria-label="Returns">
+        <div role="row" class="ui-hover-card-demo__head">
+          <span role="columnheader">Item</span>
+          <span role="columnheader">Path</span>
+          <span role="columnheader">Place</span>
+        </div>
+        <For each={returnItems}>
+          {(item) => {
+            const facts = placeFacts[item.place]!;
+            return (
+              <div role="row" class="ui-hover-card-demo__row">
+                <span role="cell" class="ui-hover-card-demo__item">
+                  <span class="ui-hover-card-demo__number">{item.number}</span> {item.title}
+                </span>
+                <span role="cell">
+                  <HoverCard.Trigger
+                    aria-label={`Path of ${item.number}`}
+                    title={`${item.number} ${item.title}`}
+                    width="34rem"
+                    content={
+                      <>
+                        <ProgressPath
+                          label={`Path of ${item.number}`}
+                          steps={pathStages.map((stage, index) => ({
+                            label: stage.label,
+                            icon: stage.icon,
+                            done: index < item.days.length,
+                            detail: item.days[index] ?? "not yet",
+                          }))}
+                        />
+                        <p class="ui-hover-card-demo__next">
+                          <strong>{item.next}</strong> {item.detail}
+                        </p>
+                      </>
+                    }
+                  >
+                    <PathGlyph done={item.days.length} />
+                  </HoverCard.Trigger>
+                </span>
+                <span role="cell">
+                  <HoverCard
+                    title={item.place}
+                    detail={facts.detail}
+                    content={<DescriptionList layout="compact" size="sm" items={facts.items} />}
+                    hint="A click filters by this place."
+                  >
+                    <Button size="xs" variant="secondary" onClick={() => setFilter(item.place)}>
+                      <i class="ti ti-map-pin" aria-hidden="true" />
+                      {item.place}
+                    </Button>
+                  </HoverCard>
+                </span>
+              </div>
+            );
+          }}
+        </For>
+      </div>
+      {/* The line keeps its height while empty, so filtering moves nothing. */}
+      <p role="status" class="min-h-5 text-sm">
+        {filter() ? `Filtered by ${filter()}` : ""}
+      </p>
+    </DemoCard>
+  );
+};
 
 const demoMessages = [
   {
@@ -663,6 +1162,8 @@ const demos: DemoSection = {
   blocks: () => (
     <DemoGrid columns="one">
       <BlocksDemo />
+      <NoticeActionsDemo />
+      <NoticeRowDemo />
     </DemoGrid>
   ),
   badges: () => (
@@ -673,6 +1174,7 @@ const demos: DemoSection = {
   toast: () => (
     <DemoGrid columns="one">
       <ToastDemo />
+      <SuccessCheckDemo />
       <AnnounceDemo />
     </DemoGrid>
   ),
@@ -680,6 +1182,11 @@ const demos: DemoSection = {
   tooltip: () => (
     <DemoGrid columns="one">
       <TooltipDemo />
+    </DemoGrid>
+  ),
+  "hover-card": () => (
+    <DemoGrid columns="one">
+      <HoverCardDemo />
     </DemoGrid>
   ),
   "hover-preview": () => (

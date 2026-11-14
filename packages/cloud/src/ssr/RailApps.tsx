@@ -1,13 +1,18 @@
-import { ScrollArea, Tooltip, useLocale } from "@k2b/ui";
+import { ScrollArea, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import type { AppAppearance } from "../contracts/app";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import { AppBadge, useAppBadgeDescription } from "./AppBadge";
-import { appAccentStyle } from "./app-appearance";
+import { appAccentStyle, appBarGrounds, appBarIconStyle } from "./app-appearance";
 import { watchAppBadges } from "./app-badges";
+import { appIconTone } from "./app-icon-style";
+import { RailItemHint } from "./RailItemHint";
 import { RAIL_PREFERENCES_EVENT, readRailContext } from "./rail-context";
+import { syncRailNames } from "./rail-names";
 import { projectRailNavigation, type RailApp, type RailLink, railLinkActive } from "./rail-navigation";
 
-function RailIcon(props: { link: RailLink; currentPath: string }) {
+/** Each app's icon takes its app's colour on the open page's canvas; a plain link keeps the bar's neutral ink. */
+function RailIcon(props: { link: RailLink; currentPath: string; grounds: ReturnType<typeof appBarGrounds> }) {
   let target: HTMLAnchorElement | undefined;
   const active = () => railLinkActive(props.link, props.currentPath);
   const badge = useAppBadgeDescription(() => ({ endpoint: props.link.badge, appId: props.link.appId }));
@@ -19,24 +24,36 @@ function RailIcon(props: { link: RailLink; currentPath: string }) {
         class={`rail-item relative shrink-0 ${active() ? "rail-item-active" : ""}`}
         aria-label={badge() ? `${props.link.label}, ${badge()}` : props.link.label}
         aria-current={active() ? "page" : undefined}
-        style={appAccentStyle(props.link.accent)}
+        style={
+          [
+            appAccentStyle(props.link.accent),
+            props.link.appId && appBarIconStyle(appIconTone({ id: props.link.appId, accent: props.link.accent }), props.grounds),
+          ]
+            .filter(Boolean)
+            .join(";") || undefined
+        }
       >
         <i class={`${props.link.iconClass} text-xl`} aria-hidden="true" />
-        <span class="sr-only">{props.link.label}</span>
+        <span class="rail-item-label">{props.link.label}</span>
         <AppBadge endpoint={props.link.badge} appId={props.link.appId} />
       </a>
-      <Tooltip target={() => target} content={props.link.label} placement="right" delay={0} />
+      <RailItemHint target={() => target} content={props.link.label} />
     </>
   );
 }
 
-export default function RailApps(props: { apps: RailApp[]; settings: RailSnapshot; currentPath: string }) {
+export default function RailApps(props: { apps: RailApp[]; settings: RailSnapshot; currentPath: string; appearance?: AppAppearance }) {
   const locale = useLocale();
   const [settings, setSettings] = createSignal(props.settings);
   const [currentPath, setCurrentPath] = createSignal(props.currentPath);
   const navigation = createMemo(() => projectRailNavigation(props.apps, settings(), locale()));
+  const grounds = createMemo(() => appBarGrounds(props.appearance));
   onMount(() => {
-    const sync = () => setSettings(readRailContext()?.settings ?? props.settings);
+    const sync = () => {
+      const next = readRailContext()?.settings ?? props.settings;
+      setSettings(next);
+      syncRailNames(next.showNames);
+    };
     const syncLocation = () => setCurrentPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
     sync();
     syncLocation();
@@ -64,11 +81,11 @@ export default function RailApps(props: { apps: RailApp[]; settings: RailSnapsho
       style={{ flex: "0 1 auto", "scrollbar-width": "none", "scrollbar-gutter": "auto", "overflow-x": "hidden" }}
       data-cloud-rail-apps
     >
-      <For each={navigation().shortcuts}>{(link) => <RailIcon link={link} currentPath={currentPath()} />}</For>
+      <For each={navigation().shortcuts}>{(link) => <RailIcon link={link} currentPath={currentPath()} grounds={grounds()} />}</For>
       <Show when={navigation().shortcuts.length > 0 && navigation().apps.length > 0}>
         <div role="separator" class="my-1 h-px w-5 shrink-0" style={{ background: "var(--ui-divider)" }} />
       </Show>
-      <For each={navigation().apps}>{(link) => <RailIcon link={link} currentPath={currentPath()} />}</For>
+      <For each={navigation().apps}>{(link) => <RailIcon link={link} currentPath={currentPath()} grounds={grounds()} />}</For>
     </ScrollArea>
   );
 }

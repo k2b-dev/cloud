@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { SQL } from "bun";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { mapFieldRow } from "./field-read";
-import type { GridsWorkflowActionScope } from "./workflow-action-scope";
+import { GridsWorkflowActionError, type GridsWorkflowActionScope } from "./workflow-action-scope";
 import { atomicQueryMatches, lockAtomicRecords, resolveWorkflowRecordValues } from "./workflow-atomic-records";
 
 useUnitClients();
@@ -60,6 +60,8 @@ const fixture = (options: { permitted?: boolean; sameBase?: boolean; correctTarg
       const query = strings.join("?");
       calls.push(query);
       queries.push(parameters);
+      if (query.includes("SELECT base_id")) return [{ base_id: baseId }];
+      if (query.includes("FROM grids.bases")) return [{ id: baseId }];
       if (query.includes("SELECT f.*")) return [fieldRow];
       if (query.includes("SELECT now()")) return [{ now: new Date() }];
       if (query.includes("FROM auth.users")) return [{ id: baseId, account_expires: null }];
@@ -81,6 +83,13 @@ const fixture = (options: { permitted?: boolean; sameBase?: boolean; correctTarg
   ) as unknown as SQL;
   return { db, calls, queries };
 };
+
+test("a missing atomic lock remains a nonretryable workflow action failure", async () => {
+  const { db } = fixture({ correctTarget: false });
+  const error = await lockAtomicRecords(db, [{ tableId, recordId, required: "write" }], async () => {}).catch((error: unknown) => error);
+  expect(error).toBeInstanceOf(GridsWorkflowActionError);
+  expect(error).toMatchObject({ code: "ATOMIC_LOCK_UNAVAILABLE", retryable: false });
+});
 
 describe("workflow relation values", () => {
   test("resolves public IDs after permission checks and verifies the exact relation target", async () => {

@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { type DateContext, type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import type { MutationResult, SpaceComment } from "@/contracts";
+import { publishSpacesEvent } from "../app-events";
 import { withShortId } from "../lib/short-id";
 import * as activity from "./activity";
 import { publishSpaceChange, spacesLive } from "./live";
@@ -220,6 +221,9 @@ export const create = async (params: {
         }
         return { ok: true, data: { row: existing } };
       }
+      const [space] = await tx<{ short_id: string }[]>`SELECT short_id FROM spaces.spaces WHERE id = ${item.space_id}::uuid`;
+      if (!space) throw new Error("Spaces event names a missing space");
+      await publishSpacesEvent(tx, "comment.created", shortId, space.short_id);
       await activity.record(
         {
           spaceId: item.space_id,

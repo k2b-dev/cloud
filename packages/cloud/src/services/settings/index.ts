@@ -14,6 +14,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { sql } from "../../runtime/clients";
 import { DEPENDENCY_STARTUP_BUDGET_MS } from "../../runtime/startup-budget";
 import { requestCacheRedis } from "../request-cache-redis";
+import { listStorageBuckets } from "../storage-buckets/rows";
 import { bindSettingValue, replaceSettingValue, unwrapSettingValue } from "./binding";
 import { decryptValue, encryptValue, getAppSecret } from "./crypto";
 import { resolveSettingPresentation, SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
@@ -312,6 +313,7 @@ export { invalidateSettingsCache, readStates, SettingUnreadableError } from "./s
 export async function getAll(locale?: string): Promise<SettingEntry[]> {
   const allKeys = SETTINGS.map((def) => def.key);
   const values = await readStates(allKeys);
+  const storageBuckets = SETTINGS.some((def) => def.kind === "storage_bucket") ? await listStorageBuckets() : undefined;
   const versions = await sql<
     { key: string; updated_at: Date; updated_by: string | null; name: string | null }[]
   >`SELECT e.key,e.updated_at,e.updated_by,COALESCE(NULLIF(u.display_name,''),u.uid) AS name FROM settings.entries e LEFT JOIN auth.users u ON u.id=e.updated_by`;
@@ -344,6 +346,7 @@ export async function getAll(locale?: string): Promise<SettingEntry[]> {
       unreadable: stored === "unreadable",
       templateVars: "templateVars" in def ? def.templateVars : undefined,
       options: presentation.options,
+      storageBuckets: def.kind === "storage_bucket" ? storageBuckets : undefined,
       min: "min" in def ? def.min : undefined,
       max: "max" in def ? def.max : undefined,
     };

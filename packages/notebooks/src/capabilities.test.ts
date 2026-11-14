@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
-  type CapabilityActionDefinition,
+  assertCapabilityReview,
+  assertResourceOpenLink,
+  assertResourceView,
+  compileCapabilityManifest,
+} from "@k2b/cloud/capabilities/testing";
+import {
+  CapabilityActionCallReviewSchema,
+  CapabilityActionReviewDataSchema,
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
@@ -96,9 +102,9 @@ const createdAt = "2026-08-02T08:00:00.000Z";
 const activeSpies: Array<{ mockRestore(): void }> = [];
 
 test("only exposes remembered approval for bounded notebook-local note changes", () => {
-  const rememberable = (Object.entries(notebooksCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
-    .filter(([, action]) => action.approval === "rememberable")
-    .map(([localId]) => localId)
+  const rememberable = compileCapabilityManifest("notebooks", notebooksCapabilities)
+    .actions.filter((action) => action.approval === "rememberable")
+    .map((action) => action.localId)
     .sort();
   expect(rememberable).toEqual(["annotation.create", "comment.create", "note.create", "note.edit", "note.move"]);
 });
@@ -1207,14 +1213,14 @@ describe("notebooks capabilities", () => {
     ];
 
     expect(results).toHaveLength(
-      (Object.values(notebooksCapabilities.actions) as CapabilityActionDefinition[]).filter((action) => action.approval === "rememberable")
-        .length,
+      compileCapabilityManifest("notebooks", notebooksCapabilities).actions.filter((action) => action.approval === "rememberable").length,
     );
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
-      expect(CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
-      const parsed = CapabilityActionReviewSchema.safeParse(result.data);
+      const value = CapabilityActionReviewDataSchema.parse(result.data);
+      expect("sentence" in value ? value.scope : value.approvalScope).toBe(`notebook:${notebook.shortId}`);
+      const parsed = CapabilityActionReviewDataSchema.safeParse(result.data);
       if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
     }
   });
@@ -1476,13 +1482,58 @@ test("note.create starts from a page template only for writers, with the caller 
 
   permission.mockResolvedValue("write");
   const review = await operation.review!(input, userContext);
-  expect(review.ok && review.data.details?.find((detail) => detail.label === "Template")?.value).toBe("Meeting notes");
-  // The preview may be cut, so the review names a checksum of the whole text; a changed template asks again.
-  expect(review.ok && review.data.details?.find((detail) => detail.label === "Text checksum")?.value).toMatch(/^sha256:[a-f0-9]{64}$/);
+  expect(review.ok).toBe(true);
+  if (review.ok) {
+    const content = CapabilityActionCallReviewSchema.parse(review.data).content;
+    expect(content?.kind).toBe("page");
+    if (content?.kind === "page") {
+      expect(content.body).toContain("Template: Meeting notes");
+      expect(content.body).toMatch(/Text checksum: sha256:[a-f0-9]{64}/);
+    }
+  }
   expect((await operation.run(input, userContext)).ok).toBe(true);
   const content = create.mock.calls[0]![0].data.contentMd ?? "";
   expect(content).toStartWith("# Meeting ");
   expect(content).toContain("**Notes by:** Notebook User");
   expect(content).not.toContain("{{");
   expect(operation.input.safeParse({ notebookId: notebook.shortId, templateId: "meeting-notes", content: "# X" }).success).toBe(false);
+});
+
+test("shared creation reviews keep complete text, notebook scope and current write checks", async () => {
+  trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+  const permission = trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
+  const content = "full proposal ".repeat(1000);
+  for (const locale of ["en", "de"]) {
+    for (const [operation, input, text] of [
+      [notebooksCapabilities.actions["note.create"], { notebookId: notebook.shortId, content }, content],
+      [notebooksCapabilities.actions["comment.create"], { noteId: note.shortId, content: "Complete comment" }, "Complete comment"],
+    ] as const) {
+      const result = await operation.review(operation.input.parse(input), { ...userContext, locale });
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      assertCapabilityReview(result.data, {
+        policy: { silent: "shared" },
+        approval: "rememberable",
+        locales: ["en", "de"],
+        queries: [],
+        validateQueryInput: () => false,
+      });
+      const review = CapabilityActionCallReviewSchema.parse(result.data);
+      expect(review.preview?.kind).toBe("page");
+      expect(review.locale).toBe(locale);
+      expect(review.scope).toBe(`notebook:${notebook.shortId}`);
+      expect(review.ask).toBeUndefined();
+      expect(review.content?.kind).toBe("page");
+      if (review.content?.kind === "page") expect(review.content.body).toContain(text);
+    }
+  }
+  permission.mockResolvedValue("read");
+  expect((await notebooksCapabilities.actions["note.create"].review({ notebookId: notebook.shortId, content }, userContext)).ok).toBe(
+    false,
+  );
+  expect((await notebooksCapabilities.actions["comment.create"].review({ noteId: note.shortId, content: "Comment" }, userContext)).ok).toBe(
+    false,
+  );
 });

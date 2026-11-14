@@ -15,13 +15,17 @@ domTest("stored CSV, XML and JSON previews load authorized bytes and never activ
     },
     { preconnect: originalFetch.preconnect },
   );
-  const { openDocumentArtifactPreview } = await import("./DocumentArtifactPreviewDialog");
-  const { dialogCore } = await import("@k2b/ui");
+  const { openDocumentArtifactPreview } = await import("./DocumentArtifactPreview");
+  const lightbox = () => dom.document.querySelector<HTMLDialogElement>("dialog.k2b-lightbox");
+  const close = async () => {
+    lightbox()?.querySelector<HTMLButtonElement>('button[aria-label="Close"]')?.click();
+    await Bun.sleep(20);
+  };
   try {
     for (const [key, mimeType] of [
       ["csv", "text/csv"],
       ["xml", "application/xml"],
-      // Not valid JSON: it falls back to text, which only the header can copy.
+      // Not valid JSON: it falls back to text, which only Copy text in the pill copies.
       ["json", "application/json"],
     ]) {
       void openDocumentArtifactPreview("DOC001", {
@@ -37,22 +41,28 @@ domTest("stored CSV, XML and JSON previews load authorized bytes and never activ
       expect(dom.document.body.textContent).toContain(source);
       expect(dom.document.querySelector("img")).toBeNull();
       expect(dom.document.querySelector("iframe")).toBeNull();
-      // One frame: the stored data sits on the dialog surface, and copying moves into the header.
-      const dialog = dom.document.querySelector(".k2b-dialog[open]")!;
-      expect(dialog.querySelector(".k2b-content-file-view")?.getAttribute("data-variant")).toBe("plain");
-      expect(dialog.querySelector(".k2b-content-code-display__header")).toBeNull();
-      expect(dialog.querySelector<HTMLButtonElement>(".k2b-panel-dialog__actions .k2b-copy-button")?.disabled).toBeFalse();
-      // Focus starts on the content, so the keyboard scrolls it at once.
-      expect(dom.document.activeElement?.classList.contains("grids-artifact-preview__content")).toBeTrue();
-      const facts = dialog.querySelector(".k2b-panel-dialog__heading p")?.textContent;
+      // The Lightbox shows the stored data as plain text; Copy text and Download sit in the action pill.
+      const shown = lightbox()!;
+      expect(shown.getAttribute("aria-label")).toBe(`export.${key}`);
+      expect(shown.querySelector(".k2b-content-file-view")?.getAttribute("data-variant")).toBe("plain");
+      expect(shown.querySelector(".k2b-content-code-display__header")).toBeNull();
+      // A CSV export is its source, never a guessed table.
+      expect(shown.querySelector("table")).toBeNull();
+      expect([...shown.querySelectorAll(".k2b-lightbox__action")].map((button) => button.textContent)).toEqual(["Copy text"]);
+      expect(shown.querySelector(".k2b-lightbox__actions a[download]")?.getAttribute("href")).toBe(
+        `/api/grids/documents/DOC001/artifacts/${key}`,
+      );
+      // Focus starts on the file, so the keyboard scrolls it at once.
+      expect(dom.document.activeElement?.classList.contains("k2b-lightbox__stage")).toBeTrue();
+      const facts = shown.querySelector(".k2b-lightbox__name span")?.textContent;
       expect(facts).toContain(`${source.length} B`);
       expect(facts).not.toContain("Preview");
-      dialogCore.close();
-      await Bun.sleep(20);
+      await close();
+      expect(lightbox()).toBeNull();
     }
     expect(paths).toHaveLength(3);
   } finally {
-    dialogCore.close();
+    await close();
     globalThis.fetch = originalFetch;
     dom.cleanup();
   }

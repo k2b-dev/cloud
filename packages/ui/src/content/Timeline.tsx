@@ -170,8 +170,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     const item = entry.item;
     const parts = [item.label];
     if (entry.kind === "all-day") parts.push(messages().allDay);
-    else if (entry.end > entry.start)
-      parts.push(timelineMessages().timelineTimeRange({ start: formatTime(entry.start), end: formatTime(entry.end) }));
+    else if (entry.end > entry.start) parts.push(`${formatTime(entry.start)}–${formatTime(entry.end)}`);
     else parts.push(formatTime(entry.start));
     if (item.detail) parts.push(item.detail);
     parts.push(
@@ -607,10 +606,10 @@ export default function Timeline(props: TimelineProps): JSX.Element {
           </span>
         </Show>
         <span class="k2b-timeline__text">
-          <span class="k2b-timeline__label">{entry().item.label}</span>
+          <span class="k2b-timeline__label">{entry().item.label}</span>{" "}
           <Show when={time()}>
             <span class="k2b-timeline__time">{time()}</span>
-          </Show>
+          </Show>{" "}
           <Show when={entry().item.detail}>
             <span class="k2b-timeline__detail">{entry().item.detail}</span>
           </Show>

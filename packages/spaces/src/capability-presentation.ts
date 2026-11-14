@@ -44,6 +44,12 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "event.compose": { title: "Neuer Termin", description: "Einen Termin in Spaces erstellen." },
       },
       events: {
+        "comment.created": { title: "Kommentar erstellt", description: "Ein Kommentar wurde zu einem Eintrag in einem Space hinzugefügt." },
+        "item.updated": {
+          title: "Eintrag geändert",
+          description: "Zuständige, Fälligkeit oder Status eines bestehenden Eintrags wurden geändert.",
+        },
+        "item.due": { title: "Aufgabe fällig", description: "Eine offene Aufgabe hat ihre Fälligkeit erreicht." },
         "item.created": { title: "Eintrag erstellt", description: "Eine Aufgabe oder ein Termin wurde in einem Space erstellt." },
         "item.completed": { title: "Eintrag abgeschlossen", description: "Ein offener Eintrag wurde abgeschlossen." },
       },

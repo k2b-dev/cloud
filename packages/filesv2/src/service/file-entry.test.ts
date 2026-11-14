@@ -33,3 +33,7 @@ test("a stable ref is minted only on a stable-ID base for a node with an ID", ()
   expect(fileEntry({ id: baseId, stableIds: false }, "Docs/a.txt", node(fileId))).not.toHaveProperty("resourceId");
   expect(fileEntry({ id: baseId }, "Docs/a.txt", node(fileId))).not.toHaveProperty("resourceId");
 });
+
+test("filesystem files carry the canonical revision in every FileEntry consumer", () => {
+  expect(fileEntry({ id: baseId }, "a.txt", { ...node(), revision: undefined }).revision).toBe("fs:2026-10-05T12:00:00Z:3");
+});

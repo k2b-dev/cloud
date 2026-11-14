@@ -2,6 +2,7 @@ import type { User } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { err, fail, freeipa, ok, type Result } from "../../server/services";
 import { dates } from "../../shared";
+import { accountLockedSql, isAccountLocked } from "../account-lock";
 import { getConfiguredExpiryDays, parseIpaAccountTransitionPolicy } from "../account-model";
 import { applyIpaAccountTransitionPolicy } from "../accounts/switching";
 import { audit } from "../audit";
@@ -147,6 +148,8 @@ const verifyIpaExtensionFreshness = async (uid: string): Promise<Result<{ accoun
     }
     case "expired":
       return fail(err.badInput("Your FreeIPA account is expired and cannot be extended."));
+    case "locked":
+      return fail(err.forbidden("Your FreeIPA account is locked and cannot be extended."));
     case "out_of_scope":
       return fail(err.forbidden("Your FreeIPA account is no longer in sync scope and cannot be extended."));
     case "not_found_local":
@@ -325,6 +328,8 @@ export const accountLifecycle = {
       WHERE provider = 'ipa'
         AND account_expires IS NOT NULL
         AND account_expires <= now()
+        -- A locked account stays as it is until FreeIPA unlocks it; the sync then applies the transition.
+        AND NOT ${accountLockedSql(sql`auth.users.id`)}
       ORDER BY account_expires ASC
     `;
 
@@ -357,6 +362,11 @@ export const accountLifecycle = {
       const userId = row.id as string;
       const uid = row.uid as string;
       const previousProfile = (row.profile as User["profile"] | null) ?? "guest";
+      // Locked since the scan: leave it to the sync, which applies the transition once FreeIPA unlocks it.
+      if (await isAccountLocked(userId)) {
+        summary.skipped += 1;
+        continue;
+      }
       const ipaDelete = await deleteFromFreeIpa(ipaSession, uid, runtime.signal);
       await checkpoint();
       if (!ipaDelete.ok) {

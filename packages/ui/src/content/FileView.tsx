@@ -43,7 +43,7 @@ import { type DelimitedPreferences, decodeDelimitedContent, readDelimitedPrefere
 import { type FileViewFile, fileViewExtension, getFileViewPreviewKind, parseDelimitedText } from "./file-view-preview";
 import MarkdownView from "./MarkdownView";
 import { leadingMarkdownTitle } from "./markdown-title";
-import PdfPreview from "./PdfPreview";
+import PdfViewer from "./PdfViewer";
 import StructuredDataPreview, { type StructuredDataValue } from "./StructuredDataPreview";
 import VideoPlayer from "./VideoPlayer";
 
@@ -178,13 +178,16 @@ function OverlayAction(props: { icon: string; title: string; onClick?: () => voi
   );
 }
 
-/** Scrollable preview panel with the floating action cluster overlaid top-right. */
-function OverlayPanel(props: { actions?: JSX.Element; children: JSX.Element }) {
+/**
+ * Scrollable preview panel with the floating action cluster overlaid top-right. Over a picture or a video the
+ * cluster is glass; over text, tables, and documents it stays solid, because blurred text reads as a fault.
+ */
+function OverlayPanel(props: { actions?: JSX.Element; overMedia?: boolean; children: JSX.Element }) {
   return (
     <div class="k2b-content-file-view__panel">
       <div class="k2b-content-file-view__preview">{props.children}</div>
       <Show when={props.actions}>
-        <div class="k2b-content-file-view__overlay">{props.actions}</div>
+        <div class={`k2b-content-file-view__overlay${props.overMedia ? " k2b-overlay-surface" : ""}`}>{props.actions}</div>
       </Show>
     </div>
   );
@@ -577,7 +580,7 @@ const mediaSource = (props: FileViewRendererProps): string =>
 
 function ImageRenderer(props: FileViewRendererProps) {
   return (
-    <OverlayPanel actions={<DownloadAction {...props} />}>
+    <OverlayPanel overMedia actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media">
         <img crossOrigin={props.crossOrigin} onError={props.onPreviewError} src={mediaSource(props)} alt={props.file.path} />
       </div>
@@ -594,10 +597,19 @@ const pdfBlob = (content: FileViewContent): Blob => {
 };
 
 /**
- * A host inline URL goes to the browser's native viewer. Without one, the
- * loaded bytes become a local PDF Blob: a download URL is an attachment and
- * would leave a native viewer empty.
+ * Both ways end in `PdfViewer`, which draws with pdf.js. A host inline URL is fetched from there and stays the address
+ * the pill's open action shows. Without one, the loaded bytes become a local PDF
+ * Blob: a download URL is an attachment and would leave a viewer empty.
  */
+const sameOrigin = (href: string): boolean => {
+  if (typeof location === "undefined") return true;
+  try {
+    return new URL(href, location.href).origin === location.origin;
+  } catch {
+    return false;
+  }
+};
+
 function PdfRenderer(props: FileViewRendererProps) {
   const fileViewMessages = useFileViewMessages();
   // A new Blob remounts the preview, so changed bytes show the new file. A revision refetch
@@ -617,21 +629,38 @@ function PdfRenderer(props: FileViewRendererProps) {
           fallback={<Placeholder icon="ti ti-file-type-pdf" title="PDF" description={fileViewMessages().noInlinePreview} />}
         >
           {(pdf) => (
-            // Composed without the standalone heading: the host already names the file, and the frame keeps the
-            // file name as its accessible title.
-            <PdfPreview autoLoad title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)} request={async () => pdf}>
-              {(parts) => (
-                <div class="k2b-content-file-view__pdf-viewer">
-                  {parts.actions}
-                  {parts.content}
-                </div>
-              )}
-            </PdfPreview>
+            // The host already names the file; the viewer keeps the file name as its accessible title.
+            <PdfViewer
+              class="k2b-content-file-view__pdf-viewer"
+              open
+              title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
+              data={pdf}
+            />
           )}
         </Show>
       }
     >
-      {(href) => <object data={href()} type="application/pdf" class="k2b-content-file-view__pdf" aria-label={props.file.path} />}
+      {(href) => (
+        // Keyed by the address: a new revision of the file loads the new document.
+        <Show keyed when={href()}>
+          {(current) => (
+            // A page may fetch only its own origin's PDFs without CORS; another origin's address stays with the
+            // browser's viewer, which embeds it as before. The viewer fetches a same-origin address itself and stops
+            // when the preview closes or a new revision arrives.
+            <Show
+              when={sameOrigin(current)}
+              fallback={<object data={current} type="application/pdf" class="k2b-content-file-view__pdf" aria-label={props.file.path} />}
+            >
+              <PdfViewer
+                class="k2b-content-file-view__pdf-viewer"
+                title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
+                open={current}
+                data={current}
+              />
+            </Show>
+          )}
+        </Show>
+      )}
     </Show>
   );
 }
@@ -660,7 +689,7 @@ function VideoRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
   const name = () => props.file.path.slice(props.file.path.lastIndexOf("/") + 1);
   return (
-    <OverlayPanel actions={<DownloadAction {...props} />}>
+    <OverlayPanel overMedia actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media" data-kind="video">
         <VideoPlayer
           src={mediaSource(props)}

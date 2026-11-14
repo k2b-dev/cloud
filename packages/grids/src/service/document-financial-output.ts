@@ -13,43 +13,45 @@ const column = z.string().min(1).max(200);
 export const FinancialDocumentOutputSchema = z.discriminatedUnion("kind", [
   z
     .object({
-      kind: z.literal("datev-csv"),
-      version: z.literal(1),
-      header: DatevHeaderSchema,
+      kind: z.literal("datev-csv").describe("Output format."),
+      version: z.literal(1).describe("Format contract version; currently 1."),
+      header: DatevHeaderSchema.describe("DATEV batch header and destination."),
       mapping: z
         .object({
-          businessId: column,
-          entryId: column,
-          amount: column,
-          direction: column,
-          account: column,
-          counterAccount: column,
-          documentDate: column,
-          documentNumber: column,
-          text: column.optional(),
-          taxKey: column.optional(),
-          costCenter1: column.optional(),
-          costCenter2: column.optional(),
+          businessId: column.describe("Stable business transaction identity for duplicate-export protection."),
+          entryId: column.describe("Stable entry identity within its business transaction."),
+          amount: column.describe("Exact positive decimal amount."),
+          direction: column.describe("Debit S or credit H."),
+          account: column.describe("Ledger account."),
+          counterAccount: column.describe("Counter-account."),
+          documentDate: column.describe("Document calendar date."),
+          documentNumber: column.describe("Document number."),
+          text: column.optional().describe("Optional captured column alias for text."),
+          taxKey: column.optional().describe("Optional captured column alias for taxKey."),
+          costCenter1: column.optional().describe("Optional captured column alias for costCenter1."),
+          costCenter2: column.optional().describe("Optional captured column alias for costCenter2."),
         })
-        .strict(),
+        .strict()
+        .describe("Map financial fields to captured GQL column aliases."),
     })
     .strict(),
   z
     .object({
-      kind: z.literal("sepa-xml"),
-      version: z.literal(1),
-      header: SepaHeaderSchema,
+      kind: z.literal("sepa-xml").describe("Output format."),
+      version: z.literal(1).describe("Format contract version; currently 1."),
+      header: SepaHeaderSchema.describe("SEPA debtor, execution date and destination."),
       mapping: z
         .object({
-          businessId: column,
-          endToEndId: column,
-          amount: column,
-          creditorName: column,
-          creditorIban: column,
-          creditorBic: column.optional(),
-          remittance: column,
+          businessId: column.describe("Stable business transaction identity for duplicate-export protection."),
+          endToEndId: column.describe("Stable payment identity."),
+          amount: column.describe("Exact positive decimal amount."),
+          creditorName: column.describe("Payee name."),
+          creditorIban: column.describe("Payee IBAN."),
+          creditorBic: column.optional().describe("Optional captured column alias for creditorBic."),
+          remittance: column.describe("Payment remittance text."),
         })
-        .strict(),
+        .strict()
+        .describe("Map financial fields to captured GQL column aliases."),
     })
     .strict(),
 ]);

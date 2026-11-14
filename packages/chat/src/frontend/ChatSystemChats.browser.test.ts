@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { SystemChatPageSchema } from "../service/contracts";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
@@ -169,7 +169,7 @@ for (const [name, options, mobile] of [
         expect(await count.textContent()).toBe("1");
         // The section count is persistent metadata, not an action revealed by hover.
         expect(await count.evaluate((element) => getComputedStyle(element).visibility)).toBe("visible");
-        await section.hover();
+        await hoverInPlace(section);
         await settled(page);
         expect(await section.boundingBox()).toEqual(before);
         expect(

@@ -107,7 +107,7 @@ export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; b
             await tx`
               INSERT INTO geoip.databases (kind, data, sha256, database_type, build_epoch, metadata, uploaded_by)
               VALUES (${kind}, ${bytes}, ${sha256}, ${metadata.databaseType}, ${metadata.buildEpoch}::timestamptz,
-                ${JSON.stringify(metadata)}::jsonb, ${actor.id}::uuid)
+                ${JSON.stringify(metadata)}::text::jsonb, ${actor.id}::uuid)
               ON CONFLICT (kind) DO UPDATE SET data = EXCLUDED.data, sha256 = EXCLUDED.sha256,
                 database_type = EXCLUDED.database_type, build_epoch = EXCLUDED.build_epoch, metadata = EXCLUDED.metadata,
                 uploaded_by = EXCLUDED.uploaded_by, uploaded_at = now()`;

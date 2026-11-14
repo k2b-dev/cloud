@@ -12,6 +12,7 @@ import {
   NumberInput,
   Placeholder,
   prompts,
+  Section,
   Select,
   StatusBadge,
   StructuredDataPreview,
@@ -194,7 +195,7 @@ function ResponsePanel(props: {
   const t = () => capabilityUiMessages.resolve([locale()]).t;
   const outcome = () => props.run.data();
   return (
-    <DetailPanel.Section
+    <Section
       title={t().response}
       description={t().responseDescription}
       meta={
@@ -230,7 +231,7 @@ function ResponsePanel(props: {
           )}
         </Show>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -463,7 +464,7 @@ function CapabilityRunner(props: Props) {
       <DetailPanel.Body
         scrollPreserveKey={`capability-${props.selection.app.id}-${props.selection.kind}-${props.selection.operation.localId}`}
       >
-        <DetailPanel.Section title={t().properties}>
+        <Section title={t().properties}>
           <DescriptionList
             layout="rows"
             size="sm"
@@ -476,10 +477,10 @@ function CapabilityRunner(props: Props) {
               ...policyRows(),
             ]}
           />
-        </DetailPanel.Section>
+        </Section>
 
         <DetailPanel.Group label={t().runGroup}>
-          <DetailPanel.Section title={t().request} description={t().requestDescription}>
+          <Section title={t().request} description={t().requestDescription}>
             <RequestEditor model={model} state={editor} errors={fieldErrors} formError={formError} onStateChange={updateEditor} />
             <Show when={reviewError()}>
               {(error) => (
@@ -494,20 +495,20 @@ function CapabilityRunner(props: Props) {
                 </div>
               )}
             </Show>
-          </DetailPanel.Section>
+          </Section>
           <ResponsePanel run={run} visible={resultVisible} selection={props.selection} />
         </DetailPanel.Group>
 
         <DetailPanel.Group title={props.selection.kind === "query" ? t().moreAboutQuery : t().moreAboutAction}>
-          <DetailPanel.Section
+          <Section
             title={t().requestCurl}
             collapsible
             disabled={!curl()}
             summary={curl() ? `POST ${capabilityPath()}` : t().curlNeedsValidInput}
           >
             <Show when={curl()}>{(value) => <CodeDisplay code={value()} language="script" lineNumbers={false} />}</Show>
-          </DetailPanel.Section>
-          <DetailPanel.Section title={t().schemas} collapsible summary={`${t().inputSchema} · ${t().dataSchema}`}>
+          </Section>
+          <Section title={t().schemas} collapsible summary={`${t().inputSchema} · ${t().dataSchema}`}>
             <div class="grid gap-3">
               <StructuredDataPreview
                 title={t().inputSchema}
@@ -528,7 +529,7 @@ function CapabilityRunner(props: Props) {
                 maxRows={10}
               />
             </div>
-          </DetailPanel.Section>
+          </Section>
         </DetailPanel.Group>
       </DetailPanel.Body>
     </DetailPanel>

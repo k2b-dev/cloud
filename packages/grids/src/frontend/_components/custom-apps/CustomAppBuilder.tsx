@@ -20,6 +20,7 @@ import {
   panelDialogOptions,
   panelDialogWorkspaceOptions,
   prompts,
+  Section,
   Select,
   StatusBadge,
   Switch,
@@ -2447,7 +2448,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                 </div>
               </DetailPanel.Summary>
               <DetailPanel.Group label={text("Page behavior")}>
-                <DetailPanel.Section
+                <Section
                   title={text("Route parameters")}
                   description={
                     selectedPage().id === draft.draft().startPageId
@@ -2533,7 +2534,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       </InlineGuidance>
                     </Show>
                   </div>
-                </DetailPanel.Section>
+                </Section>
                 <CustomAppAvailabilitySection
                   baseId={draft.draft().baseId}
                   contextKeys={contextKeys()}
@@ -2544,7 +2545,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                 />
               </DetailPanel.Group>
               <DetailPanel.Group label={text("Page management")}>
-                <DetailPanel.Section
+                <Section
                   title={text("Page order")}
                   collapsible
                   defaultOpen={false}
@@ -2568,8 +2569,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       <i class="ti ti-arrow-down" aria-hidden="true" /> {text("Move down")}
                     </Button>
                   </div>
-                </DetailPanel.Section>
-                <DetailPanel.Section title={text("Danger zone")} summary={text("Remove page")} collapsible defaultOpen={false}>
+                </Section>
+                <Section title={text("Danger zone")} summary={text("Remove page")} collapsible defaultOpen={false}>
                   <p class="grids-details-none">
                     {draft.draft().pages.length === 1
                       ? text("Every app needs at least one page.")
@@ -2578,7 +2579,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   <Button size="sm" variant="danger" disabled={draft.draft().pages.length === 1} onClick={() => void removePage()}>
                     <i class="ti ti-trash" aria-hidden="true" /> {text("Remove page")}
                   </Button>
-                </DetailPanel.Section>
+                </Section>
               </DetailPanel.Group>
             </Show>
 
@@ -2620,7 +2621,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     </div>
                   </DetailPanel.Summary>
                   <DetailPanel.Group label={text("Block behavior")}>
-                    <DetailPanel.Section
+                    <Section
                       title={text("Progressive disclosure")}
                       collapsible
                       defaultOpen={false}
@@ -2652,7 +2653,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           }
                         />
                       </Show>
-                    </DetailPanel.Section>
+                    </Section>
                     <CustomAppAvailabilitySection
                       baseId={draft.draft().baseId}
                       contextKeys={contextKeys()}
@@ -2672,7 +2673,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         selected().block.type === "record"
                       }
                     >
-                      <DetailPanel.Section
+                      <Section
                         title={text("Empty state")}
                         collapsible
                         defaultOpen={false}
@@ -2703,10 +2704,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           }
                           clearable
                         />
-                      </DetailPanel.Section>
+                      </Section>
                     </Show>
                     <Show when={selected().block.type === "actions"}>
-                      <DetailPanel.Section
+                      <Section
                         title={text("Actions")}
                         description={text("Open another page or run an available App workflow.")}
                         collapsible
@@ -2782,12 +2783,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             <InlineGuidance>{text("This Actions block already has the maximum of 12 actions.")}</InlineGuidance>
                           </Show>
                         </div>
-                      </DetailPanel.Section>
+                      </Section>
                     </Show>
                   </DetailPanel.Group>
                   <Show when={selected().block.type === "referenced_records"}>
                     <DetailPanel.Group label={text("Referenced records settings")}>
-                      <DetailPanel.Section
+                      <Section
                         title={text("Relation source")}
                         description={text("Pin the source table, its Relation to this page record, and the displayed fields.")}
                         collapsible
@@ -2887,8 +2888,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }
                           />
                         </div>
-                      </DetailPanel.Section>
-                      <DetailPanel.Section
+                      </Section>
+                      <Section
                         title={text("Row actions")}
                         description={text("Signed-in app readers can run workflows for selected rows.")}
                         collapsible
@@ -2915,14 +2916,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             <i class="ti ti-player-play" aria-hidden="true" /> {text("Add row action")}
                           </Button>
                         </div>
-                      </DetailPanel.Section>
+                      </Section>
                     </DetailPanel.Group>
                   </Show>
                   <Show
                     when={selected().block.type === "records" || selected().block.type === "metrics" || selected().block.type === "chart"}
                   >
                     <DetailPanel.Group label={text("Data settings")}>
-                      <DetailPanel.Section
+                      <Section
                         title={text("Data source")}
                         description={text("Choose the published data this block can read.")}
                         collapsible
@@ -3045,9 +3046,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             />
                           </Show>
                         </div>
-                      </DetailPanel.Section>
+                      </Section>
                       <Show when={selected().block.type === "metrics"}>
-                        <DetailPanel.Section title={text("Value format")} collapsible defaultOpen>
+                        <Section title={text("Value format")} collapsible defaultOpen>
                           <CustomAppValueFormatEditor
                             value={(() => {
                               const block = selectedSourceBlock();
@@ -3057,10 +3058,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               updateSelectedBlock((block) => (block.type === "metrics" ? { ...block, valueFormat } : block))
                             }
                           />
-                        </DetailPanel.Section>
+                        </Section>
                       </Show>
                       <Show when={selected().block.type === "records"}>
-                        <DetailPanel.Section
+                        <Section
                           title={text("Records table")}
                           description={
                             selectedRecordsBlock()?.source.kind === "view"
@@ -3320,8 +3321,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               </Show>
                             </Show>
                           </div>
-                        </DetailPanel.Section>
-                        <DetailPanel.Section
+                        </Section>
+                        <Section
                           title={text("Row actions")}
                           description={text("Signed-in app readers can run workflows for selected table rows or cards.")}
                           collapsible
@@ -3372,13 +3373,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               <InlineGuidance>{text("This Records block already has the maximum of 6 row actions.")}</InlineGuidance>
                             </Show>
                           </div>
-                        </DetailPanel.Section>
+                        </Section>
                       </Show>
                     </DetailPanel.Group>
                   </Show>
                   <Show when={selected().block.type === "form"}>
                     <DetailPanel.Group label={text("Form settings")}>
-                      <DetailPanel.Section title={text("Form")} description={text("Choose the active Form rendered by this block.")}>
+                      <Section title={text("Form")} description={text("Choose the active Form rendered by this block.")}>
                         <Select
                           label={text("Form")}
                           description={text("Only active forms you can use in this base are listed.")}
@@ -3486,7 +3487,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             updateSelectedBlock((block) => (block.type === "form" ? { ...block, mode } : block));
                           }}
                         />
-                      </DetailPanel.Section>
+                      </Section>
                       <Show when={selectedForm()}>
                         <Select
                           label={text("Actions using the saved form")}
@@ -3510,11 +3511,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           }
                         />
                         <Show when={selectedFormBlock()?.actionsBlockId}>
-                          <DetailPanel.Section
-                            title={text("Workspace context")}
-                            collapsible
-                            defaultOpen={Boolean(selectedFormBlock()?.workspace)}
-                          >
+                          <Section title={text("Workspace context")} collapsible defaultOpen={Boolean(selectedFormBlock()?.workspace)}>
                             <For
                               each={
                                 [
@@ -3542,10 +3539,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 />
                               )}
                             </For>
-                          </DetailPanel.Section>
+                          </Section>
                         </Show>
                         <Show when={selectedFormBindingOptions().length > 0}>
-                          <DetailPanel.Section
+                          <Section
                             title={text("Values supplied by this page")}
                             description={text("Hide Form inputs and provide trusted values from this page.")}
                             collapsible
@@ -3630,9 +3627,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 }}
                               </For>
                             </div>
-                          </DetailPanel.Section>
+                          </Section>
                         </Show>
-                        <DetailPanel.Section
+                        <Section
                           title={text("After submission")}
                           description={text("Optionally navigate after the Form creates its record.")}
                           collapsible
@@ -3713,13 +3710,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               }}
                             </Show>
                           </div>
-                        </DetailPanel.Section>
+                        </Section>
                       </Show>
                     </DetailPanel.Group>
                   </Show>
                   <Show when={selected().block.type === "scanner"}>
                     <DetailPanel.Group label={text("Scanner settings")}>
-                      <DetailPanel.Section
+                      <Section
                         title={text("Scanner workflow")}
                         description={text("Each scan resolves a code and starts this workflow. Readers must be signed in.")}
                       >
@@ -3751,12 +3748,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             </InlineGuidance>
                           </Show>
                         </div>
-                      </DetailPanel.Section>
+                      </Section>
                     </DetailPanel.Group>
                   </Show>
                   <Show when={selected().block.type === "record"}>
                     <DetailPanel.Group label={text("Record settings")}>
-                      <DetailPanel.Section
+                      <Section
                         title={text("Fields")}
                         description={text("Choose visible fields and which of them readers may edit.")}
                         collapsible
@@ -3871,7 +3868,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }
                           />
                         </div>
-                      </DetailPanel.Section>
+                      </Section>
                       <Show when={selectedRecordBlock()?.heading}>
                         <TextInput
                           label={text("Draft heading")}
@@ -3886,7 +3883,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           }
                         />
                       </Show>
-                      <DetailPanel.Section
+                      <Section
                         title={text("Documents")}
                         description={text("Let readers view and download existing documents for the page record.")}
                         collapsible
@@ -3959,7 +3956,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             />
                           </Show>
                         </Show>
-                      </DetailPanel.Section>
+                      </Section>
                     </DetailPanel.Group>
                   </Show>
                   <Show when={selectedChartBlock()}>
@@ -3971,7 +3968,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     )}
                   </Show>
                   <DetailPanel.Group label={text("Block management")}>
-                    <DetailPanel.Section title={text("Danger zone")} summary={text("Remove block")} collapsible defaultOpen={false}>
+                    <Section title={text("Danger zone")} summary={text("Remove block")} collapsible defaultOpen={false}>
                       <p class="grids-details-none">
                         {blockCount() === 1
                           ? text("Every page needs at least one block.")
@@ -3980,7 +3977,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       <Button size="sm" variant="danger" disabled={blockCount() === 1} onClick={() => void removeSelectedBlock()}>
                         <i class="ti ti-trash" aria-hidden="true" /> {text("Remove block")}
                       </Button>
-                    </DetailPanel.Section>
+                    </Section>
                   </DetailPanel.Group>
                 </>
               )}
@@ -4009,7 +4006,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       }}
                     />
                     <DetailPanel.Group label={text("Action settings")}>
-                      <DetailPanel.Section title={text("Action")}>
+                      <Section title={text("Action")}>
                         <div class="flex flex-col gap-3">
                           <TextInput
                             label={text("Label")}
@@ -4117,10 +4114,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             </Show>
                           </Show>
                         </div>
-                      </DetailPanel.Section>
+                      </Section>
                       <Show when={selectedNavigateAction()}>
                         {(action) => (
-                          <DetailPanel.Section title={text("Navigation")}>
+                          <Section title={text("Navigation")}>
                             <div class="flex flex-col gap-3">
                               <Select
                                 label={text("Target page")}
@@ -4219,12 +4216,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 );
                               })()}
                             </div>
-                          </DetailPanel.Section>
+                          </Section>
                         )}
                       </Show>
                       <Show when={selectedWorkflowAction()}>
                         {(workflowAction) => (
-                          <DetailPanel.Section
+                          <Section
                             title={text("Workflow")}
                             description={text("Workflow actions are available only to signed-in app readers.")}
                           >
@@ -4535,7 +4532,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 />
                               </Show>
                             </div>
-                          </DetailPanel.Section>
+                          </Section>
                         )}
                       </Show>
                       <CustomAppAvailabilitySection
@@ -4551,7 +4548,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         }
                         error={() => diagnosticFor(selected().action.id, "availableWhen")}
                       />
-                      <DetailPanel.Section
+                      <Section
                         title={text("Order")}
                         collapsible
                         defaultOpen={false}
@@ -4570,8 +4567,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             <i class="ti ti-arrow-down" aria-hidden="true" /> {text("Move down")}
                           </Button>
                         </div>
-                      </DetailPanel.Section>
-                      <DetailPanel.Section title={text("Danger zone")} summary={text("Remove action")} collapsible defaultOpen={false}>
+                      </Section>
+                      <Section title={text("Danger zone")} summary={text("Remove action")} collapsible defaultOpen={false}>
                         <p class="grids-details-none">
                           {selected().owner === "actions" && selectedActionCount() <= 1
                             ? text("Every Actions block needs at least one action.")
@@ -4585,7 +4582,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         >
                           <i class="ti ti-trash" aria-hidden="true" /> {text("Remove action")}
                         </Button>
-                      </DetailPanel.Section>
+                      </Section>
                     </DetailPanel.Group>
                   </>
                 );

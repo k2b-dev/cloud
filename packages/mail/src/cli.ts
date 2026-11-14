@@ -26,6 +26,7 @@ import { principalLabel } from "@k2b/cloud/shared";
 import { text } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
+import type { MailAutomationExportPage } from "./automation-export-contracts";
 import { ConversationSummaryWriteDataSchema } from "./capability-contracts";
 import { composeFormattingMessages, describeComposeFormattingWarning, describeIgnoredMailboxCss } from "./compose-formatting-messages";
 import {
@@ -67,7 +68,9 @@ import {
   type DraftLease,
   type DraftRecoveryCopy,
   type DraftSendReview,
+  type draftContentInputSchema,
   draftEditableContentInputSchema,
+  draftQuoteSourceSchema,
   type FolderDisplay,
   folderDisplaySchema,
   type IncomingAutomationBackfill,
@@ -106,6 +109,7 @@ import {
   type SavedConversationViewFilter,
   type ScheduledSendPage,
   SENDER_VERIFICATION_WAIT_MS,
+  type SenderConversationsPage,
   type SenderIdentity,
   type SenderIdentityStatusReason,
   savedConversationViewFilterSchema,
@@ -784,6 +788,9 @@ const draftSignatureChoice = (flags: { signature?: string; noSignature?: boolean
 };
 
 const draftEditableContentFlags = {
+  quote: flag.boolean({ description: "Append the source message after the signature" }),
+  noQuote: flag.boolean({ name: "no-quote", description: "Do not append the source message" }),
+  quoteTimeZone: flag.string({ name: "quote-time-zone", description: "IANA time zone for --quote; defaults to the local time zone" }),
   signature: flag.string({ description: "Signature template id; omitted keeps the default or current signature" }),
   noSignature: flag.boolean({ name: "no-signature", description: "Use no signature" }),
   identity: flag.string({ required: true, description: "Sender identity id" }),
@@ -856,7 +863,7 @@ const draftContentFlags = {
     description: "Conversation id for reply or forward drafts",
   }),
   intent: flag.enum(["new", "reply", "reply_all", "forward"] as const, {
-    description: "Immutable draft intent",
+    description: "Draft mode",
   }),
   sourceMessage: flag.string({
     name: "source-message",
@@ -864,25 +871,33 @@ const draftContentFlags = {
   }),
   includeSourceAttachments: flag.boolean({
     name: "include-source-attachments",
-    description: "Copy source-message attachments into a forward draft",
+    description: "Copy source-message attachments into a reply or forward draft",
   }),
 };
 
-const readDraftEditableContent = async (flags: {
-  identity?: string;
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject?: string;
-  body: Parameters<typeof readCliInput>[0];
-  format?: "plain" | "markdown";
-  priority?: MailPriority;
-  deliveryReceipt?: "on" | "off";
-  readReceipt?: "on" | "off";
-  signature?: string;
-  noSignature?: boolean;
-}) => {
+const readDraftEditableContent = async (
+  flags: {
+    identity?: string;
+    to: string[];
+    cc: string[];
+    bcc: string[];
+    subject?: string;
+    body: Parameters<typeof readCliInput>[0];
+    format?: "plain" | "markdown";
+    priority?: MailPriority;
+    deliveryReceipt?: "on" | "off";
+    readReceipt?: "on" | "off";
+    signature?: string;
+    noSignature?: boolean;
+    quote?: boolean;
+    noQuote?: boolean;
+    quoteTimeZone?: string;
+  },
+  locale?: string,
+) => {
   if (!flags.identity) throw new Error("Missing sender identity.");
+  if (flags.quote && flags.noQuote) throw new Error("Use either --quote or --no-quote.");
+  if (flags.quoteTimeZone && !flags.quote) throw new Error("Use --quote-time-zone with --quote.");
   const senderIdentityId = requireMailResourceId(flags.identity, "Sender identity id");
   const body = await readCliInput(flags.body, {
     label: "message body",
@@ -891,6 +906,16 @@ const readDraftEditableContent = async (flags: {
   return {
     senderIdentityId,
     ...draftSignatureChoice(flags),
+    ...(flags.quote || flags.noQuote
+      ? {
+          quoteSource: flags.quote
+            ? draftQuoteSourceSchema.parse({
+                locale: locale ?? "en",
+                timeZone: flags.quoteTimeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+              })
+            : null,
+        }
+      : {}),
     to: parseAddresses(flags.to),
     cc: parseAddresses(flags.cc),
     bcc: parseAddresses(flags.bcc),
@@ -910,8 +935,9 @@ const readDraftContent = async (
     sourceMessage?: string;
     includeSourceAttachments: boolean;
   },
+  locale?: string,
 ) => ({
-  ...(await readDraftEditableContent(flags)),
+  ...(await readDraftEditableContent(flags, locale)),
   conversationId: flags.conversation ? requireMailResourceId(flags.conversation, "Conversation id") : undefined,
   intent: flags.intent,
   sourceMessageId: flags.sourceMessage ? requireMailResourceId(flags.sourceMessage, "Source message id") : undefined,
@@ -933,8 +959,53 @@ const readComposeDraftInput = async (input: Parameters<typeof readCliInput>[0]) 
   return draftEditableContentInputSchema.parse(value);
 };
 
+const createDraftFromContent = async (
+  ctx: CloudCliContext,
+  mailboxId: string,
+  content: z.input<typeof draftContentInputSchema>,
+): Promise<MailDraft> => {
+  const response = await ctx.fetch(apiPath(`/mailboxes/${mailboxId}/drafts`), jsonRequest("POST", content));
+  if (response.status === 409) {
+    const failure = z.object({ code: z.literal("DRAFT_REPLY_BOX_OCCUPIED"), draftId: z.string(), message: z.string() }).safeParse(
+      await response
+        .clone()
+        .json()
+        .catch(() => null),
+    );
+    if (failure.success) {
+      const hint = `cld mail draft intent ${failure.data.draftId} --intent ${content.intent ?? "reply"} --revision <current-revision>`;
+      throw new Error(
+        `${response.status} ${failure.data.message} ${localizeCloudCliText(ctx.options.locale, {
+          en: `Switch its mode with ${hint}.`,
+          de: `Modus wechseln: ${hint}.`,
+        })}`,
+      );
+    }
+  }
+  return ctx.readJson<MailDraft>(response);
+};
+
 const createDraft = async (ctx: CloudCliContext, mailboxId: string, flags: Parameters<typeof readDraftContent>[0]): Promise<MailDraft> =>
-  readApi(ctx, `/mailboxes/${mailboxId}/drafts`, jsonRequest("POST", await readDraftContent(flags)));
+  createDraftFromContent(ctx, mailboxId, await readDraftContent(flags, ctx.options.locale));
+
+const printExistingReplyDraft = (ctx: CloudCliContext, draft: MailDraft): boolean => {
+  if (draft.creationOutcome !== "existing" && draft.creationOutcome !== "suggestion_skipped") return false;
+  ctx.print(
+    localizeCloudCliText(
+      ctx.options.locale,
+      draft.creationOutcome === "suggestion_skipped"
+        ? {
+            en: `Suggestion skipped: reply draft ${draft.id} already exists.`,
+            de: `Vorschlag übersprungen: Antwortentwurf ${draft.id} ist bereits vorhanden.`,
+          }
+        : {
+            en: `Opened existing reply draft ${draft.id} (${draft.intent}, revision ${draft.revision}).`,
+            de: `Vorhandenen Antwortentwurf ${draft.id} geöffnet (${draft.intent}, Revision ${draft.revision}).`,
+          },
+    ),
+  );
+  return true;
+};
 
 /** Tells what formatting email leaves out of a message. JSON output carries the same list as `formattingWarnings`. */
 const printFormattingWarnings = (ctx: CloudCliContext, warnings: ComposeFormattingWarning[] | undefined) => {
@@ -1597,7 +1668,6 @@ const runConversationActions = async (params: {
   return failed.length > 0 ? 1 : undefined;
 };
 
-const replySubject = (subject: string): string => (/^re:/i.test(subject) ? subject : `Re: ${subject}`);
 const forwardSubject = (subject: string): string => (/^fwd?:/i.test(subject) ? subject : `Fwd: ${subject}`);
 
 /** The message to reply to or forward: `--message`, or the conversation's latest message. */
@@ -2748,8 +2818,8 @@ const everydayCommands = (t: Translate) => {
     command("reply", {
       summary: t({ en: "Create a reply draft in a conversation", de: "Einen Antwortentwurf in einer Unterhaltung anlegen" }),
       description: t({
-        en: "Replies to the latest message unless --message names another one. Recipients and subject come from that message. Send the draft with `cld mail send <draft>`.",
-        de: "Antwortet auf die neueste Nachricht, außer --message nennt eine andere. Empfänger und Betreff kommen aus dieser Nachricht. Senden mit `cld mail send <entwurf>`.",
+        en: "Without content, opens the existing conversation draft. Supplied content conflicts if a draft exists. Otherwise replies to the latest message unless --message names another one. Recipients and subject come from that message. Send the draft with `cld mail send <draft>`.",
+        de: "Öffnet ohne Inhalt den vorhandenen Unterhaltungsentwurf. Übergebener Inhalt führt bei vorhandenem Entwurf zum Konflikt. Antwortet sonst auf die neueste Nachricht, außer --message nennt eine andere. Empfänger und Betreff kommen aus dieser Nachricht. Senden mit `cld mail send <entwurf>`.",
       }),
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
@@ -2768,7 +2838,11 @@ const everydayCommands = (t: Translate) => {
         identity: flag.string({
           description: t({ en: "Sender identity ID; default the mailbox default", de: "Absenderidentität; Standard die des Postfachs" }),
         }),
-        body: bodyFlag,
+        body: flag.input({
+          fileName: "body-file",
+          stdinName: "body-stdin",
+          description: t({ en: "Plaintext or Markdown body", de: "Text oder Markdown" }),
+        }),
         format: flag.enum(["plain", "markdown"] as const),
       },
       examples: ['cld mail reply Convo1 --body "Thanks, done."', "cld mail reply Convo1 --all --body-file answer.md --json"],
@@ -2778,26 +2852,23 @@ const everydayCommands = (t: Translate) => {
         const [source, senderIdentityId, body] = await Promise.all([
           resolveSourceMessage(ctx, mailbox.id, conversationId, flags.message, t),
           resolveSenderIdentityId(ctx, mailbox.id, flags.identity, t),
-          readCliInput(flags.body, { label: "message body", required: true }),
+          readCliInput(flags.body, { label: "message body" }),
         ]);
-        const draft = await readApi<MailDraft>(
-          ctx,
-          `/mailboxes/${mailbox.id}/drafts`,
-          jsonRequest("POST", {
-            senderIdentityId,
-            ...draftSignatureChoice(flags),
-            to: [],
-            cc: [],
-            bcc: [],
-            subject: replySubject(source.subject),
-            body: body ?? "",
-            ...(flags.format ? { format: flags.format } : {}),
-            conversationId,
-            intent: flags.all ? "reply_all" : "reply",
-            sourceMessageId: source.id,
-          }),
-        );
+        const draft = await createDraftFromContent(ctx, mailbox.id, {
+          senderIdentityId,
+          ...draftSignatureChoice(flags),
+          to: [],
+          cc: [],
+          bcc: [],
+          subject: "",
+          body: body ?? "",
+          ...(flags.format ? { format: flags.format } : {}),
+          conversationId,
+          intent: flags.all ? "reply_all" : "reply",
+          sourceMessageId: source.id,
+        });
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
+        if (printExistingReplyDraft(ctx, draft)) return;
         printFormattingWarnings(ctx, draft.formattingWarnings);
         ctx.print(
           t({
@@ -2810,8 +2881,8 @@ const everydayCommands = (t: Translate) => {
     command("forward", {
       summary: t({ en: "Create a forward draft from a conversation", de: "Einen Weiterleitungsentwurf aus einer Unterhaltung anlegen" }),
       description: t({
-        en: "Forwards the latest message unless --message names another one, with its text and attachments. Send the draft with `cld mail send <draft>`.",
-        de: "Leitet die neueste Nachricht weiter, außer --message nennt eine andere, mit Text und Anhängen. Senden mit `cld mail send <entwurf>`.",
+        en: "Supplied content conflicts if a conversation draft exists. Otherwise forwards the latest message unless --message names another one, with its text and attachments. Send the draft with `cld mail send <draft>`.",
+        de: "Übergebener Inhalt führt bei vorhandenem Unterhaltungsentwurf zum Konflikt. Leitet sonst die neueste Nachricht weiter, außer --message nennt eine andere, mit Text und Anhängen. Senden mit `cld mail send <entwurf>`.",
       }),
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
@@ -2849,24 +2920,21 @@ const everydayCommands = (t: Translate) => {
           resolveSenderIdentityId(ctx, mailbox.id, flags.identity, t),
           readCliInput(flags.body, { label: "message body" }),
         ]);
-        const draft = await readApi<MailDraft>(
-          ctx,
-          `/mailboxes/${mailbox.id}/drafts`,
-          jsonRequest("POST", {
-            senderIdentityId,
-            ...draftSignatureChoice(flags),
-            to: parseAddresses(flags.to),
-            cc: parseAddresses(flags.cc),
-            bcc: [],
-            subject: forwardSubject(source.subject),
-            body: `${body ?? ""}${forwardMessageBody(source, { locale: ctx.options.locale ?? "en", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })}`,
-            conversationId,
-            intent: "forward",
-            sourceMessageId: source.id,
-            ...(flags.noAttachments || source.attachments.length === 0 ? {} : { includeSourceAttachments: true }),
-          }),
-        );
+        const draft = await createDraftFromContent(ctx, mailbox.id, {
+          senderIdentityId,
+          ...draftSignatureChoice(flags),
+          to: parseAddresses(flags.to),
+          cc: parseAddresses(flags.cc),
+          bcc: [],
+          subject: forwardSubject(source.subject),
+          body: `${body ?? ""}${forwardMessageBody(source, { locale: ctx.options.locale ?? "en", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })}`,
+          conversationId,
+          intent: "forward",
+          sourceMessageId: source.id,
+          includeSourceAttachments: !flags.noAttachments,
+        });
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
+        if (printExistingReplyDraft(ctx, draft)) return;
         printFormattingWarnings(ctx, draft.formattingWarnings);
         ctx.print(
           t({
@@ -3652,6 +3720,9 @@ const specialistCommands = {
         sync: flag.enum(["enabled", "disabled"] as const, {
           description: "Enable or pause provider synchronization",
         }),
+        drafts: flag.enum(["lock", "shared"] as const, {
+          description: "How new drafts are edited: shared (default, together) or lock (one person at a time); existing drafts keep theirs",
+        }),
       },
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
@@ -3665,9 +3736,10 @@ const specialistCommands = {
               }
             : {}),
           ...(flags.sync !== undefined ? { syncEnabled: flags.sync === "enabled" } : {}),
+          ...(flags.drafts !== undefined ? { draftEditMode: flags.drafts } : {}),
         };
         if (Object.keys(update).length === 0) {
-          throw new Error("Pass --name, --description, --search-backend, --automatic-replies, or --sync.");
+          throw new Error("Pass --name, --description, --search-backend, --automatic-replies, --sync, or --drafts.");
         }
         const updated = await readApi<Mailbox>(ctx, `/mailboxes/${mailbox.id}`, jsonRequest("PATCH", update));
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", updated))) return;
@@ -4003,6 +4075,7 @@ const specialistCommands = {
       flags: {
         ...mailboxFlag,
         draft: composeDraftInputFlag,
+        sourceMessage: flag.string({ name: "source-message", description: "Source message for the saved quote context" }),
         conversation: flag.string({
           description: "Optional conversation id for compose context",
         }),
@@ -4014,6 +4087,7 @@ const specialistCommands = {
           `/mailboxes/${mailbox.id}/compose-preview`,
           jsonRequest("POST", {
             draft: await readComposeDraftInput(flags.draft),
+            sourceMessageId: flags.sourceMessage ? requireMailResourceId(flags.sourceMessage, "Source message id") : null,
             conversationId: flags.conversation ? requireMailResourceId(flags.conversation, "Conversation id") : null,
           }),
         );
@@ -4854,7 +4928,7 @@ const specialistCommands = {
     command("sync runs", {
       summary: "List recent sync runs with their folder and error code",
       description:
-        "Lists the sync runs Mail keeps for 30 days, newest first. Each attempt to sync a folder batch is one run, also one that a retry completed afterwards.",
+        "Lists retained sync runs, newest first: changed batches and error recoveries for 3 days, failures and other terminal runs for 30 days. Empty successful checks leave no history unless they resolve an error.",
       examples: ["cld mail sync runs --state failed", "cld --json mail sync runs --state failed --limit 100"],
       flags: {
         ...mailboxFlag,
@@ -5941,6 +6015,29 @@ const specialistCommands = {
           `Contacts: ${value.contacts.status === "ready" ? value.contacts.items.length : value.contacts.status === "absent" ? "no contact directory installed" : "unavailable"}`,
         );
         if (value.contacts.status === "ready" && value.contacts.nextCursor) ctx.print(`Next Contacts cursor: ${value.contacts.nextCursor}`);
+      },
+    }),
+    command("conversation by-sender", {
+      summary: "List the newest conversations from an exact sender address",
+      args: { email: arg.required({ description: "Sender From address" }) },
+      flags: {
+        ...mailboxFlag,
+        exclude: flag.string({ description: "Conversation id to leave out" }),
+        limit: flag.int({ min: 1, max: 5, default: 5 }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const query = new URLSearchParams({ email: args.email, limit: String(flags.limit ?? 5) });
+        if (flags.exclude) query.set("excludeConversationId", requireMailResourceId(flags.exclude, "Conversation id"));
+        const page = await readApi<SenderConversationsPage>(ctx, `/mailboxes/${mailbox.id}/sender-conversations?${query}`);
+        const items = page.items.map((resource) => withCloudResourcePermalink(ctx, "mail.conversation", resource));
+        if (printStructured(ctx, { ...page, items })) return;
+        ctx.print(`${page.total} conversations`);
+        printTable(ctx, items, items, [
+          { key: "latestMessageAt", label: "DATE" },
+          { key: "subject", label: "SUBJECT" },
+          { key: "id", label: "CONVERSATION ID" },
+        ]);
       },
     }),
     command("conversation related", {
@@ -7061,6 +7158,7 @@ const specialistCommands = {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
         const draft = await createDraft(ctx, mailbox.id, flags);
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
+        if (printExistingReplyDraft(ctx, draft)) return;
         ctx.print(`Created draft ${draft.id} (revision ${draft.revision}). ${cloudResourceUrl(ctx, { type: "mail.draft", id: draft.id })}`);
         printFormattingWarnings(ctx, draft.formattingWarnings);
       },
@@ -7085,7 +7183,7 @@ const specialistCommands = {
           `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}`,
           jsonRequest("PUT", {
             expectedRevision: flags.revision,
-            draft: await readDraftEditableContent(flags),
+            draft: await readDraftEditableContent(flags, ctx.options.locale),
           }),
         );
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
@@ -7643,6 +7741,37 @@ const specialistCommands = {
         const configuration = setup.automaticReply;
         if (printStructured(ctx, configuration)) return;
         ctx.print(`Updated automatic reply ${configuration.name} to revision ${configuration.revision}.`);
+      },
+    }),
+    command("automation export", {
+      summary: "Export every saved automation version as versioned JSON (grants no access)",
+      flags: { ...mailboxFlag, all: flag.boolean({ description: "Export all mailboxes; requires Cloud administration" }) },
+      async run({ ctx, flags }) {
+        if (flags.all && flags.mailbox) throw new Error("Use either --mailbox or --all.");
+        const endpoint = flags.all
+          ? "/admin/automation-export"
+          : `/mailboxes/${(await resolveMailbox(ctx, flags.mailbox)).id}/automation-export`;
+        let after: string | null = null;
+        let first = true;
+        let started = false;
+        do {
+          const page: MailAutomationExportPage = await readApi(ctx, `${endpoint}${after ? `?after=${after}` : ""}`);
+          if (ctx.options.output === "jsonl") ctx.jsonLine(page);
+          else {
+            if (!started) {
+              const { items: _items, nextCursor: _cursor, ...metadata } = page;
+              await ctx.write(`${JSON.stringify(metadata).slice(0, -1)},"items":[`);
+              started = true;
+            }
+            for (const item of page.items) {
+              await ctx.write(`${first ? "" : ","}${JSON.stringify(item)}`);
+              first = false;
+            }
+          }
+          if (page.nextCursor !== null && page.nextCursor === after) throw new Error("Export cursor did not advance. Retry the export.");
+          after = page.nextCursor;
+        } while (after !== null);
+        if (ctx.options.output !== "jsonl") await ctx.write('],"nextCursor":null}\n');
       },
     }),
     command("automation catalog", {
@@ -8375,6 +8504,60 @@ const specialistCommands = {
   ],
 };
 
+const replyDraftCommands = (t: Translate) => [
+  command("draft intent", {
+    summary: t({ en: "Switch reply mode while keeping body text", de: "Antwortart wechseln und den Text behalten" }),
+    args: { draftId: arg.required({ description: t({ en: "Draft id", de: "Entwurfs-ID" }) }) },
+    flags: {
+      ...mailboxFlag,
+      intent: flag.enum(["reply", "reply_all", "forward"] as const, {
+        required: true,
+        description: t({ en: "Reply mode", de: "Antwortart" }),
+      }),
+      revision: flag.int({
+        required: true,
+        min: 1,
+        description: t({ en: "Expected current revision", de: "Erwartete aktuelle Revision" }),
+      }),
+    },
+    run: async ({ ctx, args, flags }) => {
+      const mailbox = await resolveMailbox(ctx, flags.mailbox);
+      const draft = await readApi<MailDraft>(
+        ctx,
+        `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}/intent`,
+        jsonRequest("POST", { expectedRevision: flags.revision, intent: flags.intent }),
+      );
+      if (printStructured(ctx, draft)) return;
+      ctx.print(
+        localizeCloudCliText(ctx.options.locale, {
+          en: `Draft ${draft.id}: ${draft.intent}, revision ${draft.revision}.`,
+          de: `Entwurf ${draft.id}: ${draft.intent}, Revision ${draft.revision}.`,
+        }),
+      );
+    },
+  }),
+  command("draft acknowledge-consolidation", {
+    summary: t({ en: "Clear the one-time draft consolidation notice", de: "Einmaligen Hinweis zur Entwurfszusammenführung bestätigen" }),
+    args: { draftId: arg.required({ description: t({ en: "Draft id", de: "Entwurfs-ID" }) }) },
+    flags: mailboxFlag,
+    run: async ({ ctx, args, flags }) => {
+      const mailbox = await resolveMailbox(ctx, flags.mailbox);
+      const draft = await readApi<MailDraft>(
+        ctx,
+        `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}/consolidation/acknowledge`,
+        jsonRequest("POST", {}),
+      );
+      if (printStructured(ctx, draft)) return;
+      ctx.print(
+        localizeCloudCliText(ctx.options.locale, {
+          en: "Draft consolidation notice acknowledged.",
+          de: "Hinweis zu zusammengeführten Entwürfen bestätigt.",
+        }),
+      );
+    },
+  }),
+];
+
 /** Built per request locale: everyday commands and their groups follow it. */
 const mailCommands = (locale?: string) => {
   const t: Translate = (text) => localizeCloudCliText(locale, text);
@@ -8402,7 +8585,13 @@ const mailCommands = (locale?: string) => {
       }),
       conversation: t({ en: "Inspect, merge, and split conversations", de: "Unterhaltungen prüfen, zusammenführen und teilen" }),
     },
-    commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t), ...automationLogCommands(t)],
+    commands: [
+      ...everydayCommands(t),
+      ...specialistCommands.commands,
+      ...replyDraftCommands(t),
+      ...composeLogoCommands(t),
+      ...automationLogCommands(t),
+    ],
   });
 };
 

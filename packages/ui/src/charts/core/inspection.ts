@@ -11,6 +11,7 @@ export type ChartTooltipFormatter = (selection: ChartSelection) => ChartTooltip;
 const object = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const pair = (value: unknown): value is [number, number] =>
   Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number" && Number.isFinite(n));
+const optionalText = (value: unknown) => value === undefined || typeof value === "string";
 const roles: ReadonlySet<string> = new Set(chartDatumRoles);
 export function isChartDatum(value: unknown): value is ChartDatum {
   return (
@@ -24,14 +25,15 @@ export function isChartDatum(value: unknown): value is ChartDatum {
     roles.has(value.role) &&
     pair(value.anchor) &&
     (value.grid === undefined || pair(value.grid)) &&
-    (value.label === undefined || typeof value.label === "string") &&
+    optionalText(value.label) &&
     Array.isArray(value.values) &&
     value.values.every(
       (field) =>
         object(field) &&
         typeof field.key === "string" &&
         (typeof field.value === "string" || (typeof field.value === "number" && Number.isFinite(field.value))) &&
-        (field.formatted === undefined || typeof field.formatted === "string"),
+        optionalText(field.formatted) &&
+        optionalText(field.label),
     )
   );
 }

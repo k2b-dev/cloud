@@ -11,6 +11,8 @@ import {
   audit,
   coreSettings,
   logger,
+  type PreviewVariant,
+  previews,
   serviceAccounts,
 } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
@@ -18,6 +20,7 @@ import { type ExecutionContext, type ExecutionIdentity, FilegateError, type Node
 import { z } from "zod";
 import type { ActivityInput, ActivityPage } from "../activity-contracts";
 import { filegateErrorCode } from "../api/filegate-error";
+import { uploadEventScope } from "../app-events";
 import { readBoundedBody } from "../bounded-body";
 import type {
   AdminResult,
@@ -110,7 +113,9 @@ import {
   transferTicket,
 } from "./machine-access";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
+import { createPdfOperation, FilesPdfError } from "./pdf";
 import { permits, type UnixIdentity } from "./posix";
+import { enqueueFilePreview, filePreviewSource } from "./previews";
 import { rootSummary } from "./root-summary";
 import { highlight, searchPage, trashHits } from "./search";
 import { createSharingService } from "./sharing";
@@ -551,6 +556,7 @@ export function createFilesService(
     snapshot?: Awaited<ReturnType<typeof context>>,
     readOnly = false,
     budget?: ActivityReadBudget,
+    signal?: AbortSignal,
   ) {
     const state = snapshot ?? (await context(actor, budget));
     const item = state.candidates.find((candidate) => `${candidate.area}:${candidate.kind}:${candidate.identity_id}` === baseId);
@@ -561,7 +567,8 @@ export function createFilesService(
       item.storage ? { ...state.self.availability, localLinuxEnabled: true } : state.self.availability,
     );
     if (issue) throw new FilesError(issue, 403);
-    const service = deps.connect(state.config, budget?.signal).root(item.root);
+    signal?.throwIfAborted();
+    const service = deps.connect(state.config, signal ?? budget?.signal).root(item.root);
     const info = await readStep(budget, () => service.info());
     let inspection = await inspect(service, item, info, state.config.url, actor, false, undefined, readOnly, budget);
     if (!readOnly && !item.storage && inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
@@ -608,8 +615,9 @@ export function createFilesService(
     path: string,
     directory?: boolean,
     snapshot?: Awaited<ReturnType<typeof context>>,
+    signal?: AbortSignal,
   ) {
-    return authorizedPath(await authorizedBase(actor, baseId, snapshot), path, directory);
+    return authorizedPath(await authorizedBase(actor, baseId, snapshot, false, undefined, signal), path, directory);
   }
   function executionFor(current: { inspection: Inspection; state: Awaited<ReturnType<typeof context>> }): ExecutionIdentity | null {
     if (current.inspection.candidate.area !== "freeipa") return null;
@@ -630,11 +638,12 @@ export function createFilesService(
     path: string,
     base?: Awaited<ReturnType<typeof authorizedBase>>,
     writeDeniedCode?: "create_forbidden",
+    signal?: AbortSignal,
   ) {
     const relative = userPath(path);
     if (!relative) throw new FilesError("invalid_path");
     const parts = relative.split("/");
-    const selected = base ?? (await authorizedBase(actor, baseId));
+    const selected = base ?? (await authorizedBase(actor, baseId, undefined, false, undefined, signal));
     const parent = parts.slice(0, -1).join("/");
     const current = selected.item.storage
       ? await (async () => {
@@ -663,6 +672,79 @@ export function createFilesService(
       ? { uid: current.state.unix!.uid, gid: current.node.gid, [directory ? "dirMode" : "mode"]: mode }
       : { [directory ? "dirMode" : "mode"]: mode };
   };
+  /**
+   * One page of a name search below an authorized folder. `extras` adds what the Files page shows beside the hits: the
+   * folder's README and the exact total, which costs a second search inside the trash.
+   */
+  async function searchIn(
+    current: Awaited<ReturnType<typeof authorized>>,
+    input: { after?: string; signal?: AbortSignal } & Partial<SearchQuery>,
+    extras: boolean,
+    pageSize?: number,
+  ): Promise<SearchResult> {
+    const q = input.q?.trim() ?? "";
+    const scope = input.scope ?? "tree";
+    const within = input.in ?? "path";
+    const sort = searchSort({ q, sort: input.sort });
+    const options = {
+      match: input.match ?? "fuzzy",
+      in: within,
+      ext: input.ext,
+      minSize: input.minSize,
+      maxSize: input.maxSize,
+      modifiedAfter: input.modifiedAfter,
+      modifiedBefore: input.modifiedBefore,
+      path: current.target,
+      maxEntries: SEARCH_SCAN_LIMIT,
+    };
+    if (!q && !hasSearchFilters(options) && (input.type ?? "all") === "all") throw new FilesError("invalid_input");
+    const basePath = current.inspection.candidate.path;
+    // Files hides the base's trash, unreadable FreeIPA entries and, for one folder, deeper hits: only a plain subtree total stays exact.
+    const countable = extras && scope === "tree" && current.inspection.candidate.area === "cloud";
+    const trashInside = current.target === basePath;
+    const page = await browsePage(
+      { ...input, sort },
+      JSON.stringify([current.inspection.summary.locationKey, current.target, q, scope, options]),
+      async (paging) => {
+        const found = await searchPage(current.root, q, { ...options, ...paging, signal: input.signal });
+        let total = countable ? (found.total ?? null) : null;
+        if (total !== null && trashInside && !paging.after) {
+          const hidden = await trashHits(current.root, q, {
+            ...options,
+            ...paging,
+            path: joinPath(basePath, "trash"),
+            signal: input.signal,
+          });
+          total = hidden === null ? null : Math.max(0, total - hidden);
+        }
+        const items = found.items.map((node, index) => ({ node, ranges: found.matches?.[index] }));
+        return { items, next: found.next, total, truncated: !!found.truncated };
+      },
+      pageSize,
+    );
+    const items: SearchHit[] = [];
+    for (const { node, ranges } of page.items) {
+      if (!node.path.startsWith(`${current.target}/`)) continue;
+      const relative = node.path.slice(basePath.length + 1);
+      if (relative.split("/")[0] === "trash") continue;
+      const below = node.path.slice(current.target.length + 1);
+      if (scope === "folder" && below.includes("/")) continue;
+      const actions = await entryActions(current, node, node.path);
+      if (current.inspection.candidate.area === "freeipa" && !actions.share) continue;
+      items.push({ ...fileEntry(current.inspection.summary, relative, node), actions, highlight: highlight(below, ranges, within) });
+    }
+    return {
+      base: current.inspection.summary,
+      path: current.relative,
+      query: q,
+      scope,
+      items,
+      next: page.next ?? null,
+      total: page.total,
+      truncated: page.truncated,
+      readme: extras ? await folderReadme(current) : null,
+    };
+  }
   async function canWriteDirectory(current: Awaited<ReturnType<typeof authorized>>) {
     if (current.inspection.candidate.storage)
       return ["write", "admin"].includes(
@@ -787,20 +869,22 @@ export function createFilesService(
     call: UserFilesCall,
     current: Awaited<ReturnType<typeof authorized>> & { target: string },
     body: Blob,
-    onConflict: "error" | "overwrite",
+    onConflict: "error" | "overwrite" | "rename",
     templateId?: string,
+    signal: AbortSignal = AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
   ): Promise<Node> {
     if (onConflict === "overwrite") await observeContact(current, current.target, { underRootLock: true });
     if (current.info.managed && onConflict === "overwrite" && !current.node.revision) throw new FilesError("write_conflict", 409);
     if (body.size > current.info.available) throw new FilesError("insufficient_space", 409);
     const writeOptions = {
       onConflict,
-      ownership: onConflict === "error" ? ownershipFor(current, false) : undefined,
-      precondition: current.info.managed
-        ? onConflict === "error"
-          ? { ifNoneMatch: true as const }
-          : { ifMatch: current.node.revision! }
-        : undefined,
+      ownership: onConflict !== "overwrite" ? ownershipFor(current, false) : undefined,
+      precondition:
+        current.info.managed && onConflict !== "rename"
+          ? onConflict === "error"
+            ? { ifNoneMatch: true as const }
+            : { ifMatch: current.node.revision! }
+          : undefined,
     };
     return fileAction(
       call,
@@ -816,30 +900,42 @@ export function createFilesService(
         itemId: onConflict === "overwrite" && current.info.stableIds ? current.node.id : null,
         revisionBefore: onConflict === "overwrite" ? current.node.revision : null,
         size: body.size,
+        onConflict: onConflict === "rename" ? "rename" : "error",
         writeOptions,
         detail: templateId ? { template: templateId } : undefined,
       },
-      () =>
-        current.root.put(
-          current.target,
-          body,
-          { ...writeOptions, metadata: { activity: currentActivityId() } },
-          AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
-        ),
-      async (_tx, node) => {
-        if (node.root !== current.root.name || node.path !== current.target || node.directory || node.size !== body.size)
-          throw new FilesError("unavailable", 503);
-        return { itemAfterId: current.info.stableIds ? node.id : null, revisionAfter: node.revision, size: node.size };
+      () => {
+        signal.throwIfAborted();
+        return current.root.put(current.target, body, { ...writeOptions, metadata: { activity: currentActivityId() } }, signal);
       },
-    ).catch(async (error: unknown) => {
-      // The write owner has finished its definite refusal before this comparison. Open upload journals still suppress observations.
-      if (error instanceof FilegateError && error.status === 412)
-        await observeContact(current, current.target, {
-          underRootLock: true,
-          stableId: current.info.stableIds ? current.node.id : undefined,
-        });
-      throw error;
-    });
+      async (_tx, node) => {
+        const expectedPath =
+          onConflict === "rename"
+            ? node.path.split("/").slice(0, -1).join("/") === current.target.split("/").slice(0, -1).join("/")
+            : node.path === current.target;
+        if (node.root !== current.root.name || !expectedPath || node.directory || node.size !== body.size)
+          throw new FilesError("unavailable", 503);
+        return {
+          pathAfter: node.path,
+          itemAfterId: current.info.stableIds ? node.id : null,
+          revisionAfter: node.revision,
+          size: node.size,
+        };
+      },
+    )
+      .then(async (node) => {
+        await enqueueFilePreview(current.inspection.summary, userPath(node.path.slice(current.inspection.candidate.path.length + 1)), node);
+        return node;
+      })
+      .catch(async (error: unknown) => {
+        // The write owner has finished its definite refusal before this comparison. Open upload journals still suppress observations.
+        if (error instanceof FilegateError && error.status === 412)
+          await observeContact(current, current.target, {
+            underRootLock: true,
+            stableId: current.info.stableIds ? current.node.id : undefined,
+          });
+        throw error;
+      });
   }
 
   function versionIntent(
@@ -1069,10 +1165,13 @@ export function createFilesService(
   async function markedEntries(
     actor: RequestActor,
     rows: { base_id: string; path: string; name: string; directory: boolean; marked_at: Date }[],
+    /** Stop once this many entries are authorized; a preview never checks the whole list. */
+    limit = Number.POSITIVE_INFINITY,
   ): Promise<MarkedEntry[]> {
     const state = await context(actor);
     const output: MarkedEntry[] = [];
     for (const row of rows) {
+      if (output.length >= limit) break;
       const binding = await deps.bindings.byId(row.base_id);
       const item = binding && state.candidates.find((candidate) => sameBinding(binding, candidate));
       if (!item || !binding || binding.lifecycle !== "active") continue;
@@ -1156,7 +1255,11 @@ export function createFilesService(
     signal?: AbortSignal,
   ): Promise<FileEntry> {
     const { root } = current;
-    if (row.state === "committed" && row.result) return uploadResult(current, row, row.result);
+    if (row.state === "committed" && row.result) {
+      const result = uploadResult(current, row, row.result);
+      await enqueueFilePreview(current.inspection.summary, result.path, row.result);
+      return result;
+    }
     if (row.state === "aborted" || row.state === "expired") throw new FilesError("upload_closed", 409);
     const sessionId = uploadSessionId(row);
     if (!sessionId) throw new FilesError("receipt_unknown", 409);
@@ -1165,6 +1268,7 @@ export function createFilesService(
     if (session.state === "committed" && session.result) {
       const result = uploadResult(current, row, session.result);
       await uploads.finish(row.id, "committed", session.result);
+      await enqueueFilePreview(current.inspection.summary, result.path, session.result);
       return result;
     }
     if (session.state === "aborted" || session.state === "expired") {
@@ -1178,9 +1282,11 @@ export function createFilesService(
     }
     if (session.received !== session.size) throw new FilesError("upload_incomplete");
     signal?.throwIfAborted();
+    await uploads.bindEventScope(row.id, await uploadEventScope(current.inspection.summary, current.node, current.relative));
     const node = await uploadAction(row.id, () => root.commitSession(sessionId));
     const result = uploadResult(current, row, node);
     await uploads.finish(row.id, "committed", node);
+    await enqueueFilePreview(current.inspection.summary, result.path, node);
     return result;
   }
   /** Sessions are bound to the user that opened them; commit re-checks the target before Filegate publishes. */
@@ -1859,71 +1965,24 @@ export function createFilesService(
     },
     async search(
       call: UserFilesCall,
-      input: { baseId: string; path?: string; after?: string; signal?: AbortSignal } & Partial<SearchQuery>,
+      input: { baseId: string; path?: string; after?: string; pageSize?: number; signal?: AbortSignal } & Partial<SearchQuery>,
     ): Promise<SearchResult> {
-      const actor = call.actor;
-      const current = await authorized(actor, input.baseId, input.path ?? "", true);
-      const q = input.q?.trim() ?? "";
-      const scope = input.scope ?? "tree";
-      const within = input.in ?? "path";
-      const sort = searchSort({ q, sort: input.sort });
-      const options = {
-        match: input.match ?? "fuzzy",
-        in: within,
-        ext: input.ext,
-        minSize: input.minSize,
-        maxSize: input.maxSize,
-        modifiedAfter: input.modifiedAfter,
-        modifiedBefore: input.modifiedBefore,
-        path: current.target,
-        maxEntries: SEARCH_SCAN_LIMIT,
-      };
-      if (!q && !hasSearchFilters(options) && (input.type ?? "all") === "all") throw new FilesError("invalid_input");
-      const basePath = current.inspection.candidate.path;
-      // Files hides the base's trash, unreadable FreeIPA entries and, for one folder, deeper hits: only a plain subtree total stays exact.
-      const countable = scope === "tree" && current.inspection.candidate.area === "cloud";
-      const trashInside = current.target === basePath;
-      const page = await browsePage(
-        { ...input, sort },
-        JSON.stringify([current.inspection.summary.locationKey, current.target, q, scope, options]),
-        async (paging) => {
-          const found = await searchPage(current.root, q, { ...options, ...paging, signal: input.signal });
-          let total = countable ? (found.total ?? null) : null;
-          if (total !== null && trashInside && !paging.after) {
-            const hidden = await trashHits(current.root, q, {
-              ...options,
-              ...paging,
-              path: joinPath(basePath, "trash"),
-              signal: input.signal,
-            });
-            total = hidden === null ? null : Math.max(0, total - hidden);
-          }
-          const items = found.items.map((node, index) => ({ node, ranges: found.matches?.[index] }));
-          return { items, next: found.next, total, truncated: !!found.truncated };
-        },
-      );
-      const items: SearchHit[] = [];
-      for (const { node, ranges } of page.items) {
-        if (!node.path.startsWith(`${current.target}/`)) continue;
-        const relative = node.path.slice(basePath.length + 1);
-        if (relative.split("/")[0] === "trash") continue;
-        const below = node.path.slice(current.target.length + 1);
-        if (scope === "folder" && below.includes("/")) continue;
-        const actions = await entryActions(current, node, node.path);
-        if (current.inspection.candidate.area === "freeipa" && !actions.share) continue;
-        items.push({ ...fileEntry(current.inspection.summary, relative, node), actions, highlight: highlight(below, ranges, within) });
-      }
-      return {
-        base: current.inspection.summary,
-        path: current.relative,
-        query: q,
-        scope,
-        items,
-        next: page.next ?? null,
-        total: page.total,
-        truncated: page.truncated,
-        readme: await folderReadme(current),
-      };
+      return searchIn(await authorized(call.actor, input.baseId, input.path ?? "", true), input, true, input.pageSize);
+    },
+    /**
+     * Names in a folder named by its file ID and in every folder below it, for apps that choose files through Files:
+     * the same search as `search`, with the folder's write permission, without its README and exact total.
+     */
+    async folderSearch(
+      call: UserFilesCall,
+      input: { id: string; q: string; after?: string; pageSize: number; signal?: AbortSignal },
+    ): Promise<SearchResult & { writable: boolean }> {
+      const current = await located(call.actor, input.id, true);
+      const [result, writable] = await Promise.all([
+        searchIn(current, { q: input.q, after: input.after, signal: input.signal, scope: "tree" }, false, input.pageSize),
+        canWriteDirectory(current),
+      ]);
+      return { ...result, writable };
     },
     /**
      * One page of a folder named by its file ID, for apps that choose or save files through Files. Only readable
@@ -2122,7 +2181,12 @@ export function createFilesService(
           expected_revision: input.expectedRevision ?? null,
           execution: executionFor(current),
         },
-        { call, target, previous: existing },
+        {
+          call,
+          target,
+          previous: existing,
+          eventScope: await uploadEventScope(current.inspection.summary, current.node, current.relative),
+        },
       );
       return openUpload(current, row);
     },
@@ -2259,6 +2323,11 @@ export function createFilesService(
               },
               batchId,
             );
+            await enqueueFilePreview(
+              destination.inspection.summary,
+              userPath(node.path.slice(destination.inspection.candidate.path.length + 1)),
+              node,
+            );
             return fileEntry(
               destination.inspection.summary,
               userPath(node.path.slice(destination.inspection.candidate.path.length + 1)),
@@ -2351,6 +2420,7 @@ export function createFilesService(
             return { itemAfterId: fresh.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
           },
         );
+        await enqueueFilePreview(fresh.inspection.summary, fresh.relative, node);
         return { base: fresh.inspection.summary, entry: fileEntry(fresh.inspection.summary, fresh.relative, node) };
       });
     },
@@ -2396,6 +2466,7 @@ export function createFilesService(
             return { itemAfterId: destination.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
           },
         );
+        await enqueueFilePreview(destination.inspection.summary, relative, node);
         return { base: destination.inspection.summary, entry: fileEntry(destination.inspection.summary, relative, node) };
       });
     },
@@ -2501,6 +2572,61 @@ export function createFilesService(
       const bytes = await readBoundedBody(await current.root.contentRaw(current.target, signal), TEMPLATE_LIMIT, signal);
       return { bytes: new Uint8Array(bytes), filename: current.relative.split("/").at(-1)! };
     },
+    preparePdf: createPdfOperation({
+      async source(call, baseId, path, signal) {
+        signal.throwIfAborted();
+        const current = await authorized(call.actor, baseId, path, false, undefined, signal);
+        const revision = markdownRevision(current.node);
+        return {
+          size: current.node.size,
+          revision,
+          async read(readSignal) {
+            readSignal.throwIfAborted();
+            // Reauthorize each source at the point of reading, just as download does, and read only the version checked.
+            const fresh = await authorized(call.actor, baseId, path, false, undefined, readSignal);
+            if (markdownRevision(fresh.node) !== revision) throw new FilesPdfError("pdf_changed", path);
+            return fresh.root.contentRaw(fresh.target, readSignal);
+          },
+        };
+      },
+      async destination(call, baseId, path, signal) {
+        signal.throwIfAborted();
+        const current = await writableParent(call.actor, baseId, path, undefined, undefined, signal);
+        const storage = current.inspection.candidate.storage;
+        if (storage) await checkStorage(call.actor, storage, path.split("/").slice(0, -1).join("/"), "write", call.requestId);
+        signal.throwIfAborted();
+      },
+      async save(call, baseId, path, bytes, signal) {
+        signal.throwIfAborted();
+        const initial = await writableParent(call.actor, baseId, path, undefined, undefined, signal);
+        return publish(
+          initial.root.name,
+          async () => {
+            signal.throwIfAborted();
+            const current = await writableParent(call.actor, baseId, path, undefined, undefined, signal);
+            if (
+              current.root.name !== initial.root.name ||
+              current.state.config.url !== initial.state.config.url ||
+              current.inspection.binding?.id !== initial.inspection.binding?.id
+            )
+              throw new FilesError("configuration_changed", 409);
+            const storage = current.inspection.candidate.storage;
+            if (storage) await checkStorage(call.actor, storage, path.split("/").slice(0, -1).join("/"), "write", call.requestId);
+            const node = await writeBytes(
+              call,
+              { ...current, target: joinPath(current.target, current.name) },
+              new Blob([new Uint8Array(bytes)]),
+              "rename",
+              undefined,
+              signal,
+            );
+            const relative = userPath(node.path.slice(current.inspection.candidate.path.length + 1));
+            return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, relative, node) };
+          },
+          AbortSignal.any([signal, rootLockWait()]),
+        );
+      },
+    }),
     async createFromBytes(
       call: UserFilesCall,
       input: { baseId: string; path: string; templateId?: string },
@@ -2640,7 +2766,15 @@ export function createFilesService(
     async entryById(call: UserFilesCall, id: string): Promise<EntryResult> {
       const actor = call.actor;
       const current = await located(actor, id);
-      if (!current.relative) throw new FilesError("invalid_path");
+      if (!current.relative) {
+        // The file provider exposes storage roots as empty-path refs; they are readable places too.
+        const base = current.inspection.summary;
+        return {
+          base,
+          entry: { ...fileEntry({ id: base.id }, "", current.node), name: base.name },
+          resourceId: id,
+        };
+      }
       return entryResult(current);
     },
     async recent(call: UserFilesCall): Promise<MarkedEntry[]> {
@@ -2648,10 +2782,11 @@ export function createFilesService(
       const { self } = await context(actor);
       return markedEntries(actor, await recent.list(self.user.id));
     },
-    async favorites(call: UserFilesCall): Promise<MarkedEntry[]> {
+    /** Favorites by name; with `limit`, only that many are authorized, for a preview. */
+    async favorites(call: UserFilesCall, options: { limit?: number } = {}): Promise<MarkedEntry[]> {
       const actor = call.actor;
       const { self } = await context(actor);
-      return markedEntries(actor, await favorites.list(self.user.id));
+      return markedEntries(actor, await favorites.list(self.user.id), options.limit);
     },
     async setFavorite(call: UserFilesCall, input: { baseId: string; path: string; favorite: boolean }): Promise<{ favorite: boolean }> {
       const actor = call.actor;
@@ -2682,6 +2817,16 @@ export function createFilesService(
       const dimension = input.size === "large" ? 1024 : 320;
       const lease = await current.root.directThumbnail(current.target, { width: dimension, height: dimension, expiresIn: 60 });
       return { url: lease.url, method: "GET", expires: lease.expires };
+    },
+    async preview(call: UserFilesCall, input: { baseId: string; path: string; rev: string; size: PreviewVariant }, signal: AbortSignal) {
+      const current = await authorized(call.actor, input.baseId, input.path, false);
+      const source = filePreviewSource(current.inspection.summary, current.relative, current.node);
+      return { result: await previews.read(source, input.size, { signal }), immutable: input.rev === source.revision };
+    },
+    async retryPreview(call: UserFilesCall, input: { baseId: string; path: string }) {
+      const current = await authorized(call.actor, input.baseId, input.path, false);
+      await previews.retry(filePreviewSource(current.inspection.summary, current.relative, current.node));
+      return { state: "pending" as const };
     },
     async capabilityDownload(call: UserFilesCall, input: { id: string; revision: string }, signal: AbortSignal): Promise<Response> {
       const actor = call.actor;

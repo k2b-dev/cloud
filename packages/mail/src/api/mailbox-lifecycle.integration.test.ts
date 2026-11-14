@@ -108,10 +108,10 @@ suite("Mail API for recently deleted mailboxes", () => {
     expect(shown.status).toBe(200);
     expect(((await shown.json()) as { id: string }).id).toBe(mailboxShortId);
 
-    // Read access to the mailbox does not extend to its lifecycle.
+    // Read access to the mailbox does not extend to its lifecycle; the deleted mailbox answers the reader like an unknown one.
     expect(await deletedIds("reader")).not.toContain(mailboxShortId);
-    expect((await request(`/mailboxes/${mailboxShortId}/deleted`, "GET", "reader")).status).toBe(403);
-    expect((await request(`/mailboxes/${mailboxShortId}/restore`, "POST", "reader")).status).toBe(403);
+    expect((await request(`/mailboxes/${mailboxShortId}/deleted`, "GET", "reader")).status).toBe(404);
+    expect((await request(`/mailboxes/${mailboxShortId}/restore`, "POST", "reader")).status).toBe(404);
     expect(await deletedIds("owner")).toContain(mailboxShortId);
 
     expect((await request(`/mailboxes/${mailboxShortId}/restore`, "POST")).status).toBe(200);

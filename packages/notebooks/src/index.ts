@@ -1,3 +1,4 @@
+import { requireIdentityAccessEvents } from "@k2b/cloud/events";
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
@@ -34,6 +35,7 @@ const result = await app.start({
       await migrate();
     },
     start: async () => {
+      await requireIdentityAccessEvents();
       await snapshotAllowlist();
       await yjsSnapshotWorker.start();
       try {

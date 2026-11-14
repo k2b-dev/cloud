@@ -80,6 +80,19 @@ Nach der Anmeldung bittet dich Cloud einmalig, die Nutzungsbedingungen anzunehme
 
 Ist das Ergebnis einer Anmeldung unklar, lade die Seite neu, um deine Sitzung zu prüfen, oder starte eine neue Anfrage.
 
+## Gemeinsam genutzten Arbeitsplatz verwenden {icon="users"}
+
+Markiere einen Browser, den mehrere Personen nutzen, zum Beispiel einen PC am Tresen. Öffne das Profilmenü und schalte **Gemeinsam genutzter Arbeitsplatz** ein. Die Markierung gehört zum Browser und bleibt nach dem Abmelden erhalten.
+
+An einem gemeinsam genutzten Arbeitsplatz gilt:
+
+- Cloud meldet dich nach einigen Minuten ohne Eingabe mit Tastatur, Maus oder Finger ab. Die Minuten legt die Administration fest.
+- Eine Minute vorher fragt Cloud **Du wirst gleich abgemeldet**. Wähle **Weiterarbeiten**, um angemeldet zu bleiben.
+- Wenn du den Browser schließt, bist du ebenfalls abgemeldet.
+- Die Anmeldeseite merkt sich nichts von deiner Anmeldung.
+
+Arbeit in einem Tab hält alle Tabs des Browsers angemeldet. Entwürfe, die eine App für dich speichert, bleiben gespeichert. Um die Markierung zu entfernen, schalte **Gemeinsam genutzter Arbeitsplatz** im Profilmenü aus.
+
 ## Benachrichtigung zu neuen Anmeldungen {icon="bell"}
 
 Nach einer erfolgreichen Anmeldung sendet Cloud einmal pro neuem Browser **Neue Anmeldung aus einem neuen Browser**. Das beginnt 14 Tage nach dem Upgrade. Die Benachrichtigung gilt nicht für die Cloud-App.

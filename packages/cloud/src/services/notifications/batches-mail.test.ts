@@ -18,6 +18,15 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
     };
     const sql = async (parts, ...values) => {
       const query = parts.join("?");
+      if (query === "r.user_id" || query === "notifications.batch_recipients.user_id") return query;
+      if (query.includes("WITH skipped AS")) {
+        assert.ok(query.includes("outgoing_mail_id IS NULL"), "accepted mail must not be marked skipped");
+        for (const r of recipients.filter(r => r.locked && !r.outgoing_mail_id && (r.status === "pending" || r.status === "sending" && r.stale))) {
+          r.status = "skipped"; r.error = "The account is locked.";
+          if (r.notification_id) history.get(r.notification_id).error = r.error;
+        }
+        return [];
+      }
       if (query.includes("SET status = 'running'")) { if (!["ready", "running"].includes(batch.status)) return []; batch.status = "running"; return [batch]; }
       if (query.includes("WITH terminal AS")) {
         assert.ok(query.includes("r.outgoing_mail_id = t.outgoing_mail_id"));
@@ -33,7 +42,7 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
       }
       if (query.includes("RETURNING r.user_id, r.recipient")) {
         assert.ok(query.includes("outgoing_mail_id IS NULL"), "in-flight queued mail must not be reclaimed");
-        return recipients.filter(r => !r.outgoing_mail_id && (r.status === "pending" || r.status === "sending" && r.stale)).slice(0, values[1]).map(r => {
+        return recipients.filter(r => !r.locked && !r.outgoing_mail_id && (r.status === "pending" || r.status === "sending" && r.stale)).slice(0, values.at(-1)).map(r => {
           r.status = "sending"; r.attempt_count++; r.stale = false;
           return { user_id: r.user_id, recipient: r.recipient, notification_id: r.notification_id };
         });
@@ -86,6 +95,7 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
     mock.module(${JSON.stringify(new URL("../logging/index.ts", import.meta.url).pathname)}, () => ({ logger: () => ({ error() {} }), trace: {} }));
     mock.module(${JSON.stringify(new URL("../../shared/markdown.ts", import.meta.url).pathname)}, () => ({ markdown: {} }));
     mock.module(${JSON.stringify(new URL("../postgres.ts", import.meta.url).pathname)}, () => ({ parsePgJsonValue: v => v, toPgTextArray: v => v, toPgUuidArray: v => v }));
+    mock.module(${JSON.stringify(new URL("../account-lock.ts", import.meta.url).pathname)}, () => ({ accountLockedSql: () => "account-locked" }));
     mock.module(${JSON.stringify(new URL("../audit/index.ts", import.meta.url).pathname)}, () => ({ audit: { record: async () => {} } }));
     mock.module(${JSON.stringify(new URL("./email-frame.ts", import.meta.url).pathname)}, () => ({ prepareNotificationEmail: async () => ({ html: oversized ? "x".repeat(524289) : "<!DOCTYPE html><html><body>Hello</body></html>", text: "Hello" }) }));
     mock.module(${JSON.stringify(new URL("./email-mail.ts", import.meta.url).pathname)}, () => mailHelpers);
@@ -164,6 +174,11 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
     assert.equal(mails.size, 2); assert.ok(recipients.every(r => r.status === "pending"));
     await hooks.processBatchChunk(batchId); assert.equal(mails.size, 2);
     assert.deepEqual(calls[1].map(m => m.key), calls[0].map(m => m.key));
+    // A recipient whose account is locked before its mail is accepted is skipped; the batch still completes.
+    reset(); recipients[0].locked = true;
+    assert.deepEqual(await hooks.processBatchChunk(batchId), { processed: 1, remaining: 1 });
+    assert.equal(recipients[0].status, "skipped"); assert.equal(recipients[0].error, "The account is locked.");
+    assert.equal(calls[0].length, 1); assert.equal(calls[0][0].to[0], recipients[1].recipient);
   `;
   const child = Bun.spawn([process.execPath, "--eval", script], { stdout: "pipe", stderr: "pipe" });
   const [exitCode, stdout, stderr] = await Promise.all([

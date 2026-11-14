@@ -162,9 +162,9 @@ generated input requires `container`, fixes its Type to the declared local
 container Type, and leaves its ID opaque. Do not declare this Query yourself;
 a name collision fails startup. Before calling application code, the platform
 filters candidates through the shared current-account resolver: users must exist, be unexpired,
-and belong to an enabled account category; service accounts must exist and
+not be locked in FreeIPA, and belong to an enabled account category; service accounts must exist and
 have active status. A `user_delegated` service account's user must also pass
-these user checks. Disabled, expired, and deleted accounts never reach the
+these user checks. Disabled, expired, locked, and deleted accounts never reach the
 callback. This checks accounts rather than credentials and does not apply
 credential scopes. The framework rejects callback results containing any
 principal outside that filtered input.
@@ -173,7 +173,7 @@ Implement the callback with current principal rights:
 
 - Resolve direct, group, authenticated, and public grants as supported by
   your resource service, including resource bindings.
-- Disabled, expired, or deleted accounts are not readable. An unknown or
+- Disabled, expired, locked, or deleted accounts are not readable. An unknown or
   deleted resource, or an item moved out of the expected container, returns
   an empty subset.
 - Check the account's rights without applying a particular credential's
@@ -187,7 +187,7 @@ Providers can use `resolveResourceReaders(principals)` from
 `ResourceReader` values with the original `principal`, effective `subject`,
 and nullable resource `binding` (`appId`, `resourceType`, `resourceId`).
 Delegated service accounts resolve to their current user's subject. Expired
-users, disabled account categories, disabled service accounts, and missing
+users, users locked in FreeIPA, disabled account categories, disabled service accounts, and missing
 accounts are omitted. UUID matching ignores letter case while the returned
 principal preserves the input spelling. Only category `enabled` settings affect
 this check; presentation settings such as `visible` and `login.label` do not.

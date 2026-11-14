@@ -5,6 +5,7 @@ import type { Lock } from "@k2b/sync";
 import {
   type AcquiredDraftLease,
   DRAFT_LEASE_ERROR_CODES,
+  DRAFT_LEASE_TTL_MS,
   type DraftLease,
   type DraftLeaseErrorCode,
   type DraftLeaseHolder,
@@ -13,15 +14,15 @@ import { requireDraftAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { mailLive } from "./live";
 
-const DRAFT_LEASE_TTL_MS = 30_000;
 const DRAFT_LEASE_STATE_TTL_MS = 30_000;
-export const DRAFT_LEASE_HEARTBEAT_INTERVAL_MS = 10_000;
 
 type DraftLeaseEntry = {
   holder: DraftLeaseHolder;
   token: string;
   /** Chosen by one editor instance so a retried acquire whose answer was lost gets its own lease back. */
   editorId?: string;
+  /** Once shared, no individual editor can know that every other editor has stopped writing. */
+  shared?: boolean;
   lock: { resource: string; ownerToken: string; fence: string; expiresAt: string };
   acquiredAt: number;
 };
@@ -181,17 +182,27 @@ export const acquireDraftLease = async (params: {
   return withLeaseState(draft.data, async () => {
     const current = await currentValidEntry(params.mailboxId, draft.data);
     if (current) {
-      // Only the same holder and the same editor instance get the token back; another tab still has to ask.
-      if (params.editorId && current.value.editorId === params.editorId && sameHolder(current.value.holder, holder)) {
-        return ok({ ...mapLease(current), token: current.value.token });
+      // Ownership belongs to a person, including their tabs, popouts and devices.
+      // Each editor still saves against its own revision; a shared token never bypasses CAS.
+      if (sameHolder(current.value.holder, holder)) {
+        const lock = restoreLock(current.value.lock);
+        if (!(await leaseMutex().extend(lock, { ttlMs: DRAFT_LEASE_TTL_MS }))) {
+          await leaseStore().delete({ tenantId: draft.data, key: "lease" });
+          return leaseError(DRAFT_LEASE_ERROR_CODES.NOT_OWNED, "Draft lease expired");
+        }
+        const entry = await leaseStore().upsert({
+          tenantId: draft.data,
+          key: "lease",
+          value: {
+            ...current.value,
+            shared: current.value.shared || !params.editorId || current.value.editorId !== params.editorId,
+            lock: storeLock(lock),
+          },
+        });
+        return ok({ ...mapLease(entry), token: current.value.token });
       }
       if (!params.takeover) {
-        return leaseError(
-          DRAFT_LEASE_ERROR_CODES.HELD,
-          sameHolder(current.value.holder, holder)
-            ? "This draft is already being edited in another session"
-            : `This draft is being edited by ${current.value.holder.displayName}`,
-        );
+        return leaseError(DRAFT_LEASE_ERROR_CODES.HELD, `This draft is being edited by ${current.value.holder.displayName}`);
       }
       await removeEntry(draft.data, current.value);
     }
@@ -328,6 +339,9 @@ export const releaseDraftLease = async (params: {
   return withLeaseState(draft.data, async () => {
     const lease = await ownedEntry(draft.data, holder, params.token);
     if (!lease) return leaseError(DRAFT_LEASE_ERROR_CODES.NOT_OWNED, "Draft lease is no longer owned by this session");
+    // A closing tab, cancelled acquire or CLI must not drop another own editor's
+    // protection. Shared reservations end through the existing heartbeat TTL.
+    if (lease.shared) return ok();
     await removeEntry(draft.data, lease);
     return ok();
   });

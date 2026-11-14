@@ -10,6 +10,7 @@ export const APP_SETTING_PATHS: Readonly<Record<string, string>> = {
   notebooks: "/api/notebooks/admin/settings/",
   grids: "/api/grids/admin/settings/",
   chat: "/api/chat/admin/settings/",
+  tools: "/tools/api/admin/settings/",
 };
 const catalog = async (ctx: Parameters<typeof apiGet>[0], app?: string) =>
   AdminSettingsCatalogSchema.parse(

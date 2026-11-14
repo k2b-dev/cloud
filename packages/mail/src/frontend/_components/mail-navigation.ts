@@ -38,6 +38,8 @@ export const buildMailListHref = (requestUrl: URL, clearSearch = false): string 
   const next = new URL(requestUrl);
   next.searchParams.delete("conversation");
   next.searchParams.delete("message");
+  // An open draft belongs to its conversation: another selection or the list never carries it along.
+  next.searchParams.delete("draft");
   if (clearSearch) {
     for (const parameter of [
       MAIL_SEARCH_FROM_PARAMETER,
@@ -103,16 +105,6 @@ export const buildMailAttachmentDownloadHref = (requestUrl: URL, item: MailListI
   const match = /^\/app\/mail\/([^/]+)$/.exec(requestUrl.pathname);
   if (!match?.[1]) return null;
   return `/api/mail/mailboxes/${match[1]}/messages/${encodeURIComponent(item.attachmentMatch.messageId)}/attachments/${encodeURIComponent(item.attachmentMatch.attachmentId)}`;
-};
-
-/** The small thumbnail of one of a row's image attachments, under the mailbox the list shows. */
-export const buildMailAttachmentThumbnailHref = (
-  requestUrl: URL,
-  image: NonNullable<MailListItem["imageAttachments"]>[number],
-): string | null => {
-  const match = /^\/app\/mail\/([^/]+)$/.exec(requestUrl.pathname);
-  if (!match?.[1]) return null;
-  return `/api/mail/mailboxes/${match[1]}/messages/${encodeURIComponent(image.messageId)}/attachments/${encodeURIComponent(image.attachmentId)}/thumbnail`;
 };
 
 export const buildMailingListHref = (requestUrl: URL, listKey: string): string => {

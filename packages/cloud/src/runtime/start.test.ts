@@ -74,6 +74,62 @@ test("start loads only after native instances exist and never rewrites environme
   });
 });
 
+test("startup applies the process pool maximum without changing owned pools or the URL", async () => {
+  const result = await run(
+    `
+    import { startPlatform } from ${JSON.stringify(start)};
+    import { sql, createSql, closePlatformClients } from ${JSON.stringify(clients)};
+    const before = process.env.DATABASE_URL;
+    const result = await startPlatform({ appId: "inventory", load: async () => {
+      const owned = createSql();
+      const explicit = createSql({ max: 3 });
+      try { return { global: sql.options.max, owned: owned.options.max, explicit: explicit.options.max, unchanged: process.env.DATABASE_URL === before }; }
+      finally { await owned.close(); await explicit.close(); }
+    }});
+    await closePlatformClients(); console.log(JSON.stringify(result));
+  `,
+    { CLOUD_DATABASE_POOL_MAX: "2" },
+  );
+  expect(result).toEqual({ global: 2, owned: 10, explicit: 3, unchanged: true });
+});
+
+test("invalid process pool limits fail before loading application code and clear the startup binding", async () => {
+  for (const max of ["0", "1.5", "2147483648", "invalid"]) {
+    const result = await run(
+      `
+      import { startPlatform } from ${JSON.stringify(start)};
+      import { hasConnections } from ${JSON.stringify(state)};
+      let loaded = false, message;
+      try { await startPlatform({ appId: "inventory", load: async () => { loaded = true } }); }
+      catch (error) { message = error.message; }
+      console.log(JSON.stringify({ loaded, bound: hasConnections(), message }));
+    `,
+      { CLOUD_DATABASE_POOL_MAX: max },
+    );
+    expect(result).toMatchObject({ loaded: false, bound: false });
+    expect(result.message).toContain("CLOUD_DATABASE_POOL_MAX");
+  }
+});
+
+test("startup rejects URL pool options before loading application code without disclosing credentials", async () => {
+  const result = await run(
+    `
+    import { startPlatform } from ${JSON.stringify(start)};
+    import { hasConnections } from ${JSON.stringify(state)};
+    let loaded = false, message;
+    try { await startPlatform({ appId: "inventory", load: async () => { loaded = true } }); }
+    catch (error) { message = error.message; }
+    console.log(JSON.stringify({ loaded, bound: hasConnections(), message }));
+  `,
+    { DATABASE_URL: "postgres://fixture:private-password@127.0.0.1:1/unused_test?max=private-option-value" },
+  );
+  expect(result).toMatchObject({ loaded: false, bound: false });
+  expect(result.message).toContain("keep client options outside its query string");
+  expect(result.message).toContain("CLOUD_DATABASE_POOL_MAX");
+  expect(result.message).not.toContain("private-password");
+  expect(result.message).not.toContain("private-option-value");
+});
+
 test("invalid keys never fall back to env; Core and Gateway refuse keys", async () => {
   const invalid = await run(
     `

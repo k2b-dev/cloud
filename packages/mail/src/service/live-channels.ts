@@ -28,6 +28,8 @@ const mayFollow = (key: string, access: MailboxAccess | null): boolean => {
 /** `mailbox` follows one mailbox; its readers are decided like the Mail API's, with one query for all of them. */
 export const mailLiveChannels = {
   mailbox: {
+    eventOnly: true as const,
+    accessKey: (key: string) => parseKey(key).mailboxId,
     scope: z.object({ mailbox: ResourceShortIdSchema }).strict(),
     keys: async ({ mailbox }: { mailbox: string }, viewer: LiveViewer) => {
       const mailboxId = await resolvePublicId("mailboxes", mailbox);

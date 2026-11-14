@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import type { AccessSubject } from "@k2b/cloud/server";
+import { itemEventState, publishItemUpdated } from "../app-events";
 import type { MutationResult } from "../contracts";
 import { ClaimTaskSchema, type TaskWork, TaskWorkSchema, type WorkActor, WorkActorSchema, WorkTextSchema } from "../work-contracts";
 import { buildSpacePrincipalCondition } from "./access";
@@ -153,6 +154,7 @@ export const change = async (params: {
         work.progress = { content: params.content, actor: params.actor, at: new Date().toISOString() };
       }
     }
+    const eventBefore = await itemEventState(tx, params.itemId);
     TaskWorkSchema.parse(work);
     await tx`
       INSERT INTO spaces.task_work (item_id, claim, progress) VALUES (${params.itemId}::uuid, ${work.claim}::jsonb, ${work.progress}::jsonb)
@@ -196,6 +198,7 @@ export const change = async (params: {
         },
         tx,
       );
+    await publishItemUpdated(tx, params.itemId, eventBefore);
     await publishSpaceChange(tx, { type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
     return { ok: true, data: work };
   });

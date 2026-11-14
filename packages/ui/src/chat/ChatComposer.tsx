@@ -284,6 +284,7 @@ export type ChatComposerProps = {
   submitDisabled?: boolean;
   error?: string;
   focusToken?: unknown;
+  /** Names the draft. A new value starts another draft and closes the open lists; the same value keeps them. */
   draftKey?: unknown;
   class?: string;
   /**
@@ -378,6 +379,8 @@ const attachmentIcon = (attachment: ChatAttachment): string =>
 const hasContent = (items: unknown[]) => items.some((item) => item != null && typeof item !== "boolean" && item !== "");
 
 export function ChatComposer(props: ChatComposerProps): JSX.Element {
+  // A parent that recomputes the same key keeps the same draft: only a new value resets what belongs to the old one.
+  const draftKey = createMemo(() => props.draftKey);
   const accessory = children(() => props.accessory);
   const hasAccessory = () => hasContent(accessory.toArray());
   const hint = children(() => props.hint);
@@ -584,13 +587,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   });
   const openingStart = createMemo(() => commandQuery()?.start);
   createEffect(() => {
-    props.draftKey;
+    draftKey();
     const start = openingStart();
     if (start !== undefined) setCommandOpening((opening) => opening + 1);
   });
   // A failed `open` row says so for the rest of its list opening.
   createEffect(() => {
-    props.draftKey;
+    draftKey();
     commandOpening();
     setOpenFailures({});
   });
@@ -609,7 +612,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   // Rows of a `fixedWhileOpen` section are the ones it had when this `/` opened the list; later ones wait for the next
   // `/`. A retry row starts another opening in the same open list, so it does not count.
   const fixedCommandKeys = createMemo(() => {
-    props.draftKey;
+    draftKey();
     if (openingStart() === undefined) return undefined;
     return untrack(() => {
       const fixed = new Set((props.commandSections ?? []).filter((section) => section.fixedWhileOpen).map((section) => section.id));
@@ -650,7 +653,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const currentCommandQuery = createMemo(() => caretCommandToken()?.query);
   // Arrow marking belongs to one token in one draft; another draft or `/` starts at the top row again.
   createEffect(() => {
-    props.draftKey;
+    draftKey();
     caretCommandStart();
     currentCommandQuery();
     setCommandMoved(false);
@@ -710,15 +713,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   // cancels too, unless the opener announced that next move with `follow()`: its busy line moves to the status line,
   // and Escape still cancels there. Any later unannounced draft change cancels.
   createEffect(() => {
-    const draftKey = props.draftKey;
+    const key = draftKey();
     const open = commandsOpen();
     const row = openingRow();
     const run = openingRun;
     if (!run || row === undefined) return;
-    if (draftKey !== run.key) {
+    if (key !== run.key) {
       if (run.follow) {
         run.follow = false;
-        run.key = draftKey;
+        run.key = key;
         run.moved = true;
         showCommandStatus({ tone: "busy", text: run.label });
       } else run.controller.abort();
@@ -822,7 +825,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     onCleanup(() => window.removeEventListener("pointerdown", onPointerDown, true));
   });
   createEffect(() => {
-    props.draftKey;
+    draftKey();
     const token = commandQuery();
     setSearchError(false);
     if (!token || !props.searchCommands) {
@@ -904,7 +907,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const history: { value: string; mentions: readonly ChatMention[]; caret: number }[] = [];
   let historyIndex = -1;
   createEffect(() => {
-    props.draftKey;
+    draftKey();
     untrack(() => {
       history.length = 0;
       historyIndex = -1;
@@ -1144,8 +1147,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   // drops the source ends it; the words so far stay.
   // Memos compare values, so typing and arriving words never end it.
   const dictationField = createMemo(() => `${Boolean(props.dictation)}:${editBlocked()}`);
-  const dictationDraft = createMemo(() => props.draftKey);
-  createEffect(on([dictationField, dictationDraft], () => liveDictation.end(), { defer: true }));
+  createEffect(on([dictationField, draftKey], () => liveDictation.end(), { defer: true }));
   const hasDraft = () => Boolean(props.value.trim() || (!running() && attachments().length > 0));
   /** The draft may go out now, apart from a submission that is already on its way. */
   const submittable = createMemo(
@@ -1337,14 +1339,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
    */
   const attachFilesFromCommand = (token: { start: number; end: number }, selection?: { start: number; end: number }) => {
     if (!canSelectFiles()) return;
-    const key = props.draftKey;
+    const key = draftKey();
     const previous = snapshot();
     const previousHistory = { entries: [...history], index: historyIndex };
     const nextValue = props.value.slice(0, token.start) + props.value.slice(token.end);
     edit(nextValue, reconcileChatMentions(props.value, nextValue, mentions()));
     setDismissed(true);
     chooseFiles(() => {
-      if (props.draftKey !== key || props.value !== nextValue) return;
+      if (draftKey() !== key || props.value !== nextValue) return;
       setDismissed(true);
       props.onValueChange(previous.value);
       props.onMentionsChange?.(previous.mentions);
@@ -1357,7 +1359,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       });
     });
     queueMicrotask(() => {
-      if (props.draftKey !== key || props.value !== nextValue) return;
+      if (draftKey() !== key || props.value !== nextValue) return;
       textareaRef?.setSelectionRange(token.start, token.start);
       syncCaret();
     });
@@ -1381,7 +1383,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   const submit = async () => {
     if (!canSubmit()) return;
-    const key = props.draftKey;
+    const key = draftKey();
     setSubmitting(true);
     try {
       if (isTouchOnly()) {
@@ -1389,7 +1391,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         // The sheet's Back entry leaves first, so a submit handler that navigates finds the history settled.
         await dialogHistorySettled();
         // A draft that another one replaced, or that may no longer go out, is not sent and keeps its text.
-        if (disposed || props.draftKey !== key || !submittable()) return;
+        if (disposed || draftKey() !== key || !submittable()) return;
       }
       const intent = running() ? runningSubmitIntent() : "send";
       const previousValue = props.value;
@@ -1482,7 +1484,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     // From "+" a reference joins the text at the caret, apart from a word right before it.
     const lead = (value: string) => (fromAdd && token.start > 0 && !/\s/.test(value[token.start - 1] ?? "") ? " " : "");
     const previous = snapshot();
-    const key = props.draftKey;
+    const key = draftKey();
     const replacement = command.mention ? lead(props.value) + command.mention.name + " " : "";
     const nextValue = props.value.slice(0, token.start) + replacement + props.value.slice(token.end);
     const nextMentions = reconcileChatMentions(props.value, nextValue, mentions());
@@ -1499,7 +1501,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     let restored = false;
     let mentioned: { value: string; caret: number } | undefined;
     const restore = () => {
-      if (props.draftKey !== key || props.value !== nextValue) return;
+      if (draftKey() !== key || props.value !== nextValue) return;
       setDismissed(true);
       props.onValueChange(previous.value);
       props.onMentionsChange?.(previous.mentions);
@@ -1513,7 +1515,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       if (heldHistory && command.action) {
         await dialogHistorySettled();
         // Another draft or no composer any more: the command does not run against it.
-        if (disposed || props.draftKey !== key) return;
+        if (disposed || draftKey() !== key) return;
       }
       const result = await command.action?.({
         setValue: (value) => edit(value),
@@ -1529,7 +1531,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         showCommandStatus();
       } else if (result && "mention" in result) {
         // One undo step from the token to the reference, as if the row had been a reference itself.
-        if (props.draftKey === key && props.value === nextValue) {
+        if (draftKey() === key && props.value === nextValue) {
           restore();
           restored = false;
           const name = result.mention.name;
@@ -1561,9 +1563,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       if (commandStatus()?.tone === "busy") showCommandStatus();
       setExecuting(false);
     }
-    if (submitRequested && props.draftKey === key) await submit();
+    if (submitRequested && draftKey() === key) await submit();
     queueMicrotask(() => {
-      if (props.draftKey !== key) return;
+      if (draftKey() !== key) return;
       if (restored || props.value === nextValue || (mentioned && props.value === mentioned.value)) {
         const position = restored ? token.end : (mentioned?.caret ?? token.start + replacement.length);
         textareaRef?.setSelectionRange(
@@ -1582,13 +1584,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
    * stays in the row while the list is still there, otherwise the status line says it, so it never ends in silence.
    */
   const openFromCommand = async (command: ChatCommand, open: NonNullable<ChatCommand["open"]>, token: { start: number; end: number }) => {
-    const key = props.draftKey;
+    const key = draftKey();
     const row = chatCommandKey(command);
     const value = props.value;
     const nextValue = value.slice(0, token.start) + value.slice(token.end);
     const nextMentions = reconcileChatMentions(value, nextValue, mentions());
     // Still the same draft and `/…`, so the row is where the person chose it.
-    const inPlace = () => !disposed && props.draftKey === key && props.value === value && commandQuery()?.start === token.start;
+    const inPlace = () => !disposed && draftKey() === key && props.value === value && commandQuery()?.start === token.start;
     const heldHistory = commandSheetHeld();
     // Closing the list or leaving the composer cancels the opening; the row ends at once, without waiting for it.
     const controller = new AbortController();
@@ -1638,15 +1640,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       // Success: the token leaves and the list closes in the same step that ends the opening, so a phone sheet never
       // takes its Back entry again while the page navigates.
       batch(() => {
-        if (!disposed && props.draftKey === key && props.value === value) {
+        if (!disposed && draftKey() === key && props.value === value) {
           edit(nextValue, nextMentions);
           setDismissed(true);
         }
-        endAddSearch(!disposed && props.draftKey === key);
+        endAddSearch(!disposed && draftKey() === key);
         finish(true);
       });
       queueMicrotask(() => {
-        if (disposed || props.draftKey !== key || props.value !== nextValue) return;
+        if (disposed || draftKey() !== key || props.value !== nextValue) return;
         textareaRef?.setSelectionRange(token.start, token.start);
         syncCaret();
         autoResize();

@@ -10,6 +10,7 @@ import {
   ChoiceChips,
   ChoiceList,
   ChoiceSlider,
+  ChoiceSliderIndicator,
   ChoiceTiles,
   ColorChoices,
   ColorInput,
@@ -31,9 +32,14 @@ import {
   type ImageCropState,
   ImageInput,
   MarkdownEditor,
+  MarkdownSelectionToolbar,
   MultiSelectInput,
   NumberInput,
+  PeriodPicker,
+  type PeriodPreset,
+  type PeriodValue,
   PinInput,
+  periodPresets,
   RichSelect,
   type RichSelectFact,
   RichSelectFacts,
@@ -46,6 +52,7 @@ import {
   SignatureInput,
   type SignatureValue,
   Slider,
+  SuggestionGroup,
   Switch,
   signatureToPng,
   Tag,
@@ -55,7 +62,7 @@ import {
   TextInput,
 } from "@k2b/ui";
 import { TextEditor } from "@k2b/ui/text-editor";
-import { createSignal, createUniqueId } from "solid-js";
+import { batch, createSignal, createUniqueId, type JSX, onCleanup } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DictationDemo, DictationHostDemo } from "./dictation";
 import { QrScannerDemo } from "./mobile-navigation";
@@ -473,6 +480,44 @@ const MarkdownDemo = () => {
   );
 };
 
+const MarkdownSelectionDemo = () => {
+  const [value, setValue] = createSignal("Thanks for the photos of the oak chest. Select a few words to format them.");
+  const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+  return (
+    <DemoCard
+      id="markdown-editor-selection"
+      chip={{ kind: "component", name: "MarkdownSelectionToolbar", from: "@k2b/ui" }}
+      description="A calm composer: no toolbar above the text, a small one above selected text. Touch devices keep their own selection menu; shortcuts such as Ctrl/Cmd+B work everywhere. Escape closes it, and Tab from the selection moves into it."
+      code={`const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+
+<MarkdownEditor
+  aria-label="Message"
+  variant="embedded"
+  noToolbar
+  showStats={false}
+  value={value()}
+  onValueChange={setValue}
+  textareaRef={setTextarea}
+/>
+<MarkdownSelectionToolbar textarea={textarea()} />`}
+    >
+      <div style={{ "max-width": "36rem", border: "2px solid var(--k2b-border-strong)", "border-radius": "var(--k2b-radius-surface)" }}>
+        <MarkdownEditor
+          aria-label="Message"
+          variant="embedded"
+          noToolbar
+          showStats={false}
+          lines={3}
+          value={value()}
+          onValueChange={setValue}
+          textareaRef={setTextarea}
+        />
+        <MarkdownSelectionToolbar textarea={textarea()} />
+      </div>
+    </DemoCard>
+  );
+};
+
 const moveTargets: RichSelectItem[] = [
   { value: "review", label: "Marketing · Review", color: "#8b5cf6", description: "2 tags are dropped" },
   { value: "print", label: "Print orders · Inbox", color: "#f97316", description: "A guest can see it, one assignee is dropped" },
@@ -809,6 +854,78 @@ const DateDemo = () => {
             { label: "Half day", minutes: 240 },
           ]}
         />
+      </div>
+    </DemoCard>
+  );
+};
+
+const PeriodDemo = () => {
+  const presets = [
+    periodPresets.today,
+    periodPresets.thisWeek,
+    periodPresets.thisMonth,
+    periodPresets.lastMonth,
+    periodPresets.thisYear,
+    periodPresets.all({ since: "2019-03-14" }),
+  ];
+  const fiscalYear: PeriodPreset = {
+    key: "fiscal-year",
+    label: "Fiscal year",
+    resolve: ({ today }) => {
+      const year = Number(today.slice(0, 4)) - (Number(today.slice(5, 7)) < 4 ? 1 : 0);
+      return { start: `${year}-04-01`, end: `${year + 1}-03-31` };
+    },
+  };
+  const [period, setPeriod] = createSignal<PeriodValue | null>({ preset: "this-month" });
+  const [custom, setCustom] = createSignal<PeriodValue | null>({ start: "2026-11-01", end: "2026-11-07" });
+  const [finance, setFinance] = createSignal<PeriodValue | null>({ preset: "fiscal-year" });
+  const dateConfig = { timeZone: "Europe/Berlin", weekStartsOn: 1 as const };
+  const header = (title: string, picker: JSX.Element) => (
+    <div style={{ display: "flex", "align-items": "center", gap: "0.75rem", "min-width": "0" }}>
+      <strong style={{ flex: "1", "min-width": "0", overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>
+        {title}
+      </strong>
+      {picker}
+    </div>
+  );
+  return (
+    <DemoCard
+      id="period-picker"
+      chip={[{ kind: "component", name: "PeriodPicker", from: "@k2b/ui" }]}
+      description="One control for the period a view shows. Presets cover their whole calendar period in the data's time zone, and the trigger shows them with their days. Custom range opens two months in the same popover; a phone gets a bottom sheet. The trigger keeps its widest width, so nothing beside it moves."
+      code={`const presets = [periodPresets.today, periodPresets.thisWeek, periodPresets.thisMonth,
+  periodPresets.lastMonth, periodPresets.thisYear, periodPresets.all({ since: "2019-03-14" })];
+
+<PeriodPicker aria-label="Period" value={period()} onValueChange={setPeriod} presets={presets}
+  dateConfig={{ timeZone: "Europe/Berlin", weekStartsOn: 1 }} />
+<PeriodPicker aria-label="Period" value={finance()} onValueChange={setFinance}
+  presets={[periodPresets.thisMonth, periodPresets.thisQuarter, fiscalYear]} custom={false} />
+<PeriodPicker aria-label="Period" value={period()} presets={presets} loading />`}
+    >
+      <div style={{ display: "grid", gap: "1rem", "max-width": "40rem" }}>
+        {header(
+          "Revenue by channel",
+          <PeriodPicker aria-label="Period" value={period()} onValueChange={setPeriod} presets={presets} dateConfig={dateConfig} />,
+        )}
+        {header(
+          "Receipts",
+          <PeriodPicker aria-label="Period" value={custom()} onValueChange={setCustom} presets={presets} dateConfig={dateConfig} />,
+        )}
+        {header(
+          "Result",
+          <PeriodPicker
+            aria-label="Period"
+            value={finance()}
+            onValueChange={setFinance}
+            presets={[periodPresets.thisMonth, periodPresets.thisQuarter, fiscalYear]}
+            custom={false}
+            dateConfig={dateConfig}
+          />,
+        )}
+        {header(
+          "Saving",
+          <PeriodPicker aria-label="Period" value={{ preset: "last-month" }} presets={presets} dateConfig={dateConfig} loading />,
+        )}
       </div>
     </DemoCard>
   );
@@ -1262,7 +1379,9 @@ const ChoiceSliderDemo = () => {
   value={value}
   onValueChange={setValue}
   onActiveChange={setActive}
-/>`}
+/>
+
+<ChoiceSliderIndicator count={4} index={1} />`}
     >
       <div class="mx-auto grid w-full max-w-80 gap-1">
         <p class="text-center text-base font-semibold text-(--k2b-action)">{label()}</p>
@@ -1273,6 +1392,13 @@ const ChoiceSliderDemo = () => {
           onValueChange={setValue}
           onActiveChange={setActive}
         />
+        <p class="flex items-center justify-center gap-2 text-sm text-(--k2b-text-secondary)">
+          <ChoiceSliderIndicator
+            count={choiceSliderOptions.length}
+            index={choiceSliderOptions.findIndex((option) => option.value === value())}
+          />
+          Indicator for a trigger
+        </p>
       </div>
     </DemoCard>
   );
@@ -1323,15 +1449,27 @@ const SmallChoicesDemo = (props: { kind: "color" | "tags" | "pin" | "icon" | "sl
       );
     }
     return (
-      <Slider
-        label="Capacity"
-        value={slider}
-        onValueChange={setSlider}
-        min={0}
-        max={100}
-        formatValue={(value) => `${value}%`}
-        defaultValue={50}
-      />
+      <>
+        <Slider
+          label="Capacity"
+          value={slider}
+          onValueChange={setSlider}
+          min={0}
+          max={100}
+          formatValue={(value) => `${value}%`}
+          defaultValue={50}
+        />
+        <Slider
+          label="Capacity, value in label row"
+          value={slider}
+          onValueChange={setSlider}
+          min={0}
+          max={100}
+          formatValue={(value) => `${value}%`}
+          defaultValue={50}
+          valuePlacement="label"
+        />
+      </>
     );
   };
   const names = {
@@ -1365,6 +1503,15 @@ const SmallChoicesDemo = (props: { kind: "color" | "tags" | "pin" | "icon" | "sl
   min={0}
   max={100}
   defaultValue={50}
+  formatValue={(value) => \`\${value}%\`}
+/>
+
+<Slider
+  label="Capacity, value in label row"
+  value={slider}
+  onValueChange={setSlider}
+  defaultValue={50}
+  valuePlacement="label"
   formatValue={(value) => \`\${value}%\`}
 />`,
   };
@@ -1616,6 +1763,207 @@ const BooleanDemo = () => {
           value={checked}
           onValueChange={setChecked}
         />
+      </div>
+    </DemoCard>
+  );
+};
+
+// A fictional invoice an assistant read: what it proposes per field.
+const invoiceRead = {
+  supplier: "berger",
+  number: "INV-2026-4471",
+  date: "2026-10-28",
+  gross: 312.4,
+  vat: "19",
+  deduct: true,
+  text: "Purchase of a cherry chest of drawers, delivered 27 Oct",
+} as const;
+type InvoiceField = keyof typeof invoiceRead;
+
+const FieldSuggestionDemo = () => {
+  const [reading, setReading] = createSignal(false);
+  const [accepted, setAccepted] = createSignal<InvoiceField[]>(["supplier"]);
+  const [supplier, setSupplier] = createSignal<string | null>("berger");
+  const [number, setNumber] = createSignal("");
+  const [date, setDate] = createSignal<string | null>(null);
+  const [gross, setGross] = createSignal<number | null>(321.4);
+  const [vat, setVat] = createSignal<string | null>(null);
+  const [deduct, setDeduct] = createSignal(false);
+  const [text, setText] = createSignal("");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(timer));
+  const accept = (id: string) => setAccepted((list) => (list.includes(id as InvoiceField) ? list : [...list, id as InvoiceField]));
+  const suggest =
+    <K extends InvoiceField>(id: K, extra: { confidence?: "high" | "low"; reason?: string } = {}) =>
+    () =>
+      reading()
+        ? { id, state: "loading" as const }
+        : {
+            id,
+            state: "ready" as const,
+            value: invoiceRead[id] as (typeof invoiceRead)[K],
+            confidence: extra.confidence ?? ("high" as const),
+            reason: extra.reason,
+            accepted: accepted().includes(id),
+          };
+  const apply: Record<InvoiceField, () => void> = {
+    supplier: () => setSupplier(invoiceRead.supplier),
+    number: () => setNumber(invoiceRead.number),
+    date: () => setDate(invoiceRead.date),
+    gross: () => setGross(invoiceRead.gross),
+    vat: () => setVat(invoiceRead.vat),
+    deduct: () => setDeduct(invoiceRead.deduct),
+    text: () => setText(invoiceRead.text),
+  };
+  const acceptAll = (ids: string[]) =>
+    batch(() => {
+      for (const id of ids) {
+        apply[id as InvoiceField]();
+        accept(id);
+      }
+    });
+  const readAgain = () => {
+    batch(() => {
+      setAccepted(["supplier"]);
+      setSupplier("berger");
+      setNumber("");
+      setDate(null);
+      setGross(321.4);
+      setVat(null);
+      setDeduct(false);
+      setText("");
+      setReading(true);
+    });
+    clearTimeout(timer);
+    timer = setTimeout(() => setReading(false), 1500);
+  };
+  return (
+    <DemoCard
+      id="field-suggestion"
+      chip={[
+        { kind: "component", name: "SuggestionGroup", from: "@k2b/ui" },
+        { kind: "component", name: "TextInput", from: "@k2b/ui" },
+        { kind: "component", name: "NumberInput", from: "@k2b/ui" },
+        { kind: "component", name: "DatePicker", from: "@k2b/ui" },
+        { kind: "component", name: "Select", from: "@k2b/ui" },
+        { kind: "component", name: "Switch", from: "@k2b/ui" },
+      ]}
+      description="An assistant read an invoice. Empty fields show its values as AI-coloured placeholders; nothing is the value until someone accepts it. The amount someone typed stays, the unsure VAT rate stays open under Accept all, and every status line is reserved, so nothing moves."
+      code={`const [number, setNumber] = createSignal("");
+const [accepted, setAccepted] = createSignal<string[]>([]);
+const accept = (id: string) => setAccepted((ids) => [...ids, id]);
+
+<SuggestionGroup
+  source="Assistant"
+  title="Assistant read 7 fields from INV-4471.pdf"
+  onAcceptAll={(ids) => batch(() => ids.forEach(applyAndAccept))}
+>
+  <TextInput
+    label="Invoice number"
+    value={number}
+    onValueChange={setNumber}
+    suggestion={() => ({
+      id: "inv-4471:v1:number",
+      state: "ready",
+      value: "INV-2026-4471",
+      confidence: "high",
+      accepted: accepted().includes("inv-4471:v1:number"),
+    })}
+    onSuggestionAccept={accept}
+  />
+  <Select
+    label="VAT rate"
+    value={vat}
+    onValueChange={setVat}
+    options={[{ value: "19", label: "19 %" }, { value: "7", label: "7 %" }]}
+    suggestion={{
+      id: "inv-4471:v1:vat",
+      state: "ready",
+      value: "19",
+      confidence: "low",
+      reason: "The invoice shows no VAT.",
+    }}
+    onSuggestionAccept={accept}
+  />
+</SuggestionGroup>`}
+    >
+      <div class="grid gap-3">
+        <SuggestionGroup
+          source="Assistant"
+          title={reading() ? "Assistant is reading INV-4471.pdf …" : "Assistant read 7 fields from INV-4471.pdf"}
+          onAcceptAll={acceptAll}
+        >
+          <div class="ui-demo-form-grid">
+            <Select
+              label="Supplier"
+              value={supplier}
+              onValueChange={setSupplier}
+              options={[
+                { value: "berger", label: "Berger Antiques Ltd" },
+                { value: "lenz", label: "Lenz Furniture" },
+              ]}
+              suggestion={suggest("supplier")}
+              onSuggestionAccept={accept}
+            />
+            <TextInput
+              label="Invoice number"
+              value={number}
+              onValueChange={setNumber}
+              suggestion={suggest("number")}
+              onSuggestionAccept={accept}
+            />
+            <DatePicker
+              label="Invoice date"
+              value={date}
+              onValueChange={setDate}
+              suggestion={suggest("date")}
+              onSuggestionAccept={accept}
+            />
+            <NumberInput
+              label="Gross amount"
+              step={0.01}
+              suffix="€"
+              value={gross}
+              onValueChange={setGross}
+              suggestion={suggest("gross")}
+              onSuggestionAccept={accept}
+            />
+            <Select
+              label="VAT rate"
+              value={vat}
+              onValueChange={setVat}
+              options={[
+                { value: "19", label: "19 %" },
+                { value: "7", label: "7 %" },
+                { value: "0", label: "0 %" },
+              ]}
+              suggestion={suggest("vat", { confidence: "low", reason: "The invoice shows no VAT." })}
+              onSuggestionAccept={accept}
+            />
+            <Switch
+              label="Deduct input VAT"
+              value={deduct}
+              onValueChange={setDeduct}
+              suggestion={suggest("deduct")}
+              onSuggestionAccept={accept}
+            />
+            <TextInput
+              label="Booking text"
+              multiline
+              lines={2}
+              value={text}
+              onValueChange={setText}
+              suggestion={suggest("text")}
+              onSuggestionAccept={accept}
+            />
+          </div>
+        </SuggestionGroup>
+        <div>
+          <Button variant="secondary" size="sm" onClick={readAgain}>
+            <i class="ti ti-refresh" aria-hidden="true" />
+            Read again
+          </Button>
+        </div>
       </div>
     </DemoCard>
   );
@@ -1993,6 +2341,7 @@ const demos: DemoSection = {
   "markdown-editor": () => (
     <DemoGrid columns="one">
       <MarkdownDemo />
+      <MarkdownSelectionDemo />
     </DemoGrid>
   ),
   autocomplete: () => (
@@ -2008,6 +2357,11 @@ const demos: DemoSection = {
   "date-picker": () => (
     <DemoGrid columns="one">
       <DateDemo />
+    </DemoGrid>
+  ),
+  "period-picker": () => (
+    <DemoGrid columns="one">
+      <PeriodDemo />
     </DemoGrid>
   ),
   "rich-select": () => <RichSelectDemo />,
@@ -2119,6 +2473,11 @@ const demos: DemoSection = {
   boolean: () => (
     <DemoGrid columns="one">
       <BooleanDemo />
+    </DemoGrid>
+  ),
+  "field-suggestion": () => (
+    <DemoGrid columns="one">
+      <FieldSuggestionDemo />
     </DemoGrid>
   ),
 };

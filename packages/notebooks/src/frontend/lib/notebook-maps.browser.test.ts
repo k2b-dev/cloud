@@ -61,6 +61,39 @@ test("saved pins have synchronized keyboard selection and safe note, heading and
   }
 });
 
+test("the map block is a still tile that opens the full map with the pins, their links and the list selection", async () => {
+  const { context, page } = await open();
+  try {
+    const list = first(page).getByRole("listbox", { name: "Pins", exact: true });
+    await list.focus();
+    await page.keyboard.press("End");
+    const tile = first(page).locator(".k2b-map-tile__open");
+    expect(await tile.getAttribute("aria-label")).toMatch(/^Karte öffnen: /);
+    expect(await first(page).locator(".k2b-map-tile button.k2b-map-view__pin").count()).toBe(0);
+    await tile.click();
+    const dialog = page.locator("dialog[open]");
+    await dialog.locator(".k2b-map-dialog").waitFor();
+    // The pin chosen in the note's list is the one the full map shows.
+    expect(await dialog.locator('.k2b-map-dialog__place[aria-selected="true"]').innerText()).toContain("Glacis-Park");
+    await dialog.locator(".k2b-map-dialog__place", { hasText: "Museum Ulm" }).click();
+    const website = dialog.locator(".k2b-map-dialog__detail").getByRole("link", { name: "Website" });
+    expect(await website.getAttribute("href")).toBe("https://example.org/museum");
+    expect(await website.getAttribute("target")).toBe("_blank");
+    await dialog.locator(".k2b-map-dialog__place", { hasText: "Münster" }).click();
+    expect(await dialog.locator(".k2b-map-dialog__detail").getByRole("link", { name: "Münster besteigen" }).getAttribute("href")).toContain(
+      "/notes/Note01",
+    );
+    // A note block has no stable id: nothing in the URL names the map, and Back closes it onto the tile.
+    expect(new URL(page.url()).searchParams.has("map")).toBe(false);
+    await page.goBack();
+    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-map-tile__open"));
+    expect(await list.locator('[aria-selected="true"]').innerText()).toContain("Münster");
+  } finally {
+    await context.close();
+  }
+});
+
 test("place search adds a pin through link confirmation; cancel leaves the document untouched", async () => {
   const { context, page } = await open();
   try {

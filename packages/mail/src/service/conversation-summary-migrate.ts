@@ -18,14 +18,13 @@ export const migrateConversationSummaries = async (db: typeof sql): Promise<void
   ) UPDATE mail.conversations c SET summary_metadata = jsonb_build_object(
       'source', CASE WHEN a.actor_kind = 'workflow' THEN 'workflow' ELSE 'person' END,
       'author', CASE
-        WHEN a.actor_kind = 'workflow' AND w.id IS NOT NULL
-          THEN jsonb_build_object('kind','workflow','id',w.id,'name',w.name)
+        WHEN a.actor_kind = 'workflow' AND w.workflow_id IS NOT NULL
+          THEN jsonb_build_object('kind','workflow','id',w.workflow_id,'name',w.name)
         WHEN u.id IS NOT NULL THEN jsonb_build_object('kind','user','id',u.id,'name',COALESCE(NULLIF(u.display_name,''),u.uid))
         ELSE NULL END,
       'ai', false, 'generatedAt', a.created_at)
     FROM latest a
-    LEFT JOIN workflows.version v ON a.actor_kind = 'workflow' AND v.id = a.actor_id
-    LEFT JOIN workflows.workflow w ON w.id = v.workflow_id
+    LEFT JOIN mail.workflow_source_names w ON a.actor_kind = 'workflow' AND w.version_id = a.actor_id
     LEFT JOIN auth.service_accounts sa ON a.actor_kind = 'service_account' AND sa.id = a.actor_id
     LEFT JOIN auth.users u ON u.id = CASE WHEN a.actor_kind = 'user' THEN a.actor_id ELSE sa.delegated_user_id END
     WHERE c.id = a.conversation_id AND c.summary_metadata = '{}'::jsonb

@@ -6,12 +6,14 @@ import {
   type JobProcessOptions,
   type JobSubmit,
   RetentionGapError,
+  type Sync,
   type Topic,
   type TopicEvent,
   type TopicPublish,
   type Worker,
 } from "@k2b/sync";
 import * as Y from "yjs";
+import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { createDoc } from "./documents";
 import { MalformedSharedTextEventError, SHARED_TEXT_NAME, toBase64 } from "./events";
 import {
@@ -23,10 +25,15 @@ import {
   sharedText,
   sharedTextSnapshotJobConfig,
 } from "./index";
+import type { SharedTextLifecycleEntry, SharedTextLifecycleStore } from "./lifecycle-store";
+import { SharedTextSnapshotSaveError } from "./snapshots";
 
 const NOW = new Date("2026-10-19T12:00:00Z");
 beforeEach(() => setSystemTime(NOW));
-afterEach(() => setSystemTime());
+afterEach(() => {
+  setSystemTime();
+  unbindProcessSync();
+});
 const cursor = (seq: number) => `s6t.fixture.${seq}`;
 const sequence = (value: string) => {
   if (!/^s6t\.fixture\.\d+$/.test(value)) throw new Error("Foreign cursor");
@@ -55,7 +62,7 @@ const event = (seq: number, docId = "doc", ageMs = 1000): TopicEvent<SharedTextS
     doc.destroy();
   }
 };
-const fixture = (repair?: SharedTextSnapshotRepair) => {
+const fixture = (repair?: SharedTextSnapshotRepair, authority?: SharedTextLifecycleStore) => {
   const calls: string[] = [];
   const publications: TopicPublish<SharedTextSyncEvent>[] = [];
   const rows: Array<{ docId: string; cursor: string | null }> = [];
@@ -174,7 +181,15 @@ const fixture = (repair?: SharedTextSnapshotRepair) => {
       return worker;
     },
   };
-  const log = { id: "test.text", topic: () => topic, firstSequence: async () => control.firstSequence };
+  const log = {
+    lifecycle: authority,
+    admit: async <T>(_id: string, signal: AbortSignal | undefined, run: (signal: AbortSignal) => Promise<T>) =>
+      run(signal ?? new AbortController().signal),
+    writer: () => ({ ...writer, extend: async () => true }),
+    id: "test.text",
+    topic: () => topic,
+    firstSequence: async () => control.firstSequence,
+  };
   const logger = {
     info: (...args: unknown[]) => {
       infos.push(args);
@@ -185,6 +200,11 @@ const fixture = (repair?: SharedTextSnapshotRepair) => {
     error() {},
     debug() {},
   };
+  const writer: Pick<import("@k2b/sync").Mutex, "withLock"> = {
+    withLock: async (_input, run) => run({ resource: "doc", ownerToken: "test", fence: 1n, expiresAt: new Date(NOW.getTime() + 120_000) }),
+  };
+  unbindProcessSync();
+  bindProcessSync({ mutex: () => ({ ...writer, extend: async () => true }) } as unknown as Sync);
   const pipeline = sharedText.snapshots({ log, store, job: () => job, logger, repair });
   const context = (signal = new AbortController().signal): JobContext<SharedTextSnapshotRequest> => ({
     jobId: "j",
@@ -722,7 +742,8 @@ test("repair can settle an already saved document or a document without retained
     f.states.set("doc", { state: null, cursor: cursor(10), text: "saved", restoreRevision: "revision" });
     if (latest === null) f.latest.delete("doc");
     await f.run();
-    expect(f.replays).toEqual([]);
+    // Even a covered snapshot checks the retained tail before attempting repair.
+    expect(f.replays).toHaveLength(latest ? 1 : 0);
     expect(f.publications[0]!.expectedAfter).toBe(latest);
     expect(f.saves[0]![1].text).toBe("saved!");
     const input = f.saves[0]![1];
@@ -832,3 +853,174 @@ test("a repair accepted across a store-only restore cannot delete restored text 
     }
   }
 });
+
+test("a rejected app save identifies the definite failure and preserves its cause", async () => {
+  const f = fixture();
+  const error = new Error("save refused");
+  f.store.save = async () => {
+    throw error;
+  };
+  const failure = await f.pipeline.flushNow("doc").catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(SharedTextSnapshotSaveError);
+  expect(failure).toHaveProperty("cause", error);
+});
+
+for (const error of [
+  new DOMException("save timed out", "TimeoutError"),
+  new DOMException("save aborted", "AbortError"),
+  Object.assign(new Error("connection reset"), { code: "ECONNRESET" }),
+])
+  test(`an uncertain app save is not classified as a definite rejection: ${error.name} ${error.message}`, async () => {
+    const f = fixture();
+    f.store.save = async () => {
+      throw error;
+    };
+    await expect(f.pipeline.flushNow("doc")).rejects.toBe(error);
+  });
+
+test("an aborted flush does not classify a late save rejection as definite", async () => {
+  const f = fixture();
+  const abort = new AbortController();
+  const error = new Error("save refused after cancellation");
+  f.store.save = async () => {
+    abort.abort();
+    throw error;
+  };
+  await expect(f.pipeline.flushNow("doc", { signal: abort.signal })).rejects.toBe(error);
+});
+
+test("flush-now returns only committed state covering the latest accepted cursor", async () => {
+  const f = fixture();
+  f.store.save = async (id, input) => {
+    f.states.set(id, { ...input });
+  };
+  const stored = await f.pipeline.flushNow("doc", { restoreRevision: "revision", targetCursor: cursor(5) });
+  expect(stored?.text).toBe("text5");
+  expect(stored?.cursor).toBe(cursor(10));
+  expect(stored?.state).toBeInstanceOf(Uint8Array);
+  expect(f.submitted).toEqual([]);
+});
+
+test("flush-now refuses a skipped write, changed generation and uncovered requested cursor", async () => {
+  const f = fixture();
+  await expect(f.pipeline.flushNow("doc")).rejects.toThrow("did not persist");
+  await expect(f.pipeline.flushNow("doc", { restoreRevision: "replacement" })).rejects.toThrow("generation changed");
+  f.store.save = async (id, input) => {
+    f.states.set(id, { ...input });
+  };
+  await expect(f.pipeline.flushNow("doc", { targetCursor: cursor(11) })).rejects.toThrow("did not persist");
+});
+
+test("a snapshot repair cannot overwrite a restore fence while its SQL transaction is pending", async () => {
+  const f = fixture({ maxLength: 100, plan: () => [{ from: 0, to: 0, insert: "repair" }] });
+  f.events[0]!.data = { kind: "freeze", payload: "", restoreRevision: "next:opaque", originNodeId: "restore-node", originPeerId: null };
+  await expect(f.run()).rejects.toThrow("GENERATION_CHANGED");
+  expect(f.publications).toHaveLength(0);
+  expect(f.saves).toHaveLength(0);
+  // A rolled-back restore compensates the marker with the committed revision.
+  f.events[0]!.data.restoreRevision = "revision";
+  await f.run();
+  expect(f.saves[0]![1].text).toBe("repair");
+});
+
+for (const state of ["frozen", "closed"] as const)
+  test(`snapshot repair respects a durable ${state} authority after its log marker was pruned`, async () => {
+    const authority: SharedTextLifecycleStore = {
+      get: async () => ({
+        revision: 1,
+        value:
+          state === "frozen"
+            ? { state, expiresAt: NOW.getTime() + 60_000, freezeCursor: cursor(10), restoreRevision: "revision" }
+            : { state, freezeCursor: cursor(10), closeCursor: cursor(11), restoreRevision: "revision" },
+      }),
+      put: async () => {
+        throw new Error("Cannot change an active boundary");
+      },
+    };
+    const f = fixture({ maxLength: 100, plan: () => [{ from: 0, to: 0, insert: "repair" }] }, authority);
+    f.states.set("doc", { state: new Uint8Array([0, 0]), text: "", cursor: cursor(10), restoreRevision: "revision" });
+    f.events.length = 0;
+    f.latest.delete("doc");
+    await f.run();
+    expect(f.publications).toHaveLength(0);
+    expect(f.saves).toHaveLength(0);
+  });
+
+test("a no-op snapshot repair preserves an expired freeze token", async () => {
+  let reads = 0;
+  const authority: SharedTextLifecycleStore = {
+    get: async () => {
+      reads++;
+      return {
+        revision: 1,
+        value: { state: "frozen", expiresAt: NOW.getTime() - 1, freezeCursor: cursor(10), restoreRevision: "revision" },
+      };
+    },
+    put: async () => {
+      throw new Error("No edit must invalidate the token");
+    },
+  };
+  const f = fixture({ maxLength: 100, plan: () => [] }, authority);
+  await f.run();
+  expect(reads).toBe(0);
+  expect(f.publications).toHaveLength(0);
+  expect(f.saves).toHaveLength(1);
+});
+
+for (const covered of [false, true])
+  for (const boundary of ["frozen", "closed", "unavailable"] as const)
+    test(`repair post-check ${boundary} preserves the pre-repair snapshot (${covered ? "covered" : "uncovered"})`, async () => {
+      let entry: SharedTextLifecycleEntry | null = null;
+      let unavailable = false;
+      const authority: SharedTextLifecycleStore = {
+        get: async () => {
+          if (unavailable) throw new Error("lifecycle unavailable");
+          return entry;
+        },
+        put: async () => {
+          throw new Error("No lifecycle write expected");
+        },
+      };
+      const f = fixture({ maxLength: 100, plan: () => [{ from: 0, to: 0, insert: "repair" }] }, authority);
+      if (covered) {
+        f.states.set("doc", { state: new Uint8Array([0, 0]), text: "", cursor: cursor(10), restoreRevision: "revision" });
+        f.events.length = 0;
+        f.latest.delete("doc");
+      }
+      f.control.beforePublish = () => {
+        if (boundary === "unavailable") unavailable = true;
+        else
+          entry = {
+            revision: 1,
+            value:
+              boundary === "closed"
+                ? { state: "closed", freezeCursor: cursor(10), closeCursor: cursor(11), restoreRevision: "revision" }
+                : { state: "frozen", expiresAt: NOW.getTime() + 60_000, freezeCursor: cursor(10), restoreRevision: "revision" },
+          };
+      };
+      if (boundary === "unavailable") await expect(f.run()).rejects.toThrow("lifecycle unavailable");
+      else await f.run();
+      expect(f.publications).toHaveLength(1);
+      expect(f.saves).toHaveLength(covered || boundary === "unavailable" ? 0 : 1);
+      if (f.saves.length) {
+        const saved = f.saves[0]![1];
+        const doc = createDoc(saved);
+        try {
+          expect(saved.text).toBe("text5");
+          expect(doc.getText(SHARED_TEXT_NAME).toString()).toBe("text5");
+          expect(saved.cursor).toBe(cursor(10));
+        } finally {
+          doc.destroy();
+        }
+      }
+      // The published update is retained, not silently deleted; a later replay
+      // can cover it normally while the lifecycle fence prevents another repair.
+      expect(f.events.at(-1)?.data.kind).toBe("sync");
+      if (boundary !== "unavailable") {
+        f.control.beforePublish = undefined;
+        await f.run();
+        expect(f.publications).toHaveLength(1); // The fence prevents another repair.
+        expect(f.saves.at(-1)?.[1].text).toBe(`repair${covered ? "" : "text5"}`);
+        expect(f.saves.at(-1)?.[1].cursor).toBe(cursor(11));
+      }
+    });

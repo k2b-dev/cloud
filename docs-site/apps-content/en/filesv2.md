@@ -5,7 +5,7 @@ section: Work
 order: 150
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-10-07
+updated: 2026-11-11
 ---
 
 # Files
@@ -52,7 +52,14 @@ storage areas that apply to your account provider are listed or reported:
 a local account never sees FreeIPA storage and a FreeIPA account never sees
 local Cloud storage. With more than one storage location, the sidebar and the phone
 navigation menu start with **All storage**, followed by the same storage choices.
-Switching storage, opening folders, and changing pages update the workspace
+At the end of a folder or search result, **Load more** adds the next entries below
+those already shown. Keyboard focus moves to the first new entry. While loading,
+the action keeps its place; a failure keeps the entries and offers **Try again**.
+The loaded window stays in the address, so reload and Back restore the same entries.
+Loading more replaces the current history entry; Back leaves the folder in one step.
+Nested folders in tree view keep their existing explicit continuation actions.
+
+Switching storage, opening folders, and loading more entries update the workspace
 without reloading the whole page. Navigation and pagination stay in the URL,
 so reloads and browser Back and Forward preserve your location.
 Missing or inaccessible storage appears with its status rather than as an
@@ -167,6 +174,11 @@ uses Filegate's historical-copy operation and leaves
 the original file, modification time, identity, and history unchanged. Permanent
 version deletion is available only through the administrator file browser and CLI.
 
+After enough bytes have transferred, the upload panel adds an approximate
+remaining time beside the file count. It uses recent byte throughput, so a large
+file still counts for its actual size. The estimate is hidden during connection
+waits and final publication, and restarts after an interrupted transfer.
+
 Uploads report progress in one toast and resolve name conflicts once per
 batch (replace existing or upload only new). Uploads, folder uploads and new
 files open a Filegate upload session per file: Cloud authorizes the target, the browser streams segments to the
@@ -188,6 +200,20 @@ Only a definite name or write conflict at commit can abort that unpublished
 session. Filegate retains terminal receipts for seven days. Browser upload IDs
 expire locally 24 hours plus seven days after their last attempt and are pruned
 at the next upload.
+
+Browser uploads leave headroom for interactive requests on slow uplinks. After
+the first PUT lasting at least one second measures throughput, subsequent PUTs
+use a token bucket at 85% of that estimate. A growing acknowledgement tail relative to the preceding paced PUT lowers
+the estimate, bounded by the supported 64 KiB/s minimum; constant server
+acknowledgement latency does not repeatedly lower it. Each new file measures again. The
+initial measurement can still fill an upstream router's queue. Browsers without
+streaming request support and HTTP/1.1 connections retain Blob uploads through
+the SDK's existing retry budget; an unsupported origin is remembered for the page
+lifetime. Hidden tabs use Blobs. If a pacing timer is delayed by more than 200 ms,
+the current PUT finishes without pacing to preserve progress and deadlines. These
+background paths do not guarantee headroom for interactive requests. Filegate's segment sizes, receipts, verification,
+and resumability are unchanged; CLI transfers retain their transport. This does
+not remove the per-file round trips that make many small files slow.
 
 The working row in the upload panel shows the transferred bytes on its second
 line. After transfer, a commit still pending after one second shows
@@ -234,6 +260,19 @@ from acknowledged segments:
 - Other server errors and final errors are not retried automatically. A
   manual **Try again** starts a fresh retry budget. A successful probe or
   attempt does not reset the retry or rate-limit budget within a run.
+
+An unavailable receipt (`receipt_unknown` or `upload_uncertain`) or a mismatched
+upload (`upload_changed`) leaves the result unconfirmed. The row shows the
+failure and keeps its existing upload key. **Try again** checks that same
+upload; it does not start a second transfer with a fresh key. When the receipt
+becomes available, the upload can finish without publishing another copy.
+
+A changed upload can also mean that the storage or access settings no longer
+match the original request. Retrying cannot repair that mismatch. Restore the
+original settings, or check the destination before saving a separate copy
+under another name. With the CLI, running the same `put` command keeps the
+original reservation; a different remote file name creates a separate one.
+The unconfirmed original reservation remains retained.
 
 The Filegate SDK's short request retries run inside each attempt; the queue
 is the only additional retry layer. Cancel or leaving the workspace ends a
@@ -1034,6 +1073,26 @@ The canonical `entry.read` capability returns a stable `open` link and a resourc
 `application/pdf` for `report.pdf`, and `application/octet-stream` when the
 extension is unknown. Files never inspects the content for it.
 
+## React to uploaded files
+
+Files declares version 1 events `filesv2.entry.created` and
+`filesv2.entry.replaced`. A committed upload announces the public file ref and
+its containing folder ref, both of Type `filesv2.entry`; `data` is `{}`.
+Storage roots use the empty-path ref returned by `provider.list`, which
+`entry.read` now reads as a folder with current storage access.
+Subscribe to the exact folder ref, and use `filesv2.entry.read` for metadata or
+`filesv2.content.read` for content with current access. Folder subscriptions do
+not automatically include descendants. These are resource events for workloads
+with a valid mandate, not ordinary application subscriptions.
+
+Private, capability, and inbox uploads announce completion through the same
+receipt path. Aborted or failed uploads, editor saves, revision snapshots, and
+thumbnails produce no arrival event. A folder upload produces one event per
+committed file, subject to the shared capacity budget. See
+[Files uploads](/en/docs/platform/app-events#files-uploads) for the complete
+contract and [Files upload volume](/en/docs/operations/app-events#files-upload-volume)
+for bulk planning.
+
 ## Offer files to other apps
 
 Files is a [file provider](/en/docs/platform/file-providers): other apps can
@@ -1108,6 +1167,65 @@ not a way around the stream budget. `cld filesv2 get <file>` obtains
 a lease and saves the file without printing the private URL; the explicit
 `cld capabilities query filesv2 content.download` command returns the lease.
 See [App capabilities](/en/docs/platform/capabilities) for discovery and consent.
+
+## Create PDFs through the API
+
+`POST /api/filesv2/bases/:baseId/pdf` creates a new PDF in the first source's
+folder. Sources remain unchanged. The result uses `onConflict: "rename"`.
+The caller needs the same read access as download for every source and create
+access in the destination folder. OAuth callers need write scope.
+
+Send one of these JSON bodies:
+
+```json
+{"operation":"merge","paths":["folder/first.pdf","second.pdf"],"name":"combined.pdf"}
+```
+
+```json
+{"operation":"extract","paths":["folder/first.pdf","second.pdf"],"revisions":["r1","r2"],"pages":[2,4],"name":"selected.pdf"}
+```
+
+Merge requires at least two sources; extract requires at least one. Paths
+define result order. Extract page numbers start at one over the concatenation
+of all sources and must be ascending and unique. Extract also names the
+`revision` of each source the pages were chosen from, in `paths` order; a source
+that changed since fails with `pdf_changed` and its `path` instead of yielding
+other pages. Merge may send `revisions` too. The name must be a plain Files
+filename ending in `.pdf`. Every source must be a regular PDF by name and
+signature. The configured [PDF limits](/en/docs/platform/pdf-and-templates#budget-a-whole-operation)
+apply to file count, bytes, pages and the complete operation.
+
+The response is `application/x-ndjson`, with one JSON object per line:
+
+```json
+{"type":"progress","done":0,"total":4}
+{"type":"progress","done":1,"total":4}
+{"type":"progress","done":2,"total":4}
+{"type":"progress","done":3,"total":4}
+{"type":"progress","done":4,"total":4}
+{"type":"done","result":{"base":{},"entry":{"path":"folder/combined.pdf","revision":"..."}}}
+```
+
+The last line above abbreviates `base` and `entry`; the real result is the
+same `EntryResult` as other create routes, including the entry revision.
+Each source read, PDF transformation and save counts as one step.
+Multi-source extraction counts merge and extraction separately. Its total is
+`paths.length + 3`; other requests use `paths.length + 2`.
+
+The final line is either `done` or an error such as
+`{"type":"error","code":"pdf_encrypted","message":"…","path":"folder/first.pdf"}`.
+Codes include `pdf_encrypted`, `pdf_unreadable`, `pdf_changed`, `pdf_too_large`,
+`pdf_not_configured`, `pdf_busy` and `pdf_failed`, plus ordinary Files errors.
+`pdf_busy` means another PDF action of the same person, or two in this Files
+process, still runs: sources are read whole into memory, so Files admits at most
+two at once and one per person; try again a moment later. `path` is
+included when the source is known. Messages are final English or German text
+in the request locale. Validation and access failures can return the ordinary
+non-200 Files JSON error before streaming begins.
+
+Cancel the HTTP request to stop reads, rendering and the final write. A file
+already committed is retained. Undo uses the existing
+`POST /api/filesv2/bases/:baseId/delete` with the returned entry path.
 
 ## Understand changes without a Cloud entry
 

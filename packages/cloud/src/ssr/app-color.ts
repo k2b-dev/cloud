@@ -1,6 +1,8 @@
 type HexColor = `#${string}`;
 
 const minimumContrast = 4.5;
+/** WCAG 1.4.11: icons and other graphics need 3:1 against what is next to them. */
+const graphicContrast = 3;
 const fillShares = {
   light: { selected: 0.07, selectedNav: 0.1 },
   dark: { selected: 0.14, selectedNav: 0.17 },
@@ -73,6 +75,33 @@ export const mixHex = (a: HexColor, b: HexColor, share: number): HexColor => {
     .join("")}`;
 };
 
+/**
+ * The mildest whole-percent step from `accent` toward black (light) or white (dark) that keeps `minimum` contrast
+ * against every background; the end color when no step does. A passing accent stays as it is.
+ */
+export const readableTone = (
+  accent: HexColor,
+  backgrounds: readonly HexColor[],
+  theme: keyof typeof appColorSurfaces,
+  minimum: number,
+): HexColor => {
+  const toward = theme === "light" ? "#000000" : "#ffffff";
+  for (let i = 100; i >= 0; i--) {
+    const candidate = mixHex(accent, toward, i / 100);
+    if (backgrounds.every((background) => contrastRatio(candidate, background) >= minimum)) return candidate;
+  }
+  return toward;
+};
+
+/**
+ * "Color on the canvas": an app's color for a mark that lies directly on a tinted ground, such as its icon in the
+ * app bar. Darkened in light and lightened in dark until it keeps the 3:1 of graphics against every ground given.
+ */
+export const appCanvasTone = (accent: HexColor, grounds: Record<keyof typeof appColorSurfaces, readonly HexColor[]>) => ({
+  light: readableTone(accent, grounds.light, "light", graphicContrast),
+  dark: readableTone(accent, grounds.dark, "dark", graphicContrast),
+});
+
 /** Derive selection fills, the shell's open-app fill, and the nearest AA-readable app ink in each theme. */
 export const appColors = (accent: HexColor) => {
   const forTheme = (theme: keyof typeof appColorSurfaces) => {
@@ -84,16 +113,7 @@ export const appColors = (accent: HexColor) => {
     // muted surface, which stays apart from the dark bar.
     const shellSelected = theme === "light" ? surfaces.surface : mixHex(accent, surfaces.muted, fillShares.dark.selectedNav);
     const backgrounds = [...Object.values(surfaces), selected, selectedNav, shellSelected];
-    const toward = theme === "light" ? "#000000" : "#ffffff";
-    let ink: HexColor = toward;
-    for (let i = 100; i >= 0; i--) {
-      const candidate = mixHex(accent, toward, i / 100);
-      if (backgrounds.every((background) => contrastRatio(candidate, background) >= minimumContrast)) {
-        ink = candidate;
-        break;
-      }
-    }
-    return { ink, selected, selectedNav, shellSelected };
+    return { ink: readableTone(accent, backgrounds, theme, minimumContrast), selected, selectedNav, shellSelected };
   };
   return { light: forTheme("light"), dark: forTheme("dark") };
 };

@@ -468,7 +468,8 @@ describe("One notebook sidebar with quick filters", () => {
             const result = {
               fill: chip.backgroundColor,
               edge: chip.borderTopColor,
-              inset: chip.boxShadow,
+              edgeWidth: chip.borderTopWidth,
+              shadow: chip.boxShadow,
               ink: chip.color,
               oldFill: old.backgroundColor,
               selectedFill: mix("--k2b-edge-selected-fill"),
@@ -479,7 +480,9 @@ describe("One notebook sidebar with quick filters", () => {
           });
           expect(colors.fill, theme).toBe(colors.selectedFill);
           expect(colors.edge, theme).toBe(colors.selectedEdge);
-          expect(colors.inset, theme).toContain("inset");
+          // One 2 px border is the whole edge; no inset beside it.
+          expect(colors.edgeWidth, theme).toBe("2px");
+          expect(colors.shadow, theme).toBe("none");
           expect(colors.ink, theme).toBe(rgb(appColors("#eab308")[theme].ink));
           expect(colors.fill).not.toBe(colors.oldFill);
         }

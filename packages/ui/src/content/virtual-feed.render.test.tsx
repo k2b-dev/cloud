@@ -30,19 +30,59 @@ const feed = (extra: Record<string, unknown> = {}) =>
   });
 
 describe("VirtualFeed", () => {
-  test("renders a sized scrollport with an empty feed and a separate log on the server", () => {
+  test("renders a sized scrollport, the items at its end in the flow, and a separate log on the server", () => {
     const html = renderToString(() => feed({ class: "activity", busy: true }));
 
-    expect(html).toContain('class="k2b-virtual-feed activity"');
+    expect(html).toMatch(/class="k2b-virtual-feed activity"[^>]*data-server="end"/);
     expect(html).toMatch(/class="k2b-virtual-feed__viewport"[^>]*tabindex="-1"/);
     expect(html).toContain('role="feed"');
     expect(html).toContain('aria-label="Build activity"');
     expect(html).toContain('aria-busy="true"');
     expect(html).toMatch(/class="k2b-sr-only"[^>]*role="log"[^>]*aria-live="polite"[^>]*aria-relevant="additions"/);
-    // Rows need the browser to measure them, so the server sends the frame only.
-    expect(html).not.toContain('role="article"');
-    expect(html).not.toContain("First");
+    // The first picture already shows the items; the browser places the same rows before it paints.
+    expect(html.match(/role="article"/g)).toHaveLength(2);
+    expect(html).toMatch(/data-key="a"[^>]*data-server=""/);
+    expect(html.indexOf("First")).toBeLessThan(html.indexOf("Second"));
+    expect(html).not.toContain("translateY");
     expect(html).not.toContain("k2b-virtual-feed__end");
+    expect(html).not.toContain("k2b-virtual-feed__sticky");
+  });
+
+  test("renders on the server only the items at the starting point that fill a screen", () => {
+    const many = Array.from({ length: 200 }, (_, index) => ({ id: `e${index}`, text: `Entry ${index}` }));
+    const keysOf = (html: string) => [...html.matchAll(/data-key="(e\d+)"/g)].map((match) => match[1]);
+    // 40 px each, so 1,600 px of estimates are 40 items: the newest at the end, or the first at the start.
+    const end = keysOf(renderToString(() => feed({ items: many })));
+    expect(end).toHaveLength(40);
+    expect(end[0]).toBe("e160");
+    expect(end.at(-1)).toBe("e199");
+    const start = keysOf(renderToString(() => feed({ items: many, anchor: "start" })));
+    expect(start).toHaveLength(40);
+    expect(start[0]).toBe("e0");
+    expect(start.at(-1)).toBe("e39");
+    // A conversation whose newer items are not loaded opens at its first loaded item in the browser, so the server
+    // renders from there too.
+    const middle = renderToString(() => feed({ items: many, hasNewer: true }));
+    expect(keysOf(middle)[0]).toBe("e0");
+    expect(middle).toContain('data-server="start"');
+  });
+
+  test("a list that starts at the top renders its separators and its load-more edge on the server", () => {
+    const html = renderToString(() =>
+      feed({
+        anchor: "start",
+        stickySeparators: true,
+        separator: (entry: Entry, previous: Entry | undefined) => (previous ? undefined : `Group of ${entry.text}`),
+        hasMore: true,
+        onLoadMore: () => undefined,
+      }),
+    );
+    expect(html).toMatch(/class="k2b-virtual-feed"[^>]*data-anchor="start"/);
+    expect(html).toContain("Group of First");
+    expect(html.match(/k2b-virtual-feed__separator/g)).toHaveLength(1);
+    expect(html).toMatch(/class="k2b-load-more"[^>]*data-state="idle"/);
+    expect(html).toContain("Load more");
+    expect(html.indexOf("Second")).toBeLessThan(html.indexOf("k2b-load-more"));
   });
 
   test("shows the empty slot only without items", () => {

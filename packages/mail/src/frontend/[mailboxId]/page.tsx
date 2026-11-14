@@ -1,10 +1,11 @@
+import { getLiveDictationStatus } from "@k2b/cloud/ai";
 import { type AuthContext, getDateConfig, getLocale, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server";
 import { appAccessAuthority, coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin, readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
 import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { mailPageHelp } from "../../help";
-import type { MailRequestContext } from "../../service";
+import { type MailRequestContext, mailboxAccess } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
 import { requestContactDirectory } from "../../service/contact-directory";
 import { CountRefreshBusy } from "../../service/view-count-cache";
@@ -28,23 +29,26 @@ export default ssr<AuthContext>(async (c) => {
     const actor = c.get("actor");
     const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
     if (!user) return ssr.error(c, 403);
-    const request = await resolveWorkspaceRequest(new URL(c.req.raw.url), mailboxId);
-    if (!request) return c.redirect(`/app/mail/${mailboxShortId}`);
     const context: MailRequestContext = {
       actor,
       accessSubject: c.get("accessSubject"),
       requestId: c.req.header("x-request-id") ?? null,
     };
+    const readable = await mailboxAccess.requireMailboxAccess(context, mailboxId, "read");
+    if (!readable.ok) return ssr.error(c, 404);
+    const request = await resolveWorkspaceRequest(new URL(c.req.raw.url), mailboxId);
+    if (!request) return c.redirect(`/app/mail/${mailboxShortId}`);
     const cookieHeader = c.req.header("cookie");
     const workspacePreferences = readMailWorkspacePreferences(cookieHeader);
     const userPreferences = readMailUserPreferencesFromCookieHeader(cookieHeader, mailboxShortId);
     const themePreference = readThemePreferenceFromCookieHeader(cookieHeader);
     // The sidebar's mailboxes load beside the mailbox, so the page waits for neither one after the other.
-    const [internalData, spacesIntegration, sidebar, appUrl] = await Promise.all([
+    const [internalData, spacesIntegration, sidebar, appUrl, liveDictation] = await Promise.all([
       loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
       getSpacesMailIntegrationAvailability(appAccessAuthority(c)),
       loadMailSidebarData(context),
       coreSettings.get<string>("app.url"),
+      getLiveDictationStatus(c.get("accessSubject")),
     ]);
     if (!internalData.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, internalData.error.status));
     const data = await projectMailboxPageData(internalData.data);
@@ -73,6 +77,7 @@ export default ssr<AuthContext>(async (c) => {
           initialUserPreferences={userPreferences}
           initialTheme={themePreference === "system" ? null : themePreference}
           calendarIntegrationAvailable={spacesIntegration.invitations}
+          liveDictation={liveDictation.available}
           sidebar={sidebar}
         />
       </Layout>

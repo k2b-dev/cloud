@@ -8,11 +8,14 @@ import {
   archiveComposeTemplateInputSchema,
   type ComposePreview,
   type ComposePreviewInput,
+  type ComposeSignature,
   type ComposeSignatureDefault,
+  type ComposeSignatureInput,
   type ComposeSuggestion,
   type ComposeSuggestionsInput,
   type ComposeTemplate,
   type CreateComposeTemplateInput,
+  composeSignatureInputSchema,
   composeSuggestionsInputSchema,
   createComposeTemplateInputSchema,
   type DraftEditableContent,
@@ -33,7 +36,7 @@ import {
   updateMailboxComposeStyleInputSchema,
 } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { draftVisibleTo, requireMailboxAccess, requireMailboxPermission } from "./access";
+import { draftVisibleTo, getMailboxAccess, requireMailboxAccess, requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Text } from "./canonical";
 import {
@@ -42,12 +45,14 @@ import {
   previewFormattingWarnings,
   type RenderedComposeContent,
   renderComposeContent,
+  renderComposeSignatureBlock,
   renderComposeTemplateSource,
   storedComposeCss,
   validateComposeCss,
   validateComposeTemplateSource,
   withoutSignatureSegments,
 } from "./compose-renderer";
+import { loadDraftSourceQuote } from "./draft-source-quote";
 import { mailboxLogoFailure } from "./mailbox-logo-errors";
 import { validateMailboxLogoImage } from "./mailbox-logo-image";
 import {
@@ -874,6 +879,8 @@ export const renderComposeDraft = async (params: {
   actor: ActorRef;
   renderLiquid: boolean;
   logoSource: "cid" | "data";
+  context?: MailRequestContext;
+  sourceMessageId?: string | null;
 }): Promise<Result<RenderedComposeContent & { inlineLogo: OutboundDraftSnapshot["inlineLogo"] }>> => {
   const db = params.db ?? sql;
   const parsed = internalDraftEditableContentSchema.safeParse(params.draft);
@@ -895,6 +902,16 @@ export const renderComposeDraft = async (params: {
     : [];
   const logo = await currentMailboxLogo(db, params.mailboxId, params.logoSource === "cid");
   const contentId = logo ? mailboxLogoContentId(logo.id, context.data.sender.email) : "";
+  const quote = parsed.data.quoteSource
+    ? await loadDraftSourceQuote({
+        quoteSource: parsed.data.quoteSource,
+        db,
+        mailboxId: params.mailboxId,
+        sourceMessageId: params.sourceMessageId,
+        access: params.context ? await getMailboxAccess(params.context, params.mailboxId, db) : null,
+      })
+    : ok(null);
+  if (!quote.ok) return quote;
   const rendered = renderComposeContent({
     logo: logo
       ? {
@@ -907,6 +924,8 @@ export const renderComposeDraft = async (params: {
         }
       : null,
     signature: signature?.body_template ?? null,
+    quoteSource: parsed.data.quoteSource,
+    sourceQuote: quote.data,
     body: signature ? withoutSignatureSegments(parsed.data.body, signature.body_template) : parsed.data.body,
     format: parsed.data.format,
     customCss: await mailboxStyleSource(db, params.mailboxId),
@@ -926,6 +945,47 @@ export const renderComposeDraft = async (params: {
             contentId,
           }
         : null,
+  });
+};
+
+export const previewComposeSignature = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  input: ComposeSignatureInput;
+}): Promise<Result<ComposeSignature>> => {
+  const parsed = composeSignatureInputSchema
+    .extend({
+      senderIdentityId: z.string().uuid(),
+      signatureTemplateId: z.string().uuid().nullable(),
+    })
+    .safeParse(params.input);
+  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid signature"));
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write");
+  if (!allowed.ok) return allowed;
+  const ownerUserId = privateOwnerId(params.context);
+  const [signature] = parsed.data.signatureTemplateId
+    ? await sql<{ body_template: string }[]>`
+    SELECT body_template FROM mail.compose_templates
+    WHERE id = ${parsed.data.signatureTemplateId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
+      AND kind = 'signature' AND archived_at IS NULL
+      AND (scope = 'mailbox' OR owner_user_id = ${ownerUserId}::uuid)
+  `
+    : [];
+  if (parsed.data.signatureTemplateId && !signature) return fail(err.badInput("The selected signature is not available"));
+  const context = await composeRenderContext({
+    db: sql,
+    mailboxId: params.mailboxId,
+    senderIdentityId: parsed.data.senderIdentityId,
+    draft: internalDraftEditableContentSchema.parse({ senderIdentityId: parsed.data.senderIdentityId }),
+    actor: actorRefFromRequest(params.context),
+  });
+  if (!context.ok) return context;
+  const logo = await currentMailboxLogo(sql, params.mailboxId, false);
+  return renderComposeSignatureBlock({
+    signature: signature?.body_template ?? null,
+    context: context.data,
+    format: parsed.data.format,
+    logoAltText: logo?.alt_text,
   });
 };
 
@@ -959,6 +1019,8 @@ export const previewComposeDraft = async (params: {
     actor: actorRefFromRequest(params.context),
     renderLiquid: true,
     logoSource: "data",
+    context: params.context,
+    sourceMessageId: params.input.sourceMessageId,
   });
   if (!rendered.ok) return rendered;
   return ok({

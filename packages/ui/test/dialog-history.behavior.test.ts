@@ -465,6 +465,36 @@ for (const navigationApi of [true, false]) {
         expect(history.state).toEqual({ page: "tasks" });
       });
 
+      test("a dialog with its own URL closes back to the page URL and resumes its entry after a reload", async () => {
+        const page = location.href;
+        const core = createDialogCore();
+        const first = core.open(view("Map"), { history: true, historyUrl: "?map=one" });
+        expect(new URL(location.href).searchParams.get("map")).toBe("one");
+        core.close();
+        await first;
+        expect(location.href).toBe(page);
+        // The entry a reload left behind: the dialog's URL with a marker no core issued.
+        history.pushState({ k2bDialog: 41, page: "contacts" }, "", "?map=one");
+        const length = history.length;
+        const reloaded = createDialogCore();
+        const second = reloaded.open(view("Map"), { history: true, historyUrl: "?map=one" });
+        expect(history.length).toBe(length);
+        expect(history.state).toMatchObject({ page: "contacts" });
+        expect(marker()).not.toBe(41);
+        // The dialog's own address change stays a dialog-only traversal for the application.
+        const heard: string[] = [];
+        const listener = () => heard.push(location.href);
+        window.addEventListener("popstate", listener);
+        const back = popped();
+        history.back();
+        await back;
+        await second;
+        window.removeEventListener("popstate", listener);
+        expect(reloaded.isOpen()).toBe(false);
+        expect(location.href).toBe(page);
+        expect(heard).toEqual(navigationApi ? [] : [page]);
+      });
+
       test("dialogs without the option leave the history alone", async () => {
         const core = createDialogCore();
         const start = history.length;

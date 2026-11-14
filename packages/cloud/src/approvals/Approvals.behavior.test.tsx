@@ -48,7 +48,7 @@ describe("Approvals", () => {
 
   const mount = async (
     props: { initial?: ApprovalPage; layout?: "list" | "band"; app?: string },
-    answer: (url: string, init?: RequestInit) => Response,
+    answer: (url: string, init?: RequestInit) => Response | Promise<Response>,
   ) => {
     const dom = createDomTestHarness();
     const requests: { url: string; body: unknown }[] = [];
@@ -224,11 +224,15 @@ describe("Approvals", () => {
 
   test("a failed next page keeps the rows and offers a retry next to the button", async () => {
     let failNext = true;
+    let finishRetry!: (response: Response) => void;
+    const pendingRetry = new Promise<Response>((resolve) => {
+      finishRetry = resolve;
+    });
     const view = await mount({ initial: page([item("a1")], { nextCursor: "next", count: 2 }) }, (url) => {
       if (!url.startsWith("/api/approvals?")) return Response.json({ message: "no" }, { status: 500 });
       if (failNext) return Response.json({ message: "unavailable" }, { status: 503 });
       // The browser parses fetched pages strictly, so this row needs a real request id.
-      return Response.json(page([item("00000000-0000-4000-8000-0000000000a2")], { count: 2 }));
+      return pendingRetry;
     });
     try {
       const rows = () => Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
@@ -238,7 +242,13 @@ describe("Approvals", () => {
       expect(rows()).toHaveLength(1);
       expect(view.button("Show more")).toBeUndefined();
       failNext = false;
-      view.button("Try again")!.click();
+      const retry = view.button("Try again")!;
+      const alert = view.dom.root.querySelector('.cloud-approvals__more [role="alert"]');
+      retry.click();
+      expect(retry.disabled).toBe(true);
+      expect(retry.textContent?.trim()).toBe("Try again");
+      expect(view.dom.root.querySelector('.cloud-approvals__more [role="alert"]')).toBe(alert);
+      finishRetry(Response.json(page([item("00000000-0000-4000-8000-0000000000a2")], { count: 2 })));
       await waitFor(() => rows().length === 2, "the next page");
       expect(view.requests.filter((request) => request.url.startsWith("/api/approvals?"))).toHaveLength(2);
       expect(view.dom.root.querySelector('.cloud-approvals__more [role="alert"]')).toBeNull();

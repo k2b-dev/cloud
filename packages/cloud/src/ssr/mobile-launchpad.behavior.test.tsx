@@ -60,13 +60,12 @@ test("the public mobile launcher keeps profile actions and filters apps without 
     expect(document.querySelector("dialog .cloud-mobile-profile")).not.toBeNull();
     expect(document.querySelector("dialog .launchpad-panel")).toBeNull();
     expect(document.querySelectorAll('dialog a[href="/me"]')).toHaveLength(1);
-    // Phones have no dock and no Home button in the title row: the app menu leads with Start, before every app.
+    // Phones have no dock and no Home button in the title row: the app menu leads with Start, an ordinary first tile.
     const start = document.querySelector<HTMLAnchorElement>("dialog a[data-cloud-launchpad-start]");
     expect(start?.getAttribute("href")).toBe("/");
     expect(start?.textContent).toBe("Home");
-    expect(
-      start!.compareDocumentPosition(document.querySelector("dialog .launchpad-app")!) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(document.querySelector("dialog .launchpad-app")).toBe(start);
+    expect(document.querySelectorAll("dialog .launchpad-app")).toHaveLength(3);
     const input = document.querySelector<HTMLInputElement>("dialog input")!;
     input.value = "home";
     input.dispatchEvent(new Event("input", { bubbles: true }));

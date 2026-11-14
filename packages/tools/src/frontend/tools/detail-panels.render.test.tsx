@@ -76,13 +76,14 @@ describe("Tools detail panels", () => {
     expect(html).toContain('class="k2b-detail-panel"');
     expect(html).toContain("<h2>Stripe test</h2>");
     expect(html).toContain('data-scroll-preserve="webhook-request-detail-request-1"');
-    // K1 outline: kind line with the response state, properties, the bodies, then headers under "More about this request".
-    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"));
+    // K1 outline: the name, then the direction and response state below it, properties, the bodies, then headers under "More about this request".
+    expect(html.indexOf("<h2>")).toBeLessThan(html.indexOf('class="k2b-detail-panel__kind"'));
+    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("</header>"));
     expect(kind).toContain("Incoming request");
     expect(kind).toContain("202");
     expect(html).not.toContain('class="k2b-detail-panel__summary"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("k2b-section__icon");
     expect(html).toContain('data-layout="rows"');
     expect(html).toContain('data-size="sm"');
     const properties = html.indexOf(">Properties<");
@@ -96,7 +97,7 @@ describe("Tools detail panels", () => {
     expect(html.slice(more)).toContain("Request headers");
     expect(html.slice(more)).toContain("Response headers");
     // Closed header sections name their header keys.
-    expect(html.slice(more)).toContain('class="k2b-detail-panel__section-preview k2b-truncate-fade">content-type</span>');
+    expect(html.slice(more)).toContain('class="k2b-section__summary k2b-truncate-fade">content-type</span>');
     expect(html.slice(html.indexOf('class="k2b-detail-panel__primary-actions"'))).toContain("<span>Copy JSON</span>");
     expect(html).toContain('aria-label="Close request details"');
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
@@ -123,9 +124,10 @@ describe("Tools detail panels", () => {
     const html = renderImageProcessorView({ initialImages: [image] });
 
     expect(html).toContain("<h2>invoice.png</h2>");
-    expect(html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"))).toContain("Image");
+    // The name says what it is; no type word stands above or below it.
+    expect(html).not.toContain('class="k2b-detail-panel__kind"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("k2b-section__icon");
     expect(html).toContain('aria-label="More image actions"');
     expect(html).toContain("1200 × 800 px");
     expect(html).toContain('<img src="data:image/png;base64,aW1hZ2U=" alt="Preview"');

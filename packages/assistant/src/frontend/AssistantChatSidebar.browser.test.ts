@@ -34,7 +34,7 @@ import { revealChatDelivery } from ${JSON.stringify(resolve(import.meta.dir, "ch
 const config = window.harness;
 const [snapshot, setSnapshot] = createSignal(config.snapshot);
 // \`next\`: what the following reload returns; without it a reload returns the same content anew.
-const sidebar = { setSnapshot, jumps: [], revealed: null, next: null, actions: [] };
+const sidebar = { setSnapshot, jumps: [], revealed: null, next: null, actions: [], opened: [] };
 window.sidebar = sidebar;
 const state = { snapshot, projectContext: () => null, error: () => undefined, refresh: async () => undefined };
 render(
@@ -43,6 +43,7 @@ render(
       snapshot={snapshot}
       initialClosed={config.closed}
       refresh={async () => setSnapshot(JSON.parse(JSON.stringify(sidebar.next ?? snapshot())))}
+      onOpenFile={(file) => sidebar.opened.push(file.path)}
       onJump={(target) => {
         sidebar.jumps.push(target);
         sidebar.revealed = revealChatDelivery(document.querySelector(".harness-timeline"), target)?.textContent ?? null;
@@ -279,7 +280,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     const page = await clientPage(1280);
     try {
       const sidebar = page.locator("#assistant-chat-context");
-      const heading = page.locator(".assistant-sidebar-results .k2b-detail-panel__section-header");
+      const heading = page.locator(".assistant-sidebar-results .k2b-section__header");
       const box = (await sidebar.boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + 300);
       const before = await layout(page);
@@ -345,6 +346,27 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       const delivered = await page.locator('[data-call-id="call-/Umsatzbericht Q1-Q3.pdf"]').boundingBox();
       expect(delivered!.y).toBeGreaterThan(0);
       expect(delivered!.y).toBeLessThan(800);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("⤢ on a file result shows the chat's file results in the Lightbox, whose Open opens the file as a tab", async () => {
+    const page = await clientPage(1280);
+    try {
+      await page.getByRole("button", { name: "Vorschau von Umsatzbericht Q1-Q3.pdf" }).click();
+      const lightbox = page.locator("dialog.k2b-lightbox[open]");
+      await lightbox.waitFor();
+      expect(await lightbox.getAttribute("aria-label")).toBe("Umsatzbericht Q1-Q3.pdf");
+      // The blue Open pill leads the actions; the strip holds the other file results to step to.
+      const actions = lightbox.locator(".k2b-lightbox__actions");
+      expect(await actions.locator("button").first().textContent()).toContain("Öffnen");
+      expect(await lightbox.locator(".k2b-thumbnail-strip__thumb").count()).toBeGreaterThan(1);
+      await actions.getByRole("button", { name: "Öffnen" }).click();
+      await lightbox.waitFor({ state: "detached" });
+      expect(await page.evaluate(() => (window as unknown as { sidebar: { opened: string[] } }).sidebar.opened)).toEqual([
+        "/Umsatzbericht Q1-Q3.pdf",
+      ]);
     } finally {
       await page.close();
     }
@@ -622,9 +644,7 @@ for (const theme of ["light", "dark"] as const)
         const panel = page.locator(width === 390 ? ".assistant-context-sheet" : ".assistant-context-sidebar__panel");
         await panel.waitFor();
         const paint = await panel.evaluate((element) => {
-          const sections = Array.from(
-            element.querySelectorAll(".k2b-detail-panel__group,.k2b-detail-panel__body > .k2b-detail-panel__section"),
-          );
+          const sections = Array.from(element.querySelectorAll(".k2b-detail-panel__group,.k2b-detail-panel__body > .k2b-section"));
           const aside = element.closest(".assistant-context-sidebar");
           const surface = document.createElement("span");
           surface.style.background = "var(--k2b-surface)";

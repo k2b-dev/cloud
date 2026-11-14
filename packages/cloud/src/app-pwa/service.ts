@@ -13,6 +13,7 @@ import { GeoError } from "../services/geo/errors";
 import { coreGeo } from "../services/geo/service";
 import { geoPlan, readGeoConfig } from "../services/geo/settings";
 import { pairingSecret } from "../services/pairing-secret";
+import { sharedWorkstationIdleSeconds } from "../services/session/shared-workstation";
 import { get as getSetting } from "../services/settings";
 import { databaseClock, lockWebAuthority } from "./authority";
 import {
@@ -330,6 +331,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         auth_epoch: string;
         user_epoch: string;
         expires_at: Date;
+        idle_ends_at: Date | null;
         revoked_at: Date | null;
         pwa_device_id: string | null;
         key_state: string;
@@ -338,6 +340,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         category_value: string | null;
       }[]
     >`SELECT f.sid,f.auth_epoch,u.auth_epoch AS user_epoch,f.expires_at,f.revoked_at,f.pwa_device_id,k.state AS key_state,
+        f.last_input_at + ${await sharedWorkstationIdleSeconds()} * interval '1 second' AS idle_ends_at,
         u.account_expires, (NOT f.legal_pending OR EXISTS(SELECT 1 FROM auth.legal_acceptances a WHERE a.user_id=u.id)) AS legal_allowed,
         e.value AS category_value
       FROM auth.session_families f JOIN auth.signing_keys k ON k.kid=f.signing_kid JOIN auth.users u ON u.id=f.user_id
@@ -373,7 +376,8 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         ((family.account_expires && family.account_expires <= time) || !family.legal_allowed || disabledSessions.has(family.sid))
       )
         return { ...view, state: "revoked" };
-      return family.expires_at <= time ? { ...view, state: "expired" } : view;
+      // A shared workstation's family also ends after its idle limit.
+      return family.expires_at <= time || (family.idle_ends_at && family.idle_ends_at <= time) ? { ...view, state: "expired" } : view;
     });
   };
   const deviceActor = (device: Device): AppPwaDeviceActor => ({

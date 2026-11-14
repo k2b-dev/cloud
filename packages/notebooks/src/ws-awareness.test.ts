@@ -5,6 +5,7 @@ import type { Context } from "hono";
 import { WSContext, type WSEvents } from "hono/ws";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { createWsInvalidations } from "../test/ws-invalidations";
 import { notebooksYjs } from "./lib/yjs";
 
 // Isolate module mocks from the real service suites, as in ws-lineage.test.ts.
@@ -19,17 +20,23 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
     expect({ code, output: code === 0 ? "passed" : `${stdout}\n${stderr}` }).toEqual({ code: 0, output: "passed" });
   }, 15_000);
 } else {
+  const invalidations = createWsInvalidations();
   let events: WSEvents | undefined;
   let sequence = 0;
   let permission = "write";
   let authenticated = true;
   let reservationFailure: Error | null = null;
+  // A slow access check, as with a busy session store; every processed message waits for it.
+  let accessDelayMs = 0;
+  // Processing order across edits ("sync:<payload>") and published cursors ("cursor:<clock>").
+  const processed: string[] = [];
   const published: Array<{ payload: string; originPeerId: string }> = [];
   const listeners = new Set<(data: { payload: string; originPeerId: string }) => void>();
   const waitUntilAborted = async function* (config: { signal?: AbortSignal }) {
     if (!config.signal?.aborted)
       await new Promise<void>((resolve) => config.signal?.addEventListener("abort", () => resolve(), { once: true }));
   };
+  mock.module("@k2b/cloud/events", () => ({ subscribeIdentityAccessChanged: () => () => {} }));
   mock.module("@k2b/cloud/server", () => ({
     guardAppAccessSocket: async (_c: Context, _appId: string, events: WSEvents) => events,
     getLocale: () => "en",
@@ -54,61 +61,103 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       note: {
         getByShortId: async () => note,
         get: async () => note,
+        getRoomAccessState: async () => ({ ...note, restoreRevision: "0" }),
         getAnchoredYjsState: async () => ({ yjsState: null, streamCursor: null, restoreRevision: "0", contentMd: null }),
         getYjsStateWithCursor: async () => ({ restoreRevision: "0" }),
+        acceptYjsUpdate: async (input: { update: Uint8Array; validate: () => Promise<boolean> }) => {
+          if (!(await input.validate())) return { status: "recoveryRequired" };
+          const doc = new Y.Doc();
+          Y.applyUpdate(doc, input.update);
+          processed.push(`sync:${doc.getText("codemirror").toString()}`);
+          doc.destroy();
+          return { status: "accepted", cursor: `s6t.fixture.${++sequence}` };
+        },
         deliverAtRestoreRevision: async (input: { deliver: () => void }) => {
           input.deliver();
           return "delivered";
         },
       },
-      notebook: { permission: { get: async () => permission } },
-      workspaceEvents: { live: waitUntilAborted },
+      notebook: {
+        permission: {
+          get: async () => {
+            if (accessDelayMs) await Bun.sleep(accessDelayMs);
+            return permission;
+          },
+        },
+      },
+      workspaceEvents: { live: invalidations.live, latestCursor: async () => "s6t.events.0" },
       presence: { snapshot: async () => ({ participants: [] }), watch: waitUntilAborted, join: async () => {}, leave: async () => {} },
     },
   }));
   mock.module("./service/yjs-snapshot-worker", () => ({ yjsSnapshotWorker: { queueSnapshotSave: async () => {} } }));
-  mock.module("./service/yjs-sync", () => ({
-    NODE_ID: "fixture",
-    toBase64: encoding.toBase64,
-    isStorageExhausted: () => false,
-    isValidYjsUpdate: () => true,
-    maxStreamCursor: (_old: string | null, next: string) => next,
-    createYjsTopic: () => ({
+  mock.module("./service/yjs-sync", () => {
+    const topic = () => ({
       latestCursor: async () => null,
       cursorAt: () => "s6t.fixture.0",
       hub: () => ({ subscribe: waitUntilAborted, close() {} }),
       replay: async function* () {},
-    }),
-    createYjsAwarenessTopic: () => ({
-      live: async function* (config: { signal: AbortSignal }) {
-        const pending: Array<{ payload: string; originPeerId: string }> = [];
-        let wake = () => {};
-        const listener = (data: { payload: string; originPeerId: string }) => {
-          pending.push(data);
-          wake();
-        };
-        listeners.add(listener);
-        config.signal.addEventListener("abort", () => wake(), { once: true });
-        try {
-          while (!config.signal.aborted) {
-            if (!pending.length)
-              await new Promise<void>((resolve) => {
-                wake = resolve;
-              });
-            while (pending.length) yield { data: pending.shift()!, tenantId: "note" };
+    });
+    return {
+      notebooksTextLog: {
+        topic,
+        withStore: () => ({
+          accept: async (
+            docId: string,
+            input: Omit<Parameters<typeof import("./service")["notebooksService"]["note"]["acceptYjsUpdate"]>[0], "noteId">,
+          ) => {
+            const { notebooksService } = await import("./service");
+            return notebooksService.note.acceptYjsUpdate({ ...input, noteId: docId });
+          },
+        }),
+      },
+      NODE_ID: "fixture",
+      toBase64: encoding.toBase64,
+      isStorageExhausted: () => false,
+      isValidYjsUpdate: () => true,
+      maxStreamCursor: (_old: string | null, next: string) => next,
+      createYjsTopic: topic,
+      createYjsAwarenessTopic: () => ({
+        live: async function* (config: { signal: AbortSignal }) {
+          const pending: Array<{ payload: string; originPeerId: string }> = [];
+          let wake = () => {};
+          const listener = (data: { payload: string; originPeerId: string }) => {
+            pending.push(data);
+            wake();
+          };
+          listeners.add(listener);
+          config.signal.addEventListener("abort", () => wake(), { once: true });
+          try {
+            while (!config.signal.aborted) {
+              if (!pending.length)
+                await new Promise<void>((resolve) => {
+                  wake = resolve;
+                });
+              while (pending.length) yield { data: pending.shift()!, tenantId: "note" };
+            }
+          } finally {
+            listeners.delete(listener);
           }
-        } finally {
-          listeners.delete(listener);
-        }
-      },
-      publish: async (input: { data: { payload: string; originPeerId: string } }) => {
-        if (reservationFailure) throw reservationFailure;
-        published.push(input.data);
-        for (const listener of listeners) listener(input.data);
-        return { streamSequence: ++sequence, cursor: `s6t.fixture.${sequence}` };
-      },
-    }),
-  }));
+        },
+        publish: async (input: { data: { payload: string; originPeerId: string } }) => {
+          if (accessDelayMs) await Bun.sleep(accessDelayMs);
+          if (reservationFailure) throw reservationFailure;
+          published.push(input.data);
+          if (input.data.payload !== "AA==") {
+            const doc = new Y.Doc();
+            const state = new Awareness(doc);
+            state.setLocalState(null);
+            applyAwarenessUpdate(state, encoding.fromBase64(input.data.payload), "remote");
+            const cursor = [...state.getStates().values()][0]?.cursor as { anchor?: { item?: { clock?: number } } } | undefined;
+            processed.push(`cursor:${cursor?.anchor?.item?.clock ?? "none"}`);
+            state.destroy();
+            doc.destroy();
+          }
+          for (const listener of listeners) listener(input.data);
+          return { streamSequence: ++sequence, cursor: `s6t.fixture.${sequence}` };
+        },
+      }),
+    };
+  });
   const { default: app } = await import("./ws");
   type Wire = { type: string; payload: { peerId?: string; code?: string; updates?: Array<{ payload: string; originPeerId: string }> } };
   const waitFor = async (predicate: () => boolean) => {
@@ -143,6 +192,13 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       sent,
       closed,
       publish: (payload: string) => message(notebooksYjs.wsType.awarenessPublish, { payload }),
+      edit: (text: string) => {
+        const doc = new Y.Doc();
+        doc.getText("codemirror").insert(0, text);
+        const payload = encoding.toBase64(Y.encodeStateAsUpdate(doc));
+        doc.destroy();
+        return message(notebooksYjs.wsType.syncPublish, { payload, restoreRevision: "0", baseCursor: null });
+      },
       close: async () => handlers.onClose?.(new CloseEvent("close"), socket),
     };
   };
@@ -221,6 +277,8 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       applyPublished();
       expect([...observer.getStates().keys()]).toEqual([2 ** 32 + 8]);
       permission = "none";
+      invalidations.emit();
+      await waitFor(() => reconnect.closed.length > 0);
       await reconnect.publish(payload({}));
       await waitFor(() => reconnect.closed.length > 0);
       expect(reconnect.sent.some((entry) => entry.payload.code === "ACCESS_REVOKED")).toBe(true);
@@ -259,6 +317,8 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       expect(published.slice(initialPublications).map((entry) => entry.payload)).toEqual(["AA=="]);
       const before = published.length;
       authenticated = false;
+      invalidations.emit();
+      await waitFor(() => socket.closed.length > 0);
       await socket.publish(payload({}));
       await waitFor(() => socket.closed.length > 0);
       expect(published).toHaveLength(before);
@@ -268,6 +328,49 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       await socket.close();
     }
   });
+  test("a cursor flood with slow broker publication keeps the connection, and edits arrive in order", async () => {
+    const socket = await open();
+    try {
+      accessDelayMs = 3;
+      processed.length = 0;
+      const cursorAt = (clock: number) => {
+        const at = { tname: "codemirror", item: { client: 99, clock }, assoc: 0 };
+        return payload({ cursor: { anchor: at, head: at } });
+      };
+      // A selection drag: 600 cursor messages at once, with an edit after every hundredth.
+      const sentOrder: string[] = [];
+      for (let clock = 1; clock <= 600; clock++) {
+        await socket.publish(cursorAt(clock));
+        sentOrder.push(`cursor:${clock}`);
+        if (clock % 100 === 0) {
+          await socket.edit(`edit-${clock}`);
+          sentOrder.push(`sync:edit-${clock}`);
+        }
+      }
+      await waitFor(() => processed.includes("sync:edit-600") && processed.includes("cursor:600"));
+      // Nothing was shed: before, the queue filled up after 200 messages and the socket closed with 1013.
+      expect(socket.closed).toEqual([]);
+      expect(socket.sent.some((entry) => entry.payload.code === "BACKPRESSURE")).toBe(false);
+      // Every edit arrived, in order; the cursor ends at its newest state after far fewer publications.
+      expect(processed.filter((entry) => entry.startsWith("sync:"))).toEqual(
+        [100, 200, 300, 400, 500, 600].map((clock) => `sync:edit-${clock}`),
+      );
+      const cursors = processed.filter((entry) => entry.startsWith("cursor:"));
+      expect(cursors.at(-1)).toBe("cursor:600");
+      expect(cursors.length).toBeLessThan(50);
+      // No cursor overtakes the edit sent before it.
+      for (const [index, entry] of processed.entries()) {
+        if (!entry.startsWith("cursor:")) continue;
+        const sentAt = sentOrder.indexOf(entry);
+        const editsBefore = sentOrder.slice(0, sentAt).filter((sent) => sent.startsWith("sync:"));
+        for (const edit of editsBefore) expect(processed.indexOf(edit)).toBeLessThan(index);
+      }
+    } finally {
+      accessDelayMs = 0;
+      await socket.close();
+    }
+  });
+
   test("reservation failures stop visibly instead of accepting an unbound cursor", async () => {
     const socket = await open();
     try {

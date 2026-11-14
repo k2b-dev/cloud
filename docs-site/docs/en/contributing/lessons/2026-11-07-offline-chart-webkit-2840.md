@@ -1,0 +1,6 @@
+### Remote browser queries consumed the offline chart test deadline
+
+- **What happened:** The four desktop/phone and light/dark offline chart cases timed out at five seconds on an unrelated Notebooks PR (#2840); other cases in the same file still drew charts offline.
+- **Root cause:** The matrix case serialized dozens of remote browser calls for DOM reads, actions and export checks. The job slowed other chart cases from under one second to three to five seconds, and unrelated Chat panel cases also exceeded their budgets. All 112 assertions in the file executed, including all fourteen per matrix case, despite the four elapsed-time failures. This excludes an unavailable offline chunk or a permanently unresolved readiness condition in those cases.
+- **Error class:** Browser protocol round trips consume a scenario's deadline even when each product operation completes.
+- **Guard:** `lazy-charts.browser.test.ts` keeps all four offline cases, their five-second deadline, visible SVG waits, exact loading/rendered geometry, loading feedback, inspection, callbacks, module reuse, snapshots and zero-network checks. DOM observations at each settled phase travel in one browser call, retaining all fourteen assertions per case, with an explicit assertion-count guard.

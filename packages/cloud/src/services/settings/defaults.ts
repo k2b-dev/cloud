@@ -11,6 +11,7 @@
 
 import type { AppSettingPresentationTranslation } from "../../contracts/settings-types";
 import type { SettingKind, SettingOption } from "../../contracts/shared";
+import { DEFAULT_STORAGE_BUCKET_ID, parseStorageBucketId, type StorageBucketId } from "../../contracts/storage-buckets";
 import { ACCOUNT_ACTION_NOTICE_SAMPLE, renderAccountActionNotice } from "../../shared/account-action-notice";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../../shared/locale";
 import { migrateLegacyMustacheTemplate, validateLiquidTemplate } from "../../shared/template-rendering";
@@ -80,6 +81,7 @@ type NumberListSettingDef = SettingCommon & {
 };
 
 export type SettingDef =
+  | (SettingCommon & { kind: "storage_bucket"; default: StorageBucketId })
   | StringLikeSettingDef
   | BooleanSettingDef
   | NumberSettingDef
@@ -119,7 +121,7 @@ export const toLegacySettingDefs = (settings: Record<string, unknown>, requested
       kind: d.kind as SettingDef["kind"],
       // The cast loses the per-kind discriminated default type but the data is
       // correct; validateSettingValue re-validates against kind anyway.
-      default: d.default as never,
+      default: (d.kind === "storage_bucket" ? (d.default ?? DEFAULT_STORAGE_BUCKET_ID) : d.default) as never,
       label: d.label as string | undefined,
       description: (d.description as string | undefined) ?? "",
       placeholder: d.placeholder as string | undefined,
@@ -242,6 +244,8 @@ export const getSettingLabel = (def: SettingDef): string => {
 
 export const normalizeSettingValue = (def: SettingDef, raw: unknown): unknown => {
   switch (def.kind) {
+    case "storage_bucket":
+      return typeof raw === "string" ? raw.trim().toLowerCase() : raw;
     case "boolean":
       if (typeof raw === "boolean") return raw;
       if (typeof raw === "string") {
@@ -292,6 +296,10 @@ export const validateSettingValue = (def: SettingDef, raw: unknown): SettingVali
   }
 
   switch (def.kind) {
+    case "storage_bucket": {
+      const id = parseStorageBucketId(value);
+      return id ? { ok: true, value: id } : { ok: false, error: `${getSettingLabel(def)} must be a valid storage bucket ID` };
+    }
     case "boolean":
       return typeof value === "boolean" ? { ok: true, value } : { ok: false, error: `${getSettingLabel(def)} must be true or false` };
     case "number":

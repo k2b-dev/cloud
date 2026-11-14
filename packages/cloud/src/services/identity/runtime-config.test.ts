@@ -1,4 +1,4 @@
-import { describe, expect, jest, spyOn, test } from "bun:test";
+import { describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import { env } from "../../config/env";
 import * as settings from "../settings";
 import {
@@ -101,5 +101,27 @@ test("OAuth JWKS uses Core's internal endpoint, honors the deprecated override a
   } finally {
     Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", core);
     Object.defineProperty(env, "CLOUD_OAUTH_JWKS_ORIGIN", legacy);
+  }
+});
+
+test("identity invalidation replaces an in-flight settings read without recaching its older result", async () => {
+  setSystemTime(new Date("2026-11-12T12:00:00Z"));
+  invalidateIdentityRuntimeConfig();
+  const older = Promise.withResolvers<string[]>();
+  const read = spyOn(settings, "get");
+  read.mockResolvedValueOnce("https://cloud.example").mockReturnValueOnce(older.promise);
+  try {
+    const stale = getIdentityRuntimeConfig();
+    invalidateIdentityRuntimeConfig();
+    read.mockResolvedValueOnce("https://cloud.example").mockResolvedValueOnce(["current"]);
+    expect((await getIdentityRuntimeConfig()).groupsAdmin).toEqual(["current"]);
+    older.resolve(["previous"]);
+    expect((await stale).groupsAdmin).toEqual(["previous"]);
+    expect((await getIdentityRuntimeConfig()).groupsAdmin).toEqual(["current"]);
+  } finally {
+    older.resolve([]);
+    read.mockRestore();
+    invalidateIdentityRuntimeConfig();
+    setSystemTime();
   }
 });

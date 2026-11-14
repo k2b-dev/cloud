@@ -75,11 +75,10 @@ export function createMailboxMenu(options: () => MailboxMenuOptions) {
         sectionLabel: t.mailbox,
         items: [
           {
-            id: "details",
-            label: current.canWrite ? t.mailboxDetails : t.aboutMailbox,
-            icon: "ti ti-info-circle",
-            action: current.onOpenDetails,
-            disabled: current.detailsOpening,
+            id: "automations",
+            label: t.automations,
+            icon: "ti ti-route",
+            action: () => documentNavigate(`/app/mail/${current.mailboxId}/automations`),
           },
           ...(current.canAdmin
             ? [
@@ -94,17 +93,19 @@ export function createMailboxMenu(options: () => MailboxMenuOptions) {
                 { id: "health", label: t.mailboxHealth, icon: "ti ti-heartbeat", action: current.onOpenHealth },
               ]
             : []),
-          {
-            id: "automations",
-            label: t.automations,
-            icon: "ti ti-route",
-            action: () => documentNavigate(`/app/mail/${current.mailboxId}/automations`),
-          },
+          { id: "settings", label: t.settings, icon: "ti ti-settings", action: current.onOpenSettings },
         ],
       },
       {
         sectionLabel: t.manage,
         items: [
+          {
+            id: "details",
+            label: current.canWrite ? t.mailboxDetails : t.aboutMailbox,
+            icon: "ti ti-info-circle",
+            action: current.onOpenDetails,
+            disabled: current.detailsOpening,
+          },
           { id: "mailing-lists", label: t.mailingLists, icon: "ti ti-news", action: current.onOpenSubscriptions },
           { id: "remote-images", label: t.remoteImages, icon: "ti ti-photo-shield", action: current.onOpenRemoteContent },
           ...(current.canAdmin
@@ -115,9 +116,6 @@ export function createMailboxMenu(options: () => MailboxMenuOptions) {
       {
         sectionLabel: t.thisBrowser,
         items: [{ id: "email-links", label: t.emailLinkSetup, icon: "ti ti-link", action: () => void registerEmailLinks() }],
-      },
-      {
-        items: [{ id: "settings", label: t.settings, icon: "ti ti-settings", action: current.onOpenSettings }],
       },
     ];
   };
@@ -132,17 +130,18 @@ export function createMailboxMenu(options: () => MailboxMenuOptions) {
 export type MailboxMenu = ReturnType<typeof createMailboxMenu>;
 
 /**
- * "…" for the mailbox. `leading` entries come first, such as the sidebar row's own pin and hide. Renders nothing when
- * the person may use no entry.
+ * "…" for the mailbox. `leading` entries come first, such as the sidebar row's own pin and hide; `trailing` entries
+ * last, such as the head's choice between conversations and messages. Renders nothing when the person may use no entry.
  */
 export function MailboxMenuButton(props: {
   menu: MailboxMenu;
   label: string;
   leading?: MailboxMenuSection[];
+  trailing?: MailboxMenuSection[];
   size?: "xs" | "sm";
   class?: string;
 }) {
-  const sections = () => [...(props.leading ?? []), ...props.menu.sections()];
+  const sections = () => [...(props.leading ?? []), ...props.menu.sections(), ...(props.trailing ?? [])];
   return (
     <Show when={sections().length > 0}>
       <Dropdown.Root items={sections()} position="bottom-right" label={props.label} phone="sheet">

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as cloud from "@k2b/cloud";
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
+import { auth } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
@@ -49,6 +50,7 @@ const page = async (query = "", cookie = "") => {
     html,
     form: form?.[2],
     category: props && typeof props === "object" && "category" in props ? props.category : undefined,
+    forget: props && typeof props === "object" && "forget" in props ? props.forget : undefined,
     /** The plain link to the other credential: [target, label]. */
     alternative: /<a href="([^"]+)" class="k2b-button auth-login-alternative[^>]*><span[^>]*>([^<]+)</.exec(html)?.slice(1),
   };
@@ -116,6 +118,28 @@ test("without configured app sign-in the page offers no app form or link", async
     expect(form).toBe(query.includes("ipa") ? "LoginForm" : "GuestLoginForm");
     expect(alternative).toBeUndefined();
   }
+});
+
+test("a shared workstation ignores what the browser remembered and tells the forms to remember nothing", async () => {
+  const unmarked = await page("", usedApp);
+  expect([unmarked.form, unmarked.forget]).toEqual(["AppLoginForm", false]);
+  const plain = await page("");
+  spies.push(spyOn(auth.session, "isSharedWorkstation").mockReturnValue(true));
+  for (const cookie of ["", usedApp, "login_method=email", "login_email=1; login_method=login"]) {
+    const marked = await page("", cookie);
+    expect([marked.form, marked.category, marked.forget]).toEqual([plain.form, plain.category, true]);
+    expect(marked.html).toContain("This is a shared workstation");
+  }
+});
+
+test("after an idle sign-out the page says why and finishes the sign-out", async () => {
+  spies.push(spyOn(auth.session, "isSharedWorkstation").mockReturnValue(true));
+  const signedOut = await page("?signedOut=idle");
+  expect(signedOut.html).toContain("You were signed out because nobody worked at this shared workstation for a while.");
+  expect(signedOut.html).toContain('data-file="IdleSignOutFinish.island.tsx"');
+  const regular = await page("");
+  expect(regular.html).not.toContain("IdleSignOutFinish");
+  expect((await page("?signedOut=idle", "cloud.locale=de")).html).toContain("Du wurdest abgemeldet");
 });
 
 test("both directions are labelled in German", async () => {

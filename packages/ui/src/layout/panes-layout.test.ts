@@ -3,15 +3,24 @@ import {
   activatePanesItem,
   addPanesItem,
   applyPanesIntent,
+  applyPanesPreset,
+  canApplyPanesPreset,
   createPanesLayout,
   getPanesDropTargets,
+  getPanesMoves,
+  getPanesPreset,
+  getPanesSplitRatio,
   isPanesItemVisible,
   type PanesLayout,
+  panesItemOrder,
   parsePanesLayout,
+  projectPanesLayout,
   reconcilePanesLayout,
   removePanesItem,
   resizePanesSplit,
+  samePanesArrangement,
   samePanesIntent,
+  samePanesSizes,
 } from "./panes-layout";
 
 const splitLayout = (): PanesLayout => ({
@@ -171,5 +180,91 @@ describe("Panes layout", () => {
     if (resized.root?.type !== "split" || nested.root?.type !== "split") throw new Error("Expected split layouts");
     expect(resized.root.second).toBe(nested.root.second);
     expect(resizePanesSplit(nested, ["second"], 0.5)).toBe(nested);
+  });
+
+  test("arranges presets in item order, keeps the active tab, and borrows ratios from a matching fallback", () => {
+    const ids = ["draft", "history", "preview"];
+    expect(applyPanesPreset("stacked", ids)).toEqual({
+      version: 2,
+      root: {
+        type: "split",
+        direction: "horizontal",
+        ratio: 0.5,
+        first: { type: "group", items: ["draft"], active: "draft" },
+        second: {
+          type: "split",
+          direction: "vertical",
+          ratio: 0.5,
+          first: { type: "group", items: ["history"], active: "history" },
+          second: { type: "group", items: ["preview"], active: "preview" },
+        },
+      },
+    });
+    expect(applyPanesPreset("tabs", ids, { active: "preview" })?.root).toEqual({
+      type: "group",
+      items: ids,
+      active: "preview",
+    });
+    expect(applyPanesPreset("two", ids, { active: "preview" })?.root).toMatchObject({
+      second: { type: "group", items: ["history", "preview"], active: "preview" },
+    });
+    expect(applyPanesPreset("three", ["a", "b"])).toBeNull();
+    expect(applyPanesPreset("stacked", ["a", "b"])).toBeNull();
+
+    const fallback = resizePanesSplit(resizePanesSplit(applyPanesPreset("stacked", ids)!, [], 0.54), ["second"], 0.58);
+    const restored = applyPanesPreset("stacked", ids, { fallback });
+    expect(getPanesSplitRatio(restored!, [], "horizontal")).toBe(0.54);
+    expect(getPanesSplitRatio(restored!, ["second"], "vertical")).toBe(0.58);
+    expect(getPanesSplitRatio(applyPanesPreset("two", ids, { fallback })!, [], "horizontal")).toBe(0.5);
+  });
+
+  test("names the preset a layout has and offers only presets the split option allows", () => {
+    const ids = ["draft", "history", "preview"];
+    for (const preset of ["two", "three", "stacked", "tabs"] as const) {
+      expect(getPanesPreset(applyPanesPreset(preset, ids)!, ids)).toBe(preset);
+    }
+    expect(getPanesPreset(splitLayout(), ["one", "two", "three"])).toBeNull();
+    expect(canApplyPanesPreset("stacked", 3, "horizontal")).toBe(false);
+    expect(canApplyPanesPreset("two", 3, "vertical")).toBe(false);
+    expect(canApplyPanesPreset("tabs", 3, false)).toBe(true);
+    expect(canApplyPanesPreset("three", 2, "both")).toBe(false);
+  });
+
+  test("compares arrangements without ratios or active tabs, and sizes with ratios", () => {
+    const resized = resizePanesSplit(splitLayout(), [], 0.3);
+    expect(samePanesArrangement(resized, splitLayout())).toBe(true);
+    expect(samePanesSizes(resized, splitLayout())).toBe(false);
+    expect(samePanesSizes(activatePanesItem(splitLayout(), "two"), splitLayout())).toBe(true);
+    expect(samePanesArrangement(activatePanesItem(splitLayout(), "two"), splitLayout())).toBe(true);
+    expect(samePanesArrangement(createPanesLayout(["one", "two", "three"]), splitLayout())).toBe(false);
+    expect(samePanesArrangement({ version: 2, root: null }, { version: 2, root: null })).toBe(true);
+  });
+
+  test("offers a menu move for every drop target that changes the arrangement, plus one tab step each way", () => {
+    const layout = applyPanesPreset("stacked", ["draft", "history", "notes", "preview"])!;
+    const options = { movable: true, split: "both" as const };
+    const moves = getPanesMoves(layout, "history", options);
+    const changing = getPanesDropTargets(layout, "history", options).filter(
+      (target) => target.kind !== "tab" && !samePanesArrangement(applyPanesIntent(layout, target.intent), layout),
+    );
+    expect(moves.filter((move) => move.kind !== "tab").map((move) => move.intent)).toEqual(changing.map((target) => target.intent));
+    expect(moves.some((move) => move.kind === "tab")).toBe(false);
+    for (const move of moves) expect(samePanesArrangement(applyPanesIntent(layout, move.intent), layout)).toBe(false);
+
+    const notes = getPanesMoves(layout, "notes", options);
+    const step = notes.find((move) => move.kind === "tab");
+    expect(step).toMatchObject({ kind: "tab", direction: "next" });
+    expect(panesItemOrder(applyPanesIntent(layout, step!.intent))).toEqual(["draft", "history", "preview", "notes"]);
+    expect(getPanesMoves(layout, "notes", { movable: false, split: "both" })).toEqual([]);
+  });
+
+  test("projects every item into one group without touching the stored layout", () => {
+    const layout = splitLayout();
+    expect(projectPanesLayout(layout, "three")).toEqual({
+      version: 2,
+      root: { type: "group", items: ["one", "two", "three"], active: "three" },
+    });
+    expect(projectPanesLayout(layout, null).root).toMatchObject({ active: "one" });
+    expect(layout).toEqual(splitLayout());
   });
 });

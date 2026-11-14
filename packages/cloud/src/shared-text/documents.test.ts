@@ -3,11 +3,12 @@ import { ConflictError, type TopicPublish } from "@k2b/sync";
 import * as Y from "yjs";
 import { createStructuralFixture } from "../../../../scripts/fixtures/shared-text-history";
 import { captureTextAnchor, resolveTextAnchor } from "./anchors";
+import { SharedTextBoundaryError } from "./boundary";
 import { bindDocuments, createDoc } from "./documents";
 import { applySharedTextEvent, SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
 import type { SharedTextSaveInput, SharedTextStoredState, SharedTextSyncEvent } from "./types";
 
-const fixture = () => {
+const fixture = (checkLifecycle?: () => Promise<() => Promise<void>>) => {
   let stored: SharedTextStoredState | null = { state: null, cursor: null, restoreRevision: "revision", text: null };
   const publications: TopicPublish<SharedTextSyncEvent>[] = [];
   const events: { cursor: string; data: SharedTextSyncEvent }[] = [];
@@ -33,6 +34,7 @@ const fixture = () => {
   };
   const documents = bindDocuments(
     {
+      checkLifecycle,
       topic: () => handle,
       async *events(_docId, after, until) {
         const start = after === until ? Number(until.split(".").at(-1)) - 1 : after ? Number(after.split(".").at(-1)) : 0;
@@ -72,6 +74,7 @@ const fixture = () => {
   };
   return {
     documents,
+    stored: () => stored,
     publications,
     events,
     saves,
@@ -137,6 +140,7 @@ test("an unreferenced freeze marker does not reject a pending edit from before t
   const vector = Y.encodeStateVector(doc);
   doc.getText(SHARED_TEXT_NAME).insert(5, " later");
   const admitted = await f.documents.accept("doc", {
+    snapshot: f.stored(),
     actor,
     update: Y.encodeStateAsUpdate(doc, vector),
     baseCursor: null,
@@ -210,6 +214,7 @@ test("admission validates application headers in the merged state before confirm
     const update = Y.encodeStateAsUpdate(f.own.doc, vector);
     let inspected = false;
     const result = await f.documents().accept("fixture", {
+      snapshot: f.stored(),
       actor: f.own.actor,
       update,
       baseCursor: f.own.cursor,
@@ -639,6 +644,7 @@ test("ordinary ingress accepts an idle shared-topic snapshot watermark and repla
   try {
     expect(
       await documents.accept("idle", {
+        snapshot: stored,
         actor: { kind: "user", id: "author" },
         update: Y.encodeStateAsUpdate(client, before),
         baseCursor: stored.cursor,
@@ -696,7 +702,15 @@ test("admission validates the merged text limit before confirming individually l
     expect(f.peer.text.length).toBe(6);
     const own = Y.encodeStateAsUpdate(f.own.doc, ownVector),
       peer = Y.encodeStateAsUpdate(f.peer.doc, peerVector);
-    const options = { actor: f.own.actor, baseCursor, restoreRevision: "0", originNodeId: "fixture", originPeerId: "peer", maxLength: 6 };
+    const options = {
+      snapshot: f.stored(),
+      actor: f.own.actor,
+      baseCursor,
+      restoreRevision: "0",
+      originNodeId: "fixture",
+      originPeerId: "peer",
+      maxLength: 6,
+    };
     expect((await f.documents().accept("fixture", { ...options, update: own })).status).toBe("accepted");
     const count = f.events.length,
       before = (await f.canonical()).text;
@@ -822,6 +836,7 @@ test("ordinary server edits admit concurrent browser input while table scaffold 
       expect(await f.documents.edit("doc", { actor: null }, () => next)).toMatchObject({ status: "edited" });
       expect(
         await f.documents.accept("doc", {
+          snapshot: f.stored(),
           actor: { kind: "user", id: "browser" },
           update: Y.encodeStateAsUpdate(browser, vector),
           baseCursor: current!.cursor,
@@ -834,5 +849,213 @@ test("ordinary server edits admit concurrent browser input while table scaffold 
     } finally {
       browser.destroy();
     }
+  }
+});
+
+test("a retained restore marker fences old opaque revisions before any SQL or outbox delivery", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  try {
+    source.getText(SHARED_TEXT_NAME).insert(0, "old input");
+    f.events.push({
+      cursor: "s6t.fixture.1",
+      data: { kind: "freeze", payload: "", restoreRevision: "restored:opaque", originNodeId: "other-node", originPeerId: null },
+    });
+    expect(
+      await f.documents.accept("doc", {
+        snapshot: f.stored(),
+        actor: { kind: "user", id: "user" },
+        update: Y.encodeStateAsUpdate(source),
+        baseCursor: null,
+        restoreRevision: "revision",
+        originNodeId: "fixture",
+        originPeerId: "peer",
+      }),
+    ).toEqual({ status: "recoveryRequired" });
+    expect(f.publications).toHaveLength(0);
+    expect(f.saves).toHaveLength(0);
+  } finally {
+    source.destroy();
+  }
+});
+
+test("admission uses its join snapshot and accepted base without loading SQL or replaying covered edits", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 513;
+  f.failures.load = new Error("Admission must not load the snapshot store");
+  let baseCursor: string | null = null;
+  try {
+    for (let n = 0; n < 50; n++) {
+      const vector = Y.encodeStateVector(source);
+      source.getText(SHARED_TEXT_NAME).insert(n, "x");
+      const result = await f.documents.accept("doc", {
+        snapshot: f.stored(),
+        actor: { kind: "user", id: "author" },
+        update: Y.encodeStateAsUpdate(source, vector),
+        baseCursor,
+        restoreRevision: "revision",
+        originNodeId: "node",
+        originPeerId: "peer",
+      });
+      expect(result.status).toBe("accepted");
+      if (result.status === "accepted") baseCursor = result.cursor;
+    }
+    expect(f.replays).toHaveLength(0);
+    expect(f.publications).toHaveLength(50);
+    expect(f.saves).toHaveLength(0);
+  } finally {
+    source.destroy();
+  }
+});
+
+for (const code of ["DOCUMENT_FROZEN", "DOCUMENT_CLOSED"] as const) {
+  test(`an ordinary ingress published across ${code} cannot be acknowledged or advance its accepted base`, async () => {
+    const f = fixture(async () => async () => {
+      throw new SharedTextBoundaryError(code);
+    });
+    const source = new Y.Doc();
+    let applied = false;
+    try {
+      source.getText(SHARED_TEXT_NAME).insert(0, "late input");
+      expect(
+        await f.documents.accept("doc", {
+          snapshot: f.stored(),
+          actor: { kind: "user", id: "author" },
+          update: Y.encodeStateAsUpdate(source),
+          baseCursor: null,
+          restoreRevision: "revision",
+          originNodeId: "node",
+          originPeerId: "peer",
+          applied: () => {
+            applied = true;
+          },
+        }),
+      ).toEqual({ status: code === "DOCUMENT_FROZEN" ? "frozen" : "closed" });
+      expect(f.events).toHaveLength(1); // Retain the late publication for drainage.
+      expect(applied).toBe(false);
+      expect(f.saves).toHaveLength(0);
+    } finally {
+      source.destroy();
+    }
+  });
+  test(`a server edit published across ${code} cannot report success or save an unfenced state`, async () => {
+    const f = fixture(async () => async () => {
+      throw new SharedTextBoundaryError(code);
+    });
+    await expect(f.documents.edit("doc", { actor: null }, () => "late input")).rejects.toThrow(code);
+    expect(f.events).toHaveLength(1);
+    expect(f.saves).toHaveLength(0);
+  });
+}
+
+test("two documents interleaved after their head yield retain independent admission authority", async () => {
+  const yielded = Promise.withResolvers<void>();
+  const resume = Promise.withResolvers<void>();
+  const heads = new Map([
+    ["a", { cursor: "s6t.multi.1", revision: "revision-a" }],
+    ["b", { cursor: "s6t.multi.2", revision: "revision-b" }],
+  ]);
+  const head = (id: string) => {
+    const entry = heads.get(id);
+    if (!entry) throw new Error("Unknown fixture document");
+    return entry;
+  };
+  const publications: Array<{ id: string; revision?: string }> = [];
+  const documents = bindDocuments(
+    {
+      topic: () => ({
+        latestCursor: async ({ tenantId } = {}) => head(tenantId ?? "").cursor,
+        publish: async (input) => {
+          publications.push({ id: input.tenantId!, revision: input.data.restoreRevision });
+          const cursor = `s6t.multi.${publications.length + 2}`;
+          return { cursor, eventId: cursor, messageId: cursor, streamSequence: publications.length + 2, duplicate: false };
+        },
+      }),
+      events: async function* (id) {
+        const current = head(id);
+        yield {
+          cursor: current.cursor,
+          data: { kind: "freeze", payload: "", restoreRevision: current.revision, originNodeId: "node", originPeerId: null },
+        };
+        if (id === "a") {
+          yielded.resolve();
+          await resume.promise;
+        }
+      },
+      replay: async () => {
+        throw new Error("Joined snapshot already covers the head");
+      },
+    },
+    {
+      load: async () => {
+        throw new Error("Ordinary admission must not load the store");
+      },
+      save: async () => {
+        throw new Error("Ordinary admission must not save the store");
+      },
+    },
+  );
+  const admit = async (id: string) => {
+    const doc = new Y.Doc();
+    try {
+      doc.clientID = id === "a" ? 100 : 200;
+      doc.getText(SHARED_TEXT_NAME).insert(0, id);
+      return await documents.accept(id, {
+        snapshot: { state: null, cursor: head(id).cursor, restoreRevision: head(id).revision, text: "" },
+        actor: { kind: "user", id },
+        update: Y.encodeStateAsUpdate(doc),
+        baseCursor: head(id).cursor,
+        restoreRevision: head(id).revision,
+        originNodeId: "node",
+        originPeerId: id,
+      });
+    } finally {
+      doc.destroy();
+    }
+  };
+  const a = admit("a");
+  try {
+    await yielded.promise;
+    expect(await admit("b")).toMatchObject({ status: "accepted" });
+    resume.resolve();
+    expect(await a).toMatchObject({ status: "accepted" });
+    expect(publications).toEqual([
+      { id: "b", revision: "revision-b" },
+      { id: "a", revision: "revision-a" },
+    ]);
+  } finally {
+    resume.resolve();
+    await a.catch(() => {});
+  }
+});
+
+test("caller cancellation after publication skips the transport applied callback", async () => {
+  const caller = new AbortController();
+  const f = fixture(async () => async () => {
+    caller.abort(new Error("caller cancelled"));
+  });
+  const source = new Y.Doc();
+  let applied = false;
+  try {
+    source.clientID = 41;
+    source.getText(SHARED_TEXT_NAME).insert(0, "late input");
+    await f.documents.accept("doc", {
+      snapshot: f.stored(),
+      actor: { kind: "user", id: "author" },
+      signal: caller.signal,
+      update: Y.encodeStateAsUpdate(source),
+      baseCursor: null,
+      restoreRevision: "revision",
+      originNodeId: "node",
+      originPeerId: "peer",
+      applied: () => {
+        applied = true;
+      },
+    });
+    expect(f.events).toHaveLength(1);
+    expect(applied).toBe(false);
+  } finally {
+    source.destroy();
   }
 });

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
@@ -70,7 +70,7 @@ const openMenu = async (page: Page, phoneSize: boolean, item: Locator) => {
     await sheet.waitFor();
     return sheet;
   }
-  await item.locator(".k2b-message-row__bubble").hover();
+  await hoverInPlace(item.locator(".k2b-message-row__bubble"));
   await item.getByRole("button", { name: "Message actions", exact: true }).click();
   const menu = page.getByRole("menu", { name: "Message actions", exact: true });
   await menu.waitFor();

@@ -16,5 +16,9 @@ export const migrate = async (db: typeof sql = sql): Promise<void> => {
         uploaded_at timestamptz NOT NULL DEFAULT now()
       )`.simple();
     await tx`ALTER TABLE geoip.databases ALTER COLUMN data SET STORAGE EXTERNAL`.simple();
+    // Earlier uploads bound serialized metadata directly as jsonb, storing a JSON string instead of its object.
+    // There are at most two rows; leave the database bytes, hash and upload attribution unchanged.
+    await tx`UPDATE geoip.databases SET metadata=(metadata #>> '{}')::jsonb
+      WHERE jsonb_typeof(metadata)='string'`;
   });
 };

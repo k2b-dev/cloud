@@ -120,7 +120,7 @@ export function RecordCardsView(props: {
                   <div class="pointer-events-none relative flex flex-col">
                     <Show when={preview()}>
                       {(file) => (
-                        <div class="aspect-square w-full overflow-hidden rounded-md bg-white shadow-sm ring-1 ring-black/5 dark:bg-zinc-950 dark:ring-white/10">
+                        <div class="aspect-square w-full overflow-hidden rounded-md bg-white ring-1 ring-black/5 dark:bg-zinc-950 dark:ring-white/10">
                           <img src={coverUrl(file())} alt="" class="h-full w-full object-cover" loading="lazy" />
                         </div>
                       )}

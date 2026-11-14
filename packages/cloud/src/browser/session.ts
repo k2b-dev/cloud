@@ -1,4 +1,5 @@
 import { apiClient } from "../clients/core";
+import { IDLE_SIGN_OUT_STORAGE_KEY, type IdleSignOutRecord } from "./idle-sign-out";
 
 /** Fence and remove application-owned entries in the authenticated user's browser namespace. */
 const clearUserStorage = (userId: string): void => {
@@ -36,4 +37,50 @@ export const signOutBrowserSession = async (userId: string | undefined, errorMes
     }
   }
   if (!response.ok || cleanupFailed) throw new Error(errorMessage);
+};
+
+const readIdleSignOut = (): IdleSignOutRecord | null => {
+  try {
+    const raw = window.sessionStorage.getItem(IDLE_SIGN_OUT_STORAGE_KEY);
+    const record: unknown = raw ? JSON.parse(raw) : null;
+    if (!record || typeof record !== "object" || !("userId" in record) || !("sid" in record)) return null;
+    const { userId, sid } = record;
+    return typeof userId === "string" && typeof sid === "string" ? { userId, sid } : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * On the sign-in page after a shared workstation signed out for lack of input: revokes exactly the session the tab
+ * left, once the apps saved their work on `pagehide`, and clears that account's data in this browser. A newer sign-in
+ * keeps its session. The record stays until every step succeeded, so `"failed"` can be retried; `"none"` means there
+ * was nothing to finish.
+ */
+export const finishIdleSignOut = async (): Promise<"done" | "failed" | "none"> => {
+  const record = readIdleSignOut();
+  if (!record) return "none";
+  let failed = false;
+  // Push first, while the session still authenticates removing its endpoint. Each step runs on its own: a failed
+  // unsubscribe must not keep local drafts.
+  await import("./notifications").then(({ browserNotificationClient }) => browserNotificationClient.disable()).catch(() => (failed = true));
+  const response = await apiClient.auth.logout
+    .$post({}, { headers: { "x-cloud-logout-user": record.userId, "x-cloud-logout-session": record.sid } })
+    .catch(() => null);
+  // 409: a newer sign-in took over this browser and keeps its session. The account the tab left keeps no data here
+  // either way, since the newer sign-in may be another person's.
+  if (!response || (!response.ok && response.status !== 409)) return "failed";
+  const steps = [
+    async () => clearUserStorage(record.userId),
+    () => import("./shared-text-offline").then(({ logoutSharedTextOffline }) => logoutSharedTextOffline(record.userId)),
+  ];
+  for (const step of steps) await step().catch(() => (failed = true));
+  if (!failed) {
+    try {
+      window.sessionStorage.removeItem(IDLE_SIGN_OUT_STORAGE_KEY);
+    } catch {
+      // Nothing is left to finish; a later visit repeats an idempotent sign-out at worst.
+    }
+  }
+  return failed ? "failed" : "done";
 };

@@ -301,8 +301,12 @@ describe(`Calendar day and week views in ${browserName}`, () => {
       }, top);
       await page.waitForFunction('window.visible.at(-1) === "2026-10-13"');
       const before = await scrollTop(page, DAYS);
-      // The view switcher is the last stop of the header before the days.
-      await page.locator('.k2b-calendar-header .k2b-segmented-control__option[tabindex="0"]').focus();
+      // The view switcher is the last stop of the header before the days. WebKit puts a focused element on screen in its
+      // next rendering update, at whatever has the focus by then; a Tab that a test sends sooner than a person can would
+      // carry that reveal onto the day the Tab enters (#3215). The switcher is on screen, so it takes the focus without one.
+      await page
+        .locator('.k2b-calendar-header .k2b-segmented-control__option[tabindex="0"]')
+        .evaluate((option: HTMLElement) => option.focus({ preventScroll: true }));
       await page.keyboard.press("Tab");
       await page.waitForFunction((before) => {
         const scroller = document.querySelector(".k2b-calendar-days__scroll");

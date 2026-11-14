@@ -1,10 +1,12 @@
 import { type ApiErrorResponse, type AuthContext, auth, getLocale, respond } from "@k2b/cloud/server";
-import { err, fail, type Result, type ServiceError } from "@k2b/stdlib";
+import { err, fail, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import type { Context, Next, TypedResponse } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { type DraftSeedOrigin, ResourceShortIdSchema } from "../contracts";
-import { publicResources } from "../service";
+import { mailboxAccess, publicResources, resourceParents, scheduledSends } from "../service";
+import type { MailboxAccess } from "../service/access";
+import type { MailRequestContext } from "../service/auth";
 import { localizeMailError } from "../service/error-messages";
 
 export type MailApiContext = AuthContext & {
@@ -160,9 +162,71 @@ export const resolvePublicRelations = async <T>(mailboxId: string, value: T): Pr
   return maps ? (replaceRelations(value, maps, "internal") as T) : null;
 };
 
+const requireAssignedResourceVisibility = async (
+  context: MailRequestContext,
+  access: MailboxAccess,
+  mailboxId: string,
+  table: RelationTable,
+  id: string,
+): Promise<Result<unknown>> => {
+  switch (table) {
+    case "conversations":
+      return mailboxAccess.requireVisibleConversation(access, id);
+    case "messages":
+      return mailboxAccess.requireVisibleMessages(access, [id]);
+    case "drafts":
+      return mailboxAccess.requireDraftAccess(context, mailboxId, id, "read");
+    case "deliveries":
+      return scheduledSends.requireVisibleScheduledSend(access, mailboxId, id);
+    case "comments":
+    case "reminders": {
+      const parent = await resourceParents[table === "comments" ? "comment" : "reminder"](id);
+      return parent ? mailboxAccess.requireVisibleConversation(access, parent.conversationId) : fail(err.notFound("Mail resource"));
+    }
+    default:
+      return ok();
+  }
+};
+
+/** Body/query references and special message IDs use the same assigned visibility boundary as route parameters. */
+const assertAssignedRelationsVisible = async (c: Context<MailApiContext>, resources: Map<RelationTable, string[]>) => {
+  if (resources.size === 0) return;
+  const context: MailRequestContext = {
+    actor: c.get("actor"),
+    accessSubject: c.get("accessSubject"),
+    requestId: c.req.header("x-request-id") ?? null,
+  };
+  const mailboxId = internalMailboxId(c);
+  const access = await mailboxAccess.requireMailboxAccess(context, mailboxId, "read");
+  if (!access.ok || access.data.scope !== "assigned") return;
+  for (const [table, ids] of resources) {
+    for (const id of new Set(ids)) {
+      const visible = await requireAssignedResourceVisibility(context, access.data, mailboxId, table, id);
+      if (!visible.ok) {
+        const error = visible.error.code === "NOT_FOUND" ? err.notFound("Mail resource") : visible.error;
+        throw new HTTPException(error.status, { message: localizeMailError(error, getLocale(c)).message });
+      }
+    }
+  }
+};
+
+export const internalMailboxResourceId = async (
+  c: Context<MailApiContext>,
+  table: publicResources.MailboxOwnedPublicResourceTable,
+  shortId: string,
+): Promise<string> => {
+  const id = await publicResources.resolveMailboxPublicId(table, internalMailboxId(c), shortId);
+  if (!id) throw new HTTPException(404, { message: localizeMailError(err.notFound("Mail resource"), getLocale(c)).message });
+  await assertAssignedRelationsVisible(c, new Map([[table, [id]]]));
+  return id;
+};
+
 export const internalInput = async <T>(c: Context<MailApiContext>, value: T): Promise<T> => {
   const resolved = await resolvePublicRelations(internalMailboxId(c), value);
   if (!resolved) throw new HTTPException(404, { message: localizeMailError(err.notFound("Mail resource"), getLocale(c)).message });
+  const resources = new Map<RelationTable, string[]>();
+  collectRelations(resolved, resources, "public");
+  await assertAssignedRelationsVisible(c, resources);
   return resolved;
 };
 
@@ -173,8 +237,7 @@ export const internalInput = async <T>(c: Context<MailApiContext>, value: T): Pr
 export const internalDraftSeedInput = async <T extends { origin: DraftSeedOrigin }>(c: Context<MailApiContext>, input: T): Promise<T> => {
   const resolved = await internalInput(c, input);
   if (resolved.origin.kind !== "derive") return resolved;
-  const messageId = await publicResources.resolveMailboxPublicId("messages", internalMailboxId(c), resolved.origin.messageId);
-  if (!messageId) throw new HTTPException(404, { message: localizeMailError(err.notFound("Mail resource"), getLocale(c)).message });
+  const messageId = await internalMailboxResourceId(c, "messages", resolved.origin.messageId);
   return { ...resolved, origin: { ...resolved.origin, messageId } };
 };
 
@@ -375,10 +438,24 @@ export const internalParams = <T extends Record<string, unknown>>(c: Context<Mai
   return resolved;
 };
 
+/**
+ * Whether the request may learn that the mailbox exists: it can read the mailbox, it administers the mailbox (also a
+ * deleted one, for its lifecycle), or its credential permits Cloud administration. The lifecycle check caps that
+ * administrator exception by credential scopes, and the routes still authorize each operation in their services.
+ */
+const mayResolveMailbox = async (context: MailRequestContext, mailboxId: string): Promise<boolean> =>
+  (await mailboxAccess.requireMailboxAccess(context, mailboxId, "read")).ok ||
+  (await mailboxAccess.requireMailboxLifecycleAdmin(context, mailboxId)).ok;
+
+/**
+ * Resolves the mailbox of a route. A mailbox the request may not resolve answers like an unknown one, so no route
+ * tells whether the mailbox or an ID inside it exists; every mailbox resource parameter resolves after this.
+ */
 export const resolveMailboxParam = auth.readOnlyMiddleware(async (c: Context<MailApiContext>, next: Next) => {
   const shortId = c.req.param("mailboxId");
   const mailboxId = shortId ? await publicResources.resolvePublicId("mailboxes", shortId) : null;
-  if (!mailboxId) return respondPublic(c, fail(err.notFound("Mailbox")));
+  const context = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), requestId: c.req.header("x-request-id") ?? null };
+  if (!mailboxId || !(await mayResolveMailbox(context, mailboxId))) return respondPublic(c, fail(err.notFound("Mailbox")));
   c.set("internalMailboxId", mailboxId);
   await next();
 });
@@ -389,6 +466,20 @@ export const resolveMailboxResourceParam =
     const shortId = c.req.param(param);
     const id = shortId ? await publicResources.resolveMailboxPublicId(table, internalMailboxId(c), shortId) : null;
     if (!id) return respondPublic(c, fail(err.notFound(label)));
+    // Resolve assigned visibility before validators and write checks can disclose a hidden child ID.
+    const context: MailRequestContext = {
+      actor: c.get("actor"),
+      accessSubject: c.get("accessSubject"),
+      requestId: c.req.header("x-request-id") ?? null,
+    };
+    const mailboxId = internalMailboxId(c);
+    const access = await mailboxAccess.requireMailboxAccess(context, mailboxId, "read");
+    if (access.ok && access.data.scope === "assigned") {
+      const visible = await requireAssignedResourceVisibility(context, access.data, mailboxId, table, id);
+      if (!visible.ok) {
+        return respondPublic(c, visible.error.code === "NOT_FOUND" ? fail(err.notFound(label)) : visible);
+      }
+    }
     c.set(resolvedParamVariables[param], id);
     await next();
   };

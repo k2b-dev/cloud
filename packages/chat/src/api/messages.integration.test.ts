@@ -313,7 +313,8 @@ suite("chat messages", () => {
             rev: 1,
             kind: "text",
             author: message.author,
-            preview: "Hello **world** 😀",
+            // The summary is a list line, so it is plain text; the full Markdown travels in the message event above.
+            preview: "Hello world 😀",
             mention: false,
           },
         },

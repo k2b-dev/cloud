@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
-import { drafts, publicResources } from "../service";
+import { drafts, mailboxAccess, publicResources } from "../service";
 import { imapSmtpConnector, transportDiagnostic } from "../service/connectors/imap-smtp";
 import { mailboxLogoFailure } from "../service/mailbox-logo-errors";
 import { verifyProviderConnection } from "../service/provider-connections";
@@ -282,10 +282,13 @@ describe("Mail draft seed derive origin", () => {
     new Hono<MailApiContext>()
       .use((c, next) => {
         c.set("internalMailboxId", mailboxId);
+        c.set("actor", { kind: "user", user });
+        c.set("accessSubject", { type: "user", userId: user.id });
         return next();
       })
       .post("/", async (c) => c.json(await internalDraftSeedInput(c, await c.req.json<{ origin: typeof publicOrigin }>())));
   const stubResolution = () => {
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "read" } });
     const message = spyOn(publicResources, "resolveMailboxPublicId").mockImplementation(
       async (_table, _mailbox, id) => internalIds[id] ?? null,
     );

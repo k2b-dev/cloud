@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import type { ProviderEvent } from "@k2b/nessi";
 import { complete } from "@k2b/nessi/ai";
 import { z } from "zod";
+import { aiMessageStopNotice } from "./chat/stop-notice";
+import { truncatedAnswer } from "./chat/stop-notice.test-fixture";
 import { createAiProvider } from "./provider";
 import * as connections from "./provider-connections";
 import type { AiModelProfile } from "./types";
@@ -28,6 +30,28 @@ const profile = (overrides: Partial<AiModelProfile>): AiModelProfile => ({
 });
 
 describe("AI provider factory", () => {
+  test("silent truncation: compatible finish-reason mapping preserves every abnormal terminal outcome for the message", async () => {
+    const original = globalThis.fetch;
+    try {
+      for (const reason of ["length", "model_length", "content_filter", "error", "stop"]) {
+        globalThis.fetch = Object.assign(
+          async () =>
+            new Response(
+              `data: ${JSON.stringify({ choices: [{ delta: { content: "Partial answer" }, finish_reason: reason }], usage: { prompt_tokens: 1, completion_tokens: 1 } })}\n\ndata: [DONE]\n\n`,
+              { headers: { "content-type": "text/event-stream" } },
+            ),
+          { preconnect: original.preconnect },
+        );
+        const result = await complete(createAiProvider(profile({ provider: "openai-compatible", baseURL: "https://example.invalid/v1" })), {
+          messages: [{ role: "user", content: ["Hello"] }],
+        });
+        expect(Boolean(aiMessageStopNotice({ ...truncatedAnswer, stopReason: result.finishReason ?? null }))).toBe(reason !== "stop");
+      }
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   test("complete sends a streaming request and returns the streamed text", async () => {
     const requests: { stream: boolean }[] = [];
     const server = Bun.serve({

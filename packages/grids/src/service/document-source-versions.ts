@@ -10,9 +10,9 @@ export const DocumentSourceVersionsSchema = z
   .array(
     z
       .object({
-        tableId: ShortIdSchema,
-        recordId: ShortIdSchema,
-        version: z.number().int().positive().safe(),
+        tableId: ShortIdSchema.describe("Public source Table ID."),
+        recordId: ShortIdSchema.describe("Public source Record ID."),
+        version: z.number().int().positive().safe().describe("Exact source Record version."),
       })
       .strict(),
   )

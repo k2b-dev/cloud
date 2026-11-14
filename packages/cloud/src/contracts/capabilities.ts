@@ -1,4 +1,22 @@
 import {
+  CapabilityQualifiedIdSchema,
+  type CloudResourceRef,
+  type CloudResourceReference,
+  CloudResourceReferenceSchema,
+  CloudResourceRefSchema,
+} from "./resource-reference";
+
+export {
+  CAPABILITY_QUALIFIED_ID_MAX_LENGTH,
+  CapabilityQualifiedIdSchema,
+  CLOUD_RESOURCE_ID_MAX_LENGTH,
+  type CloudResourceRef,
+  type CloudResourceReference,
+  CloudResourceReferenceSchema,
+  CloudResourceRefSchema,
+} from "./resource-reference";
+
+import {
   type CapabilityStream,
   type CapabilityStreamDefinition,
   CapabilityStreamPolicySchema,
@@ -20,8 +38,6 @@ export const CAPABILITY_PROTOCOL_VERSION = 2 as const;
 export const CAPABILITY_MAX_REQUEST_BYTES = 256 * 1024;
 export const CAPABILITY_MAX_RESULT_BYTES = 256 * 1024;
 export const CAPABILITY_MAX_CATALOG_BYTES = 2 * 1024 * 1024;
-export const CAPABILITY_QUALIFIED_ID_MAX_LENGTH = 180;
-export const CLOUD_RESOURCE_ID_MAX_LENGTH = 512;
 export const CAPABILITY_APP_ID_MAX_LENGTH = 80;
 
 export const CAPABILITY_FRAMEWORK_ERROR_CODES = {
@@ -75,7 +91,6 @@ export const CapabilityIdempotencyKeySchema = z
   .regex(/^[\x21-\x7e]+$/, "Idempotency keys must contain only visible ASCII characters");
 
 const CAPABILITY_LOCAL_ID_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
-const CAPABILITY_QUALIFIED_ID_PATTERN = /^[a-z][a-z0-9-]*\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 const CLOUD_PATH_PATTERN = /^\/(?![\\/])[^\\\u0000-\u001f\u007f]*$/;
 
 export const CapabilityLocalIdSchema = z
@@ -84,44 +99,7 @@ export const CapabilityLocalIdSchema = z
   .max(100)
   .regex(CAPABILITY_LOCAL_ID_PATTERN, "Use a stable lower-case capability id");
 
-export const CapabilityQualifiedIdSchema = z
-  .string()
-  .min(3)
-  .max(CAPABILITY_QUALIFIED_ID_MAX_LENGTH)
-  .regex(CAPABILITY_QUALIFIED_ID_PATTERN, "Expected a namespaced capability id such as contacts.contact");
-
-export const CloudResourceRefSchema = z
-  .object({
-    type: CapabilityQualifiedIdSchema.describe("Namespaced resource type declared by the owning app."),
-    id: z.string().min(1).max(CLOUD_RESOURCE_ID_MAX_LENGTH).describe("Stable app-owned resource identifier."),
-  })
-  .strict();
-
-export type CloudResourceRef = z.infer<typeof CloudResourceRefSchema>;
-
 export { cloudResourceHref } from "./resource-href";
-
-export const CloudResourceReferenceSchema = CloudResourceRefSchema.extend({
-  title: z.string().min(1).max(500).optional().describe("Optional current user-facing resource label."),
-  preview: z.string().max(2000).optional().describe("Optional short plain-text context for the resource."),
-  icon: z.string().min(1).max(120).optional().describe("Optional presentation icon for the resource."),
-  context: z
-    .string()
-    .min(1)
-    .max(200)
-    .optional()
-    .describe(
-      "One line in the caller's locale that says what and where the resource is and its most useful fact, for example 'Task in IT planning · due 30 Oct'.",
-    ),
-  status: z
-    .string()
-    .min(1)
-    .max(60)
-    .optional()
-    .describe("The resource's current state as a short label in the caller's locale, for example 'Open' or 'Done'."),
-}).strict();
-
-export type CloudResourceReference = z.infer<typeof CloudResourceReferenceSchema>;
 
 /** Authorized presentation returned as `data.view` by a canonical resource reader. */
 export const CloudResourceReaderViewSchema = z
@@ -527,7 +505,7 @@ export const CapabilityReviewContentSchema = /* @__PURE__ */ (() => {
             .max(202)
             .optional(),
           sendAt: reviewTime.optional(),
-          warnings: z.array(z.string().max(300)).max(6).optional(),
+          warnings: z.array(z.string().max(300)).max(7).optional(),
         })
         .strict(),
       z
@@ -941,6 +919,8 @@ export type CapabilityOperationPresentationTranslation = {
 export type CapabilityPresentationTranslation = {
   events?: Readonly<Record<string, { title?: string; description?: string }>>;
   types?: Readonly<Record<string, { title?: string; description?: string }>>;
+  /** The file provider's `title` in this locale; only for a provider that declares a `title`. */
+  fileProvider?: { title?: string };
   queries?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
   actions?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
   commands?: Readonly<
@@ -1056,7 +1036,18 @@ export type CapabilityCommandManifest = z.infer<typeof CapabilityCommandManifest
 type CapabilityDefinitionCatalog<T> = Readonly<Record<string, T>>;
 
 /** Offers files to other apps: local IDs of the list Query, the read Query, and the optional save Action. */
-export type CapabilityFileProviderDeclaration = { list: string; read: string; save?: string };
+export type CapabilityFileProviderDeclaration = {
+  list: string;
+  read: string;
+  save?: string;
+  /**
+   * The source's name in file dialogs, such as "Scanner", up to 80 characters in the presentation's base locale;
+   * translate it with `presentation.translations[locale].fileProvider.title`. Defaults to the application's name.
+   */
+  title?: string;
+  /** The source's Tabler icon class in file dialogs, such as `ti ti-scan`. Defaults to the application's icon. */
+  icon?: string;
+};
 
 export type CapabilityCalendarSourceDeclaration = { calendars: string; events: string; update?: string; move?: string; delete?: string };
 
@@ -1156,7 +1147,13 @@ export const CapabilityAppIdSchema = z
 const MAX_MANIFEST_ENTRIES = 200;
 
 export const CapabilityFileProviderManifestSchema = z
-  .object({ list: CapabilityLocalIdSchema, read: CapabilityLocalIdSchema, save: CapabilityLocalIdSchema.optional() })
+  .object({
+    list: CapabilityLocalIdSchema,
+    read: CapabilityLocalIdSchema,
+    save: CapabilityLocalIdSchema.optional(),
+    title: z.string().trim().min(1).max(80).optional(),
+    icon: z.string().min(1).max(120).optional(),
+  })
   .strict();
 
 export const CapabilityCalendarSourceManifestSchema = z

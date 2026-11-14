@@ -16,8 +16,9 @@ import {
 } from "@k2b/cloud/workflows/runtime";
 import { createWorkflowDryRunPort } from "@k2b/cloud/workflows/store";
 import type { WorkflowTryItem } from "../contracts";
-import { mailLiquidTemplateVariables, mailWorkflowTemplateData, renderMailLiquidTemplate } from "../service/template-rendering";
+import { mailLiquidTemplateVariables, renderMailLiquidTemplate } from "../service/template-rendering";
 import type { FrozenMailWorkflowSource } from "../service/workflow-data";
+import { mailWorkflowTemplateData } from "../service/workflow-template-rendering";
 import { mailWorkflows } from "./module";
 import { MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS, mailWorkflowTemplateOutput } from "./template-validation";
 

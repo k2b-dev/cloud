@@ -150,7 +150,8 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
     // One pointer owns a drag; a second finger waits until it ends.
     if (props.disabled || count() < 2 || event.button !== 0 || drag) return;
     event.preventDefault();
-    track?.focus({ preventScroll: true });
+    // A pointer press focuses the track without the keyboard focus ring.
+    track?.focus({ preventScroll: true, focusVisible: false });
     track?.setPointerCapture?.(event.pointerId);
     const near = Math.round(at(event.clientX));
     const pressed = props.options[near];
@@ -209,6 +210,8 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
           aria-valuenow={Math.max(0, shown()) + 1}
           aria-valuetext={valueText()}
           aria-disabled={props.disabled ? "true" : undefined}
+          data-dragging={preview() !== null ? "" : undefined}
+          style={{ "--k2b-choice-slider-at": `${position(Math.max(0, shown()), count())}%` }}
           onKeyDown={onKeyDown}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -216,18 +219,8 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
           onPointerCancel={onPointerEnd}
           onLostPointerCapture={onPointerEnd}
         >
-          <For each={props.options.slice(1)}>
-            {(_, index) => (
-              <span
-                class="k2b-choice-slider__segment"
-                data-on={shown() > index() ? "" : undefined}
-                style={{
-                  left: `calc(${position(index(), count())}% + 8px)`,
-                  width: `calc(${position(index() + 1, count()) - position(index(), count())}% - 16px)`,
-                }}
-              />
-            )}
-          </For>
+          <span class="k2b-choice-slider__rail" />
+          <span class="k2b-choice-slider__fill" hidden={shown() < 0} />
           <For each={props.options}>
             {(stop, index) => (
               <span
@@ -243,10 +236,34 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
             class="k2b-choice-slider__thumb"
             data-tone={warning() && preview() === null && option()?.disabledReason ? "warning" : undefined}
             hidden={shown() < 0}
-            style={{ left: `${position(Math.max(0, shown()), count())}%` }}
           />
         </div>
       </Show>
     </div>
+  );
+}
+
+export type ChoiceSliderIndicatorProps = {
+  /** How many stops the slider it stands for has. */
+  count: number;
+  /** The chosen stop's index, or `null` (or a negative index) for a choice that is none of the stops. */
+  index: number | null;
+  class?: string;
+};
+
+/**
+ * The slider in small and without interaction, 24 px wide: rail, fill and thumb in the same look, for a trigger that
+ * opens the real slider. It is decoration; the trigger's own label says the value.
+ */
+export function ChoiceSliderIndicator(props: ChoiceSliderIndicatorProps): JSX.Element {
+  const at = () => (props.index === null || props.index < 0 ? null : position(Math.min(props.index, props.count - 1), props.count));
+  return (
+    <span class={["k2b-choice-slider", props.class].filter(Boolean).join(" ")} data-size="indicator" aria-hidden="true">
+      <span class="k2b-choice-slider__track" style={{ "--k2b-choice-slider-at": `${at() ?? 0}%` }}>
+        <span class="k2b-choice-slider__rail" />
+        <span class="k2b-choice-slider__fill" hidden={at() === null} />
+        <span class="k2b-choice-slider__thumb" hidden={at() === null} />
+      </span>
+    </span>
   );
 }

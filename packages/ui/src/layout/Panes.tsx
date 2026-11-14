@@ -1,26 +1,41 @@
 import { type DndCollisionContext, type DndController, type DndDroppableSnapshot, dnd } from "@k2b/stdlib/solid";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { Dropdown, type DropdownAnchor, type DropdownItem, type DropdownReturnFocus } from "../actions/Dropdown";
+import { announce } from "../feedback/announce";
+import { MovedHint } from "../feedback/MovedHint";
 import { Tooltip } from "../feedback/Tooltip";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
 import {
   activatePanesItem,
   applyPanesIntent,
+  applyPanesPreset,
+  canApplyPanesPreset,
   getPanesDropTargets,
+  getPanesMoves,
+  getPanesPreset,
+  getPanesSplitRatio,
   PANES_MAX_ID_LENGTH,
   PANES_MIN_RATIO,
+  PANES_PRESETS,
   type PanesDropTarget,
   type PanesGroup,
   type PanesIntent,
   type PanesLayout,
+  type PanesMove,
   type PanesNode,
   type PanesPath,
+  type PanesPreset,
   type PanesSplit,
+  panesItemOrder,
   parsePanesLayout,
+  projectPanesLayout,
   resizePanesSplit,
+  samePanesArrangement,
   samePanesIntent,
+  samePanesSizes,
 } from "./panes-layout";
-import { usePanesMessages } from "./panes-messages";
+import { type PanesMessages, usePanesMessages } from "./panes-messages";
 import { assertUniqueStableUiIds } from "./stable-id";
 
 export type PanesItem = {
@@ -39,8 +54,49 @@ export type PanesProps = {
   resizable?: boolean;
   split?: false | "horizontal" | "vertical" | "both";
   onAddItem?: (targetItemId: string | null) => void;
+  /**
+   * The application's own arrangement. "Reset arrangement" in the Arrange menu returns to it, choosing its preset
+   * restores its sizes, and a double click on a boundary restores that boundary's size.
+   */
+  defaultLayout?: PanesLayout;
+  /**
+   * The one-time hint at the first tab grip that panes can be arranged. The application decides on the server
+   * whether it was seen and stores the dismissal, so a dismissed hint never renders again.
+   */
+  arrangeHint?: { open: boolean; onDismiss: () => void };
   ariaLabel?: string;
   class?: string;
+};
+
+/** Below this width of its own container, Panes shows every item as one row of tabs and never stores that. */
+export const PANES_NARROW_WIDTH = 640;
+
+const PRESET_ICONS: Record<PanesPreset, string> = {
+  two: "ti ti-layout-columns",
+  three: "ti ti-columns-3",
+  stacked: "ti ti-layout-board-split",
+  tabs: "ti ti-app-window",
+};
+
+const SIDE_ICONS = {
+  top: "ti ti-layout-navbar",
+  bottom: "ti ti-layout-bottombar",
+  left: "ti ti-layout-sidebar",
+  right: "ti ti-layout-sidebar-right",
+} as const;
+
+const MOVE_ORDER: Record<PanesMove["kind"], number> = { split: 0, group: 1, tab: 2 };
+
+/** The group that hosts the Arrange button: the top group at the trailing edge. */
+const arrangeHostGroup = (node: PanesNode | null): PanesGroup | null => {
+  if (!node) return null;
+  if (node.type === "group") return node;
+  return arrangeHostGroup(node.direction === "horizontal" ? node.second : node.first);
+};
+
+const firstGroupOf = (node: PanesNode | null): PanesGroup | null => {
+  if (!node) return null;
+  return node.type === "group" ? node : firstGroupOf(node.first);
 };
 
 type DragMeta = { itemId: string; label: string };
@@ -198,9 +254,43 @@ export default function Panes(props: PanesProps): JSX.Element {
     for (const id of collectLayoutItemIds(props.layout.root)) requireItem(items(), id);
     return props.layout;
   });
-  const canMove = () => props.movable ?? true;
+  let rootElement: HTMLDivElement | undefined;
+  // A narrow container shows one row of tabs. It is measured after the first render, so server HTML and the first
+  // client render agree; a hidden container (width 0) keeps the last answer.
+  const [narrow, setNarrow] = createSignal(false);
+  onMount(() => {
+    const measure = () => {
+      const width = rootElement?.getBoundingClientRect().width ?? 0;
+      if (width > 0) setNarrow(width < PANES_NARROW_WIDTH);
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    if (rootElement) observer?.observe(rootElement);
+    onCleanup(() => observer?.disconnect());
+  });
+  // The tab the person chose last, by click, focus, or working in its pane: the Arrange menu moves it, and a narrow
+  // container opens on it.
+  const [chosen, setChosen] = createSignal<string | null>(null);
+  const [projectedActive, setProjectedActive] = createSignal<string | null>(null);
+  const inLayout = (itemId: string | null) => (itemId !== null && collectLayoutItemIds(layout().root).includes(itemId) ? itemId : null);
+  const shown = createMemo(() =>
+    narrow()
+      ? projectPanesLayout(layout(), inLayout(projectedActive()) ?? inLayout(chosen()) ?? firstGroupOf(layout().root)?.active ?? null)
+      : layout(),
+  );
+  const canMove = () => (props.movable ?? true) && !narrow();
   const canResize = () => props.resizable ?? true;
   const split = () => props.split ?? "both";
+  // Presets arrange the open items in the application's order.
+  const itemOrder = createMemo(() => {
+    const open = new Set(panesItemOrder(layout()));
+    return props.items.map((item) => item.id).filter((id) => open.has(id));
+  });
+  const canArrange = () => canMove() && itemOrder().length > 1;
+  const hostGroupKey = createMemo(() => (canArrange() ? (arrangeHostGroup(shown().root)?.items[0] ?? null) : null));
+  const menuItemFor = () => inLayout(chosen()) ?? arrangeHostGroup(layout().root)?.active ?? null;
+  const tabElementId = (itemId: string) => `${instanceId}-${itemId}-tab`;
+  const focusTab = (itemId: string) => queueMicrotask(() => document.getElementById(tabElementId(itemId))?.focus());
   const [draggedItemId, setDraggedItemId] = createSignal<string | null>(null);
   const [dragMode, setDragMode] = createSignal<"pointer" | "keyboard" | null>(null);
   const dropTargets = createMemo(() => {
@@ -217,10 +307,16 @@ export default function Panes(props: PanesProps): JSX.Element {
       setDraggedItemId(active.meta.itemId);
     },
     announcements: {
-      dragStart: (active) => `Picked up ${active.meta.label}.`,
-      dragOver: (active, over) => (over ? `Move ${active.meta.label} to ${over.meta.label}.` : `${active.meta.label} is not over a pane.`),
-      drop: (active, over) => (over ? `Moved ${active.meta.label} to ${over.meta.label}.` : `Did not move ${active.meta.label}.`),
-      cancel: (active) => `Cancelled moving ${active.meta.label}.`,
+      dragStart: (active) => panesMessages().pickedUp({ name: active.meta.label }),
+      dragOver: (active, over) =>
+        over
+          ? panesMessages().dragOver({ name: active.meta.label, place: over.meta.label })
+          : panesMessages().notOverPane({ name: active.meta.label }),
+      drop: (active, over) =>
+        over
+          ? panesMessages().dropped({ name: active.meta.label, place: over.meta.label })
+          : panesMessages().notMoved({ name: active.meta.label }),
+      cancel: (active) => panesMessages().cancelled({ name: active.meta.label }),
     },
     onDrop: ({ intent, mode }) => {
       setDragMode(null);
@@ -229,8 +325,9 @@ export default function Panes(props: PanesProps): JSX.Element {
       const current = layout();
       const next = applyPanesIntent(current, intent);
       if (next === current) return;
+      setChosen(intent.itemId);
       props.onLayoutChange(next);
-      if (mode === "keyboard") queueMicrotask(() => document.getElementById(`${instanceId}-${intent.itemId}-tab`)?.focus());
+      if (mode === "keyboard") focusTab(intent.itemId);
     },
     onCancel: () => {
       setDragMode(null);
@@ -238,18 +335,155 @@ export default function Panes(props: PanesProps): JSX.Element {
     },
   });
   const activate = (itemId: string) => {
+    setChosen(itemId);
+    if (narrow()) {
+      setProjectedActive(itemId);
+      return;
+    }
+    // A choice in the wide layout is newer than one in the narrow row.
+    setProjectedActive(null);
     const current = layout();
     const next = activatePanesItem(current, itemId);
     if (next !== current) props.onLayoutChange(next);
   };
   const requestAdd = (targetItemId: string | null) => props.onAddItem?.(targetItemId);
 
+  const title = (itemId: string) => requireItem(items(), itemId).title;
+  const moveLabel = (move: PanesMove, messages: PanesMessages): string => {
+    if (move.kind === "split") return messages.moveBeside({ side: move.side, name: title(move.targetItemId) });
+    if (move.kind === "group") return messages.moveIntoGroup({ name: title(move.targetItemId) });
+    return move.direction === "previous" ? messages.moveTabPrevious : messages.moveTabNext;
+  };
+  const move = (itemId: string, intent: PanesIntent, place: string) => {
+    const current = layout();
+    const next = applyPanesIntent(current, intent);
+    if (next === current) return;
+    setChosen(itemId);
+    props.onLayoutChange(next);
+    focusTab(itemId);
+    announce(panesMessages().moved({ name: title(itemId), place }));
+  };
+  const moveWithinGroup = (itemId: string, direction: "previous" | "next"): boolean => {
+    const step = getPanesMoves(layout(), itemId, { movable: canMove(), split: split() }).find(
+      (entry) => entry.kind === "tab" && entry.direction === direction,
+    );
+    if (!step) return false;
+    move(itemId, step.intent, moveLabel(step, panesMessages()));
+    return true;
+  };
+  const arrange = (preset: PanesPreset, itemId: string | null) => {
+    const next = applyPanesPreset(preset, itemOrder(), { active: itemId ?? undefined, fallback: props.defaultLayout });
+    // Choosing the current preset again restores its sizes.
+    if (!next || samePanesSizes(next, layout())) return;
+    props.onLayoutChange(next);
+    if (itemId) focusTab(itemId);
+    announce(panesMessages().arranged({ preset: panesMessages().preset({ preset }) }));
+  };
+  // A default that names other items than the open ones, such as a pane the application closed, cannot be restored.
+  const resettable = () => {
+    const fallback = props.defaultLayout;
+    if (!fallback) return false;
+    const open = panesItemOrder(layout()).toSorted();
+    const stored = panesItemOrder(fallback).toSorted();
+    return open.length === stored.length && open.every((id, index) => id === stored[index]);
+  };
+  const reset = (itemId: string | null) => {
+    const fallback = props.defaultLayout;
+    if (!fallback || !resettable() || samePanesSizes(fallback, layout())) return;
+    props.onLayoutChange(fallback);
+    const focus = itemId && collectLayoutItemIds(fallback.root).includes(itemId) ? itemId : null;
+    if (focus) focusTab(focus);
+  };
+  const menuItems = (itemId: string | null): DropdownItem[] => {
+    const messages = panesMessages();
+    const current = layout();
+    const order = itemOrder();
+    const selected = getPanesPreset(current, order);
+    const sections: DropdownItem[] = [];
+    const presets = PANES_PRESETS.filter((preset) => canApplyPanesPreset(preset, order.length, split()));
+    if (presets.length > 0) {
+      sections.push({
+        sectionLabel: messages.arrangement,
+        layout: "tiles",
+        items: presets.map((preset) => ({
+          choice: "radio" as const,
+          label: messages.preset({ preset }),
+          icon: PRESET_ICONS[preset],
+          checked: selected === preset,
+          action: () => arrange(preset, itemId),
+        })),
+      });
+    }
+    if (itemId) {
+      const moves = getPanesMoves(current, itemId, { movable: canMove(), split: split() }).sort(
+        (left, right) => MOVE_ORDER[left.kind] - MOVE_ORDER[right.kind],
+      );
+      if (moves.length > 0) {
+        sections.push({
+          sectionLabel: messages.moveNamed({ name: title(itemId) }),
+          items: moves.map((entry) => {
+            const label = moveLabel(entry, messages);
+            return {
+              label,
+              icon:
+                entry.kind === "split"
+                  ? SIDE_ICONS[entry.side]
+                  : entry.kind === "group"
+                    ? "ti ti-arrows-move"
+                    : entry.direction === "previous"
+                      ? "ti ti-arrow-left"
+                      : "ti ti-arrow-right",
+              trailing:
+                entry.kind === "tab" ? (
+                  <kbd class="k2b-panes__shortcut">{`${messages.ctrlKey} ⇧ ${entry.direction === "previous" ? "←" : "→"}`}</kbd>
+                ) : undefined,
+              action: () => move(itemId, entry.intent, label),
+            };
+          }),
+        });
+      }
+    }
+    if (resettable()) {
+      const atDefault = samePanesSizes(props.defaultLayout!, current);
+      sections.push({
+        items: [
+          atDefault
+            ? { label: messages.resetArrangement, icon: "ti ti-restore", disabled: true as const }
+            : { label: messages.resetArrangement, icon: "ti ti-restore", action: () => reset(itemId) },
+        ],
+      });
+    }
+    return sections;
+  };
+  // One menu for right clicks, Shift+F10 and the hint; the Arrange button has its own trigger with the same entries.
+  const [contextItemId, setContextItemId] = createSignal<string | null>(null);
+  let openContextMenu: ((anchor: DropdownAnchor, returnFocus?: DropdownReturnFocus) => void) | undefined;
+  const openMenu = (itemId: string | null, anchor: DropdownAnchor, returnFocus?: DropdownReturnFocus) => {
+    if (!canArrange()) return;
+    if (itemId) setChosen(itemId);
+    setContextItemId(itemId);
+    openContextMenu?.(anchor, returnFocus);
+  };
+  let firstGrip: HTMLElement | undefined;
+  let arrangeButton: HTMLElement | undefined;
+
   return (
-    <div class={`k2b-panes ${props.class ?? ""}`} data-k2b-panes role="group" aria-label={props.ariaLabel ?? panesMessages().paneWorkspace}>
+    <div
+      ref={rootElement}
+      class={`k2b-panes ${props.class ?? ""}`}
+      data-k2b-panes
+      data-narrow={narrow() ? "true" : undefined}
+      role="group"
+      aria-label={props.ariaLabel ?? panesMessages().paneWorkspace}
+    >
       <Show
-        when={layout().root}
+        when={shown().root}
         fallback={
           <div class="k2b-panes__empty">
+            <span class="k2b-panes__empty-mark" aria-hidden="true">
+              <i class="ti ti-layout-columns" />
+            </span>
+            <p>{panesMessages().noPane}</p>
             <Show when={props.onAddItem !== undefined}>
               <button type="button" class="k2b-panes__add" onClick={() => requestAdd(null)} aria-label={panesMessages().addPane}>
                 <i class="ti ti-plus" aria-hidden="true" />
@@ -263,7 +497,7 @@ export default function Panes(props: PanesProps): JSX.Element {
           <PanesNodeRenderer
             node={root}
             path={[]}
-            layout={layout}
+            layout={shown}
             itemById={items}
             dnd={paneDnd}
             dropTargetIndex={dropTargetIndex}
@@ -274,8 +508,69 @@ export default function Panes(props: PanesProps): JSX.Element {
             canAdd={() => props.onAddItem !== undefined}
             onActivate={activate}
             onLayoutChange={props.onLayoutChange}
+            defaultRatio={(path, direction) =>
+              (props.defaultLayout && samePanesArrangement(props.defaultLayout, layout())
+                ? getPanesSplitRatio(props.defaultLayout, path, direction)
+                : null) ?? 0.5
+            }
+            onChoose={setChosen}
+            onMenu={openMenu}
+            onMoveWithinGroup={moveWithinGroup}
+            hostGroupKey={hostGroupKey}
+            arrange={() => (
+              <Dropdown
+                items={menuItems(menuItemFor())}
+                position="bottom-right"
+                label={panesMessages().arrange}
+                note={panesMessages().arrangeNote}
+                menuClass="k2b-panes__menu"
+                lazy
+              >
+                <Dropdown.Trigger
+                  ref={(element: HTMLButtonElement) => {
+                    arrangeButton = element;
+                  }}
+                  class="k2b-panes__arrange"
+                  variant="ghost"
+                  size="sm"
+                  tooltip={false}
+                >
+                  <i class="ti ti-layout-columns" aria-hidden="true" />
+                  <span>{panesMessages().arrange}</span>
+                </Dropdown.Trigger>
+              </Dropdown>
+            )}
+            registerFirstGrip={(element) => {
+              firstGrip = element;
+            }}
           />
         )}
+      </Show>
+      <Dropdown
+        items={menuItems(contextItemId())}
+        label={panesMessages().arrange}
+        menuClass="k2b-panes__menu"
+        lazy
+        openAt={(open) => {
+          openContextMenu = open;
+        }}
+      />
+      <Show when={props.arrangeHint && canArrange()}>
+        <MovedHint
+          // Hidden while a tab is dragged, so it never covers a drop target; it comes back afterwards.
+          open={(props.arrangeHint?.open ?? false) && draggedItemId() === null}
+          onDismiss={() => props.arrangeHint?.onDismiss()}
+          target={() => firstGrip}
+          action={{
+            label: panesMessages().arrange,
+            onClick: () => {
+              const button = arrangeButton;
+              if (button) openMenu(menuItemFor(), button, button);
+            },
+          }}
+        >
+          <strong>{panesMessages().arrangeHint}</strong> {panesMessages().arrangeHintDetail}
+        </MovedHint>
       </Show>
     </div>
   );
@@ -295,6 +590,14 @@ type RendererProps = {
   canAdd: () => boolean;
   onActivate: (itemId: string) => void;
   onLayoutChange: (layout: PanesLayout) => void;
+  defaultRatio: (path: PanesPath, direction: PanesSplit["direction"]) => number;
+  onChoose: (itemId: string) => void;
+  onMenu: (itemId: string | null, anchor: DropdownAnchor, returnFocus?: DropdownReturnFocus) => void;
+  onMoveWithinGroup: (itemId: string, direction: "previous" | "next") => boolean;
+  /** The first item of the group that shows the Arrange button, or `null` when there is none. */
+  hostGroupKey: () => string | null;
+  arrange: () => JSX.Element;
+  registerFirstGrip: (element: HTMLElement) => void;
 };
 
 function PanesNodeRenderer(props: RendererProps): JSX.Element {
@@ -320,6 +623,7 @@ function PanesSplitRenderer(props: Omit<RendererProps, "node"> & { node: () => P
   let separatorElement: HTMLButtonElement | undefined;
   let stopResize: (() => void) | undefined;
   let finishResize: (() => void) | undefined;
+  const [resizing, setResizing] = createSignal(false);
   const stopActiveResize = () => {
     stopResize?.();
     stopResize = undefined;
@@ -407,7 +711,9 @@ function PanesSplitRenderer(props: Omit<RendererProps, "node"> & { node: () => P
       if (end.pointerId === pointerId) finishActiveResize();
     };
     const releaseTextSelection = suppressTextSelection(pointerId);
+    setResizing(true);
     stopResize = () => {
+      setResizing(false);
       releaseTextSelection();
       if (frame !== undefined) cancelAnimationFrame(frame);
       frame = undefined;
@@ -428,8 +734,16 @@ function PanesSplitRenderer(props: Omit<RendererProps, "node"> & { node: () => P
     window.addEventListener("pointercancel", onEnd);
     window.addEventListener("blur", finishActiveResize);
   };
+  const resetRatio = () => {
+    if (props.canResize()) commitRatio(props.defaultRatio(props.path, props.node().direction));
+  };
   const onResizeKeyDown = (event: KeyboardEvent) => {
     if (!props.canResize()) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      resetRatio();
+      return;
+    }
     const step = event.shiftKey ? 0.08 : 0.02;
     let ratio: number | null = null;
     if (event.key === "Home") ratio = PANES_MIN_RATIO;
@@ -467,11 +781,21 @@ function PanesSplitRenderer(props: Omit<RendererProps, "node"> & { node: () => P
         class="k2b-panes__separator"
         data-direction={props.node().direction}
         aria-label={panesMessages().resizePanes}
+        aria-keyshortcuts={props.canResize() ? "Enter" : undefined}
+        data-active={resizing() ? "true" : undefined}
         onPointerDown={startResize}
         onKeyDown={onResizeKeyDown}
+        onDblClick={resetRatio}
       >
         <span aria-hidden="true" />
       </button>
+      <Show when={props.canResize()}>
+        <Tooltip
+          content={panesMessages().resizeHint({ direction: props.node().direction })}
+          target={() => separatorElement}
+          placement={props.node().direction === "horizontal" ? "right" : "bottom"}
+        />
+      </Show>
       <div class="k2b-panes__split-child" style={{ flex: `${1 - props.node().ratio} 1 0` }}>
         <PanesNodeRenderer {...props} node={() => props.node().second} path={[...props.path, "second"]} />
       </div>
@@ -542,17 +866,18 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
     stopTabPress?.();
     if (clearSuppressedPointerClick !== undefined) window.clearTimeout(clearSuppressedPointerClick);
   });
-  const [scrollbar, setScrollbar] = createSignal({ overflow: false, left: 0, width: 0 });
+  const [scrollbar, setScrollbar] = createSignal({ overflow: false, left: 0, width: 0, track: 0 });
   const syncScrollbar = () => {
     if (!tabsElement) return;
     const { clientWidth, scrollLeft, scrollWidth } = tabsElement;
     if (scrollWidth <= clientWidth || clientWidth <= 0) {
-      setScrollbar({ overflow: false, left: 0, width: 0 });
+      setScrollbar({ overflow: false, left: 0, width: 0, track: 0 });
       return;
     }
     const width = Math.min(clientWidth, Math.max(24, (clientWidth * clientWidth) / scrollWidth));
     const left = (scrollLeft / (scrollWidth - clientWidth)) * (clientWidth - width);
-    setScrollbar({ overflow: true, left, width });
+    // The track spans the tab row only, not the Arrange button beside it, so thumb and drag share one range.
+    setScrollbar({ overflow: true, left, width, track: clientWidth });
   };
   const scrollFromPointer = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
     if (!tabsElement) return;
@@ -591,6 +916,8 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
     props.canAdd();
     queueMicrotask(syncScrollbar);
   });
+  const isHost = () => props.hostGroupKey() !== null && props.hostGroupKey() === itemIds()[0];
+  const isFirstGroup = () => props.path.every((segment) => segment === "first");
   const tabId = (itemId: string) => `${props.instanceId}-${itemId}-tab`;
   const panelId = (itemId: string) => `${props.instanceId}-${itemId}-panel`;
   const focusTab = (index: number) => {
@@ -605,6 +932,23 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
     if ((event.key === "Delete" || event.key === "Backspace") && item.onClose) {
       event.preventDefault();
       item.onClose();
+      return;
+    }
+    if (props.canMove() && ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu")) {
+      event.preventDefault();
+      const tab = event.currentTarget as HTMLElement;
+      props.onMenu(itemId, tab, () => document.getElementById(tabId(itemId)) ?? undefined);
+      return;
+    }
+    // The reorder keys never fall through to tab navigation, also at either end where the tab cannot move.
+    if (
+      props.canMove() &&
+      (event.ctrlKey || event.metaKey) &&
+      event.shiftKey &&
+      (event.key === "ArrowLeft" || event.key === "ArrowRight")
+    ) {
+      event.preventDefault();
+      props.onMoveWithinGroup(itemId, event.key === "ArrowLeft" ? "previous" : "next");
       return;
     }
     const count = itemIds().length;
@@ -629,109 +973,133 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
       : panesMessages().addToNamed({ name: targetItem.title });
   };
   return (
-    <section class="k2b-panes__group">
-      <div
-        ref={tabsElement}
-        class="k2b-panes__tabs"
-        role="tablist"
-        aria-label={panesMessages().paneTabs}
-        aria-orientation="horizontal"
-        onScroll={syncScrollbar}
-      >
-        <For each={itemIds()}>
-          {(itemId, index) => {
-            const item = () => requireItem(props.itemById(), itemId);
-            const active = () => props.node().active === itemId;
-            return (
-              <div
-                ref={(surface) =>
-                  props.dnd.draggable(surface, () => ({
-                    id: draggableId(itemId),
-                    meta: { itemId, label: item().title },
-                    disabled: !props.canMove(),
-                    focusable: false,
-                    keyboard: true,
-                    handleSelector: ".k2b-panes__tab-button",
-                  }))
-                }
-                class="k2b-panes__tab"
-                data-active={active() ? "true" : undefined}
-                data-closable={item().onClose !== undefined ? "true" : undefined}
-                data-movable={props.canMove() ? "true" : undefined}
-                data-dnd-active={props.dnd.activeId() === draggableId(itemId) ? "true" : undefined}
-              >
-                <Show when={targetBefore(itemId)}>
-                  {(target) => <PanesDropTargetView target={target()} label={targetLabel(target())} dnd={props.dnd} placement="tab" />}
-                </Show>
-                <button
-                  id={tabId(itemId)}
-                  type="button"
-                  class="k2b-panes__tab-button"
-                  role="tab"
-                  aria-label={item().title}
-                  aria-selected={active()}
-                  aria-controls={active() ? panelId(itemId) : undefined}
-                  aria-posinset={index() + 1}
-                  aria-setsize={itemIds().length}
-                  aria-keyshortcuts={item().onClose ? "Delete Backspace" : undefined}
-                  tabIndex={active() ? 0 : -1}
-                  title={item().title}
-                  onPointerDown={(event) => startTabPress(event, itemId)}
-                  onClick={(event) => {
-                    if (event?.detail > 0 && suppressedPointerClick === itemId) {
-                      suppressedPointerClick = null;
-                      if (clearSuppressedPointerClick !== undefined) {
-                        window.clearTimeout(clearSuppressedPointerClick);
-                        clearSuppressedPointerClick = undefined;
-                      }
-                      return;
-                    }
-                    props.onActivate(itemId);
-                  }}
-                  onKeyDown={(event) => onTabKeyDown(event, index(), itemId)}
+    <section class="k2b-panes__group" data-arrange={isHost() ? "true" : undefined}>
+      <div class="k2b-panes__head">
+        <div
+          ref={tabsElement}
+          class="k2b-panes__tabs"
+          role="tablist"
+          aria-label={panesMessages().paneTabs}
+          aria-orientation="horizontal"
+          onScroll={syncScrollbar}
+        >
+          <For each={itemIds()}>
+            {(itemId, index) => {
+              const item = () => requireItem(props.itemById(), itemId);
+              const active = () => props.node().active === itemId;
+              return (
+                <div
+                  ref={(surface) =>
+                    props.dnd.draggable(surface, () => ({
+                      id: draggableId(itemId),
+                      meta: { itemId, label: item().title },
+                      disabled: !props.canMove(),
+                      focusable: false,
+                      keyboard: true,
+                      handleSelector: ".k2b-panes__tab-button",
+                    }))
+                  }
+                  class="k2b-panes__tab"
+                  data-active={active() ? "true" : undefined}
+                  data-closable={item().onClose !== undefined ? "true" : undefined}
+                  data-movable={props.canMove() ? "true" : undefined}
+                  data-dnd-active={props.dnd.activeId() === draggableId(itemId) ? "true" : undefined}
                 >
-                  <span class="k2b-ui k2b-panes__drag-surface k2b-panes__drag-preview" data-dnd-preview>
-                    <i class={`${iconClass(item().icon)} k2b-panes__icon`} aria-hidden="true" />
-                    <span>{item().title}</span>
-                  </span>
-                </button>
-                <Show when={item().onClose !== undefined}>
-                  <Tooltip.Trigger
+                  <Show when={targetBefore(itemId)}>
+                    {(target) => <PanesDropTargetView target={target()} label={targetLabel(target())} dnd={props.dnd} placement="tab" />}
+                  </Show>
+                  <button
+                    id={tabId(itemId)}
                     type="button"
-                    class="k2b-panes__close"
-                    content={messages().closeNamed({ name: item().title })}
-                    aria-label={messages().closeNamed({ name: item().title })}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      item().onClose?.();
+                    class="k2b-panes__tab-button"
+                    role="tab"
+                    aria-label={item().title}
+                    aria-selected={active()}
+                    aria-controls={active() ? panelId(itemId) : undefined}
+                    aria-posinset={index() + 1}
+                    aria-setsize={itemIds().length}
+                    aria-keyshortcuts={item().onClose ? "Delete Backspace" : undefined}
+                    tabIndex={active() ? 0 : -1}
+                    title={item().title}
+                    aria-haspopup={props.canMove() ? "menu" : undefined}
+                    onContextMenu={(event) => {
+                      if (!props.canMove()) return;
+                      event.preventDefault();
+                      props.onMenu(
+                        itemId,
+                        { getBoundingClientRect: () => new DOMRect(event.clientX, event.clientY, 0, 0) },
+                        () => document.getElementById(tabId(itemId)) ?? undefined,
+                      );
                     }}
+                    onFocus={() => props.onChoose(itemId)}
+                    onPointerDown={(event) => startTabPress(event, itemId)}
+                    onClick={(event) => {
+                      if (event?.detail > 0 && suppressedPointerClick === itemId) {
+                        suppressedPointerClick = null;
+                        if (clearSuppressedPointerClick !== undefined) {
+                          window.clearTimeout(clearSuppressedPointerClick);
+                          clearSuppressedPointerClick = undefined;
+                        }
+                        return;
+                      }
+                      props.onActivate(itemId);
+                    }}
+                    onKeyDown={(event) => onTabKeyDown(event, index(), itemId)}
                   >
-                    <i class="ti ti-x" aria-hidden="true" />
-                  </Tooltip.Trigger>
-                </Show>
-              </div>
-            );
-          }}
-        </For>
-        <Show when={targetAtEnd()}>
-          {(target) => <PanesDropTargetView target={target()} label={targetLabel(target())} dnd={props.dnd} placement="tab-end" />}
-        </Show>
-        <Show when={props.canAdd()}>
-          <Tooltip.Trigger
-            type="button"
-            class="k2b-panes__add k2b-panes__add--tab"
-            aria-label={panesMessages().addPane}
-            content={panesMessages().addPane}
-            onClick={() => props.addItem(props.node().active)}
-          >
-            <i class="ti ti-plus" aria-hidden="true" />
-          </Tooltip.Trigger>
-        </Show>
+                    <Show when={props.canMove()}>
+                      <i
+                        ref={(element) => {
+                          if (index() === 0 && isFirstGroup()) props.registerFirstGrip(element);
+                        }}
+                        class="ti ti-grip-vertical k2b-panes__grip"
+                        aria-hidden="true"
+                      />
+                    </Show>
+                    <span class="k2b-ui k2b-panes__drag-surface k2b-panes__drag-preview" data-dnd-preview>
+                      <i class={`${iconClass(item().icon)} k2b-panes__icon`} aria-hidden="true" />
+                      <span>{item().title}</span>
+                    </span>
+                  </button>
+                  <Show when={item().onClose !== undefined}>
+                    <Tooltip.Trigger
+                      type="button"
+                      class="k2b-panes__close"
+                      content={messages().closeNamed({ name: item().title })}
+                      aria-label={messages().closeNamed({ name: item().title })}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        item().onClose?.();
+                      }}
+                    >
+                      <i class="ti ti-x" aria-hidden="true" />
+                    </Tooltip.Trigger>
+                  </Show>
+                </div>
+              );
+            }}
+          </For>
+          <Show when={targetAtEnd()}>
+            {(target) => <PanesDropTargetView target={target()} label={targetLabel(target())} dnd={props.dnd} placement="tab-end" />}
+          </Show>
+          <Show when={props.canAdd()}>
+            <Tooltip.Trigger
+              type="button"
+              class="k2b-panes__add k2b-panes__add--tab"
+              aria-label={panesMessages().addPane}
+              content={panesMessages().addPane}
+              onClick={() => props.addItem(props.node().active)}
+            >
+              <i class="ti ti-plus" aria-hidden="true" />
+            </Tooltip.Trigger>
+          </Show>
+        </div>
+        <Show when={isHost()}>{props.arrange()}</Show>
       </div>
       <Show when={scrollbar().overflow}>
         <div
           class="k2b-panes__tabs-scrollbar"
+          style={{ width: `${scrollbar().track}px`, right: "auto" }}
           aria-hidden="true"
           onPointerDown={startScrollbarDrag}
           onPointerMove={(event) => {
@@ -748,7 +1116,8 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
           />
         </div>
       </Show>
-      <div class="k2b-panes__body">
+      {/* Working in a pane chooses it, so Arrange acts on the pane the person is in. */}
+      <div class="k2b-panes__body" onFocusIn={() => props.onChoose(props.node().active)}>
         <div id={panelId(props.node().active)} class="k2b-panes__panel" role="tabpanel" aria-labelledby={tabId(props.node().active)}>
           <Show when={props.node().active} keyed>
             {(itemId) => <ActivePane itemId={itemId} itemById={props.itemById} />}

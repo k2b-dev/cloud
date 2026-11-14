@@ -5,6 +5,7 @@ import { AccountIdentityError, audit, serviceAccounts } from "@k2b/cloud/service
 import { type ExecutionIdentity, FilegateError, type Node, type Ownership, type Session, type SessionCreated } from "@k2b/filegate";
 import type { TransactionSQL } from "bun";
 import type { z } from "zod";
+import { uploadEventScope } from "../app-events";
 import type {
   ArchiveDownload,
   BaseSummary,
@@ -29,6 +30,7 @@ import type { FilesFilegate, FilesRoot } from "./filegate-facade";
 import { filesAuditActor, filesScope, machineActor, machineOwner, principalMetadata } from "./machine-access";
 import { joinPath, relativePath, userPath } from "./paths";
 import type { UnixIdentity } from "./posix";
+import { enqueueFilePreview } from "./previews";
 import { hashSharePassword, requireSharePassword, unlockSharePassword } from "./share-password";
 
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
@@ -672,7 +674,12 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
           },
           execution: normalizeExecution(deps.executionFor(current)),
         },
-        { call: visitorCall(row.id, requestId), target: joinPath(row.base_path, relative), previous: null },
+        {
+          call: visitorCall(row.id, requestId),
+          target: joinPath(row.base_path, relative),
+          previous: null,
+          eventScope: await uploadEventScope(current.inspection.summary, current.node, relative),
+        },
       );
       try {
         let created: SessionCreated;
@@ -735,9 +742,14 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       validateSession(upload, row, session);
       if (session.received !== session.size) throw new FilesError("upload_incomplete", 409);
       try {
+        await uploads.bindEventScope(
+          upload.id,
+          await uploadEventScope(active.current.inspection.summary, active.current.node, upload.path),
+        );
         const node = await uploadAction(upload.id, () => active.root.commitSession(sessionId));
         const result = published(upload, row, node);
         await uploads.finish(upload.id, "committed", node);
+        await enqueueFilePreview(active.current.inspection.summary, userPath(node.path.slice(row.base_path.length + 1)), node);
         return result;
       } catch (error) {
         const recovered = await reconcile(root, upload, config);

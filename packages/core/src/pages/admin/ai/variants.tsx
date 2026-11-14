@@ -278,6 +278,7 @@ function VariantDialog(props: {
             </div>
             <div class="grid content-start gap-2">
               <Switch label={t().ownOut} value={() => draft().ownOut} onValueChange={(ownOut) => update({ ownOut })} />
+              <p class="text-xs text-(--k2b-text-muted)">{t().maxOutHelp}</p>
               <Show
                 when={draft().ownOut}
                 fallback={

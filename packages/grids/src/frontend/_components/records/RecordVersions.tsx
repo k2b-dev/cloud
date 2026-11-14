@@ -8,6 +8,7 @@ import {
   PanelDialog,
   Placeholder,
   panelDialogOptions,
+  Section,
   StatusBadge,
   useLocale,
 } from "@k2b/ui";
@@ -156,7 +157,7 @@ export default function RecordVersions(props: { tableId: string; recordId: strin
 
   return (
     <Show when={status()?.enabled !== false}>
-      <DetailPanel.Section
+      <Section
         title={t().durableHistory}
         icon="ti ti-versions"
         collapsible
@@ -213,7 +214,7 @@ export default function RecordVersions(props: { tableId: string; recordId: strin
             </Button>
           </Show>
         </div>
-      </DetailPanel.Section>
+      </Section>
     </Show>
   );
 }

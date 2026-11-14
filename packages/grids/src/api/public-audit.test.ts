@@ -60,6 +60,7 @@ const storedEntry: RecordHistoryEntry = {
     [textFieldId]: { old: "before", new: "after" },
     [relationFieldId]: { old: [oldRelatedRecordId, removedRelatedRecordId], new: newRelatedRecordId },
     [deletedFieldId]: { old: "legacy", new: null },
+    capability: { old: null, new: { actor: { kind: "service_account", id: actorUserId }, origin: "app", requestId: "capability-test" } },
   },
   context: null,
   ip: null,

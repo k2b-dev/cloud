@@ -76,6 +76,20 @@ test("chart reference draws Cloud chart markup", async () => {
   expect(element.innerHTML).toStartWith('<div class="k2b-chart" data-chart-kind="bar" role="img" aria-label="Orders by region">');
 });
 
+test("the Code chart catalog's nested dots example renders exact counts", async () => {
+  const example = (await blocks("charts.md")).find(({ code }) => code.includes('marks: "dots"'));
+  expect(example).toBeDefined();
+  const markup = String(
+    new Function("cloud", `${example!.code}; return engagement;`)({
+      chart: (options: Parameters<typeof chart>[0]) => chart(options, "en-US"),
+    }),
+  );
+  expect(markup.match(/class="k2b-chart-dot"/g)).toHaveLength(40);
+  expect(markup).toContain('data-dot-series="remainder"');
+  expect(markup).toContain("Opened");
+  expect(markup).toContain("Clicked");
+});
+
 test("first-file skill entry compiles without loading app references", async () => {
   const document = await Bun.file(new URL("../skills/assistant-code-mode/SKILL.md", import.meta.url)).text();
   const content = document.match(/```js\n([\s\S]*?)\n```/)?.[1];

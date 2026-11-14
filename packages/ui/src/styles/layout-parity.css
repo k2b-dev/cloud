@@ -157,6 +157,12 @@
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
   gap: 0.75rem;
 }
+/* Plain cards carry no frame, so they sit closer; the negative inset puts their tiles on the heading's edge. */
+.k2b-ui .k2b-app-overview__cards[data-surface="plain"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: 0.125rem 0.75rem;
+  margin-inline: -0.625rem;
+}
 
 /* Cloud renders the compact `Placeholder` as a bare child of the panel and
    lets the placeholder's own `px-3 py-6` carry the inset; the 0.75rem margin
@@ -1416,14 +1422,9 @@ html {
   border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: 0 -10px 36px rgb(9 9 11 / 0.16);
+  /* The detail as a sheet overlays the page: layer 2. */
+  box-shadow: var(--k2b-shadow-sheet);
   overscroll-behavior: contain;
-}
-
-.k2b-ui[data-theme="dark"] .k2b-app-workspace__detail,
-.k2b-ui.k2b-dark .k2b-app-workspace__detail,
-.dark .k2b-ui .k2b-app-workspace__detail {
-  box-shadow: 0 -10px 36px rgb(0 0 0 / 0.5);
 }
 
 .k2b-ui .k2b-app-workspace__detail[data-workspace-detail-sheet="full"] {
@@ -1467,16 +1468,11 @@ html {
 }
 
 /* The panel is the one raised surface: its summary, groups, and sections are
-   separated by space and their headings, not by boxes of their own, and they
-   start where the header's title does. */
+   separated by space, their headings, and one hairline, not by boxes of their
+   own, and they start where the header's title does. */
 .k2b-ui
   :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
-  :is(
-    .k2b-detail-panel__summary,
-    .k2b-detail-panel__group,
-    .k2b-detail-panel__body > .k2b-detail-panel__section,
-    .k2b-detail-panel .k2b-discussion[data-surface="default"]
-  ) {
+  :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-detail-panel__body > .k2b-section) {
   padding: 0;
   border-radius: 0;
   background: transparent;
@@ -1488,12 +1484,8 @@ html {
   gap: 1.5rem;
 }
 
-.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > :is(.k2b-detail-panel__section, .k2b-discussion),
-.k2b-ui
-  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
-  .k2b-detail-panel__group
-  > :is(.k2b-detail-panel__section, .k2b-discussion)
-  + :is(.k2b-detail-panel__section, .k2b-discussion[data-surface="default"]) {
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > .k2b-section,
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > .k2b-section + .k2b-section {
   padding: 0;
 }
 
@@ -1504,8 +1496,19 @@ html {
   scrollbar-width: thin;
 }
 
+/* One subtle hairline separates the panel's topics: every section,
+   discussion, or group after the body's first element starts below it. A
+   group's own sections stay together without lines. Apps draw no line. */
+.k2b-ui
+  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
+  .k2b-detail-panel__body
+  > :is(.k2b-section, .k2b-detail-panel__group):not(:first-child) {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--k2b-border);
+}
+
 .k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__body {
-  gap: 1.5rem;
+  gap: 1.25rem;
   padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
   scrollbar-width: thin;
 }
@@ -2065,13 +2068,48 @@ html {
 
 /* ------------------------------------------------------- floating window */
 
-.k2b-ui .k2b-floating-window[data-mobile="true"] {
-  inset: 0.5rem;
+/* On a phone an open window is a full-screen sheet: close first, the status below the title. */
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) {
+  inset: 0;
   width: auto;
   height: auto;
   max-width: none;
   max-height: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   transform: none;
+}
+
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) > header {
+  height: 3.5rem;
+  gap: 0.25rem;
+  padding: 0 0.75rem 0 0.25rem;
+  background: transparent;
+  cursor: default;
+}
+
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) .k2b-floating-window__controls {
+  order: -1;
+}
+
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) .k2b-floating-window__close {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) .k2b-floating-window__heading {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+}
+
+.k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) .k2b-floating-window__title {
+  max-width: 100%;
+  font-size: 0.9375rem;
+  cursor: default;
 }
 
 /* ------------------------------------------------------------ responsive */
@@ -2389,7 +2427,10 @@ html {
 /* The head: one 46 px row above the work area, without a line under it. It
    shows on a page with a page above it (`data-trail="up"`), unless from
    64 rem the sidebar marks the page or its ancestor (see below), and from 48 to 64 rem
-   whenever the workspace has an overlay sidebar, whose button it holds. The page's own `PageTitle` replaces the head's title; the
+   whenever the workspace has an overlay sidebar, whose button it holds. Beside the overlay it shows no title
+   on a page without a page above it; a page that puts
+   `AppWorkspace.SidebarToggle` in its own toolbar takes the button there, and a head with nothing
+   left to show takes no row. The page's own `PageTitle` replaces the head's title; the
    head then stays only for that button. A nested workspace's head never
    carries the title. */
 .k2b-ui .k2b-app-workspace__head {
@@ -2422,7 +2463,8 @@ html {
   display: none;
 }
 
-.k2b-ui .k2b-app-workspace__head-toggle {
+.k2b-ui .k2b-app-workspace__head-toggle,
+.k2b-ui .k2b-app-workspace__sidebar-toggle {
   display: none;
 }
 
@@ -2802,41 +2844,45 @@ html {
      so the head shows neither the title nor the way up beside it; Alt+Up
      still goes up.
      On a page without its own `h1` the head's heading stays for assistive
-     technology. A collapsed sidebar shows no names and keeps the head. */
-  .k2b-ui
-    .k2b-app-workspace:not([data-sidebar-collapsed="true"])
-    > :is(
-      .k2b-app-workspace__head:has(
-          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
-          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
-        ),
-      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
-      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
-    )[data-trail="up"] {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    min-height: 0;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
+     technology. A collapsed sidebar shows no names and keeps the head. Where
+     the sidebar does not fit and is the overlay (see below), the head keeps
+     its row for the overlay's button and follows the overlay's title rule. */
+  @container k2b-workspace (width >= 20rem) {
+    .k2b-ui
+      .k2b-app-workspace:not([data-sidebar-collapsed="true"])
+      > :is(
+        .k2b-app-workspace__head:has(
+            ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+            ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
+          ),
+        .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+        :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
+      )[data-trail="up"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      min-height: 0;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
 
-  .k2b-ui
-    .k2b-app-workspace:not([data-sidebar-collapsed="true"])
-    > :is(
-      .k2b-app-workspace__head:has(
-          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
-          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
-        ),
-      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
-      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
-    )
-    > .k2b-app-workspace__head-lead
-    > .k2b-page-title {
-    display: none;
+    .k2b-ui
+      .k2b-app-workspace:not([data-sidebar-collapsed="true"])
+      > :is(
+        .k2b-app-workspace__head:has(
+            ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+            ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
+          ),
+        .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+        :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
+      )
+      > .k2b-app-workspace__head-lead
+      > .k2b-page-title {
+      display: none;
+    }
   }
 
   .k2b-ui
@@ -2933,17 +2979,95 @@ html {
       display: inline-flex;
     }
 
-    /* A head row shows the title beside the overlay's button, as the head
-       does, unless the page shows its own. */
+    /* A page's own toolbar may hold the overlay's button
+       (`AppWorkspace.SidebarToggle`); the head's button then gives way. */
     .k2b-ui
       .k2b-app-workspace:has(
         > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
-      > .k2b-app-workspace__head[data-row]
+      > :is(.k2b-app-workspace__content, solid-island, solid-client)
+      .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *)) {
+      display: inline-flex;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *)))
       > .k2b-app-workspace__head-lead
-      > .k2b-page-title.k2b-page-title:not([data-k2b-own-title][data-k2b-own-title] *) {
-      display: flex;
+      > .k2b-app-workspace__head-toggle {
+      display: none;
+    }
+
+    /* Beside the overlay the head shows no title on a page without a page
+       above it, as beside the column from 64 rem: the sidebar names the
+       place one tap away. A deeper page keeps its title and way up, because
+       the closed overlay shows neither its marked item nor the way up. */
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head:not([data-trail="up"])
+      > .k2b-app-workspace__head-lead
+      > .k2b-page-title {
+      display: none;
+    }
+
+    /* There, on a page without its own `h1`, the head's heading names it for
+       assistive technology, also while the head takes no row. */
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head:not([data-trail="up"]):not(:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__main h1))
+      > .k2b-app-workspace__head-lead
+      > .k2b-app-workspace__head-heading:not([data-k2b-own-title][data-k2b-own-title] *) {
+      position: absolute;
+      display: block;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    /* With the button in the page's toolbar and no title to show, or a page
+       that shows its own, the head takes no row. A head row keeps its views;
+       a waiting detail's Details button keeps its row (see the waiting blocks
+       below, which win). Only the workspace's own toolbar counts: a nested
+       workspace keeps the button in its head. */
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head:not([data-row], [data-trail="up"]):has(
+        ~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *))
+      ),
+    :where(.k2b-ui[data-k2b-own-title], .k2b-ui [data-k2b-own-title])
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head.k2b-app-workspace__head:not([data-row]):has(
+        ~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *))
+      ) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      min-height: 0;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
 
     .k2b-ui .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) {
@@ -3859,16 +3983,84 @@ html {
       display: inline-flex;
     }
 
-    /* The head's title comes back unless the page shows its own. */
+    /* The page's toolbar button, the title, the heading, and a head with
+       nothing left follow the overlay below 64 rem. */
     .k2b-ui
       .k2b-app-workspace:has(
         > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
-      > .k2b-app-workspace__head
+      > :is(.k2b-app-workspace__content, solid-island, solid-client)
+      .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *)) {
+      display: inline-flex;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *)))
       > .k2b-app-workspace__head-lead
-      > .k2b-page-title.k2b-page-title:not([data-k2b-own-title][data-k2b-own-title] *) {
-      display: flex;
+      > .k2b-app-workspace__head-toggle {
+      display: none;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head:not([data-trail="up"])
+      > .k2b-app-workspace__head-lead
+      > .k2b-page-title {
+      display: none;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head:not([data-trail="up"]):not(:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__main h1))
+      > .k2b-app-workspace__head-lead
+      > .k2b-app-workspace__head-heading:not([data-k2b-own-title][data-k2b-own-title] *) {
+      position: absolute;
+      display: block;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head:not([data-row], [data-trail="up"]):has(
+        ~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *))
+      ),
+    :where(.k2b-ui[data-k2b-own-title], .k2b-ui [data-k2b-own-title])
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head.k2b-app-workspace__head:not([data-row]):has(
+        ~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *))
+      ) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      min-height: 0;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
 
     .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"] {
@@ -4243,6 +4435,11 @@ html[data-k2b-mobile-shell] .k2b-ui,
   line-height: 1.5rem;
 }
 
+/* A card icon stays centred on the taller title line. */
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card[data-card-icon] > .k2b-notice-card__icon {
+  height: 1.5rem;
+}
+
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-settings-section__heading p,
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__description,
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__body,
@@ -4509,7 +4706,6 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   html[data-k2b-mobile-shell="sidebar"]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b-toast-container] {
     --k2b-toast-rail-left: 15rem;
     --k2b-toast-rail-width: auto;
-    align-items: center;
   }
 
   html[data-k2b-mobile-shell="sidebar"]:not([data-k2b-mobile-shell-modal])
@@ -4517,6 +4713,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
     [data-k2b-toast-container]
     > .k2b-toast-slot {
     width: min(100%, 26rem);
+    margin-inline: auto;
   }
 }
 
@@ -4887,17 +5084,10 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   padding: 0.375rem;
   border-radius: 1.625rem;
   background: var(--k2b-tab-bar-background, var(--k2b-surface-elevated));
+  /* A floating pill that stays open: the toolbar shadow and a light ring as its edge. */
   box-shadow:
-    0 10px 28px -14px rgb(9 9 11 / 0.34),
-    0 0 0 1px rgb(9 9 11 / 0.06);
-}
-
-.k2b-ui[data-theme="dark"] .k2b-tab-bar[data-variant="floating"],
-.k2b-ui.k2b-dark .k2b-tab-bar[data-variant="floating"],
-.dark .k2b-ui .k2b-tab-bar[data-variant="floating"] {
-  box-shadow:
-    0 12px 30px -14px rgb(0 0 0 / 0.7),
-    0 0 0 1px var(--k2b-border);
+    var(--k2b-shadow-toolbar),
+    0 0 0 1px color-mix(in srgb, var(--k2b-border) 72%, transparent);
 }
 
 .k2b-ui .k2b-tab-bar[data-variant="floating"] > ul {
@@ -4916,7 +5106,6 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-tab-bar[data-variant="floating"] a[data-k2b-pending] {
   color: var(--k2b-tab-bar-selected-color, var(--k2b-action));
   background: var(--k2b-tab-bar-selected-background, var(--k2b-surface));
-  box-shadow: 0 1px 2px rgb(9 9 11 / 0.06);
 }
 
 .k2b-ui .k2b-tab-bar[data-variant="floating"]:has(a[data-k2b-pending]) a[aria-current="page"]:not([data-k2b-pending]) {
@@ -5586,4 +5775,54 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
     color: HighlightText;
     background: Highlight;
   }
+}
+
+/* Breadcrumbs: one line of blue text links up to the current level, which is
+   plain text. A long path scrolls sideways under the shared scroll fade, never
+   wraps; the 2 px inline padding keeps focus rings inside the scrollport. */
+.k2b-ui .k2b-breadcrumbs {
+  display: flex;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-breadcrumbs__list {
+  --scroll-fade-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  margin: 0 -0.125rem;
+  padding: 0 0.125rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+.k2b-ui .k2b-breadcrumbs__list::-webkit-scrollbar {
+  display: none;
+}
+
+.k2b-ui .k2b-breadcrumbs__item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-breadcrumbs__separator {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-breadcrumbs__current {
+  color: var(--k2b-text);
+  font-weight: 500;
+}
+
+.k2b-ui .k2b-button.k2b-breadcrumbs__link {
+  min-height: 1.75rem;
+  font-size: inherit;
 }

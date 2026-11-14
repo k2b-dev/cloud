@@ -85,7 +85,7 @@ describe("Contacts detail query behavior", () => {
 
   test("keeps a favorite event authoritative when the contact is selected later", async () => {
     const dom = createDomTestHarness();
-    const { default: ContactDetailPanel } = await import("../src/frontend/_components/ContactDetailPanel.island.tsx");
+    const { default: ContactDetailPanel } = await import("../src/frontend/_components/ContactDetailPanel.tsx");
     const contact: Contact = {
       id: "ada",
       bookId: "team",

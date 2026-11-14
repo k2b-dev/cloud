@@ -6,6 +6,7 @@ import {
   DetailPanel,
   IconButtonLink,
   isStructuredDataValue,
+  Section,
   StructuredDataPreview,
   type StructuredDataValue,
   useLocale,
@@ -32,12 +33,7 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
     <aside class="paper min-h-0 p-3" aria-label={t.runDetail}>
       <DetailPanel>
         <DetailPanel.Header
-          kind={
-            <>
-              <span>{t.run}</span>
-              {props.status}
-            </>
-          }
+          kind={props.status}
           title={props.span.name}
           subtitle={props.span.spanKey ?? props.span.spanId}
           actions={
@@ -48,7 +44,7 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
         />
 
         <DetailPanel.Body>
-          <DetailPanel.Section title={t.properties}>
+          <Section title={t.properties}>
             <DescriptionList
               layout="rows"
               size="sm"
@@ -72,9 +68,9 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
                   : []),
               ]}
             />
-          </DetailPanel.Section>
+          </Section>
 
-          <DetailPanel.Section title={t.events}>
+          <Section title={t.events}>
             {props.events.length === 0 ? (
               <p class="text-xs text-dimmed">{t.noRunEvents}</p>
             ) : (
@@ -96,19 +92,19 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
                 ))}
               </ol>
             )}
-          </DetailPanel.Section>
+          </Section>
 
           {props.span.summary || props.span.attributes ? (
             <DetailPanel.Group title={t.moreAboutRun}>
               {props.span.summary ? (
-                <DetailPanel.Section title={t.summary}>
+                <Section title={t.summary}>
                   <StructuredDataPreview data={traceData(props.span.summary, t.invalidTraceData)} maxRows={8} />
-                </DetailPanel.Section>
+                </Section>
               ) : null}
               {props.span.attributes ? (
-                <DetailPanel.Section title={t.attributes}>
+                <Section title={t.attributes}>
                   <StructuredDataPreview data={traceData(props.span.attributes, t.invalidTraceData)} maxRows={10} />
-                </DetailPanel.Section>
+                </Section>
               ) : null}
             </DetailPanel.Group>
           ) : null}

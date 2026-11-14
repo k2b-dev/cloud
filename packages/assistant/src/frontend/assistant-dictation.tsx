@@ -390,7 +390,8 @@ export const createAssistantDictation = (props: {
     /** What failed last, until it is tried again or discarded. */
     problem: () => failure()?.message ?? null,
     RecordingFooter: () => (
-      <div class="assistant-recording-footer">
+      // A running dictation stays sharp and usable under Cloud's privacy screen and pauses its timer.
+      <div class="assistant-recording-footer" data-cloud-privacy="live">
         <IconButton
           size="sm"
           class="assistant-recording-action"

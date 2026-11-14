@@ -1,5 +1,5 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, DetailPanel } from "@k2b/ui";
+import { Button, ButtonLink, DetailPanel, Section } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
 import type { ActivityPage, ShareAccessPeriod } from "../activity-contracts";
 import type { ShareView } from "../contracts";
@@ -161,7 +161,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
   };
   return (
     <DetailPanel.Group label={h().history}>
-      <DetailPanel.Section
+      <Section
         title={h().history}
         icon="ti ti-history"
         tone="neutral"
@@ -309,7 +309,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
             </p>
           </Show>
         </div>
-      </DetailPanel.Section>
+      </Section>
     </DetailPanel.Group>
   );
 }

@@ -28,15 +28,15 @@ const artifactKeyPattern = /^[a-z][a-z0-9._-]{0,63}$/;
  */
 export const DocumentZipOutputSchema = z
   .object({
-    kind: z.literal("zip"),
+    kind: z.literal("zip").describe("Output format."),
     files: z
       .array(
         z
           .object({
-            column: z.string().trim().min(1).max(200).optional(),
-            template: z.string().trim().min(1).max(200).optional(),
-            mediaType: z.string().max(255).regex(mediaTypePattern).optional(),
-            required: z.boolean().default(true),
+            column: z.string().trim().min(1).max(200).optional().describe("Captured column containing file references."),
+            template: z.string().trim().min(1).max(200).optional().describe("Document template ID selecting existing document artifacts."),
+            mediaType: z.string().max(255).regex(mediaTypePattern).optional().describe("Optional artifact MIME type."),
+            required: z.boolean().default(true).describe("Fail if this selected artifact is missing."),
             folder: z
               .string()
               .trim()
@@ -44,13 +44,19 @@ export const DocumentZipOutputSchema = z
               .max(64)
               .regex(/^[^/\\\u0000-\u001f\u007f]+$/)
               .refine((value) => value !== "." && value !== "..")
-              .optional(),
+              .optional()
+              .describe("Optional single archive directory name."),
           })
           .strict(),
       )
       .max(20)
-      .default([]),
-    include: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+      .default([])
+      .describe("Artifact selections; at most 20."),
+    include: z
+      .array(z.string().trim().min(1).max(500))
+      .max(50)
+      .default([])
+      .describe("Explicit existing document IDs included in the archive."),
   })
   .strict()
   .refine((value) => value.files.length + value.include.length > 0, "ZIP output needs files or include");

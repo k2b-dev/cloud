@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { launchBrowser, pageErrors } from "../../test/browser";
+import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { chartFixtures } from "../../test/charts/fixtures";
 
 test("named charts preserve browser output and reactive data at desktop and phone widths", async () => {
@@ -35,7 +35,7 @@ test("named charts preserve browser output and reactive data at desktop and phon
             }
             const [data, setData] = createSignal([{label:"Old", value:4}]);
             render(() => createComponent(Chart.Bar, {get data() { return data(); }}), document.querySelector("#reactive"));
-            document.querySelector("button").onclick = () => setData([{label:"Updated",value:9}]);
+            document.querySelector("#update-chart").onclick = () => setData([{label:"Updated",value:9}]);
           `,
           }));
         },
@@ -53,10 +53,12 @@ test("named charts preserve browser output and reactive data at desktop and phon
         const errors = pageErrors(page);
         await page.setContent(`<html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
           body{margin:0;padding:24px;background:white;color:#202632}main{display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))}section{min-width:0}h2{font:600 16px sans-serif}.direct,.named{height:220px}
-          </style></head><body class="k2b-ui"><main></main><button>Update</button><div id="reactive" style="height:200px"></div></body></html>`);
+          .direct:has([data-balance-flow]),.named:has([data-balance-flow]){height:auto}
+          </style></head><body class="k2b-ui"><main></main><button id="update-chart">Update</button><div id="reactive" style="height:200px"></div></body></html>`);
         await page.addScriptTag({ content: bundle });
+        await settled(page);
         const equal = await page
-          .locator("main section")
+          .locator("main > section")
           .evaluateAll((sections) =>
             sections.map((section) => section.querySelector(".direct svg")?.outerHTML === section.querySelector(".named svg")?.outerHTML),
           );

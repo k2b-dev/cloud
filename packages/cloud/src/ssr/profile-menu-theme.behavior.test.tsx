@@ -47,6 +47,11 @@ const choices = [
 
 test("the profile appearance row cycles in place, keeps the menu open and keeps focus", async () => {
   installPopoverStub();
+  // A touch screen without a mouse: the touch menu offers no privacy screen there.
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: (media: string) => ({ matches: false, media, addEventListener() {}, removeEventListener() {} }),
+  });
   const { LocaleProvider } = await import("@k2b/ui");
   const { default: ProfilePreferences } = await import("./ProfilePreferences");
   dispose = render(

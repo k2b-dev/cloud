@@ -16,6 +16,8 @@ export function FileDialogFrame(props: {
   /** The path and filter row; without it, the content starts at the top of the column. */
   toolbar?: JSX.Element;
   children: JSX.Element;
+  /** A column beside the content on wide screens, such as the chooser's preview; hidden below its breakpoint. */
+  aside?: JSX.Element;
   /** Covers the dialog while files are dragged over it. */
   overlay?: JSX.Element;
   status: JSX.Element;
@@ -34,6 +36,9 @@ export function FileDialogFrame(props: {
             <Show when={props.toolbar}>{props.toolbar}</Show>
             <div class="cloud-file-dialog__content">{props.children}</div>
           </div>
+          <Show when={props.aside}>
+            <aside class="cloud-file-dialog__aside">{props.aside}</aside>
+          </Show>
         </div>
         <PanelDialog.Footer>
           <span class="cloud-file-chooser__status" role="status" data-error={props.statusError ? "true" : undefined}>

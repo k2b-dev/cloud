@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { packageIds } from "../workspace";
+import { appIds } from "../workspace";
 import { isDirectory, isTestFile, listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
@@ -42,8 +42,7 @@ export const rule: Rule = {
   description: "Application facade, service module, capability, and API conventions",
   run: async ({ workspaceRoot }) => {
     const packagesRoot = join(workspaceRoot, "packages");
-    const nonAppPackages = new Set(["cloud", "ui", "ssr", "editor"]);
-    const appNames = packageIds(workspaceRoot).filter((name) => !nonAppPackages.has(name) && isDirectory(join(packagesRoot, name, "src")));
+    const appNames = appIds(workspaceRoot).filter((name) => isDirectory(join(packagesRoot, name, "src")));
     const findings: Finding[] = [];
     const report = (file: string, message: string) => findings.push({ file, message });
 

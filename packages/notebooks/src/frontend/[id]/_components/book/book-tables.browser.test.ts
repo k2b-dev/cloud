@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
 import { renderNotebookBook } from "../../../../lib/book-renderer";
 import type { NoteQueryResult } from "../../../../service/note-query";
 
@@ -132,7 +132,7 @@ test("Book tables give lines, row hover and column bands one width", async () =>
         layout: undefined,
       });
       const cell = page.locator(".notebook-book-content .md-table-wrap").nth(index).locator("tbody tr").last().locator("td").last();
-      await cell.hover();
+      await hoverInPlace(cell);
       const fills = await cell.evaluate((element) => [
         getComputedStyle(element.parentElement!).backgroundColor,
         getComputedStyle(element, "::after").backgroundColor,

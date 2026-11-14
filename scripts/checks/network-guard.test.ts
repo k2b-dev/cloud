@@ -13,6 +13,7 @@ const findings = async (source: string, file = "packages/demo/src/outbound.ts", 
         workspaces: {
           packages: [
             "packages/demo",
+            "packages/speedtest",
             "packages/pulse",
             "packages/notebooks",
             "packages/cloud",
@@ -215,4 +216,11 @@ test("mail constructor coverage also includes workspace scripts", async () => {
       "scripts/imap.ts",
     ),
   ).toEqual([]);
+});
+
+test("standalone UDP CLI resolves locally while server and other app resolvers stay guarded", async () => {
+  const source = 'import { lookup } from "node:dns/promises";';
+  expect(await lines(source, "packages/speedtest/src/udp-client.ts")).toEqual([]);
+  expect(await lines(source, "packages/speedtest/src/server.ts")).toEqual([1]);
+  expect(await lines(source, "packages/demo/src/cli.ts")).toEqual([1]);
 });

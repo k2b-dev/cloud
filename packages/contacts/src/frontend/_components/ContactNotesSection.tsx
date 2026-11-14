@@ -1,7 +1,7 @@
 import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { dates, type Paginated } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { announce, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import { announce, Button, Discussion, IconButton, MarkdownView, prompts, Section, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactNote } from "../../service";
@@ -204,10 +204,12 @@ export default function ContactNotesSection(props: Props) {
   });
 
   return (
-    <Discussion
+    <Section
       ref={sectionRoot}
+      size="md"
+      class="k2b-discussion"
       icon="ti ti-message-circle"
-      label={t().comments}
+      title={t().notes}
       count={notesPage().total}
       actions={
         props.canWrite && !composerOpen() ? (
@@ -218,100 +220,107 @@ export default function ContactNotesSection(props: Props) {
       }
       data-contacts-editor={composerOpen() || editingId() ? "true" : undefined}
     >
-      <Show when={props.canWrite && composerOpen()}>
-        <Discussion.Composer
-          label={t().addComment}
-          placeholder={t().commentPlaceholder}
-          submitLabel={t().postComment}
-          cancelLabel={t().cancel}
-          onCancel={() => setComposerOpen(false)}
-          lines={5}
-          onSubmit={async (content) => {
-            await createMutation.mutate({ bookId: props.bookId, contactId: props.contactId, content });
-            const error = createMutation.error();
-            if (error) throw error;
-          }}
-        />
-      </Show>
+      <div class="k2b-discussion__body">
+        <Show when={props.canWrite && composerOpen()}>
+          <Discussion.Composer
+            label={t().addComment}
+            placeholder={t().commentPlaceholder}
+            submitLabel={t().postComment}
+            cancelLabel={t().cancel}
+            onCancel={() => setComposerOpen(false)}
+            lines={5}
+            onSubmit={async (content) => {
+              await createMutation.mutate({ bookId: props.bookId, contactId: props.contactId, content });
+              const error = createMutation.error();
+              if (error) throw error;
+            }}
+          />
+        </Show>
 
-      <Discussion.List
-        fold={3}
-        loading={(notesQuery.loading() || notesQuery.refreshing()) && notesPage().items.length === 0}
-        loadingLabel={t().loadingComments}
-        error={notesQuery.error()?.message}
-        onRetry={() => notesQuery.refresh()}
-        hasMore={notesPage().hasNext}
-        loadingMore={notesQuery.loadingMore()}
-        loadMoreLabel={t().loadEarlierComments}
-        onLoadMore={() => notesQuery.loadMore()}
-      >
-        <For each={notesPage().items}>
-          {(note) => {
-            const isOwn = () => note.authorUserId === props.currentUserId;
-            const isEditing = () => editingId() === note.id;
-            return (
-              <Discussion.Item
-                avatar={
-                  <CloudAvatar username={note.authorDisplayName} userId={note.authorUserId} avatarHash={note.authorAvatarHash} size="xs" />
-                }
-                author={note.authorDisplayName}
-                timestamp={
-                  <time dateTime={note.createdAt} title={dates.formatDateTime(note.createdAt, { locale: locale() })}>
-                    {dates.formatDateTimeRelative(note.createdAt, { locale: locale() })}
-                  </time>
-                }
-                meta={
-                  note.updatedAt !== note.createdAt ? (
-                    <span title={dates.formatDateTime(note.updatedAt, { locale: locale() })}>{t().edited}</span>
-                  ) : undefined
-                }
-                actions={
-                  props.canWrite && !isEditing() && (note.canEdit || note.canDelete) ? (
-                    <>
-                      <Show when={note.canEdit && isOwn()}>
-                        <Tooltip.Anchor content={t().editComment}>
-                          <IconButton variant="ghost" size="xs" onClick={() => startEdit(note)} label={t().editComment}>
-                            <i class="ti ti-pencil" aria-hidden="true" />
-                          </IconButton>
-                        </Tooltip.Anchor>
-                      </Show>
-                      <Show when={note.canDelete && isOwn()}>
-                        <Tooltip.Anchor content={t().deleteComment}>
-                          <IconButton
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => void deleteNote(note)}
-                            disabled={deleteConfirming() || deleteMutation.loading()}
-                            label={t().deleteComment}
-                          >
-                            <i class="ti ti-trash" aria-hidden="true" />
-                          </IconButton>
-                        </Tooltip.Anchor>
-                      </Show>
-                    </>
-                  ) : undefined
-                }
-              >
-                <Show when={isEditing()} fallback={<MarkdownView markdown={note.content} headingScale="compact" />}>
-                  <Discussion.Composer
-                    label={t().editComment}
-                    initialValue={note.content}
-                    submitLabel={t().saveComment}
-                    cancelLabel={t().cancel}
-                    onCancel={cancelEdit}
-                    lines={3}
-                    onSubmit={async (content) => {
-                      await updateMutation.mutate({ bookId: props.bookId, contactId: props.contactId, noteId: note.id, content });
-                      const error = updateMutation.error();
-                      if (error) throw error;
-                    }}
-                  />
-                </Show>
-              </Discussion.Item>
-            );
-          }}
-        </For>
-      </Discussion.List>
-    </Discussion>
+        <Discussion.List
+          fold={3}
+          loading={(notesQuery.loading() || notesQuery.refreshing()) && notesPage().items.length === 0}
+          loadingLabel={t().loadingComments}
+          error={notesQuery.error()?.message}
+          onRetry={() => notesQuery.refresh()}
+          hasMore={notesPage().hasNext}
+          loadingMore={notesQuery.loadingMore()}
+          loadMoreLabel={t().loadEarlierComments}
+          onLoadMore={() => notesQuery.loadMore()}
+        >
+          <For each={notesPage().items}>
+            {(note) => {
+              const isOwn = () => note.authorUserId === props.currentUserId;
+              const isEditing = () => editingId() === note.id;
+              return (
+                <Discussion.Item
+                  avatar={
+                    <CloudAvatar
+                      username={note.authorDisplayName}
+                      userId={note.authorUserId}
+                      avatarHash={note.authorAvatarHash}
+                      size="xs"
+                    />
+                  }
+                  author={note.authorDisplayName}
+                  timestamp={
+                    <time dateTime={note.createdAt} title={dates.formatDateTime(note.createdAt, { locale: locale() })}>
+                      {dates.formatDateTimeRelative(note.createdAt, { locale: locale() })}
+                    </time>
+                  }
+                  meta={
+                    note.updatedAt !== note.createdAt ? (
+                      <span title={dates.formatDateTime(note.updatedAt, { locale: locale() })}>{t().edited}</span>
+                    ) : undefined
+                  }
+                  actions={
+                    props.canWrite && !isEditing() && (note.canEdit || note.canDelete) ? (
+                      <>
+                        <Show when={note.canEdit && isOwn()}>
+                          <Tooltip.Anchor content={t().editComment}>
+                            <IconButton variant="ghost" size="xs" onClick={() => startEdit(note)} label={t().editComment}>
+                              <i class="ti ti-pencil" aria-hidden="true" />
+                            </IconButton>
+                          </Tooltip.Anchor>
+                        </Show>
+                        <Show when={note.canDelete && isOwn()}>
+                          <Tooltip.Anchor content={t().deleteComment}>
+                            <IconButton
+                              variant="ghost"
+                              size="xs"
+                              onClick={() => void deleteNote(note)}
+                              disabled={deleteConfirming() || deleteMutation.loading()}
+                              label={t().deleteComment}
+                            >
+                              <i class="ti ti-trash" aria-hidden="true" />
+                            </IconButton>
+                          </Tooltip.Anchor>
+                        </Show>
+                      </>
+                    ) : undefined
+                  }
+                >
+                  <Show when={isEditing()} fallback={<MarkdownView markdown={note.content} headingScale="compact" />}>
+                    <Discussion.Composer
+                      label={t().editComment}
+                      initialValue={note.content}
+                      submitLabel={t().saveComment}
+                      cancelLabel={t().cancel}
+                      onCancel={cancelEdit}
+                      lines={3}
+                      onSubmit={async (content) => {
+                        await updateMutation.mutate({ bookId: props.bookId, contactId: props.contactId, noteId: note.id, content });
+                        const error = updateMutation.error();
+                        if (error) throw error;
+                      }}
+                    />
+                  </Show>
+                </Discussion.Item>
+              );
+            }}
+          </For>
+        </Discussion.List>
+      </div>
+    </Section>
   );
 }

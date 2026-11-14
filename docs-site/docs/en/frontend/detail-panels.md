@@ -5,7 +5,7 @@ section: Frontend
 order: 825
 description: Build an object's detail panel from the shared sections, in one order of use, with every state and one text edge.
 tags: [detail panel, presence, access, links, properties, tags, progressive disclosure]
-updated: 2026-11-04
+updated: 2026-11-08
 ---
 
 # Detail panels
@@ -13,11 +13,24 @@ updated: 2026-11-04
 The detail panel answers "what is this, who is here, and what belongs to it"
 for the object open in an application. Every Cloud application builds it the
 same way, so people find the same things in the same places in Notebooks,
-Spaces, Files, Mail, and third-party apps.
+Spaces, Files, and third-party apps. Mail is the exception: its reader shows
+state in the head, notes in the timeline, and attachments in the messages.
 
 Build it from [`DetailPanel`](/en/ui/layout/detail-panel) inside
 `AppWorkspace.Detail` and its shared sections. The application passes data;
-the sections own their icon, title, count, states, and geometry.
+the sections own their icon, title, count, states, and geometry. Every topic
+is a [`Section`](/en/ui/surfaces/section): in the panel it stands flat, and on
+a full page, such as a customer file, the same component draws one light card
+per topic.
+
+## Start with the name
+
+The header starts with the object's name, beside the close button. Nothing
+stands above it: the person opened the object from a list that already says
+what it is, so a type such as "File" or "Task" above the name only delays it.
+A state such as "Done" or "Read only" leads the line below the name, before
+facts such as size and date. See
+[DetailPanel](/en/ui/layout/detail-panel#use-detailpanel).
 
 ## Put sections in the order of use
 
@@ -26,12 +39,12 @@ Show what people work with first and let context wait:
 | Order | Section | Use it when | Building block |
 | --- | --- | --- | --- |
 | 1 | Here now | Several people can have the object open live | `DetailPresence` |
-| 2 | Fields people edit | The object has fields such as status, owner, or due date | Property rows in `DetailPanel.Section` |
+| 2 | Fields people edit | The object has fields such as status, owner, or due date | Property rows in a `Section` |
 | 3 | Comments | People discuss the object | `Discussion` |
-| 4 | The object's own content | It has parts to jump to or progress to show, such as an outline or tasks | `DetailPanel.Section` with `DetailPanel.Action` rows |
+| 4 | The object's own content | It has parts to jump to or progress to show, such as an outline or tasks | `Section` with `DetailPanel.Action` rows |
 | 5 | Tags | The object carries tags | `DetailTags` |
 | 6 | Links | Other objects link to it or it links to them | `DetailLinks` |
-| 7 | Attachments | Files belong to it | `DetailPanel.Section` with `FileGrid layout="list" limit={5}` |
+| 7 | Attachments | Files belong to it | `Section` with `FileGrid layout="list" limit={5}` |
 | 8 | More about … | Access, facts, and history | `DetailPanel.Group` with `DetailAccess`, `DetailProperties`, and activity |
 
 Leave out what the object does not have. A section with nothing in it yet,
@@ -58,6 +71,9 @@ such as an H3 in an outline, indents further. The shared sections, rows, and
 `FileGrid` keep this edge on their own: do not add padding or negative
 margins around them. See
 [One edge per section](/en/ui/layout/detail-panel#one-edge-per-section).
+The panel draws one subtle hairline between its topics; do not add a border
+or divider of your own
+([One hairline between topics](/en/ui/layout/detail-panel#one-hairline-between-topics)).
 
 Each section keeps its height while its data changes. "Here now" is always
 two lines tall: people coming, going, or moving between headings change only

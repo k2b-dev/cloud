@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // Scrolling, touch-action, the toast rail's place, and the room a persistent toast takes are layout results, which
 // happy-dom does not model, so a real engine runs the built package at phone size.
@@ -136,6 +136,16 @@ const geometry = (page: Page) =>
       }),
     };
   });
+
+/**
+ * Waits until the toasts have arrived or left and the shell has measured them. A toast opens a frame after it is
+ * added, then moves for the stack's motion time, and the shell measures the room it takes in the frame after that
+ * motion ends; a fixed wait as long as the motion read the stack mid-move on a slow runner (#3121).
+ */
+const toastsSettled = async (page: Page) => {
+  await page.waitForFunction(() => !document.querySelector('.k2b-toast-slot[data-state="entering"]'));
+  await settled(page);
+};
 
 /** Scrolls the content to its end and reports where the last row ends. */
 const lastRowBottom = (page: Page) =>
@@ -305,7 +315,7 @@ describe("MobileShell in a phone browser", () => {
       expect(free).toBeLessThanOrEqual(before.footerTop);
 
       await page.evaluate(() => void ui.toast("Saved"));
-      await page.waitForTimeout(400);
+      await toastsSettled(page);
       const timed = await geometry(page);
       expect(timed.cards).toHaveLength(1);
       expect(timed.cards[0]!.bottom).toBeLessThanOrEqual(timed.footerTop);
@@ -313,14 +323,14 @@ describe("MobileShell in a phone browser", () => {
       expect(timed.inset).toBe("0px");
 
       await page.evaluate(() => void ui.toast("You're offline", { duration: 0 }));
-      await page.waitForTimeout(400);
+      await toastsSettled(page);
       const sticky = await geometry(page);
       const covered = Math.min(...sticky.cards.map((card) => card.top));
       expect(Number.parseFloat(sticky.inset)).toBeCloseTo(sticky.bodyBottom - covered, 0);
       expect(await lastRowBottom(page)).toBeLessThanOrEqual(covered + 1);
 
       await page.evaluate(() => ui.toast.dismissAll());
-      await page.waitForTimeout(400);
+      await toastsSettled(page);
       expect((await geometry(page)).inset).toBe("0px");
     } finally {
       await page.context().close();
@@ -333,7 +343,7 @@ describe("MobileShell in a phone browser", () => {
       await page.evaluate(() => {
         ui.kept = ui.toast("Uploading", { progress: "indeterminate" });
       });
-      await page.waitForTimeout(400);
+      await toastsSettled(page);
       const running = await geometry(page);
       const covered = Math.min(...running.cards.map((card) => card.top));
       expect(Number.parseFloat(running.inset)).toBeCloseTo(running.bodyBottom - covered, 0);
@@ -341,10 +351,10 @@ describe("MobileShell in a phone browser", () => {
 
       // Ending the progress gives the toast its timer back, so it no longer pads the content.
       await page.evaluate(() => ui.kept?.update("Uploaded", { progress: null, duration: 60_000 }));
-      await page.waitForTimeout(400);
+      await toastsSettled(page);
       expect((await geometry(page)).inset).toBe("0px");
       await page.evaluate(() => ui.toast.dismissAll());
-      await page.waitForTimeout(400);
+      await toastsSettled(page);
 
       await page.evaluate(() => {
         const panel = document.createElement("div");
@@ -352,7 +362,7 @@ describe("MobileShell in a phone browser", () => {
         panel.textContent = "3 files";
         ui.toast.custom(panel);
       });
-      await page.waitForTimeout(400);
+      await toastsSettled(page);
       const custom = await geometry(page);
       const panelTop = Math.min(...custom.cards.map((card) => card.top));
       expect(Number.parseFloat(custom.inset)).toBeCloseTo(custom.bodyBottom - panelTop, 0);
@@ -368,7 +378,7 @@ describe("MobileShell in a phone browser", () => {
       await page.evaluate(() => void ui.dialogCore.open(() => document.createTextNode("Dialog")));
       await page.locator("dialog").waitFor();
       await page.evaluate(() => void ui.toast("Link copied", { duration: 0 }));
-      await page.waitForTimeout(400);
+      await toastsSettled(page);
       const { cards, inset } = await geometry(page);
       expect(cards[0]!.top).toBeLessThan(100);
       expect(inset).toBe("0px");

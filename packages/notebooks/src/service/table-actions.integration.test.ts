@@ -125,6 +125,7 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_INTEGRATION_CHILD !== "1") {
         for (const change of setAlign(peerTable, 1, "center").toReversed()) peerText.insert(change.from, change.insert);
         const peerActor = { kind: "service_account" as const, id: crypto.randomUUID() };
         const accepted = await notes.acceptYjsUpdate({
+          snapshot: await notes.noteDocuments.read(noteId),
           noteId,
           actor: peerActor,
           update: Y.encodeStateAsUpdate(peer, peerVector),
@@ -209,6 +210,7 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_INTEGRATION_CHILD !== "1") {
             const head = await topic.latestCursor({ tenantId: noteId });
             expect(
               await notes.acceptYjsUpdate({
+                snapshot: await notes.noteDocuments.read(noteId),
                 noteId,
                 actor: peerActor,
                 update: recovery.update,

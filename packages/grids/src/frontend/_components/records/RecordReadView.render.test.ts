@@ -158,7 +158,8 @@ describe("RecordReadView", () => {
       }),
     );
 
-    expect(html).toContain(">Links</h3>");
+    // A section heading (h3) titled "Links": the h3 itself, or the title in a collapsible section's heading button.
+    expect(html).toMatch(/<h3\b[^>]*>(?:Links<\/h3>|(?:(?!<\/h3>)[\s\S])*?class="k2b-section__title"[^>]*>Links<\/span>)/);
     expect(html).toContain("Links to 1");
     expect(html).toContain("Category · Sony FX3");
     expect(html).toContain("Reusable equipment category.");

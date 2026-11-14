@@ -11,6 +11,7 @@ const drive: FileProviderSource = {
   icon: "ti ti-folders",
   list: "folder.list",
   context: false,
+  tree: false,
   read: "file.read",
   maxBytes: 1_000,
   save: { id: "file.save", maxBytes: 1_000 },

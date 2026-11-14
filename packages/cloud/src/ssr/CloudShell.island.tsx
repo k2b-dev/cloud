@@ -7,6 +7,7 @@ import LayoutHelpTrigger from "./LayoutHelpTrigger";
 import LayoutPreferences from "./LayoutPreferences";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 import PanelTrigger from "./PanelTrigger";
+import PrivacyCountdown from "./PrivacyCountdown";
 import ProfilePreferences from "./ProfilePreferences";
 import { platformMessages } from "./platform-messages";
 import RailApps from "./RailApps";
@@ -42,7 +43,7 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
   createEffect(() => setAppLaunchpadContext(data.apps, data.legalLinks, profile));
   return (
     <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={t().apps}>
-      <RailApps apps={data.apps} settings={data.rail} currentPath={props.currentPath} />
+      <RailApps apps={data.apps} settings={data.rail} currentPath={props.currentPath} appearance={data.appearance} />
       <AppLaunchpadButton profile={profile} apps={data.apps} legalLinks={data.legalLinks} variant="rail" label={t().openApps} />
       <div class="layout-rail-actions mt-auto shrink-0 flex flex-col items-center gap-1">
         {(data.panel?.providers.length ?? 0) > 1 && <PanelTrigger open={props.panelOpen} />}
@@ -52,6 +53,7 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
           panel={data.panel?.providers.some((provider) => provider.id === "core")}
           helpOpen={!!props.panelOpen && data.panel?.provider === "core"}
         />
+        <PrivacyCountdown timerSeconds={data.privacyTimerSeconds ?? 0} />
         <ProfilePreferences
           userId={data.profile.userId}
           appHref={data.profile.appHref}
@@ -64,7 +66,11 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
   );
 }
 
-/** The header's title and controls, between the server-rendered Home and Sign in. */
+/**
+ * The header's title and controls, between the server-rendered Home and Sign in. Signed-out pages show the same
+ * controls at every width; only the labels shorten. Their title needs the room from `md` and becomes the breadcrumbs
+ * from `lg`; on a phone the page's own heading names the page.
+ */
 function HeaderControls(props: {
   authenticated: boolean;
   title?: string;
@@ -84,7 +90,11 @@ function HeaderControls(props: {
             <LayoutBreadcrumbs breadcrumbs={props.breadcrumbs ?? []} />
           </div>
         )}
-        <div class="min-w-0 items-center max-lg:flex lg:hidden">
+        <div
+          class={
+            props.authenticated ? "min-w-0 items-center max-lg:flex lg:hidden" : "min-w-0 items-center max-md:hidden md:flex lg:hidden"
+          }
+        >
           <span class="layout-header-title truncate font-semibold">{props.title}</span>
           {props.launchpad && (
             <AppLaunchpadButton
@@ -107,7 +117,7 @@ function HeaderControls(props: {
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
-        <div class="items-center gap-1 max-lg:flex lg:hidden">
+        <div class="flex items-center gap-1">
           {props.authenticated && <GlobalSearchTrigger variant="header" />}
           <LayoutHelpTrigger
             variant="header"
@@ -133,7 +143,7 @@ function HeaderControls(props: {
             />
           )}
         </div>
-        {!props.authenticated && <LayoutPreferences initialTheme={data.theme} position="bottom-left" />}
+        {!props.authenticated && <LayoutPreferences initialTheme={data.theme} />}
       </div>
     </>
   );

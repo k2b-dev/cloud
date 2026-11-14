@@ -3,12 +3,12 @@ import {
   Button,
   CheckboxCard,
   confirmDiscardIfDirty,
-  DetailPanel,
   dialogCore,
   NoticeCard,
   PanelDialog,
   panelDialogWorkspaceOptions,
   prompts,
+  Section,
   Select,
   type TemplateVariable,
   TextInput,
@@ -473,7 +473,7 @@ function DocumentTemplateEditorDialog(props: {
                 : undefined
             }
           />
-          <DetailPanel.Section
+          <Section
             collapsible
             title={t().templateSettings}
             icon="ti ti-settings"
@@ -557,8 +557,8 @@ function DocumentTemplateEditorDialog(props: {
                 <p class="text-xs text-dimmed">{t().rendererOwnsNumbering}</p>
               </Show>
             </div>
-          </DetailPanel.Section>
-          <DetailPanel.Section
+          </Section>
+          <Section
             collapsible
             title={t().templateDataSource}
             icon="ti ti-database"
@@ -600,7 +600,7 @@ function DocumentTemplateEditorDialog(props: {
                 </NoticeCard>
               </Show>
             </div>
-          </DetailPanel.Section>
+          </Section>
         </fieldset>
       </PanelDialog.Body>
       <PanelDialog.Footer>

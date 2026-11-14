@@ -343,6 +343,47 @@ export const relatedMailQuerySchema = z
   })
   .strict();
 
+/** Sender history is a preview of at most five conversations; total counts only visible matches. */
+export const senderConversationsQuerySchema = z
+  .object({
+    email: z.email().max(320),
+    excludeConversationId: ResourceShortIdSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(5).default(5),
+  })
+  .strict();
+export const senderConversationsPageSchema = z
+  .object({
+    items: z.array(relatedMailSummarySchema).max(5),
+    total: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SenderConversationsPage = z.infer<typeof senderConversationsPageSchema>;
+
+export const MAIL_WORKSPACE_HINT_IDS = [
+  "reader-head-moved",
+  "filters-moved",
+  "toolbar-moved",
+  "density-by-width",
+  "drafts-consolidated",
+  "panes-arrange",
+] as const;
+export const mailWorkspaceHintIdSchema = z.enum(MAIL_WORKSPACE_HINT_IDS);
+export type MailWorkspaceHintId = z.infer<typeof mailWorkspaceHintIdSchema>;
+export const DEFAULT_MAIL_LIST_SHARE = 0.4;
+export const mailWorkspacePreferenceSchema = z
+  .object({
+    listShare: z.number().min(0).max(1).nullable(),
+    seenHints: z.array(mailWorkspaceHintIdSchema).max(MAIL_WORKSPACE_HINT_IDS.length),
+  })
+  .strict();
+export type MailWorkspacePreference = z.infer<typeof mailWorkspacePreferenceSchema>;
+export const mailWorkspacePreferenceChangeSchema = z
+  .object({
+    listShare: mailWorkspacePreferenceSchema.shape.listShare,
+  })
+  .strict();
+export const markMailWorkspaceHintSeenSchema = z.object({ hintId: mailWorkspaceHintIdSchema }).strict();
+
 export const relatedConversationReasonSchema = z
   .object({
     kind: z.enum(["participant", "subject"]),
@@ -565,6 +606,8 @@ export const providerConnectionSchema = z.object({
 });
 export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
 
+export const draftEditModeSchema = z.enum(["lock", "shared"]);
+
 export const mailboxSchema = z.object({
   accessScope: z.enum(["mailbox", "assigned"]),
   id: ResourceShortIdSchema,
@@ -576,6 +619,8 @@ export const mailboxSchema = z.object({
   searchBackend: searchBackendSchema,
   automaticReplyManagementPermission: automaticReplyManagementPermissionSchema,
   composeSafety: composeSafetyConfigSchema,
+  // Creation switch only: rollback retains existing shared drafts and their recovery history.
+  draftEditMode: draftEditModeSchema.default("shared"),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -1277,6 +1322,7 @@ const actorCommandBaseSchema = z
   .strict();
 
 export const composeSafetyWarningIdSchema = z.enum([
+  "missing_subject",
   "missing_attachment",
   "large_recipient_set",
   "external_recipients",
@@ -1290,7 +1336,10 @@ export const composeSafetyApprovalSchema = z
   .object({
     revision: z.number().int().positive().describe("Exact reviewed draft revision."),
     fingerprint: z.string().length(64).describe("Exact review fingerprint."),
-    warningIds: z.array(composeSafetyWarningIdSchema).max(6).describe("Warning identifiers accepted by the caller."),
+    warningIds: z
+      .array(composeSafetyWarningIdSchema)
+      .max(composeSafetyWarningIdSchema.options.length)
+      .describe("Warning identifiers accepted by the caller."),
   })
   .strict();
 export type ComposeSafetyApproval = z.infer<typeof composeSafetyApprovalSchema>;
@@ -3219,6 +3268,11 @@ export const updateMailboxComposeStyleInputSchema = z
   .strict();
 export type UpdateMailboxComposeStyleInput = z.infer<typeof updateMailboxComposeStyleInputSchema>;
 
+/** Writing activity is checked once per heartbeat in every Mail editor. */
+export const DRAFT_LEASE_HEARTBEAT_INTERVAL_MS = 10_000;
+/** Three missed heartbeats end the server's writing reservation. */
+export const DRAFT_LEASE_TTL_MS = 3 * DRAFT_LEASE_HEARTBEAT_INTERVAL_MS;
+
 /** Stable lease outcomes shared by interactive and automated editors. */
 export const DRAFT_LEASE_ERROR_CODES = {
   HELD: "DRAFT_LEASE_HELD",
@@ -3438,6 +3492,39 @@ export type DraftDeliveryClass = z.infer<typeof draftDeliveryClassSchema>;
 
 const draftActorRefSchema = actorRefSchema;
 
+/** A quote captures the enabling person's presentation context for later delivery. */
+export const draftQuoteSourceSchema = z
+  .object({
+    locale: z
+      .string()
+      .refine(
+        (value) => {
+          try {
+            return Intl.getCanonicalLocales(value).length === 1;
+          } catch {
+            return false;
+          }
+        },
+        { message: "Invalid BCP-47 locale", abort: true },
+      )
+      .overwrite((value) => (new Intl.Locale(value).language === "de" ? "de" : "en"))
+      .describe("BCP-47 locale of the person enabling the quote; resolves to shipped de or en, with en fallback."),
+    timeZone: z
+      .string()
+      .refine((value) => {
+        try {
+          if (!value || /^[+-]/.test(value)) return false;
+          new Intl.DateTimeFormat("en", { timeZone: value });
+          return true;
+        } catch {
+          return false;
+        }
+      }, "Invalid IANA time zone")
+      .describe("IANA time zone of the person enabling the quote, validated by Intl."),
+  })
+  .strict();
+export type DraftQuoteSource = z.output<typeof draftQuoteSourceSchema>;
+
 export const draftSchema = z.object({
   id: ResourceShortIdSchema,
   mailboxId: ResourceShortIdSchema,
@@ -3457,10 +3544,15 @@ export const draftSchema = z.object({
   requestDeliveryReceipt: z.boolean(),
   requestReadReceipt: z.boolean(),
   attachments: z.array(draftAttachmentSchema),
+  suggestion: z.boolean(),
+  /** Name of the account that suggested this untouched draft; null once it is no suggestion. Absent from older pods. */
+  suggestedBy: z.string().min(1).nullable().optional(),
   createdBy: draftActorRefSchema,
   lastEditedBy: draftActorRefSchema,
   lastEditedByDisplayName: z.string().min(1),
   recoveryCopyCount: z.number().int().nonnegative(),
+  consolidatedCount: z.number().int().nonnegative().optional(),
+  creationOutcome: z.enum(["created", "existing", "suggestion_skipped"]).optional(),
   revision: z.number().int().positive(),
   /** Optional while release N accepts responses from older lock-only pods. */
   editMode: z.enum(["lock", "shared"]).optional(),
@@ -3472,6 +3564,7 @@ export const draftSchema = z.object({
   state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
   deliveryClass: draftDeliveryClassSchema,
   signatureTemplateId: ResourceShortIdSchema.nullable(),
+  quoteSource: draftQuoteSourceSchema.nullable().default(null),
   /** Returned by create and update only. */
   formattingWarnings: composeFormattingWarningsSchema.optional(),
   createdAt: z.string().datetime(),
@@ -3479,7 +3572,27 @@ export const draftSchema = z.object({
 });
 export type MailDraft = z.infer<typeof draftSchema>;
 
-export type ConversationDraftSummary = Pick<MailDraft, "id" | "intent" | "subject" | "updatedAt"> & {
+export const conversationListDraftsSchema = z
+  .object({
+    count: z.number().int().nonnegative(),
+    editors: z
+      .array(
+        z
+          .object({
+            kind: z.enum(["user", "service_account"]),
+            id: z.string().uuid(),
+            displayName: z.string().min(1),
+          })
+          .strict(),
+      )
+      .max(3),
+    /** Account behind the conversation's only draft while it is an untouched suggestion. Absent from older pods. */
+    suggestedBy: z.string().min(1).nullable().optional(),
+  })
+  .strict();
+export type ConversationListDrafts = z.infer<typeof conversationListDraftsSchema>;
+
+export type ConversationDraftSummary = Pick<MailDraft, "id" | "intent" | "subject" | "updatedAt" | "suggestion"> & {
   bodyPreview: string;
   createdByDisplayName: string;
 };
@@ -3549,6 +3662,10 @@ export const draftEditableContentInputSchema = z
       .describe(
         "Signature template shown after the body, or null for none. On create, omit it to use the sender's default signature; on update, omit it to keep the current choice.",
       ),
+    quoteSource: draftQuoteSourceSchema
+      .nullable()
+      .default(null)
+      .describe("Append the readable source message after the signature using this saved locale and time zone; null disables quoting."),
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
@@ -3677,10 +3794,23 @@ export type ComposeSafetyReview = z.infer<typeof composeSafetyReviewSchema>;
 export const draftSendReviewSchema = composeSafetyReviewSchema.extend({ contentHash: z.string().regex(/^[a-f0-9]{64}$/) });
 export type DraftSendReview = z.infer<typeof draftSendReviewSchema>;
 
+export const composeSignatureInputSchema = z
+  .object({
+    senderIdentityId: ResourceShortIdSchema,
+    signatureTemplateId: ResourceShortIdSchema.nullable(),
+    format: mailComposeFormatSchema,
+  })
+  .strict();
+export type ComposeSignatureInput = z.infer<typeof composeSignatureInputSchema>;
+
+export const composeSignatureSchema = z.object({ html: z.string().nullable(), text: z.string() }).strict();
+export type ComposeSignature = z.infer<typeof composeSignatureSchema>;
+
 export const composePreviewInputSchema = z
   .object({
     draft: draftEditableContentInputSchema,
     conversationId: ResourceShortIdSchema.nullable().default(null),
+    sourceMessageId: ResourceShortIdSchema.nullable().optional(),
   })
   .strict();
 export type ComposePreviewInput = z.input<typeof composePreviewInputSchema>;
@@ -3872,6 +4002,7 @@ export const automationLogReasonSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("skipped_upper_rule"), workflowId: z.string().uuid(), name: z.string() }),
   z.object({ kind: z.literal("already_assigned") }),
   z.object({ kind: z.literal("undone_before") }),
+  z.object({ kind: z.literal("reply_draft_occupied") }),
   z.object({
     kind: z.literal("manual"),
     before: z.object({ kind: z.enum(["user", "group"]), name: z.string(), byRule: z.string().nullable() }).nullable(),

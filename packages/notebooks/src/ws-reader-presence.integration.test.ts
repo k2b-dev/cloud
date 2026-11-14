@@ -225,14 +225,16 @@ if (process.env.NOTEBOOKS_READER_PRESENCE_CHILD !== "1") {
         const lost = await create(notebookId);
         watch(returning, lost.shortId, alicePeer);
         await waitFor(() => returning.people(lost.shortId).length === 1);
-        if (loss === "deleted") await sql`DELETE FROM notebooks.notes WHERE id = ${lost.id}::uuid`;
-        else await sql`UPDATE notebooks.notes SET notebook_id = ${otherNotebookId}::uuid WHERE id = ${lost.id}::uuid`;
-        // Deletion exercises the timer backstop; movement exercises immediate invalidation.
-        if (loss === "moved")
-          await workspaceTransaction((tx) =>
-            notebooksService.workspaceEvents.invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] }, tx),
-          );
-        await waitFor(() => returning.people(lost.shortId).length === 0, loss === "deleted" ? 15_000 : 5_000);
+        await workspaceTransaction(async (tx) => {
+          if (loss === "deleted") {
+            await tx`DELETE FROM notebooks.notes WHERE id = ${lost.id}::uuid`;
+            await notebooksService.workspaceEvents.noteDeleted({ notebookId, noteId: lost.id, shortId: lost.shortId }, tx);
+          } else {
+            await tx`UPDATE notebooks.notes SET notebook_id = ${otherNotebookId}::uuid WHERE id = ${lost.id}::uuid`;
+            await notebooksService.workspaceEvents.invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] }, tx);
+          }
+        });
+        await waitFor(() => returning.people(lost.shortId).length === 0);
         expect(returning.socket.readyState).toBe(WebSocket.OPEN);
         expect((await notebooksService.presence.snapshot({ noteId: lost.id })).participants).toEqual([]);
         const priorEvents = returning.messages.filter((m) => m.type === "notes.workspace.event").length;

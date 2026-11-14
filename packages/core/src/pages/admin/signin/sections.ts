@@ -26,7 +26,7 @@ export const signinSections = (locale: string, base?: string): RegistryFormSecti
     {
       title: s.login,
       description: s.loginDescription,
-      keys: ["user.session.expiry_hours"],
+      keys: ["user.session.expiry_hours", "user.session.shared_workstation_idle_minutes"],
       link: guide(base, "user.login", s.documentation),
     },
     {

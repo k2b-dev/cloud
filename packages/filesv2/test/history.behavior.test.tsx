@@ -248,7 +248,11 @@ describe("Files history components", () => {
     expect(requests).toHaveLength(0);
     const text = () => dom.root.textContent ?? "";
     expect(text()).toContain("Heute");
-    expect(text()).toContain("Mia Schulz hat Proof.pdf überschrieben");
+    // Under "All" the actor has its own column and the change reads in note style, the item first.
+    const proof = () => [...dom.root.querySelectorAll("article")].find((row) => row.textContent?.includes("Proof.pdf"))!;
+    expect(proof().querySelector(".filesv2-history-row__actor")?.textContent).toBe("Mia Schulz");
+    expect(proof().querySelector(".filesv2-history-row__sentence")?.textContent).toBe("Proof.pdf überschrieben in Team Vertrieb");
+    // A batch has no note form and keeps its full sentence, which names the actor itself.
     expect(text()).toContain("Assistant im Auftrag von Lukas Pohl hat 5 Elemente nach Team Vertrieb › Archiv › 2025 verschoben");
     expect(dom.root.querySelectorAll(".filesv2-history-row__members li")).toHaveLength(3);
     const more = buttonNamed(dom.root, "2 weitere")!;
@@ -263,13 +267,13 @@ describe("Files history components", () => {
     requests[0]!.reply.reject(new Error("offline"));
     await flush();
     expect(text()).toContain("Ältere Einträge konnten nicht geladen werden.");
-    expect(text()).toContain("Mia Schulz hat Proof.pdf überschrieben");
+    expect(proof().textContent).toContain("Proof.pdf überschrieben in Team Vertrieb");
     buttonNamed(dom.root, "Erneut versuchen")!.click();
     await flush();
     const older = entry({ action: "item.trash", time: "2026-10-01T08:00:00.000Z", before: gone("vertrieb/Alt.docx") });
     requests.at(-1)!.reply.resolve(page([older]));
     await flush();
-    expect(text()).toContain("Lukas Pohl hat Alt.docx in den Papierkorb verschoben");
+    expect(text()).toContain("Alt.docx in den Papierkorb verschoben");
     expect(text()).not.toContain("Ältere Einträge konnten nicht geladen werden.");
   });
 
@@ -306,7 +310,8 @@ describe("Files history components", () => {
     expect(dom.root.textContent).toContain("In Team Vertrieb gab es in den letzten 7 Tagen nichts dazu.");
     expect(changes).toEqual([]);
     buttonNamed(dom.root, "Filter zurücksetzen")!.click();
-    expect(changes).toEqual([{}]);
+    // Reset leads back to where Activity starts: "Me".
+    expect(changes).toEqual([{ actor: "me" }]);
   });
 
   const searchView = async (
@@ -596,12 +601,15 @@ describe("Files history components", () => {
         items: [network("2001:db8:4f2::/48", 9), network("192.0.2.0/24", 3), network("198.18.0.0/24", 1), network("198.51.100.0/24", 22)],
       },
     };
+    const retryPage = deferred<ShareAccessCounts>();
     const requests: ShareAccessRequest[] = [];
     const period = { from: "2026-09-21", to: "2026-10-20" };
     const load = async (request: ShareAccessRequest) => {
       requests.push(request);
-      return { ...first, networks: { ...first.networks, next: null, items: [network("203.0.113.0/24", 148)] } };
+      if (requests.length === 1) throw new Error("Offline");
+      return retryPage.promise;
     };
+    const last = { ...first, networks: { ...first.networks, next: null, items: [network("203.0.113.0/24", 148)] } };
     const dom = await mount(() => {
       const links = createShareAccess({
         shares: () => [{ share, creatorName: "Mia Schulz" }],
@@ -637,7 +645,17 @@ describe("Files history components", () => {
     expect(dom.root.querySelectorAll(".filesv2-share-facts__networks li")).toHaveLength(4);
     buttonNamed(dom.root, "Weitere Netze laden")!.click();
     await flush();
-    expect(requests).toEqual([{ shareId: share.id, networkAfter: "198.51.100.0/24" }]);
+    const retry = buttonNamed(dom.root, "Erneut versuchen")!;
+    const alert = dom.root.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    retry.click();
+    await flush();
+    expect(retry.disabled).toBe(true);
+    expect(retry.textContent?.trim()).toBe("Erneut versuchen");
+    expect(dom.root.querySelector('[role="alert"]')).toBe(alert);
+    retryPage.resolve(last);
+    await flush();
+    expect(requests).toEqual(Array(2).fill({ shareId: share.id, networkAfter: "198.51.100.0/24" }));
     expect(text()).toContain("203.0.113.x");
     expect(text()).toContain("seit 18.10. · 9-mal");
     expect(text()).toContain("148-mal");

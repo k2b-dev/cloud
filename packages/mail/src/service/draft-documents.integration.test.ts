@@ -9,9 +9,11 @@ import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { DRAFT_REVISION_HISTORY_BYTES, DRAFT_REVISION_OPERATION_ORIGIN } from "./draft-document-operation";
+import { flushDraftDocumentSnapshot } from "./draft-document-snapshots";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, mailDraftDocumentLog, readDraftDocument } from "./draft-documents";
+import { draftProviderContentSchema } from "./draft-provider-mime";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
-import { removeDraftAttachment } from "./drafts";
+import { getDraft, removeDraftAttachment } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { loadSendContent } from "./send-content";
 
@@ -115,6 +117,7 @@ suite("Mail shared draft transaction store", () => {
     } = {},
   ) => {
     const content = draftEditableContentInputSchema.parse({
+      quoteSource: null,
       senderIdentityId: identity.short_id,
       signatureTemplateId: options.signature ? signature.short_id : null,
       to: [{ address: "to@example.test", name: "To" }],
@@ -264,6 +267,7 @@ suite("Mail shared draft transaction store", () => {
     const base = await initial(created.id);
     const next = {
       ...created.content,
+      quoteSource: { locale: "de", timeZone: "Europe/Berlin" },
       subject: "New subject",
       body: "New body 😀",
       to: [],
@@ -280,6 +284,10 @@ suite("Mail shared draft transaction store", () => {
     if (admitted.status !== "accepted") throw new Error("Admission did not persist");
     expect(admitted.revision).toBe(2);
     expect(admitted.durable.content).toEqual(next);
+    expect(value(await getDraft(owner, mailboxId, created.id)).quoteSource).toEqual(next.quoteSource);
+    const [quoteRow] = await sql<{ quote_source: boolean; quote_locale: string; quote_time_zone: string }[]>`
+      SELECT quote_source, quote_locale, quote_time_zone FROM mail.drafts WHERE id = ${created.id}::uuid`;
+    expect(quoteRow).toMatchObject({ quote_source: true, quote_locale: "de", quote_time_zone: "Europe/Berlin" });
     const [row] = await sql<
       {
         sender_identity_id: string;
@@ -325,6 +333,112 @@ suite("Mail shared draft transaction store", () => {
     `;
     expect(counts?.revisions).toBe(2);
     expect(counts?.projections).toBe(1);
+  });
+
+  test("lazy room input survives a fresh replay and projects headers, adoption and provider export once at flush", async () => {
+    const created = await draft();
+    const base = await initial(created.id);
+    const cached = {
+      state: base.durable.state,
+      text: base.durable.content.body,
+      cursor: base.durable.cursor,
+      restoreRevision: base.generation,
+    };
+    // The socket's join-time base has no per-edit SQL load or save. The flush
+    // must recover from the durable log even when that process-local base is gone.
+    const roomDocuments = mailDraftDocumentLog.withStore({
+      load: async () => cached,
+      save: async () => {
+        throw new Error("Room admission must not save SQL");
+      },
+    });
+    const next: DraftEditableContent = {
+      ...created.content,
+      body: "Accepted before a server restart 😀",
+      subject: "Lazy subject",
+      to: [],
+      cc: [],
+      bcc: [{ address: "hidden@example.test", name: "Hidden" }],
+      signatureTemplateId: signature.short_id,
+      format: "plain",
+      priority: "low",
+      requestDeliveryReceipt: false,
+      requestReadReceipt: false,
+    };
+    const update = await createDraftRevisionUpdate(base.durable.state, next, { deadline: deadline() });
+    const accepted = await roomDocuments.accept(created.id, {
+      snapshot: cached,
+      actor: { kind: "user", id: users[0]! },
+      update,
+      baseCursor: base.durable.cursor,
+      restoreRevision: base.generation,
+      originNodeId: "departed-room-process",
+      originPeerId: "human-editor",
+    });
+    expect(accepted.status).toBe("accepted");
+    if (accepted.status !== "accepted") throw new Error("Room input was not retained");
+    const [before] = await sql<{ body_markdown: string; subject: string; revision: number; adopted_at: Date | null }[]>`
+      SELECT body_markdown, subject, revision::int AS revision, adopted_at FROM mail.drafts WHERE id = ${created.id}::uuid`;
+    expect(before).toMatchObject({ body_markdown: created.content.body, subject: created.content.subject, revision: 1, adopted_at: null });
+    await flushDraftDocumentSnapshot(created.id);
+    const [saved] = await sql<
+      {
+        body_markdown: string;
+        subject: string;
+        revision: number;
+        adopted_at: Date | null;
+        doc_cursor: string;
+        signature_template_id: string;
+        to_addresses: unknown;
+        cc_addresses: unknown;
+        bcc_addresses: unknown;
+        body_format: string;
+        priority: string;
+        request_delivery_receipt: boolean;
+        request_read_receipt: boolean;
+      }[]
+    >`
+      SELECT body_markdown, subject, revision::int AS revision, adopted_at, doc_cursor, signature_template_id,
+        to_addresses, cc_addresses, bcc_addresses, body_format, priority, request_delivery_receipt, request_read_receipt
+      FROM mail.drafts WHERE id = ${created.id}::uuid`;
+    expect(saved).toMatchObject({
+      body_markdown: next.body,
+      subject: next.subject,
+      revision: 2,
+      signature_template_id: signature.id,
+      to_addresses: [],
+      cc_addresses: [],
+      bcc_addresses: next.bcc,
+      body_format: next.format,
+      priority: next.priority,
+      request_delivery_receipt: false,
+      request_read_receipt: false,
+    });
+    expect(saved?.adopted_at).not.toBeNull();
+    expect(mailDraftDocumentLog.topic().cursorSequence(saved!.doc_cursor)).toBeGreaterThanOrEqual(
+      mailDraftDocumentLog.topic().cursorSequence(accepted.cursor),
+    );
+    const fresh = value(await read(created.id));
+    expect(fresh.durable.content).toEqual(next);
+    expect(decode(fresh.durable.state)).toEqual(next);
+    const [projection] = await sql<{ content_snapshot: unknown }[]>`SELECT content_snapshot FROM mail.draft_provider_snapshots
+      WHERE draft_id = ${created.id}::uuid AND cloud_revision = 2`;
+    expect(draftProviderContentSchema.parse(projection?.content_snapshot)).toMatchObject({
+      revision: 2,
+      body: next.body,
+      subject: next.subject,
+      to: [],
+      cc: [],
+      bcc: next.bcc,
+      format: next.format,
+    });
+    await flushDraftDocumentSnapshot(created.id);
+    const [counts] = await sql<{ revision: number; revisions: number; projections: number }[]>`
+      SELECT revision::int AS revision,
+        (SELECT count(*)::int FROM mail.draft_document_revisions WHERE draft_id = ${created.id}::uuid) AS revisions,
+        (SELECT count(*)::int FROM mail.draft_provider_snapshots WHERE draft_id = ${created.id}::uuid AND cloud_revision = 2) AS projections
+      FROM mail.drafts WHERE id = ${created.id}::uuid`;
+    expect(counts).toEqual({ revision: 2, revisions: 2, projections: 1 });
   });
 
   test("idle snapshots keep revisions while repeated updates remain sendable", async () => {

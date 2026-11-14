@@ -4,6 +4,7 @@ import {
   createDefaultMailComposerPanesLayout,
   normalizeMailComposerPanes,
   readMailComposerPanesFromCookieHeader,
+  reconcileLargeMailComposerPanes,
   reconcileMailComposerPanes,
 } from "./mail-composer-panes";
 import {
@@ -130,21 +131,29 @@ describe("Mail composer pane preferences", () => {
     expect(normalizeMailComposerPanes(value)).toEqual(value);
   });
 
-  test("rejects v1, malformed, vertical, unknown, and editor-less layouts", () => {
+  test("keeps a stacked layout: draft beside the conversation above the preview (F3)", () => {
+    const value = createDefaultMailComposerPanesLayout();
+    expect(value.root).toEqual({
+      type: "split",
+      direction: "horizontal",
+      ratio: 0.54,
+      first: { type: "group", items: ["editor"], active: "editor" },
+      second: {
+        type: "split",
+        direction: "vertical",
+        ratio: 0.58,
+        first: { type: "group", items: ["history"], active: "history" },
+        second: { type: "group", items: ["preview"], active: "preview" },
+      },
+    });
+    expect(normalizeMailComposerPanes(value)).toEqual(value);
+  });
+
+  test("rejects v1, malformed, unknown, and editor-less layouts", () => {
     const fallback = createDefaultMailComposerPanesLayout();
     for (const value of [
       { root: { type: "leaf", elementIds: ["editor"] } },
       { version: 2, root: { type: "split" } },
-      {
-        version: 2,
-        root: {
-          type: "split",
-          direction: "vertical",
-          ratio: 0.5,
-          first: { type: "group", items: ["editor"], active: "editor" },
-          second: { type: "group", items: ["preview"], active: "preview" },
-        },
-      },
       { version: 2, root: { type: "group", items: ["editor", "unknown"], active: "editor" } },
       { version: 2, root: { type: "group", items: ["history"], active: "history" } },
       { version: 2, root: null },
@@ -164,11 +173,30 @@ describe("Mail composer pane preferences", () => {
 
   test("reconciles the persisted layout with the current composer inventory", () => {
     const all = createDefaultMailComposerPanesLayout();
-    const plain = reconcileMailComposerPanes(all, "plain", false);
-    expect(plain).toEqual({ version: 2, root: { type: "group", items: ["editor"], active: "editor" } });
-    expect(reconcileMailComposerPanes(plain, "markdown", true)).toEqual({
+    // A plain new message on the compose page: the draft alone.
+    expect(reconcileMailComposerPanes(all, "plain", false)).toEqual({
       version: 2,
-      root: { type: "group", items: ["editor", "preview", "history"], active: "editor" },
+      root: { type: "group", items: ["editor"], active: "editor" },
+    });
+    // A new message in the large composer: draft beside preview.
+    const fresh = reconcileLargeMailComposerPanes(all, false);
+    expect(fresh.root).toMatchObject({
+      type: "split",
+      direction: "horizontal",
+      first: { type: "group", items: ["editor"] },
+      second: { type: "group", items: ["preview"] },
+    });
+    // A reply opened with that stored layout gets its conversation back above the preview.
+    expect(reconcileLargeMailComposerPanes(fresh, true).root).toMatchObject({
+      first: { items: ["editor"] },
+      second: { type: "split", direction: "vertical", first: { items: ["history"] }, second: { items: ["preview"] } },
+    });
+    // Tabs stay tabs: the conversation joins as a tab.
+    const tabs = { version: 2 as const, root: { type: "group" as const, items: ["editor", "preview"], active: "editor" } };
+    expect(reconcileLargeMailComposerPanes(tabs, true).root).toEqual({
+      type: "group",
+      items: ["editor", "preview", "history"],
+      active: "editor",
     });
   });
 });

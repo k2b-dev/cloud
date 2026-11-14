@@ -43,6 +43,11 @@ export interface DialogOptions {
   history?: boolean;
 }
 
+export type SuccessDialogOptions = Omit<DialogOptions, "variant"> & {
+  /** A finished success, such as an issued document: the header draws its check once when the dialog opens. */
+  celebrate?: boolean;
+};
+
 export interface ConfirmOptions extends DialogOptions {
   confirmationPhrase?: string;
 }
@@ -707,43 +712,44 @@ const promptNumber = (
     })
     .then((result) => result?.value ?? null);
 
+const openAlert = (content: PromptContent, options?: DialogOptions, celebrate?: boolean): Promise<void | undefined> =>
+  dialogCore.open<void>(
+    (close) => (
+      <div class="k2b-dialog__panel">
+        <DialogHeader
+          title={options?.title || resolveUiMessages().info}
+          icon={options?.icon}
+          tone={promptTone(options?.variant)}
+          celebrate={celebrate}
+          close={() => close()}
+        />
+        <div class="k2b-dialog__body">{content}</div>
+        <footer class="k2b-dialog__actions">
+          <button type="button" class="k2b-button" data-variant={promptButtonVariant(options?.variant)} onClick={() => close()}>
+            {options?.confirmText || resolveUiMessages().ok}
+          </button>
+        </footer>
+      </div>
+    ),
+    {
+      panelClassName: panelClass(options),
+      contentClassName: contentClass(options?.surface),
+      signal: options?.signal,
+      cancelBehavior: options?.cancelBehavior,
+      history: options?.history,
+      ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().info,
+    },
+  );
+
 // The same object as `sharedPrompts`, which `PanelDialog` uses for its discard question: replacing `prompts.confirm`
 // (for example in a test) therefore reaches every confirmation.
 export const prompts = Object.assign(sharedPrompts, {
-  alert: (content: PromptContent, options?: DialogOptions): Promise<void | undefined> =>
-    dialogCore.open<void>(
-      (close) => (
-        <div class="k2b-dialog__panel">
-          <DialogHeader
-            title={options?.title || resolveUiMessages().info}
-            icon={options?.icon}
-            tone={promptTone(options?.variant)}
-            close={() => close()}
-          />
-          <div class="k2b-dialog__body">{content}</div>
-          <footer class="k2b-dialog__actions">
-            <button type="button" class="k2b-button" data-variant={promptButtonVariant(options?.variant)} onClick={() => close()}>
-              {options?.confirmText || resolveUiMessages().ok}
-            </button>
-          </footer>
-        </div>
-      ),
-      {
-        panelClassName: panelClass(options),
-        contentClassName: contentClass(options?.surface),
-        signal: options?.signal,
-        cancelBehavior: options?.cancelBehavior,
-        history: options?.history,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().info,
-      },
-    ),
+  alert: (content: PromptContent, options?: DialogOptions): Promise<void | undefined> => openAlert(content, options),
 
-  success: (content: PromptContent, options?: Omit<DialogOptions, "variant">): Promise<void | undefined> =>
-    prompts.alert(content, {
-      ...options,
-      variant: "success",
-      title: options?.title ?? resolveUiMessages().success,
-    }),
+  success: (content: PromptContent, options?: SuccessDialogOptions): Promise<void | undefined> => {
+    const { celebrate, ...rest } = options ?? {};
+    return openAlert(content, { ...rest, variant: "success", title: rest.title ?? resolveUiMessages().success }, celebrate);
+  },
 
   prompt: promptText,
   promptNumber,

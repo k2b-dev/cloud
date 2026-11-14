@@ -3,6 +3,7 @@ import { IconButton, useLocale } from "@k2b/ui";
 import type { Accessor } from "solid-js";
 import { For, Show } from "solid-js";
 import type { MailDraft } from "../../contracts";
+import { mailComposeWindowMessages } from "./mail-compose-window-messages";
 import { mailComposerMessages } from "./mail-composer-messages";
 export type MailComposerUpload = {
   /** `null` for an upload an earlier editing session started: its file is gone, so it can only be cancelled. */
@@ -27,6 +28,7 @@ export default function MailComposerAttachments(props: {
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
+  const uploadT = () => mailComposeWindowMessages.resolve([locale()]).t;
   return (
     <Show when={props.attachments().length > 0 || props.uploads().length > 0}>
       <div class="flex shrink-0 flex-wrap gap-2 py-2" aria-label={t().attachedFiles} role="list">
@@ -59,10 +61,22 @@ export default function MailComposerAttachments(props: {
         </For>
         <For each={props.uploads()}>
           {(upload) => (
-            <span class="chip max-w-full" role="listitem">
+            <span class="chip mail-composer-upload max-w-full" role="listitem" data-mail-upload>
               <i class={`ti ${upload.error ? "ti-alert-circle text-red-500" : "ti-loader-2 animate-spin"}`} aria-hidden="true" />
               <span class="max-w-48 truncate">{upload.filename}</span>
-              <span class="text-xs text-dimmed">{upload.error ?? `${upload.progress}%`}</span>
+              <span class="text-xs text-dimmed">{upload.error ?? uploadT().uploading({ percent: upload.progress })}</span>
+              {/* The bar lies on the chip's lower edge, so the chip keeps its size while it fills. */}
+              <Show when={!upload.error}>
+                <span
+                  class="mail-composer-upload-bar"
+                  role="progressbar"
+                  aria-label={upload.filename}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={upload.progress}
+                  style={{ "--mail-upload-progress": `${upload.progress}%` }}
+                />
+              </Show>
               <Show when={upload.error && upload.file}>
                 <IconButton
                   type="button"

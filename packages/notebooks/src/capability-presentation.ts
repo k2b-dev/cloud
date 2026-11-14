@@ -62,6 +62,10 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
     de: {
       commands: { "note.compose": { title: "Neue Notiz", description: "Notizbuch auswählen und eine Notiz schreiben." } },
       events: {
+        "comment.created": {
+          title: "Beitrag zur Seitendiskussion erstellt",
+          description: "Ein Beitrag wurde zur Seitendiskussion einer Notiz hinzugefügt.",
+        },
         "notebook.created": { title: "Notizbuch erstellt", description: "Ein Notizbuch wurde erstellt." },
         "notebook.updated": { title: "Notizbuch geändert", description: "Metadaten oder Einstellungen eines Notizbuchs wurden geändert." },
         "note.created": { title: "Notiz erstellt", description: "Eine Notiz wurde erstellt." },
