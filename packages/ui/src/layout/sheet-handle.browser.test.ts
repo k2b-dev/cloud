@@ -194,18 +194,43 @@ test("an owner that hides the sheet during a glide ends the glide: the next open
   }
 });
 
-test("a press that catches a glide at its end lets it land, and its click does not move the sheet on", async () => {
+test("a tap that catches a glide at its end switches once, like every press, and lands", async () => {
   const tab = await open({ reducedMotion: "no-preference" });
   try {
     await tab.evaluate(() => {
       document.querySelector<HTMLElement>("#handle")!.click();
-      // Hold the glide a hair before its end, where the catch lands it at once.
-      for (const animation of document.getAnimations()) {
+      // Hold the sheet's own glide a hair before its end, where the catch lands it at once.
+      const glides = document
+        .querySelector<HTMLElement>("#sheet")!
+        .getAnimations()
+        .filter((animation) => animation.timeline === document.timeline);
+      for (const animation of glides) {
         animation.pause();
         animation.currentTime = 279.9;
       }
     });
+    // The glide to full is caught; the tap's click sends the sheet back to half, once, and it lands there.
     await tab.click("#handle");
+    await settled(tab);
+    expect(await place(tab)).toEqual({ layout: 300, visible: 300, detent: "half", inline: "" });
+  } finally {
+    await tab.context().close();
+  }
+});
+
+test("a press that catches a glide and lifts off the handle without a click lets the glide land", async () => {
+  const tab = await open({ reducedMotion: "no-preference" });
+  try {
+    await settled(tab);
+    const start = await handleCenter(tab);
+    await tab.evaluate(() => document.querySelector<HTMLElement>("#handle")!.click());
+    await tab.mouse.move(start.x, start.y);
+    await tab.mouse.down();
+    // Lifting outside the handle sends no click on it.
+    await tab.mouse.move(start.x, start.y - 3);
+    await tab.evaluate(() => document.querySelector<HTMLElement>("#handle")!.releasePointerCapture?.(1));
+    await tab.mouse.move(start.x + 300, start.y - 400);
+    await tab.mouse.up();
     await settled(tab);
     expect(await place(tab)).toEqual({ layout: 700, visible: 700, detent: "full", inline: "" });
   } finally {

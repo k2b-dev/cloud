@@ -11,7 +11,7 @@ export type SheetHandleOptions = {
   detents: readonly string[];
   /** The detent the stylesheet draws while the sheet has no `data-sheet-detent`, such as in the server's markup. */
   initial: string;
-  /** After a drag or a press moved the sheet to another detent, for example to rename the handle. */
+  /** When a drag or a press sends the sheet to another detent, as it starts to glide, for example to rename the handle. */
   onChange?: (detent: string) => void;
   /**
    * Without it, a drag stops at the lowest detent; with it, a drag well below that detent slides the sheet out and
@@ -56,12 +56,14 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     sheet.dataset.sheetDetent = detent;
     if (changed) options.onChange?.(detent);
   };
+  /** The painted height; an environment without layout, such as a test DOM, reports 0 and every move is instant. */
+  const heightOf = () => Number(sheet.getBoundingClientRect().height) || 0;
   // Each detent's height as the stylesheet draws it now, while the transition is off.
   const measure = () => {
     const shown = sheet.dataset.sheetDetent;
     const heights = detents.map((detent) => {
       sheet.dataset.sheetDetent = detent;
-      return sheet.getBoundingClientRect().height;
+      return heightOf();
     });
     if (shown === undefined) delete sheet.dataset.sheetDetent;
     else sheet.dataset.sheetDetent = shown;
@@ -83,10 +85,10 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
   const stop = () => {
     const running = animation;
     if (!running || !pinned) return;
-    const matrix = new DOMMatrixReadOnly(getComputedStyle(sheet).transform);
+    const at = typeof DOMMatrixReadOnly === "function" ? new DOMMatrixReadOnly(getComputedStyle(sheet).transform).m42 : 0;
     animation = undefined;
     running.cancel();
-    put(pinned.highest - matrix.m42);
+    put(pinned.highest - at);
   };
   // When the owner hides the sheet while it moves, as a close button or navigation does, the move ends without
   // landing: no detent, no `onDismiss`, nothing left for the next opening.
@@ -101,7 +103,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
       stop();
       return pinned;
     }
-    const visible = sheet.getBoundingClientRect().height;
+    const visible = heightOf();
     sheet.style.transition = "none";
     const heights = measure();
     pinned = { heights, highest: Math.max(visible, ...heights), visible };
@@ -144,6 +146,8 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
       fill: "forwards",
     });
     animation = running;
+    // A cancelled glide rejects `finished`; nothing waits on it.
+    running.finished.catch(() => {});
     running.onfinish = () => {
       if (animation !== running) return;
       animation = undefined;
@@ -152,13 +156,13 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
       done();
     };
   };
+  // The detent and its name change when the move starts, so assistive technology hears the press at once; the pinned
+  // height keeps the stylesheet's new height from showing until the glide lands.
   const moveTo = (detent: string) => {
     const state = pin();
     goal = detent;
-    glide(state.heights[detents.indexOf(detent)] ?? state.visible, MOVE_MS, () => {
-      set(detent);
-      unpin();
-    });
+    set(detent);
+    glide(state.heights[detents.indexOf(detent)] ?? state.visible, MOVE_MS, unpin);
   };
   const dismiss = () => {
     goal = undefined;
@@ -173,8 +177,6 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
   let drag:
     | {
         id: number;
-        /** The press caught a glide; its click lets the glide land instead of moving on. */
-        caught: boolean;
         startY: number;
         /** The visible height when the drag took the sheet. */
         from: number;
@@ -187,16 +189,25 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
       }
     | undefined;
   let suppressClick = false;
+  let resume: ReturnType<typeof setTimeout> | undefined;
   const finish = (commit: boolean, time?: number) => {
     const ended = drag;
     if (!ended) return;
     drag = undefined;
     ended.releaseSelection();
     if (handle.hasPointerCapture?.(ended.id)) handle.releasePointerCapture(ended.id);
-    // A press that caught a glide lets it land; a cancelled drag returns. A cancelled gesture sends no click.
-    if (!ended.moved || !commit) {
-      if (!ended.moved && ended.caught && commit) suppressClick = true;
+    // A cancelled gesture sends no click: a cancelled drag returns, and a caught glide lands where it was going.
+    if (!commit) {
       if (pinned) moveTo(ended.moved ? current() : (goal ?? current()));
+      return;
+    }
+    // A press that caught a glide waits for its click, which switches as every press does; without one, as when the
+    // pointer left the handle, the glide lands where it was going.
+    if (!ended.moved) {
+      if (pinned)
+        resume = setTimeout(() => {
+          if (pinned && !animation) moveTo(goal ?? current());
+        });
       return;
     }
     suppressClick = true;
@@ -219,12 +230,10 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     if (event.button !== 0 || event.isPrimary === false || drag) return;
     suppressClick = false;
     // A press during a glide catches the sheet where it is now.
-    const caught = animation !== undefined;
     stop();
     handle.setPointerCapture?.(event.pointerId);
     drag = {
       id: event.pointerId,
-      caught,
       startY: event.clientY,
       from: 0,
       moved: false,
@@ -270,6 +279,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
       return;
     }
     suppressClick = false;
+    clearTimeout(resume);
     const index = detents.indexOf(current());
     moveTo(detents[index + 1 < detents.length ? index + 1 : 0] ?? options.initial);
   };
@@ -284,6 +294,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
   handle.addEventListener("click", click);
   return () => {
     finish(false);
+    clearTimeout(resume);
     unpin();
     hidden?.disconnect();
     handle.style.touchAction = touchAction;
