@@ -852,10 +852,67 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-panes__split-child {
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Panes are one surface. Each boundary carries the quiet column shade of the
+   workspace, darkest at the edge and drawn on the leading pane: beside a
+   column boundary as between list and reader, above a row boundary as at the
+   drawer's edge. Its handle darkens it while hovered, focused, or dragged. It
+   is paint only and sits under the tab row and every drop target. */
+.k2b-ui .k2b-panes__split > .k2b-panes__split-child:first-child::after {
+  --k2b-panes-shade-edge: var(--k2b-shadow-column-edge);
+  --k2b-panes-shade-mid: var(--k2b-shadow-column-mid);
+  position: absolute;
+  z-index: 1;
+  content: "";
+  pointer-events: none;
+  transition:
+    --k2b-panes-shade-edge var(--k2b-motion-fast) var(--k2b-ease-out),
+    --k2b-panes-shade-mid var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-panes__split[data-direction="horizontal"] > .k2b-panes__split-child:first-child::after {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1.5rem;
+  background: linear-gradient(to right, transparent, var(--k2b-panes-shade-mid) 45%, var(--k2b-panes-shade-edge));
+  mask-image: linear-gradient(to bottom, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+}
+
+.k2b-ui .k2b-panes__split[data-direction="vertical"] > .k2b-panes__split-child:first-child::after {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1.5rem;
+  background: linear-gradient(to bottom, transparent, var(--k2b-panes-shade-mid) 45%, var(--k2b-panes-shade-edge));
+  mask-image: linear-gradient(to right, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+}
+
+.k2b-ui
+  .k2b-panes__split
+  > .k2b-panes__split-child:first-child:has(
+    + .k2b-panes__separator:not([aria-disabled="true"]):is(:hover, :focus-visible, [data-active="true"])
+  )::after {
+  --k2b-panes-shade-edge: var(--k2b-shadow-column-active-edge);
+  --k2b-panes-shade-mid: var(--k2b-shadow-column-active-mid);
+}
+
+@property --k2b-panes-shade-edge {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+@property --k2b-panes-shade-mid {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
 }
 
 .k2b-ui .k2b-panes__separator {
@@ -885,46 +942,40 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: default;
 }
 
+/* The grip of the workspace's resize handles: neutral, 3 px by 2 rem, and
+   visible at rest, so the boundary says it moves. No line, no colour. */
 .k2b-ui .k2b-panes__separator > span {
   position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 2rem;
   border-radius: 999px;
   background: var(--k2b-border-strong);
-  opacity: 0;
-  transition:
-    opacity 120ms ease,
-    background-color 120ms ease,
-    box-shadow 120ms ease;
-}
-
-/* Cloud's indicator fills the separator: `inset-y-2 left-0 right-0` and
-   `inset-x-2 bottom-0 top-0`. The port shrank it to a 1px hairline centred in
-   the track, which is far harder to aim at than the 8px bar it replaced. */
-.k2b-ui .k2b-panes__separator[data-direction="horizontal"] > span {
-  inset: 0.5rem 0;
+  transform: translate(-50%, -50%);
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui .k2b-panes__separator[data-direction="vertical"] > span {
-  inset: 0 0.5rem;
+  width: 2rem;
+  height: 3px;
 }
 
-/* Only interactive separators paint a hover or active affordance. */
-.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):hover > span,
-.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):active > span {
-  background: var(--k2b-success-500);
-  opacity: 1;
+/* A fixed boundary keeps its shade and has no grip. */
+.k2b-ui .k2b-panes__separator[aria-disabled="true"] > span {
+  display: none;
 }
 
-.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):focus-visible > span {
-  background: var(--k2b-success-600);
-  opacity: 1;
+.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):is(:hover, [data-active="true"]) > span {
+  background: color-mix(in srgb, var(--k2b-border-strong) 45%, var(--k2b-text-muted));
 }
 
 .k2b-ui .k2b-panes__separator:focus-visible {
   outline: none;
 }
 
-.k2b-ui .k2b-panes__separator:focus-visible > span {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--k2b-success-600) 42%, transparent);
+.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):focus-visible > span {
+  background: var(--k2b-focus-ring);
 }
 
 .k2b-ui .k2b-panes__group {
@@ -939,13 +990,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
 }
 
+/* The tab row and, in one group, the Arrange button at its end. */
+.k2b-ui .k2b-panes__head {
+  display: flex;
+  height: 2.5rem;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+}
+
 .k2b-ui .k2b-panes__tabs {
   position: relative;
   z-index: 2;
   display: flex;
   height: 2.5rem;
   min-width: 0;
-  flex: none;
+  flex: 1;
   align-items: center;
   gap: 0.25rem;
   /* Reserve half an insertion marker at the leading edge. This keeps the
@@ -953,7 +1013,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
      drag begins or letting the horizontal scroll viewport clip it. */
   padding: 0.375rem 0.5rem 0.375rem 0.75rem;
   color: var(--k2b-text-muted);
-  background: var(--k2b-surface);
+  /* The panes are one surface: the boundary shade runs behind the tab row. */
+  background: transparent;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -978,8 +1039,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   transition: opacity 120ms ease;
 }
 
-.k2b-ui .k2b-panes__tabs:hover + .k2b-panes__tabs-scrollbar,
-.k2b-ui .k2b-panes__tabs:focus-within + .k2b-panes__tabs-scrollbar,
+.k2b-ui .k2b-panes__head:has(> .k2b-panes__tabs:is(:hover, :focus-within)) + .k2b-panes__tabs-scrollbar,
 .k2b-ui .k2b-panes__tabs-scrollbar:hover {
   opacity: 1;
   pointer-events: auto;
@@ -1011,6 +1071,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: transparent;
   font-size: 0.75rem;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
   transition:
@@ -1025,10 +1086,49 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-hover);
 }
 
+/* Selected like every tab: the app colour's selection fill and its 2 px
+   edge. The weight stays, so a tab never changes width. */
 .k2b-ui .k2b-panes__tab[data-active="true"] {
   color: var(--k2b-text);
-  background: var(--k2b-surface-muted);
-  font-weight: 600;
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+  box-shadow: inset 0 0 0 var(--k2b-edge-width)
+    color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
+}
+
+.k2b-ui .k2b-panes__tab[data-active="true"]:hover {
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
+}
+
+.k2b-ui .k2b-panes__tab[data-active="true"] .k2b-panes__icon {
+  color: var(--k2b-app-workspace-active);
+}
+
+/* The grip says a tab moves. Its place is always kept, so showing it never
+   changes a tab's width: on the selected tab, on hover and focus, and always
+   on a touch screen. */
+.k2b-ui .k2b-panes__grip {
+  flex: none;
+  margin-left: 0.25rem;
+  margin-right: -0.375rem;
+  color: color-mix(in srgb, var(--k2b-border-strong) 45%, var(--k2b-text-muted));
+  font-size: 0.875rem;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-panes__tab:is([data-active="true"], :hover, :focus-within) .k2b-panes__grip {
+  opacity: 1;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-panes__grip {
+    opacity: 1;
+  }
+}
+
+.k2b-ui .k2b-panes__tab-button > .k2b-panes__grip + .k2b-panes__drag-surface {
+  padding-left: 0.375rem;
 }
 
 .k2b-ui .k2b-panes__tab[data-movable="true"] {
@@ -1173,6 +1273,39 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: min(var(--k2b-focus-offset), 1px);
 }
 
+/* One small text button per Panes, at the end of the top group on the
+   trailing side. It never takes a tab's place: the row ends before it. */
+.k2b-ui .k2b-panes__arrange {
+  flex: none;
+  margin-right: 0.5rem;
+}
+
+/* The Arrange menu lists every place a tab can go; it grows to the window's
+   height before it scrolls, so "Reset arrangement" stays in view. */
+.k2b-ui .k2b-dropdown__menu.k2b-panes__menu {
+  max-height: min(40rem, calc(100dvh - 1rem));
+}
+
+.k2b-ui .k2b-panes__shortcut {
+  color: var(--k2b-text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+/* A narrow container shows every pane as one row of tabs that share its
+   width; many tabs scroll sideways instead of shrinking. */
+.k2b-ui .k2b-panes[data-narrow="true"] .k2b-panes__tab {
+  min-width: max-content;
+  max-width: none;
+  flex: 1 0 auto;
+  justify-content: center;
+}
+
+.k2b-ui .k2b-panes[data-narrow="true"] .k2b-panes__drag-surface {
+  justify-content: center;
+}
+
 /* Cloud: `relative min-h-0 flex-1 overflow-hidden` — a plain block. */
 .k2b-ui .k2b-panes__body {
   position: relative;
@@ -1205,8 +1338,28 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   min-height: 0;
   flex: 1;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.625rem;
+  padding: 1rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.k2b-ui .k2b-panes__empty > p {
+  margin: 0;
+}
+
+.k2b-ui .k2b-panes__empty-mark {
+  display: inline-grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+  font-size: 1.25rem;
 }
 
 .k2b-ui .k2b-panes__add {
@@ -7109,6 +7262,62 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-app-workspace-active);
   background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
   box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
+}
+
+/* A few choices that a picture tells apart, such as arrangements: tiles with
+   the icon above the label and the 2 px edge of every choice. */
+.k2b-ui .k2b-dropdown__tiles {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 0.375rem;
+  padding: 0.25rem 0.25rem 0.375rem;
+}
+
+.k2b-ui .k2b-dropdown__tiles > .k2b-dropdown__item {
+  --k2b-edge-color: var(--k2b-edge);
+  width: auto;
+  min-width: 4rem;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0.25rem 0.375rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.k2b-ui .k2b-dropdown__tiles > .k2b-dropdown__item > i:not(.k2b-dropdown__check) {
+  font-size: 1.5rem;
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-dropdown__tiles > .k2b-dropdown__item > .k2b-dropdown__check {
+  display: none;
+}
+
+.k2b-ui .k2b-dropdown__tiles > .k2b-dropdown__item[data-selected="true"] {
+  --k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
+  color: var(--k2b-text);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+}
+
+.k2b-ui .k2b-dropdown__tiles > .k2b-dropdown__item[data-selected="true"] > i:not(.k2b-dropdown__check) {
+  color: var(--k2b-app-workspace-active);
+}
+
+.k2b-ui .k2b-dropdown__tiles > .k2b-dropdown__item:focus-visible {
+  --k2b-edge-color: var(--k2b-edge-focus);
+  outline: none;
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-dropdown__tiles > .k2b-dropdown__item:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
+  }
 }
 
 /* On the track, an option darkens like a segment; the thumb keeps its fill under the pointer. */

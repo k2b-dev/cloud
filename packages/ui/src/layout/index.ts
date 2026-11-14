@@ -183,6 +183,7 @@ export type {
   PanesNode,
   PanesPath,
   PanesPathSegment,
+  PanesPreset,
   PanesSide,
   PanesSplit,
 } from "./panes-layout";
@@ -190,6 +191,7 @@ export {
   activatePanesItem,
   addPanesItem,
   applyPanesIntent,
+  applyPanesPreset,
   createPanesLayout,
   isPanesItemVisible,
   PANES_LAYOUT_VERSION,

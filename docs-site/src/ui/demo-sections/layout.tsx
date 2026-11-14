@@ -6,6 +6,7 @@ import {
   AppWorkspaceSidebarItemStatus,
   Avatar,
   addPanesItem,
+  applyPanesPreset,
   BottomSheet,
   Breadcrumbs,
   Button,
@@ -861,6 +862,62 @@ const addNextItem = (targetItemId: string | null) =>
           items={items}
           onAddItem={nextClosedItem() ? addNextItem : undefined}
           ariaLabel="Editor panes"
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
+const arrangedPaneDefinitions = [
+  { id: "draft", title: "Draft", icon: "ti ti-pencil", tone: "blue" },
+  { id: "history", title: "History", icon: "ti ti-history", tone: "violet" },
+  { id: "preview", title: "Preview", icon: "ti ti-eye", tone: "emerald" },
+] as const;
+
+// The application's own arrangement: draft beside history above preview.
+const arrangedPanesDefault = applyPanesPreset(
+  "stacked",
+  arrangedPaneDefinitions.map((item) => item.id),
+)!;
+
+const PanesArrangeDemo = () => {
+  const [layout, setLayout] = createSignal<PanesLayout>(arrangedPanesDefault);
+  const [hintSeen, setHintSeen] = createSignal(false);
+  const items: readonly PanesItem[] = arrangedPaneDefinitions.map((item) => ({
+    id: item.id,
+    title: item.title,
+    icon: item.icon,
+    render: () => (
+      <div class="ui-pane-body" data-tone={item.tone}>
+        <span>{item.title}</span>
+      </div>
+    ),
+  }));
+  return (
+    <DemoCard
+      id="panes-arrange"
+      chip={{ kind: "component", name: "Panes", from: "@k2b/ui" }}
+      description="Arrange: a grip on each tab, the Arrange menu with presets and named places, the same menu on a right click, and the quiet column edge at every boundary. Double-click a boundary to reset its size."
+      code={`const defaultLayout = applyPanesPreset("stacked", ["draft", "history", "preview"])!;
+const [layout, setLayout] = createSignal<PanesLayout>(storedLayout ?? defaultLayout);
+
+<Panes
+  layout={layout()}
+  onLayoutChange={(next) => { setLayout(next); saveLayout(next); }}
+  defaultLayout={defaultLayout}
+  arrangeHint={{ open: !hintSeen, onDismiss: markHintSeen }}
+  items={items}
+  ariaLabel="Reply panes"
+/>`}
+    >
+      <div class="ui-panes-demo">
+        <Panes
+          layout={layout()}
+          onLayoutChange={setLayout}
+          defaultLayout={arrangedPanesDefault}
+          arrangeHint={{ open: !hintSeen(), onDismiss: () => setHintSeen(true) }}
+          items={items}
+          ariaLabel="Reply panes"
         />
       </div>
     </DemoCard>
@@ -2585,6 +2642,7 @@ const items = [
   "resize-separator": () => <ResizeSeparatorDemo />,
   panes: () => (
     <DemoGrid columns="one">
+      <PanesArrangeDemo />
       <PanesDemo />
     </DemoGrid>
   ),

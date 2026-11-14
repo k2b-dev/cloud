@@ -166,3 +166,35 @@ domTest("launcher preserves entered configuration on save failure and retries be
     dom.cleanup();
   }
 });
+
+domTest("the email template editor shows movable panes with a fixed boundary", async () => {
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async (input: RequestInfo | URL) => Response.json(String(input).includes("dependencies") ? {} : []), {
+    preconnect: originalFetch.preconnect,
+  });
+  const { render } = await import("solid-js/web");
+  const { dialogCore } = await import("@k2b/ui");
+  const { EmailTemplateManager } = await import("./WorkflowEmailTemplates");
+  const dispose = render(() => <EmailTemplateManager baseId="BASE01" onChanged={() => {}} onClose={() => {}} />, dom.root);
+  try {
+    await Bun.sleep(30);
+    Array.from(dom.document.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Add email template")!
+      .click();
+    let panes: Element | null = null;
+    for (let attempt = 0; attempt < 100 && !panes; attempt++) {
+      await Bun.sleep(10);
+      panes = dom.document.querySelector("[data-k2b-panes]");
+    }
+    expect(panes).not.toBeNull();
+    expect(panes!.querySelectorAll(".k2b-panes__grip").length).toBe(3);
+    expect(panes!.querySelectorAll(".k2b-panes__arrange").length).toBe(1);
+    expect(panes!.querySelector('[role="separator"]')?.getAttribute("aria-disabled")).toBe("true");
+  } finally {
+    dialogCore.close();
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});

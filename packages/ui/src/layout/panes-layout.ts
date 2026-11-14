@@ -484,3 +484,157 @@ export const getPanesDropTargets = (layout: PanesLayout, itemId: string, options
   }
   return targets;
 };
+
+/** The item IDs of a layout in tree order: left before right, top before bottom, tabs in their order. */
+export const panesItemOrder = (layout: PanesLayout): string[] => {
+  const ids: string[] = [];
+  collectGroups(layout.root).forEach((group) => ids.push(...group.items));
+  return ids;
+};
+
+const sameShape = (left: PanesNode, right: PanesNode): boolean => {
+  if (left.type === "group" || right.type === "group") {
+    return left.type === "group" && right.type === "group" && sameItems(left.items, right.items);
+  }
+  return left.direction === right.direction && sameShape(left.first, right.first) && sameShape(left.second, right.second);
+};
+
+/** Whether two layouts place the same items the same way, regardless of split ratios and active tabs. */
+export const samePanesArrangement = (left: PanesLayout, right: PanesLayout): boolean =>
+  left.root === null || right.root === null ? left.root === right.root : sameShape(left.root, right.root);
+
+/** The named arrangements offered by the Arrange menu. */
+export const PANES_PRESETS = ["two", "three", "stacked", "tabs"] as const;
+export type PanesPreset = (typeof PANES_PRESETS)[number];
+
+const presetDirections: Record<PanesPreset, readonly PanesDirection[]> = {
+  two: ["horizontal"],
+  three: ["horizontal"],
+  stacked: ["horizontal", "vertical"],
+  tabs: [],
+};
+const presetMinimum: Record<PanesPreset, number> = { two: 2, three: 3, stacked: 3, tabs: 2 };
+
+const groupOf = (items: readonly string[], active: string | undefined): PanesGroup => ({
+  type: "group",
+  items: [...items],
+  active: active !== undefined && items.includes(active) ? active : items[0]!,
+});
+
+const splitOf = (direction: PanesDirection, ratio: number, first: PanesNode, second: PanesNode): PanesSplit => ({
+  type: "split",
+  direction,
+  ratio,
+  first,
+  second,
+});
+
+/** Whether `preset` can arrange `count` items when only the `split` directions are allowed. */
+export const canApplyPanesPreset = (preset: PanesPreset, count: number, split: PanesDropTargetOptions["split"]): boolean =>
+  count >= presetMinimum[preset] && presetDirections[preset].every((direction) => split === "both" || split === direction);
+
+/**
+ * Arranges `itemIds`, in this order, as a named preset: `two` puts the first item beside the rest as tabs, `three`
+ * puts the first two items beside the rest, `stacked` puts the first item beside the second above the rest, and
+ * `tabs` keeps every item in one group. `active` stays the visible tab of its group. A `fallback` layout with the
+ * same arrangement lends its split ratios, so choosing an application's default arrangement restores its sizes.
+ * Returns `null` when there are too few items.
+ */
+export const applyPanesPreset = (
+  preset: PanesPreset,
+  itemIds: readonly string[],
+  options: { active?: string; fallback?: PanesLayout } = {},
+): PanesLayout | null => {
+  assertUniqueStableUiIds(itemIds, "Panes item id", PANES_MAX_ID_LENGTH);
+  if (itemIds.length < presetMinimum[preset]) return null;
+  const [first, second, ...rest] = itemIds as [string, string, ...string[]];
+  const active = options.active;
+  let root: PanesNode;
+  if (preset === "tabs") root = groupOf(itemIds, active);
+  else if (preset === "two") root = splitOf("horizontal", 0.5, groupOf([first], active), groupOf([second, ...rest], active));
+  else if (preset === "three")
+    root = splitOf(
+      "horizontal",
+      0.34,
+      groupOf([first], active),
+      splitOf("horizontal", 0.5, groupOf([second], active), groupOf(rest, active)),
+    );
+  else
+    root = splitOf("horizontal", 0.5, groupOf([first], active), splitOf("vertical", 0.5, groupOf([second], active), groupOf(rest, active)));
+  const layout: PanesLayout = { version: PANES_LAYOUT_VERSION, root };
+  const fallback = options.fallback;
+  if (!fallback?.root || !samePanesArrangement(layout, fallback)) return layout;
+  const withRatios = (node: PanesNode, source: PanesNode): PanesNode =>
+    node.type === "split" && source.type === "split"
+      ? { ...node, ratio: source.ratio, first: withRatios(node.first, source.first), second: withRatios(node.second, source.second) }
+      : node;
+  return { version: PANES_LAYOUT_VERSION, root: withRatios(root, fallback.root) };
+};
+
+/** The preset whose arrangement `layout` has for `itemIds`, if any. */
+export const getPanesPreset = (layout: PanesLayout, itemIds: readonly string[]): PanesPreset | null =>
+  PANES_PRESETS.find((preset) => {
+    const candidate = applyPanesPreset(preset, itemIds);
+    return candidate !== null && samePanesArrangement(candidate, layout);
+  }) ?? null;
+
+/** The split ratio at `path` in `layout`, when a split with that direction is there. */
+export const getPanesSplitRatio = (layout: PanesLayout | undefined, path: PanesPath, direction: PanesDirection): number | null => {
+  if (!layout?.root) return null;
+  const node = nodeAtPath(layout.root, path);
+  return node?.type === "split" && node.direction === direction ? node.ratio : null;
+};
+
+/**
+ * One group with every item in tree order, for a container too narrow for side-by-side panes. It is shown, never
+ * stored: the stored layout stays as it is and returns once the container is wide enough again.
+ */
+export const projectPanesLayout = (layout: PanesLayout, active: string | null): PanesLayout => {
+  const items = panesItemOrder(layout);
+  if (items.length === 0) return layout;
+  return { version: PANES_LAYOUT_VERSION, root: groupOf(items, active ?? firstGroup(layout.root)?.active) };
+};
+
+export type PanesMove =
+  | { kind: "split"; side: PanesSide; targetItemId: string; intent: PanesIntent }
+  | { kind: "group"; targetItemId: string; intent: PanesIntent }
+  | { kind: "tab"; direction: "previous" | "next"; intent: PanesIntent };
+
+/**
+ * Every place `itemId` can move to, as menu entries: each drop target that changes the arrangement, with the tab
+ * order inside its own group as one step to either side. Positions inside another group's tab row are reached by
+ * joining that group, then stepping.
+ */
+export const getPanesMoves = (layout: PanesLayout, itemId: string, options: PanesDropTargetOptions): PanesMove[] => {
+  const source = findItem(layout.root, itemId);
+  if (!source || !options.movable) return [];
+  const moves: PanesMove[] = [];
+  const changes = (intent: PanesIntent) => {
+    const next = applyPanesIntent(layout, intent);
+    return next !== layout && !samePanesArrangement(next, layout);
+  };
+  for (const target of getPanesDropTargets(layout, itemId, options)) {
+    if (target.kind === "split" && target.side && changes(target.intent)) {
+      moves.push({ kind: "split", side: target.side, targetItemId: target.targetItemId, intent: target.intent });
+    }
+    if (target.kind === "group" && changes(target.intent))
+      moves.push({ kind: "group", targetItemId: target.targetItemId, intent: target.intent });
+  }
+  const items = source.group.items;
+  const groupTarget = items.find((id) => id !== itemId);
+  if (groupTarget && source.index > 0) {
+    moves.push({
+      kind: "tab",
+      direction: "previous",
+      intent: { type: "tab", itemId, targetItemId: groupTarget, beforeItemId: items[source.index - 1]! },
+    });
+  }
+  if (groupTarget && source.index < items.length - 1) {
+    moves.push({
+      kind: "tab",
+      direction: "next",
+      intent: { type: "tab", itemId, targetItemId: groupTarget, beforeItemId: items[source.index + 2] ?? null },
+    });
+  }
+  return moves;
+};

@@ -74,6 +74,25 @@ describe("query workspace UI contracts", () => {
     expect(formatIdentifierRef(quotedField.name)).toBe('"Asset ID"');
   });
 
+  test("arranges result, query and sources as panes with grips, shadow boundaries and one Arrange button", () => {
+    const html = renderToString(() =>
+      createComponent(QueryWorkspace, {
+        baseId: table.baseId,
+        initialQuery: "",
+        queryPath: "/app/grids/inventory/query",
+        tables: [table],
+        fieldsByTable: { [table.id]: [field] },
+        viewsByTable: {},
+      }),
+    );
+
+    expect(html).toContain("data-k2b-panes");
+    expect(html.match(/k2b-panes__grip/g)?.length).toBe(3);
+    expect(html.match(/k2b-panes__arrange/g)?.length).toBe(1);
+    expect(html.match(/role="separator"/g)?.length).toBe(2);
+    expect(html).not.toMatch(/role="separator"[^>]*aria-disabled="true"/);
+  });
+
   test("shows query diagnostics as danger notices, not hand-coloured boxes", () => {
     const html = renderToString(() =>
       createComponent(QueryWorkspace, {
