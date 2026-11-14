@@ -303,8 +303,12 @@ export default function MailComposer(props: {
     return options;
   });
   const [showCc, setShowCc] = createSignal(Boolean(initialContent.cc.length || initialContent.bcc.length));
+  // The page trims the stored arrangement to what it shows. A draft in a window keeps it whole: written large, it shows
+  // the preview also for plain text, beside the draft as stored, not as a tab added to the draft.
   const [composerPanes, setComposerPanes] = createSignal(
-    reconcileMailComposerPanes(props.initialPanes, initialContent.format, Boolean(initial.conversationId)),
+    props.host
+      ? props.initialPanes
+      : reconcileMailComposerPanes(props.initialPanes, initialContent.format, Boolean(initial.conversationId)),
   );
   const composerTransition = createMailComposerTransition();
   let recoveryController: AbortController | null = null;
@@ -424,12 +428,16 @@ export default function MailComposer(props: {
   };
   /** A popout that sent, discarded, or saved its draft closes; a browser that keeps it open shows why it stays. */
   const [popoutDone, setPopoutDone] = createSignal<Exclude<Parameters<MailComposerHost["leave"]>[0], "moved"> | null>(null);
+  let popoutCloseCheck: ReturnType<typeof setTimeout> | undefined;
   const closePopout = (outcome: Exclude<Parameters<MailComposerHost["leave"]>[0], "moved">) => {
     draftSession.allowNavigation();
     window.close();
-    // Only a window that a script opened may close itself; any other one stays and says so.
-    setTimeout(() => {
-      if (!window.closed && !disposed) setPopoutDone(outcome);
+    // Only a window that a script opened may close itself; any other one stays and says so. The check ends with the
+    // composer (see onCleanup), so it never runs after its page went away.
+    if (popoutCloseCheck !== undefined) clearTimeout(popoutCloseCheck);
+    popoutCloseCheck = setTimeout(() => {
+      popoutCloseCheck = undefined;
+      if (!disposed && !window.closed) setPopoutDone(outcome);
     }, 100);
   };
   /** Back where the person came from: the conversation that holds the draft, or the compose page's return place. */
@@ -557,6 +565,8 @@ export default function MailComposer(props: {
   // The large composer shows the preview as a pane of its own, also for a plain message (as text).
   const [largePreview, setLargePreview] = createSignal(false);
   const previewVisible = () => (props.host ? inlinePreview() || largePreview() : isPanesItemVisible(currentComposerPanes(), "preview"));
+  /** One gate for the preview query and its updates while typing: Markdown, or the large preview, which shows plain text too. */
+  const previewWanted = () => format() === "markdown" || largePreview();
   type PreviewInput = { draft: DraftEditableContentInput; conversationId: string | null; sourceMessageId: string | null };
   const initialPreviewInput: PreviewInput = {
     draft: content(),
@@ -566,7 +576,7 @@ export default function MailComposer(props: {
   const [previewSource, setPreviewSource] = createSignal(JSON.stringify(initialPreviewInput));
   const previewQuery = query.create<string, ComposePreview>({
     source: previewSource,
-    enabled: () => (format() === "markdown" || largePreview()) && previewVisible() && Boolean(identityId()),
+    enabled: () => previewWanted() && previewVisible() && Boolean(identityId()),
     load: async (serialized, { abortSignal }) => {
       const input = JSON.parse(serialized) as PreviewInput;
       const response = await apiClient.mailboxes[":mailboxId"]["compose-preview"]
@@ -953,7 +963,7 @@ export default function MailComposer(props: {
       conversationId: conversationId(),
       sourceMessageId: initial.sourceMessageId,
     } satisfies PreviewInput);
-    if (format() !== "markdown" || !identityId()) {
+    if (!previewWanted() || !identityId()) {
       stopPreview();
       return;
     }
@@ -971,6 +981,7 @@ export default function MailComposer(props: {
 
   onCleanup(() => {
     disposed = true;
+    if (popoutCloseCheck !== undefined) clearTimeout(popoutCloseCheck);
     recoveryController?.abort();
     recoveryController = null;
     stopPreview();
