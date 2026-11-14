@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
 import { answerCitations, rootResourceLinks } from "./answer-links";
-import { answerSources } from "./answer-sources";
+import { answerSources } from "./answer-source-model";
 
 const md = (source: string) => markdown.renderSync(source, { locale: "de" });
 const html = (source: string) => rootResourceLinks(markdown.renderSync(source, { locale: "de" }), (number) => `Quelle ${number}`);
