@@ -354,6 +354,7 @@ describe("streamed search in a browser", () => {
         const statusTop = await page.locator(".cloud-resource-search__status").evaluate((element) => element.getBoundingClientRect().top);
         expect(statusTop).toBeGreaterThanOrEqual(first.rows[2]![1]! + first.rows[2]![3]!);
         await page.keyboard.press("ArrowDown");
+        await settled(page);
         expect((await layout(page)).selected).toContain("Project plan.docx");
 
         mail.open();
@@ -583,6 +584,7 @@ test("global search keeps hits in a narrow column, grows the preview, and maximi
     await maximize.click();
     const restore = page.getByRole("button", { name: "Restore search size" });
     expect(await restore.getAttribute("aria-pressed")).toBe("true");
+    await settled(page);
     const large = await sizes();
     expect(large.dialog).toBe(1440 - 48);
     expect(large.preview).toBeGreaterThan(normal.preview + 300);

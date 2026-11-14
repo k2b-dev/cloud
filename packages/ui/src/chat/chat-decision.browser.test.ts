@@ -140,7 +140,8 @@ for (const width of [1440, 390])
         const sentence = box(".k2b-chat-decision__sentence");
         const reason = box(".k2b-chat-decision__reason");
         const details = box(".k2b-chat-decision__details");
-        const answers = box(".k2b-chat-decision__answers");
+        // The answer row sticks to the bottom of the view; its own padding keeps the buttons 14px under the details.
+        const answers = box(".k2b-chat-decision__buttons");
         const style = getComputedStyle(document.querySelector(".k2b-chat-decision__sentence")!);
         return {
           indent: Array.from(document.querySelectorAll(".k2b-chat-decision__reason .k2b-chat-line__text")).map(
@@ -165,7 +166,7 @@ for (const width of [1440, 390])
       for (const left of metrics.flush) expect(Math.abs(left)).toBeLessThanOrEqual(0.5);
       for (const [index, expected] of [2, 14, 14].entries()) expect(Math.abs(metrics.gaps[index]! - expected)).toBeLessThanOrEqual(0.5);
       for (const height of metrics.heights) expect(height).toBeGreaterThanOrEqual(44);
-      expect(metrics.size).toBe("16px");
+      expect(metrics.size).toBe("18px");
       expect(metrics.weight).toBe("400");
       // The AI tint carries the question; the details lie on the surface colour.
       expect(metrics.ground).not.toBe(metrics.detailsGround);
@@ -357,7 +358,7 @@ for (const timelineWidth of ["narrow", "wide"] as const)
       }));
       expect(metrics.window).toBe(1440);
       expect(metrics.timeline).toBe((timelineWidth === "narrow" ? 22 : 60) * 16);
-      expect(metrics.sentence).toBe("16px");
+      expect(metrics.sentence).toBe("18px");
       // The decision follows its own width: narrow, the answers share the row.
       expect(metrics.answers).toEqual(timelineWidth === "narrow" ? ["1", "1"] : ["0", "0"]);
     } finally {

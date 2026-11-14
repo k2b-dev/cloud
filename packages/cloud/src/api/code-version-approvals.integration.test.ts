@@ -47,7 +47,8 @@ suiteFor(
       const outsiderHeaders = { Authorization: `Bearer ${await createTestSession(author)}`, "Content-Type": "application/json" };
       const review = {
         ...reviewFixture(),
-        view: { version: 1 as const, blocks: [{ kind: "Text" as const, text: "+ new code" }] },
+        // Larger than an inline view: people read it complete through its content reference, never on a device.
+        view: { version: 1 as const, blocks: [{ kind: "Text" as const, text: `+ new code\n${"+ more\n".repeat(6_000)}` }] },
       };
       const ask = async (fullContent = true, authorUserId = author) => {
         const question = fullContent ? review : { message: "Source diff: + report();" };
