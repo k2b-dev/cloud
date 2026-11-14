@@ -1787,3 +1787,107 @@ dialog:has(.launchpad-panel)::backdrop {
   object-fit: cover;
   object-position: top;
 }
+
+/* Citations and sources (Gustav chat v12). A citation in the answer is a small grey chip with its number, two pixels
+   above the baseline; the row under the answer lists each source as a grey pill with the same number in a white
+   circle, its app tile, and its title. */
+.k2b-ui .assistant-markdown-block a.ai-cite {
+  display: inline-block;
+  box-sizing: border-box;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  margin-inline: 0.0625rem;
+  padding-inline: 0.3125rem;
+  border-radius: 0.375rem;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.125rem;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: 2px;
+}
+
+.k2b-ui .assistant-markdown-block a.ai-cite:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .assistant-markdown-block a.ai-cite:focus-visible,
+.k2b-ui .ai-source:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 1px;
+}
+
+/* An app's icon tile beside a source or a step: 20 px, its icon in the app colour on its tint. */
+.k2b-ui .ai-app-tile {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.375rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .ai-sources {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .ai-sources__list {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .ai-sources__list > li {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.k2b-ui .ai-source {
+  display: inline-flex;
+  height: 1.625rem;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.625rem 0 0.25rem;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  text-decoration: none;
+}
+
+.k2b-ui .ai-source:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .ai-source__number {
+  display: inline-grid;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--k2b-text);
+  background: var(--k2b-surface);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .ai-source__title {
+  min-width: 0;
+  max-width: 20rem;
+}

@@ -14181,10 +14181,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
 }
 
+/* The person's own message is a neutral grey bubble whose corner toward the composer is tighter; colour stays for
+   meaning, and a sent message means nothing more than being one's own. */
 .k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__bubble {
-  padding: 0.625rem 0.75rem;
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-selected);
+  padding: 0.625rem 0.875rem;
+  border-radius: 1rem 1rem 0.3125rem 1rem;
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-chat-message[data-role="system"],
@@ -14204,7 +14206,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1;
 }
 
@@ -14350,12 +14352,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-bottom: 0;
 }
 
+/* Quiet 15 px icons in 32 px buttons. Under an answer the first glyph sits on the text's edge; under the person's own
+   message the last glyph sits on the bubble's edge. */
 .k2b-ui .k2b-chat-message__actions {
   display: flex;
-  min-height: 1.5rem;
+  min-height: 2rem;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.125rem;
   color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-chat-message[data-role="assistant"] .k2b-chat-message__actions {
+  margin: -0.25rem 0 0 -0.5rem;
+}
+
+.k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__actions {
+  margin-inline-end: -0.5rem;
+}
+
+.k2b-ui .k2b-chat-message__actions > :is(button, .k2b-chat-message__menu),
+.k2b-ui .k2b-chat-message__actions .k2b-chat-message__menu {
+  min-width: 2rem;
+  min-height: 2rem;
+  font-size: 0.9375rem;
 }
 
 .k2b-ui .k2b-chat-message__menu {
