@@ -2,14 +2,11 @@ import type { AiConversationSource, AiFileStat, AiProject, AiProjectFile, AiChat
 import { type ConversationFileSource, conversationFileSource } from "@k2b/cloud/ai/solid";
 import { SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
-  BottomSheet,
   Button,
   ButtonLink,
-  bottomSheetOptions,
   DetailPanel,
   Dropdown,
   type DropdownItem,
-  dialogCore,
   formatFileViewSize,
   IconButton,
   Lightbox,
