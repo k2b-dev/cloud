@@ -41,11 +41,12 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
                   WHERE key IN ('group_id', 'child_group_id', 'manager_group_id')
                 UNION SELECT gg.child_group_id FROM auth.group_groups_v2 gg JOIN affected a ON a.id = gg.parent_group_id
               )
-              SELECT DISTINCT u.id FROM auth.users u
-                WHERE NOT EXISTS (SELECT FROM affected)
-                  OR EXISTS (SELECT FROM auth.user_groups_v2 ug JOIN affected a ON a.id = ug.group_id WHERE ug.user_id = u.id)
-                  OR EXISTS (SELECT FROM auth.ipa_user_effective_groups ug JOIN auth.groups g ON g.name = ug.group_name
-                    JOIN affected a ON a.id = g.id WHERE ug.user_id = u.id)
+              -- Enumerate each membership relation once. Correlated EXISTS under
+              -- OR can rescan it for every user when statistics lag a bulk write.
+              SELECT u.id FROM auth.users u WHERE NOT EXISTS (SELECT FROM affected)
+              UNION SELECT ug.user_id FROM auth.user_groups_v2 ug JOIN affected a ON a.id = ug.group_id
+              UNION SELECT ug.user_id FROM auth.ipa_user_effective_groups ug JOIN auth.groups g ON g.name = ug.group_name
+                JOIN affected a ON a.id = g.id
             LOOP PERFORM auth.publish_room_identity(jsonb_build_object('userId', candidate.id)); END LOOP;
             FOR candidate IN SELECT id FROM auth.service_accounts LOOP
               PERFORM auth.publish_room_identity(jsonb_build_object('serviceAccountId', candidate.id));
