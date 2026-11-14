@@ -13,9 +13,19 @@ test("an approval card takes data and answers, never a look", () => {
   expect(checkSource("/repo/packages/x/a.test.tsx", `<ApprovalCard class="x" />`)).toEqual([]);
 });
 
-test("Chat.Decision draws only inside ApprovalCard", () => {
+test("the approval frame a Code version or an admin review fills takes data and answers, never a look", () => {
+  const plain = `<ApprovalFrame locale="de" state="open" source={source} sentence={sentence()} reason={reason()} confirm={confirm} />`;
+  expect(checkSource(place, plain)).toEqual([]);
+  for (const look of ['class="wide"', "style={{ color: 'red' }}", 'variant="compact"', 'tone="blue"', "{...props}"])
+    expect(checkSource(place, `const a = 1;\n<ApprovalFrame locale="de" ${look} state="open" />`)).toMatchObject([
+      { line: 2, message: expect.stringContaining("ApprovalFrame takes no look props") },
+    ]);
+});
+
+test("Chat.Decision draws only inside ApprovalFrame", () => {
   expect(checkSource(place, "<Chat.Decision state='open' />")).toHaveLength(1);
-  expect(checkSource("/repo/packages/cloud/src/approvals/ApprovalCard.tsx", "<Chat.Decision state='open' />")).toEqual([]);
+  expect(checkSource("/repo/packages/cloud/src/approvals/ApprovalCard.tsx", "<Chat.Decision state='open' />")).toHaveLength(1);
+  expect(checkSource("/repo/packages/cloud/src/approvals/ApprovalFrame.tsx", "<Chat.Decision state='open' />")).toEqual([]);
   expect(checkSource(place, "type S = ChatDecisionState;")).toEqual([]);
   expect(checkSource("/repo/packages/ui/src/chat/ChatDecision.tsx", "export function ChatDecision() {}")).toEqual([]);
 });

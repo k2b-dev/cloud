@@ -67,7 +67,7 @@ describe("Chat.Decision SSR", () => {
       decision({ mode: "edit", kind: { label: "Draft", icon: "ti ti-pencil" }, remember: { label: "Remember", onSelect: noop } }),
     );
     expect(body.querySelector("section")!.getAttribute("data-mode")).toBe("edit");
-    expect(Array.from(body.querySelectorAll("button")).map((b) => b.getAttribute("data-variant"))).toEqual(["ghost", "secondary"]);
+    expect(Array.from(body.querySelectorAll("button")).map((b) => b.getAttribute("data-variant"))).toEqual(["text", "secondary"]);
     // Remembering belongs to the approval, never to a draft.
     expect(body.querySelector(".k2b-chat-decision__remember")).toBeNull();
   });
@@ -75,8 +75,34 @@ describe("Chat.Decision SSR", () => {
     const body = render(() =>
       decision({ back: { label: "Change", onSelect: noop }, meta: [{ text: "Expires in 9 min", icon: "ti ti-clock" }] }),
     );
-    expect(Array.from(body.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Change", "Keep draft", "Send"]);
+    expect(Array.from(body.querySelectorAll("button")).map((b) => [b.textContent, b.getAttribute("data-variant")])).toEqual([
+      ["Change", "text"],
+      ["Keep draft", "secondary"],
+      ["Send", "ai"],
+    ]);
     expect(body.querySelector(".k2b-chat-decision__meta")!.textContent).toBe("Expires in 9 min");
+  });
+  test("a frame without decline carries a link, further answers, notes and a toned fact", () => {
+    const body = render(() =>
+      decision({
+        decline: undefined,
+        link: { label: "See everything", href: "/code/1" },
+        more: [{ label: "Withdraw", onSelect: noop }],
+        details: { label: "Details from Code", content: "Two changes", note: { text: "Cloud checks access, not behaviour." } },
+        notes: [{ text: "The admins know.", icon: "ti ti-bell" }],
+        meta: [{ text: "3 of 3 examples passed", icon: "ti ti-circle-check", tone: "success" }],
+      }),
+    );
+    const answers = Array.from(body.querySelectorAll(".k2b-chat-decision__buttons > *"));
+    expect(answers.map((a) => [a.tagName, a.textContent, a.getAttribute("data-variant")])).toEqual([
+      ["A", "See everything", "text"],
+      ["BUTTON", "Withdraw", "secondary"],
+      ["BUTTON", "Send", "ai"],
+    ]);
+    expect(answers[0]!.getAttribute("href")).toBe("/code/1");
+    expect(body.querySelector(".k2b-chat-decision__details-note")!.textContent).toBe("Cloud checks access, not behaviour.");
+    expect(body.querySelector(".k2b-chat-decision__note")!.textContent).toBe("The admins know.");
+    expect(body.querySelector(".k2b-chat-decision__fact")!.getAttribute("data-tone")).toBe("success");
   });
   for (const tone of ["neutral", "danger", "warning"] as const)
     test(`reason supports ${tone} and an icon override`, () => {

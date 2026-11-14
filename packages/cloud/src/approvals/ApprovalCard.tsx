@@ -1,9 +1,10 @@
-import { Chat, type ChatDecisionState, type ChatOutcomeTone, LocaleProvider } from "@k2b/ui";
+import type { ChatDecisionState } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount } from "solid-js";
 import type { ActionCard, ActionText } from "../ai/chat/action-card";
 import { actionMessages } from "../ai/chat/action-messages";
-import { ActionDetails, type ActionLine, ActionReceipt, ActionTextView } from "../ai/chat/action-question";
+import { ActionDetails, type ActionLine, ActionReceipt } from "../ai/chat/action-question";
 import type { Block } from "../blocks/schema";
+import { ApprovalFrame, type ApprovalFrameStatus } from "./ApprovalFrame";
 
 /**
  * The one approval of Cloud. Every place shows it the same way: the Assistant chat, the side panel, the approvals
@@ -34,16 +35,6 @@ export type ApprovalCardProps = {
   /** Turns every answer off until it clears, such as without a connection. */
   waiting?: string;
   anchorId?: string | number;
-};
-
-const STATUS_ICONS: Record<ChatOutcomeTone | "expired", string> = {
-  running: "ti ti-loader-2",
-  done: "ti ti-circle-check",
-  off: "ti ti-circle-x",
-  waiting: "ti ti-clock",
-  warning: "ti ti-alert-triangle",
-  error: "ti ti-alert-circle",
-  expired: "ti ti-clock-x",
 };
 
 const confirmIcon = (card: ActionCard): string | undefined => (card.reason.code === "sends" ? "ti ti-send" : undefined);
@@ -94,12 +85,11 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
       { defer: true },
     ),
   );
-  const status = createMemo(() => {
+  const status = createMemo((): ApprovalFrameStatus | undefined => {
     if (props.state === "open") return undefined;
-    const line = props.outcome.lines[props.outcome.current];
     const words = t();
-    if (props.state === "expired") return { label: words.statusExpired, icon: STATUS_ICONS.expired, tone: "off" as const };
-    const tone = line?.tone ?? "running";
+    if (props.state === "expired") return { label: words.statusExpired, tone: "expired" };
+    const tone = props.outcome.lines[props.outcome.current]?.tone ?? "running";
     const label = {
       running: words.statusRunning,
       done: words.statusDone,
@@ -108,7 +98,7 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
       warning: words.statusUnknown,
       error: words.statusFailed,
     }[tone];
-    return { label, icon: STATUS_ICONS[tone], tone };
+    return { label, tone };
   });
   const meta = createMemo(() => {
     const words = t();
@@ -144,60 +134,58 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
     if (accepted) setEditing(false);
   };
   return (
-    <LocaleProvider locale={props.card.locale}>
-      <Chat.Decision
-        state={props.state}
-        mode={editing() && props.state === "open" ? "edit" : "approve"}
-        anchorId={props.anchorId}
-        kind={editing() ? { label: t().draftKind, icon: "ti ti-pencil" } : { label: t().approvalKind, icon: "ti ti-shield-check" }}
-        source={{ name: props.card.app.name, icon: props.card.app.icon, accent: props.card.app.accent }}
-        status={status()}
-        sentence={<ActionTextView text={editing() ? intent(props.card) : props.card.question} accent={props.card.app.accent} />}
-        reason={reason()}
-        unavailable={!editing() && unavailable() ? reason() : sending() ? reason() : undefined}
-        waiting={props.waiting ? reason() : undefined}
-        details={
-          props.card.view || props.card.contentRef || props.card.links.length > 0 || (props.card.consequences ?? []).length > 0
-            ? {
-                label: t().detailsFrom({ app: props.card.app.name }),
-                content: (
-                  <ActionDetails
-                    card={props.card}
-                    onContentLoaded={setLoadedContent}
-                    draft={{
-                      editable: editing(),
-                      values: values(),
-                      onChange: (name, value) => setValues((current) => ({ ...current, [name]: value })),
-                    }}
-                  />
-                ),
-              }
-            : undefined
-        }
-        meta={editing() ? [] : meta()}
-        confirm={
-          editing()
-            ? { label: `${props.card.confirm.label} …`, icon: confirmIcon(props.card), onSelect: moveOn }
-            : { label: props.card.confirm.label, icon: confirmIcon(props.card), onSelect: props.onConfirm }
-        }
-        decline={{ label: editing() ? t().discard : props.card.decline, onSelect: props.onDecline }}
-        back={
-          !editing() && editable()
-            ? {
-                label: t().change,
-                onSelect: () => {
-                  setEditing(true);
-                },
-              }
-            : undefined
-        }
-        remember={
-          props.remember
-            ? { label: props.remember.website ? t().rememberWebsite : t().remember, onSelect: props.remember.onSelect }
-            : undefined
-        }
-        outcome={<ActionReceipt card={props.card} lines={props.outcome.lines} current={props.outcome.current} />}
-      />
-    </LocaleProvider>
+    <ApprovalFrame
+      locale={props.card.locale}
+      state={props.state}
+      mode={editing() ? "edit" : "approve"}
+      anchorId={props.anchorId}
+      source={{ name: props.card.app.name, icon: props.card.app.icon, accent: props.card.app.accent }}
+      status={status()}
+      sentence={editing() ? intent(props.card) : props.card.question}
+      reason={reason()}
+      unavailable={!editing() && unavailable() ? reason() : sending() ? reason() : undefined}
+      waiting={props.waiting ? reason() : undefined}
+      details={
+        props.card.view || props.card.contentRef || props.card.links.length > 0 || (props.card.consequences ?? []).length > 0
+          ? {
+              label: t().detailsFrom({ app: props.card.app.name }),
+              content: (
+                <ActionDetails
+                  card={props.card}
+                  onContentLoaded={setLoadedContent}
+                  draft={{
+                    editable: editing(),
+                    values: values(),
+                    onChange: (name, value) => setValues((current) => ({ ...current, [name]: value })),
+                  }}
+                />
+              ),
+            }
+          : undefined
+      }
+      meta={editing() ? [] : meta()}
+      confirm={
+        editing()
+          ? { label: `${props.card.confirm.label} …`, icon: confirmIcon(props.card), onSelect: moveOn }
+          : { label: props.card.confirm.label, onSelect: props.onConfirm }
+      }
+      decline={{ label: editing() ? t().discard : props.card.decline, onSelect: props.onDecline }}
+      back={
+        !editing() && editable()
+          ? {
+              label: t().change,
+              onSelect: () => {
+                setEditing(true);
+              },
+            }
+          : undefined
+      }
+      remember={
+        props.remember
+          ? { label: props.remember.website ? t().rememberWebsite : t().remember, onSelect: props.remember.onSelect }
+          : undefined
+      }
+      outcome={<ActionReceipt card={props.card} lines={props.outcome.lines} current={props.outcome.current} />}
+    />
   );
 }

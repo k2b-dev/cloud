@@ -13,9 +13,16 @@ import {
   untrack,
   useContext,
 } from "solid-js";
-import { Button } from "../actions/Button";
+import { Button, ButtonLink } from "../actions/Button";
 import { Checkbox } from "../inputs/Checkbox";
-import type { ChatDecisionAnswer, ChatDecisionReason, ChatDecisionState, ChatOutcomeLine, ChatOutcomeTone } from "./types";
+import type {
+  ChatDecisionAnswer,
+  ChatDecisionFact,
+  ChatDecisionReason,
+  ChatDecisionState,
+  ChatOutcomeLine,
+  ChatOutcomeTone,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Decision
@@ -40,16 +47,25 @@ export type ChatDecisionProps = {
   sentence: JSX.Element;
   /** Why this question is asked, in the platform's words. */
   reason: ChatDecisionReason;
-  /** The thing itself on the surface colour, under its own label such as "Details from Mail". */
-  details?: { label: string; content: JSX.Element };
+  /**
+   * The thing itself on the surface colour, under its own label such as "Details from Mail". `note` is one quiet line
+   * under it that holds for every such question, such as what Cloud checked.
+   */
+  details?: { label: string; content: JSX.Element; note?: { text: string; icon?: string } };
+  /** Lines after the details, each with its icon, such as what happens now and what holds until then. */
+  notes?: readonly ChatDecisionReason[];
   /** Quiet facts at the start of the answer row, such as when the question expires. */
-  meta?: readonly { text: string; icon: string }[];
+  meta?: readonly ChatDecisionFact[];
   /** The main answer, named by verb and target ("Send to Lea"); the only filled button. */
-  confirm: ChatDecisionAnswer;
+  confirm?: ChatDecisionAnswer;
   /** The other answer ("Don't send"). */
-  decline: ChatDecisionAnswer;
-  /** A quiet answer before the others, such as "Change" back to `edit`. It turns off with `waiting` only. */
+  decline?: ChatDecisionAnswer;
+  /** A quiet text answer before the others, such as "Change" back to `edit`. It turns off with `waiting` only. */
   back?: ChatDecisionAnswer;
+  /** A quiet text link before the answers, such as "See everything" on the thing's own page. */
+  link?: { label: string; href: string };
+  /** Further answers on the surface colour before `decline`, such as "Withdraw". They turn off with `waiting` only. */
+  more?: readonly ChatDecisionAnswer[];
   /**
    * A checkbox in the answer row, such as "Don't ask again here". Checked, `confirm` calls this answer's `onSelect`
    * instead of its own.
@@ -172,7 +188,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
 
   const confirm = () => {
     const chosen = props.remember && remembered() && !editing() ? props.remember : props.confirm;
-    answer(chosen, !confirmOff());
+    if (chosen) answer(chosen, !confirmOff());
   };
 
   return (
@@ -249,15 +265,35 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                   {details().label}
                 </p>
                 {details().content}
+                <Show when={details().note}>
+                  {(note) => (
+                    <p class="k2b-chat-decision__details-note">
+                      <i class={note().icon ?? "ti ti-info-circle"} aria-hidden="true" />
+                      {note().text}
+                    </p>
+                  )}
+                </Show>
               </div>
             )}
+          </Show>
+          <Show when={(props.notes?.length ?? 0) > 0}>
+            <div class="k2b-chat-decision__notes">
+              <For each={props.notes}>
+                {(note) => (
+                  <p class="k2b-chat-line k2b-chat-decision__note" data-tone={note.tone ?? "neutral"}>
+                    <i class={`k2b-chat-line__icon ${reasonIcon(note)}`} aria-hidden="true" />
+                    <span class="k2b-chat-line__text">{note.text}</span>
+                  </p>
+                )}
+              </For>
+            </div>
           </Show>
           <div class="k2b-chat-decision__answers">
             <Show when={(props.meta?.length ?? 0) > 0 || (props.remember && !editing())}>
               <span class="k2b-chat-decision__meta">
                 <For each={props.meta ?? []}>
                   {(item) => (
-                    <span class="k2b-chat-decision__fact">
+                    <span class="k2b-chat-decision__fact" data-tone={item.tone ?? "neutral"}>
                       <i class={item.icon} aria-hidden="true" />
                       {item.text}
                     </span>
@@ -277,12 +313,19 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
               </span>
             </Show>
             <span class="k2b-chat-decision__buttons">
+              <Show when={props.link}>
+                {(link) => (
+                  <ButtonLink class="k2b-chat-decision__answer" wrap variant="text" href={link().href}>
+                    {link().label}
+                  </ButtonLink>
+                )}
+              </Show>
               <Show when={props.back}>
                 {(back) => (
                   <Button
                     class="k2b-chat-decision__answer"
                     wrap
-                    variant="secondary"
+                    variant="text"
                     disabled={Boolean(props.waiting)}
                     onClick={() => {
                       if (!props.waiting) void back().onSelect();
@@ -293,26 +336,50 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                   </Button>
                 )}
               </Show>
-              <Button
-                class="k2b-chat-decision__answer"
-                wrap
-                variant={editing() ? "ghost" : "secondary"}
-                disabled={Boolean(props.waiting)}
-                onClick={() => answer(props.decline, !props.waiting)}
-              >
-                <Show when={props.decline.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-                {props.decline.label}
-              </Button>
-              <Button
-                class="k2b-chat-decision__answer"
-                wrap
-                variant={editing() ? "secondary" : "ai"}
-                disabled={confirmOff()}
-                onClick={confirm}
-              >
-                <Show when={props.confirm.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-                {props.confirm.label}
-              </Button>
+              <For each={props.more ?? []}>
+                {(more) => (
+                  <Button
+                    class="k2b-chat-decision__answer"
+                    wrap
+                    variant="secondary"
+                    disabled={Boolean(props.waiting)}
+                    onClick={() => {
+                      if (!props.waiting) void Promise.resolve(more.onSelect()).catch((error: unknown) => props.onAnswerError?.(error));
+                    }}
+                  >
+                    <Show when={more.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                    {more.label}
+                  </Button>
+                )}
+              </For>
+              <Show when={props.decline}>
+                {(decline) => (
+                  <Button
+                    class="k2b-chat-decision__answer"
+                    wrap
+                    variant={editing() ? "text" : "secondary"}
+                    disabled={Boolean(props.waiting)}
+                    onClick={() => answer(decline(), !props.waiting)}
+                  >
+                    <Show when={decline().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                    {decline().label}
+                  </Button>
+                )}
+              </Show>
+              <Show when={props.confirm}>
+                {(confirmAnswer) => (
+                  <Button
+                    class="k2b-chat-decision__answer"
+                    wrap
+                    variant={editing() ? "secondary" : "ai"}
+                    disabled={confirmOff()}
+                    onClick={confirm}
+                  >
+                    <Show when={confirmAnswer().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                    {confirmAnswer().label}
+                  </Button>
+                )}
+              </Show>
             </span>
           </div>
         </>

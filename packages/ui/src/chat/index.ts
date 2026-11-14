@@ -41,6 +41,7 @@ export type {
   ChatComposerState,
   ChatContextUsageData,
   ChatDecisionAnswer,
+  ChatDecisionFact,
   ChatDecisionReason,
   ChatDecisionState,
   ChatDictationState,
