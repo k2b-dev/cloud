@@ -94,8 +94,8 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     await context.getByRole("button", { name: `Open ${app.title}`, exact: true }).click();
     await page.getByRole("tab", { name: app.title, exact: true }).waitFor();
     expect(requests.some((path) => path.endsWith("/app-assets"))).toBe(false);
-    await page.locator(".artifact-workspace__tabs").getByRole("button", { name: "Open", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Studio", exact: true }).click();
+    // The Studio overview opens from the chat's list as a tab of its own.
+    await context.getByRole("button", { name: /Script runs · 3/ }).click();
     expect(await context.getByText("Recent one-off runs").count()).toBe(0);
     await page.locator(".assistant-studio-card").waitFor();
     expect(await page.locator(".assistant-studio-card").count()).toBe(1);

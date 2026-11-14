@@ -64,7 +64,7 @@ import {
   reconcileChatMentions,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
 import { revokeChatWebsite } from "../artifacts/approval-preferences";
@@ -74,8 +74,9 @@ import { scheduleChartPreparation } from "../artifacts/html/prepare-assets";
 import { artifactMessages } from "../artifacts/messages";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
 import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
-import { appTab, contextTab, fileTab, taskTab } from "../artifacts/workspace-state";
+import { appTab, contextTab, fileTab, taskTab, webTab } from "../artifacts/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
+import type { ChatWorkspaceSnapshot } from "../chat-workspace";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
@@ -125,7 +126,7 @@ import { submitAssistantProjectMessage } from "./assistant-project-chat";
 import { assistantSearchOptions } from "./assistant-search";
 import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
-import { revealChatDelivery } from "./chat-sidebar-layout";
+import { dismissAssistantPanesHint, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
@@ -197,6 +198,10 @@ type Props = {
   initialWorkspaceHref?: string;
   initialDetail: InitialDetail | null;
   initialContext: AssistantChatContextSnapshot | null;
+  /** The open tabs of the initial chat as the person left them, from the server. */
+  initialTabs?: { chatId: string; snapshot: ChatWorkspaceSnapshot } | null;
+  /** The hint that tabs can be arranged was dismissed. */
+  arrangeHintSeen?: boolean;
   /** The person closed the chat sidebar's column before; the server renders it closed. */
   projects: AiProject[];
   initialProject: AiProject | null;
@@ -221,7 +226,19 @@ export default function AssistantWorkspace(props: Props) {
   const contextText = useAssistantText();
   const commandCopy = useAssistantCopy();
   const runKeys = createAssistantTaskRunKeys();
-  const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref);
+  const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref, {
+    initial: props.initialTabs ?? null,
+    store: { load: assistantApi.getChatTabs, save: assistantApi.saveChatTabs },
+  });
+  const [arrangeHintOpen, setArrangeHintOpen] = createSignal(props.arrangeHintSeen !== true);
+  // Web pages of the chat open as reading views only where the operator set up the reading service.
+  const [webReader] = createResource(async () => (await assistantApi.getWebReader().catch(() => ({ available: false }))).available);
+  const openWebPage = () => {
+    const conversationId = chat.activeConversationId();
+    return webReader() && conversationId
+      ? (url: string, title: string) => artifactWorkspace.open(webTab(conversationId, url, title))
+      : undefined;
+  };
   const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
   const openContextView = (view: ContextView) =>
     artifactWorkspace.open(
@@ -260,30 +277,6 @@ export default function AssistantWorkspace(props: Props) {
   };
   const artifactCopy = () => artifactMessages.resolve([locale()]).t;
   const t = () => assistantMessages.resolve([locale()]).t;
-  const contextMenuItems = () => [
-    { label: "Secrets", icon: "ti ti-key", action: openChatSecrets },
-    { label: artifactCopy().apps, icon: "ti ti-app-window", action: () => openContextOverview("apps", artifactCopy().apps) },
-    { label: artifactCopy().files, icon: "ti ti-files", action: () => openContextOverview("files", artifactCopy().files) },
-    { label: contextText("Sources"), icon: "ti ti-link", action: () => openContextOverview("sources", contextText("Sources")) },
-    ...(activeConversationProject()
-      ? [
-          {
-            label: contextText("Project knowledge"),
-            icon: "ti ti-bulb",
-            action: () => openContextOverview("knowledge", contextText("Project knowledge")),
-          },
-        ]
-      : []),
-    ...(workspaceContext()?.tasks.length
-      ? [
-          {
-            label: contextText("Routines"),
-            icon: "ti ti-calendar-time",
-            action: () => openContextOverview("tasks", contextText("Routines")),
-          },
-        ]
-      : []),
-  ];
   const audioCopy = () => audioMessages.resolve([locale()]).t;
 
   const [liveError, setLiveError] = createSignal<string | null>(null);
@@ -1526,6 +1519,7 @@ export default function AssistantWorkspace(props: Props) {
       onJump: (target) => void jumpTo(target),
       onOpenSecrets: openChatSecrets,
       onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
+      onOpenWebPage: openWebPage(),
     });
   // The box "In this chat": a click opens the thing as a tab beside the chat, or jumps to it.
   const contextBoxActions = (): ContextBoxActions => ({
@@ -1552,7 +1546,14 @@ export default function AssistantWorkspace(props: Props) {
         </LocaleProvider>
       ),
     });
-
+  // The tabs belong to the chat and the person: another chat shows its own tabs.
+  createEffect(
+    on(
+      () => chat.activeConversationId(),
+      (id) => artifactWorkspace.bindChat(id ?? null),
+      { defer: true },
+    ),
+  );
   const [emptyProjectId, setEmptyProjectId] = createSignal<string | null>(activeConversation()?.projectId ?? null);
   const [choosingProject, setChoosingProject] = createSignal(false);
   let emptyProjectConversationId: string | null = null;
@@ -1735,6 +1736,16 @@ export default function AssistantWorkspace(props: Props) {
     }
   };
 
+  /** "Ask Gustav about it" in a tab's menu: names the thing in the next message of this chat. */
+  const askAboutTab = (title: string) => {
+    const key = chat.activeConversationId();
+    if (!key) return;
+    const mention = `„${title}“ `;
+    const existing = composerDraft(key);
+    setComposerDraft(key, existing.trim() ? `${existing} ${mention}` : mention);
+    artifactWorkspace.setMobile("chat");
+    focusComposer();
+  };
   const editScheduledTask = async (task: AiChatTaskView, repair: boolean) => {
     if (!(await openAndFocusConversation(task.chatId))) return;
     const key = task.chatId;
@@ -2727,7 +2738,13 @@ export default function AssistantWorkspace(props: Props) {
 
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false} mobilePane={artifactWorkspace.mobile()}>
-            <AppWorkspace.MainPane id="chat" label={artifactCopy().chat} scroll={false} class="assistant-chat-pane flex min-h-0 flex-col">
+            <AppWorkspace.MainPane
+              id="chat"
+              label={artifactCopy().chat}
+              scroll={false}
+              minSize={360}
+              class="assistant-chat-pane flex min-h-0 flex-col"
+            >
               <Show when={props.embedded && !approvalsOpen()}>
                 <AssistantPanelContext
                   initial={props.initialPanelContext ?? null}
@@ -2828,6 +2845,12 @@ export default function AssistantWorkspace(props: Props) {
                                     onOpenScheduledTaskRun: (taskId, occurrenceId) =>
                                       void openAssistantTaskRun(taskId, occurrenceId, liveHub),
                                     onOpenFile: (path) => void openFiles(path),
+                                    onOpenWebLink: (href, title) => {
+                                      const open = openWebPage();
+                                      if (!open) return false;
+                                      open(href, title);
+                                      return true;
+                                    },
                                     resolveFileLink: (href) => {
                                       const context = workspaceContext();
                                       const conversationId = chat.activeConversationId();
@@ -2914,7 +2937,7 @@ export default function AssistantWorkspace(props: Props) {
               id="workspace"
               label={artifactCopy().workspace}
               open={artifactWorkspace.state().tabs.length > 0}
-              defaultSize={620}
+              defaultSize={680}
               minSize={320}
               scroll={false}
             >
@@ -2934,9 +2957,19 @@ export default function AssistantWorkspace(props: Props) {
                   controller={artifactWorkspace}
                   userId={props.userId}
                   refreshKey={filesRefreshKey()}
-                  menuItems={contextMenuItems()}
                   onJump={(target) => void jumpTo(target)}
                   onOpenSecrets={openChatSecrets}
+                  snapshot={contextState.snapshot}
+                  onAsk={askAboutTab}
+                  onAdd={() => openContextOverview("files", sidebarCopy().title)}
+                  webReader={webReader() === true}
+                  arrangeHint={{
+                    open: arrangeHintOpen(),
+                    onDismiss: () => {
+                      setArrangeHintOpen(false);
+                      dismissAssistantPanesHint();
+                    },
+                  }}
                 />
               </Show>
             </AppWorkspace.MainPane>

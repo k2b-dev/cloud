@@ -53,7 +53,9 @@ test("a PDF file tab previews the conversation file bytes instead of the attachm
     expect(dom.root.querySelector('[role="tabpanel"] iframe')).toBeNull();
     expect(dom.root.querySelector('[role="tabpanel"] .k2b-content-file-view .k2b-pdf-viewer')).not.toBeNull();
     // The tab already names the file, so the preview sits in the tab without a second frame.
-    expect(dom.root.querySelector('[role="tabpanel"] > .k2b-content-file-view')?.getAttribute("data-variant")).toBe("plain");
+    expect(dom.root.querySelector('[role="tabpanel"] .artifact-pane__body > .k2b-content-file-view')?.getAttribute("data-variant")).toBe(
+      "plain",
+    );
   } finally {
     dispose();
     fetchMock.mockRestore();
@@ -94,7 +96,7 @@ for (const [path, content, highlighted] of [
     );
     try {
       await tick();
-      const view = dom.root.querySelector('[role="tabpanel"] > .k2b-content-file-view');
+      const view = dom.root.querySelector('[role="tabpanel"] .artifact-pane__body > .k2b-content-file-view');
       expect(view?.getAttribute("data-variant")).toBe("plain");
       expect(view?.textContent).toContain(content.split("\n")[0]!.slice(0, 12));
       expect(view?.querySelector("textarea")).toBeNull();

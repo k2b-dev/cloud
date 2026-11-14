@@ -23,21 +23,17 @@ export function AssistantMarkdownBlock(props: { html: string }) {
   });
   onMount(() => {
     const handleClick = (event: MouseEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey ||
-        !actions.onOpenFile
-      )
-        return;
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = event.target instanceof Element ? event.target.closest("a") : null;
-      const path = link ? files.get(link) : undefined;
-      if (!path) return;
-      event.preventDefault();
-      actions.onOpenFile(path);
+      if (!link) return;
+      const path = files.get(link);
+      if (path && actions.onOpenFile) {
+        event.preventDefault();
+        actions.onOpenFile(path);
+        return;
+      }
+      const href = link.getAttribute("href") ?? "";
+      if (!path && /^https?:\/\//iu.test(href) && actions.onOpenWebLink?.(href, link.textContent?.trim() || href)) event.preventDefault();
     };
     element.addEventListener("click", handleClick);
     onCleanup(() => element.removeEventListener("click", handleClick));

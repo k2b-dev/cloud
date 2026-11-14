@@ -7,7 +7,8 @@ export type WorkspaceTab =
   | { key: string; kind: "view"; title: string; render: () => JSX.Element }
   | { key: string; kind: "file"; conversationId: string; path: string; title: string }
   | { key: string; kind: "app"; artifactId: string; title: string; autoStart?: boolean }
-  | { key: string; kind: "source"; artifactId: string; path: string; title: string };
+  | { key: string; kind: "source"; artifactId: string; path: string; title: string }
+  | { key: string; kind: "web"; conversationId: string; url: string; title: string };
 
 export function contextTab(conversationId: string, category: ContextCategory, title: string, project?: AiProject | null): WorkspaceTab {
   return { key: JSON.stringify(["context", conversationId, category]), kind: "context", conversationId, category, title, project };
@@ -21,6 +22,11 @@ export function fileTab(conversationId: string, path: string): WorkspaceTab {
 }
 export function appTab(artifactId: string, title: string, autoStart = false): WorkspaceTab {
   return { key: JSON.stringify(["app", artifactId]), kind: "app", artifactId, title, autoStart };
+}
+/** A web page from this chat in the reading view. */
+export function webTab(conversationId: string, url: string, title?: string): WorkspaceTab {
+  const host = URL.canParse(url) ? new URL(url).host : url;
+  return { key: JSON.stringify(["web", conversationId, url]), kind: "web", conversationId, url, title: title || host };
 }
 export function sourceTab(artifactId: string, path: string): WorkspaceTab {
   return { key: JSON.stringify(["source", artifactId, path]), kind: "source", artifactId, path, title: path.split("/").pop() || path };
@@ -71,6 +77,7 @@ export function workspaceSelectionFromHref(href: string): WorkspaceTab | null {
       return contextTab(id, path, path);
     if (kind === "file") return fileTab(id, path);
     if (kind === "source") return sourceTab(id, path);
+    if (kind === "web" && /^https?:\/\//u.test(path)) return webTab(id, path);
   } catch {
     /* Invalid URL state is ignored; resource APIs still authorize every read. */
   }
