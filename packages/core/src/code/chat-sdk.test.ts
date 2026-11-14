@@ -127,3 +127,16 @@ test("the SDK index classifies inference queries as AI and keeps non-inference q
   for (const capability of ["ai.chat.run.read", "code.list"]) expect(policy(capability)).toBe("read");
   expect(policy("ai.chat.deliver")).toBe("silent_you");
 });
+
+test("declaration selection resolves custom and reserved export names without generating unselected apps", () => {
+  const custom = compileCapabilityManifest("example", { protocolVersion: 2, sdkExportName: "installed", queries: {}, actions: {} });
+  const reserved = compileCapabilityManifest("atob", { protocolVersion: 2, queries: {}, actions: {} });
+  for (const [name, appId] of [
+    ["installed", "example"],
+    ["_atob", "atob"],
+  ] as const) {
+    const result = codeChatSdkView([custom, reserved], { mode: "personal" }, [name]);
+    expect(result.kind === "declarations" && result.apps).toEqual([appId]);
+    expect(result.kind === "declarations" && result.declarations).toContain(`export declare const ${name}:`);
+  }
+});

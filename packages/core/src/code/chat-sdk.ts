@@ -1,4 +1,4 @@
-import { type CodeSdkOptions, generateCodeSdk } from "@k2b/cloud/code";
+import { type CodeSdkOptions, codeSdkExportName, generateCodeSdk } from "@k2b/cloud/code";
 import { type CapabilityManifest, CodePolicyRowSchema, capabilityActionPolicy } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { type CodeContext, CodeDataError } from "./access";
@@ -68,8 +68,8 @@ export function codeChatSdkView(
   options: CodeSdkOptions,
   apps?: readonly string[],
 ): CodeChatSdkData {
-  const sdk = generateCodeSdk(manifests, options);
   if (apps === undefined) {
+    const sdk = generateCodeSdk(manifests, options);
     const byApp = new Map(manifests.map((manifest) => [manifest.appId, manifest]));
     const factories = new Map(sdk.manifest.handles.map((handle) => [handle.type, handle.factoryPath]));
     return {
@@ -108,7 +108,7 @@ export function codeChatSdkView(
   }
   const wanted = new Set<string>();
   for (const name of apps) {
-    const app = sdk.manifest.apps.find((entry) => entry.appId === name || entry.exportName === name);
+    const app = manifests.find((entry) => entry.appId === name || (entry.sdkExportName ?? codeSdkExportName(entry.appId)) === name);
     if (!app) throw new CodeDataError("BAD_INPUT", `Unknown app ${name}. Use an appId or export from the code_sdk index.`);
     wanted.add(app.appId);
   }

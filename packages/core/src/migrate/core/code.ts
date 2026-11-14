@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import type { SQL } from "bun";
+import { migrateCodeActivity } from "./code-activity";
 import { migrateUnusedCodeDatabases } from "./code-unused-databases";
 
 /** Additive Core migration. Existing AI/Assistant and workflow data are untouched. */
@@ -137,6 +138,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     DECLARE run code.runs;
     BEGIN
       SELECT * INTO run FROM code.runs WHERE id = NEW.run_id FOR UPDATE;
+      -- The owning run is authoritative; this projection indexes recent confirmed effects per Code.
+      NEW.code_id := run.code_id;
       IF NEW.ordinal > run.calls_limit OR octet_length(NEW.call::text) > run.payload_bytes OR COALESCE(octet_length(NEW.result::text),0) > 262144 THEN
         RAISE EXCEPTION 'code call storage limit' USING ERRCODE = '23514';
       END IF;
@@ -189,5 +192,6 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
         CREATE OR REPLACE TRIGGER immutable_version_delete BEFORE DELETE ON code.versions FOR EACH ROW EXECUTE FUNCTION code.guard_version_delete();
     `.simple();
     await migrateUnusedCodeDatabases(tx);
+    await migrateCodeActivity(tx);
   });
 };
