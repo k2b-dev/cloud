@@ -31,7 +31,7 @@ import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-c
 // Kept in sync with the server limits; browser code does not import server-only constants.
 const MEMORY_MAX_CHARS = 500;
 
-type AssistantPrefsTab = "personalization" | "skills" | "system-prompt" | "approvals" | "api-access";
+type AssistantPrefsTab = "personalization" | "chat" | "skills" | "system-prompt" | "approvals" | "api-access";
 
 /** Present only while the operator offers the OpenAI-compatible API. */
 type OpenAiApiAccess = { baseUrl: string; models: import("@k2b/cloud/ai").AiPeopleModels["options"] };
@@ -588,6 +588,38 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
   );
 }
 
+/** Chat helpers that apply at once, as a switch does; a failed save turns the switch back and says so. */
+function ChatSettings(props: { prefs: AiUserPrefs }) {
+  const text = useAssistantText();
+  const [suggest, setSuggest] = createSignal(props.prefs.suggestNextMessage);
+  const [saving, setSaving] = createSignal(false);
+  const change = async (next: boolean) => {
+    setSuggest(next);
+    setSaving(true);
+    try {
+      await assistantApi.updatePrefs({ suggestNextMessage: next });
+    } catch (error) {
+      setSuggest(!next);
+      toast.error(error instanceof Error ? error.message : text("Failed to save AI preferences"));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <SettingsGroup title={text("Composer")}>
+      <Switch
+        label={text("Suggest next message")}
+        description={text(
+          "After an answer, the empty field shows what you might write next. Tab takes it over; nothing is sent. It costs hardly any budget.",
+        )}
+        value={suggest}
+        onValueChange={(next) => void change(next)}
+        disabled={saving()}
+      />
+    </SettingsGroup>
+  );
+}
+
 function PrefsDialog(props: {
   prefs: AiUserPrefs;
   openAiApiAccess: OpenAiApiAccess | null;
@@ -622,6 +654,17 @@ function PrefsDialog(props: {
               description={text("Facts, preferences, and workflow defaults Assistant may carry into future conversations.")}
             >
               <MemorySettings prefs={props.prefs} onDirtyChange={setPersonalizationDirty} />
+            </SettingsModal.Tab>
+
+            <SettingsModal.Tab
+              id="chat"
+              title={text("Chat")}
+              icon="ti ti-message-circle"
+              description={text("How the composer helps you write your next message.")}
+            >
+              <Show when={activeTab() === "chat"}>
+                <ChatSettings prefs={props.prefs} />
+              </Show>
             </SettingsModal.Tab>
 
             <SettingsModal.Tab

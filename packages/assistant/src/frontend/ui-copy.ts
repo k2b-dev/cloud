@@ -193,6 +193,12 @@ const germanText: Record<string, string> = {
   "Failed to delete skill": "Skill konnte nicht gelöscht werden",
   "Failed to import skill": "Skill konnte nicht importiert werden",
   "Failed to load AI preferences": "KI-Einstellungen konnten nicht geladen werden",
+  "Failed to dismiss the suggestion": "Der Vorschlag konnte nicht verworfen werden",
+  Composer: "Eingabefeld",
+  "Suggest next message": "Nächste Nachricht vorschlagen",
+  "After an answer, the empty field shows what you might write next. Tab takes it over; nothing is sent. It costs hardly any budget.":
+    "Nach einer Antwort steht im leeren Feld, was du als Nächstes schreiben könntest. Tab übernimmt; gesendet wird nichts. Das kostet kaum Budget.",
+  "How the composer helps you write your next message.": "Wie das Eingabefeld dir bei der nächsten Nachricht hilft.",
   "Failed to load Project access": "Projektzugriff konnte nicht geladen werden",
   "Failed to load skill": "Skill konnte nicht geladen werden",
   "Failed to load skill access": "Skill-Zugriff konnte nicht geladen werden",
