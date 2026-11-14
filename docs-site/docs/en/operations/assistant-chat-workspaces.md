@@ -28,9 +28,8 @@ revision `0`.
 PUT to the same path with `{ state, revision }`. Success returns
 `{ conflict: false, revision }`; stale writes return
 `{ conflict: true, state, revision }` with the current server snapshot. Reconcile
-that snapshot before retrying. Empty tabs delete the row and reset revision to
-`0`; a later save starts at `1` again. Revisions compare existing rows, so they
-do not identify workspace generations across deletion and recreation.
+that snapshot before retrying. Closing every tab stores an empty state and keeps
+counting the revision, so an older device cannot bring closed tabs back.
 
 The contract in `packages/assistant/src/chat-workspace.ts` accepts at most 24
 tabs and 32 KiB of serialized UTF-8 state. Each tab has a unique short `id`, a

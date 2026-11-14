@@ -62,6 +62,7 @@ import {
   Placeholder,
   prompts,
   reconcileChatMentions,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { batch, createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
@@ -229,6 +230,7 @@ export default function AssistantWorkspace(props: Props) {
   const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref, {
     initial: props.initialTabs ?? null,
     store: { load: assistantApi.getChatTabs, save: assistantApi.saveChatTabs },
+    onSaveError: () => toast.error(t().tabsNotSaved),
   });
   const [arrangeHintOpen, setArrangeHintOpen] = createSignal(props.arrangeHintSeen !== true);
   // Web pages of the chat open as reading views only where the operator set up the reading service.

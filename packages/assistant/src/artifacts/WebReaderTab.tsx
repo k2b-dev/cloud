@@ -45,7 +45,8 @@ export function WebReaderTab(props: {
       void refetching;
       try {
         const result = await assistantApi.readWebPage(props.conversationId, { url: request.url, confirmed: request.confirmed });
-        if (result.status === "ready") props.onTitle(result.title);
+        // The tab keeps the page it opened with; its title follows that page only.
+        if (result.status === "ready" && request.url === props.url) props.onTitle(result.title);
         return result;
       } catch (error) {
         return { status: "error", message: error instanceof Error ? error.message : String(error) };
@@ -63,7 +64,9 @@ export function WebReaderTab(props: {
     const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
     const href = link?.getAttribute("href");
     if (!href) return;
-    const target = URL.canParse(href, current()) ? new URL(href, current()) : null;
+    // Relative links resolve against the page shown, where a redirect may have led.
+    const base = ready()?.finalUrl ?? current();
+    const target = URL.canParse(href, base) ? new URL(href, base) : null;
     if (!target || (target.protocol !== "https:" && target.protocol !== "http:")) return;
     event.preventDefault();
     go(target.href);

@@ -32,7 +32,7 @@ databaseSuite()("personal chat workspace persistence", () => {
   });
   const chat = () => aiConversations.createConversation({ ownerUserId: owner.user.id, title: "Workspace test" });
 
-  test("load, create, update, conflict and delete-on-empty", async () => {
+  test("load, create, update, conflict, and closing every tab", async () => {
     const conversation = await chat();
     const id = conversation.shortId;
     expect(await loadAssistantChatWorkspace(owner, id)).toEqual({ state: empty, revision: 0 });
@@ -46,11 +46,11 @@ databaseSuite()("personal chat workspace persistence", () => {
       state: next,
       revision: 2,
     });
-    expect(await saveAssistantChatWorkspace(owner, id, { state: empty, revision: 2 })).toEqual({ conflict: false, revision: 0 });
-    expect(await loadAssistantChatWorkspace(owner, id)).toEqual({ state: empty, revision: 0 });
-    expect(await sql`SELECT 1 FROM assistant.chat_workspaces WHERE conversation_id=${conversation.id}::uuid`).toHaveLength(0);
-    expect(await saveAssistantChatWorkspace(owner, id, { state: empty, revision: 0 })).toEqual({ conflict: false, revision: 0 });
-    expect(await saveAssistantChatWorkspace(owner, id, { state, revision: 0 })).toEqual({ conflict: false, revision: 1 });
+    // Closing every tab keeps the row and its revision: an older device cannot bring the closed tabs back.
+    expect(await saveAssistantChatWorkspace(owner, id, { state: empty, revision: 2 })).toEqual({ conflict: false, revision: 3 });
+    expect(await loadAssistantChatWorkspace(owner, id)).toEqual({ state: empty, revision: 3 });
+    expect(await saveAssistantChatWorkspace(owner, id, { state, revision: 2 })).toEqual({ conflict: true, state: empty, revision: 3 });
+    expect(await saveAssistantChatWorkspace(owner, id, { state, revision: 3 })).toEqual({ conflict: false, revision: 4 });
   });
 
   test("two devices writing the same revision cannot overwrite each other", async () => {

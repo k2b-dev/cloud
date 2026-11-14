@@ -75,6 +75,18 @@ const publicUrl = (raw: string): string => {
   }
 };
 
+/** The same address, up to the upgrade to HTTPS and a trailing slash, which sites add on their own. */
+const sameDestination = (finalUrl: string, url: string) => {
+  const normal = (value: string) => {
+    const parsed = new URL(value);
+    parsed.protocol = "https:";
+    parsed.hash = "";
+    if (!parsed.pathname.endsWith("/")) parsed.pathname = `${parsed.pathname}/`;
+    return parsed.href;
+  };
+  return normal(finalUrl) === normal(url);
+};
+
 /** The caller resolves the owned chat to its internal UUID before invoking this user-backed read. */
 export const readWebPageForPerson = async (
   input: { actor: RequestActor; conversationId: string; url: string; confirmed?: boolean; signal?: AbortSignal },
@@ -109,8 +121,8 @@ export const readWebPageForPerson = async (
       const output = await runCloudAiWebExtract({ url }, { maxAge: 0, signal });
       const finalUrl = publicUrl(output.url);
       await check(finalUrl);
-      if (finalUrl !== url && !(input.confirmed && new URL(finalUrl).origin === new URL(url).origin) && !(await allowed(finalUrl)))
-        return { status: "redirect_blocked", url, finalUrl };
+      // A confirmation covers exactly the confirmed address, not its site: any other destination needs its own right.
+      if (sameDestination(finalUrl, url) ? false : !(await allowed(finalUrl))) return { status: "redirect_blocked", url, finalUrl };
       signal.throwIfAborted();
       const cleaned = stripWebReaderImages(output.content).trim();
       const markdown = cleaned.slice(0, WEB_EXTRACT_MAX_CONTENT_CHARS);
