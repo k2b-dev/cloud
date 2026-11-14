@@ -1,7 +1,7 @@
 ---
 id: weather-read
 title: Vorhersage lesen
-icon: ti ti-cloud-sun
+icon: ti ti-temperature-celsius
 description: Aktuelle, stündliche und tägliche Vorhersagen, Regenradar und Anzeigen passend zum Zeitraum auswählen.
 order: 110
 ---

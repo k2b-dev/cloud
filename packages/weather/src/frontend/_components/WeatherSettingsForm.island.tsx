@@ -98,7 +98,7 @@ export default function WeatherSettingsForm(props: { initial: Initial; unreadabl
       style="view-transition-name: admin-weather-settings"
       title={t().appName}
       subtitle={t().settingsSubtitle}
-      icon="ti ti-cloud-sun"
+      icon="ti ti-temperature-celsius"
       scrollPreserveKey="weather-admin"
       footer={
         <SettingsPanelFooter

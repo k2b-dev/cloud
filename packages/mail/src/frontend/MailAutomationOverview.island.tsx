@@ -47,7 +47,7 @@ export default function MailAutomationOverview(props: {
             value={activeIncomingAutomations()}
             sub={messages().configured({ count: props.data.incomingAutomations?.length ?? 0 })}
             href={`${base}/incoming`}
-            accent={{ tone: "blue", icon: "ti ti-inbox-cog" }}
+            accent={{ tone: "blue", icon: "ti ti-mail-cog" }}
           />
           <StatCell
             label={messages().customWorkflows}

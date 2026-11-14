@@ -2,11 +2,11 @@
  * Curated Tabler-icon catalogue for use in icon pickers.
  *
  * Each entry holds:
- *   - `id`      — the full Tabler class string ("ti ti-foo"). Used as the
+ *   - `id`      — the full Tabler class string ("ti ti-<name>"). Used as the
  *                 stored value in DB / config so consumers can render
  *                 directly via `<i class={value}>` without having to
  *                 prepend the family class. Render sites that DO prepend
- *                 `ti ` produce a duplicate-token (`ti ti ti-foo`) which
+ *                 `ti ` produce a duplicate-token (`ti ti ti-<name>`) which
  *                 the browser's classList tolerates as a no-op.
  *   - `label`   — primary display name shown in the picker.
  *   - `icon`    — same string as `id`. Kept as a separate field so the

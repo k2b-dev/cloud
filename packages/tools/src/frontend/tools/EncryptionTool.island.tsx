@@ -203,7 +203,7 @@ export default function EncryptionTool() {
       <SegmentedControl
         options={[
           { value: "symmetric" as Tab, label: t().tabSymmetric, icon: "ti ti-key" },
-          { value: "asymmetric" as Tab, label: t().tabAsymmetric, icon: "ti ti-keys" },
+          { value: "asymmetric" as Tab, label: t().tabAsymmetric, icon: "ti ti-certificate" },
         ]}
         value={tab}
         onValueChange={setTab}

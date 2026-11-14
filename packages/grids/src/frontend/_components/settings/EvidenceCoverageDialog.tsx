@@ -41,7 +41,7 @@ function EvidenceCoverageDialog(props: { baseId: string; baseName: string; table
       <PanelDialog.Header
         title={messages().evidenceCoverageByTable}
         subtitle={`${props.baseName} · ${messages().storedTableCount({ count: number(props.tables.length) })}`}
-        icon="ti ti-table-search"
+        icon="ti ti-zoom-scan"
         close={props.close}
       />
       <PanelDialog.Body>
