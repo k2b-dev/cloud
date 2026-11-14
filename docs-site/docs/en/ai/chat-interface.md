@@ -519,6 +519,22 @@ actions are keyed by their call. When the turn ends, the work line changes its
 text and the message actions appear; nothing else moves, and host views such as
 a running Studio session keep their state. Copy copies only the final message.
 
+Under the final answer sit quiet icons: Copy, Answer again, Helpful, Needs
+improvement, and More with More detailed, More concise, Continue in a new chat,
+and Response details. Answering again and its variants retry the person's message
+the answer belongs to; the person's own message offers Copy and Edit and try again.
+
+### Sources
+
+Gustav cites a Cloud resource or web page right after the statement that relies
+on it, as a numbered Markdown link to its exact href: `[1](/open/mail.thread/~…)`.
+The answer shows the number as a small grey chip that opens the link, and a
+"Sources" row under the finished answer lists each cited source once, in number
+order, as a pill with its number, the owning app's icon tile, and its title. The
+title and app come from the turn's own tool results; a source no result names
+keeps its number with the app's name or the web page's host. Only completed calls
+name sources, and the chat never builds a link the answer did not cite.
+
 Turns with a work line, results, actions, or a failure notice span the full
 message column, so disclosure chevrons share one right edge. Plain prose keeps
 the reading width.

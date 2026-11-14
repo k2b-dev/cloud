@@ -14181,10 +14181,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
 }
 
+/* The person's own message is a neutral grey bubble whose corner toward the composer is tighter; colour stays for
+   meaning, and a sent message means nothing more than being one's own. */
 .k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__bubble {
-  padding: 0.625rem 0.75rem;
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-selected);
+  padding: 0.5625rem 0.875rem;
+  border-radius: 1rem 1rem 0.3125rem 1rem;
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-chat-message[data-role="system"],

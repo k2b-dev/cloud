@@ -20,6 +20,7 @@ import { type ChatTaskReason, chatTaskReasonSentence, chatTaskReasonState, chatT
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
+import { AiAnswerSources, answerSources } from "./answer-sources";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
@@ -710,6 +711,15 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
   const actions = createMemo(() => new Map(layout().actions.map((action) => [action.id, action])));
   const actionIds = createMemo(() => [...actions().keys()]);
   const live = () => isLive(props.segment().phase);
+  // The sources the finished answer cites, numbered as in its text.
+  const sources = createMemo(() =>
+    answerSources(
+      layout()
+        .text.map((block) => block.text)
+        .join("\n\n"),
+      layout().work,
+    ),
+  );
   // Screen readers hear once that the turn they followed failed and why; history read later is not announced.
   createEffect(
     on(live, (now, before) => {
@@ -761,6 +771,9 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             quiet={() => layout().textIsStatus}
             earlier={() => props.segment().earlier}
           />
+        </Show>
+        <Show when={!live() && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
+          <AiAnswerSources sources={sources()} />
         </Show>
         <For each={mapFollowupIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => false} />}</For>
         <Show when={props.segment().scheduledTask?.stop ? undefined : props.segment().scheduledTask?.reason}>

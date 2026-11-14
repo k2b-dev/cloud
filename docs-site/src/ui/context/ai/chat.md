@@ -73,7 +73,9 @@ Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
 used by message, menu, and context actions. Set `pressed` for persistent toggle
 state such as a saved helpful rating; inline actions expose it through
-`aria-pressed`.
+`aria-pressed`. With inline actions, mark the less frequent ones `overflow`: they
+move into one trailing "More" menu, so a message shows a few quiet icons and
+keeps every action reachable.
 
 Pasted files use the same `fileSelection.onSelect` callback as the file picker
 and drag-and-drop. Use the generic `onPaste` seam only for non-file content;
@@ -233,7 +235,7 @@ type ChatActivityTone = "neutral" | "ai" | "success" | "warning" | "danger";
 
 type ChatActionBase = {
   id: string; label: string; icon?: string; variant?: "danger"; disabled?: boolean; pressed?: boolean;
-  pressedTone?: "success" | "danger";
+  pressedTone?: "success" | "danger"; overflow?: boolean;
 };
 
 type ChatAction = ChatActionBase &
