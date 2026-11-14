@@ -223,6 +223,7 @@ export default function MailAutomationLog(props: {
       const notice = toast(message({ subject: item.conversation.subject }), {
         action: {
           label: t().redo,
+          variant: "ghost",
           onClick: () => {
             notice.dismiss();
             void redo(updated);

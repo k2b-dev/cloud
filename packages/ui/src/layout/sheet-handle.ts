@@ -1,7 +1,11 @@
 import { suppressTextSelection } from "../internal/text-selection";
+import { prefersReducedMotion } from "../motion";
 
 export type SheetHandleOptions = {
-  /** The sheet the handle sits on. It carries the current detent in `data-sheet-detent`. */
+  /**
+   * The sheet the handle sits on, anchored at its bottom edge. It carries the current detent in `data-sheet-detent`.
+   * Its container clips with `overflow: clip`, so the part that slides below the edge never scrolls into view.
+   */
   sheet: HTMLElement;
   /** The detents' names, lowest first. The stylesheet gives each `[data-sheet-detent="…"]` its height. */
   detents: readonly string[];
@@ -9,7 +13,10 @@ export type SheetHandleOptions = {
   initial: string;
   /** After a drag or a press moved the sheet to another detent, for example to rename the handle. */
   onChange?: (detent: string) => void;
-  /** Without it, a drag stops at the lowest detent; with it, a drag well below that detent asks to close. */
+  /**
+   * Without it, a drag stops at the lowest detent; with it, a drag well below that detent slides the sheet out and
+   * then asks to close. When the sheet is still shown afterwards, as when the owner asks first, it returns.
+   */
   onDismiss?: () => void;
 };
 
@@ -21,14 +28,22 @@ const PROJECTION_MS = 120;
 const REST_MS = 80;
 /** A release below this share of the lowest detent dismisses, when the sheet may be dismissed. */
 const DISMISS_SHARE = 0.6;
+/** Gliding to a detent and out, as `BottomSheet` does. */
+const MOVE_MS = 280;
+const CLOSE_MS = 220;
+/** `--k2b-ease-out`: lands without overshoot. */
+const EASE = "cubic-bezier(0.23, 1, 0.32, 1)";
 
 /**
  * Lets a sheet's handle drag it between detents. The handle stays a button: a press, by pointer, Enter or Space,
- * moves the sheet to the next detent up, and from the highest back to the lowest. A drag follows the pointer with an
- * inline height and, on release, snaps to the detent nearest to where the pointer's speed would carry it. The snap
- * animates with the sheet's own height transition, so reduced motion makes it instant. The stylesheet owns every
- * resting height, which keeps the server's first frame and a rotation correct without script; the handle measures
- * them when a drag starts.
+ * moves the sheet to the next detent up, and from the highest back to the lowest.
+ *
+ * The sheet moves by transform only, like `BottomSheet`. When a drag or a glide starts, its layout height is pinned
+ * at the highest detent and a transform shows the visible part; the content inside does not lay out again on every
+ * frame. A release glides to the detent nearest to where the pointer's speed would carry it; then the stylesheet's
+ * height for that detent takes over in one step that looks the same. Reduced motion makes every glide instant. The
+ * stylesheet owns every resting height, which keeps the server's first frame and a rotation correct without script;
+ * it must not transition `height`.
  */
 export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptions): () => void {
   const { sheet, detents } = options;
@@ -41,7 +56,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     sheet.dataset.sheetDetent = detent;
     if (changed) options.onChange?.(detent);
   };
-  // Each detent's height as the stylesheet draws it now; the caller has turned the transition off.
+  // Each detent's height as the stylesheet draws it now, while the transition is off.
   const measure = () => {
     const shown = sheet.dataset.sheetDetent;
     const heights = detents.map((detent) => {
@@ -52,13 +67,106 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     else sheet.dataset.sheetDetent = shown;
     return heights;
   };
+
+  /** While the sheet moves: its pinned layout height and how much of it shows above the edge. */
+  let pinned: { heights: number[]; highest: number; visible: number } | undefined;
+  let animation: Animation | undefined;
+  /** The detent the running glide lands on; a press that catches it lets it land there. */
+  let goal: string | undefined;
+  const offset = (highest: number, visible: number) => `translate3d(0, ${highest - visible}px, 0)`;
+  const put = (visible: number) => {
+    if (!pinned) return;
+    pinned.visible = visible;
+    sheet.style.transform = offset(pinned.highest, visible);
+  };
+  /** Holds a gliding sheet where the eye sees it. */
+  const stop = () => {
+    const running = animation;
+    if (!running || !pinned) return;
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(sheet).transform);
+    animation = undefined;
+    running.cancel();
+    put(pinned.highest - matrix.m42);
+  };
+  const pin = () => {
+    if (pinned) {
+      stop();
+      return pinned;
+    }
+    const visible = sheet.getBoundingClientRect().height;
+    sheet.style.transition = "none";
+    const heights = measure();
+    pinned = { heights, highest: Math.max(visible, ...heights), visible };
+    sheet.style.height = `${pinned.highest}px`;
+    put(visible);
+    return pinned;
+  };
+  const unpin = () => {
+    animation?.cancel();
+    animation = undefined;
+    goal = undefined;
+    delete sheet.dataset.sheetDragging;
+    if (!pinned) return;
+    pinned = undefined;
+    sheet.style.removeProperty("height");
+    sheet.style.removeProperty("transform");
+    // The stylesheet's resting height arrives in this one layout, not through a transition.
+    void sheet.offsetHeight;
+    sheet.style.removeProperty("transition");
+  };
+  const glide = (to: number, ms: number, done: () => void) => {
+    const state = pinned;
+    if (!state) {
+      done();
+      return;
+    }
+    stop();
+    const from = state.visible;
+    const duration = prefersReducedMotion() || typeof sheet.animate !== "function" ? 0 : ms;
+    if (!duration || Math.abs(from - to) < 0.5) {
+      put(to);
+      done();
+      return;
+    }
+    const running = sheet.animate([{ transform: offset(state.highest, from) }, { transform: offset(state.highest, to) }], {
+      duration,
+      easing: EASE,
+      fill: "forwards",
+    });
+    animation = running;
+    running.onfinish = () => {
+      if (animation !== running) return;
+      animation = undefined;
+      put(to);
+      running.cancel();
+      done();
+    };
+  };
+  const moveTo = (detent: string) => {
+    const state = pin();
+    goal = detent;
+    glide(state.heights[detents.indexOf(detent)] ?? state.visible, MOVE_MS, () => {
+      // A sheet its owner closed during the glide keeps the detent the owner left it.
+      if (sheet.getClientRects().length > 0) set(detent);
+      unpin();
+    });
+  };
+  const dismiss = () => {
+    goal = undefined;
+    glide(0, CLOSE_MS, () => {
+      options.onDismiss?.();
+      // The owner kept the sheet on screen: it returns to its lowest detent.
+      if (sheet.isConnected && sheet.getClientRects().length > 0) moveTo(detents[0] ?? options.initial);
+      else unpin();
+    });
+  };
+
   let drag:
     | {
         id: number;
         startY: number;
-        startHeight: number;
-        heights: number[];
-        height: number;
+        /** The visible height when the drag took the sheet. */
+        from: number;
         moved: boolean;
         y: number;
         time: number;
@@ -68,53 +176,43 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
       }
     | undefined;
   let suppressClick = false;
-  // Dropping the inline height and transition together lets the stylesheet's transition carry the sheet to its detent.
-  const release = () => {
-    sheet.style.removeProperty("height");
-    sheet.style.removeProperty("transition");
-    delete sheet.dataset.sheetDragging;
-  };
   const finish = (commit: boolean, time?: number) => {
     const ended = drag;
     if (!ended) return;
     drag = undefined;
     ended.releaseSelection();
     if (handle.hasPointerCapture?.(ended.id)) handle.releasePointerCapture(ended.id);
-    // A cancelled gesture sends no click; only a finished drag's click must not move the sheet again.
+    // A press that caught a glide lets it land; a cancelled drag returns. A cancelled gesture sends no click.
     if (!ended.moved || !commit) {
-      release();
+      if (pinned) moveTo(ended.moved ? current() : (goal ?? current()));
       return;
     }
     suppressClick = true;
+    const state = pinned;
+    if (!state) return;
+    delete sheet.dataset.sheetDragging;
     const speed = time !== undefined && time - ended.time > REST_MS ? 0 : ended.speed;
-    const target = ended.height - speed * PROJECTION_MS;
-    const lowest = ended.heights[0] ?? 0;
-    if (options.onDismiss && ended.height < lowest && target < lowest * DISMISS_SHARE) {
-      release();
-      options.onDismiss();
+    const target = state.visible - speed * PROJECTION_MS;
+    const lowest = state.heights[0] ?? 0;
+    if (options.onDismiss && state.visible < lowest && target < lowest * DISMISS_SHARE) {
+      dismiss();
       return;
     }
     let nearest = 0;
-    for (const [index, height] of ended.heights.entries())
-      if (Math.abs(height - target) < Math.abs((ended.heights[nearest] ?? 0) - target)) nearest = index;
-    release();
-    set(detents[nearest] ?? options.initial);
+    for (const [index, height] of state.heights.entries())
+      if (Math.abs(height - target) < Math.abs((state.heights[nearest] ?? 0) - target)) nearest = index;
+    moveTo(detents[nearest] ?? options.initial);
   };
   const down = (event: PointerEvent) => {
     if (event.button !== 0 || event.isPrimary === false || drag) return;
     suppressClick = false;
-    // A press during a snap starts from where the sheet is now.
-    const startHeight = sheet.getBoundingClientRect().height;
-    sheet.style.transition = "none";
-    const heights = measure();
-    sheet.style.height = `${startHeight}px`;
+    // A press during a glide catches the sheet where it is now.
+    stop();
     handle.setPointerCapture?.(event.pointerId);
     drag = {
       id: event.pointerId,
       startY: event.clientY,
-      startHeight,
-      heights,
-      height: startHeight,
+      from: 0,
       moved: false,
       y: event.clientY,
       time: event.timeStamp,
@@ -124,22 +222,24 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
   };
   const move = (event: PointerEvent) => {
     if (!drag || event.pointerId !== drag.id) return;
-    // A move without a change of height, such as one a release sends first, is no speed.
+    // A move without a change of position, such as one a release sends first, is no speed.
     if (event.clientY === drag.y) return;
     const distance = event.clientY - drag.startY;
     if (!drag.moved && Math.abs(distance) < DRAG_THRESHOLD) return;
     if (!drag.moved) {
       drag.moved = true;
+      goal = undefined;
+      drag.from = pin().visible;
       sheet.dataset.sheetDragging = "";
     }
     const elapsed = event.timeStamp - drag.time;
     if (elapsed > 0) drag.speed = drag.speed * 0.4 + ((event.clientY - drag.y) / elapsed) * 0.6;
     drag.y = event.clientY;
     drag.time = event.timeStamp;
-    const highest = Math.max(...drag.heights);
-    const lowest = options.onDismiss ? 0 : Math.min(...drag.heights);
-    drag.height = Math.min(highest, Math.max(lowest, drag.startHeight - distance));
-    sheet.style.height = `${drag.height}px`;
+    const state = pinned;
+    if (!state) return;
+    const lowest = options.onDismiss ? 0 : Math.min(...state.heights);
+    put(Math.min(state.highest, Math.max(lowest, drag.from - distance)));
   };
   const up = (event: PointerEvent) => {
     if (drag && event.pointerId === drag.id) finish(true, event.timeStamp);
@@ -157,7 +257,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     }
     suppressClick = false;
     const index = detents.indexOf(current());
-    set(detents[index + 1 < detents.length ? index + 1 : 0] ?? options.initial);
+    moveTo(detents[index + 1 < detents.length ? index + 1 : 0] ?? options.initial);
   };
   const touchAction = handle.style.touchAction;
   // The browser must not take the drag for a scroll or a page swipe.
@@ -170,6 +270,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
   handle.addEventListener("click", click);
   return () => {
     finish(false);
+    unpin();
     handle.style.touchAction = touchAction;
     handle.removeEventListener("pointerdown", down);
     handle.removeEventListener("pointermove", move);

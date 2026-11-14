@@ -724,7 +724,9 @@ test("390px sheet leaves room to scroll the page's last row above it", async () 
 
 // 10d: The handle drags the sheet: it follows the pointer, snaps to the nearest height and closes far below half.
 // settled: callers read after `settled`, or mid-drag, where the moment under the pointer is the subject.
-const sheetHeight = (page: Page) => page.locator(slot).evaluate((element) => element.getBoundingClientRect().height);
+// The height the sheet shows above the screen's edge; it moves by transform, so mid-drag this differs from its layout.
+const sheetHeight = (page: Page) => page.locator(slot).evaluate((element) => Math.round(innerHeight - element.getBoundingClientRect().top));
+const layoutHeight = (page: Page) => page.locator(slot).evaluate((element) => (element as HTMLElement).offsetHeight);
 async function dragHandle(page: Page, distance: number, check?: () => Promise<void>) {
   const box = (await page.locator("[data-cloud-panel-grow]").boundingBox())!;
   const x = box.x + box.width / 2;
@@ -744,8 +746,9 @@ test("390px handle drag follows the pointer, snaps to half and full, and closes 
     await open(page);
     expect(await sheetHeight(page)).toBe(854);
     await dragHandle(page, 120, async () => {
-      // Mid-drag the sheet follows the pointer, without a transition.
+      // Mid-drag the sheet follows the pointer by transform: its layout keeps the full height.
       expect(await sheetHeight(page)).toBe(734);
+      expect(await layoutHeight(page)).toBe(854);
       expect(await page.locator(slot).getAttribute("data-sheet-dragging")).toBe("");
     });
     // 734 px is nearer to full (854) than to half (522).
@@ -817,29 +820,44 @@ test("390px handle stays a button: Enter and Space switch the height and keep fo
   }
 });
 
-test("390px snap animates only without reduced motion, from the OS setting or the Cloud preference", async () => {
-  // The fixture stills every transition for stable geometry; this test needs the stylesheet's own.
-  const duration = (page: Page) =>
-    page.evaluate(() => {
-      for (const style of document.querySelectorAll("style")) if (style.textContent?.includes("transition:none!important")) style.remove();
-      return getComputedStyle(document.getElementById("cloud-panel")!).transitionDuration;
-    });
+test("390px snap glides by transform only without reduced motion, from the OS setting or the Cloud preference", async () => {
+  // A press on the handle, sampled every frame: the shown height and the layout height of the sheet.
+  const press = (page: Page) =>
+    page.evaluate(
+      () =>
+        new Promise<{ shown: number; layout: number }[]>((resolve) => {
+          const sheet = document.getElementById("cloud-panel")!;
+          const samples: { shown: number; layout: number }[] = [];
+          const sample = () => {
+            samples.push({ shown: Math.round(innerHeight - sheet.getBoundingClientRect().top), layout: sheet.offsetHeight });
+            if (samples.length < 30) requestAnimationFrame(sample);
+            else resolve(samples);
+          };
+          document.querySelector<HTMLElement>("[data-cloud-panel-grow]")!.click();
+          requestAnimationFrame(sample);
+        }),
+    );
+  const between = (samples: { shown: number; layout: number }[]) => samples.filter((sample) => sample.shown > 525 && sample.shown < 851);
   const reduced = await fixture(390);
   try {
     await open(reduced.page);
-    expect(await duration(reduced.page)).toBe("0s");
+    expect(between(await press(reduced.page))).toEqual([]);
   } finally {
     await reduced.context.close();
   }
   const { context, page } = await fixture(390, undefined, { motion: true });
   try {
     await open(page);
-    expect(await duration(page)).toBe("0.22s");
-    // The snap after a drag runs on that transition.
-    await dragHandle(page, 260);
+    const samples = await press(page);
+    // It glides from full to half, while its layout keeps the full height.
+    expect(between(samples).length).toBeGreaterThanOrEqual(3);
+    expect(new Set(between(samples).map((sample) => sample.layout))).toEqual(new Set([854]));
+    await settled(page);
     expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("half");
+    // The Cloud preference for reduced motion makes the next press instant.
     await page.evaluate(() => document.documentElement.setAttribute("data-k2b-motion", "reduced"));
-    expect(await duration(page)).toBe("0s");
+    expect(between(await press(page))).toEqual([]);
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("full");
   } finally {
     await context.close();
   }

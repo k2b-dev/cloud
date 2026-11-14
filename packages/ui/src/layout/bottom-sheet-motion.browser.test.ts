@@ -228,6 +228,42 @@ describe("BottomSheet motion on a phone", () => {
     }
   }, 30_000);
 
+  test("pulled past full height the sheet gives like a rubber band over its apron, and returns on release", async () => {
+    const page = await open({ ...phone, hasTouch: false, isMobile: false });
+    try {
+      await page.evaluate(() => (window as unknown as SheetWindow).openSheet());
+      await settled(page);
+      const handle = page.locator(".k2b-bottom-sheet__handle");
+      await handle.click();
+      await settled(page);
+      const full = await place(page);
+      expect(full.detent).toBe("full");
+      const box = (await handle.boundingBox())!;
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, y - 120, { steps: 6 });
+      await settled(page);
+      // settled: the sheet follows the held pointer, but only 28 × ln(1 + 120 / 28) ≈ 46 px of the 120.
+      const pulled = await place(page);
+      expect(pulled.visible - full.visible).toBeGreaterThan(30);
+      expect(pulled.visible - full.visible).toBeLessThan(50);
+      // The footer rides along with the lifted sheet instead of slipping below its edge.
+      expect(Math.abs(pulled.footerBottom - (844 - (pulled.visible - full.visible)))).toBeLessThanOrEqual(1);
+      // The apron in the sheet's own colour fills the gap under the lifted edge, above the sheet's shadow.
+      const apron = await page.evaluate(() => getComputedStyle(document.querySelector("dialog[open]")!).boxShadow);
+      expect(apron).toMatch(/^rgba?\([^)]*\) 0px 96px 0px 0px,/);
+      // fixed wait: a pointer that rests carries no speed into the release.
+      await page.waitForTimeout(150);
+      await page.mouse.up();
+      await settled(page);
+      expect(await place(page)).toMatchObject({ top: full.top, detent: "full" });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   // CDP touch input exists in Chromium only.
   test.skipIf(browserName === "webkit")(
     "a finger in a scrolled list scrolls it first; at its top, pulling down drags the sheet",

@@ -81,7 +81,7 @@ export const confirmCompletion = (change: CompletionChange, t: Messages, trackin
     );
   };
   const notice = toast.success(change.previous.completedAt ? t.itemReopened : t.itemCompleted, {
-    action: { label: t.undo, onClick: undo },
+    action: { label: t.undo, variant: "ghost", onClick: undo },
   });
   return undo;
 };

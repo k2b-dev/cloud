@@ -19335,6 +19335,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion] {
   animation-name: none;
 }
+/* Pulled past full height, a sheet gives like a rubber band and lifts off the
+ * edge; an apron in its own colour fills the gap below it. */
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion] {
+  box-shadow: 0 6rem 0 0 var(--k2b-surface-elevated), var(--k2b-shadow-float);
+}
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion][data-sheet-dragging] {
   user-select: none;
   -webkit-user-select: none;
@@ -19420,6 +19425,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     max-height: min(86dvh, var(--k2b-dialog-available-height));
     border-bottom: 1px solid var(--k2b-border-strong);
     border-radius: var(--k2b-radius-dialog);
+    box-shadow: var(--k2b-shadow-float);
     animation-name: k2b-sheet-dialog-enter;
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive > .k2b-bottom-sheet-viewport {

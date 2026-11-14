@@ -301,7 +301,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
       },
       () => {
         if (signal.aborted || !uploads.has(id)) return;
-        toast(`${t().uploadFailed}: ${entry.file.name}`, { iconClass: "ti ti-alert-circle" });
+        toast.error(`${t().uploadFailed}: ${entry.file.name}`);
         updateChip(id, {
           icon: "ti ti-alert-circle",
           data: { upload: true, state: "failed" } satisfies Upload,
