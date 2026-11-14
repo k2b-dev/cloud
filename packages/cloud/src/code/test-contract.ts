@@ -5,6 +5,34 @@ import type { GeneratedCodeSdk } from "./types";
 
 const positive = z.number().int().positive().safe();
 const errorCode = z.string().regex(/^[a-z][a-z0-9_]{0,127}$/);
+/** Authoring/log metadata only; paths and indexes address the fixture JSON and are zero-based. */
+export const CodeTestFixtureDetailSchema = z
+  .object({
+    file: z.string().nullable().optional(),
+    operation: z.string().nullable(),
+    mockIndex: z.number().int().nonnegative().nullable(),
+    replyIndex: z.number().int().nonnegative().nullable(),
+    path: z.array(z.union([z.string(), z.number().int().nonnegative()])),
+    reason: z.string(),
+  })
+  .strict();
+export type CodeTestFixtureDetail = z.infer<typeof CodeTestFixtureDetailSchema>;
+
+/** Retain only the first schema issue, without copying rejected values or stacks into the result. */
+export function codeTestFixtureDetail(
+  fixture: unknown,
+  issue: { path: readonly PropertyKey[]; message: string },
+  file?: string | null,
+): CodeTestFixtureDetail {
+  const path = issue.path.map((part) => (typeof part === "number" ? part : String(part)));
+  const mockIndex = path[0] === "mocks" && typeof path[1] === "number" ? path[1] : null;
+  const replyIndex = mockIndex !== null && path[2] === "replies" && typeof path[3] === "number" ? path[3] : null;
+  const mocks: unknown[] =
+    fixture && typeof fixture === "object" && "mocks" in fixture && Array.isArray(fixture.mocks) ? fixture.mocks : [];
+  const mock = mockIndex === null ? undefined : mocks[mockIndex];
+  const operation = mock && typeof mock === "object" && "operation" in mock && typeof mock.operation === "string" ? mock.operation : null;
+  return { ...(file === undefined ? {} : { file }), operation, mockIndex, replyIndex, path, reason: issue.message };
+}
 /** Declarative reply. No functions, executable fixtures, filesystem paths or real credentials. */
 export const CodeTestMockSchema = z
   .object({
@@ -33,7 +61,7 @@ export const CodeTestCallSchema = z
     replayed: z.boolean(),
     result: z.discriminatedUnion("ok", [
       z.object({ ok: z.literal(true), data: z.json() }).strict(),
-      z.object({ ok: z.literal(false), error: errorCode }).strict(),
+      z.object({ ok: z.literal(false), error: errorCode, detail: CodeTestFixtureDetailSchema.optional() }).strict(),
     ]),
   })
   .strict();
@@ -94,6 +122,7 @@ export const CodeTestResultSchema = z
     mode: z.enum(["test", "simulate"]),
     ok: z.boolean(),
     error: errorCode.nullable(),
+    detail: CodeTestFixtureDetailSchema.optional(),
     /** --trace adds run boundaries; calls always retain the full ordered effect list. */
     trace: z
       .array(
@@ -153,11 +182,13 @@ export const codeTestFailure = (
   mode: CodeTestExecution["mode"],
   error: string,
   diagnostics: CodeCheckDiagnostic[] = [],
+  detail?: CodeTestFixtureDetail,
 ): CodeTestResult => ({
   version: 1,
   mode,
   ok: false,
   error,
+  ...(detail === undefined ? {} : { detail }),
   diagnostics,
   cases: [],
 });

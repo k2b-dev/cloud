@@ -180,9 +180,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     const selected = handle(base);
     const appId = selected?.type === "cloud.app" ? selected.ids?.[0] : selected?.type.split(".")[0];
     if (!appId || !path.length) return "";
-    const candidates = request.sdk.manifest.operations.filter(
-      (op) => op.appId === appId && (op.methodPath.join(".") === path.join(".") || op.methodPath.at(-1) === path.at(-1)),
-    );
+    const operations = request.sdk.manifest.operations.filter((op) => op.appId === appId);
+    // Prefer the exact method on a different receiver over every unrelated list/read operation.
+    const exact = operations.filter((op) => op.methodPath.join(".") === path.join("."));
+    const candidates = exact.length ? exact : operations.filter((op) => op.methodPath.at(-1) === path.at(-1));
     const paths = candidates.map((op) => {
       const factory = request.sdk.manifest.handles.find((h) => h.appId === appId && h.type === op.target)!;
       return `${factory.exportName}${op.target ? `.${factory.factoryPath.join(".")}(id)` : ""}.${op.methodPath.join(".")}`;
@@ -191,6 +192,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       .sort()
       .map((path) => `; ${t.exists_under({ path })}`)
       .join("");
+  };
+  const unknownMethod = (expression: ts.Expression): string => {
+    const { base, path } = member(expression);
+    // Name the receiver and method without copying arguments or multiline author source into feedback.
+    const receiver = ts.isIdentifier(base) ? base.text : `${handle(base)?.type ?? "SDK"}(id)`;
+    return t.unknown_method({ path: [receiver, ...path].join(".") }) + operationHint(expression) + ".";
   };
   const signatureInSdk = (node: ts.CallExpression) =>
     checker.getResolvedSignature(node)?.declaration?.getSourceFile().fileName === root + "sdk.d.ts";
@@ -575,7 +582,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       const memberType = checker.getTypeAtLocation(node);
       if (memberType.flags & ts.TypeFlags.Any) {
         const hint = operationHint(node);
-        if (hint) report(node, "code_unresolved_call", t.unresolved_call3 + hint);
+        if (hint && !(ts.isCallExpression(node.parent) && node.parent.expression === node))
+          report(node, "code_unresolved_call", unknownMethod(node));
       }
       const signatures = memberType.getCallSignatures();
       const tool = aiToolElement(node);
@@ -599,10 +607,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     if (ts.isImportEqualsDeclaration(node)) report(node, "code_import_forbidden", t.import_forbidden2);
     if (ts.isCallExpression(node)) {
       if (node.expression.kind === ts.SyntaxKind.ImportKeyword) report(node, "code_import_forbidden", t.import_forbidden3);
-      if (checker.getTypeAtLocation(node.expression).flags & ts.TypeFlags.Any)
-        report(node, "code_unresolved_call", t.unresolved_call2 + operationHint(node.expression));
       const { base, path } = member(node.expression);
       const target = handle(base);
+      const unresolved = !!(checker.getTypeAtLocation(node.expression).flags & ts.TypeFlags.Any);
+      if (!target && unresolved) report(node, "code_unresolved_call", t.unresolved_call2 + operationHint(node.expression));
       const declaration = checker.getResolvedSignature(node)?.declaration;
       const appOperation = declaration && appOperations.get(declaration);
       const receiverCall =
@@ -627,8 +635,9 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             omitted.reason === "stream" ? t.stream : omitted.reason === "code_false" ? t.code_false : t.app_only,
           );
         if (op) {
+          if (unresolved) report(node, "code_unresolved_call", t.unresolved_call2);
           operationCall(node, op, target);
-        } else if (!omitted) report(node, "code_unresolved_call", t.unresolved_call3 + operationHint(node.expression));
+        } else if (!omitted) report(node, "code_unresolved_call", unknownMethod(node.expression));
       } else if (signatureInSdk(node)) {
         const method = path.at(-1);
         const appType = checker.getTypeAtLocation(base);

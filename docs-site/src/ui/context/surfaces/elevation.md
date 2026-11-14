@@ -124,8 +124,8 @@ More when the row gets narrow.
 
 Scroll and hover fades always end in the surface colour, through a mask:
 `data-scroll-fade`, `ScrollArea`, or the content's own `mask-image`. A dark
-inner shadow as a fade is never used. `HoverPreview` floats on layer 3 with
-`--k2b-shadow-float` outside and no inner shade.
+inner shadow as a fade is never used. `HoverPreview` and `HoverCard` float on
+layer 3 with `--k2b-shadow-float` outside and no inner shade.
 
 ## How an app gets it for free
 
@@ -215,3 +215,4 @@ already shows the final depth. Dark mode switches with the theme of the
 - [DetailPanel](/en/ui/layout/detail-panel)
 - [Toolbar](/en/ui/actions/toolbar)
 - [HoverPreview](/en/ui/feedback/hover-preview)
+- [HoverCard](/en/ui/feedback/hover-card)

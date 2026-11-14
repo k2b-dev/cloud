@@ -188,7 +188,7 @@ export function createCodeAuthoringChatTools() {
         await advanceCodeChatDraftBase(input.codeId, conversationId(chat), draft, result.submission.version.id);
         return result;
       },
-      "With {codeId}, check and submit the same server-held draft as code_check/code_test, including its baseVersionId and test fixtures as review evidence. Explicit files, entry, tests or baseVersionId replace that draft part first. Returns an immutable version for human review. Does not activate: the chat shows the person a card with the rights and who can switch it on, also possible in the UI or CLI. On unknown outcome pull before retrying.",
+      "With {codeId}, check and submit the same server-held draft as code_check/code_test, including its baseVersionId and test fixtures as review evidence. Explicit files, entry, tests or baseVersionId replace that draft part first. Returns an immutable version and authoritative nextStep {next, who}, from the version card's approval check. State that step in plain words: admin_approval means a Cloud administrator must approve first; only switch_on means its personal owner or owner manager can switch it on. For revise ask to revise; for check_status or missing nextStep ask to check the live card. Never invent a step or claim it is waiting for the person to switch on while approval is pending. Does not activate. On unknown outcome pull before retrying.",
     ),
     tool(
       "diff",

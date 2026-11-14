@@ -7311,6 +7311,123 @@
 .k2b-ui .k2b-steps > li { position: relative; min-height: 2rem; margin: 0; padding: 0.1875rem 0 0 2.875rem; counter-increment: k2b-step; }
 .k2b-ui .k2b-steps > li::before { content: counter(k2b-step); position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 999px; background: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 14%, transparent); color: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 70%, var(--k2b-text)); font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 
+/* ProgressPath: the stages of one thing in order. Side by side in a wide
+   container, one below the other in a narrow one, such as a phone sheet. A done
+   step carries a check and a green line to the next step; its word says the same. */
+.k2b-ui .k2b-progress-path {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-progress-path__list {
+  display: grid;
+  grid-template-columns: repeat(var(--k2b-progress-path-count, 1), minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-progress-path__step {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  margin: 0;
+  padding-inline-end: 0.5rem;
+}
+
+.k2b-ui .k2b-progress-path__step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: calc(0.8125rem - 1px);
+  inset-inline: 2rem 0.25rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--k2b-border);
+}
+
+.k2b-ui .k2b-progress-path__step[data-done]:not(:last-child)::before {
+  background: color-mix(in srgb, var(--k2b-success-500) 55%, transparent);
+}
+
+.k2b-ui .k2b-progress-path__marker {
+  display: grid;
+  width: 1.625rem;
+  height: 1.625rem;
+  flex: none;
+  place-items: center;
+  margin-bottom: 0.375rem;
+  border: 2px solid var(--k2b-border-strong);
+  border-radius: 999px;
+  color: var(--k2b-text-muted);
+  background: var(--k2b-surface-elevated);
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-progress-path__step[data-done] .k2b-progress-path__marker {
+  border-color: var(--k2b-success-500);
+  color: var(--k2b-success-text);
+  background: var(--k2b-success-surface);
+}
+
+.k2b-ui .k2b-progress-path__label {
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .k2b-progress-path__step:not([data-done]) .k2b-progress-path__label {
+  color: var(--k2b-text-muted);
+  font-weight: 500;
+}
+
+.k2b-ui .k2b-progress-path__detail {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+@container (max-width: 25.999rem) {
+  .k2b-ui .k2b-progress-path__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .k2b-ui .k2b-progress-path__step {
+    display: grid;
+    grid-template-columns: 1.625rem minmax(0, 1fr);
+    column-gap: 0.625rem;
+    padding: 0 0 0.75rem;
+  }
+
+  .k2b-ui .k2b-progress-path__step:last-child {
+    padding-bottom: 0;
+  }
+
+  .k2b-ui .k2b-progress-path__marker {
+    grid-row: span 2;
+    margin: 0;
+  }
+
+  .k2b-ui .k2b-progress-path__label {
+    padding-top: 0.25rem;
+  }
+
+  .k2b-ui .k2b-progress-path__label,
+  .k2b-ui .k2b-progress-path__detail {
+    grid-column: 2;
+  }
+
+  .k2b-ui .k2b-progress-path__step:not(:last-child)::before {
+    top: 2rem;
+    bottom: 0.25rem;
+    inset-inline: calc(0.8125rem - 1px) auto;
+    width: 2px;
+    height: auto;
+  }
+}
+
 /* MapView: shared static geometry and the progressively loaded map image. */
 .k2b-ui .k2b-map-view {
   /* The map image palette; mapPalette in map-palette.ts carries the same values, and a test keeps them equal. */

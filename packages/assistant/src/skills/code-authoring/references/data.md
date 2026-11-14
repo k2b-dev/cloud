@@ -102,6 +102,10 @@ and choose a fixed maximum of pages or items. Every page spends one ordinary
 call; pagination never resets `code_call_limit`. Report a deliberately capped
 read as incomplete:
 
+Spaces task and event lists are app-level Queries: `spaces.task.list` and
+`spaces.event.list`, with `spaceId` in the input. The Space handle's
+`task.create` and `task.update` Actions do not imply a `space.task.list` Query.
+
 <!-- check: personal -->
 ```ts
 import { app, spaces } from "@sdk";

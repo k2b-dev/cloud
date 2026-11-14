@@ -1399,6 +1399,96 @@
   color: var(--k2b-text-secondary);
 }
 
+/* Returns with a small path and a place per row, for the HoverCard demo. The
+ * small path is app-owned; the card shows it large as a ProgressPath. */
+.ui-hover-card-demo {
+  display: grid;
+  container-type: inline-size;
+  font-size: 0.8125rem;
+}
+
+.ui-hover-card-demo__head,
+.ui-hover-card-demo__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7rem minmax(0, 10rem);
+  gap: 1rem;
+  align-items: center;
+  min-height: 2.5rem;
+  border-bottom: 1px solid var(--k2b-border);
+}
+
+.ui-hover-card-demo__head {
+  color: var(--k2b-text-muted);
+  font-weight: 600;
+}
+
+.ui-hover-card-demo__item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-hover-card-demo__number {
+  font-family: var(--k2b-font-mono);
+}
+
+.ui-hover-card-demo__glyph {
+  display: grid;
+  gap: 0.1875rem;
+  width: 5.5rem;
+  padding: 0.25rem 0;
+}
+
+.ui-hover-card-demo__glyph > span {
+  display: flex;
+  justify-content: space-between;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.ui-hover-card-demo__glyph i[data-done] {
+  color: var(--k2b-text);
+}
+
+.ui-hover-card-demo__glyph > b {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--k2b-success-500);
+}
+
+/* On a phone the item gets its own line above its path and place. */
+@container (max-width: 30rem) {
+  .ui-hover-card-demo__head {
+    display: none;
+  }
+
+  .ui-hover-card-demo__row {
+    grid-template-columns: 7rem minmax(0, 1fr);
+    row-gap: 0.25rem;
+    padding: 0.5rem 0;
+  }
+
+  .ui-hover-card-demo__item {
+    grid-column: 1 / -1;
+  }
+}
+
+.ui-hover-card-demo__next {
+  margin: 0.75rem 0 0;
+}
+
+.ui-hover-card-demo__next > strong {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+
+.ui-progress-path-demo__narrow {
+  max-width: 20rem;
+  margin-top: 1.5rem;
+}
+
 .ui-tooltip-demo {
   display: flex;
   flex-wrap: wrap;

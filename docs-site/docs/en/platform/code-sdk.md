@@ -21,6 +21,14 @@ including inference Queries. Reading a stored chat run uses `read`; delivering
 a chat message retains its Action policy. The index, checker and runtime use
 the same inference classification.
 
+Read `code_sdk({codeId})` for the method index, then request the declarations
+for the apps you use. List Queries need their declared receiver too:
+`spaces.task.list({ spaceId, limit: 50, cursor })` and `spaces.event.list(...)`
+are app-level paginated Queries. Task changes use the Space handle, for
+example `spaces.space(spaceId).task.update(...)`; that handle has no
+`task.list` method. Read list results from `data` and continue with
+`page.nextCursor` in a [bounded loop](#read-query-results-and-follow-cursors).
+
 SDK generation rejects invalid app IDs, capability paths, target types and event
 names with a validation error. App IDs use the capability app-ID grammar; local
 names and ref target types use `CapabilityLocalIdSchema`. Ref field names remain

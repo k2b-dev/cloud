@@ -12,7 +12,8 @@ the start of a message, the facts of a record, or details of a navigation
 entry. The card supplements the item; it never replaces opening it. Hovering
 changes no state, so a preview must not mark anything as read or seen.
 
-Keep the card to facts and a short excerpt. Use a `Tooltip` for a one-line hint
+Keep the card to facts and a short excerpt. Use a `Tooltip` for a one-line hint,
+a [`HoverCard`](/en/ui/feedback/hover-card) for the details of one control,
 and a dialog or detail panel for work. Pointer and keyboard users must reach
 everything in the card some other way, usually by opening the item.
 
