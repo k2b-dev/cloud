@@ -77,6 +77,10 @@ export type ChatTabsStore = {
 type TabsState = WorkspaceState & { layout: PanesLayout | null; pinned: readonly string[] };
 
 const SAVE_DELAY = 500;
+/** The tab storage keeps at most this many tabs per chat (`ChatWorkspaceStateSchema`). */
+const CHAT_TABS_KEPT = 24;
+/** Longer web addresses do not fit a stored tab; they open in the person's own browser. */
+const WEB_TAB_URL_MAX = 500;
 
 /** The arrangement for these tabs: the given one where it still fits, every other tab added to its first group. */
 const fitLayout = (layout: PanesLayout | null, tabs: readonly WorkspaceTab[]): PanesLayout | null => {
@@ -104,7 +108,12 @@ const tabsFromSnapshot = (snapshot: ChatWorkspaceSnapshot): TabsState => {
 
 /** What the server keeps: tabs that can open again, their arrangement, the front tab, and what is pinned. */
 const snapshotOf = (state: TabsState): ChatWorkspaceSnapshot["state"] => {
-  const tabs = state.tabs.filter((tab) => tab.kind !== "view");
+  // The newest tabs the contract keeps, the front tab always among them.
+  const kept = state.tabs.filter((tab) => tab.kind !== "view");
+  const tabs =
+    kept.length <= CHAT_TABS_KEPT
+      ? kept
+      : [...kept.filter((tab) => tab.key !== state.active).slice(-(CHAT_TABS_KEPT - 1)), ...kept.filter((tab) => tab.key === state.active)];
   const layout = fitLayout(state.layout, tabs);
   return {
     tabs: tabs.map((tab) => ({
@@ -125,7 +134,12 @@ const snapshotOf = (state: TabsState): ChatWorkspaceSnapshot["state"] => {
  */
 export function createArtifactWorkspace(
   initialHref?: string,
-  options: { initial?: { chatId: string; snapshot: ChatWorkspaceSnapshot } | null; store?: ChatTabsStore } = {},
+  options: {
+    initial?: { chatId: string; snapshot: ChatWorkspaceSnapshot } | null;
+    store?: ChatTabsStore;
+    /** Saving failed; the tabs stay here and the next change tries again. */
+    onSaveError?: () => void;
+  } = {},
 ) {
   const empty = (): TabsState => ({ tabs: [], active: null, layout: null, pinned: [] });
   const initialTab = initialHref ? workspaceSelectionFromHref(initialHref) : null;
@@ -157,20 +171,24 @@ export function createArtifactWorkspace(
     timer = undefined;
     const store = options.store;
     if (!store) return;
-    const current = state();
-    const revision = cache.get(chat)?.revision ?? 0;
+    const sent = state();
     saving = saving.then(async () => {
+      // The revision the server acknowledged last, read when this save goes out, after any save before it.
+      const revision = cache.get(chat)?.revision ?? 0;
       try {
-        const result = await store.save(chat, { state: snapshotOf(current), revision });
+        const result = await store.save(chat, { state: snapshotOf(sent), revision });
         if (!result.conflict) {
-          cache.set(chat, { state: current, revision: result.revision });
+          cache.set(chat, { state: cache.get(chat)?.state ?? sent, revision: result.revision });
           return;
         }
         const theirs = tabsFromSnapshot(result);
-        cache.set(chat, { state: theirs, revision: result.revision });
-        if (chatId === chat && state() === current) setState(theirs);
+        const newer = chatId === chat && state() !== sent;
+        cache.set(chat, { state: newer ? state() : theirs, revision: result.revision });
+        if (chatId === chat && !newer) setState(theirs);
+        // Changes made meanwhile go out again on the server's revision.
+        if (newer) changed();
       } catch {
-        // Kept here; the next change tries again.
+        options.onSaveError?.();
       }
     });
   };
@@ -187,6 +205,10 @@ export function createArtifactWorkspace(
     changed();
   };
   const open = (tab: WorkspaceTab) => {
+    if (tab.kind === "web" && tab.url.length > WEB_TAB_URL_MAX) {
+      window.open(tab.url, "_blank", "noopener,noreferrer");
+      return;
+    }
     update((current) => {
       const opened = openWorkspaceTab(current, tab);
       const id = workspaceTabId(tab.key);
@@ -218,6 +240,7 @@ export function createArtifactWorkspace(
     });
     if (!state().tabs.length) setMobile("chat");
   };
+  const belongs = (tab: WorkspaceTab) => !("conversationId" in tab) || chatId === null || tab.conversationId === chatId;
   const select = (key: string) => {
     if (state().active === key && state().layout && isPanesItemVisible(state().layout!, workspaceTabId(key))) return;
     update((current) => ({
@@ -233,9 +256,10 @@ export function createArtifactWorkspace(
     open,
     rename: (key: string, title: string) =>
       update((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.key === key ? { ...tab, title } : tab)) })),
+    /** Opens the tab the URL names, when it belongs to the chat shown; another chat's tab waits for that chat. */
     restore: () => {
       const tab = workspaceSelectionFromHref(window.location.href);
-      if (tab) open(tab);
+      if (tab && belongs(tab)) open(tab);
     },
     select,
     /** Panes reports a choice by its item id, also in its narrow row. */
@@ -272,7 +296,10 @@ export function createArtifactWorkspace(
       dirty.clear();
       const known = next ? cache.get(next) : undefined;
       setState(known?.state ?? empty());
-      syncUrl();
+      // The URL may name a tab of this chat, as after Back; it wins.
+      const named = workspaceSelectionFromHref(window.location.href);
+      if (named && belongs(named)) open(named);
+      else syncUrl();
       if (!state().tabs.length) setMobile("chat");
       const store = options.store;
       if (!next || !store) return;
@@ -285,7 +312,8 @@ export function createArtifactWorkspace(
           cache.set(next, { state: state() === shown ? theirs : state(), revision: snapshot.revision });
           if (state() === shown) {
             setState(theirs);
-            syncUrl();
+            if (named && belongs(named)) open(named);
+            else syncUrl();
           } else changed();
         })
         .catch(() => undefined);

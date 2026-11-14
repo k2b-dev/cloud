@@ -171,10 +171,13 @@ describe("person's web reader", () => {
     expect(extract).toHaveBeenCalledTimes(1);
   });
 
-  test("allows same-origin redirects after confirmation and independently authorized redirect origins", async () => {
+  test("a confirmation covers exactly its address: another path of the site needs its own right; independently authorized redirects read", async () => {
     const { read, extract, hasProvenance, remembered } = setup();
-    extract.mockResolvedValue({ url: "https://example.com/final", content: "Article", truncated: false });
+    // The site only adds HTTPS or a trailing slash: still the confirmed address.
+    extract.mockResolvedValue({ url: "https://example.com/article/?full=address", content: "Article", truncated: false });
     expect((await read({ confirmed: true })).status).toBe("ready");
+    extract.mockResolvedValue({ url: "https://example.com/final?data=secret", content: "Article", truncated: false });
+    expect(await read({ confirmed: true })).toMatchObject({ status: "redirect_blocked" });
     const finalUrl = "https://other.example/final";
     extract.mockResolvedValue({ url: finalUrl, content: "Article", truncated: false });
     hasProvenance.mockImplementation(async (_conversationId, address) => address === finalUrl);

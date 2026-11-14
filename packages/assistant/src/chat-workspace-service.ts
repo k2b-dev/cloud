@@ -42,14 +42,7 @@ export const saveAssistantChatWorkspace = async (
   const chat = await workspaceConversation(identity, chatShortId);
   if (!chat) return null;
   const { state, revision } = SaveChatWorkspaceSchema.parse(input);
-  if (state.tabs.length === 0) {
-    const removed = await sql<{ revision: number }[]>`DELETE FROM assistant.chat_workspaces
-      WHERE conversation_id=${chat.conversationId}::uuid AND user_id=${chat.userId}::uuid AND revision=${revision}
-      RETURNING revision::float8 AS revision`;
-    if (removed.length) return { conflict: false, revision: 0 };
-    const current = await readWorkspace(chat.conversationId, chat.userId);
-    return current.revision === 0 ? { conflict: false, revision: 0 } : { conflict: true, ...current };
-  }
+  // An empty state stays a row, so its revision keeps counting and an older device cannot bring closed tabs back.
   const [saved] = await sql<{ revision: number }[]>`INSERT INTO assistant.chat_workspaces(conversation_id,user_id,state)
     VALUES(${chat.conversationId}::uuid,${chat.userId}::uuid,${JSON.stringify(state)}::jsonb)
     ON CONFLICT(conversation_id,user_id) DO UPDATE SET state=EXCLUDED.state,
