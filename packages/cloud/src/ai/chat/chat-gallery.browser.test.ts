@@ -103,6 +103,20 @@ for (const width of [1440, 390])
       expect(
         await answer.locator("button[aria-label]").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label"))),
       ).toEqual(["Kopieren", "Neu antworten", "Hilfreich", "Verbesserungswürdig", "Mehr"]);
+      // Quiet 15 px icons in 32 px buttons; the first glyph starts on the answer's text edge.
+      const icons = await answer.evaluate((row) => {
+        const button = row.querySelector("button")!;
+        const glyph = button.querySelector("i")!.getBoundingClientRect();
+        const text = document.querySelector(".ai-turn__text .assistant-markdown-block")!.getBoundingClientRect();
+        return {
+          size: getComputedStyle(button).fontSize,
+          button: button.getBoundingClientRect().height,
+          offset: Math.abs(glyph.left - text.left),
+        };
+      });
+      expect(icons.size).toBe("15px");
+      expect(icons.button).toBe(32);
+      expect(icons.offset).toBeLessThan(2);
       await answer.getByRole("button", { name: "Mehr" }).click();
       expect(await page.getByRole("menuitem").allTextContents()).toEqual([
         "Ausführlicher",

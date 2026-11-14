@@ -83,14 +83,14 @@ export function AiAppTile(props: { icon: string; accent?: string; class?: string
 
 /**
  * The row under an answer: "Sources", then one grey pill per source with its number, app tile, and title. The number
- * matches the chip in the text. Web pages open in a new tab, Cloud objects like the links in the answer.
+ * matches the chip in the text and opens the same way: in a new tab, like every link in an answer.
  */
 export function AiAnswerSources(props: { sources: AiAnswerSource[] }): JSX.Element {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   return (
     <Show when={props.sources.length > 0}>
-      <nav class="ai-sources" aria-label={t().sources}>
+      <div class="ai-sources" role="group" aria-label={t().sources}>
         <span class="ai-sources__label" aria-hidden="true">
           {t().sources}
         </span>
@@ -114,7 +114,7 @@ export function AiAnswerSources(props: { sources: AiAnswerSource[] }): JSX.Eleme
             )}
           </For>
         </ul>
-      </nav>
+      </div>
     </Show>
   );
 }
