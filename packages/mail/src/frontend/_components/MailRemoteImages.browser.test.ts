@@ -377,18 +377,42 @@ describe("Mail external images row", () => {
         await shownImages(page, imageIds.length);
         await settled(page);
         expect((await row(page)).height).toBe(48);
+        const trigger = page.locator("section[data-remote-images] .k2b-dropdown__trigger");
+        const restingColor = await trigger.evaluate((element) => getComputedStyle(element).color);
         const text = await page.locator("section[data-remote-images]").innerText();
         expect(text).toContain(width === "390" ? "Bilder werden immer geladen" : `Bilder von ${SENDER} werden immer geladen`);
         await (width === "390" ? page.getByRole("button", { name: "Ändern" }).tap() : page.getByRole("button", { name: "Ändern" }).click());
         const surface = width === "390" ? page.getByRole("dialog").last() : page.getByRole("menu");
         await surface.waitFor();
-        await settled(page);
+        // A touch can start the background trigger's hover after the sheet appears.
+        // Wait for this surface's motion, as in the phone-sheet case above.
+        await surface.evaluate((element) =>
+          Promise.all(
+            element
+              .getAnimations({ subtree: true })
+              .filter((animation) => animation.timeline === document.timeline)
+              .map((animation) => animation.finished),
+          ),
+        );
         expect(await surface.textContent()).toContain(`Gilt durch die Regeln „Absender: ${SENDER}“ und „Domain: ${DOMAIN}“.`);
         await shoot(page, `5-immer-erlaubt-${width}`);
         const stop = surface.getByRole("menuitem", { name: "Nicht mehr automatisch laden" });
         await (width === "390" ? stop.tap() : stop.click());
         await waitKind(page, "once");
         expect(ruleCalls.sort()).toEqual([`delete ${RULE.id}`, `delete ${domainRule.id}`]);
+        // Leave touch hover deliberately, then verify the restored control is quiet and usable.
+        await page.mouse.move(0, 0);
+        await page.waitForFunction((color) => {
+          const trigger = document.querySelector("section[data-remote-images] .k2b-dropdown__trigger");
+          return (
+            trigger &&
+            !trigger.matches(":hover") &&
+            getComputedStyle(trigger).color === color &&
+            trigger.getAttribute("aria-expanded") === "false" &&
+            document.activeElement === trigger
+          );
+        }, restingColor);
+        expect(await trigger.textContent()).toContain("Immer laden");
       } finally {
         await page.context().close();
       }
