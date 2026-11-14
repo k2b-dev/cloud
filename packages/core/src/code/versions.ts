@@ -25,6 +25,7 @@ import {
 import type { SQL } from "bun";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
+import type { CodeActivationPreview } from "./activation-contracts";
 import { createCodeCheckRequest, verifyCodeSubmission } from "./authoring-check";
 import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersion, CodeVersionSchema } from "./contracts";
 import { requireCodeEventAccess } from "./event-access";
@@ -631,6 +632,18 @@ export async function requireCodeVersionApproval(code: Code, versionId: string, 
   if (rows.some((row) => row.value === "admin") && !decision?.approved)
     throw new CodeVersionError("code_approval_required", "Cloud-admin version approval is required.");
   return { policyRevision: policy.revision };
+}
+/** Shared approval readiness for the version card and authoring handover. Never changes access. */
+export async function codeVersionReadiness(code: Code, versionId: string, db: SQL): Promise<CodeActivationPreview["readiness"]> {
+  try {
+    await requireCodeVersionApproval(code, versionId, db);
+    return { state: "ready" };
+  } catch (error) {
+    if (!(error instanceof CodeVersionError)) throw error;
+    return error.code === "code_approval_required"
+      ? { state: "approval_pending" }
+      : { state: "refused", code: error.code, message: error.message };
+  }
 }
 async function requireExecutionEditor(code: Code, context: CodeContext, tx: SQL) {
   const person = codePerson(context, true);

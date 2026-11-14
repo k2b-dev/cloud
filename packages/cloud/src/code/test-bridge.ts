@@ -120,8 +120,19 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
       const mock = selected[0]!;
       const cursor = cursors.get(mock) ?? 0;
       const reply = mock.replies[cursor];
-      if (!reply) return refuse("code_test_mock_exhausted");
       cursors.set(mock, cursor + 1);
+      if (!reply)
+        return refuse(
+          "code_test_mock_exhausted",
+          true,
+          codeTestFixtureDetail(
+            { mocks },
+            {
+              path: ["mocks", mocks.indexOf(mock), "replies", cursor],
+              message: `Mock exhausted: calls=${cursor + 1} (excluding replays), replies=${mock.replies.length}. Each reply serves exactly one call; add a reply for each call.`,
+            },
+          ),
+        );
       if (!reply.ok) return refuse(reply.error, false);
       const invalidFixture = (path: PropertyKey[], reason: string): never =>
         refuse(

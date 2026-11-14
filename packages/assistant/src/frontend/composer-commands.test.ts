@@ -19,12 +19,16 @@ const {
   assistantCommandScopes,
   assistantCommandSections,
   createAssistantCommandSession,
+  createAssistantRecentResources,
+  resetAssistantRecentResources,
+  assistantRecentCommands,
 
   overviewSkills,
 } = await import("./composer-commands");
 
 beforeEach(() => {
   setSystemTime(new Date("2026-10-10T12:00:00.000Z"));
+  resetAssistantRecentResources();
   spyOn(assistantApi, "listSkills").mockResolvedValue([]);
   spyOn(assistantApi, "findSkillsByName").mockResolvedValue([]);
 });
@@ -611,3 +615,225 @@ for (const withTrack of [false, true]) {
     });
   }
 }
+
+test.each(["de", "de-AT", "en"])("built-in Skill menu copy follows the request locale (%s)", async (locale) => {
+  const skill = {
+    ...skillFixture(0),
+    name: "cloud-weather",
+    description:
+      "Use for current weather and forecasts through Cloud Weather, including saved locations, unsaved German city lookup, hourly or daily outlooks, and saving or deleting locations. Load it whenever the user asks about weather, temperature, rain, or a forecast for a place.",
+    source: { appId: "weather", appName: "Weather" },
+  };
+  spyOn(assistantApi, "listSkills").mockResolvedValue([skill]);
+  const rows = await assistantComposerCommands({
+    query: "",
+    scope: "skill",
+    signal: new AbortController().signal,
+    locale,
+    projects: [],
+    running: false,
+    assignProject: async () => {},
+  });
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.label).toBe(locale.startsWith("de") ? "Wetter" : "cloud-weather");
+  expect(rows[0]!.description).toBe(
+    locale.startsWith("de")
+      ? "Skill · Aktuelles Wetter und Vorhersagen für deine Orte abrufen und Orte verwalten."
+      : "Skill · Use for current weather and forecasts through Cloud Weather, including saved locations, unsaved German city lookup, hourly or daily outlooks, and saving or deleting locations. Load it whenever the user asks about weather, temperature, rain, or a forecast for a place.",
+  );
+  expect(rows[0]!.mention?.data).toMatchObject({ ref: { type: "core.ai.skill", id: skill.shortId } });
+  expect(skill.description).toBe(
+    "Use for current weather and forecasts through Cloud Weather, including saved locations, unsaved German city lookup, hourly or daily outlooks, and saving or deleting locations. Load it whenever the user asks about weather, temperature, rain, or a forecast for a place.",
+  );
+});
+
+test.each([null, { appId: "third-party", appName: "Custom" }])(
+  "a same-named custom Skill keeps its own presentation (%j)",
+  async (source) => {
+    const skill = { ...skillFixture(0), name: "cloud-weather", description: "Our own weather workflow.", source };
+    spyOn(assistantApi, "listSkills").mockResolvedValue([skill]);
+    const rows = await assistantComposerCommands({
+      query: "",
+      scope: "skill",
+      signal: new AbortController().signal,
+      locale: "de",
+      projects: [],
+      running: false,
+      assignProject: async () => {},
+    });
+    expect(rows[0]!.label).toBe(skill.name);
+    expect(rows[0]!.description).toBe(`Skill · ${skill.description}`);
+  },
+);
+
+test("German Skill titles and descriptions are searchable without changing source discovery", async () => {
+  const skill = {
+    ...skillFixture(0),
+    name: "cloud-weather",
+    description:
+      "Use for current weather and forecasts through Cloud Weather, including saved locations, unsaved German city lookup, hourly or daily outlooks, and saving or deleting locations. Load it whenever the user asks about weather, temperature, rain, or a forecast for a place.",
+    source: { appId: "weather", appName: "Weather" },
+  };
+  const list = spyOn(assistantApi, "listSkills").mockImplementation(async (_signal, query) => (query === undefined ? [skill] : []));
+  for (const query of ["wetter", "vorhersagen"]) {
+    const rows = await assistantComposerCommands({
+      query,
+      scope: "skill",
+      signal: new AbortController().signal,
+      locale: "de",
+      projects: [],
+      running: false,
+      assignProject: async () => {},
+    });
+    expect(rows.map((row) => row.label)).toEqual(["Wetter"]);
+  }
+  expect(list).toHaveBeenCalledWith(expect.anything(), "vorhersagen");
+});
+
+test("an app Skill without menu translation keeps its source title and description", async () => {
+  const skill = {
+    ...skillFixture(0),
+    name: "custom-forecast",
+    description: "Forecasts for our team.",
+    source: { appId: "weather", appName: "Weather" },
+  };
+  spyOn(assistantApi, "listSkills").mockResolvedValue([skill]);
+  const rows = await assistantComposerCommands({
+    query: "",
+    scope: "skill",
+    signal: new AbortController().signal,
+    locale: "de",
+    projects: [],
+    running: false,
+    assignProject: async () => {},
+  });
+  expect(rows[0]!.label).toBe(skill.name);
+  expect(rows[0]!.description).toBe(`Skill · ${skill.description}`);
+});
+
+test.each(["en", "de"])("customized built-in descriptions remain visible (%s)", async (locale) => {
+  const skill = {
+    ...skillFixture(0),
+    name: "cloud-weather",
+    description: "Our edited weather workflow.",
+    source: { appId: "weather", appName: "Weather" },
+  };
+  spyOn(assistantApi, "listSkills").mockResolvedValue([skill]);
+  const rows = await assistantComposerCommands({
+    query: "",
+    scope: "skill",
+    signal: new AbortController().signal,
+    locale,
+    projects: [],
+    running: false,
+    assignProject: async () => {},
+  });
+  expect(rows[0]!.label).toBe(skill.name);
+  expect(rows[0]!.description).toBe(`Skill · ${skill.description}`);
+});
+
+test("translated Skill searches match separate words and deduplicate source matches", async () => {
+  const { assistantMessages } = await import("./messages");
+  const skill = {
+    ...skillFixture(0),
+    name: "cloud-mail",
+    description: assistantMessages.resolve(["en"]).t.skillCloudMailDescription,
+    source: { appId: "mail", appName: "Mail" },
+  };
+  spyOn(assistantApi, "listSkills").mockImplementation(async (_signal, query) => (query === undefined || query === "mail" ? [skill] : []));
+  for (const query of ["E-Mails versenden", "versenden E-Mails", "mail"]) {
+    const rows = await assistantComposerCommands({
+      query,
+      scope: "skill",
+      signal: new AbortController().signal,
+      locale: "de",
+      projects: [],
+      running: false,
+      assignProject: async () => {},
+    });
+    expect(rows.map((row) => row.label)).toEqual(["Mit E-Mails arbeiten"]);
+  }
+});
+
+test.each(["de", "en"])("recent Skill rows use localized presentation without changing their references (%s)", async (locale) => {
+  const { assistantMessages } = await import("./messages");
+  const skill = {
+    ...skillFixture(0),
+    name: "cloud-weather",
+    description: assistantMessages.resolve(["en"]).t.skillCloudWeatherDescription,
+    source: { appId: "weather", appName: "Weather" },
+  };
+  const find = spyOn(assistantApi, "findSkillsByName").mockResolvedValue([skill]);
+  const item = {
+    ref: { type: "core.ai.skill", id: skill.shortId },
+    title: skill.name,
+    preview: "English source preview…",
+    kind: "Skill",
+    appName: "Assistant",
+    count: 1,
+  };
+  const load = mock(async () => [item]);
+  const recent = createAssistantRecentResources(load);
+  recent.ensure(locale);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const rows = assistantRecentCommands({ items: recent.items(), excludeRefs: [], partCount: () => 0, locale });
+  expect(rows[0]!.label).toBe(locale === "de" ? "Wetter" : skill.name);
+  expect(rows[0]!.description).toBe(
+    locale === "de"
+      ? "Skill · Aktuelles Wetter und Vorhersagen für deine Orte abrufen und Orte verwalten."
+      : "Skill · English source preview…",
+  );
+  expect(find).toHaveBeenCalledTimes(locale === "de" ? 1 : 0);
+  recent.ensure(locale);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(load).toHaveBeenCalledTimes(1);
+  expect(rows[0]!.action?.(context)).toMatchObject({ mention: { data: { ref: item.ref } } });
+});
+
+test.each([null, { appId: "third-party", appName: "Custom" }, { appId: "weather", appName: "Weather" }])(
+  "recent same-named custom Skills keep their own copy (%j)",
+  async (source) => {
+    const skill = { ...skillFixture(0), name: "cloud-weather", description: "Custom forecast", source };
+    spyOn(assistantApi, "findSkillsByName").mockResolvedValue([skill]);
+    const item = {
+      ref: { type: "core.ai.skill", id: skill.shortId },
+      title: skill.name,
+      preview: skill.description,
+      kind: "Skill",
+      appName: "Assistant",
+      count: 1,
+    };
+    const recent = createAssistantRecentResources(async () => [item]);
+    recent.ensure("de");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(recent.items()).toEqual([item]);
+  },
+);
+
+test("a failed recent Skill lookup retries on the next opening", async () => {
+  const { assistantMessages } = await import("./messages");
+  const skill = {
+    ...skillFixture(0),
+    name: "cloud-weather",
+    description: assistantMessages.resolve(["en"]).t.skillCloudWeatherDescription,
+    source: { appId: "weather", appName: "Weather" },
+  };
+  const find = spyOn(assistantApi, "findSkillsByName").mockRejectedValueOnce(new Error("offline")).mockResolvedValue([skill]);
+  const item = {
+    ref: { type: "core.ai.skill", id: skill.shortId },
+    title: skill.name,
+    preview: "Source preview",
+    kind: "Skill",
+    appName: "Assistant",
+    count: 1,
+  };
+  const load = mock(async () => [item]);
+  const recent = createAssistantRecentResources(load);
+  recent.opened({ opening: 1 }, "de");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(recent.items()).toBeUndefined();
+  recent.opened({ opening: 2 }, "de");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(recent.items()?.[0]?.title).toBe("Wetter");
+  expect(find).toHaveBeenCalledTimes(2);
+});

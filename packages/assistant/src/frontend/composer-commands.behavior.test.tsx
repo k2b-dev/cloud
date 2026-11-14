@@ -13,6 +13,15 @@ import { createDomTestHarness } from "../../../ui/test/dom";
 
 const picker = mock<(options?: CloudResourcePickerOptions) => Promise<CloudResourcePickerItem | undefined>>(async () => undefined);
 mock.module("@k2b/cloud/browser/resource-picker", () => ({ openCloudResourcePicker: picker }));
+
+// Compile invariant modules with a DOM before interaction timers start; each test still owns its live DOM.
+const moduleDom = createDomTestHarness();
+try {
+  await import("@k2b/ui");
+  await import("./composer-commands");
+} finally {
+  moduleDom.cleanup();
+}
 const catalogTags = [
   { tag: "note", title: "Notizen", description: "Notizen suchen", aliases: ["notes", "markdown"] },
   { tag: "notebook", title: "Notizbücher", description: "Notizbücher suchen", aliases: ["notebooks"] },
@@ -998,4 +1007,50 @@ test("Plus Attach file retains the running-answer reason", async () => {
   h.mark("Datei anhängen");
   h.key("Enter");
   expect(choose).not.toHaveBeenCalled();
+});
+
+test.each(["de", "en"])("the Skill menu renders localized built-ins and untouched custom copy (%s)", async (locale) => {
+  const h = await mount({
+    locale,
+    value: "/skill ",
+    skills: [
+      {
+        ...skills[0]!,
+        name: "cloud-weather",
+        description: (await import("./messages")).assistantMessages.resolve(["en"]).t.skillCloudWeatherDescription,
+        source: { appId: "weather", appName: "Weather" },
+      },
+      { ...skills[1]!, name: "weekly-update", description: "Our weekly report workflow." },
+    ],
+  });
+  const title = locale === "de" ? "Wetter" : "cloud-weather";
+  expect(h.labels()).toEqual([title, "weekly-update"]);
+  expect(h.row(title).querySelector("small")?.textContent).toBe(
+    locale === "de"
+      ? "Skill · Aktuelles Wetter und Vorhersagen für deine Orte abrufen und Orte verwalten."
+      : "Skill · Use for current weather and forecasts through Cloud Weather, including saved locations, unsaved German city lookup, hourly or daily outlooks, and saving or deleting locations. Load it whenever the user asks about weather, temperature, rain, or a forecast for a place.",
+  );
+  expect(h.row("weekly-update").querySelector("small")?.textContent).toBe("Skill · Our weekly report workflow.");
+  h.mark(title);
+  h.key("Enter");
+  await flush();
+  expect(h.mentions()[0]?.attachment.data).toMatchObject({ kind: "resource", ref: { type: "core.ai.skill", id: skills[0]!.shortId } });
+});
+
+test("a built-in Skill under Recent is translated and appears only once", async () => {
+  const skill = {
+    ...skills[0]!,
+    name: "cloud-weather",
+    description: (await import("./messages")).assistantMessages.resolve(["en"]).t.skillCloudWeatherDescription,
+    source: { appId: "weather", appName: "Weather" },
+  };
+  const h = await mountWithRecent({
+    skills: [skill],
+    recent: [recentItem("core.ai.skill", skill.shortId, skill.name, { kind: "Skill", preview: "English weather preview…" })],
+  });
+  expect(h.labels().filter((label) => label === "Wetter")).toHaveLength(1);
+  expect(h.labels()[0]).toBe("Wetter");
+  expect(h.row("Wetter").querySelector("small")?.textContent).toBe(
+    "Skill · Aktuelles Wetter und Vorhersagen für deine Orte abrufen und Orte verwalten.",
+  );
 });

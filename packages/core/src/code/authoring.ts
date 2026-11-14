@@ -30,7 +30,7 @@ import { startCodeRun } from "./scheduling";
 import { checkCodeSecretBinding, currentCodeSecretBindings, deleteCodeSecret, listCodeSecrets, setCodeSecret } from "./secrets";
 import { codeSourceHash, createCode, listCodes, readCode, readCodeRun, readCodeVersion } from "./store";
 import { simulateCode, testCode } from "./testing";
-import { diffCodeVersion, listCodeVersions, setCodePaused, submitCodeVersion } from "./versions";
+import { codeVersionReadiness, diffCodeVersion, listCodeVersions, setCodePaused, submitCodeVersion } from "./versions";
 
 /** Read every chunk of one immutable version through the existing permission-aware reader. */
 async function versionText(
@@ -77,6 +77,22 @@ async function runningVersionNumber(codeId: string, context: CodeContext) {
     return (await readCodeVersion({ codeId, versionId: code.activeVersionId, offset: 0, length: 1 }, context)).version.number;
   } catch {
     return undefined;
+  }
+}
+/** A saved submission stays successful if its follow-up read fails; ask to check the live card in that case. */
+async function submissionNextStep(
+  codeId: string,
+  versionId: string,
+  context: CodeContext,
+): Promise<NonNullable<CodeAuthoringData<"submit">["nextStep"]>> {
+  try {
+    const { code } = await readCode(codeId, context);
+    const readiness = await codeVersionReadiness(code, versionId, sql);
+    if (readiness.state === "approval_pending") return { next: "admin_approval", who: "cloud_admin" };
+    if (readiness.state === "refused") return { next: "revise", who: "code_editor" };
+    return { next: "switch_on", who: code.owner.kind === "person" ? "personal_owner" : "owner_manager" };
+  } catch {
+    return { next: "check_status", who: "code_editor" };
   }
 }
 /** Classifications and display names come from current catalog/reader authority, never author-supplied titles. */
@@ -290,7 +306,12 @@ export const codeAuthoringServices = {
       },
       context,
     );
-    return { version: 1, submission, runningVersion: await runningVersionNumber(input.codeId, context) };
+    return {
+      version: 1,
+      submission,
+      runningVersion: await runningVersionNumber(input.codeId, context),
+      nextStep: await submissionNextStep(input.codeId, submission.version.id, context),
+    };
   },
   async submit(input: CodeAuthoringInput<"submit">, context: CodeContext): Promise<CodeAuthoringData<"submit">> {
     return codeAuthoringServices.push(input, context);

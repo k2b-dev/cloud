@@ -5,7 +5,7 @@ section: Platform services
 order: 682
 description: Test and simulate Code with declarative fixtures in the production sandbox without changing real data.
 tags: [code, testing, fixtures, runner]
-updated: 2026-11-08
+updated: 2026-11-14
 ---
 
 # Test Code
@@ -69,10 +69,30 @@ Successful receipts last for that case; separate cases start fresh.
 
 Mocks can include `input` and `refs` for exact matching. A more specific mock
 wins over a general mock; equally specific matches fail with
-`code_test_ambiguous_mock`. Replies are consumed in order. Exhaustion reports
+`code_test_ambiguous_mock`. Each mocked reply serves exactly one call and is
+consumed in order, even when the next call has identical input. Runs in one
+case share the reply cursor. Successful idempotency replays and calls refused
+before mock selection consume no new reply. Exhaustion reports
 `code_test_mock_exhausted`. Input and successful reply data must satisfy the
 operation's manifest schemas. Use `{ "ok": false, "error": "not_ready" }` to
 simulate a domain refusal. Failed replies do not create successful receipts.
+
+For two `notebooks.notebook.browse` calls, supply two replies in one mock,
+even when both replies contain the same data:
+
+```json
+{
+  "operation": "notebooks.notebook.browse",
+  "target": null,
+  "replies": [
+    { "ok": true, "data": [] },
+    { "ok": true, "data": [] }
+  ]
+}
+```
+
+There is no `repeat` fixture option. Two identical mock entries are ambiguous;
+put the replies in one list instead.
 
 For Query replies, keep domain `data` in the fixture and put optional `page`
 beside it, for example:
@@ -111,11 +131,15 @@ flags, and replies or refusal codes. A failed assertion lists its field in
 even when the Code catches the exception. Trace output adds run start and
 completion events; the call list is present with or without trace.
 
-A `code_test_invalid_fixture` refusal from the fake bridge carries a
-model-facing `detail` on the failed call's `result`. If Core rejects JSON or
-the fixture structure before execution, `detail` is on the top-level result
-and includes `file` (`null` for
-simulation). It contains `operation`, zero-based `mockIndex` and `replyIndex`
+A `code_test_invalid_fixture` or `code_test_mock_exhausted` refusal from the
+fake bridge carries a model-facing `detail` on the failed call's `result`.
+For exhaustion, it locates the missing reply and its `reason` names the
+number of non-replayed calls to that mock and the number of configured
+replies, for example `calls=2 (excluding replays), replies=1`.
+
+If Core rejects JSON or the fixture structure before execution with
+`code_test_invalid_fixture`, `detail` is on the top-level result and includes
+`file` (`null` for simulation). In either location, the detail contains `operation`, zero-based `mockIndex` and `replyIndex`
 (`null` when unavailable), `path` segments from the fixture root, and a short
 `reason` for the first issue. No rejected values or stack traces are copied
 into this detail. The existing result-byte budget also bounds these failures;
@@ -131,6 +155,13 @@ IDs; `Itm0001` and `ColBacklog01` are not. Stream reads instead return checked
 FileRefs within the operation's byte limit. Codes, indexes and paths are for
 authoring tools and logs; human-facing summaries describe the tested behavior
 and outcome.
+
+For a page form request, `input.body` is the encoded string and
+`input.contentType` is `application/x-www-form-urlencoded`. In Code, build
+that string with `new URLSearchParams({ title: "A+B & C" }).toString()`;
+in JSON, store the result `"title=A%2BB+%26+C"`. An unencoded `+` means a
+space. The handler reads the original text with `await c.req.formData()`.
+See [HTTP form bodies](/en/docs/platform/code-sdk#http-form-bodies).
 
 Simulation uses one invocation with fixture data and the same fake bridge.
 It creates no durable Code version, production run, or effect. Source check

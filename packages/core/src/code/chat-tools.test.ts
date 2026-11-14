@@ -4,6 +4,12 @@ import { codeAuthoringContracts } from "./authoring-contracts";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 
 const tools = createCodeAuthoringChatTools();
+test("submit guidance follows the authoritative next step instead of always promising switch-on", () => {
+  const description = tools.find((tool) => tool.def.name === "code_submit")!.def.description;
+  expect(description).toContain("nextStep");
+  expect(description).toContain("admin_approval");
+  expect(description).toContain("nextStep {next, who}");
+});
 const schema = (name: string) => {
   const tool = tools.find((item) => item.def.name === name);
   if (!tool) throw new Error(`Missing tool ${name}`);

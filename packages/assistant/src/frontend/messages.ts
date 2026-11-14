@@ -4,6 +4,45 @@ export const assistantMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      skillCodeAuthoringTitle: "code-authoring",
+      skillCodeAuthoringDescription:
+        "Build or change lasting Cloud Code. Use for automations that react to events at readable places across apps or incoming mail, run on a schedule or once, use AI, deliver results to a Gustav chat, or pass mail attachments and files to another app, and for Code pages with forms, key figures, tables and charts. Rebuild exported Mail rules or Assistant routines as reviewed candidates. Covers code.ts and code.tsx, app.on, app.schedule, app.get/post, c.page, checking, fictional tests, simulation and submitting a version with its required approval or switch-on step. One-off analysis or exports in this chat use assistant-code-mode and code_run.",
+      skillCodeModeTitle: "assistant-code-mode",
+      skillCodeModeDescription:
+        "Analyze files, transform data, create native chat views, generate documents and combine discovered Cloud capabilities with one-off runner scripts. For lasting Code and schedules use code-authoring. For plain arithmetic or date offsets, use calculate.",
+      skillDataAnalysisTitle: "assistant-data-analysis",
+      skillDataAnalysisDescription:
+        "Analyze source data, explain metrics and comparisons, and build evidence-backed reports or dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; computed charts, tables and one-off dashboards use cloud.view.* in the run, a dashboard to keep, reload or share uses lasting Code, and a few non-run values use the chart tool.",
+      skillCloudAssistantTitle: "cloud-assistant",
+      skillCloudAssistantDescription:
+        'Use for work involving Cloud Assistant itself: finding or reading earlier conversations, recovering resources used in chats, messaging another conversation, or creating and managing reminders and recurring scheduled chat work. Also use when a request refers to earlier work, such as "like last time", "as last week", or "the report you made me".',
+      skillSkillCreatorTitle: "skill-creator",
+      skillSkillCreatorDescription:
+        "Create and improve reusable Assistant Skills. Use this whenever the user wants to turn instructions or a recurring workflow into a Skill, revise an existing Skill, add supporting information, or enable, disable, or remove a Skill.",
+      skillCloudChatTitle: "cloud-chat",
+      skillCloudChatDescription:
+        "Use when the person asks to use Chat for a Cloud resource discussion: reading the item discussion, posting, replying, and correcting or deleting your own recent messages.",
+      skillCloudContactsTitle: "cloud-contacts",
+      skillCloudContactsDescription:
+        "Use for work involving the user's Cloud address books or contacts: finding or resolving people and organizations, choosing exact contact points, creating or updating records, favorites, tags, moves, and contact notes. Load it whenever a request involves Cloud Contacts, an address book, a contact, or recipient identity.",
+      skillCloudGridsTitle: "cloud-grids",
+      skillCloudGridsDescription:
+        "Use for Cloud Grids: finding or analysing records, GQL queries, reports and Views, inventory, CRM, invoices, or understanding and administering bases, tables, relations, permissions, forms, workflows, documents, custom apps and navigation. Explain unsupported administration through the GUI; use only available authorized tools.",
+      skillCloudMailTitle: "cloud-mail",
+      skillCloudMailDescription:
+        "Use for work involving the user's Cloud mailboxes: finding, reading, summarizing, organizing, drafting, replying to, forwarding, sending, scheduling, or unsubscribing from email. Load it whenever a request involves Cloud Mail, an inbox, a mailbox, a message, or an email conversation.",
+      skillCloudNotebooksTitle: "cloud-notebooks",
+      skillCloudNotebooksDescription:
+        "Use for Cloud Notebooks, Markdown notes and company handbooks: finding, reading, editing, organizing and discussing pages, flexible named data, query filters, tables of contents, charts, table formulas and Book mode. Load it whenever a request involves notebooks, notes, wiki pages, note links, tags, comments, :::data, :::query, :::toc or :::chart.",
+      skillCloudPulseTitle: "cloud-pulse",
+      skillCloudPulseDescription:
+        "Set up Pulse bases, sources, Prometheus scrapes and filters, ingest metrics, events and states, query base measurements with SQL, save queries, inspect collection status, and guide Cloud administrators through ClickHouse setup and recovery.",
+      skillCloudSpacesTitle: "cloud-spaces",
+      skillCloudSpacesDescription:
+        "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, templates, assignees, blockers, comments, reactions, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue.",
+      skillCloudWeatherTitle: "cloud-weather",
+      skillCloudWeatherDescription:
+        "Use for current weather and forecasts through Cloud Weather, including saved locations, unsaved German city lookup, hourly or daily outlooks, and saving or deleting locations. Load it whenever the user asks about weather, temperature, rain, or a forecast for a place.",
       panelUnsaved: "Draft not saved yet",
       panelSaveHint: "Save drafts before closing or switching the panel. Then repeat your navigation.",
       panelSave: "Save drafts",
@@ -258,6 +297,32 @@ export const assistantMessages = i18n.define({
       codeViewRetry: "Try again",
     },
     de: {
+      skillCodeAuthoringTitle: "Abläufe und Seiten erstellen",
+      skillCodeAuthoringDescription: "Dauerhafte Abläufe und Seiten erstellen, prüfen und zur Freigabe vorbereiten.",
+      skillCodeModeTitle: "Dateien und Daten verarbeiten",
+      skillCodeModeDescription: "Dateien auswerten, Daten umwandeln und Ergebnisse für diesen Chat erstellen.",
+      skillDataAnalysisTitle: "Daten analysieren",
+      skillDataAnalysisDescription: "Kennzahlen vergleichen, Zusammenhänge untersuchen und Berichte mit belegten Ergebnissen erstellen.",
+      skillCloudAssistantTitle: "Frühere Gespräche nutzen",
+      skillCloudAssistantDescription: "Frühere Gespräche und Ergebnisse finden und geplante Aufgaben im Chat verwalten.",
+      skillSkillCreatorTitle: "Skills erstellen und verbessern",
+      skillSkillCreatorDescription: "Wiederkehrende Aufgaben als Skill festhalten und vorhandene Skills anpassen oder verwalten.",
+      skillCloudChatTitle: "Diskussionen führen",
+      skillCloudChatDescription: "Diskussionen zu Cloud-Inhalten lesen, beantworten und eigene Nachrichten bearbeiten.",
+      skillCloudContactsTitle: "Kontakte verwalten",
+      skillCloudContactsDescription: "Personen und Organisationen finden sowie Kontakte und Adressbücher pflegen.",
+      skillCloudGridsTitle: "Tabellen und Datensätze nutzen",
+      skillCloudGridsDescription: "Datensätze finden, auswerten und bearbeiten sowie Berichte und Ansichten erstellen.",
+      skillCloudMailTitle: "Mit E-Mails arbeiten",
+      skillCloudMailDescription: "E-Mails finden, lesen und ordnen sowie Nachrichten entwerfen, beantworten und versenden.",
+      skillCloudNotebooksTitle: "Notizen und Handbücher pflegen",
+      skillCloudNotebooksDescription: "Notizen und Handbücher finden, lesen, bearbeiten und strukturieren.",
+      skillCloudPulseTitle: "Messwerte und Ereignisse auswerten",
+      skillCloudPulseDescription: "Datenquellen einrichten, Messwerte und Ereignisse abfragen und die Datensammlung prüfen.",
+      skillCloudSpacesTitle: "Aufgaben und Termine organisieren",
+      skillCloudSpacesDescription: "Aufgaben und Termine finden, planen und bearbeiten sowie im Team abstimmen.",
+      skillCloudWeatherTitle: "Wetter",
+      skillCloudWeatherDescription: "Aktuelles Wetter und Vorhersagen für deine Orte abrufen und Orte verwalten.",
       panelUnsaved: "Entwurf noch nicht gespeichert",
       panelSaveHint: "Speichere die Entwürfe vor dem Schließen oder Wechseln des Panels. Wiederhole danach den Wechsel.",
       panelSave: "Entwürfe speichern",

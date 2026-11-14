@@ -37,6 +37,14 @@ one-based `file`, `line`, and `column`. It has no manifest or executable bundle.
 TypeScript errors retain their
 `TS` number, such as `TS2589` for an excessively deep type instantiation.
 
+Unknown SDK methods fail during analysis, before type checking or execution.
+The diagnostic names the call. When that method exists on another receiver,
+it suggests that exact path before unrelated methods with the same final name.
+For example, `space.task.list` on a Space handle points to `spaces.task.list`;
+read its declarations through `code_sdk` and pass `spaceId` in the input.
+These details help Gustav repair the draft; human replies describe the
+problem and recovery in plain words, without code or diagnostic identifiers.
+
 ## Keep targets and registrations readable
 
 All Code modes accept dynamic resource IDs. Imported constants and `as const`

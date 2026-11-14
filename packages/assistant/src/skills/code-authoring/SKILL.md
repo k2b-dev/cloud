@@ -1,6 +1,6 @@
 ---
 name: code-authoring
-description: Build or change lasting Cloud Code. Use for automations that react to events at readable places across apps or incoming mail, run on a schedule or once, use AI, deliver results to a Gustav chat, or pass mail attachments and files to another app, and for Code pages with forms, key figures, tables and charts. Rebuild exported Mail rules or Assistant routines as reviewed candidates. Covers code.ts and code.tsx, app.on, app.schedule, app.get/post, c.page, checking, fictional tests, simulation and submitting a version that the person switches on. One-off analysis or exports in this chat use assistant-code-mode and code_run.
+description: Build or change lasting Cloud Code. Use for automations that react to events at readable places across apps or incoming mail, run on a schedule or once, use AI, deliver results to a Gustav chat, or pass mail attachments and files to another app, and for Code pages with forms, key figures, tables and charts. Rebuild exported Mail rules or Assistant routines as reviewed candidates. Covers code.ts and code.tsx, app.on, app.schedule, app.get/post, c.page, checking, fictional tests, simulation and submitting a version with its required approval or switch-on step. One-off analysis or exports in this chat use assistant-code-mode and code_run.
 load-tools: [code_init, code_pull, code_sdk, code_write, code_check, code_test, code_simulate, code_submit, code_diff]
 ---
 # Write Code
@@ -13,6 +13,9 @@ same contracts as `cld code`; keep them intact. Cloud shows Code under the
 name **feat/code**: a person who says feat/code means Code.
 
 Guests cannot create Code or submit versions; if a guest asks, kindly explain that Code authoring is available to Cloud members and suggest asking a member for help.
+
+Explain effects, triggers, tests and next steps in plain words. Keep source code,
+file names or error codes in tool calls and results, out of replies to people.
 
 ## Workflow
 
@@ -38,6 +41,11 @@ Guests cannot create Code or submit versions; if a guest asks, kindly explain th
    `core.ai.generate(...)`. Resource factories take an ID, for example
    `mail.mailbox(id)`; `owner` stays the fixed handle. The zero-argument `.app()`
    factory is removed; a resource Type named `app` still has its typed `.app(id)` factory.
+   Spaces list Queries are app-level: `spaces.task.list({ spaceId, limit: 50, cursor })`
+   returns `{ data, page }`. Task changes use `spaces.space(spaceId).task.update(...)`.
+   A `space` handle has no `task.list`; use the app-level paginated Query.
+   Check each list's actual receiver and continuation input in the declarations;
+   list Queries do not automatically live beside targeted Actions.
    Streaming reads keep their `FileRef`; Actions return domain data directly.
    Omit the input when no field, ref or retry key is required; `{}` remains valid.
    Import named types such as `Mail_Message_ReadData` from `@sdk` for helpers.
@@ -67,9 +75,17 @@ Guests cannot create Code or submit versions; if a guest asks, kindly explain th
    including its fixtures and saved base. On a version conflict, `code_pull`
    resets the draft to the latest version; re-apply the edits and fixtures,
    check again and submit. After an uncertain submit, pull before trying again.
-7. **Hand over.** The chat shows a version card; the person chooses
-   **Switch on** there, on the Code page or with `cld code activate`. You never
-   switch Code on and never change access. For resource Code, say which
+7. **Hand over.** Follow the submit result's authoritative `nextStep` with
+   `next` and `who`, from the same approval check as the version card.
+   `admin_approval` / `cloud_admin`: say “A Cloud administrator must approve
+   this version first.” `switch_on`: its `personal_owner` or `owner_manager`
+   can choose **Switch on** on the card or Code page. `revise` / `code_editor`:
+   the version needs revision before it can run. `check_status`, or an older
+   result without `nextStep`: ask the person to check the live version card.
+   State only the returned next step and who can do it; never infer one from
+   a passing check, a submitted version or the person's role. While approval
+   is pending, never say it is waiting for the person to switch it on.
+   You never switch Code on and never change access. For resource Code, say which
    resources the service account needs and that their managers share them
    with its handle ([Access and secrets](references/access.md)).
 

@@ -150,12 +150,21 @@ const check = z
   })
   .strict();
 const pulled = z.object({ version: z.literal(1), config: CodeProjectSchema, files: CodeSourceFilesSchema }).strict();
+/** The next human step, never an instruction for Gustav to approve or activate. */
+export const CodeSubmissionNextStepSchema = z.discriminatedUnion("next", [
+  z.object({ next: z.literal("admin_approval"), who: z.literal("cloud_admin") }).strict(),
+  z.object({ next: z.literal("switch_on"), who: z.enum(["personal_owner", "owner_manager"]) }).strict(),
+  z.object({ next: z.literal("revise"), who: z.literal("code_editor") }).strict(),
+  z.object({ next: z.literal("check_status"), who: z.literal("code_editor") }).strict(),
+]);
 const submitted = z
   .object({
     version: z.literal(1),
     submission: codeVersionContracts.submit.data,
     /** Which version keeps running meanwhile; null when none runs. Added field: consumers may ignore it. */
     runningVersion: z.number().int().positive().nullable().optional(),
+    /** Absent on older responses. check_status means saved, but current readiness could not be read. */
+    nextStep: CodeSubmissionNextStepSchema.optional(),
   })
   .strict();
 /** Local source compared with its saved base and the current server version. No filesystem paths. */
