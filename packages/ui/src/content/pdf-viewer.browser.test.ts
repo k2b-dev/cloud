@@ -5,6 +5,7 @@ import { basename, join, resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
 import { pdfFixture } from "../../test/pdf-fixture";
+import { expectCompactPills, measurePills } from "../../test/pill";
 
 // pdf.js draws real pages only in a real browser, so the shipped browser build renders a generated 40-page PDF here.
 const ui = resolve(import.meta.dir, "../..");
@@ -437,9 +438,8 @@ describe("@k2b/ui PdfViewer", () => {
     }
   });
 
-  // The bar has the size of every floating pill of small controls (`--k2b-pill-control`, `--k2b-pill-inset`), the
-  // Notebooks editor pills too: the round background of each icon has the same space to the edge above, below, and at
-  // the end, so the pill is never taller than its icons need.
+  // The bar is a pill of small controls (`k2b-pill`) like the Notebooks editor pills: 38 px high, and the round
+  // background of each icon has the same space to the edge above, below, and at the end.
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 390, height: 844 },
@@ -448,18 +448,7 @@ describe("@k2b/ui PdfViewer", () => {
       const page = await load("?open", viewport);
       try {
         await settled(page);
-        const pill = await page.locator(".k2b-pdf-viewer__bar > .k2b-toolbar").evaluate((toolbar) => {
-          const box = toolbar.getBoundingClientRect();
-          const icons = Array.from(toolbar.querySelectorAll("button")).map((button) => button.getBoundingClientRect());
-          return {
-            height: box.height,
-            radius: getComputedStyle(toolbar.querySelector("button")!).borderRadius,
-            insets: icons.flatMap((icon) => [icon.top - box.top, box.bottom - icon.bottom]).concat(box.right - icons.at(-1)!.right),
-          };
-        });
-        expect(pill.height).toBe(38);
-        expect(pill.radius).toBe("9999px");
-        for (const inset of pill.insets) expect(Math.abs(inset - pill.insets[0]!)).toBeLessThanOrEqual(0.5);
+        expectCompactPills(await measurePills(page, ".k2b-pdf-viewer__bar > .k2b-toolbar"));
       } finally {
         await page.close();
       }

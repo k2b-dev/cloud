@@ -416,7 +416,8 @@
 
 /* Details: the preview leads the panel without a heading. A PDF shows its whole first page, narrower than the panel,
    in an area of 26rem (at most 60 % of the screen's height); images and video keep their frames. The expand icon
-   floats in the top corner, a small pill like the PDF's bar, beside a centred page rather than over it. */
+   floats in the top corner, a pill of small controls like the PDF's bar (`k2b-pill`), beside a centred page rather than
+   over it. */
 .filesv2-inspector-preview {
   position: relative;
   min-width: 0;
@@ -426,17 +427,10 @@
   flex: none;
 }
 .k2b-ui .filesv2-inspector-preview__expand {
-  --k2b-radius-control: 9999px;
   position: absolute;
   z-index: 1;
   top: 0.5rem;
   right: 0.5rem;
-  display: flex;
-  padding: 0.125rem;
-  border: 1px solid var(--k2b-border);
-  border-radius: 9999px;
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-toolbar);
 }
 /* The approved order: preview, then the action bar 12px below it; a folder starts with the bar. */
 .filesv2-inspector-lead {

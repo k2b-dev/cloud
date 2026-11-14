@@ -2,8 +2,9 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, pageErrors, settled } from "../../test/browser";
+import { browserName, hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { pdfFixture } from "../../test/pdf-fixture";
+import { expectCompactPills, measurePills, PILL_HEIGHT, PILL_SPACE } from "../../test/pill";
 
 // The Lightbox shows each kind of file on one stage: pictures, PDFs drawn by pdf.js, Markdown through FileView, a
 // document only as its preview PDF, and files without a preview. Layout, the top layer and pdf.js need a real engine,
@@ -90,7 +91,7 @@ const load = async ({ search = "", width = 1440, height = 900, dark = false, pho
   const context = await browser.newContext({
     viewport: { width, height },
     reducedMotion: "reduce",
-    ...(phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}),
+    ...(phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : shots ? { deviceScaleFactor: 2 } : {}),
   });
   const page = await context.newPage();
   page.setDefaultTimeout(12_000);
@@ -128,6 +129,17 @@ const shot = async (page: Page, file: string) => {
   if (!shots) return;
   await settled(page);
   await page.screenshot({ path: `${shots}/${file}` });
+};
+
+/** A close-up of one control or pill with some room around it, for before and after comparisons. */
+const closeUp = async (page: Page, selector: string, file: string) => {
+  if (!shots) return;
+  await settled(page);
+  const box = (await page.locator(selector).boundingBox())!;
+  await page.screenshot({
+    path: `${shots}/${file}`,
+    clip: { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 },
+  });
 };
 
 describe("@k2b/ui Lightbox", () => {
@@ -183,6 +195,40 @@ describe("@k2b/ui Lightbox", () => {
       await page.context().close();
     }
   });
+
+  // The head's pills and the zoom pill are pills of small controls like the Notebooks editor pills (`k2b-pill`): 38 px
+  // high, the same space between the edge and each round control on every side, also beside the blue Open.
+  for (const [width, phone] of [
+    [1440, false],
+    [390, true],
+  ] as const)
+    test(`every pill is 38 px with the same space around its controls (${width} px)`, async () => {
+      const page = await load({ search: "?index=1", width, phone });
+      try {
+        await page.waitForFunction(() => document.querySelector(".k2b-lightbox__page")?.textContent === "Page 1 / 4");
+        if (!phone) {
+          await closeUp(page, ".k2b-lightbox__actions", "lightbox-actions-light-1440.png");
+          await closeUp(page, '.k2b-lightbox__edge[data-direction="previous"]', "lightbox-previous-light-1440.png");
+          await hoverInPlace(page.getByRole("button", { name: "Zoom out" }));
+          await closeUp(page, ".k2b-lightbox__tools", "lightbox-zoom-hover-light-1440.png");
+          await page.mouse.move(0, 0);
+        }
+        await settled(page);
+        expectCompactPills(await measurePills(page, ".k2b-lightbox__actions, .k2b-lightbox__tools"));
+        expect(await page.locator(".k2b-lightbox__name").evaluate((pill) => pill.getBoundingClientRect().height)).toBe(PILL_HEIGHT);
+        // The focus ring of a control stays inside the pill's space.
+        await page.getByRole("button", { name: "Close" }).focus();
+        await settled(page);
+        const ring = await page.getByRole("button", { name: "Close" }).evaluate((control) => {
+          const style = getComputedStyle(control);
+          return Number.parseFloat(style.outlineOffset) + Number.parseFloat(style.outlineWidth);
+        });
+        expect(ring).toBeLessThan(PILL_SPACE);
+        if (!phone) await shot(page, "lightbox-pills-light-1440.png");
+      } finally {
+        await page.context().close();
+      }
+    });
 
   test("Markdown lifts its first heading into the head; a document shows its preview PDF read-only", async () => {
     const page = await load({ search: "?index=2" });

@@ -104,16 +104,26 @@ document is solid, so text that scrolls beneath it never shows through.
 
 ## Floating pills
 
-`Toolbar variant="floating"` is a pill: fully rounded, a light 1 px edge,
-`--k2b-shadow-toolbar`, 44 px controls. It floats at the bottom of its column,
-and content scrolls beneath it but still ends above it, so the last line stays
+A floating pill of small controls carries the class `k2b-pill`: fully rounded,
+a light 1 px edge, a solid elevated surface, and `--k2b-shadow-toolbar`.
+`Toolbar variant="floating"` is one, and so are an editor's formatting pill,
+the `PdfViewer` bar, and the zoom and actions of the `Lightbox`. Put the class
+on your own pill instead of styling one; with `k2b-overlay-surface` it is glass
+over a picture. A floating toolbar floats at the bottom of its column, and
+content scrolls beneath it but still ends above it, so the last line stays
 reachable.
 
-Every pill has the same space between its edge and the round background of its
-controls above, below, and at the sides; it is never taller than its controls
-need. A pill of small controls, such as an editor's formatting pill, the
-`PdfViewer` bar, or a reader's reply pill, uses `--k2b-pill-control` (24 px) and
-`--k2b-pill-inset` (6 px inside the 1 px edge) and is 38 px high.
+Every pill has the same size: 24 px round controls (`--k2b-pill-control`) 6 px
+inside the 1 px edge (`--k2b-pill-inset`), so 38 px high with the same 7 px
+between the edge and each control above, below, and at the sides. A control
+inside a pill is round, also a filled one with text such as Open, so its hover
+and its focus ring keep that space too: the inner radius is the outer radius
+minus the space. Icons are 14 px, text 12 px. Touch screens keep the 44 px hit
+area through the buttons' own touch rule; the pill does not grow.
+
+A lone chevron in an icon button, such as the round previous and next buttons
+of the `Lightbox`, moves a sixteenth of its size toward its point, so it looks
+centred in the round button.
 
 For two pills at the edges of one column, such as formatting at the left and
 comments, reading, and details at the right, put both into one `ToolbarDock`

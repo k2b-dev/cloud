@@ -78,7 +78,7 @@ packages/ui/src/actions/drag-and-drop.browser.test.ts | 3
 packages/ui/src/actions/gesture-menu.browser.test.ts | 5
 packages/ui/src/actions/menu-width.browser.test.ts | 6
 packages/ui/src/actions/tabs.browser.test.ts | 2
-packages/ui/src/actions/toolbar.browser.test.ts | 11
+packages/ui/src/actions/toolbar.browser.test.ts | 10
 packages/ui/src/base/base.browser.test.ts | 6
 packages/ui/src/chat/chat-activity-motion.browser.test.ts | 1
 packages/ui/src/chat/chat-composer.browser.test.ts | 20
