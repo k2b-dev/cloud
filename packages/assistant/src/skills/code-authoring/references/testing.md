@@ -41,6 +41,10 @@ never reaches a real app. Nothing is sent, saved or charged.
   `code_test_ambiguous_mock`. Used-up replies fail with `code_test_mock_exhausted`.
 - Inputs and reply data must match the operation's schemas, otherwise the
   test fails with `code_test_invalid_input` or `code_test_invalid_fixture`.
+  A fixture refusal includes `detail` on the failed call's `result`, or on
+  the top-level result when JSON/fixture parsing failed. Read `operation`,
+  zero-based `mockIndex` and `replyIndex`, `path` (segments from the fixture
+  root), and `reason`; parsing failures also name `file`.
   A Query mock keeps domain `data` and optional `page` beside it; the SDK
   receives `{ data, page? }`. Its recorded `result` is
   `{ ok: true, data: { data, page? } }`. Action and stream-read mocks cannot
@@ -55,6 +59,27 @@ never reaches a real app. Nothing is sent, saved or charged.
   fails with `idempotency_conflict`. Fixtures share nothing.
 
 Use only fictional values: no real names, addresses, IDs or secrets.
+
+## Repair a refused fixture
+
+Use the first refusal's `detail` to correct that field in `test/NAME.json`
+with `code_write`, then run `code_test` again. Read the operation in
+`code_sdk` when the reason names a format or missing field. Fictional IDs
+must still match that format: Spaces task and column IDs have exactly six
+alphanumeric characters, for example `Itm001` and `Col001`; `Itm0001` and
+`ColBacklog01` are invalid. Include every required reply field, even when the
+Code only reads the ID.
+
+For example, `path: ["mocks", 0, "replies", 1, "data", "id"]` identifies
+the second reply of the first mock. For a Query, keep `data` and `page`
+beside each other as described above. For a stream read, return a FileRef
+within the declared byte limit ([Files](file-ref.md)).
+
+Do not remove a failing case, weaken its expectations, or submit with failed
+tests. Submit only after the corrected draft's tests pass. If the test
+service is unavailable, explain the blocker without claiming the tests passed.
+Keep codes, fixture paths and schema details in tool work; tell the person
+which behavior was checked and whether it passed.
 
 ## Test a schedule
 

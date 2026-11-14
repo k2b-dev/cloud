@@ -33,6 +33,7 @@ import contentMatchText from "./content/match-text.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
 import contentMessageRows from "./content/message-rows.md" with { type: "text" };
 import contentMoney from "./content/money.md" with { type: "text" };
+import contentProgressPath from "./content/progress-path.md" with { type: "text" };
 import contentReactionBar from "./content/reaction-bar.md" with { type: "text" };
 import contentSteps from "./content/steps.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
@@ -42,6 +43,7 @@ import contentTimeline from "./content/timeline.md" with { type: "text" };
 import contentVirtualFeed from "./content/virtual-feed.md" with { type: "text" };
 import feedbackBadges from "./feedback/badges.md" with { type: "text" };
 import feedbackBlocks from "./feedback/blocks.md" with { type: "text" };
+import feedbackHoverCard from "./feedback/hover-card.md" with { type: "text" };
 import feedbackHoverPreview from "./feedback/hover-preview.md" with { type: "text" };
 import feedbackInstallGuide from "./feedback/install-guide.md" with { type: "text" };
 import feedbackMovedHint from "./feedback/moved-hint.md" with { type: "text" };
@@ -208,6 +210,7 @@ const catalogContextSources = {
   "feedback/toast": { file: "feedback/toast.md", content: feedbackToast },
   "feedback/moved-hint": { file: "feedback/moved-hint.md", content: feedbackMovedHint },
   "feedback/tooltip": { file: "feedback/tooltip.md", content: feedbackTooltip },
+  "feedback/hover-card": { file: "feedback/hover-card.md", content: feedbackHoverCard },
   "feedback/hover-preview": { file: "feedback/hover-preview.md", content: feedbackHoverPreview },
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },
   "feedback/install-guide": { file: "feedback/install-guide.md", content: feedbackInstallGuide },
@@ -216,6 +219,7 @@ const catalogContextSources = {
   "content/kbd": { file: "content/kbd.md", content: contentKbd },
   "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
   "content/match-text": { file: "content/match-text.md", content: contentMatchText },
+  "content/progress-path": { file: "content/progress-path.md", content: contentProgressPath },
   "content/steps": { file: "content/steps.md", content: contentSteps },
   "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },

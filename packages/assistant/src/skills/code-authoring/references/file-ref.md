@@ -81,6 +81,15 @@ transfer but does not undo a publication the target already committed.
 | `code_stream_forbidden`, `code_stream` | The Action has a write stream without a `file` input |
 | `code_test_invalid_input`, `code_test_invalid_fixture` | In tests: the `file` or the mocked FileRef does not match, or exceeds the stream limit |
 
+For a refused mock, read the failed call's `result.detail`: `operation`,
+zero-based `mockIndex` and `replyIndex`, `path` and `reason` identify the
+field to repair. A stream-read reply's `data` is the FileRef itself, with
+an opaque fictional `id`, a valid `mediaType` and exact `size`; it has no
+`page`, bytes or URL. A size refusal points to `data.size` and names the
+operation's byte limit. Correct the fixture with `code_write` and run
+`code_test` again; submit after it passes. Keep these details in tool work,
+and describe the transfer's behavior and test outcome to the person.
+
 ## Example and test
 
 Copy a Files document into an import app once a week. The template

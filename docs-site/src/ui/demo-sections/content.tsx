@@ -59,6 +59,7 @@ import {
   PdfThumbnails,
   PdfViewer,
   Placeholder,
+  ProgressPath,
   panelDialogFixedOptions,
   panelDialogOptions,
   ReactionBar,
@@ -2481,6 +2482,44 @@ const demos: DemoSection = {
         <p class="text-sm text-dimmed">
           <MatchText text="Kunden/Bäckerei Sonnenschein" ranges={[[0, 6]]} />
         </p>
+      </DemoCard>
+    </DemoGrid>
+  ),
+  "progress-path": () => (
+    <DemoGrid columns="one">
+      <DemoCard
+        id="progress-path"
+        chip={{ kind: "component", name: "ProgressPath", from: "@k2b/ui" }}
+        description="Where one order is on its way. Done stages carry a check and a green line; the words say the state too. A narrow container, such as a phone sheet, lists the stages one below the other."
+        code={`<ProgressPath
+  label="Order 2026-0418"
+  steps={[
+    { label: "Ordered", detail: "Nov 3", done: true },
+    { label: "Paid", detail: "Nov 3", done: true },
+    { label: "Shipped", detail: "Nov 5", done: true },
+    { label: "Delivered", detail: "expected Nov 8", icon: "ti ti-home" },
+  ]}
+/>`}
+      >
+        <ProgressPath
+          label="Order 2026-0418"
+          steps={[
+            { label: "Ordered", detail: "Nov 3", done: true },
+            { label: "Paid", detail: "Nov 3", done: true },
+            { label: "Shipped", detail: "Nov 5", done: true },
+            { label: "Delivered", detail: "expected Nov 8", icon: "ti ti-home" },
+          ]}
+        />
+        <div class="ui-progress-path-demo__narrow">
+          <ProgressPath
+            label="Order 2026-0419"
+            steps={[
+              { label: "Ordered", detail: "Nov 6", done: true },
+              { label: "Paid", detail: "not yet", icon: "ti ti-credit-card" },
+              { label: "Shipped", detail: "not yet", icon: "ti ti-truck" },
+            ]}
+          />
+        </div>
       </DemoCard>
     </DemoGrid>
   ),

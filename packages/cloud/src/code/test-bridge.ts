@@ -4,7 +4,7 @@ import { CapabilityIdempotencyKeySchema, NormalizedCapabilityCallSchema } from "
 import { CodeDatabaseRequestSchema } from "./database-contract";
 import { CodeFileRefSchema } from "./file-ref";
 import { RunnerCallError, type RunnerJsonValue } from "./runner-protocol";
-import type { CodeTestCall, CodeTestMock } from "./test-contract";
+import { type CodeTestCall, type CodeTestFixtureDetail, type CodeTestMock, codeTestFixtureDetail } from "./test-contract";
 import type { CodeSdkManifest } from "./types";
 
 const InvocationSchema = z
@@ -61,8 +61,8 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
         result: { ok: false, error: "code_test_invalid_call" },
       };
       calls.push(row);
-      const refuse = (code: string, fixtureFailure = true): never => {
-        row.result = { ok: false, error: code };
+      const refuse = (code: string, fixtureFailure = true, detail?: CodeTestFixtureDetail): never => {
+        row.result = { ok: false, error: code, ...(detail === undefined ? {} : { detail }) };
         if (fixtureFailure) failure ??= code;
         throw new RunnerCallError(code);
       };
@@ -123,8 +123,14 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
       if (!reply) return refuse("code_test_mock_exhausted");
       cursors.set(mock, cursor + 1);
       if (!reply.ok) return refuse(reply.error, false);
+      const invalidFixture = (path: PropertyKey[], reason: string): never =>
+        refuse(
+          "code_test_invalid_fixture",
+          true,
+          codeTestFixtureDetail({ mocks }, { path: ["mocks", mocks.indexOf(mock), "replies", cursor, ...path], message: reason }),
+        );
       if ((spec.kind !== "query" || spec.stream?.direction === "read") && reply.page !== undefined)
-        return refuse("code_test_invalid_fixture");
+        return invalidFixture(["page"], "Pagination is only allowed on non-stream Query replies.");
       const changes = z.object({ changes: z.number().int().nonnegative() }).strict();
       const output = database
         ? operation === "db.query"
@@ -136,8 +142,12 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
           ? CodeFileRefSchema
           : z.fromJSONSchema(spec.dataSchema);
       const checked = output.safeParse(reply.data);
-      if (!checked.success || (spec.stream?.direction === "read" && CodeFileRefSchema.parse(checked.data).size > spec.stream.maxBytes))
-        return refuse("code_test_invalid_fixture");
+      if (!checked.success) {
+        const issue = checked.error.issues[0]!;
+        return invalidFixture(["data", ...issue.path], issue.message);
+      }
+      if (spec.stream?.direction === "read" && CodeFileRefSchema.parse(checked.data).size > spec.stream.maxBytes)
+        return invalidFixture(["data", "size"], `File size exceeds the operation's stream limit of ${spec.stream.maxBytes} bytes.`);
       const data = structuredClone(
         !database && spec.kind === "query" && spec.stream?.direction !== "read"
           ? { data: reply.data, ...(reply.page === undefined ? {} : { page: reply.page }) }

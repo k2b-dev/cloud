@@ -3,13 +3,16 @@ import {
   Button,
   ButtonLink,
   createHoverPreview,
+  DescriptionList,
   dialogCore,
+  HoverCard,
   HoverPreview,
   InlineGuidance,
   MovedHint,
   NoticeCard,
   NoticeRow,
   PanelDialog,
+  ProgressPath,
   panelDialogOptions,
   prompts,
   SplitButton,
@@ -652,6 +655,162 @@ const TooltipDemo = () => (
   </DemoCard>
 );
 
+const pathStages = [
+  { label: "Received", icon: "ti ti-flag" },
+  { label: "Brought to returns", icon: "ti ti-truck" },
+  { label: "Booked in", icon: "ti ti-package-import" },
+  { label: "Owner told", icon: "ti ti-mail" },
+  { label: "Back or gone", icon: "ti ti-circle-check" },
+];
+
+const returnItems = [
+  {
+    number: "B7A01",
+    title: "Cherry chest of drawers",
+    days: ["Nov 7", "Nov 9", "Nov 9", "Nov 10"],
+    next: "Dispose · owner agreed on Nov 11.",
+    detail: "You can dispose of the item or pass it on.",
+    place: "R4 › Bin 7",
+  },
+  {
+    number: "B7A02",
+    title: "Pewter jug with lid",
+    days: ["Nov 7", "Nov 9", "Nov 9"],
+    next: "Tell the owner.",
+    detail: "The item is booked in. Send the owner a note so they can collect it.",
+    place: "R4 › Bin 7",
+  },
+  {
+    number: "B7A05",
+    title: "Delft wall plate",
+    days: ["Nov 12"],
+    next: "Bring it to returns.",
+    detail: "The item still waits at the intake shelf.",
+    place: "Intake shelf",
+  },
+];
+
+const placeFacts: Record<string, { detail: string; items: { term: string; description: string }[] }> = {
+  "R4 › Bin 7": {
+    detail: "Return stack 1 of Lea Lorem",
+    items: [
+      { term: "From Lea Lorem", description: "22 items, the first since Nov 9" },
+      { term: "At this place", description: "22 items from 1 person" },
+    ],
+  },
+  "Intake shelf": {
+    detail: "Not in returns yet",
+    items: [
+      { term: "From Paul Probe", description: "1 item since Nov 12" },
+      { term: "At this place", description: "4 items from 3 people" },
+    ],
+  },
+};
+
+/** The small path in a row: one icon per stage and a bar for how far the item got. App-owned; the card shows it large. */
+const PathGlyph = (props: { done: number }) => (
+  <span class="ui-hover-card-demo__glyph" aria-hidden="true">
+    <span>
+      <For each={pathStages}>{(stage, index) => <i class={stage.icon} data-done={index() < props.done ? "" : undefined} />}</For>
+    </span>
+    <b style={{ width: `${(props.done / pathStages.length) * 100}%` }} />
+  </span>
+);
+
+const HoverCardDemo = () => {
+  const [filter, setFilter] = createSignal<string>();
+  return (
+    <DemoCard
+      id="hover-card"
+      chip={[
+        { kind: "component", name: "HoverCard", from: "@k2b/ui" },
+        { kind: "component", name: "HoverCard.Trigger", from: "@k2b/ui" },
+        { kind: "component", name: "ProgressPath", from: "@k2b/ui" },
+      ]}
+      description="Rest the mouse on a small path or a place, or move the keyboard focus there. The path opens large with a word and a day per stage; the place lists what lies there. A tap on a path opens it on a phone as a sheet; a click on a place filters."
+      code={`<HoverCard.Trigger
+  aria-label="Path of B7A02"
+  title="B7A02 Pewter jug with lid"
+  width="34rem"
+  content={<ProgressPath label="Path" steps={steps} />}
+>
+  <PathGlyph done={3} />
+</HoverCard.Trigger>
+
+<HoverCard
+  title="R4 › Bin 7"
+  detail="Return stack 1 of Lea Lorem"
+  content={<DescriptionList layout="compact" size="sm" items={facts} />}
+  hint="A click filters by this place."
+>
+  <Button size="xs" variant="secondary" onClick={() => filterBy("R4 › Bin 7")}>R4 › Bin 7</Button>
+</HoverCard>`}
+    >
+      <div class="ui-hover-card-demo" role="table" aria-label="Returns">
+        <div role="row" class="ui-hover-card-demo__head">
+          <span role="columnheader">Item</span>
+          <span role="columnheader">Path</span>
+          <span role="columnheader">Place</span>
+        </div>
+        <For each={returnItems}>
+          {(item) => {
+            const facts = placeFacts[item.place]!;
+            return (
+              <div role="row" class="ui-hover-card-demo__row">
+                <span role="cell" class="ui-hover-card-demo__item">
+                  <span class="ui-hover-card-demo__number">{item.number}</span> {item.title}
+                </span>
+                <span role="cell">
+                  <HoverCard.Trigger
+                    aria-label={`Path of ${item.number}`}
+                    title={`${item.number} ${item.title}`}
+                    width="34rem"
+                    content={
+                      <>
+                        <ProgressPath
+                          label={`Path of ${item.number}`}
+                          steps={pathStages.map((stage, index) => ({
+                            label: stage.label,
+                            icon: stage.icon,
+                            done: index < item.days.length,
+                            detail: item.days[index] ?? "not yet",
+                          }))}
+                        />
+                        <p class="ui-hover-card-demo__next">
+                          <strong>{item.next}</strong> {item.detail}
+                        </p>
+                      </>
+                    }
+                  >
+                    <PathGlyph done={item.days.length} />
+                  </HoverCard.Trigger>
+                </span>
+                <span role="cell">
+                  <HoverCard
+                    title={item.place}
+                    detail={facts.detail}
+                    content={<DescriptionList layout="compact" size="sm" items={facts.items} />}
+                    hint="A click filters by this place."
+                  >
+                    <Button size="xs" variant="secondary" onClick={() => setFilter(item.place)}>
+                      <i class="ti ti-map-pin" aria-hidden="true" />
+                      {item.place}
+                    </Button>
+                  </HoverCard>
+                </span>
+              </div>
+            );
+          }}
+        </For>
+      </div>
+      {/* The line keeps its height while empty, so filtering moves nothing. */}
+      <p role="status" class="min-h-5 text-sm">
+        {filter() ? `Filtered by ${filter()}` : ""}
+      </p>
+    </DemoCard>
+  );
+};
+
 const demoMessages = [
   {
     id: "invoice",
@@ -1023,6 +1182,11 @@ const demos: DemoSection = {
   tooltip: () => (
     <DemoGrid columns="one">
       <TooltipDemo />
+    </DemoGrid>
+  ),
+  "hover-card": () => (
+    <DemoGrid columns="one">
+      <HoverCardDemo />
     </DemoGrid>
   ),
   "hover-preview": () => (

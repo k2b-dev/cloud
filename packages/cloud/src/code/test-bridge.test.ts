@@ -35,6 +35,17 @@ test("matching uses exact operation, target, input and refs; invalid schemas and
   );
   const invalid = createCodeTestBridge(manifest, [{ ...mock, replies: [{ ok: true, data: { id: 3 } }] }]);
   await expect(invalid.call(mock.operation, invocation())).rejects.toThrow("code_test_invalid_fixture");
+  expect(invalid.calls()[0]?.result).toMatchObject({
+    ok: false,
+    error: "code_test_invalid_fixture",
+    detail: {
+      operation: mock.operation,
+      mockIndex: 0,
+      replyIndex: 0,
+      path: ["mocks", 0, "replies", 0, "data", "id"],
+      reason: expect.stringContaining("string"),
+    },
+  });
   const specific = createCodeTestBridge(manifest, [
     mock,
     { ...mock, input: { title: "One" }, replies: [{ ok: true, data: { id: "specific" } }] },
@@ -104,6 +115,62 @@ test("query mocks preserve envelope pagination while validating domain data sepa
 test("Action mocks reject query pagination rather than silently dropping it", async () => {
   const bridge = createCodeTestBridge(manifest, [{ ...mock, replies: [{ ...mock.replies[0]!, page: { hasMore: false } }] }]);
   await expect(bridge.call(mock.operation, invocation())).rejects.toThrow("code_test_invalid_fixture");
+  expect(bridge.calls()[0]?.result).toMatchObject({
+    detail: { operation: mock.operation, replyIndex: 0, path: ["mocks", 0, "replies", 0, "page"], reason: expect.any(String) },
+  });
+});
+
+test("nested reply failures retain fixture indexes across attempts and survive the public result schema", async () => {
+  const operation = "work-shop.stock.list";
+  const bridge = createCodeTestBridge(manifest, [
+    mock,
+    {
+      operation,
+      target,
+      replies: [
+        { ok: true, data: { rows: [], next: null } },
+        { ok: true, data: { rows: [{ id: "one", state: "invalid" }], next: null } },
+      ],
+    },
+  ]);
+  const raw = { call: { capability: operation, target, refs: {}, input: {} }, metadata: {} };
+  await bridge.call(operation, raw);
+  bridge.begin();
+  await expect(bridge.call(operation, raw)).rejects.toThrow("code_test_invalid_fixture");
+  const result = CodeTestResultSchema.parse({
+    version: 1,
+    mode: "test",
+    ok: false,
+    error: null,
+    diagnostics: [],
+    cases: [
+      {
+        name: "nested",
+        file: "test/nested.json",
+        ok: false,
+        runs: [
+          {
+            entrypoint: "weekly",
+            ok: false,
+            error: bridge.failure(),
+            value: null,
+            calls: bridge.calls(),
+            failures: [],
+          },
+        ],
+      },
+    ],
+  });
+  expect(result.cases[0]?.runs[0]?.calls[0]?.result).toMatchObject({
+    error: "code_test_invalid_fixture",
+    detail: {
+      operation,
+      mockIndex: 1,
+      replyIndex: 1,
+      path: ["mocks", 1, "replies", 1, "data", "rows", 0, "state"],
+      reason: expect.any(String),
+    },
+  });
 });
 
 test("file mocks pass only checked references and keep the business receipt stable across fresh references", async () => {
@@ -130,4 +197,7 @@ test("file mocks pass only checked references and keep the business receipt stab
   await expect(invalid.call(read, { call: { capability: read, target, refs: {}, input: {} }, metadata: {} })).rejects.toThrow(
     "code_test_invalid_fixture",
   );
+  expect(invalid.calls()[0]?.result).toMatchObject({
+    detail: { operation: read, replyIndex: 0, path: ["mocks", 0, "replies", 0, "data", "size"], reason: expect.stringContaining("100") },
+  });
 });
