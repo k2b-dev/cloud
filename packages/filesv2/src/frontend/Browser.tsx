@@ -2162,7 +2162,7 @@ export default function Browser(props: {
             >
               <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={contextItems()} label={t().actions} disabled={busy()}>
                 <ScrollArea
-                  class="h-full"
+                  class="filesv2-browser__scroll h-full"
                   scrollPreserveKey={`filesv2:${folderKey(baseIdentity(), folder())}:${props.after ?? ""}:${view().view}`}
                 >
                   <Show
@@ -2334,9 +2334,18 @@ export default function Browser(props: {
                       </Show>
                     </div>
                   </Show>
-                  {/* The selection's actions float at the bottom of the column; the list scrolls beneath and ends above. */}
-                  <Show when={selected().length > 0}>
-                    <Toolbar label={b().selectionActions} variant="floating" moreItems={pillMore()} class="filesv2-selection-pill">
+                  {/*
+                   * The selection's actions float at the bottom of the column; the list scrolls beneath and ends above.
+                   * The pill keeps its place while nothing is selected, only hidden, so showing or hiding it never moves a
+                   * row, also at the end of a long list.
+                   */}
+                  <Toolbar
+                    label={b().selectionActions}
+                    variant="floating"
+                    moreItems={selected().length ? pillMore() : undefined}
+                    class={selected().length ? "filesv2-selection-pill" : "filesv2-selection-pill filesv2-selection-pill--idle"}
+                  >
+                    <Show when={selected().length > 0}>
                       <Toolbar.Action label={b().clear} icon="ti ti-x" onClick={() => toggleSelecting(false)} />
                       <Toolbar.Label>{b().pillCount({ n: selected().length, kind: pillKind(selected()) })}</Toolbar.Label>
                       <Toolbar.Separator />
@@ -2377,8 +2386,8 @@ export default function Browser(props: {
                           onClick={() => void moveOrCopy(selected())}
                         />
                       </Show>
-                    </Toolbar>
-                  </Show>
+                    </Show>
+                  </Toolbar>
                 </ScrollArea>
               </ContextMenu>
             </Show>
