@@ -137,7 +137,9 @@ test("a phone sheet slides in by transform, and with reduced motion it is in pla
     // settled: with reduced motion the first frame is already the rest.
     const first = await frame(still);
     expect(first.bottom).toBe(844);
-    expect(await still.evaluate(() => document.getAnimations().filter((animation) => animation.timeline === document.timeline).length)).toBe(0);
+    expect(
+      await still.evaluate(() => document.getAnimations().filter((animation) => animation.timeline === document.timeline).length),
+    ).toBe(0);
   } finally {
     await still.context().close();
   }
