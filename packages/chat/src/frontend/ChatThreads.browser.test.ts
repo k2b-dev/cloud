@@ -128,6 +128,35 @@ describe("Chat threads on a desktop", () => {
     }
   }, 30_000);
 
+  test("a thread still opens when its live summary refreshes during the press after Back", async () => {
+    const { chat, problems, updates } = seed();
+    const { page, errors } = await load(desktop, { chat });
+    try {
+      await threadRow(page, problems).click();
+      await page.waitForURL(`**/t/${problems}`);
+      await viewTransitionEnded(page);
+      await page.goBack();
+      await threadRow(page, "all").and(page.locator('[aria-current="page"]')).waitFor();
+      await viewTransitionEnded(page);
+      await until(() => harness.subscribed(chat));
+      const target = threadRow(page, updates);
+      await target.hover();
+      const pressed = await target.elementHandle();
+      await page.mouse.down();
+      // A live message refreshes every thread object while the person's pointer is held down.
+      // Rename another summary in that response so its visible label signals that the refresh applied.
+      harness.thread(chat, updates)!.name = "Release updates";
+      harness.receiveIn(chat, nora, "Another printer outage", { thread: problems });
+      await target.getByText("Release updates", { exact: true }).waitFor();
+      expect(await target.evaluate((element, before) => element === before, pressed)).toBe(true);
+      await page.mouse.up();
+      await page.waitForURL(`**/t/${updates}`);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("All threads labels each message with its thread, and writing there goes to General", async () => {
     const { chat, problems } = seed();
     const { page, errors } = await load(desktop, { chat });
