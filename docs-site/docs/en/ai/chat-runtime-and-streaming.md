@@ -852,6 +852,14 @@ messages, response bodies, and tool-validation payloads do not enter these
 diagnostics. Detailed tool-validation feedback remains in the authorized
 conversation for model repair. A stop records no reason.
 
+OpenAI-compatible providers classify in-band reasoning separately from answer
+text, including Kimi K3 responses with `<|close|>think<|sep|>` markers.
+The reasoning remains in thinking blocks during streaming and after reload;
+control markers do not appear in answer text. If Kimi K3 omits the opening
+marker and sends no structured reasoning, its first text can wait until a
+closing marker, tool call, or stream end identifies the span. Existing saved
+messages are not reparsed.
+
 Provider history preserves each complete assistant message, including its
 producing `provider` and reasoning blocks' `signature`, `redacted`, and `details`.
 Those fields remain unchanged through tool-result repair and in the recent
