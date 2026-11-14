@@ -523,6 +523,7 @@ export default function Panes(props: PanesProps): JSX.Element {
                 label={panesMessages().arrange}
                 note={panesMessages().arrangeNote}
                 menuClass="k2b-panes__menu"
+                lazy
               >
                 <Dropdown.Trigger
                   ref={(element: HTMLButtonElement) => {
@@ -548,6 +549,7 @@ export default function Panes(props: PanesProps): JSX.Element {
         items={menuItems(contextItemId())}
         label={panesMessages().arrange}
         menuClass="k2b-panes__menu"
+        lazy
         openAt={(open) => {
           openContextMenu = open;
         }}
