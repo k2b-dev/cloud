@@ -110,12 +110,75 @@ const shot = async (page: Page, name: string) => {
   const dir = process.env.CAPBLOCKS_SHOTS;
   if (!dir) return;
   mkdirSync(dir, { recursive: true });
-  await page.screenshot({ path: resolve(dir, `${name}.png`), fullPage: true });
+  // The whole page in one viewport: a full-page capture would pin an answer row that sticks to the bottom of the view.
+  const height = await page.evaluate(() => document.documentElement.scrollHeight);
+  const size = page.viewportSize()!;
+  await page.setViewportSize({ width: size.width, height });
+  await settled(page);
+  await page.screenshot({ path: resolve(dir, `${name}.png`) });
+  await page.setViewportSize(size);
 };
 
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 describe("Approval scenes", () => {
+  for (const width of [1440, 390])
+    test(`the approval frame a Code version fills at ${width} px draws the same card from data`, async () => {
+      const page = await open("frame", width);
+      try {
+        expect(await noOverflow(page)).toBe(0);
+        const frames = await page.locator(".k2b-chat-decision").evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const style = getComputedStyle(node);
+            const answers = node.querySelector<HTMLElement>(".k2b-chat-decision__answers");
+            return {
+              primary: node.getAttribute("data-k2b-primary"),
+              radius: style.borderTopLeftRadius,
+              shadow: style.boxShadow,
+              sentence: node.querySelector(".k2b-chat-decision__sentence")
+                ? getComputedStyle(node.querySelector(".k2b-chat-decision__sentence")!).fontSize
+                : null,
+              note: node.querySelector(".k2b-chat-decision__details-note")?.textContent ?? null,
+              notes: node.querySelectorAll(".k2b-chat-decision__note").length,
+              facts: [...node.querySelectorAll(".k2b-chat-decision__fact")].map((fact) => fact.getAttribute("data-tone")),
+              answers: [...node.querySelectorAll(".k2b-chat-decision__buttons > *")].map((answer) => [
+                answer.textContent?.trim(),
+                answer.getAttribute("data-variant"),
+              ]),
+              sticky: answers ? getComputedStyle(answers).position : null,
+              status: node.querySelector(".k2b-chat-decision__status")?.textContent ?? null,
+              busy: node.querySelector("[aria-busy='true']") !== null,
+            };
+          }),
+        );
+        expect(frames.map((frame) => [frame.primary, frame.radius, frame.shadow])).toEqual(
+          Array.from({ length: 3 }, () => ["ai", "12px", "none"]),
+        );
+        expect(frames[0]).toMatchObject({
+          sentence: "18px",
+          note: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+          facts: ["success", "neutral"],
+          answers: [
+            ["Alles ansehen", "text"],
+            ["Version 5 einschalten", "ai"],
+          ],
+          sticky: "sticky",
+        });
+        expect(frames[1]).toMatchObject({
+          notes: 2,
+          facts: ["warning"],
+          answers: [
+            ["Alles ansehen", "text"],
+            ["Zurückziehen", "secondary"],
+          ],
+        });
+        expect(frames[2]).toMatchObject({ status: "Lädt", busy: true, sentence: null });
+        await shot(page, `40-freigabe-rahmen-light-${width}`);
+      } finally {
+        await page.context().close();
+      }
+    }, 60_000);
+
   for (const width of [1440, 390])
     test(`every state at ${width} px keeps its tinted ground and head, and says its state`, async () => {
       const page = await open("states", width);

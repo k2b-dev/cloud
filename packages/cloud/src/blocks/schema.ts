@@ -96,6 +96,8 @@ const stat = z.strictObject({
     .strictObject({ value: z.number().finite(), unit: z.literal("points").optional(), better: z.enum(["up", "down"]).optional() })
     .optional(),
   compare: z.strictObject({ label: blockShortLabel, value: z.number().finite() }).optional(),
+  /** One quiet line under the figure, such as "your share" or "debited on 28.11.". */
+  note: blockShortLabel.optional(),
   trend: z.array(z.number().finite()).max(BLOCK_LIMITS.trend).optional(),
 });
 const pageLeaf = z.discriminatedUnion("kind", [

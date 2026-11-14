@@ -87,3 +87,16 @@ test("full historical snapshot outranks excerpt without rewriting the old locato
   expect(output.contentRef).toEqual(raw.contentRef);
   expect(output.draft?.editable).toBe(false);
 });
+
+test("old previews show their times as people read them, never as ISO text", () => {
+  const event = JSON.stringify(
+    presentReview(review({ kind: "event", title: "Retro", start: "2026-10-17T13:00:00.000Z", timeZone: "Europe/Berlin" }, "de")),
+  );
+  expect(event).toContain("17. Okt. 2026, 15:00");
+  expect(event).not.toContain("2026-10-17T13:00");
+  const message = JSON.stringify(presentReview(review({ ...cases[0], sendAt: "2026-10-17T12:00:00Z" }, "en")));
+  expect(message).toContain("Oct 17, 2026, 12:00 UTC");
+  expect(JSON.stringify(presentReview(review({ kind: "event", title: "Day", start: "2026-10-17", allDay: true }, "de")))).toContain(
+    "17. Okt. 2026",
+  );
+});

@@ -1,4 +1,4 @@
-import { type ChatDecisionState, LocaleProvider } from "@k2b/ui";
+import { ChangeList, type ChatDecisionState, LocaleProvider } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
 import type { ActionCard, ActionText } from "../ai/chat/action-card";
@@ -9,6 +9,7 @@ import { legacyOutcomeWords } from "../ai/chat/tool-action-words";
 import type { ApprovalPage } from "../contracts/approvals";
 import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import { ApprovalCard } from "./ApprovalCard";
+import { ApprovalFrame } from "./ApprovalFrame";
 import Approvals from "./Approvals";
 
 /**
@@ -173,7 +174,11 @@ const scenes: Record<string, () => JSX.Element> = {
       <Card card={cardOf("mail", reviewOf("mail"), { draft: true })} draft />
       <Card
         card={toolActionCard(
-          { ...fixtures.mail!.block, review: { ...draftReview("spaces"), draft: { editable: true, fields: ["title", "description"] } } },
+          {
+            ...fixtures.mail!.block,
+            presentation: { ...fixtures.mail!.block.presentation!, appId: "spaces", appName: "Spaces", appIcon: "ti ti-layout-kanban" },
+            review: { ...draftReview("spaces"), draft: { editable: true, fields: ["title", "description"] } },
+          },
           { locale: "de", timeZone: "Europe/Berlin", outcome: legacyOutcomeWords(fixtures.mail!.block, "de", "Europe/Berlin") },
         )}
         draft
@@ -182,6 +187,7 @@ const scenes: Record<string, () => JSX.Element> = {
         card={toolActionCard(
           {
             ...fixtures.mail!.block,
+            presentation: { ...fixtures.mail!.block.presentation!, appId: "grids", appName: "Grids", appIcon: "ti ti-table" },
             review: { ...draftReview("grids"), draft: { editable: true, fields: ["item", "place", "estimate"] } },
           },
           { locale: "de", timeZone: "Europe/Berlin", outcome: legacyOutcomeWords(fixtures.mail!.block, "de", "Europe/Berlin") },
@@ -190,6 +196,67 @@ const scenes: Record<string, () => JSX.Element> = {
       />
     </>
   ),
+  // The frame a Code version fills (Gustav v12, version card): data only, no Capability.
+  frame: () => {
+    const code = { name: "Code", icon: "ti ti-code", accent: "var(--k2b-ai-accent)" };
+    const sentence: ActionText = [
+      { kind: "chip", chip: { kind: "object", title: "Version 5" } },
+      { kind: "text", text: " von " },
+      { kind: "chip", chip: { kind: "object", title: "Code von info@" } },
+      { kind: "text", text: " einschalten?" },
+    ];
+    const details = {
+      label: "Details von Code · gegenüber Version 4",
+      note: { text: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.", icon: "ti ti-info-circle" },
+      content: (
+        <ChangeList
+          label="Änderungen"
+          items={[
+            { tone: "added", label: "Läuft zusätzlich Mo–Fr um 08:00" },
+            { tone: "added", label: "Darf neu Dateien ablegen im Ordner Lieferscheine 2026" },
+            { tone: "removed", label: "Darf nicht mehr Unterhaltungen markieren im Postfach info@" },
+          ]}
+        />
+      ),
+    };
+    return (
+      <>
+        <Label>Bereit</Label>
+        <ApprovalFrame
+          locale="de"
+          state="open"
+          source={code}
+          sentence={sentence}
+          reason={{ text: "Sie darf danach mehr als Version 4: Sie legt Dateien ab, die andere sehen.", icon: "ti ti-eye" }}
+          details={details}
+          meta={[
+            { text: "3 von 3 Beispielen erfolgreich", icon: "ti ti-circle-check", tone: "success" },
+            { text: "Bis dahin bleibt Version 4 eingeschaltet", icon: "ti ti-history" },
+          ]}
+          link={{ label: "Alles ansehen", href: "/app/code/info" }}
+          confirm={{ label: "Version 5 einschalten", icon: "ti ti-power", onSelect: () => {} }}
+        />
+        <Label>Wartet auf Admin</Label>
+        <ApprovalFrame
+          locale="de"
+          state="open"
+          source={code}
+          sentence={[...sentence.slice(0, 3), { kind: "text", text: " wartet auf die Freigabe eines Admins." }]}
+          reason={{ text: "In eurer Cloud gibt ein Admin jede Automation frei, die etwas tut, das andere sehen.", icon: "ti ti-eye" }}
+          details={details}
+          notes={[
+            { text: "Die Admins wissen Bescheid. Du bekommst eine Mitteilung, sobald einer entschieden hat.", icon: "ti ti-bell" },
+            { text: "Bis dahin bleibt Version 4 eingeschaltet. Du musst nichts tun.", icon: "ti ti-history" },
+          ]}
+          meta={[{ text: "Keine Beispiele: Niemand hat ausprobiert, was sie tut", icon: "ti ti-alert-triangle", tone: "warning" }]}
+          more={[{ label: "Zurückziehen", onSelect: () => {} }]}
+          link={{ label: "Alles ansehen", href: "/app/code/info" }}
+        />
+        <Label>Lädt</Label>
+        <ApprovalFrame locale="de" state="loading" source={code} reason={{ text: "" }} />
+      </>
+    );
+  },
   everywhere: () => (
     <div class="scene-places">
       <section data-place="chat">

@@ -47,7 +47,7 @@ suiteFor(
       const outsiderHeaders = { Authorization: `Bearer ${await createTestSession(author)}`, "Content-Type": "application/json" };
       const review = {
         ...reviewFixture(),
-        content: { kind: "page" as const, title: "Source", body: "+ new code", format: "plain" as const },
+        view: { version: 1 as const, blocks: [{ kind: "Text" as const, text: "+ new code" }] },
       };
       const ask = async (fullContent = true, authorUserId = author) => {
         const question = fullContent ? review : { message: "Source diff: + report();" };
@@ -79,7 +79,7 @@ suiteFor(
       expect(await counts.json()).toMatchObject({ total: 1, apps: { demo: 1 } });
       expect(await (await routes.request("/", { headers: outsiderHeaders })).json()).toMatchObject({ count: 0, items: [] });
       const contentPath = `/${id}/content?digest=${approvalReviewDigest(review)}`;
-      expect(await (await routes.request(contentPath, { headers })).json()).toEqual(review.content);
+      expect(await (await routes.request(contentPath, { headers })).json()).toEqual(review.view);
       expect((await routes.request(contentPath, { headers: outsiderHeaders })).status).toBe(404);
       const decide = (approved: boolean, requestHeaders: Record<string, string> = headers, remember?: string) =>
         routes.request(`/${id}/decision`, {

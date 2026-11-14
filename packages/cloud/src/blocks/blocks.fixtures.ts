@@ -165,10 +165,23 @@ export const financeView: Block[] = [
   {
     kind: "Stats",
     items: [
-      { label: "Girokonto", value: 2481.2, format: { style: "currency", currency: "EUR" }, icon: "ti ti-building-bank" },
-      { label: "Tagesgeld", value: 12050, format: { style: "currency", currency: "EUR" }, icon: "ti ti-pig-money" },
-      { label: "Haushaltstopf", value: 640, format: { style: "currency", currency: "EUR" }, icon: "ti ti-home" },
-      { label: "Kreditkarte", value: -312.45, format: { style: "currency", currency: "EUR" }, icon: "ti ti-credit-card" },
+      {
+        label: "Girokonto",
+        value: 2481.2,
+        format: { style: "currency", currency: "EUR" },
+        icon: "ti ti-building-bank",
+        delta: { value: 0.145, better: "up" },
+        note: "seit 01.11.",
+      },
+      { label: "Tagesgeld", value: 12050, format: { style: "currency", currency: "EUR" }, icon: "ti ti-pig-money", note: "2,1 % Zins" },
+      { label: "Haushaltstopf", value: 640, format: { style: "currency", currency: "EUR" }, icon: "ti ti-home", note: "dein Anteil" },
+      {
+        label: "Kreditkarte",
+        value: -312.45,
+        format: { style: "currency", currency: "EUR" },
+        icon: "ti ti-credit-card",
+        note: "Abbuchung 28.11.",
+      },
     ],
   },
   {

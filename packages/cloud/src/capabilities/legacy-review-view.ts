@@ -1,3 +1,4 @@
+import { dates } from "@k2b/stdlib";
 import { capabilityPersonText, capabilitySentenceText } from "../_internal/capability-sentences";
 import type { Block } from "../blocks/schema";
 import type { CapabilityActionReviewPresentation } from "../contracts/capabilities";
@@ -48,7 +49,7 @@ export function legacyReviewView(value: unknown): unknown {
       const moreAttachments = "moreAttachments" in p ? p.moreAttachments : 0;
       if (moreAttachments) attachments.push(de ? `und ${moreAttachments} weitere` : `and ${moreAttachments} more`);
       add("Attachments", "Anhänge", attachments.join(", "));
-      if (p.sendAt) add("Send at", "Sendezeit", p.sendAt);
+      if (p.sendAt) add("Send at", "Sendezeit", legacyTime(p.sendAt, locale));
       blocks.push({
         kind: "Draft",
         context,
@@ -73,8 +74,12 @@ export function legacyReviewView(value: unknown): unknown {
       break;
     case "event":
       row("Title", "Titel", p.title);
-      row("Start", "Beginn", p.start);
-      row("End", "Ende", p.end);
+      {
+        // An old event preview names its own time zone; its times read in that zone and the review's language.
+        const zone = typeof p.timeZone === "string" && p.timeZone ? p.timeZone : undefined;
+        row("Start", "Beginn", legacyTime(p.start, locale, zone, p.allDay));
+        row("End", "Ende", legacyTime(p.end, locale, zone, p.allDay));
+      }
       row("All day", "Ganztägig", p.allDay);
       row("Time zone", "Zeitzone", p.timeZone);
       row("Place", "Ort", p.place);
@@ -86,7 +91,7 @@ export function legacyReviewView(value: unknown): unknown {
     case "task":
       row("Title", "Titel", p.title);
       row("Place", "Ort", p.place);
-      row("Due", "Fällig", p.due);
+      row("Due", "Fällig", legacyTime(p.due, locale));
       if (p.assignees) row("Assignees", "Zuständig", personList(p.assignees));
       if (p.status)
         rows.push({ label: "Status", value: p.status, type: "status", states: { [p.status]: { label: p.status, tone: "neutral" } } });
@@ -152,6 +157,23 @@ export function legacyReviewView(value: unknown): unknown {
 }
 
 /** Bind new views and convert historical snapshots without mutating the source. */
+/**
+ * A time an old preview kept as ISO text, as people read it: a day as a date, an instant in its own zone or, without
+ * one, in UTC and marked so. Text that is no time stays as it was.
+ */
+const legacyTime = (value: string | undefined, locale: string, zone?: string, allDay?: boolean): string | undefined => {
+  if (!value || Number.isNaN(Date.parse(value))) return value;
+  const day = allDay || /^\d{4}-\d{2}-\d{2}$/.test(value);
+  try {
+    if (day) return dates.formatDate(value, { locale, timeZone: zone ?? "UTC" });
+    return zone
+      ? dates.formatDateTime(value, { locale, timeZone: zone })
+      : `${dates.formatDateTime(value, { locale, timeZone: "UTC" })} UTC`;
+  } catch {
+    return value;
+  }
+};
+
 export const presentReview = (value: unknown, compact = false): unknown => {
   const converted = legacyReviewView(value);
   if (!converted || typeof converted !== "object" || !("sentence" in converted)) return converted;

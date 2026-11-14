@@ -662,6 +662,14 @@
     height: var(--search-body-height);
   }
 }
+/* The way into the app stays in view at the foot of the preview column while the reader's view scrolls. */
+.cloud-global-search .cloud-resource-search__preview-open {
+  position: sticky;
+  bottom: 0;
+  margin-top: 1rem;
+  padding-block: 0.75rem 0.125rem;
+  background: var(--ui-dialog-surface);
+}
 /* A reader's text in the preview reads at the body step of the dialog. */
 .cloud-resource-search__preview .cloud-blocks[data-host="preview"] {
   font-size: 0.875rem;
