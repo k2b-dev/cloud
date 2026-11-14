@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
 import { sidebarSnapshot } from "../frontend/AssistantChatSidebar.fixture";
@@ -40,12 +43,20 @@ beforeAll(async () => {
   if (!appCss.success) throw new AggregateError(appCss.logs, "Could not compile the Assistant stylesheet.");
   const css = await appCss.outputs[0]!.text();
   const snapshot = sidebarSnapshot({ chatId: "chat01" });
+  // Fonts and icons as Cloud serves them, for the screenshots compared with the concept.
+  const publicDir = mkdtempSync(resolve(tmpdir(), "assistant-tabs-public-"));
+  if (shots) {
+    await (await import("../../../core/scripts/font-assets")).buildFontAssets(publicDir);
+    await (await import("../../../core/scripts/tabler-assets")).buildTablerIconAssets(publicDir);
+  }
+  const head = shots ? '<link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css">' : "";
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
       if (url.pathname === "/bundle.js") return new Response(code, { headers: { "content-type": "text/javascript; charset=utf-8" } });
+      if (url.pathname.startsWith("/public/")) return new Response(Bun.file(resolve(publicDir, url.pathname.slice("/public/".length))));
       if (url.pathname === "/ui.css") return new Response(Bun.file(`${ui}dist/styles.css`));
       if (url.pathname === "/app.css") return new Response(css, { headers: { "content-type": "text/css" } });
       if (url.pathname.endsWith("/files/content"))
@@ -56,7 +67,7 @@ beforeAll(async () => {
       if (url.pathname.endsWith("/web-reader")) return webReader(request);
       if (url.pathname.endsWith("/sources")) return Response.json({ sources: snapshot.sources, total: snapshot.sources.length });
       return new Response(
-        '<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root" style="height:100vh"></div><script type="module" src="/bundle.js"></script>',
+        `<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css">${head}<body class="k2b-ui" style="margin:0"><div id="root" style="height:100vh"></div><script type="module" src="/bundle.js"></script>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
@@ -138,6 +149,7 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
       await page.getByRole("menuitem", { name: "Andere schließen" }).waitFor();
       expect(await chatBox(page)).toEqual(before);
       await page.keyboard.press("Escape");
+      await page.getByRole("tab", { name: /Quellen/ }).hover();
       await page.getByRole("button", { name: /Quellen schließen/ }).click();
       await frames(page);
       expect(await chatBox(page)).toEqual(before);
@@ -247,7 +259,7 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
       await ask.getByText("Diese Seite holen?").waitFor();
       expect(await ask.locator("code").textContent()).toBe("https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon");
       expect(await ask.textContent()).toContain("Darin: wert = 2000 · ziel = lyon");
-      expect(reads.at(-1)).toEqual({ url: "https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon" });
+      expect(reads.at(-1)).toEqual({ url: "https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon", confirmed: false });
       await ask.getByRole("button", { name: "Seite holen" }).click();
       await page.locator(".web-reader__stand").last().waitFor();
       expect(reads.at(-1)).toEqual({ url: "https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon", confirmed: true });

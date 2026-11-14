@@ -511,7 +511,7 @@ function AssistantChatContextView(
             </Show>
 
             <Show when={section("sources") && chatSources().length > 0}>
-              <AssistantContextSection title={text("Sources")}>
+              <AssistantContextSection title={props.category === "sources" ? "" : text("Sources")}>
                 <AssistantContextRows>
                   <For
                     each={chatSources()

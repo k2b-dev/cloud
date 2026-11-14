@@ -830,7 +830,7 @@ export function ArtifactWorkspace(props: {
   );
   const layout = createMemo(() => state().layout ?? { version: 2 as const, root: null });
   return (
-    <div class="artifact-workspace" data-k2b-primary="ai">
+    <div class="artifact-workspace">
       <Button class="artifact-mobile-toggle" size="sm" variant="ghost" onClick={() => props.controller.setMobile("chat")}>
         <i class="ti ti-arrow-left" aria-hidden="true" />
         {w().backToChat}
