@@ -588,18 +588,18 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
   );
 }
 
-/** Chat helpers that apply at once, as a switch does; a failed save turns the switch back and says so. */
-function ChatSettings(props: { prefs: AiUserPrefs }) {
+/** Chat helpers that apply at once, as a switch does; a failed save turns the switch back and says so. The dialog owns
+ *  the choice, so leaving the tab and coming back shows what was saved. */
+function ChatSettings(props: { suggest: boolean; onSuggestChange: (next: boolean) => void }) {
   const text = useAssistantText();
-  const [suggest, setSuggest] = createSignal(props.prefs.suggestNextMessage);
   const [saving, setSaving] = createSignal(false);
   const change = async (next: boolean) => {
-    setSuggest(next);
+    props.onSuggestChange(next);
     setSaving(true);
     try {
       await assistantApi.updatePrefs({ suggestNextMessage: next });
     } catch (error) {
-      setSuggest(!next);
+      props.onSuggestChange(!next);
       toast.error(error instanceof Error ? error.message : text("Failed to save AI preferences"));
     } finally {
       setSaving(false);
@@ -612,7 +612,7 @@ function ChatSettings(props: { prefs: AiUserPrefs }) {
         description={text(
           "After an answer, the empty field shows what you might write next. Tab takes it over; nothing is sent. It costs hardly any budget.",
         )}
-        value={suggest}
+        value={() => props.suggest}
         onValueChange={(next) => void change(next)}
         disabled={saving()}
       />
@@ -630,6 +630,7 @@ function PrefsDialog(props: {
   const text = useAssistantText();
   const [activeTab, setActiveTab] = createSignal<AssistantPrefsTab>(props.initialTab);
   const [personalizationDirty, setPersonalizationDirty] = createSignal(false);
+  const [suggestNextMessage, setSuggestNextMessage] = createSignal(props.prefs.suggestNextMessage);
   const [skillEditor, setSkillEditor] = createSignal<AssistantSkillEditorRequest | undefined>(props.initialSkillEditor);
   const [skillsRefreshKey, setSkillsRefreshKey] = createSignal(0);
   const requestClose = async () => {
@@ -663,7 +664,7 @@ function PrefsDialog(props: {
               description={text("How the composer helps you write your next message.")}
             >
               <Show when={activeTab() === "chat"}>
-                <ChatSettings prefs={props.prefs} />
+                <ChatSettings suggest={suggestNextMessage()} onSuggestChange={setSuggestNextMessage} />
               </Show>
             </SettingsModal.Tab>
 

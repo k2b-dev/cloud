@@ -293,6 +293,15 @@ test("the Chat tab turns the suggested next message off at once and turns it bac
     expect(updatePrefs.mock.calls).toEqual([[{ suggestNextMessage: false }]]);
     expect(toggle().checked).toBe(false);
 
+    // Leaving the tab and coming back shows the saved choice, not the one the dialog opened with.
+    const tab = (name: string) =>
+      Array.from(dom.document.querySelectorAll<HTMLElement>('[role="tab"]')).find((item) => item.textContent?.trim() === name)!;
+    tab("Personalization").click();
+    await tick();
+    tab("Chat").click();
+    await tick();
+    expect(toggle().checked).toBe(false);
+
     fail = true;
     toggle().click();
     await tick();

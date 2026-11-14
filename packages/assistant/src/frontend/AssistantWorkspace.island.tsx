@@ -63,6 +63,7 @@ import {
   Placeholder,
   prompts,
   reconcileChatMentions,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
@@ -1934,6 +1935,10 @@ export default function AssistantWorkspace(props: Props) {
         waiting().entries.some((question) => question.conversationId === chat.activeConversationId()) ||
         queuedMessagesFor(chat.activeConversationId() ?? "").length > 0,
       dismiss: assistantApi.dismissNextMessage,
+      onDismissFailed: (retry) =>
+        toast.error(contextText("Failed to dismiss the suggestion"), {
+          action: { label: commandCopy().commandTryAgain, onClick: retry },
+        }),
     });
     const catalog = createCloudComposerCatalog();
     let commandTarget: string | undefined;

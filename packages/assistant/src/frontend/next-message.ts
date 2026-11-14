@@ -8,12 +8,15 @@ export type AssistantNextMessageInput = {
   /** A response runs, a question or approval waits, messages are queued, or this is a Project composer. */
   blocked: () => boolean;
   dismiss: (conversationId: string, messageId: string) => Promise<unknown>;
+  /** Recording a dismissal failed; `retry` records it again. Until then a reload would bring the suggestion back. */
+  onDismissFailed: (retry: () => void) => void;
 };
 
 /**
  * The suggested next message of the chat's latest answer, for the composer. Only the person who started that answer
  * receives it (the server projects it); it stands only while nothing else asks for their attention. Escape sets it
- * aside at once and records that on the server, so a reload keeps it dismissed.
+ * aside at once and records that on the server, so a reload keeps it dismissed; a failed record is reported with a
+ * way to try again.
  */
 export const createAssistantNextMessage = (input: AssistantNextMessageInput) => {
   const [dismissed, setDismissed] = createSignal<ReadonlySet<string>>(new Set());
@@ -28,8 +31,8 @@ export const createAssistantNextMessage = (input: AssistantNextMessageInput) => 
       onAccept: () => {},
       onDismiss: () => {
         setDismissed((ids) => new Set(ids).add(last.id));
-        // A failed record only means the suggestion can come back after a reload; the person already set it aside.
-        void input.dismiss(conversationId, last.id).catch(() => undefined);
+        const record = () => void input.dismiss(conversationId, last.id).catch(() => input.onDismissFailed(record));
+        record();
       },
     };
   };

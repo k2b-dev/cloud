@@ -17,8 +17,15 @@ const setup = (rows: Row[], dismiss: (conversationId: string, messageId: string)
     const [messages, setMessages] = createSignal<Row[]>(rows);
     const [blocked, setBlocked] = createSignal(false);
     const [conversationId, setConversationId] = createSignal<string | null>("c1");
-    const next = createAssistantNextMessage({ conversationId, messages, blocked, dismiss });
-    return { next, setMessages, setBlocked, setConversationId, dismiss, dispose };
+    const failures: (() => void)[] = [];
+    const next = createAssistantNextMessage({
+      conversationId,
+      messages,
+      blocked,
+      dismiss,
+      onDismissFailed: (retry) => failures.push(retry),
+    });
+    return { next, setMessages, setBlocked, setConversationId, dismiss, failures, dispose };
   });
 
 test("the latest answer's suggestion stands while nothing else waits", () => {
@@ -42,16 +49,30 @@ test("no suggestion when the latest message is not an answer with one, or it was
   expect(setup([answer({ text: "Ja", dismissedAt: "2026-11-14T20:00:00Z" })]).next()).toBeUndefined();
 });
 
-test("Escape hides it at once and records the dismissal; a failed record does not bring it back", async () => {
+test("Escape hides it at once and records the dismissal; a failed record says so and can try again", async () => {
+  let fail = true;
   const dismiss = mock(async (_conversationId: string, _messageId: string): Promise<unknown> => {
-    throw new Error("offline");
+    if (fail) throw new Error("offline");
+    return undefined;
   });
   const view = setup([user, answer({ text: "Ja, antworte Jana", dismissedAt: null })], dismiss);
   view.next()!.onDismiss();
   expect(view.next()).toBeUndefined();
   expect(dismiss.mock.calls).toEqual([["c1", "m2"]]);
   await Promise.resolve();
+  await Promise.resolve();
+  // The person already set it aside, so it stays hidden; the failure is reported with a way to try again.
   expect(view.next()).toBeUndefined();
+  expect(view.failures).toHaveLength(1);
+  fail = false;
+  view.failures[0]!();
+  expect(dismiss.mock.calls).toEqual([
+    ["c1", "m2"],
+    ["c1", "m2"],
+  ]);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(view.failures).toHaveLength(1);
   // The next answer brings its own suggestion.
   view.setMessages([user, answer({ text: "Ja", dismissedAt: null }), { ...answer({ text: "Schick es ab", dismissedAt: null }), id: "m3" }]);
   expect(view.next()?.text).toBe("Schick es ab");
