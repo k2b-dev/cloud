@@ -11,7 +11,7 @@ forced-color mode always leaves content unmasked.
 
 Compose `Chat.Timeline` and `Chat.Composer` inside `Chat`. The application owns messages, draft, attachments, model selection, run state, and mutations. The components own keyboard behavior, scrolling, focus, disclosures, structured actions, and accessible status presentation.
 
-Timeline items are plain message or activity records. Message actions and attachments are structured arrays; activity bodies remain JSX so an application can render rich tool results without coupling the package to a protocol.
+Timeline items are plain message or activity records. Message actions and attachments are structured arrays; activity bodies remain JSX so an application can render rich tool results without coupling the package to a protocol. A message shows its attachments above its words: an image with a `previewUrl` as a 148 × 110 px preview, every other attachment as a grey tile with its name and, with `size`, its size.
 
 `Chat.Timeline` renders rows by `id`, which must be unique within the timeline.
 A new record with a known `id` updates that row in place: the message element,
