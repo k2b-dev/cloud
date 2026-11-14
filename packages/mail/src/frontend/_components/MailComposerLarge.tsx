@@ -55,7 +55,9 @@ function MailLargePreview(props: {
       >
         {(value) => (
           <div class="mail-large-preview-frame">
+            {/* Not a tab stop: inside the sandboxed frame no key, also not Esc, would reach the composer. */}
             <iframe
+              tabIndex={-1}
               class="mail-large-preview-mail"
               sandbox=""
               srcdoc={`${PREVIEW_POLICY}<style>body{margin:0}</style>${value().html}`}

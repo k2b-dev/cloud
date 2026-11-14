@@ -323,6 +323,11 @@ export default function MailReplyBox(props: {
       if (target.kind === "draft") {
         const loaded = await loadDraft(target.id, target.known);
         if (disposed || generation !== loadGeneration) return false;
+        // A window of this tab took the draft meanwhile, such as after a reload: the box offers it back instead.
+        if (draftWindowOpen(loaded.draft.id)) {
+          holdForWindow(loaded.draft.id);
+          return false;
+        }
         const intent = loaded.draft.intent;
         batch(() => {
           if (isMailReplyMailMode(intent)) setMailMode(intent);
@@ -624,12 +629,22 @@ export default function MailReplyBox(props: {
   });
 
   /** Takes the draft back from its window into the box; from a large window with the caret where it stood. */
+  let bringingBack = false;
   const bringBack = async (selection?: DraftTextSelection) => {
     const id = detachedId();
-    if (!id) return;
-    await recallDraftWindow(id);
-    if (disposed) return;
-    openDraft(id, selection);
+    if (!id || bringingBack) return;
+    bringingBack = true;
+    try {
+      // A window that keeps the draft (a failed save, an upload still running) keeps it; the box does not open a
+      // second editor beside it.
+      const recalled = await recallDraftWindow(id);
+      if (disposed || (!recalled && draftWindowOpen(id))) return;
+      withdrawReturn?.();
+      withdrawReturn = undefined;
+      openDraft(id, selection);
+    } finally {
+      bringingBack = false;
+    }
   };
   /** While a large window holds this box's draft, making it smaller brings the draft back here. */
   let withdrawReturn: (() => void) | undefined;

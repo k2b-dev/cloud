@@ -1384,6 +1384,26 @@ describe("MailComposer robustness", () => {
     expect(dom.root.querySelector("[data-mail-write-large-failed]")).toBeNull();
   });
 
+  test("Write large without a confirmed lease release keeps the reply in the box", async () => {
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        const url = input instanceof Request ? input.url : String(input);
+        if (method === "DELETE" && url.endsWith("/lease")) return Response.json({ message: "Down" }, { status: 503 });
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await mount({ host: true, draft: replyDraft, box: {} });
+    // Typing takes the edit lease, which the handover then has to give back.
+    view().dispatch({ changes: { from: view().state.doc.length, insert: " More." }, userEvent: "input.type" });
+    await waitFor(() => requests.some((request) => request.endsWith("/lease")));
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-write-large]")!.click();
+    await waitFor(() => Boolean(dom.root.querySelector("[data-mail-write-large-failed]")));
+    expect(detached).toEqual([]);
+  });
+
   test("discarding an unsaved seed creates no draft, also not when the box unmounts", async () => {
     const { prompts } = await import("@k2b/ui");
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);

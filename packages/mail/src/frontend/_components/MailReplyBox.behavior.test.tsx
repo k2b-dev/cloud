@@ -644,4 +644,47 @@ describe("MailReplyBox", () => {
       unregister();
     }
   });
+
+  test("a large window that keeps its draft (failed save, running upload) keeps it; the box opens no second editor", async () => {
+    const windows = await import("./mail-compose-windows");
+    const [open, setOpen] = createSignal<string | null>(null);
+    await mount({ drafts: () => [summary()] });
+    const unregister = windows.registerDraftWindowHost({
+      mailboxId: `Box${mailbox}`,
+      open: (draftId) => setOpen(draftId),
+      isOpen: (draftId) => open() === draftId,
+      recall: async () => false,
+    });
+    try {
+      host().box!.detach("Draft1", { large: true });
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-reply-box='detached']")));
+      expect(windows.returnDraftToReplyBox("Draft1", undefined)).toBe(true);
+      await Bun.sleep(30);
+      expect(mounts).toHaveLength(1);
+      expect(dom.root.querySelector("[data-mail-reply-box='detached']")).not.toBeNull();
+      // It can still be asked again later.
+      expect(windows.returnDraftToReplyBox("Draft1", undefined)).toBe(true);
+    } finally {
+      unregister();
+    }
+  });
+
+  test("after a reload the untouched box steps aside once its draft's window comes back", async () => {
+    const windows = await import("./mail-compose-windows");
+    await mount({ drafts: () => [summary()] });
+    expect(mounts.at(-1)!.initialDraft?.id).toBe("Draft1");
+    // The windows of this tab restore after the box loaded.
+    const unregister = windows.registerDraftWindowHost({
+      mailboxId: `Box${mailbox}`,
+      open: () => undefined,
+      isOpen: (draftId) => draftId === "Draft1",
+      recall: async () => true,
+    });
+    try {
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-reply-box='detached']")));
+      expect(mounts).toHaveLength(1);
+    } finally {
+      unregister();
+    }
+  });
 });

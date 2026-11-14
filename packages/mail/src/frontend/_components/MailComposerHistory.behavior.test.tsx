@@ -121,6 +121,8 @@ describe("Mail composer history", () => {
       expect(requests.some((url) => url.includes("/messages/Old001"))).toBeFalse();
       // The reader's look: the newest message open with who and when, older ones as one line each.
       expect(dom.root.textContent).toContain("to me · 12:00 Aug 16, 2026");
+      // The notes failed here (500): the messages stand, and a quiet line says so with a way to retry.
+      expect(dom.root.textContent).toContain("The internal notes could not load. The messages are complete.");
       expect(dom.root.textContent).toContain("Older subject");
       expect(dom.root.textContent).toContain("12:00 Aug 15, 2026");
       expect(dom.root.textContent).toContain("https://unsafe.example.test");

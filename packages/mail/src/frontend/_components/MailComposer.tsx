@@ -683,7 +683,9 @@ export default function MailComposer(props: {
   });
   const uploads = attachments.uploads;
   /** Uploads this page is streaming; one an earlier session left unfinished only blocks sending. */
-  const uploadsInProgress = () => uploads().some((upload) => upload.file !== null);
+  /** Files of the conversation on their way into the draft ("Attach to reply"); they count as uploads in progress. */
+  const [attaching, setAttaching] = createSignal(0);
+  const uploadsInProgress = () => attaching() > 0 || uploads().some((upload) => upload.file !== null);
   /** From this device or from a Cloud app; either way the files take the same upload path, limits, and progress. */
   const chooseAttachments = async () => {
     const current = content();
@@ -1793,7 +1795,12 @@ export default function MailComposer(props: {
     const windowT = () => mailComposeWindowMessages.resolve([locale()]).t;
     // A window writes on offline and keeps the text here; Send waits until the connection is back.
     const sendBlocked = () =>
-      !editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || (Boolean(windowSlots) && !online());
+      !editable() ||
+      !sharedCanSend() ||
+      tableNeedsCheck() ||
+      uploads().length > 0 ||
+      attaching() > 0 ||
+      (Boolean(windowSlots) && !online());
     const uploadPercent = () => {
       const running = uploads().filter((upload) => !upload.error);
       return running.length === 0 ? null : Math.round(running.reduce((sum, upload) => sum + upload.progress, 0) / running.length);
@@ -2015,7 +2022,9 @@ export default function MailComposer(props: {
           if (!saved || disposed) throw new Error(statusMessage() || t().requestedWindowFailed);
           try {
             await releaseLease(saved);
-          } catch {
+          } catch (error) {
+            // Large, the window takes the draft over at once: without a confirmed release the box keeps it.
+            if (large) throw error;
             await releaseLeaseOnExit();
           }
           draftSession.allowNavigation();
@@ -2669,6 +2678,7 @@ export default function MailComposer(props: {
     /** "Attach to reply": the file of a message joins the draft through the same upload as a dropped file. */
     const attachFromConversation = async (attachment: { id: string; filename: string | null; contentType: string }, messageId: string) => {
       const name = attachment.filename ?? t().attachment;
+      setAttaching((count) => count + 1);
       try {
         const response = await fetch(`/api/mail/mailboxes/${props.mailboxId}/messages/${messageId}/attachments/${attachment.id}`);
         if (!response.ok) throw new Error(await readApiError(response, t().attachToReplyFailed({ name })));
@@ -2685,6 +2695,8 @@ export default function MailComposer(props: {
             },
           },
         });
+      } finally {
+        setAttaching((count) => count - 1);
       }
     };
     const largeDefault = createMemo(() =>

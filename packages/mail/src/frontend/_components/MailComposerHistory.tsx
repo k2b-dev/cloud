@@ -210,10 +210,10 @@ export default function MailComposerHistory(props: {
     enabled: props.active,
     load: async (conversationId, { abortSignal }) => {
       const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].comments.$get(
-        { param: { mailboxId: props.mailboxId, conversationId }, query: { order: "newest", limit: "50" } },
+        { param: { mailboxId: props.mailboxId, conversationId }, query: { order: "newest", limit: "100" } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(await readApiError(response, t().notesLoadFailed));
       return (await response.json()).items;
     },
   });
@@ -224,7 +224,10 @@ export default function MailComposerHistory(props: {
   const entries = createMemo<HistoryEntry[]>(() => {
     const list: HistoryEntry[] = [
       ...messages().map((message) => ({ kind: "message" as const, at: message.internalDate, message })),
-      ...(notes.data() ?? []).filter((note) => !note.deletedAt).map((note) => ({ kind: "note" as const, at: note.createdAt, note })),
+      // Notes stand within the loaded part of the conversation; earlier ones come with "Load earlier".
+      ...(notes.data() ?? [])
+        .filter((note) => !note.deletedAt && (!history.hasMore() || note.createdAt >= (messages()[0]?.internalDate ?? "")))
+        .map((note) => ({ kind: "note" as const, at: note.createdAt, note })),
     ].toSorted((left, right) => left.at.localeCompare(right.at));
     return newestFirst() ? list.toReversed() : list;
   });
@@ -315,6 +318,14 @@ export default function MailComposerHistory(props: {
                   </button>
                 </NoticeCard>
               )}
+            </Show>
+            <Show when={notes.error()}>
+              <NoticeCard tone="warning" class="m-3">
+                <span>{t().notesLoadFailed}</span>{" "}
+                <button type="button" class="font-semibold underline" onClick={() => void notes.refresh()}>
+                  {t().retry}
+                </button>
+              </NoticeCard>
             </Show>
             <Show when={!newestFirst()}>{earlier()}</Show>
             <div class="mail-composer-history-list">
