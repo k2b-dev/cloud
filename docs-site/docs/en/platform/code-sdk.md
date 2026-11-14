@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-11
+updated: 2026-11-14
 ---
 
 # Code SDK
@@ -56,6 +56,33 @@ The checker and runtime share these generated paths.
 Use `await response.text()` for UTF-8 or `await response.json()` for JSON;
 `bodyBase64` preserves binary bytes. Invalid JSON rejects `json()`.
 Schedules require a unique stable `name`; keep it when reordering registrations.
+
+## HTTP form bodies
+
+`http.fetch` accepts a string `body`. For a URL-encoded form, use the
+standard `URLSearchParams` API and pass `.toString()`; set the content type
+explicitly:
+
+```ts
+import { app, http } from "@sdk";
+
+app.schedule({ cron: "0 8 * * *", name: "form-post" }, async () => {
+  const response = await http.fetch("https://api.example.com/items", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ title: "A+B & Grüße" }).toString(),
+  });
+  if (response.status !== 200) throw new Error(`Form service answered ${response.status}`);
+});
+export default app;
+```
+
+This preserves literal plus signs, ampersands, spaces and Unicode. A
+hand-built `title=A+B` instead decodes as `A B`. Incoming page handlers read
+forms with `await c.req.formData()` and return `c.json()`, `c.text()` or
+`c.page()`; there is no `form()` response helper. In a [test
+fixture](/en/docs/platform/test-code), put the serialized string in
+`input.body` and set `input.contentType`; JSON cannot execute the expression.
 
 ## Mail invoices to an app
 

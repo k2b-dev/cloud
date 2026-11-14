@@ -73,6 +73,33 @@ test("none Actions execute each time; required Actions reject missing keys; doma
   expect(error.calls().every((row) => !row.replayed)).toBe(true);
 });
 
+test("exhausted mocks locate the next reply and count non-replayed calls across runs", async () => {
+  const bridge = createCodeTestBridge(manifest, [mock]);
+  await bridge.call(mock.operation, invocation());
+  // A successful keyed replay does not consume a reply or count toward exhaustion.
+  await bridge.call(mock.operation, invocation());
+  bridge.begin();
+  await expect(bridge.call(mock.operation, invocation("Two", target.id, "invoice:two"))).rejects.toThrow("code_test_mock_exhausted");
+  expect(bridge.calls()[0]?.result).toEqual({
+    ok: false,
+    error: "code_test_mock_exhausted",
+    detail: {
+      operation: mock.operation,
+      mockIndex: 0,
+      replyIndex: 1,
+      path: ["mocks", 0, "replies", 1],
+      reason: "Mock exhausted: calls=2 (excluding replays), replies=1. Each reply serves exactly one call; add a reply for each call.",
+    },
+  });
+  // Even a caught refusal must retain its count on the next attempt.
+  await expect(bridge.call(mock.operation, invocation("Three", target.id, "invoice:three"))).rejects.toThrow("code_test_mock_exhausted");
+  expect(bridge.calls()[1]?.result).toMatchObject({
+    detail: { replyIndex: 2, reason: expect.stringContaining("calls=3 (excluding replays), replies=1") },
+  });
+  expect(bridge.failure()).toBe("code_test_mock_exhausted");
+  expect(CodeTestResultSchema.shape.cases.element.shape.runs.element.shape.calls.parse(bridge.calls())).toEqual(bridge.calls());
+});
+
 test("test cases and stable machine output have versioned JSON schemas", () => {
   expect(
     CodeTestCaseSchema.safeParse({
