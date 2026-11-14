@@ -65,7 +65,11 @@
   --k2b-hover: var(--k2b-accent-50);
   --k2b-selected: var(--k2b-accent-100);
   --k2b-action: var(--k2b-accent-700);
-  --k2b-action-hover: var(--k2b-accent-800);
+  /* Hovered blue text: only a darker blue, never the body ink and never an
+     added underline. Text links, link and text buttons, and the text actions
+     of headings share it; text in an app accent reads the optional host hook
+     `--k2b-detail-panel-accent-hover` beside `--k2b-detail-panel-accent`. */
+  --k2b-action-hover: var(--k2b-accent-900);
   /* Kind colours of icon chips (LinkCard, ResourceCard); each keeps 3:1 on its own chip. */
   --k2b-tint-blue: var(--k2b-accent-600);
   --k2b-tint-emerald: #047857;
@@ -328,7 +332,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-hover: #252c35;
   --k2b-selected: var(--k2b-accent-950);
   --k2b-action: var(--k2b-accent-300);
-  --k2b-action-hover: var(--k2b-accent-200);
+  --k2b-action-hover: var(--k2b-accent-100);
   --k2b-tint-blue: var(--k2b-accent-400);
   --k2b-tint-emerald: #34d399;
   --k2b-tint-violet: #a78bfa;
@@ -2436,9 +2440,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-button[data-variant="link"]:not(:disabled, [aria-disabled="true"]):hover {
-  color: var(--k2b-action);
+  color: var(--k2b-action-hover);
   background: transparent;
-  text-decoration: underline;
 }
 
 /* A destructive text action, such as Remove at the foot of a menu, takes the
@@ -3989,11 +3992,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-inline-end: -0.375rem;
 }
 
-/* A collapsible section's whole heading row is one disclosure button. Flat,
-   hover only colours its text, and the row starts where the other headings
-   start. In a card it fills the card's top on hover and focus. The chevron
-   and the summary keep their places in both states, so opening moves only
-   what lies below. */
+/* A collapsible section's whole heading row is one disclosure button. It
+   never draws a fill, not on hover, open, or with focus: hover only colours
+   the title and the chevron in the accent, and keyboard focus draws the ring
+   around the row. The row keeps the heading's place, so the gaps are those of
+   a fixed section. The chevron and the summary keep their places in both
+   states, so opening moves only what lies below. */
 .k2b-ui .k2b-section__toggle {
   padding: 0;
   border: 0;
@@ -4003,7 +4007,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font: inherit;
   cursor: pointer;
   user-select: none;
-  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui .k2b-section__toggle:disabled {
@@ -4011,7 +4014,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section__toggle:not(:disabled):hover :is(.k2b-section__title, .k2b-section__chevron) {
-  color: var(--k2b-text);
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
 }
 
 .k2b-ui .k2b-section__toggle:focus-visible {
@@ -4025,46 +4028,37 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 2.75rem;
 }
 
+/* In a card the whole top of the card opens it: an invisible hit area reaches
+   over the card's padding, and open down to the content. */
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: calc(100% + 1.75rem);
-  margin: -0.75rem -0.875rem;
-  padding: 0.75rem 0.875rem;
-  border-radius: calc(var(--k2b-radius-surface) - 1px);
+  position: relative;
 }
 
-.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: calc(100% + 2.25rem);
-  margin: -1rem -1.125rem;
-  padding: 1rem 1.125rem;
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle::before {
+  content: "";
+  position: absolute;
+  inset: -0.75rem -0.875rem;
 }
 
-.k2b-ui .k2b-section[data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle {
-  margin-bottom: -0.375rem;
-  padding-bottom: 0.375rem;
-  border-end-start-radius: 0;
-  border-end-end-radius: 0;
+.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle::before {
+  inset: -1rem -1.125rem;
 }
 
-.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle:not(:disabled):hover {
-  background: var(--k2b-hover);
+.k2b-ui .k2b-section[data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle::before {
+  bottom: -0.375rem;
 }
 
-.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle:focus-visible {
-  outline-offset: calc(-1 * var(--k2b-focus-width));
+.k2b-ui .k2b-section[data-size="md"][data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle::before {
+  bottom: -0.5rem;
 }
 
-/* A card that stands flat inside another frame is a flat row again. */
+/* A card that stands flat inside another frame has no padding to reach over. */
 .k2b-ui
   :is(.k2b-section, .k2b-detail-panel__group, .k2b-detail-panel__summary, .k2b-paper, .k2b-panel-dialog, .k2b-settings-section)
   .k2b-section[data-frame="line"]
   > .k2b-section__header
-  > .k2b-section__toggle {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  border-radius: var(--k2b-radius-control);
-  background: transparent;
-  outline-offset: var(--k2b-focus-offset);
+  > .k2b-section__toggle::before {
+  content: none;
 }
 
 .k2b-ui .k2b-section__chevron {
@@ -4642,6 +4636,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-section__actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 9%, transparent);
+}
+
+/* Blue text stays blue on hover: a darker blue, not the body ink. */
+.k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover,
+.k2b-ui .k2b-section__actions .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-detail-panel-accent-hover, var(--k2b-action-hover));
 }
 
 /* A titled group: a quiet title over secondary sections that stand flush as
@@ -14791,14 +14791,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-button.k2b-chat-decision__remember:not(:disabled, [aria-disabled="true"]):hover,
-.k2b-ui .k2b-button.k2b-chat-outcome__link:not(:disabled, [aria-disabled="true"]):hover {
-  color: var(--k2b-action);
-}
-
-.k2b-ui :is(.k2b-chat-decision__remember, .k2b-chat-outcome__link):not(:disabled, [aria-disabled="true"]):hover > .k2b-button__label,
+.k2b-ui .k2b-button.k2b-chat-outcome__link:not(:disabled, [aria-disabled="true"]):hover,
 .k2b-ui .k2b-chat-preview__more:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: var(--k2b-action-hover);
 }
 
 /* Touch targets: the quiet answer often wraps under the two answers, closer

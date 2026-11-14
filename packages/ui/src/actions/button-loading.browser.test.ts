@@ -161,12 +161,14 @@ const boxes = (page: Page) =>
   );
 
 describe("@k2b/ui a busy button keeps its box", () => {
-  test("link actions use regular action ink, surface-free hover and visible keyboard focus in both themes", async () => {
+  test("link actions use regular action ink, a darker blue on hover without surface or underline, and visible keyboard focus in both themes", async () => {
     const page = await load(viewports.desktop!);
     try {
       const link = page.getByRole("button", { name: "Save link sm", exact: true });
       for (const theme of ["light", "dark"]) {
         await page.evaluate((value) => document.body.setAttribute("data-theme", value), theme);
+        // The pointer leaves the link the previous theme hovered, so the resting ink is read at rest.
+        await page.mouse.move(0, 0);
         await settle(page);
         const ink = await link.evaluate((button) => {
           const reference = document.createElement("span");
@@ -186,8 +188,28 @@ describe("@k2b/ui a busy button keeps its box", () => {
         expect(ink.background).toBe("rgba(0, 0, 0, 0)");
         await link.hover();
         await settled(page);
+        // Hover only darkens the blue: accent 900 in light, accent 100 in dark, never the body ink.
+        const hover = await link.evaluate((button, theme) => {
+          const color = (value: string) => {
+            const reference = document.createElement("span");
+            reference.style.color = value;
+            button.append(reference);
+            const resolved = getComputedStyle(reference).color;
+            reference.remove();
+            return resolved;
+          };
+          return {
+            expected: color(theme === "light" ? "var(--k2b-accent-900)" : "var(--k2b-accent-100)"),
+            text: color("var(--k2b-text)"),
+          };
+        }, theme);
+        await page.waitForFunction(
+          (expected) => getComputedStyle(document.querySelector('.k2b-button[data-variant="link"][data-size="sm"]')!).color === expected,
+          hover.expected,
+        );
+        expect(hover.expected).not.toBe(hover.text);
         expect(await link.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
-        expect(await link.evaluate((button) => getComputedStyle(button).textDecorationLine)).toBe("underline");
+        expect(await link.evaluate((button) => getComputedStyle(button).textDecorationLine)).toBe("none");
         await page.keyboard.press("Tab");
         await link.focus();
         await settled(page);

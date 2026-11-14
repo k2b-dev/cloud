@@ -41,13 +41,8 @@
   background: transparent;
 }
 
-.k2b-ui .k2b-dialog .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  border-radius: var(--k2b-radius-control);
-  background: transparent;
-  outline-offset: var(--k2b-focus-offset);
+.k2b-ui .k2b-dialog .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle::before {
+  content: none;
 }
 
 .k2b-ui .k2b-dialog {
