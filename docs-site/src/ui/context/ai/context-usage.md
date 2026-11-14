@@ -25,11 +25,12 @@ import { Chat } from "@k2b/ui";
 ## The ring
 
 The ring follows the highest known share of all parts: the one that runs out
-first. At rest it is a calm grey ring without a number; without any share it
-is an empty grey circle. The context warns from 85 % of the window, and a
-section from its `warnAt`, 80 % unless set. While one part warns, the ring and
-its number take the warning colour, and the ring gains a centre mark, so the
-state does not depend on colour. On a screen narrower than 30rem the box stays
+first. At rest it is a calm ring without a number: the share in the meta grey
+on a light track; without any share it is an empty grey circle. The context
+warns from 85 % of the window, and a section from its `warnAt`, 80 % unless
+set. While one part warns, the arc turns warning orange, the number appears
+at 12 px semibold in the warning text colour, and the ring gains a centre mark,
+so the state does not depend on colour. On a screen narrower than 30rem the box stays
 one touch target wide: the number stays in the label and the details.
 
 The box is reserved for a ring with "100 %", so a warning, its number, or

@@ -251,6 +251,42 @@ for (const width of [1440, 390]) {
   }, 30_000);
 }
 
+test("the ring is calm meta grey at rest and warning orange with a 12 px semibold number", async () => {
+  const page = await open(1440);
+  try {
+    const paint = () =>
+      page.evaluate(() => {
+        const probe = document.createElement("span");
+        document.body.append(probe);
+        const token = (value: string) => {
+          probe.style.color = value;
+          return getComputedStyle(probe).color;
+        };
+        const ring = document.querySelector(".k2b-chat-usage__trigger .k2b-progress-ring")!;
+        const track = document.querySelector(".k2b-chat-usage__trigger .k2b-progress-ring__track")!;
+        const number = document.querySelector(".k2b-chat-usage__number");
+        const result = {
+          arc:
+            getComputedStyle(ring).color === token("var(--k2b-placeholder-color)")
+              ? "meta"
+              : getComputedStyle(ring).color === token("var(--k2b-warning-500)")
+                ? "warning"
+                : getComputedStyle(ring).color,
+          track: getComputedStyle(track).stroke === token("var(--k2b-border)") ? "border" : getComputedStyle(track).stroke,
+          number: number ? [getComputedStyle(number).fontSize, getComputedStyle(number).fontWeight] : null,
+        };
+        probe.remove();
+        return result;
+      });
+    expect(await paint()).toEqual({ arc: "meta", track: "border", number: null });
+    await page.evaluate(() => fixture.setBudget(86));
+    await settled(page);
+    expect(await paint()).toEqual({ arc: "warning", track: "border", number: ["12px", "600"] });
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
 test("the details hold the old context window and the budget, and the summary icon says why it is off", async () => {
   const page = await open(1440);
   try {

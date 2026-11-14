@@ -15249,7 +15249,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    the widest state, a ring with "100 %", so a warning never moves the controls after it. */
 .k2b-ui .k2b-chat-usage {
   display: inline-flex;
-  min-inline-size: 4.25rem;
+  min-inline-size: 4.5rem;
   flex: 0 0 auto;
   align-items: center;
 }
@@ -15259,9 +15259,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
-/* The ring follows the trigger's text: calm grey at rest, the warning colour once a part warns. */
+/* Calm at rest: the share in the meta grey on a light track. Once a part warns, the arc turns warning orange and the
+   number appears in the meta step, semibold in the warning text colour (4.5:1). */
+.k2b-ui .k2b-chat-usage__trigger {
+  font-size: 0.75rem;
+}
+
 .k2b-ui .k2b-chat-usage__trigger .k2b-progress-ring[data-tone] {
-  color: inherit;
+  color: var(--k2b-placeholder-color);
+}
+
+.k2b-ui .k2b-chat-usage__trigger .k2b-progress-ring__track {
+  stroke: var(--k2b-border);
+}
+
+.k2b-ui .k2b-chat-usage__trigger[data-warning="true"] .k2b-progress-ring[data-tone] {
+  color: var(--k2b-warning-500);
+}
+
+.k2b-ui .k2b-chat-usage__number {
+  font-weight: 600;
 }
 
 /* On a phone the box stays one touch target wide, so the footer still fits + · usage · tasks · model · microphone ·
