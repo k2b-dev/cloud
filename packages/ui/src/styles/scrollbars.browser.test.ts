@@ -14,7 +14,7 @@ const entry = resolve(import.meta.dir, "scrollbars.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, Chat, DataTable, LocaleProvider, Panes, ScrollArea, applyPanesPreset } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, Chat, DataTable, DetailPanel, LocaleProvider, Panes, ScrollArea, applyPanesPreset } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const [grown, setGrown] = createSignal(false);
 window.grow = () => setGrown(true);
@@ -61,6 +61,14 @@ render(() => h(LocaleProvider, { locale: "en", get children() {
   return h(ScrollArea, { id: "notebook", style: "height: 100%", get children() { return paragraphs("Line", 2)(); } });
 } }), document.getElementById("notebook-host"));
 render(() => h(LocaleProvider, { locale: "en", get children() {
+  return h(DetailPanel, { get children() {
+    return [
+      h(DetailPanel.Header, { title: "Migration plan", subtitle: "Collaborative note" }),
+      h(DetailPanel.Body, { get children() { return paragraphs("Detail", 2)(); } }),
+    ];
+  } });
+} }), document.getElementById("detail-host"));
+render(() => h(LocaleProvider, { locale: "en", get children() {
   return h(Chat.Timeline, { get items() { return chatItems(); }, label: "Chat" });
 } }), document.getElementById("chat-host"));
 render(() => h(LocaleProvider, { locale: "en", get children() {
@@ -103,6 +111,7 @@ const html = `<!doctype html><html lang="en"><head><style>${css}</style><style>
     <div class="cell" id="table-host"></div>
     <div class="cell" id="pdf-host">${pdf(1)}</div>
     <div class="cell" id="panes-host"></div>
+    <div class="cell" id="detail-host"></div>
   </div>
 </body></html>`;
 
@@ -110,7 +119,7 @@ const html = `<!doctype html><html lang="en"><head><style>${css}</style><style>
  * A scroller, the element whose box must stay put inside it, and the axis its scrollbar takes room on. A probe that
  * follows new content down, as the chat's does, or grows with it keeps only its inline position and width.
  */
-type Surface = { name: string; scroller: string; probe: string; axis: "y" | "x"; inlineOnly?: boolean };
+type Surface = { name: string; scroller: string; probe: string; axis: "y" | "x"; inlineOnly?: boolean; plain?: boolean };
 const surfaces: Surface[] = [
   { name: "sidebar (vertical)", scroller: ".k2b-app-workspace__sidebar-body", probe: ".k2b-app-workspace__sidebar-item", axis: "y" },
   { name: "sidebar (horizontal)", scroller: ".k2b-app-workspace__sidebar-body", probe: ".k2b-app-workspace__sidebar-item", axis: "x" },
@@ -121,10 +130,20 @@ const surfaces: Surface[] = [
     probe: '[data-workspace-level="2"] .probe',
     axis: "y",
   },
-  { name: "notebook content", scroller: "#notebook", probe: "#notebook .probe", axis: "y" },
+  // A plain ScrollArea often never scrolls, so it draws no empty track. Safari reserves no gutter before content
+  // overflows: there its content narrows by the track once, at its end edge, and nothing else moves.
+  { name: "notebook content", scroller: "#notebook", probe: "#notebook .probe", axis: "y", plain: true },
   { name: "chat timeline", scroller: ".k2b-chat-timeline__viewport", probe: ".k2b-chat-timeline__content", axis: "y", inlineOnly: true },
   // A filling table stretches its few rows; only the columns' inline geometry belongs to the scrollbar.
   { name: "data table", scroller: ".k2b-table-wrap", probe: ".k2b-data-table thead th", axis: "y", inlineOnly: true },
+  // The header keeps the body's track without scrolling, so its trailing controls stay on the body's edge.
+  { name: "detail panel", scroller: "#detail-host .k2b-detail-panel__body", probe: "#detail-host .probe", axis: "y" },
+  {
+    name: "detail header",
+    scroller: "#detail-host .k2b-detail-panel__body",
+    probe: "#detail-host .k2b-detail-panel__header-main",
+    axis: "y",
+  },
   { name: "pdf viewer", scroller: "#pdf", probe: "#pdf .probe", axis: "y" },
   // More tabs share the row, so each one narrows; the row itself and the pane below it stay put.
   { name: "panes", scroller: ".k2b-panes__tabs", probe: ".k2b-panes__head", axis: "x" },
@@ -215,20 +234,48 @@ describe(`one shared scrollbar (${browserName})`, () => {
       });
       await settled(page);
       const after = await readAll(page);
-      for (const { name } of surfaces) {
+      const lateGutter = (surface: Surface) => surface.plain === true && browserName === "webkit";
+      for (const surface of surfaces) {
+        const { name } = surface;
         expect([name, before[name]!.overflows]).toEqual([name, false]);
         expect([name, after[name]!.overflows]).toEqual([name, true]);
-        expect([name, after[name]!.probe]).toEqual([name, before[name]!.probe]);
         expect([name, after[name]!.scroller]).toEqual([name, before[name]!.scroller]);
+        if (!lateGutter(surface)) {
+          expect([name, after[name]!.probe]).toEqual([name, before[name]!.probe]);
+          continue;
+        }
+        const [x, y, width, height] = before[name]!.probe;
+        const narrowed = after[name]!.room - before[name]!.room;
+        expect([name, narrowed]).toEqual([name, 8]);
+        expect([name, after[name]!.probe]).toEqual([name, [x, y, width - narrowed, height]]);
       }
       // A vertical scrollbar keeps the same room from the start. A sideways one inside a scroller of fixed height
       // takes its room from that scroller's own height, which moves nothing above it.
-      for (const { name, axis } of surfaces) if (axis === "y") expect([name, after[name]!.room]).toEqual([name, before[name]!.room]);
+      for (const surface of surfaces)
+        if (surface.axis === "y" && !lateGutter(surface))
+          expect([surface.name, after[surface.name]!.room]).toEqual([surface.name, before[surface.name]!.room]);
       // A classic scrollbar is the shared 0.5rem, or takes no room where an overlay draws it (DataTable, Panes).
       for (const { name } of surfaces) expect([name, after[name]!.room === 0 || after[name]!.room === 8]).toEqual([name, true]);
     } finally {
       await page.close();
     }
+  });
+
+  test("the document keeps the browser's own scrollbar, also with a .k2b-ui body", async () => {
+    // WebKit styles the viewport's scrollbar from the body, so a styled `.k2b-ui` body would give every long page a
+    // classic track that narrows it.
+    const room = async (stylesheet: string) => {
+      const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><style>${stylesheet}</style></head><body class="k2b-ui" style="margin:0"><div style="height:3000px"></div></body></html>`,
+        );
+        return await page.evaluate(() => window.innerWidth - document.documentElement.clientWidth);
+      } finally {
+        await page.close();
+      }
+    };
+    expect(await room(css)).toBe(await room(""));
   });
 
   test("the thumb is 4px at rest and 6px under the pointer, inside the same 0.5rem", async () => {

@@ -551,6 +551,9 @@
   padding: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  /* Opening or closing a group must not move the centered section when the
+     panel starts or stops scrolling. */
+  scrollbar-gutter: stable;
 }
 
 .k2b-ui .k2b-settings__section {
@@ -3772,19 +3775,39 @@ html {
       padding-inline-end: 0;
     }
 
+    /* The settings dialog's panel scrolls by nature; its centered section
+       keeps one place. */
+    .k2b-ui .k2b-settings__body {
+      overflow-y: scroll;
+    }
+
+    /* A panel dialog's body takes the track from its end inset, so its
+       content keeps its width whether it scrolls or not. */
+    .k2b-ui .k2b-panel-dialog__body:not([data-surface="floating"], .k2b-panel-dialog[data-media] > *) {
+      overflow-y: scroll;
+      padding-inline-end: max(0px, var(--k2b-panel-dialog-inset, 1.5rem) - 0.5rem);
+      scrollbar-gutter: stable;
+    }
+
+    /* A settings page keeps its 1rem end edge the same way. */
+    .k2b-ui .k2b-settings-page__body {
+      overflow-y: scroll;
+      padding-inline-end: 0.5rem;
+      scrollbar-gutter: stable;
+    }
+
     /* A page level keeps its 1rem end edge: 0.5rem padding and the 0.5rem track. */
     .k2b-ui .k2b-app-workspace__main-pane[data-workspace-heading="page"] > .k2b-app-workspace__level-body:not([data-scroll="false"], .k2b-mobile-shell__main *) {
       padding-inline-end: 0.5rem;
     }
 
-    /* Every other shared scroller that reserves a stable gutter keeps the
-       same always-present track, for the same reason: WebKit's
-       scrollbar-gutter reserves nothing until content overflows. Chromium
-       draws the same empty track either way. */
-    .k2b-ui .k2b-scroll-area[data-orientation="vertical"],
+    /* Every shared scroller that exists to scroll keeps the same
+       always-present track, for the same reason: WebKit's scrollbar-gutter
+       reserves nothing until content overflows. Chromium draws the same empty
+       track either way. Regions that often do not scroll, such as Main,
+       MainPane, and a plain ScrollArea, keep their gutter and draw no empty
+       track; an inset ScrollArea takes it from its inset (above). */
     .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body,
-    .k2b-ui .k2b-app-workspace__main:not([data-scroll="false"], [data-workspace-levels], .k2b-mobile-shell__main *),
-    .k2b-ui .k2b-app-workspace__main-pane:not([data-scroll="false"], [data-workspace-level], .k2b-mobile-shell__main *),
     .k2b-ui .k2b-detail-panel__body,
     .k2b-ui .k2b-chat-timeline__viewport,
     .k2b-ui .k2b-virtual-feed__viewport {
@@ -4946,6 +4969,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
     .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-body:not([data-scroll="false"]) {
       overflow-y: scroll;
       padding-inline-end: calc(max(1rem, env(safe-area-inset-right)) - 0.5rem);
+      scrollbar-gutter: stable;
     }
 
     @media (min-width: 48rem) {

@@ -12624,9 +12624,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* scrollbars: central rule begin */
-/* One scrollbar for every scroller inside `.k2b-ui` and for the document that
-   hosts it: no track, no corner, no arrows, only a fully round thumb in the
-   two tokens below. Chromium and WebKit draw a fixed 0.5rem scrollbar whose
+/* One scrollbar for every scroller inside `.k2b-ui`: no track, no corner, no
+   arrows, only a fully round thumb in the two tokens below. The document keeps
+   the browser's own scrollbar: WebKit styles it from `body`, so a `.k2b-ui`
+   body is left out. Chromium and WebKit draw a fixed 0.5rem scrollbar whose
    thumb is 4px wide at rest and 6px under the pointer or while dragged. The
    thumb widens inside that fixed space, so hovering never moves content.
    Chromium ignores every ::-webkit-scrollbar rule of an element that has a
@@ -12635,18 +12636,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    keep their native overlay scrollbars and forced colors the system ones.
    The rules match every element directly, because a direct match beats an
    inherited value, and sit in the components layer with no specificity, so a
-   hidden scrollbar (`scrollbar-width: none`, a utility) always wins. Scrollers that
-   can start or stop overflowing reserve this space with `scrollbar-gutter`, or
-   take it from an end inset they already have; see layout-parity.css.
+   hidden scrollbar (`scrollbar-width: none`, a utility) always wins. Scrollers
+   that can start or stop overflowing reserve this space with
+   `scrollbar-gutter`, or take it from an end inset they already have; see
+   layout-parity.css.
    scripts/checks/scrollbars.ts keeps other stylesheets from setting their own. */
-:root:has(> .k2b-ui),
 .k2b-ui {
   --k2b-scrollbar-thumb: color-mix(in srgb, var(--k2b-neutral-500, #71717a) 45%, transparent);
   --k2b-scrollbar-thumb-hover: color-mix(in srgb, var(--k2b-neutral-500, #71717a) 80%, transparent);
 }
 
-:root.dark:has(> .k2b-ui),
-:root:has(> .k2b-ui:is([data-theme="dark"], .k2b-dark)),
 .k2b-ui[data-theme="dark"],
 .k2b-ui.k2b-dark,
 .dark .k2b-ui {
@@ -12656,24 +12655,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 @layer components {
   @media (pointer: fine) and (forced-colors: none) {
-    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar {
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar {
       width: 0.5rem;
       height: 0.5rem;
       background: transparent;
     }
 
-    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-track,
-    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-corner {
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-track,
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-corner {
       background: transparent;
     }
 
-    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-button {
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-button {
       display: none;
       width: 0;
       height: 0;
     }
 
-    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-thumb {
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-thumb {
       min-width: 2rem;
       min-height: 2rem;
       border: 0.125rem solid transparent;
@@ -12682,8 +12681,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       background-clip: padding-box;
     }
 
-    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-thumb:hover,
-    :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar-thumb:active {
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-thumb:hover,
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-thumb:active {
       border-width: 0.0625rem;
       background: var(--k2b-scrollbar-thumb-hover);
       background-clip: padding-box;
@@ -12692,7 +12691,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   @supports not selector(::-webkit-scrollbar) {
     @media (forced-colors: none) {
-      :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *) {
+      :where(.k2b-ui:not(body), .k2b-ui *) {
         scrollbar-width: thin;
         scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
       }

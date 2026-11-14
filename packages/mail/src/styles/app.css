@@ -1532,6 +1532,7 @@
 @media (pointer: fine) and (forced-colors: none) {
   @supports selector(::-webkit-scrollbar) {
     .k2b-ui .mail-reader-scroll {
+      overflow-y: scroll;
       padding-inline-end: 0.25rem;
     }
 

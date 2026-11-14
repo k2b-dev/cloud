@@ -149,8 +149,9 @@ describe("@k2b/ui stylesheet hygiene", () => {
       expect(rule, `${context} ${selector}`).toBeDefined();
       return cssDeclarations(rule!.body);
     };
-    // Every element inside `.k2b-ui` and the document hosting it, matched directly: a direct match beats an inherited value.
-    const every = ":where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)";
+    // Every element inside `.k2b-ui`, matched directly: a direct match beats an inherited value. WebKit styles the
+    // document's scrollbar from the body, so a `.k2b-ui` body keeps the browser's own.
+    const every = ":where(.k2b-ui:not(body), .k2b-ui *)";
     const webkit = "@layer components > @media (pointer: fine) and (forced-colors: none)";
     const scrollbar = declarations(`${every}::-webkit-scrollbar`, webkit);
     expect([scrollbar.get("width"), scrollbar.get("height")]).toEqual([["0.5rem"], ["0.5rem"]]);

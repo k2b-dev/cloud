@@ -1684,6 +1684,17 @@
   background: var(--k2b-surface);
 }
 
+/* WebKit reserves no gutter before content overflows, so with a mouse the
+   hours, the day row, and the all-day row keep the same always-present track
+   (layout-parity.css), and the day headers stay over their columns. */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui :is(.k2b-calendar-time-grid__days, .k2b-calendar-time-grid__all-day, .k2b-calendar-time-grid__scroll) {
+      overflow-y: scroll;
+    }
+  }
+}
+
 .k2b-ui .k2b-calendar-time-grid__grid,
 .k2b-ui .k2b-calendar-time-grid__column {
   min-height: 100%;
@@ -3361,6 +3372,17 @@
   overscroll-behavior: contain;
   scroll-padding: var(--k2b-calendar-week-top, 5rem) var(--k2b-detail-space, 0px) 0 var(--k2b-calendar-gutter);
   outline: none;
+}
+
+/* WebKit reserves no gutter and draws a styled scrollbar only once the week
+   overflows, which narrows the week while it reveals a day. With a mouse the
+   shared track is always there (layout-parity.css). */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-calendar-week__scroll {
+      overflow-y: scroll;
+    }
+  }
 }
 
 .k2b-ui .k2b-calendar-week__grid {
@@ -5536,6 +5558,22 @@
   border-radius: var(--k2b-radius-control);
   background: var(--k2b-field-surface, var(--k2b-surface-muted));
   color: var(--k2b-text);
+}
+
+/* With a mouse, a code block's shared 0.5rem track is always there and lies in
+   its bottom padding, so the block keeps its height when a long line starts or
+   stops overflowing (also when WebKit draws the scrollbar late). */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-content-markdown pre {
+      overflow-x: scroll;
+      padding-bottom: 0.25rem;
+    }
+
+    .k2b-ui .k2b-content-markdown .k2b-message-row__code pre {
+      padding-bottom: 0.125rem;
+    }
+  }
 }
 
 .k2b-ui .k2b-content-markdown pre code {

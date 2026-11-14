@@ -96,7 +96,8 @@ the pointer or while dragged. The thumb widens inside the same 0.5 rem, so
 nothing moves. Its colors are `--k2b-scrollbar-thumb` and
 `--k2b-scrollbar-thumb-hover`. Chromium and Safari draw it exactly. Firefox
 draws its thin scrollbar in the same color. Touch screens keep their native
-overlay scrollbars, and forced colors mode keeps the system scrollbars.
+overlay scrollbars, and forced colors mode keeps the system scrollbars. The
+document keeps the browser's own scrollbar.
 
 Applications do not style scrollbars. Do not set `scrollbar-width`,
 `scrollbar-color`, or `::-webkit-scrollbar` rules of your own. Chromium
@@ -116,16 +117,21 @@ In markup, `[scrollbar-width:none]` does the same. A rare justified exception
 names its reason in a comment on the line above the declaration or its selector
 (`scrollbars: allow <reason>`).
 
-A scrollbar never moves content when it appears. `ScrollArea`, level bodies,
-the workspace sidebar, `Main`, `MainPane`, `DetailPanel.Body`,
-`ChatTimeline`, `VirtualFeed`, and `PdfViewer` keep the scrollbar's room from
-the start. Chromium and Firefox reserve it with `scrollbar-gutter: stable`.
-Safari reserves no gutter before content overflows, so with a mouse these
-scrollers always show the empty 0.5 rem track. Where a column already has an
-end inset, the track takes that inset instead of adding room: an inset
-`ScrollArea`, a level body, and the sidebar keep 0.5 rem on both sides. An
-application scroller with its own end padding does the same and subtracts
-the track from its padding:
+A scrollbar never moves content when it appears. Chromium and Firefox reserve
+its room from the start with `scrollbar-gutter: stable`. Safari reserves no
+gutter before content overflows, so with a mouse the scrollers that exist to
+scroll always show the empty 0.5 rem track: level bodies, the workspace
+sidebar, an inset `ScrollArea`, the settings page, `DetailPanel.Body`,
+`ChatTimeline`, `VirtualFeed`, `PdfViewer`, the calendar's hours, and code
+blocks. Where such a scroller already has an end inset or padding, the track
+takes it instead of adding room, so the content keeps its width: an inset
+`ScrollArea`, a level body, and the sidebar keep 0.5 rem on both sides.
+
+Regions that often do not scroll, such as `Main`, `MainPane`, and a plain
+`ScrollArea`, draw no empty track. In Safari their content narrows by the
+track once, at the end edge, when it first overflows. For a list or reader
+that grows, use `ScrollArea inset`, or give your own scroller the track in
+its end padding:
 
 ```css
 /* The reader pads 1.25rem; the shared track takes 0.5rem of it. */
