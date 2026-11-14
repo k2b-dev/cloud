@@ -1,0 +1,6 @@
+### The access summary named an option the app does not offer, and the Code head wrapped its handle label
+
+- **What happened:** Mail's mailbox settings said "All signed-in people: off" under Access, although a mailbox never offers that option. On a phone, the Code page head pushed "· Handle" to line 2 because it was set at the page's 14 px instead of the mockup's smaller step.
+- **Root cause:** `AccessSummary` always named General, and the dialog's `allowAuthenticated` had no counterpart on the summary. The Code head line had no size of its own, and Administration › Code set the same sentence with its own classes.
+- **Error class:** A shared summary that does not take the same surface options as the dialog it opens, and one head line built twice with separate type sizes.
+- **Guard:** `packages/cloud/src/access/AccessSummary.behavior.test.tsx` covers an app with and without "All signed-in people", and `packages/mail/src/frontend/_components/MailboxSettings.render.test.tsx` asserts Mail's line. `CodeAccountHandle.browser.test.ts` checks at 390 px that "· Handle" ends line 1 at the natural width, and `CodeArea.browser.test.ts` checks that Administration › Code uses the same `cloud-code__lead`.

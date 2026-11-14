@@ -56,7 +56,7 @@ test("chat clicks select immediately while loading, preserve native modifiers an
     finish = resolve;
   });
   const [project, setProject] = createSignal<string | null>(null);
-  const [view, setView] = createSignal<"chat" | "apps" | "all">("chat");
+  const [view, setView] = createSignal<"chat" | "code" | "all">("chat");
   let opens = 0;
   let transitions = 0;
   Object.defineProperty(dom.document, "startViewTransition", {
@@ -109,7 +109,7 @@ test("chat clicks select immediately while loading, preserve native modifiers an
     expect(link.getAttribute("aria-current")).not.toBe("page");
     setProject(null);
     expect(link.getAttribute("aria-current")).toBe("page");
-    for (const destination of ["apps", "all"] as const) {
+    for (const destination of ["code", "all"] as const) {
       setView(destination);
       expect(link.getAttribute("aria-current")).not.toBe("page");
     }
@@ -213,14 +213,13 @@ test("footer project popup and mobile group share search and creation; pinned ch
       ["Pinned", ["chat:pinned"]],
       ["Previous 30 days", ["chat:normal"]],
     ]);
-    expect(ids.slice(-4)).toEqual(["apps", "projects", "activities", "preferences"]);
+    expect(ids.slice(-3)).toEqual(["approvals", "projects", "preferences"]);
+    expect(ids).not.toContain("activities");
+
     expect(ids).not.toContain("pinned");
     expect(ids).not.toContain("chats");
     expect(mobile.items().find((item) => item.id === "projects")?.defaultExpanded).toBe(false);
-    const studio = mobile.items().find((item) => item.id === "apps");
-    expect(studio?.action).toBe("apps");
-    expect(studio?.href).toBeUndefined();
-    expect(studio?.children).toBeUndefined();
+    expect(mobile.items().find((item) => item.id === "apps")).toBeUndefined();
     await mobile.activate("search-projects");
     await mobile.activate("new-project");
     expect(searches).toHaveLength(2);
@@ -235,7 +234,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
 test("Done keeps its row through live updates, confirms success, then fades without blocking", async () => {
   const dom = createDomTestHarness();
   const live = createAssistantLiveHub();
-  const original = { ...conversation("finish", "Finish this", null), hasActiveSchedule: true };
+  const original = { ...conversation("finish", "Finish this", null) };
   const completed = { ...original, isDone: true, done: true };
   const [items, setItems] = createSignal<AiConversation[]>([original]);
   let resolveSave: (value: AiConversation) => void = () => {};
@@ -262,7 +261,7 @@ test("Done keeps its row through live updates, confirms success, then fades with
   const card = () =>
     dom.root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-section:not([data-collapsible]) .assistant-chat-sidebar-item");
   try {
-    expect(card()?.querySelector('.assistant-chat-marker[title="Active schedule"]')).not.toBeNull();
+    expect(card()?.querySelector('.assistant-chat-marker[title="Active schedule"]')).toBeNull();
     card()!.querySelector<HTMLButtonElement>('[aria-label="Mark chat done"]')!.click();
     expect(card()?.classList.contains("assistant-chat-sidebar-item--saving")).toBe(true);
     setItems([completed]);
@@ -344,7 +343,7 @@ test("the server's approvals count renders the row from the first paint", async 
   }
 });
 
-test("the Approvals row sits above Studio while something waits and changes only on navigation", async () => {
+test("Waiting for you always keeps its place above Projects, with the live count", async () => {
   const dom = createDomTestHarness();
   const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
   const { refreshAppBadges } = await import("@k2b/cloud/browser/app-badges");
@@ -356,8 +355,6 @@ test("the Approvals row sits above Studio while something waits and changes only
     for (let attempt = 0; attempt < 5; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 0));
   };
   const live = createAssistantLiveHub();
-  const [pending, setPending] = createSignal(0);
-  const [selected, setSelected] = createSignal("first");
   let opened = 0;
   const dispose = render(
     () => (
@@ -365,8 +362,8 @@ test("the Approvals row sits above Studio while something waits and changes only
         timeZone="UTC"
         renderedAt={renderedAt}
         conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
-        activeConversationId={selected}
-        pendingApprovals={pending()}
+        activeConversationId={() => "first"}
+        pendingApprovals={0}
         onOpenApprovals={() => {
           opened++;
         }}
@@ -378,40 +375,33 @@ test("the Approvals row sits above Studio while something waits and changes only
   delegateEvents(["click"]);
   const footer = () => dom.root.querySelector<HTMLElement>('footer[data-sidebar-mode="expanded"]')!;
   const row = () => footer().querySelector<HTMLAnchorElement>('a[href="/app/assistant?approvals=1"]');
+  const labels = () =>
+    Array.from(footer().querySelectorAll(".k2b-app-workspace__sidebar-item-label-text")).map((label) => label.textContent);
   const mobileIds = () =>
     readWorkspaceNavigation()!
       .navigation.items()
       .map((item) => item.id);
   const stopBadges = watchAppBadges([]);
   try {
-    // Rendered with nothing open: no row, on the desktop or on the phone.
+    // Nothing waits: the row is still there, so a later request never slides the footer under the pointer.
     await settle();
-    expect(row()).toBeNull();
-    expect(mobileIds()).not.toContain("approvals");
-    // A request that arrives while the person reads does not slide a row under the pointer.
+    expect(row()).not.toBeNull();
+    expect(row()!.querySelector("i")?.className).toContain("ti-hand-stop");
+    expect(labels()).toEqual(["Waiting for you", "Projects", "Personalize"]);
+
+    expect(mobileIds()).toContain("approvals");
+    expect(mobileIds()).not.toContain("apps");
     counts = { total: 2, apps: { assistant: 2 } };
     refreshAppBadges();
     await settle();
-    expect(row()).toBeNull();
-    setSelected("second");
-    expect(row()).not.toBeNull();
-    const labels = Array.from(footer().querySelectorAll(".k2b-app-workspace__sidebar-item-label-text")).map((label) => label.textContent);
-    expect(labels.indexOf("Approvals")).toBeGreaterThanOrEqual(0);
-    expect(labels.indexOf("Approvals")).toBeLessThan(labels.indexOf("Studio"));
     expect(row()!.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent).toBe("2");
     const ids = mobileIds();
-    expect(ids.indexOf("approvals")).toBeLessThan(ids.indexOf("apps"));
+    expect(ids.indexOf("approvals")).toBeLessThan(ids.indexOf("projects"));
     expect(
       readWorkspaceNavigation()!
         .navigation.items()
         .find((item) => item.id === "approvals")?.badge,
     ).toBe(2);
-    // The last request decided elsewhere: the row stays with a muted 0 until the person navigates.
-    counts = { total: 0, apps: {} };
-    refreshAppBadges();
-    await settle();
-    expect(row()).not.toBeNull();
-    expect(row()!.querySelector('[data-waiting="zero"] .k2b-app-workspace__sidebar-status-count')?.textContent).toBe("0");
     // Modified clicks keep the link's own behavior, such as a new tab; a plain click opens the view in place.
     for (const modifier of ["metaKey", "ctrlKey", "shiftKey", "altKey"]) {
       const event = new MouseEvent("click", { bubbles: true, cancelable: true, [modifier]: true });
@@ -423,13 +413,58 @@ test("the Approvals row sits above Studio while something waits and changes only
     row()!.dispatchEvent(click);
     expect(click.defaultPrevented).toBe(true);
     expect(opened).toBe(1);
-    // Navigation removes it; once the browser has read a count, that count wins over the rendered one.
-    setPending(1);
-    setSelected("first");
-    expect(row()).toBeNull();
   } finally {
     stopBadges();
     globalThis.fetch = originalFetch;
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test("My apps & automations appears only for a person with Code and opens its view in place", async () => {
+  const dom = createDomTestHarness();
+  const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
+  const live = createAssistantLiveHub();
+  const [hasCode, setHasCode] = createSignal(false);
+  let opened = 0;
+  const dispose = render(
+    () => (
+      <AssistantSidebar
+        timeZone="UTC"
+        renderedAt={renderedAt}
+        conversations={() => [conversation("first", "First", null)]}
+        hasPersonalCode={hasCode}
+        onOpenCode={() => {
+          opened++;
+        }}
+        live={live}
+      />
+    ),
+    dom.root,
+  );
+  delegateEvents(["click"]);
+  const footer = () => dom.root.querySelector<HTMLElement>('footer[data-sidebar-mode="expanded"]')!;
+  const row = () => footer().querySelector<HTMLAnchorElement>('a[href="/app/assistant?code=1"]');
+  const mobileIds = () =>
+    readWorkspaceNavigation()!
+      .navigation.items()
+      .map((item) => item.id);
+  try {
+    // Without Code there is no empty entry, neither on the desktop nor on the phone.
+    expect(row()).toBeNull();
+    expect(mobileIds()).not.toContain("code");
+    setHasCode(true);
+    expect(row()?.textContent).toContain("My apps & automations");
+    // The entry carries the feat/code sign in the row's colour.
+    expect(row()!.querySelector('.cloud-featcode[data-variant="glyph"][data-tone="current"]')).not.toBeNull();
+    const labels = Array.from(footer().querySelectorAll(".k2b-app-workspace__sidebar-item-label-text")).map((label) => label.textContent);
+    expect(labels.slice(0, 3)).toEqual(["Waiting for you", "My apps & automations", "Projects"]);
+    expect(mobileIds()).toContain("code");
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    row()!.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(opened).toBe(1);
+  } finally {
     dispose();
     dom.cleanup();
   }

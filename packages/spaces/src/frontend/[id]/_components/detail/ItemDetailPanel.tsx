@@ -79,6 +79,7 @@ import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughW
 import CommentsSection from "./CommentsSection";
 import DependencyList from "./DependencyList";
 import EventInvitations from "./EventInvitations";
+import ItemHistorySection from "./ItemHistorySection";
 import ItemLinksSection from "./ItemLinksSection";
 import TaskAttachmentsSection from "./TaskAttachmentsSection";
 import TaskChecklistSection from "./TaskChecklistSection";
@@ -1181,6 +1182,10 @@ export default function ItemDetailPanel(props: Props) {
               add="always"
               class="spaces-item-reactions"
             />
+          </Show>
+
+          <Show when={props.commentTarget.itemId} keyed>
+            {(itemId) => <ItemHistorySection spaceId={props.spaceId} itemId={itemId} dateConfig={props.dateConfig} />}
           </Show>
 
           <Show when={props.canWrite || commentsPage().total > 0}>

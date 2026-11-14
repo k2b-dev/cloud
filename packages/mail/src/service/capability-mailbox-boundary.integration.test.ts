@@ -145,10 +145,16 @@ suite("Mail capabilities check mailbox access before resolving IDs", () => {
     for (const phase of ["review", "run"] as const) {
       const calls = [
         (mailbox: string, conversation: string) =>
-          assign[phase]({ mailboxId: mailbox, conversationIds: [conversation], mode: "replace", assigneeUserIds: [] }, outsider),
+          assign[phase](
+            { conversationIds: [conversation], mode: "replace", assigneeUserIds: [] },
+            { ...outsider, target: { type: "mail.mailbox", id: mailbox } },
+          ),
         ...[status, legacyStatus].map(
           (action) => (mailbox: string, conversation: string) =>
-            action[phase]({ mailboxId: mailbox, conversationIds: [conversation], status: "done" }, outsider),
+            action[phase](
+              { conversationIds: [conversation], status: "done" },
+              { ...outsider, target: { type: "mail.mailbox", id: mailbox } },
+            ),
         ),
       ];
       for (const call of calls) {
@@ -170,10 +176,11 @@ suite("Mail capabilities check mailbox access before resolving IDs", () => {
       const calls = [
         (mailbox: string, conversation: string) =>
           summary[phase](
-            { mailboxId: mailbox, conversationId: conversation, expectedRevision: 1, expectedSummaryRevision: 0, summary: "Prepared" },
-            context,
+            { conversationId: conversation, expectedRevision: 1, expectedSummaryRevision: 0, summary: "Prepared" },
+            { ...context, target: { type: "mail.mailbox", id: mailbox } },
           ),
-        (mailbox: string, conversation: string) => reference[phase]({ mailboxId: mailbox, conversationId: conversation }, context),
+        (mailbox: string, conversation: string) =>
+          reference[phase]({ conversationId: conversation }, { ...context, target: { type: "mail.mailbox", id: mailbox } }),
       ];
       for (const call of calls) {
         const existing = await refusal(call(mailboxShortId, conversationShortId));
@@ -187,13 +194,13 @@ suite("Mail capabilities check mailbox access before resolving IDs", () => {
   test("conversation reviews answer an unreadable mailbox like an unknown conversation", async () => {
     const statusReview = (context: CapabilityExecutionContext, mailbox: string, conversation: string) =>
       mailCapabilities.actions["conversation.status.update"].review(
-        { mailboxId: mailbox, conversationId: conversation, expectedRevision: 1, status: "done" },
-        context,
+        { conversationId: conversation, expectedRevision: 1, status: "done" },
+        { ...context, target: { type: "mail.mailbox", id: mailbox } },
       );
     const commentReview = (context: CapabilityExecutionContext, conversation: string) =>
       mailCapabilities.actions["conversation.comment.create"].review(
-        { mailboxId: mailboxShortId, conversationId: conversation, body: "Hello" },
-        context,
+        { conversationId: conversation, body: "Hello" },
+        { ...context, target: { type: "mail.mailbox", id: mailboxShortId } },
       );
 
     const existing = await refusal(statusReview(outsider, mailboxShortId, conversationShortId));
@@ -211,27 +218,32 @@ suite("Mail capabilities check mailbox access before resolving IDs", () => {
     const update = mailCapabilities.actions["conversation.comment.update"];
     const remove = mailCapabilities.actions["conversation.comment.delete"];
     const target = (conversation: string, comment: string) => ({
-      mailboxId: mailboxShortId,
       conversationId: conversation,
       commentId: comment,
       expectedRevision: 1,
     });
+    const scoped = (context: CapabilityExecutionContext): CapabilityExecutionContext => ({
+      ...context,
+      target: { type: "mail.mailbox", id: mailboxShortId },
+    });
     const deleteRun = (context: CapabilityExecutionContext, conversation: string, comment: string) =>
-      remove.run(target(conversation, comment), { ...context, idempotencyKey: `delete-${newShortId()}` });
+      remove.run(target(conversation, comment), { ...scoped(context), idempotencyKey: `delete-${newShortId()}` });
 
-    const existing = await refusal(update.review({ ...target(conversationShortId, commentShortId), body: "Changed" }, outsider));
+    const existing = await refusal(update.review({ ...target(conversationShortId, commentShortId), body: "Changed" }, scoped(outsider)));
     expect(existing).toMatchObject(notFound);
-    expect(await refusal(update.review({ ...target(conversationShortId, unknown()), body: "Changed" }, outsider))).toEqual(existing);
-    expect(await refusal(update.review({ ...target(unknown(), commentShortId), body: "Changed" }, outsider))).toEqual(existing);
+    expect(await refusal(update.review({ ...target(conversationShortId, unknown()), body: "Changed" }, scoped(outsider)))).toEqual(
+      existing,
+    );
+    expect(await refusal(update.review({ ...target(unknown(), commentShortId), body: "Changed" }, scoped(outsider)))).toEqual(existing);
     expect(await refusal(deleteRun(outsider, conversationShortId, commentShortId))).toEqual(
       await refusal(deleteRun(outsider, conversationShortId, unknown())),
     );
 
-    expect(await refusal(update.review({ ...target(conversationShortId, commentShortId), body: "Changed" }, reader))).toMatchObject(
+    expect(await refusal(update.review({ ...target(conversationShortId, commentShortId), body: "Changed" }, scoped(reader)))).toMatchObject(
       forbidden,
     );
     expect(await refusal(deleteRun(reader, conversationShortId, commentShortId))).toMatchObject(forbidden);
-    expect((await update.review({ ...target(conversationShortId, commentShortId), body: "Changed" }, owner)).ok).toBeTrue();
+    expect((await update.review({ ...target(conversationShortId, commentShortId), body: "Changed" }, scoped(owner))).ok).toBeTrue();
     const [comment] = await sql<{ deleted_at: Date | null }[]>`SELECT deleted_at FROM mail.conversation_comments
       WHERE short_id = ${commentShortId}`;
     expect(comment?.deleted_at).toBeNull();
@@ -239,11 +251,14 @@ suite("Mail capabilities check mailbox access before resolving IDs", () => {
 
   test("draft reviews and mailbox queries answer an unreadable mailbox like an unknown ID", async () => {
     const discard = (context: CapabilityExecutionContext, draft: string) =>
-      mailCapabilities.actions["draft.discard"].review({ mailboxId: mailboxShortId, draftId: draft, expectedRevision: 1 }, context);
+      mailCapabilities.actions["draft.discard"].review(
+        { draftId: draft, expectedRevision: 1 },
+        { ...context, target: { type: "mail.mailbox", id: mailboxShortId } },
+      );
     const comments = (context: CapabilityExecutionContext, conversation: string) =>
       mailCapabilities.queries["conversation.comment.list"].run(
-        mailCapabilities.queries["conversation.comment.list"].input.parse({ mailboxId: mailboxShortId, conversationId: conversation }),
-        context,
+        mailCapabilities.queries["conversation.comment.list"].input.parse({ conversationId: conversation }),
+        { ...context, target: { type: "mail.mailbox", id: mailboxShortId } },
       );
 
     const existingDraft = await refusal(discard(outsider, draftShortId));
@@ -255,14 +270,14 @@ suite("Mail capabilities check mailbox access before resolving IDs", () => {
     expect(await refusal(discard(assigned, draftShortId))).toEqual(await refusal(discard(assigned, unknown())));
     const patch = (draft: string) =>
       mailCapabilities.actions["draft.patch"].run(
-        { mailboxId: mailboxShortId, draftId: draft, expectedRevision: 1, patch: { subject: "Changed" } },
-        assigned,
+        { draftId: draft, expectedRevision: 1, patch: { subject: "Changed" } },
+        { ...assigned, target: { type: "mail.mailbox", id: mailboxShortId } },
       );
     expect(await refusal(patch(draftShortId))).toEqual(await refusal(patch(unknown())));
     const sendReview = (draft: string) =>
       mailCapabilities.queries["draft.send.review"].run(
-        mailCapabilities.queries["draft.send.review"].input.parse({ mailboxId: mailboxShortId, draftId: draft, expectedRevision: 1 }),
-        assigned,
+        mailCapabilities.queries["draft.send.review"].input.parse({ draftId: draft, expectedRevision: 1 }),
+        { ...assigned, target: { type: "mail.mailbox", id: mailboxShortId } },
       );
     expect(await refusal(sendReview(draftShortId))).toEqual(await refusal(sendReview(unknown())));
 
@@ -335,12 +350,101 @@ suite("Mail capabilities check mailbox access before resolving IDs", () => {
   test("a keep release refuses a caller who may not release keeps alike for known and unknown IDs", async () => {
     const release = (conversation: string) =>
       mailCapabilities.actions["conversation.keep.release"].run(
-        { mailboxId: mailboxShortId, conversationId: conversation },
-        { ...owner, idempotencyKey: `release-${newShortId()}` },
+        { conversationId: conversation },
+        { ...{ ...owner, idempotencyKey: `release-${newShortId()}` }, target: { type: "mail.mailbox", id: mailboxShortId } },
       );
 
     const existing = await refusal(release(conversationShortId));
     expect(existing).toMatchObject(forbidden);
     expect(await refusal(release(unknown()))).toEqual(existing);
+  });
+
+  test("FileRef attachment imports check write access, limits and durable idempotent completion", async () => {
+    const action = mailCapabilities.actions["draft.attachment.import.v1"];
+    const input = { draftId: draftShortId, expectedRevision: 1, file: { name: "report.csv", mediaType: "text/csv", size: 4 } };
+    const context = { ...owner, target: { type: "mail.mailbox", id: mailboxShortId }, idempotencyKey: "chat-attachment-retry" };
+    expect(await refusal(action.run(input, { ...context, ...reader }))).toMatchObject(forbidden);
+    expect(await refusal(action.run({ ...input, file: { ...input.file, size: 100 * 1024 * 1024 + 1 } }, context))).toMatchObject({
+      status: 400,
+    });
+    const first = unwrap(await action.run(input, context));
+    const retried = unwrap(await action.run(input, context));
+    expect(retried.stream?.id).toBe(first.stream?.id);
+    if (!first.stream) throw new Error("Missing attachment stream");
+    const result = await action.stream.write(first.stream, new Blob(["data"]).stream(), context);
+    expect(result.data).toMatchObject({ draftId: draftShortId, revision: 2 });
+    expect(await action.stream.write(first.stream, new Blob(["data"]).stream(), context)).toEqual(result);
+    expect(await action.stream.status(first.stream, context)).toEqual({ state: "completed", result });
+    await action.stream.abort(first.stream, context);
+    expect(await action.stream.status(first.stream, context)).toEqual({ state: "completed", result });
+    const again = unwrap(await action.run(input, context));
+    expect(again.stream?.id).toBe(first.stream.id);
+    const [count] = await sql<{ count: string }[]>`
+      SELECT count(*) AS count FROM mail.draft_attachments attachment JOIN mail.drafts draft ON draft.id = attachment.draft_id
+      WHERE draft.short_id = ${draftShortId} AND draft.mailbox_id = ${mailboxId}::uuid AND attachment.removed_at IS NULL
+    `;
+    expect(Number(count?.count)).toBe(1);
+    for (const call of [
+      () => action.stream.write(first.stream!, new Blob(["data"]).stream(), { ...context, ...reader }),
+      () => action.stream.status(first.stream!, { ...context, ...reader }),
+      () => action.stream.abort(first.stream!, { ...context, ...reader }),
+    ])
+      await expect(call()).rejects.toMatchObject({ status: 403 });
+  });
+
+  test("slow FileRef writers leave the database pool available and competing writers cannot claim twice", async () => {
+    const action = mailCapabilities.actions["draft.attachment.import.v1"];
+    const input = { draftId: draftShortId, expectedRevision: 1, file: { name: "report.csv", mediaType: "text/csv", size: 4 } };
+    const context = { ...owner, target: { type: "mail.mailbox", id: mailboxShortId } };
+    // Exceed the configured pool, including its documented default of ten connections.
+    const count = Number(process.env.CLOUD_DATABASE_POOL_MAX ?? 10) + 1;
+    const offers = await Promise.all(
+      Array.from({ length: count }, async (_, i) => {
+        const caller = { ...context, idempotencyKey: `slow-import-${i}` };
+        const offer = unwrap(await action.run(input, caller));
+        if (!offer.stream) throw new Error("Missing attachment stream");
+        return { stream: offer.stream, caller };
+      }),
+    );
+    const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
+    const started = offers.map(() => Promise.withResolvers<void>());
+    const release = Promise.withResolvers<void>();
+    const writes = offers.map(({ stream, caller }, i) =>
+      action.stream.write(
+        stream,
+        new ReadableStream<Uint8Array>(
+          {
+            start(controller) {
+              controllers.push(controller);
+            },
+            pull() {
+              started[i]!.resolve();
+              return release.promise;
+            },
+          },
+          { highWaterMark: 0 },
+        ),
+        caller,
+      ),
+    );
+    // Attach rejection handlers immediately; closing empty sources below deliberately aborts these reservations.
+    const settled = Promise.allSettled(writes);
+    try {
+      await Promise.all(started.map((item) => item.promise));
+      const [claims] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM mail.draft_attachment_uploads upload
+        JOIN mail.drafts draft ON draft.id = upload.draft_id
+        WHERE draft.short_id = ${draftShortId} AND draft.mailbox_id = ${mailboxId}::uuid AND upload.capability_write_started
+      `;
+      expect(claims?.count).toBe(count);
+      const first = offers[0]!;
+      await expect(action.stream.write(first.stream, new Blob(["data"]).stream(), first.caller)).rejects.toMatchObject({ status: 409 });
+      expect(await action.stream.status(first.stream, first.caller)).toEqual({ state: "open" });
+    } finally {
+      for (const controller of controllers) controller.close();
+      release.resolve();
+      await settled;
+    }
+    for (const { stream, caller } of offers) expect(await action.stream.status(stream, caller)).toEqual({ state: "aborted" });
   });
 });

@@ -151,6 +151,8 @@ export const chatMessages = i18n.define({
       resourceAccount: "Service account",
       standaloneAccount: "Agent (API key only)",
       agentAccount: "Agent",
+      codeAccount: "Service account",
+      codeAuthority: "Anyone who edits the Code acts with this permission.",
 
       findGroup: "Find a directory group",
       discoveryAudience: ({ count }: { count: number }) => `${count.toLocaleString("en")} accounts can find this channel.`,
@@ -651,6 +653,8 @@ export const chatMessages = i18n.define({
       resourceAccount: "Dienstkonto",
       standaloneAccount: "Agent (nur API Key)",
       agentAccount: "Agent",
+      codeAccount: "Dienstkonto",
+      codeAuthority: "Wer den Code bearbeitet, handelt mit diesem Recht.",
 
       findGroup: "Verzeichnisgruppe suchen",
       discoveryAudience: ({ count }: { count: number }) => `${count.toLocaleString("de")} Konten können diesen Kanal finden.`,

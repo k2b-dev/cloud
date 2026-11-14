@@ -19,6 +19,10 @@ pages, breadcrumbs and a footer.
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it.
 
+Use `focusMode` for a dedicated editor or pop-out window. It hides the app bar
+and header while keeping the signed-in profile available to access dialogs and
+panels, so they can identify the current person just as on a regular page.
+
 Application authors put objects in the sidebar and views of the open object
 in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
 quiet secondary actions share that row while the workspace width permits;

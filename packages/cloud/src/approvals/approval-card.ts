@@ -1,10 +1,13 @@
 import { capabilityQuestionText, capabilityUnknownText } from "../_internal/capability-sentences";
 import { type AiStoredActionReview, isLegacyActionReview, storedActionReview } from "../ai/action-review";
-import { type ActionCard, legacyActionCard, reviewActionCard } from "../ai/chat/action-card";
+import { type ActionCard, actionReason, legacyActionCard, reviewActionCard } from "../ai/chat/action-card";
 import { aiChatMessages } from "../ai/chat/messages";
 import type { CapabilityActionReviewData } from "../contracts/capabilities";
+import { approvalMessages } from "./messages";
 
 export type ApprovalCardInput = {
+  codeVersion?: boolean;
+  soleAdminNotice?: string;
   sentence: string;
   action: string;
   appName: string;
@@ -43,26 +46,34 @@ export const approvalCard = (item: ApprovalCardInput, locale: string, timeZone: 
   const app = { name: item.appName, icon: item.appIcon ?? "ti ti-shield-check" };
   const context = { locale, timeZone, app };
   const review = item.review ? ("legacy" in item.review ? item.review : storedActionReview(item.review)) : null;
-  if (review && !isLegacyActionReview(review)) return reviewActionCard(review, context);
+  const codeReason = (card: ActionCard): ActionCard => {
+    if (!item.codeVersion) return card;
+    const reason = actionReason("changes_access", { locale: card.locale, appName: item.appName });
+    const notice = item.soleAdminNotice ? approvalMessages.resolve([card.locale]).t.soleAdminNotice : undefined;
+    return { ...card, reason: { ...reason, text: notice ? `${reason.text} ${notice}` : reason.text } };
+  };
+  if (review && !isLegacyActionReview(review)) return codeReason(reviewActionCard(review, context));
   const title = approvalTitle(item);
   const t = aiChatMessages(locale);
-  return legacyActionCard(
-    {
-      question: review?.legacy.question ?? capabilityQuestionText(title, locale),
-      rows: review?.legacy.rows ?? sentenceRows(item),
-      ...(review?.legacy.markdown ? { markdown: review.legacy.markdown } : {}),
-      ...(review?.legacy.links ? { links: review.legacy.links } : {}),
-      subject: title,
-      title,
-      outcome: {
-        running: t.receiptRunning({ title }),
-        done: t.receiptDone({ title }),
-        rejected: t.receiptRejected({ title }),
-        notRun: t.receiptNotRun({ title, stopped: false }),
-        unknown: capabilityUnknownText(title, locale),
-        unknownStill: capabilityUnknownText(title, locale, true),
+  return codeReason(
+    legacyActionCard(
+      {
+        question: review?.legacy.question ?? capabilityQuestionText(title, locale),
+        rows: review?.legacy.rows ?? sentenceRows(item),
+        ...(review?.legacy.markdown ? { markdown: review.legacy.markdown } : {}),
+        ...(review?.legacy.links ? { links: review.legacy.links } : {}),
+        subject: title,
+        title,
+        outcome: {
+          running: t.receiptRunning({ title }),
+          done: t.receiptDone({ title }),
+          rejected: t.receiptRejected({ title }),
+          notRun: t.receiptNotRun({ title, stopped: false }),
+          unknown: capabilityUnknownText(title, locale),
+          unknownStill: capabilityUnknownText(title, locale, true),
+        },
       },
-    },
-    context,
+      context,
+    ),
   );
 };

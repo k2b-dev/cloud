@@ -29,7 +29,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Abschlussbereitschaft lesen",
           description: "Aktuelle Pflichtfelder, Vier-Augen-Anfrage und Regelrevision vor dem Abschließen eines Datensatzes lesen.",
           input: {
-            tableId: "Öffentliche ID der gespeicherten Tabelle.",
             recordId: "Öffentliche ID des Datensatzes in dieser Tabelle.",
           },
         },
@@ -98,6 +97,17 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl der zurückzugebenden Artikel.",
           },
         },
+        "base.readable": {
+          title: "Leser für Base prüfen",
+          description: "Prüfen, welche aktuellen Konten diese Ressource lesen dürfen; ohne Inhaltszugriff.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
+            "container.type": "Typ des erwarteten Orts.",
+            "container.id": "Öffentliche ID des erwarteten Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
         "base.read": {
           title: "Die Grids-Base lesen",
           description: "Lesen Sie einen von base.list oder base.search zurückgegebenen grids.base ref.",
@@ -129,7 +139,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Lade das relevante Schema für eine konkrete Aufgabe. Bei unbekannter Quelle zuerst tables, sonst fields mit tableId. options benötigt tableId und fieldId. Unbenutzte IDs weglassen, keine leeren Strings senden. includeWriteContext nur vor Datensatzänderungen verwenden.",
           input: {
-            baseId: "Öffentliche Base ID, deren berechtigungsbasierter GQL-Kontext geladen werden soll.",
             kind: "Katalogabschnitt: Tabellen, Ansichten, Felder oder genaue Auswahloption IDs.",
             tableId: "Öffentlicher Tisch ID; Erforderlich für Felder und Optionen, optional für Ansichten.",
             fieldId: "Öffentliches Auswahlfeld ID; erforderlich, wenn Art Optionen ist.",
@@ -147,7 +156,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
             showTableToUser: "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
             parameters:
               "Werte für @params.name: Skalare, exakte {decimal: string}-Werte oder flache Listen. Kein Authentifizierungs- oder Seitenkontext; parametrisierte Ergebnisse enthalten keinen Editor-Link.",
-            baseId: "Öffentliche Base ID, in der die GQL-Quelle aufgelöst ist.",
             query: "Grids Query Auszuführende Sprachquelle.",
             currentTableId: "Optionale öffentliche Tabelle ID, die verwendet wird, wenn die Quelle eine explizite from-Klausel weglässt.",
             currentSource: "Optionale aktuelle Tabellen- oder Ansichtsquelle, die verwendet wird, wenn GQL weglässt.",
@@ -164,7 +172,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
             showTableToUser: "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
             parameters:
               "Werte für @params.name: Skalare, exakte {decimal: string}-Werte oder flache Listen. Kein Authentifizierungs- oder Seitenkontext; parametrisierte Ergebnisse enthalten keinen Editor-Link.",
-            baseId: "Öffentliche Base ID, in der die GQL-Quelle aufgelöst ist.",
             query: "Grids Query Auszuführende Sprachquelle.",
             currentTableId: "Optionale öffentliche Tabelle ID, die verwendet wird, wenn die Quelle eine explizite from-Klausel weglässt.",
             currentSource: "Optionale aktuelle Tabellen- oder Ansichtsquelle, die verwendet wird, wenn GQL weglässt.",
@@ -175,10 +182,9 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "gql.view.execute": {
           title: "Gespeicherte Grids-Ansicht ausführen",
           description:
-            "Führen Sie die genaue gespeicherte Abfrage für eine Base-ID und eine Ansichts-ID aus, die von gql.context-Typansichten zurückgegeben werden. Dies ist der direkte Pfad zur gespeicherten Ansicht. Verwenden Sie gql.execute für Ad-hoc-GQL und nextCursor für weitere Seiten.",
+            "Führen Sie die genaue gespeicherte Abfrage im Base-Ziel für eine Ansichts-ID aus, die von gql.context-Typansichten zurückgegeben wird. Dies ist der direkte Pfad zur gespeicherten Ansicht. Verwenden Sie gql.execute für Ad-hoc-GQL und nextCursor für weitere Seiten.",
           input: {
             showTableToUser: "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
-            baseId: "Öffentliche Base ID, die die gespeicherte Ansicht enthält.",
             viewId: "Öffentliche gespeicherte Ansicht ID, deren genau gespeicherter GQL ausgeführt werden soll.",
             pageSize: "Maximale Anzahl an Zeilen, die auf dieser Cursorseite zurückgegeben werden sollen.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -203,7 +209,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "view.read": {
           title: "Die Grids-Ansicht lesen",
           description:
-            "Lesen Sie einen von gql.context zurückgegebenen grids.view ref-Typ. Führen Sie es mit gql.view.execute und derselben Base-ID aus.",
+            "Lesen Sie einen von gql.context zurückgegebenen grids.view ref-Typ. Führen Sie es mit gql.view.execute und demselben Base-Ziel aus.",
           input: {
             id: "Stabile öffentliche Ansicht ID.",
           },
@@ -215,7 +221,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Bis zu 50 Datensätze nach aktuellen Bedingungen in einer Transaktion erstellen oder ändern; höchstens 100 gesperrte Datensätze. Bei einem Fehler wird alles zurückgerollt.",
           input: {
-            baseId: "Öffentliche Base-ID; alle Ziele müssen zu dieser Base gehören.",
             locks: "Vor den Prüfungen gesperrte Koordinationsdatensätze; insgesamt höchstens 100 verschiedene Sperren.",
             "locks[].tableId": "Öffentliche Tabellen-ID des gesperrten Datensatzes.",
             "locks[].recordId": "Öffentliche ID des gesperrten Datensatzes.",
@@ -228,7 +233,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Nach der direkten Abschlussregel abschließen oder eine Vier-Augen-Anfrage erstellen. Benötigt aktuelle Datensatzversion und Regelrevision; fragt immer nach.",
           input: {
-            tableId: "Öffentliche Tabellen-ID des Datensatzes.",
             recordId: "Öffentliche ID des abzuschließenden Datensatzes.",
             ifVersion: "Aktuelle Datensatzversion; Änderungen führen zur Ablehnung.",
             expectedPolicyRevision: "Regelrevision aus record.finalization.read.",
@@ -239,7 +243,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Datensatz finalisieren",
           description: "Einen versionsgeprüften Datensatz nach den bestehenden Vier-Augen-Regeln finalisieren. Fragt immer nach.",
           input: {
-            tableId: "Öffentliche Tabellen-ID des Datensatzes.",
             recordId: "Öffentliche ID des abzuschließenden Datensatzes.",
             ifVersion: "Aktuelle Datensatzversion; Änderungen führen zur Ablehnung.",
             expectedPolicyRevision: "Regelrevision aus record.finalization.read.",
@@ -251,7 +254,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Einen bearbeitbaren Korrektur- oder Stornoentwurf mit Verknüpfung zum abgeschlossenen Original erstellen. Das Original bleibt unverändert.",
           input: {
-            tableId: "Öffentliche Tabellen-ID des Originals.",
             recordId: "Öffentliche ID des abgeschlossenen Originals.",
             ifVersion: "Aktuelle Version des Originals.",
             typeFieldId: "Öffentliche ID des Auswahlfeldes für Korrektur oder Storno.",
@@ -265,7 +267,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Ein vollständiges berechtigungsgeprüftes GQL-Ergebnis unabhängig von Workflows unveränderlich speichern. Abgeschnittene Ergebnisse werden abgelehnt.",
           input: {
-            baseId: "Öffentliche ID der Base mit Schreibzugriff.",
             query: "GQL-Abfrage für die vollständige unveränderliche Datenaufnahme.",
           },
         },
@@ -274,7 +275,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "PDF, CSV, JSON, XML oder ZIP aus festgehaltenen Daten ausgeben. DATEV und SEPA benötigen Quellversionen und eine separate Bestätigung der genauen Vorschau; fragt immer nach.",
           input: {
-            baseId: "Öffentliche ID der Base mit Schreibzugriff.",
             data: "Unveränderliche Datenaufnahme aus document.capture.",
             "data.id": "Öffentliche ID der gespeicherten Datenaufnahme.",
             "data.sha256": "SHA-256-Prüfsumme der Datenaufnahme.",
@@ -291,7 +291,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Die genaue DATEV- oder SEPA-Vorschau als ursprünglicher Auftraggeber bestätigen und die Ausgabe nach erneuter Berechtigungs- und Versionsprüfung abschließen. Übermittelt keine Bankzahlung; fragt immer nach.",
           input: {
-            baseId: "Öffentliche ID der Base mit Schreibzugriff.",
             receiptId: "Öffentliche ID des offenen Belegs aus document.issue.",
             sha256: "Genaue Bestätigungsprüfsumme der geprüften Vorschau.",
           },
@@ -301,7 +300,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine geprüfte GQL-Abfrage als persönliche oder geteilte Ansicht speichern. Erfordert Base-Adminrechte und Bestätigung. Ändert keine Tabellen oder Datensätze. Bei ungewissem Ergebnis zuerst vorhandene Ansichten prüfen, nicht blind wiederholen.",
           input: {
-            baseId: "Öffentliche Base-ID der neuen Ansicht.",
             query: "Geprüfte GQL-Abfrage für die gespeicherte Ansicht.",
             currentSource: "Tabellen- oder Ansichtsquelle für eine Abfrage ohne from-Klausel.",
             name: "Name der neuen gespeicherten Ansicht.",
@@ -332,7 +330,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Lade zuerst gql.context mit kind fields und includeWriteContext true. Erstelle dann einen Datensatz mit öffentlichen IDs beschreibbarer Felder als Schlüssel. Auswahlwerte verwenden Options-IDs. Gibt begrenzte Metadaten zurück; Feldwerte mit gezieltem GQL lesen. Verwende den Idempotenzschlüssel nur, um dieselbe Erstellung zu wiederholen.",
           input: {
-            tableId: "Öffentliches ID der beschreibbaren gespeicherten Tabelle, die den Datensatz empfangen soll.",
             values: "Öffentliches Feld IDs, das explizit bereitgestellten Werten zugeordnet ist.",
           },
         },
@@ -341,7 +338,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Lade gql.context mit kind fields und includeWriteContext true für Wert- und Audit-Anforderungen, danach record.read für ifVersion. Nur übergebene Felder werden geändert; veraltete Versionen werden abgelehnt. Gibt begrenzte Metadaten zurück; Feldwerte mit gezieltem GQL lesen.",
           input: {
-            tableId: "Öffentliches ID der beschreibbaren gespeicherten Tabelle, die den Datensatz enthält.",
             recordId: "Stabile öffentliche Live-Aufnahme ID zum Aktualisieren.",
             values: "Öffentliches Feld IDs, das explizit bereitgestellten Ersatzwerten zugeordnet ist.",
             ifVersion: "Von record.read zurückgegebene Datensatzversion; veraltete Versionen werden abgelehnt.",
@@ -354,7 +350,6 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Lade zuerst gql.context mit kind fields und includeWriteContext true. Ordne provider + providerAccount + resourceKind + externalId wiederholungssicher einem Datensatz zu. Der erste Aufruf erstellt ihn; spätere Änderungen benötigen ifVersion und ändern nur übergebene Felder.",
           input: {
-            tableId: "Öffentliches ID der beschreibbaren gespeicherten Tabelle, die den Datensatz besitzt.",
             externalRef: "Groß- und Kleinschreibung beachtete dauerhafte Identität des Quelldatensatzes außerhalb von Grids.",
             "externalRef.provider": "Externer System- oder Connectorname.",
             "externalRef.providerAccount": "Stabiles Anbieterkonto oder Mieteridentität.",

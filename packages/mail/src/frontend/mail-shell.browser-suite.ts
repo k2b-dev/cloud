@@ -12,6 +12,7 @@ import type { MailSearchExpression, MailWorkspacePreference } from "../contracts
 import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
 import { mailTagSearch } from "../search-url";
 import { readMailHeadFilters } from "./_components/mail-head-filters";
+import { measureGeometry, measurements, measureStrip, tabsSelector } from "./mail-shell-metrics.browser-source";
 
 setDefaultTimeout(20_000);
 /**
@@ -77,40 +78,11 @@ const fontPreloads = ["400", "500", "600"]
   .join("");
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
 const boxPath = "/app/mail/Box001";
-const tabsSelector = ".mail-list-bar";
 const sidebarSelector = ".mail-sidebar .k2b-app-workspace__sidebar-desktop";
-const measurements = [
-  ".mail-sidebar",
-  ".k2b-app-workspace__head",
-  tabsSelector,
-  ".k2b-app-workspace__head-filters",
-  ".k2b-app-workspace__head-actions",
-  ".k2b-app-workspace__head-actions button",
-  "[data-workspace-primary]",
-  ".k2b-app-workspace__main",
-  ".k2b-view-tabs__item",
-  ".k2b-filter-chip",
-  ".mail-sidebar-mailbox",
-  ".mail-list-entry",
-  ".mail-row-draft-tag",
-  "[data-mail-queue-count]",
-  ".mail-list-bar",
-  ".mail-split-list",
-  ".mail-split-reader",
-  ".mail-list-handle",
-  ".mail-reader-head",
-  ".mail-reader-chips",
-  "[data-app-workspace-detail-toggle]",
-  ".mail-reading-column",
-  ".k2b-app-workspace__detail",
-  // The Events feed's rows: the server renders the first ones in the flow, the browser places the same ones.
-  ".mail-event",
-].join(",");
-// Rows below the fold render lazily (content-visibility); only what the person sees must hold still.
-const geometrySource = `() => Array.from(document.querySelectorAll(${JSON.stringify(measurements)})).map((e,i)=>{const r=e.getBoundingClientRect();const part=String(e.className).split(" ").filter(Boolean).join(" ");return r.bottom<=0||r.top>=innerHeight?{part,index:i,x:0,y:-1,width:0,height:0}:{part,index:i,x:r.x,y:r.y,width:r.width,height:r.height}})`;
+const metrics = new Bun.Transpiler({ loader: "ts" }).transformSync(
+  readFileSync(resolve(import.meta.dir, "mail-shell-metrics.browser-source.ts"), "utf8"),
+);
 type Frame = { part: string; index: number; x: number; y: number; width: number; height: number }[];
-// The head's view strip as a person sees it: every rendered label at its full width, the current tab inside the strip.
-const stripSource = `() => {const list=document.querySelector(${JSON.stringify(`${tabsSelector} .k2b-view-tabs__list`)});if(!list)return null;const b=list.getBoundingClientRect();const fade=list.getAttribute("data-scroll-fade");const current=list.querySelector('.k2b-view-tabs__tab[aria-current="page"]');const c=current&&current.getClientRects().length>0?current.getBoundingClientRect():null;return {overflow:list.scrollWidth-list.clientWidth,current:current?.getAttribute("href")??null,left:c?c.left-b.left:null,right:c?b.right-c.right:null,leftInset:fade==="top"||fade==="both"?parseFloat(getComputedStyle(list).scrollPaddingLeft)||0:0,rightInset:fade==="bottom"||fade==="both"?parseFloat(getComputedStyle(list).scrollPaddingRight)||0:0,labels:Array.from(list.querySelectorAll(".k2b-view-tabs__tab .k2b-view-tabs__label")).filter(l=>l.getClientRects().length>0).map(l=>({text:l.textContent,scroll:l.scrollWidth,width:l.clientWidth}))}}`;
 type Strip = {
   overflow: number;
   current: string | null;
@@ -159,8 +131,9 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
   );
   // As in Cloud, the page owns the one workspace controller (its body marker), so workspaces do not install their own.
   return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${fontPreloads}<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><link rel="stylesheet" href="/mail-shell.css"><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui app-accent-scope" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0;${appAccentStyle("#0f766e")}">${shell(url, html)}<script src="/mail-shell-controller.js"></script>${url.searchParams.has("navigation") ? '<button id="mailbox-navigation-test" style="position:fixed;bottom:12px;left:12px;z-index:12">Open mailbox navigation</button><script src="/mail-shell-navigation.js"></script>' : ""}<script type="module">
-    const geometry=${geometrySource};
-    const strip=${stripSource};
+    import { measureGeometry, measurements, measureStrip, tabsSelector } from "/mail-shell-metrics.js";
+    const geometry=()=>measureGeometry(measurements);
+    const strip=()=>measureStrip(tabsSelector);
     const step=(name)=>{document.documentElement.dataset.mailShellStep=name;performance.mark('mail-shell:'+name)};
     step('fonts');
     await document.fonts.ready;
@@ -169,7 +142,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
     step('server geometry');
     document.documentElement.dataset.serverGeometry=JSON.stringify(geometry());
     document.documentElement.dataset.serverStrip=JSON.stringify(strip());
-    document.documentElement.dataset.serverCurrent=document.querySelector('${tabsSelector} [aria-current="page"]')?.getAttribute('href')??'';
+    document.documentElement.dataset.serverCurrent=document.querySelector(tabsSelector+' [aria-current="page"]')?.getAttribute('href')??'';
     step('islands');
     await Promise.all(Array.from(document.querySelectorAll('solid-island'),e=>import('/_ssr/'+e.dataset.id+'.js')));
     step('hydrated frame');
@@ -247,6 +220,7 @@ beforeAll(async () => {
       const cached = { "cache-control": "public, max-age=3600, immutable" };
       const asset = new Map<string, [type: string, body: string]>([
         ["/mail-shell.css", ["text/css", css]],
+        ["/mail-shell-metrics.js", ["text/javascript", metrics]],
         ["/mail-shell-controller.js", ["text/javascript", controller]],
         ["/mail-shell-navigation.js", ["text/javascript", navigation]],
       ]).get(url.pathname);
@@ -485,18 +459,7 @@ const expectNoReplyJump = async (page: Page, label: string) => {
 const tabs = (page: Page) => page.locator(tabsSelector);
 const sidebar = (page: Page) => page.locator(sidebarSelector);
 const currentHref = (page: Page) => tabs(page).locator('a[aria-current="page"]').getAttribute("href");
-const geometry = (page: Page): Promise<Frame> =>
-  page.evaluate(
-    (selector) =>
-      Array.from(document.querySelectorAll(selector)).map((e, index) => {
-        const r = e.getBoundingClientRect();
-        const part = String(e.className).split(" ").filter(Boolean).join(" ");
-        // Rows below the fold render lazily (content-visibility); only what the person sees must hold still.
-        if (r.bottom <= 0 || r.top >= innerHeight) return { part, index, x: 0, y: -1, width: 0, height: 0 };
-        return { part, index, x: r.x, y: r.y, width: r.width, height: r.height };
-      }),
-    measurements,
-  );
+const geometry = (page: Page): Promise<Frame> => page.evaluate(measureGeometry, measurements);
 const assertFrame = (before: Frame, after: Frame, label: string) => {
   expect(after.length, `${label}: measured part count`).toBe(before.length);
   for (const [index, actual] of after.entries()) {
@@ -1992,7 +1955,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 ? []
                 : [
                     permission === "read" ? "About this mailbox" : "Mailbox details",
-                    "Automations",
+                    "Retired rule history",
                     "Mailing lists",
                     "Remote images",
                     "Email link setup",
@@ -2158,7 +2121,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 const label = `${path} ${locale} ${name}`;
                 const strip: Strip | null =
                   name === "settled"
-                    ? await page.evaluate(`(${stripSource})()`)
+                    ? await page.evaluate(measureStrip, tabsSelector)
                     : JSON.parse((await page.locator("html").getAttribute(`data-${name}-strip`)) ?? "null");
                 if (!strip) throw new Error(`${label}: missing view strip`);
                 expect(strip.labels.length, `${label}: visible tab labels`).toBeGreaterThanOrEqual(3);
@@ -2793,31 +2756,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           });
 
         // One case per trace, each on its own page (#1966): the current AI assignment leads, every effect stays below.
-        for (const width of [1440, 390])
-          for (const kind of ["name", "uncertain", "manual", "normal"] as const)
-            test(`automation: rule trace ${kind} at ${width}`, async () => {
-              const page = await open(`${boxPath}?conversation=Conv01&locale=de&trace=${kind}`, width, width === 390 ? 844 : 900);
-              try {
-                if (kind === "name") await page.getByText("„Mails nach Art verteilen“ hat Nora Albrecht zugewiesen.").waitFor();
-                if (kind === "uncertain") {
-                  await page
-                    .getByText("Die KI war unsicher. „Mails nach Art verteilen“ hat die Mail an „Eingang prüfen“ gegeben.")
-                    .waitFor();
-                  await page.getByRole("button", { name: "Mir zuweisen" }).waitFor();
-                }
-                if (kind === "manual") {
-                  await page.getByText("Nora Albrecht hat um 06:40 Lisa Brandt zugewiesen.").waitFor();
-                  expect(await page.locator("[data-mail-automation-note]").count()).toBe(0);
-                }
-                if (kind === "normal") {
-                  await page.getByText("„Großkunden an Can“ hat Zuweisen übersprungen:").waitFor();
-                  await page.locator('[data-mail-automation-note="assigned"]').waitFor();
-                }
-                if (screenshots) await page.screenshot({ path: join(screenshots, `trace-${kind}-light-${width}.png`) });
-              } finally {
-                await close(page);
-              }
-            });
 
         // Mail v5: one head with the same five actions for everyone, the state as one row of chips, no details panel.
         for (const [width, height] of [

@@ -22,7 +22,7 @@ describe("isManagerEntry", () => {
 
   test("never counts public access, keys that vanish with their resource or user, or lower levels", () => {
     expect(isManagerEntry(entry({ type: "public" }))).toBe(false);
-    for (const kind of ["resource_bound", "user_delegated", undefined] as const) {
+    for (const kind of ["resource_bound", "user_delegated", "code", undefined] as const) {
       expect(isManagerEntry(entry({ type: "service_account", serviceAccountId: "key" }, "admin", kind))).toBe(false);
     }
     for (const level of ["none", "read", "write"] as const) expect(isManagerEntry(person("qdt", level))).toBe(false);

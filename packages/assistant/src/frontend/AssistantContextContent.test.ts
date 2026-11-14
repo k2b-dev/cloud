@@ -182,6 +182,19 @@ describe("Assistant Cloud references", () => {
       title: "Note",
       icon: "ti ti-file-text",
       href: "/app/notebooks/JJVtWA/notes/3rQGbm",
+      // Notes declare no Code owners.
+      canOwnCode: false,
     });
+    expect(resolved.name).toBeUndefined();
+
+    // A canonical reader view names the resource itself, for headings such as "Code of …".
+    const named = await resolveAssistantCloudResource(ref, {
+      listCatalog: async () => catalog,
+      invoke: async () => ({
+        ok: true,
+        data: { data: { view: { title: "Release notes" } }, links: invocation.ok ? invocation.data.links : [] },
+      }),
+    });
+    expect(named.name).toBe("Release notes");
   });
 });

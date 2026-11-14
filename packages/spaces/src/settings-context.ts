@@ -1,6 +1,6 @@
-import { AccessEntrySchema, PermissionLevelSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
+import { PermissionLevelSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
-import { SpaceDetailSchema, SpaceWormholeSchema } from "./contracts";
+import { AccessEntrySchema, SpaceDetailSchema, SpaceWormholeSchema } from "./contracts";
 
 export const SpaceViewSchema = z.enum(["list", "table", "kanban", "calendar"]);
 export type ViewType = z.infer<typeof SpaceViewSchema>;

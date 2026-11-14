@@ -2,7 +2,7 @@ import { type Accessor, batch, createEffect, createMemo, createSignal, onCleanup
 import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
 import { beginAppAction, fetchAppAction } from "../../browser/app-actions";
-import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
+import { CapabilityActionReceiptSchema, type CloudResourceRef } from "../../contracts/capabilities";
 import type { AiModelRequest } from "../../shared/ai-models";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
@@ -718,16 +718,21 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const createConversation = async (
     input: {
       requestId?: string;
+      /** A place chat: created with its first message as `draft`, never with a title or launch settings. */
+      place?: CloudResourceRef;
       title?: string;
       projectId?: string;
       draft?: { content: AiDraftContentPart[] };
       preloadTools?: Array<{ name: string } | { appId: string; kind: "query" | "action"; id: string }>;
     } = {},
-    /** Runs in the same update that makes the new chat active, so views keyed by it never see it without their local state. */
-    beforeOpen?: (conversation: AiConversation) => void,
+    options: {
+      activate?: boolean;
+      /** Runs in the same update that makes the new chat active, so views keyed by it never see it without their local state. */
+      beforeOpen?: (conversation: AiConversation) => void;
+    } = {},
   ) => {
-    const generation = ++conversationOpenGeneration;
-    clearErrors();
+    const generation = options.activate === false ? conversationOpenGeneration : ++conversationOpenGeneration;
+    if (options.activate !== false) clearErrors();
     setCreationErrorStatus(null);
     try {
       const conversation = await request<AiConversation>(
@@ -738,9 +743,9 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       const projection = emptyProjection(conversation);
       cache.set(conversation.id, projection);
       setHasMore(conversation.id, false);
-      if (generation !== conversationOpenGeneration) return conversation;
+      if (generation !== conversationOpenGeneration || options.activate === false) return conversation;
       batch(() => {
-        beforeOpen?.(conversation);
+        options.beforeOpen?.(conversation);
         setState(reconcile(projection, { key: "id", merge: true }));
         setActiveConversationIdSignal(conversation.id);
         setLoadingConversationId(null);

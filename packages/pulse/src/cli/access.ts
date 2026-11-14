@@ -13,6 +13,7 @@ export const pulseAccessCommands = createAccessCommands({
     return {
       id: base.id,
       label: `${base.name} (${compactId(base.id)})`,
+      target: { type: "pulse.base", id: base.id },
     };
   },
   list: async (ctx, base) => readApi<AccessEntry[]>(ctx, `/bases/${encodeURIComponent(base.id)}/access`),

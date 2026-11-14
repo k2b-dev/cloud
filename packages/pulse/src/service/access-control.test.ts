@@ -155,7 +155,7 @@ suite("Pulse base access", () => {
         resourceId: baseShortId,
         scopes: ["read"],
       });
-      expect((await requireBaseAccess(baseId, readableBaseAccount, "read")).ok).toBe(true);
+      expect(await requireBaseAccess(baseId, readableBaseAccount, "read")).toEqual({ ok: true, data: "read" });
       expect((await requireBaseAccess(baseId, readableBaseAccount, "write")).ok).toBe(false);
       expect(await listBaseIdsVisibleTo(readableBaseAccount)).toEqual([baseId]);
       expect(
@@ -217,7 +217,7 @@ suite("Pulse base access", () => {
       });
       expect(granted.ok).toBe(true);
       if (granted.ok) accessIds.push(granted.data.id);
-      expect((await requireBaseAccess(baseId, readableBaseAccount, "read")).ok).toBe(true);
+      expect(await requireBaseAccess(baseId, readableBaseAccount, "read")).toEqual({ ok: true, data: "read" });
       expect(await listBaseIdsVisibleTo(readableBaseAccount)).toEqual([baseId]);
 
       const entries = await listBaseAccess(baseId, { id: userId });

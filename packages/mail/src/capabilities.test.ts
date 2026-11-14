@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
+import { capabilityCallFromTool, capabilityToolInputSchema } from "@k2b/cloud/capabilities/server";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -8,9 +9,11 @@ import {
   type CapabilityInvocationResult,
   capabilityResultSchema,
   cloudResourceHref,
+  typeViewIssues,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
-import { err, fail } from "@k2b/stdlib";
+import { err, fail, ok } from "@k2b/stdlib";
+import type { z } from "zod";
 import { mailCapabilities } from "./capabilities";
 import {
   ActivityListDataSchema,
@@ -66,6 +69,7 @@ import {
   triage,
 } from "./service";
 import * as reviewReaders from "./service/capability-review-readers";
+import { previewMailCodeMessage, resolveMailCodeEvent, selectMailCodeMessages } from "./service/code-messages";
 
 const mailboxId = "MbA123";
 const conversationId = "CvB234";
@@ -132,8 +136,16 @@ const publicIdsByTable = {
 const internalIdsByTable = {
   reminders: new Map([[reminderId, internalReminderId]]),
   mailboxes: new Map([[mailboxId, internalMailboxId]]),
-  folders: new Map([[folderId, internalFolderId]]),
-  conversations: new Map([[conversationId, internalConversationId]]),
+  folders: new Map([
+    [folderId, internalFolderId],
+    [folderAId, internalFolderAId],
+    [folderBId, internalFolderBId],
+    [folderCId, internalFolderCId],
+  ]),
+  conversations: new Map([
+    [conversationId, internalConversationId],
+    [relatedConversationId, internalRelatedConversationId],
+  ]),
   messages: new Map([[messageId, internalMessageId]]),
   drafts: new Map([[draftId, internalDraftId]]),
   senderIdentities: new Map([[senderIdentityId, internalConversationId]]),
@@ -150,6 +162,7 @@ const context = {
   user: { id: userId },
   requestId: "mail-capability-test-request",
   origin: "assistant",
+  target: { type: "mail.mailbox", id: mailboxId },
   signal: new AbortController().signal,
 } as CapabilityExecutionContext;
 
@@ -319,6 +332,235 @@ beforeEach(() => {
 afterEach(() => mock.restore());
 
 describe("mail capabilities", () => {
+  test("declares mailbox targets separately from domain input and keeps chat/MCP fields flat", () => {
+    const manifest = compileCapabilityManifest("mail", mailCapabilities);
+    const mailboxActions = manifest.actions.filter((action) => !action.localId.startsWith("code.access."));
+    expect(mailboxActions).toHaveLength(35);
+    for (const action of mailboxActions) {
+      expect(action.target).toBe("mailbox");
+      expect(action.inputSchema.properties).not.toHaveProperty("mailboxId");
+      expect(action.inputSchema.properties).not.toHaveProperty("mailbox");
+      expect(capabilityToolInputSchema(action).properties).toHaveProperty("mailbox");
+    }
+    const patch = manifest.actions.find((action) => action.localId === "draft.patch");
+    if (!patch) throw new Error("Missing draft.patch");
+    expect(capabilityCallFromTool("mail", patch, { mailbox: mailboxId, draftId, expectedRevision: 2, patch: { subject: "New" } })).toEqual({
+      capability: "mail.draft.patch",
+      target: { type: "mail.mailbox", id: mailboxId },
+      refs: {},
+      input: { draftId, expectedRevision: 2, patch: { subject: "New" } },
+    });
+    expect(manifest.queries.filter((query) => query.target === "mailbox")).toHaveLength(19);
+    for (const query of manifest.queries.filter((query) => query.target)) {
+      expect(query.inputSchema.properties).not.toHaveProperty("mailboxId");
+      expect(query.target).toBe("mailbox");
+    }
+    for (const type of manifest.resourceTypes ?? []) if (type.type !== "mailbox") expect(type.container).toBe("mailbox");
+    for (const id of [
+      "mailbox.browse",
+      "mailbox.list",
+      "search",
+      "conversation.focus",
+      "conversation.read",
+      "draft.read",
+      "draft.send.check",
+    ])
+      expect(manifest.queries.find((query) => query.localId === id)?.target).toBeUndefined();
+  });
+
+  test("requires a public mailbox target in review and execution without using old input coordinates", async () => {
+    const action = mailCapabilities.actions["conversation.status.update"];
+    const input = action.input.parse({ conversationId, status: "done", expectedRevision: 1 });
+    const mutation = spyOn(conversationAssignments, "updateConversationCollaboration");
+    for (const target of [undefined, { type: "mail.draft", id: draftId }, { type: "mail.mailbox", id: internalMailboxId }]) {
+      for (const call of [action.review, action.run])
+        expect(await call(input, { ...context, target })).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+    }
+    expect(action.input.safeParse({ ...input, mailboxId }).success).toBeFalse();
+    expect(mutation).not.toHaveBeenCalled();
+  });
+
+  test("review and execution reject an item from a different mailbox even when both mailboxes are visible", async () => {
+    const action = mailCapabilities.actions["conversation.status.update"];
+    const resolve = spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(null);
+    const mutation = spyOn(conversationAssignments, "updateConversationCollaboration");
+    const input = action.input.parse({ conversationId: "Other1", status: "done", expectedRevision: 1 });
+    for (const call of [action.review, action.run])
+      expect(await call(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    expect(resolve).toHaveBeenCalledWith("conversations", internalMailboxId, "Other1");
+    expect(mutation).not.toHaveBeenCalled();
+  });
+
+  test.each(["senderIdentityId", "signatureTemplateId"] as const)(
+    "draft.patch refuses a foreign %s in review and execution",
+    async (field) => {
+      spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+      const update = spyOn(drafts, "updateDraft");
+      const action = mailCapabilities.actions["draft.patch"];
+      const input = action.input.parse({ draftId, expectedRevision: 2, patch: { [field]: "Other1" } });
+      for (const call of [action.review, action.run])
+        expect(await call(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+      expect(update).not.toHaveBeenCalled();
+    },
+  );
+
+  test("conversation.move refuses a foreign source folder in review and execution", async () => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
+    } as never);
+    const mutation = spyOn(triage, "createConversationTriageCommands");
+    const action = mailCapabilities.actions["conversation.move"];
+    const input = action.input.parse({
+      target: { conversationId, sourceFolderId: "Other1" },
+      destination: { kind: "role", role: "archive" },
+    });
+    for (const call of [action.review, action.run])
+      expect(await call(input, { ...context, idempotencyKey: "foreign-folder" })).toMatchObject({
+        ok: false,
+        error: { code: "NOT_FOUND" },
+      });
+    expect(mutation).not.toHaveBeenCalled();
+  });
+
+  test.each(["addTagIds", "removeTagIds"] as const)("conversation.tag.update refuses foreign %s in review and execution", async (field) => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
+    } as never);
+    const mutation = spyOn(localTags, "setConversationLocalTags");
+    const action = mailCapabilities.actions["conversation.tag.update"];
+    const input = action.input.parse({ conversationId, expectedRevision: 2, [field]: ["Other1"] });
+    for (const call of [action.review, action.run])
+      expect(await call(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    expect(mutation).not.toHaveBeenCalled();
+  });
+
+  test.each(["conversation.assign.batch", "conversation.status.update.batch", "conversation.status.set.batch"] as const)(
+    "%s checks every member before review or any mutation",
+    async (id) => {
+      spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+      const action = mailCapabilities.actions[id];
+      const resolve = spyOn(publicResources, "resolveMailboxPublicIds").mockResolvedValue(null);
+      const assign = spyOn(conversationAssignments, "assignConversations");
+      const complete = spyOn(collaboration, "applyConversationCompletions");
+      // Put the foreign member last so checking just the first member would miss it.
+      const fields = { conversationIds: [conversationId, "Other1"] };
+      if (id === "conversation.assign.batch") {
+        const action = mailCapabilities.actions[id];
+        const input = action.input.parse({ ...fields, mode: "replace", assigneeUserIds: [] });
+        expect(await action.review(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+        expect(await action.run(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+      } else {
+        const action = mailCapabilities.actions[id];
+        const input = action.input.parse({ ...fields, status: "done" });
+        expect(await action.review(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+        expect(await action.run(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+      }
+      expect(action.target).toBe("mailbox");
+      expect(resolve).toHaveBeenCalledTimes(2);
+      expect(resolve).toHaveBeenCalledWith("conversations", internalMailboxId, fields.conversationIds);
+      expect(assign).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(["conversation.assign.batch", "conversation.status.update.batch", "conversation.status.set.batch"] as const)(
+    "%s checks current access before resolving members",
+    async (id) => {
+      const denied = fail(err.forbidden("Access denied"));
+      const missing = fail(err.notFound("Mailbox"));
+      spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
+      spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+      const members = spyOn(publicResources, "resolveMailboxPublicIds");
+      const assign = spyOn(conversationAssignments, "assignConversations");
+      const complete = spyOn(collaboration, "applyConversationCompletions");
+      for (const conversationIds of [[conversationId], [conversationId, "Other1"]]) {
+        if (id === "conversation.assign.batch") {
+          const action = mailCapabilities.actions[id];
+          const input = action.input.parse({ conversationIds, mode: "replace", assigneeUserIds: [] });
+          expect(await action.review(input, context)).toEqual(missing);
+          expect(await action.run(input, context)).toEqual(missing);
+        } else {
+          const action = mailCapabilities.actions[id];
+          const input = action.input.parse({ conversationIds, status: "done" });
+          expect(await action.review(input, context)).toEqual(missing);
+          expect(await action.run(input, context)).toEqual(missing);
+        }
+      }
+      expect(members).not.toHaveBeenCalled();
+      expect(assign).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+    },
+  );
+
+  test("conversation.tag.update checks current access before resolving contained resources", async () => {
+    const denied = fail(err.forbidden("Access denied"));
+    const missing = fail(err.notFound("Mailbox"));
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    const resource = spyOn(publicResources, "resolveMailboxPublicId");
+    const tags = spyOn(publicResources, "resolveMailboxPublicIds");
+    const action = mailCapabilities.actions["conversation.tag.update"];
+    const input = action.input.parse({ conversationId, expectedRevision: 2, addTagIds: ["Other1"] });
+    for (const call of [action.review, action.run]) expect(await call(input, context)).toEqual(missing);
+    expect(resource).not.toHaveBeenCalled();
+    expect(tags).not.toHaveBeenCalled();
+  });
+
+  test("conversation and comment Actions return the same denial for existing and missing resources", async () => {
+    const denied = fail(err.forbidden("Access denied"));
+    const missing = fail(err.notFound("Mailbox"));
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    const resource = spyOn(publicResources, "resolveMailboxPublicId");
+    const content = spyOn(messages, "listConversationMessages");
+    const comment = spyOn(collaboration, "getConversationComment");
+    const deniedContext = { ...context, idempotencyKey: "denied-conversation-action" };
+    const check = async <Input extends z.ZodType, Data extends z.ZodType>(
+      action: CapabilityActionDefinition<Input, Data>,
+      fields: Record<string, unknown>,
+      nestedTarget = false,
+    ) => {
+      for (const id of [conversationId, "NoConv"]) {
+        const input = action.input.parse({
+          ...fields,
+          ...(nestedTarget ? { target: { conversationId: id, sourceFolderId: folderId } } : { conversationId: id }),
+        });
+        expect(await action.review?.(input, deniedContext), `${action.title} review for ${id}`).toEqual(missing);
+        expect(await action.run(input, deniedContext), `${action.title} execution for ${id}`).toEqual(missing);
+      }
+    };
+    await check(mailCapabilities.actions["conversation.mark"], { read: true }, true);
+    await check(mailCapabilities.actions["conversation.move"], { destination: { kind: "role", role: "archive" } }, true);
+    await check(mailCapabilities.actions["conversation.tag.update"], { expectedRevision: 3, addTagIds: [tagId] });
+    await check(mailCapabilities.actions["conversation.assign"], { mode: "replace", assigneeUserIds: [] });
+    await check(mailCapabilities.actions["conversation.status.update"], { expectedRevision: 3, status: "done" });
+    await check(mailCapabilities.actions["conversation.keep"], {});
+    await check(mailCapabilities.actions["conversation.snooze"], { expectedRevision: 3, snoozedUntil: null });
+    await check(mailCapabilities.actions["conversation.reminder.set"], { expectedRevision: null, dueAt: timestamp });
+    await check(mailCapabilities.actions["conversation.reminder.cancel"], { expectedRevision: 3 });
+    await check(mailCapabilities.actions["conversation.comment.create"], { body: "Internal context" });
+    for (const id of [commentId, "NoCmnt"]) {
+      await check(mailCapabilities.actions["conversation.comment.update"], { commentId: id, expectedRevision: 3, body: "Updated comment" });
+      await check(mailCapabilities.actions["conversation.comment.delete"], { commentId: id, expectedRevision: 3 });
+    }
+    expect(resource).not.toHaveBeenCalled();
+    expect(content).not.toHaveBeenCalled();
+    expect(comment).not.toHaveBeenCalled();
+  });
+
+  test("conversation.related checks current access before resolving its conversation", async () => {
+    const denied = fail(err.forbidden("Access denied"));
+    const missing = fail(err.notFound("Mailbox"));
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    const resource = spyOn(publicResources, "resolveMailboxPublicId");
+    const related = spyOn(conversationContext, "listRelatedConversations");
+    const query = mailCapabilities.queries["conversation.related"];
+    expect(await query.run(query.input.parse({ conversationId }), context)).toEqual(missing);
+    expect(resource).not.toHaveBeenCalled();
+    expect(related).not.toHaveBeenCalled();
+  });
+
   test.each([undefined, null, "Sign01"])("draft.create resolves the signature choice %j", async (signatureTemplateId) => {
     const materialize = spyOn(drafts, "materializeDraftSeed").mockResolvedValue({
       ok: true,
@@ -326,7 +568,6 @@ describe("mail capabilities", () => {
     });
     const action = mailCapabilities.actions["draft.create"];
     const input = action.input.parse({
-      mailboxId,
       senderIdentityId,
       body: "Body only",
       ...(signatureTemplateId !== undefined ? { signatureTemplateId } : {}),
@@ -366,7 +607,6 @@ describe("mail capabilities", () => {
     };
     const result = await action.run(
       action.input.parse({
-        mailboxId,
         senderIdentityId,
         body: "Another suggestion",
         attachments: [{ filename: "extra.txt", contentType: "text/plain", base64: Buffer.from("extra").toString("base64") }],
@@ -421,7 +661,7 @@ describe("mail capabilities", () => {
     );
     for (const locale of ["en", "de"]) {
       const patch = mailCapabilities.actions["draft.patch"];
-      const result = await patch.run(patch.input.parse({ mailboxId, draftId, expectedRevision: 2, patch: { subject: "Blocked" } }), {
+      const result = await patch.run(patch.input.parse({ draftId, expectedRevision: 2, patch: { subject: "Blocked" } }), {
         ...context,
         locale,
       });
@@ -439,14 +679,13 @@ describe("mail capabilities", () => {
     expect(
       (
         await replace.run(
-          replace.input.parse({ mailboxId, draftId, expectedRevision: 2, draft: { senderIdentityId, body: "Body only", ...choice } }),
+          replace.input.parse({ draftId, expectedRevision: 2, draft: { senderIdentityId, body: "Body only", ...choice } }),
           context,
         )
       ).ok,
     ).toBeTrue();
     expect(
-      (await patch.run(patch.input.parse({ mailboxId, draftId, expectedRevision: 2, patch: { subject: "Changed", ...choice } }), context))
-        .ok,
+      (await patch.run(patch.input.parse({ draftId, expectedRevision: 2, patch: { subject: "Changed", ...choice } }), context)).ok,
     ).toBeTrue();
     for (const [request] of update.mock.calls)
       expect(request.input.signatureTemplateId).toBe(signatureTemplateId ? technicalTargetId : signatureTemplateId);
@@ -460,7 +699,7 @@ describe("mail capabilities", () => {
       const update = spyOn(drafts, "updateDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
       const action = mailCapabilities.actions["draft.patch"];
       const patch = { subject: "Changed", ...(quoteSource !== undefined ? { quoteSource } : {}) };
-      const input = action.input.parse({ mailboxId, draftId, expectedRevision: 2, patch });
+      const input = action.input.parse({ draftId, expectedRevision: 2, patch });
       expect((await action.run(input, context)).ok).toBeTrue();
       expect(update.mock.calls[0]?.[0].input.quoteSource).toEqual(
         quoteSource === undefined ? saved : quoteSource === null ? null : { locale: "de", timeZone: "Europe/Berlin" },
@@ -540,7 +779,7 @@ describe("mail capabilities", () => {
         replyTo: [],
         cc: [],
         flags: [],
-        keywords: [],
+        keywords: Array.from({ length: 1025 }, (_, n) => `provider-label-${n}`),
         hydrationStatus: "hydrated",
         remoteAvailable: true,
         plainText: "\u0001".repeat(96 * 1024),
@@ -556,6 +795,9 @@ describe("mail capabilities", () => {
     if (!result.ok) throw new Error("Expected message");
     expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
     expect(result.data.data).toMatchObject({ bodyTruncated: true, conversationId });
+    expect(result.data.data.keywords).toHaveLength(1024);
+    expect(result.data.data.keywords[1023]).toBe("provider-label-1023");
+    expect(result.data.data.keywordsTruncated).toBe(true);
     expect(capabilityResultSchema(MessageDataSchema).safeParse(result.data).success).toBeTrue();
   });
 
@@ -605,7 +847,7 @@ describe("mail capabilities", () => {
       ok: true,
       data: { plainText: text, forwardText: null, subject: "Reply here" },
     } as never);
-    const query = mailCapabilities.queries["message.read-content"];
+    const query = mailCapabilities.queries["message.content.read"];
     let offset = 0;
     let collected = "";
     do {
@@ -635,7 +877,7 @@ describe("mail capabilities", () => {
       data: { ...current, revision: current.revision + 1 },
     } as never);
     const action = mailCapabilities.actions["draft.patch"];
-    const input = action.input.parse({ mailboxId, draftId, expectedRevision: current.revision, patch: { subject: "Changed" } });
+    const input = action.input.parse({ draftId, expectedRevision: current.revision, patch: { subject: "Changed" } });
     expect(input.patch).toEqual({ subject: "Changed" });
     const result = await action.run(input, context);
     expect(result.ok).toBeTrue();
@@ -655,31 +897,59 @@ describe("mail capabilities", () => {
     expect(checkMailCapabilityMessages()).toEqual([]);
   });
 
-  test("keep release refuses non-admin review before resolving content and accepts Cloud admins without mailbox grants", async () => {
-    const allowed = spyOn(conversationKeeps, "canLiftConversationKeeps").mockResolvedValue(false);
+  test("keep release checks administrator access before resolution and accepts admins without mailbox grants", async () => {
+    const order: string[] = [];
+    const allowed = spyOn(conversationKeeps, "canLiftConversationKeeps").mockImplementation(async () => {
+      order.push("access");
+      return false;
+    });
     const subject = spyOn(conversationKeeps, "getConversationKeepReleaseSubject").mockResolvedValue({
       ok: true,
       data: { subject: "Evidence" },
     });
-    const access = spyOn(mailboxAccess, "requireMailboxPermission");
-    const read = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({
-      ok: false,
-      error: { code: "FORBIDDEN", message: "Access denied", status: 403 },
+    const denied = fail(err.forbidden("Access denied"));
+    const access = spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
+    const assignedAccess = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    spyOn(publicResources, "resolveMailboxPublicId").mockImplementation(async (table, mailbox, id) => {
+      order.push("resolve");
+      expect(table).toBe("conversations");
+      expect(mailbox).toBe(internalMailboxId);
+      return id === conversationId ? internalConversationId : null;
     });
+    const mutation = spyOn(conversationKeeps, "releaseConversationKeep");
+    const audit = spyOn(conversationKeeps, "recordConversationKeepAudit").mockResolvedValue(undefined);
     const release = mailCapabilities.actions["conversation.keep.release"];
-    expect(await release.review({ mailboxId, conversationId }, context)).toMatchObject({
-      ok: false,
-      error: {
-        code: "FORBIDDEN",
-        message: "Only a Cloud administrator can stop keeping a conversation",
+    for (const id of [conversationId, "NoConv"]) {
+      const denied = fail(err.forbidden(conversationKeeps.LIFT_KEEP_FORBIDDEN));
+      expect(await release.review({ conversationId: id }, context)).toEqual(denied);
+      expect(
+        await release.run({ conversationId: id, reason: "  Policy reviewed  " }, { ...context, idempotencyKey: "denied-keep-release" }),
+      ).toEqual(denied);
+    }
+    expect(order).toEqual(["access", "access", "resolve", "access", "access", "resolve", "access"]);
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith(
+      {
+        context: { actor: context.actor, accessSubject: context.accessSubject, requestId: context.requestId },
+        mailboxId: internalMailboxId,
+        conversationId: internalConversationId,
       },
-    });
+      "mail.conversation.keep.release",
+      "denied",
+      { reason: "Policy reviewed" },
+    );
+    expect(mutation).not.toHaveBeenCalled();
     expect(subject).not.toHaveBeenCalled();
     allowed.mockResolvedValue(true);
-    const review = await release.review({ mailboxId, conversationId, reason: "Policy reviewed" }, context);
+    const review = await release.review({ conversationId, reason: "Policy reviewed" }, context);
     expect(review).toMatchObject({ ok: true });
+    mutation.mockResolvedValue({ ok: true, data: { conversationId: internalConversationId, released: true } });
+    expect(
+      await release.run({ conversationId, reason: "Policy reviewed" }, { ...context, idempotencyKey: "admin-keep-release" }),
+    ).toMatchObject({ ok: true, data: { data: { conversationId, released: true } } });
     expect(access).not.toHaveBeenCalled();
-    expect(read).not.toHaveBeenCalled();
+    expect(assignedAccess).not.toHaveBeenCalled();
+    expect(audit).toHaveBeenCalledTimes(1);
     if (!review.ok) throw new Error(review.error.message);
     expect(review.data.sentence.action).toBe("Stop keeping the conversation {conversation}");
     expect(review.data.consequences?.map((c) => c.text).join(" ")).toContain("Cloud administrator");
@@ -703,7 +973,7 @@ describe("mail capabilities", () => {
     });
     expect(
       await mailCapabilities.actions["conversation.move"].review(
-        { mailboxId, target: { conversationId, sourceFolderId: folderId }, destination: { kind: "role", role: "trash" } },
+        { target: { conversationId, sourceFolderId: folderId }, destination: { kind: "role", role: "trash" } },
         context,
       ),
     ).toMatchObject({ ok: false, error: { code: "CONVERSATION_KEPT", status: 409 } });
@@ -718,7 +988,7 @@ describe("mail capabilities", () => {
       } as never);
       expect(
         await mailCapabilities.actions["conversation.move"].review(
-          { mailboxId, target: { conversationId, sourceFolderId: folderId }, destination: { kind: "folder", folderId } },
+          { target: { conversationId, sourceFolderId: folderId }, destination: { kind: "folder", folderId } },
           context,
         ),
       ).toMatchObject({ ok: false, error: { code: "CONVERSATION_KEPT", status: 409 } });
@@ -728,16 +998,19 @@ describe("mail capabilities", () => {
   test("compiles into a registrable v1 manifest", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
     expect(manifest.appId).toBe("mail");
+    expect(typeViewIssues(manifest, "mailbox")).toEqual([]);
     expect(mailCapabilities.types.conversation.icon).toBe("ti ti-mail");
-    expect(manifest.queries).toHaveLength(Object.keys(mailCapabilities.queries).length);
-    expect(manifest.actions).toHaveLength(Object.keys(mailCapabilities.actions).length);
+    expect(manifest.queries.map((query) => query.localId).sort()).toEqual(
+      [...Object.keys(mailCapabilities.queries), "mailbox.readable"].sort(),
+    );
+    expect(manifest.actions.map((action) => action.localId).sort()).toEqual(Object.keys(mailCapabilities.actions).sort());
     const mailboxReader = manifest.queries.find((query) => query.localId === "mailbox.read");
     expect(mailboxReader?.inputSchema).toHaveProperty("properties.id.description", expect.stringContaining("List mailboxes"));
     expect(mailCapabilities.queries["mailbox.list"].description).toContain("Normal entry for mailbox-scoped Mail work");
     expect(mailCapabilities.queries.search.description).toContain("direct cross-mailbox entry");
     expect(mailCapabilities.queries["conversation.search"].description).toContain("use search instead when no mailbox is known");
     expect(mailCapabilities.queries["conversation.read"].description).toContain("call message.read");
-    expect(mailCapabilities.queries["message.read"].description).toContain("attachment.read-content");
+    expect(mailCapabilities.queries["message.read"].description).toContain("attachment.text.read");
     expect(mailCapabilities.queries["draft.send.review"].description).toContain("immediately before draft.send");
   });
 
@@ -764,6 +1037,7 @@ describe("mail capabilities", () => {
       "conversation.summary.write",
       "conversation.tag.update",
       "draft.attachment.add",
+      "draft.attachment.import.v1",
       "draft.consolidation.acknowledge",
       "draft.create",
       "draft.intent",
@@ -791,8 +1065,9 @@ describe("mail capabilities", () => {
       "tag",
     ]);
     expect(Object.keys(mailCapabilities.queries).sort()).toEqual([
+      "attachment.content.read",
       "attachment.read",
-      "attachment.read-content",
+      "attachment.text.read",
       "comment.read",
       "conversation.activity.list",
       "conversation.by_sender",
@@ -818,9 +1093,12 @@ describe("mail capabilities", () => {
       "mailbox.tag.list",
       "mailing-list.subscription.get",
       "mailing-list.subscription.list",
+      "message.catchup",
+      "message.content.read",
+      "message.event",
+      "message.event-preview",
       "message.list",
       "message.read",
-      "message.read-content",
       "reminder.read",
       "search",
     ]);
@@ -846,6 +1124,7 @@ describe("mail capabilities", () => {
       "conversation.tag.update",
       "delivery.cancel",
       "draft.attachment.add",
+      "draft.attachment.import.v1",
       "draft.attachment.remove",
       "draft.consolidation.acknowledge",
       "draft.create",
@@ -887,6 +1166,7 @@ describe("mail capabilities", () => {
       "conversation.tag.update",
       "delivery.cancel",
       "draft.attachment.add",
+      "draft.attachment.import.v1",
       "draft.attachment.remove",
       "draft.consolidation.acknowledge",
       "draft.create",
@@ -910,21 +1190,18 @@ describe("mail capabilities", () => {
     };
     expect(
       ConversationMarkInputSchema.safeParse({
-        mailboxId,
         target,
         read: false,
       }).success,
     ).toBeTrue();
     expect(
       ConversationMarkInputSchema.safeParse({
-        mailboxId,
         targets: [target, target],
         read: false,
       }).success,
     ).toBeFalse();
     expect(
       ConversationMoveInputSchema.safeParse({
-        mailboxId,
         target,
         destination: { kind: "role", role: "archive" },
       }).success,
@@ -935,12 +1212,11 @@ describe("mail capabilities", () => {
   });
 
   test("rejects UUIDs at the public Mail resource boundary", () => {
-    expect(DraftCreateInputSchema.safeParse({ mailboxId, senderIdentityId }).success).toBeTrue();
+    expect(DraftCreateInputSchema.safeParse({ senderIdentityId }).success).toBeTrue();
     expect(DraftCreateInputSchema.safeParse({ mailboxId: internalMailboxId, senderIdentityId }).success).toBeFalse();
-    expect(DraftCreateInputSchema.safeParse({ mailboxId, senderIdentityId: internalConversationId }).success).toBeFalse();
+    expect(DraftCreateInputSchema.safeParse({ senderIdentityId: internalConversationId }).success).toBeFalse();
     expect(
       ConversationMarkInputSchema.safeParse({
-        mailboxId,
         target: { conversationId: internalConversationId, sourceFolderId: folderId },
         read: true,
       }).success,
@@ -979,18 +1255,16 @@ describe("mail capabilities", () => {
       },
     });
 
-    await mailCapabilities.actions["draft.create"].review(DraftCreateInputSchema.parse({ mailboxId, senderIdentityId }), context);
-    expect(await mailCapabilities.actions["delivery.cancel"].review({ mailboxId, deliveryId, disposition: "draft" }, context)).toEqual(
-      denied,
-    );
-    await mailCapabilities.actions["mailbox.tag.update"].review({ mailboxId, tagId, expectedRevision: 1, name: "Updated" }, context);
-    await mailCapabilities.actions["mailbox.tag.delete"].review({ mailboxId, tagId, expectedRevision: 1 }, context);
+    await mailCapabilities.actions["draft.create"].review(DraftCreateInputSchema.parse({ senderIdentityId }), context);
+    expect(await mailCapabilities.actions["delivery.cancel"].review({ deliveryId, disposition: "draft" }, context)).toEqual(denied);
+    await mailCapabilities.actions["mailbox.tag.update"].review({ tagId, expectedRevision: 1, name: "Updated" }, context);
+    await mailCapabilities.actions["mailbox.tag.delete"].review({ tagId, expectedRevision: 1 }, context);
     await mailCapabilities.actions["mailing-list.unsubscribe"].review(
-      { mailboxId, listKey: "example", href: "https://example.test/unsubscribe" },
+      { listKey: "example", href: "https://example.test/unsubscribe" },
       context,
     );
     await mailCapabilities.actions["conversation.reminder.set"].review(
-      { mailboxId, conversationId, dueAt: "2026-08-05T10:00:00.000Z", expectedRevision: null },
+      { conversationId, dueAt: "2026-08-05T10:00:00.000Z", expectedRevision: null },
       context,
     );
 
@@ -1003,7 +1277,6 @@ describe("mail capabilities", () => {
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
     const review = await mailCapabilities.actions["draft.create"].review(
       DraftCreateInputSchema.parse({
-        mailboxId,
         senderIdentityId,
         to: [{ name: "Ada", address: "ada@example.test" }],
         cc: [{ address: "team@example.test" }],
@@ -1044,16 +1317,15 @@ describe("mail capabilities", () => {
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
     const unavailable = fail(err.forbidden("Source message is unavailable"));
     spyOn(drafts, "prepareDraftSeed").mockResolvedValue(unavailable);
-    expect(
-      await mailCapabilities.actions["draft.create"].review(DraftCreateInputSchema.parse({ mailboxId, senderIdentityId }), context),
-    ).toEqual(unavailable);
+    expect(await mailCapabilities.actions["draft.create"].review(DraftCreateInputSchema.parse({ senderIdentityId }), context)).toEqual(
+      unavailable,
+    );
   });
 
   test("returns German action-review text for regional German locales", async () => {
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
     const review = await mailCapabilities.actions["draft.create"].review(
       DraftCreateInputSchema.parse({
-        mailboxId,
         senderIdentityId,
         to: [{ name: "Ada", address: "ada@example.test" }],
         subject: "Release follow-up",
@@ -1111,7 +1383,6 @@ describe("mail capabilities", () => {
     } as never);
     const proposedBody = `Hello **Ada**\n\n<script>alert('plain text')</script>\n${"x".repeat(10_500)}`;
     const input = DraftUpdateInputSchema.parse({
-      mailboxId,
       draftId,
       expectedRevision: 2,
       draft: {
@@ -1174,7 +1445,7 @@ describe("mail capabilities", () => {
     spyOn(composeSafety, "reviewDraftComposeSafety").mockResolvedValue({ ok: true, data: { warnings: [] } } as never);
 
     const review = await mailCapabilities.actions["draft.send"].review(
-      DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2, expectedContentHash: "a".repeat(64) }),
+      DraftSendInputSchema.parse({ draftId, senderIdentityId, expectedRevision: 2, expectedContentHash: "a".repeat(64) }),
       context,
     );
 
@@ -1217,7 +1488,7 @@ describe("mail capabilities", () => {
     });
 
     const review = await mailCapabilities.actions["draft.send"].review(
-      DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2, expectedContentHash: "a".repeat(64) }),
+      DraftSendInputSchema.parse({ draftId, senderIdentityId, expectedRevision: 2, expectedContentHash: "a".repeat(64) }),
       context,
     );
 
@@ -1236,7 +1507,7 @@ describe("mail capabilities", () => {
       data: { items: [{ subject: "s".repeat(998) }], nextCursor: null },
     } as never);
     const review = await mailCapabilities.actions["conversation.mark"].review(
-      { mailboxId, target: { conversationId, sourceFolderId: folderId }, read: false },
+      { target: { conversationId, sourceFolderId: folderId }, read: false },
       context,
     );
     expect(review.ok).toBeTrue();
@@ -1253,13 +1524,14 @@ describe("mail capabilities", () => {
       { id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null },
     ] as never);
     const conversationIds = [conversationId, "CvB235", "CvB236", "CvB237", "CvB238"];
+    spyOn(publicResources, "resolveMailboxPublicIds").mockResolvedValue(conversationIds);
 
     const assign = await mailCapabilities.actions["conversation.assign.batch"].review(
-      { mailboxId, conversationIds, assigneeUserIds: [userId], mode: "replace" },
+      { conversationIds, assigneeUserIds: [userId], mode: "replace" },
       context,
     );
     const unassign = await mailCapabilities.actions["conversation.assign.batch"].review(
-      { mailboxId, conversationIds: [conversationId], assigneeUserIds: [], mode: "replace" },
+      { conversationIds: [conversationId], assigneeUserIds: [], mode: "replace" },
       { ...context, locale: "de" },
     );
 
@@ -1301,11 +1573,10 @@ describe("mail capabilities", () => {
     ]);
     spyOn(collaboration, "listAssigneeCollaborators").mockResolvedValue([{ id: userId, uid: "ada", displayName: "Ada", avatarHash: null }]);
     for (const mode of ["add", "remove", "replace"] as const) {
-      const input = { mailboxId, conversationId, assigneeUserIds: [userId], mode };
+      const input = { conversationId, assigneeUserIds: [userId], mode };
       expect(mailCapabilities.actions["conversation.assign"].input.safeParse(input).success).toBeTrue();
       expect(
         mailCapabilities.actions["conversation.assign.batch"].input.safeParse({
-          mailboxId,
           conversationIds: [conversationId],
           assigneeUserIds: [],
           mode,
@@ -1317,7 +1588,6 @@ describe("mail capabilities", () => {
     }
     expect(
       mailCapabilities.actions["conversation.assign"].input.safeParse({
-        mailboxId,
         conversationId,
         assigneeUserIds: Array(21).fill(userId),
         mode: "add",
@@ -1345,7 +1615,7 @@ describe("mail capabilities", () => {
       removedTotal: 0,
     });
     const review = await mailCapabilities.actions["conversation.assign"].review(
-      { mailboxId, conversationId, assigneeUserIds: [userId], mode: "replace" },
+      { conversationId, assigneeUserIds: [userId], mode: "replace" },
       context,
     );
 
@@ -1395,7 +1665,7 @@ describe("mail capabilities", () => {
         grantedTotal: 1,
       });
       const review = await mailCapabilities.actions["conversation.assign"].review(
-        { mailboxId, conversationId, assigneeUserIds: [userId], mode: "add" },
+        { conversationId, assigneeUserIds: [userId], mode: "add" },
         context,
       );
       expect(review.ok).toBe(true);
@@ -1445,7 +1715,6 @@ describe("mail capabilities", () => {
 
     const review = await mailCapabilities.actions["conversation.move"].review(
       ConversationMoveInputSchema.parse({
-        mailboxId,
         target: { conversationId, sourceFolderId: folderAId },
         destination: { kind: "folder", folderId },
       }),
@@ -1468,7 +1737,6 @@ describe("mail capabilities", () => {
     const review = () =>
       mailCapabilities.actions["conversation.move"].review(
         ConversationMoveInputSchema.parse({
-          mailboxId,
           target: { conversationId, sourceFolderId: folderAId },
           destination: { kind: "folder", folderId },
         }),
@@ -1504,7 +1772,6 @@ describe("mail capabilities", () => {
 
     const review = await mailCapabilities.actions["conversation.comment.update"].review(
       {
-        mailboxId,
         conversationId,
         commentId,
         expectedRevision: 3,
@@ -1578,33 +1845,32 @@ describe("mail capabilities", () => {
     });
     const results = [
       await mailCapabilities.actions["conversation.summary.write"].review(
-        { mailboxId, conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared summary" },
+        { conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared summary" },
         context,
       ),
-      await mailCapabilities.actions["conversation.reference.ensure"].review({ mailboxId, conversationId }, context),
+      await mailCapabilities.actions["conversation.reference.ensure"].review({ conversationId }, context),
 
-      await mailCapabilities.actions["draft.consolidation.acknowledge"].review({ mailboxId, draftId }, context),
-      await mailCapabilities.actions["draft.intent"].review({ mailboxId, draftId, expectedRevision: 2, intent: "forward" }, context),
-      await mailCapabilities.actions["draft.patch"].review(
-        { mailboxId, draftId, expectedRevision: 2, patch: { subject: "Changed" } },
-        context,
-      ),
+      await mailCapabilities.actions["draft.consolidation.acknowledge"].review({ draftId }, context),
+      await mailCapabilities.actions["draft.intent"].review({ draftId, expectedRevision: 2, intent: "forward" }, context),
+      await mailCapabilities.actions["draft.patch"].review({ draftId, expectedRevision: 2, patch: { subject: "Changed" } }, context),
       await mailCapabilities.actions["draft.create"].review(
-        DraftCreateInputSchema.parse({ mailboxId, senderIdentityId, subject: "Release follow-up" }),
+        DraftCreateInputSchema.parse({ senderIdentityId, subject: "Release follow-up" }),
         context,
       ),
       await mailCapabilities.actions["draft.update"].review(
         DraftUpdateInputSchema.parse({
-          mailboxId,
           draftId,
           expectedRevision: 2,
           draft: { senderIdentityId, subject: "Updated release follow-up" },
         }),
         context,
       ),
+      await mailCapabilities.actions["draft.attachment.import.v1"].review(
+        { draftId, expectedRevision: 2, file: { name: "notes.pdf", mediaType: "application/pdf", size: 5 } },
+        context,
+      ),
       await mailCapabilities.actions["draft.attachment.add"].review(
         {
-          mailboxId,
           draftId,
           expectedRevision: 2,
           attachment: { filename: "notes.pdf", contentType: "application/pdf", base64: "bm90ZXM=" },
@@ -1612,57 +1878,44 @@ describe("mail capabilities", () => {
         context,
       ),
       await mailCapabilities.actions["conversation.mark"].review(
-        { mailboxId, target: { conversationId, sourceFolderId: folderId }, read: true },
+        { target: { conversationId, sourceFolderId: folderId }, read: true },
         context,
       ),
       await mailCapabilities.actions["conversation.tag.update"].review(
-        { mailboxId, conversationId, expectedRevision: 4, addTagIds: [tagId], removeTagIds: [] },
+        { conversationId, expectedRevision: 4, addTagIds: [tagId], removeTagIds: [] },
         context,
       ),
-      await mailCapabilities.actions["conversation.assign"].review(
-        { mailboxId, conversationId, assigneeUserIds: [userId], mode: "replace" },
-        context,
-      ),
+      await mailCapabilities.actions["conversation.assign"].review({ conversationId, assigneeUserIds: [userId], mode: "replace" }, context),
       await mailCapabilities.actions["conversation.assign.batch"].review(
-        { mailboxId, conversationIds: [conversationId], assigneeUserIds: [userId], mode: "replace" },
+        { conversationIds: [conversationId], assigneeUserIds: [userId], mode: "replace" },
         context,
       ),
       await mailCapabilities.actions["conversation.status.update.batch"].review(
-        { mailboxId, conversationIds: [conversationId], status: "done" },
+        { conversationIds: [conversationId], status: "done" },
         context,
       ),
-      await mailCapabilities.actions["conversation.status.update"].review(
-        { mailboxId, conversationId, expectedRevision: 4, status: "done" },
-        context,
-      ),
+      await mailCapabilities.actions["conversation.status.update"].review({ conversationId, expectedRevision: 4, status: "done" }, context),
       await mailCapabilities.actions["conversation.status.set.batch"].review(
-        { mailboxId, conversationIds: [conversationId], status: "waiting" },
+        { conversationIds: [conversationId], status: "waiting" },
         context,
       ),
-      await mailCapabilities.actions["conversation.status.set"].review(
-        { mailboxId, conversationId, expectedRevision: 4, status: "waiting" },
-        context,
-      ),
-      await mailCapabilities.actions["conversation.keep"].review({ mailboxId, conversationId }, context),
+      await mailCapabilities.actions["conversation.status.set"].review({ conversationId, expectedRevision: 4, status: "waiting" }, context),
+      await mailCapabilities.actions["conversation.keep"].review({ conversationId }, context),
       await mailCapabilities.actions["conversation.snooze"].review(
-        { mailboxId, conversationId, expectedRevision: 4, snoozedUntil: timestamp },
+        { conversationId, expectedRevision: 4, snoozedUntil: timestamp },
         context,
       ),
       await mailCapabilities.actions["conversation.reminder.set"].review(
-        { mailboxId, conversationId, dueAt: timestamp, expectedRevision: null },
+        { conversationId, dueAt: timestamp, expectedRevision: null },
         context,
       ),
-      await mailCapabilities.actions["conversation.reminder.cancel"].review({ mailboxId, conversationId, expectedRevision: 2 }, context),
-      await mailCapabilities.actions["conversation.comment.create"].review(
-        { mailboxId, conversationId, body: "Internal context" },
-        context,
-      ),
-      await mailCapabilities.actions["folder.display.set"].review({ mailboxId, folderId, display: "hidden" }, context),
-      await mailCapabilities.actions["mailbox.tag.create"].review({ mailboxId, name: "customer", color: "#336699" }, context),
-      await mailCapabilities.actions["mailbox.tag.update"].review({ mailboxId, tagId, expectedRevision: 1, name: "Updated" }, context),
+      await mailCapabilities.actions["conversation.reminder.cancel"].review({ conversationId, expectedRevision: 2 }, context),
+      await mailCapabilities.actions["conversation.comment.create"].review({ conversationId, body: "Internal context" }, context),
+      await mailCapabilities.actions["folder.display.set"].review({ folderId, display: "hidden" }, context),
+      await mailCapabilities.actions["mailbox.tag.create"].review({ name: "customer", color: "#336699" }, context),
+      await mailCapabilities.actions["mailbox.tag.update"].review({ tagId, expectedRevision: 1, name: "Updated" }, context),
       await mailCapabilities.actions["conversation.move"].review(
         ConversationMoveInputSchema.parse({
-          mailboxId,
           target: { conversationId, sourceFolderId: folderId },
           destination: { kind: "role", role: "archive" },
         }),
@@ -1673,7 +1926,6 @@ describe("mail capabilities", () => {
     for (const role of ["trash", "junk"] as const) {
       const toBin = await mailCapabilities.actions["conversation.move"].review(
         ConversationMoveInputSchema.parse({
-          mailboxId,
           target: { conversationId, sourceFolderId: folderId },
           destination: { kind: "role", role },
         }),
@@ -1697,6 +1949,7 @@ describe("mail capabilities", () => {
   });
 
   test("returns a schema-valid user outcome from every Mail action", async () => {
+    spyOn(conversationKeeps, "canLiftConversationKeeps").mockResolvedValue(true);
     spyOn(conversationKeeps, "keepConversation").mockResolvedValue({
       ok: true,
       data: {
@@ -1883,14 +2136,14 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["conversation.summary.write"],
         run: () =>
           mailCapabilities.actions["conversation.summary.write"].run(
-            { mailboxId, conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared summary" },
+            { conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared summary" },
             idempotentContext,
           ),
       },
       {
         localId: "conversation.reference.ensure",
         action: mailCapabilities.actions["conversation.reference.ensure"],
-        run: () => mailCapabilities.actions["conversation.reference.ensure"].run({ mailboxId, conversationId }, idempotentContext),
+        run: () => mailCapabilities.actions["conversation.reference.ensure"].run({ conversationId }, idempotentContext),
       },
 
       {
@@ -1898,20 +2151,19 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["draft.create"],
         run: () =>
           mailCapabilities.actions["draft.create"].run(
-            DraftCreateInputSchema.parse({ mailboxId, senderIdentityId, subject: "Release follow-up" }),
+            DraftCreateInputSchema.parse({ senderIdentityId, subject: "Release follow-up" }),
             idempotentContext,
           ),
       },
       {
         localId: "draft.intent",
         action: mailCapabilities.actions["draft.intent"],
-        run: () =>
-          mailCapabilities.actions["draft.intent"].run({ mailboxId, draftId, expectedRevision: 2, intent: "forward" }, idempotentContext),
+        run: () => mailCapabilities.actions["draft.intent"].run({ draftId, expectedRevision: 2, intent: "forward" }, idempotentContext),
       },
       {
         localId: "draft.consolidation.acknowledge",
         action: mailCapabilities.actions["draft.consolidation.acknowledge"],
-        run: () => mailCapabilities.actions["draft.consolidation.acknowledge"].run({ mailboxId, draftId }, idempotentContext),
+        run: () => mailCapabilities.actions["draft.consolidation.acknowledge"].run({ draftId }, idempotentContext),
       },
       {
         localId: "draft.update",
@@ -1919,7 +2171,6 @@ describe("mail capabilities", () => {
         run: () =>
           mailCapabilities.actions["draft.update"].run(
             DraftUpdateInputSchema.parse({
-              mailboxId,
               draftId,
               expectedRevision: 2,
               draft: { senderIdentityId, subject: "Release follow-up" },
@@ -1930,13 +2181,12 @@ describe("mail capabilities", () => {
       {
         localId: "draft.patch",
         action: mailCapabilities.actions["draft.patch"],
-        run: () =>
-          mailCapabilities.actions["draft.patch"].run({ mailboxId, draftId, expectedRevision: 2, patch: { subject: "Changed" } }, context),
+        run: () => mailCapabilities.actions["draft.patch"].run({ draftId, expectedRevision: 2, patch: { subject: "Changed" } }, context),
       },
       {
         localId: "draft.discard",
         action: mailCapabilities.actions["draft.discard"],
-        run: () => mailCapabilities.actions["draft.discard"].run({ mailboxId, draftId, expectedRevision: 2 }, idempotentContext),
+        run: () => mailCapabilities.actions["draft.discard"].run({ draftId, expectedRevision: 2 }, idempotentContext),
       },
       {
         localId: "draft.attachment.add",
@@ -1944,7 +2194,6 @@ describe("mail capabilities", () => {
         run: () =>
           mailCapabilities.actions["draft.attachment.add"].run(
             {
-              mailboxId,
               draftId,
               expectedRevision: 2,
               attachment: { filename: "notes.pdf", contentType: "application/pdf", base64: "bm90ZXM=" },
@@ -1957,7 +2206,7 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["draft.attachment.remove"],
         run: () =>
           mailCapabilities.actions["draft.attachment.remove"].run(
-            { mailboxId, draftId, attachmentId: draftAttachmentId, expectedRevision: 2 },
+            { draftId, attachmentId: draftAttachmentId, expectedRevision: 2 },
             idempotentContext,
           ),
       },
@@ -1966,21 +2215,21 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["draft.send"],
         run: () =>
           mailCapabilities.actions["draft.send"].run(
-            DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2, expectedContentHash: "a".repeat(64) }),
+            DraftSendInputSchema.parse({ draftId, senderIdentityId, expectedRevision: 2, expectedContentHash: "a".repeat(64) }),
             idempotentContext,
           ),
       },
       {
         localId: "delivery.cancel",
         action: mailCapabilities.actions["delivery.cancel"],
-        run: () => mailCapabilities.actions["delivery.cancel"].run({ mailboxId, deliveryId, disposition: "draft" }, idempotentContext),
+        run: () => mailCapabilities.actions["delivery.cancel"].run({ deliveryId, disposition: "draft" }, idempotentContext),
       },
       {
         localId: "conversation.mark",
         action: mailCapabilities.actions["conversation.mark"],
         run: () =>
           mailCapabilities.actions["conversation.mark"].run(
-            { mailboxId, target: { conversationId, sourceFolderId: folderId }, read: true, flagged: true },
+            { target: { conversationId, sourceFolderId: folderId }, read: true, flagged: true },
             idempotentContext,
           ),
       },
@@ -1989,7 +2238,7 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["conversation.move"],
         run: () =>
           mailCapabilities.actions["conversation.move"].run(
-            { mailboxId, target: { conversationId, sourceFolderId: folderId }, destination: { kind: "role", role: "archive" } },
+            { target: { conversationId, sourceFolderId: folderId }, destination: { kind: "role", role: "archive" } },
             idempotentContext,
           ),
       },
@@ -1998,7 +2247,7 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["conversation.tag.update"],
         run: () =>
           mailCapabilities.actions["conversation.tag.update"].run(
-            { mailboxId, conversationId, expectedRevision: 4, addTagIds: [tagId], removeTagIds: [] },
+            { conversationId, expectedRevision: 4, addTagIds: [tagId], removeTagIds: [] },
             context,
           ),
       },
@@ -2006,17 +2255,14 @@ describe("mail capabilities", () => {
         localId: "conversation.assign",
         action: mailCapabilities.actions["conversation.assign"],
         run: () =>
-          mailCapabilities.actions["conversation.assign"].run(
-            { mailboxId, conversationId, assigneeUserIds: [userId], mode: "replace" },
-            context,
-          ),
+          mailCapabilities.actions["conversation.assign"].run({ conversationId, assigneeUserIds: [userId], mode: "replace" }, context),
       },
       {
         localId: "conversation.assign.batch",
         action: mailCapabilities.actions["conversation.assign.batch"],
         run: () =>
           mailCapabilities.actions["conversation.assign.batch"].run(
-            { mailboxId, conversationIds: [conversationId, relatedConversationId], assigneeUserIds: [userId], mode: "replace" },
+            { conversationIds: [conversationId, relatedConversationId], assigneeUserIds: [userId], mode: "replace" },
             context,
           ),
       },
@@ -2025,7 +2271,7 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["conversation.status.update.batch"],
         run: () =>
           mailCapabilities.actions["conversation.status.update.batch"].run(
-            { mailboxId, conversationIds: [conversationId, relatedConversationId], status: "done" },
+            { conversationIds: [conversationId, relatedConversationId], status: "done" },
             context,
           ),
       },
@@ -2033,17 +2279,14 @@ describe("mail capabilities", () => {
         localId: "conversation.status.update",
         action: mailCapabilities.actions["conversation.status.update"],
         run: () =>
-          mailCapabilities.actions["conversation.status.update"].run(
-            { mailboxId, conversationId, expectedRevision: 4, status: "done" },
-            context,
-          ),
+          mailCapabilities.actions["conversation.status.update"].run({ conversationId, expectedRevision: 4, status: "done" }, context),
       },
       {
         localId: "conversation.status.set.batch",
         action: mailCapabilities.actions["conversation.status.set.batch"],
         run: () =>
           mailCapabilities.actions["conversation.status.set.batch"].run(
-            { mailboxId, conversationIds: [conversationId, relatedConversationId], status: "done" },
+            { conversationIds: [conversationId, relatedConversationId], status: "done" },
             context,
           ),
       },
@@ -2051,51 +2294,41 @@ describe("mail capabilities", () => {
         localId: "conversation.status.set",
         action: mailCapabilities.actions["conversation.status.set"],
         run: () =>
-          mailCapabilities.actions["conversation.status.set"].run(
-            { mailboxId, conversationId, expectedRevision: 4, status: "done" },
-            context,
-          ),
+          mailCapabilities.actions["conversation.status.set"].run({ conversationId, expectedRevision: 4, status: "done" }, context),
       },
       {
         localId: "conversation.keep",
         action: mailCapabilities.actions["conversation.keep"],
-        run: () => mailCapabilities.actions["conversation.keep"].run({ mailboxId, conversationId }, context),
+        run: () => mailCapabilities.actions["conversation.keep"].run({ conversationId }, context),
       },
       {
         localId: "conversation.keep.release",
         action: mailCapabilities.actions["conversation.keep.release"],
-        run: () => mailCapabilities.actions["conversation.keep.release"].run({ mailboxId, conversationId }, idempotentContext),
+        run: () => mailCapabilities.actions["conversation.keep.release"].run({ conversationId }, idempotentContext),
       },
       {
         localId: "conversation.snooze",
         action: mailCapabilities.actions["conversation.snooze"],
         run: () =>
-          mailCapabilities.actions["conversation.snooze"].run(
-            { mailboxId, conversationId, expectedRevision: 4, snoozedUntil: timestamp },
-            context,
-          ),
+          mailCapabilities.actions["conversation.snooze"].run({ conversationId, expectedRevision: 4, snoozedUntil: timestamp }, context),
       },
       {
         localId: "conversation.reminder.set",
         action: mailCapabilities.actions["conversation.reminder.set"],
         run: () =>
-          mailCapabilities.actions["conversation.reminder.set"].run(
-            { mailboxId, conversationId, dueAt: timestamp, expectedRevision: null },
-            context,
-          ),
+          mailCapabilities.actions["conversation.reminder.set"].run({ conversationId, dueAt: timestamp, expectedRevision: null }, context),
       },
       {
         localId: "conversation.reminder.cancel",
         action: mailCapabilities.actions["conversation.reminder.cancel"],
-        run: () =>
-          mailCapabilities.actions["conversation.reminder.cancel"].run({ mailboxId, conversationId, expectedRevision: 2 }, context),
+        run: () => mailCapabilities.actions["conversation.reminder.cancel"].run({ conversationId, expectedRevision: 2 }, context),
       },
       {
         localId: "conversation.comment.create",
         action: mailCapabilities.actions["conversation.comment.create"],
         run: () =>
           mailCapabilities.actions["conversation.comment.create"].run(
-            { mailboxId, conversationId, body: "Internal context", referencedMessageId: null },
+            { conversationId, body: "Internal context", referencedMessageId: null },
             context,
           ),
       },
@@ -2104,7 +2337,7 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["conversation.comment.update"],
         run: () =>
           mailCapabilities.actions["conversation.comment.update"].run(
-            { mailboxId, conversationId, commentId, expectedRevision: 3, body: "Updated context" },
+            { conversationId, commentId, expectedRevision: 3, body: "Updated context" },
             context,
           ),
       },
@@ -2113,46 +2346,82 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["conversation.comment.delete"],
         run: () =>
           mailCapabilities.actions["conversation.comment.delete"].run(
-            { mailboxId, conversationId, commentId, expectedRevision: 3 },
+            { conversationId, commentId, expectedRevision: 3 },
             idempotentContext,
           ),
       },
       {
         localId: "folder.display.set",
         action: mailCapabilities.actions["folder.display.set"],
-        run: () => mailCapabilities.actions["folder.display.set"].run({ mailboxId, folderId, display: "folder_only" }, context),
+        run: () => mailCapabilities.actions["folder.display.set"].run({ folderId, display: "folder_only" }, context),
       },
       {
         localId: "mailbox.tag.create",
         action: mailCapabilities.actions["mailbox.tag.create"],
-        run: () => mailCapabilities.actions["mailbox.tag.create"].run({ mailboxId, name: "customer", color: "#336699" }, context),
+        run: () => mailCapabilities.actions["mailbox.tag.create"].run({ name: "customer", color: "#336699" }, context),
       },
       {
         localId: "mailbox.tag.update",
         action: mailCapabilities.actions["mailbox.tag.update"],
-        run: () => mailCapabilities.actions["mailbox.tag.update"].run({ mailboxId, tagId, expectedRevision: 2, name: "customer" }, context),
+        run: () => mailCapabilities.actions["mailbox.tag.update"].run({ tagId, expectedRevision: 2, name: "customer" }, context),
       },
       {
         localId: "mailbox.tag.delete",
         action: mailCapabilities.actions["mailbox.tag.delete"],
-        run: () => mailCapabilities.actions["mailbox.tag.delete"].run({ mailboxId, tagId, expectedRevision: 2 }, idempotentContext),
+        run: () => mailCapabilities.actions["mailbox.tag.delete"].run({ tagId, expectedRevision: 2 }, idempotentContext),
       },
       {
         localId: "mailing-list.unsubscribe",
         action: mailCapabilities.actions["mailing-list.unsubscribe"],
         run: () =>
           mailCapabilities.actions["mailing-list.unsubscribe"].run(
-            { mailboxId, listKey: "example", href: "https://example.test/unsubscribe" },
+            { listKey: "example", href: "https://example.test/unsubscribe" },
             idempotentContext,
           ),
       },
     ];
 
-    expect(results).toHaveLength(Object.keys(mailCapabilities.actions).length);
-    expect(new Set(results.map((item) => item.localId)).size).toBe(results.length);
+    const importedUpload = {
+      id: "aaaaaaaa-0000-4000-8000-000000000099",
+      draftId: internalDraftId,
+      filename: "notes.pdf",
+      contentType: "application/pdf",
+      byteLength: 5,
+      receivedBytes: 5,
+      chunkSize: 1024 * 1024,
+      state: "attached" as const,
+      attachmentId: internalDraftAttachmentId,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: importedUpload });
+    spyOn(draftUploads, "capabilityAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: { upload: importedUpload, expectedRevision: 2, finalizedRevision: 3 },
+    });
+    spyOn(draftUploads, "claimCapabilityAttachmentWrite").mockResolvedValue(ok());
+    const importCase = {
+      localId: "draft.attachment.import.v1",
+      action: mailCapabilities.actions["draft.attachment.import.v1"],
+      run: async () => {
+        const action = mailCapabilities.actions["draft.attachment.import.v1"];
+        const prepared = await action.run(
+          { draftId, expectedRevision: 2, file: { name: "notes.pdf", mediaType: "application/pdf", size: 5 } },
+          idempotentContext,
+        );
+        if (!prepared.ok || !prepared.data.stream) throw new Error("expected prepared attachment");
+        return {
+          ok: true as const,
+          data: await action.stream.write(prepared.data.stream, new Blob(["notes"]).stream(), idempotentContext),
+        };
+      },
+    };
+    const allResults = [...results, importCase];
+    expect(allResults).toHaveLength(Object.keys(mailCapabilities.actions).length);
+    expect(new Set(allResults.map((item) => item.localId)).size).toBe(allResults.length);
     const summaries = new Map<string, string>();
     const actionOutputs: unknown[] = [];
-    for (const { localId, action, run } of results) {
+    for (const { localId, action, run } of allResults) {
       const result = await run().catch((error) => {
         throw new Error(`Mail action ${localId} threw`, { cause: error });
       });
@@ -2212,7 +2481,7 @@ describe("mail capabilities", () => {
       data: [folder(internalFolderCId, "C"), folder(internalFolderAId, "A"), folder(internalFolderBId, "B")],
     });
 
-    const first = await mailCapabilities.queries["folder.list"].run({ mailboxId, limit: 2 }, context);
+    const first = await mailCapabilities.queries["folder.list"].run({ limit: 2 }, context);
     expect(listFolders.mock.calls[0]?.[1]).toBe(internalMailboxId);
     expect(first).toMatchObject({
       ok: true,
@@ -2234,7 +2503,7 @@ describe("mail capabilities", () => {
     });
     if (!first.ok || !first.data.page?.hasMore) throw new Error("Expected another folder page");
     expect(FolderListDataSchema.safeParse(first.data.data).success).toBeTrue();
-    const second = await mailCapabilities.queries["folder.list"].run({ mailboxId, limit: 2, cursor: first.data.page.nextCursor }, context);
+    const second = await mailCapabilities.queries["folder.list"].run({ limit: 2, cursor: first.data.page.nextCursor }, context);
     expect(second).toMatchObject({
       ok: true,
       data: { data: [{ ref: { type: "mail.folder", id: folderCId }, title: "C" }], page: { hasMore: false } },
@@ -2270,7 +2539,7 @@ describe("mail capabilities", () => {
       },
     } as never);
 
-    const result = await mailCapabilities.queries["conversation.list"].run({ mailboxId, limit: 25 }, context);
+    const result = await mailCapabilities.queries["conversation.list"].run({ limit: 25 }, context);
     expect(result).toMatchObject({
       ok: true,
       data: {
@@ -2346,7 +2615,7 @@ describe("mail capabilities", () => {
 
   test("returns a typed ref and pagination envelope for draft lists", async () => {
     const listDrafts = spyOn(drafts, "listDrafts").mockResolvedValue({ ok: true, data: [draftFixture] } as never);
-    const result = await mailCapabilities.queries["draft.list"].run({ mailboxId, limit: 25 }, context);
+    const result = await mailCapabilities.queries["draft.list"].run({ limit: 25 }, context);
 
     expect(listDrafts.mock.calls[0]?.[2]).toBe(200);
     expect(result).toMatchObject({
@@ -2417,7 +2686,6 @@ describe("mail capabilities", () => {
 
     const result = await mailCapabilities.queries["conversation.search"].run(
       {
-        mailboxId,
         expression: { type: "text", field: "any", query: "roadmap milestone", match: "words" },
         sort: "relevance",
         limit: 25,
@@ -2463,11 +2731,8 @@ describe("mail capabilities", () => {
       },
     });
     const query = mailCapabilities.queries["conversation.by_sender"];
-    expect(() => query.input.parse({ mailboxId, email: "ada@example.test", limit: 6 })).toThrow();
-    const result = await query.run(
-      query.input.parse({ mailboxId, email: "ada@example.test", excludeConversationId: conversationId }),
-      context,
-    );
+    expect(() => query.input.parse({ email: "ada@example.test", limit: 6 })).toThrow();
+    const result = await query.run(query.input.parse({ email: "ada@example.test", excludeConversationId: conversationId }), context);
     expect(history.mock.calls[0]?.[0]).toMatchObject({
       mailboxId: internalMailboxId,
       email: "ada@example.test",
@@ -2486,6 +2751,7 @@ describe("mail capabilities", () => {
   });
 
   test("returns bounded related conversations with explainable reasons, refs, and links", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "read" });
     spyOn(conversationContext, "listRelatedConversations").mockResolvedValue({
       ok: true,
       data: [
@@ -2503,7 +2769,7 @@ describe("mail capabilities", () => {
       ],
     });
 
-    const result = await mailCapabilities.queries["conversation.related"].run({ mailboxId, conversationId, limit: 5 }, context);
+    const result = await mailCapabilities.queries["conversation.related"].run({ conversationId, limit: 5 }, context);
 
     expect(result).toEqual({
       ok: true,
@@ -2639,7 +2905,7 @@ describe("mail capabilities", () => {
       },
     });
 
-    const result = await mailCapabilities.queries["message.list"].run({ mailboxId, conversationId, limit: 25 }, context);
+    const result = await mailCapabilities.queries["message.list"].run({ conversationId, limit: 25 }, context);
 
     if (!result.ok) throw new Error("Expected message list success");
     expect(MessageListDataSchema.safeParse(result.data.data).success).toBeTrue();
@@ -2675,7 +2941,7 @@ describe("mail capabilities", () => {
       ok: true,
       data: { correlationId: "correlation", commands: [{ id: internalMailboxId, state: "pending" }] },
     } as never);
-    const input = { mailboxId, target: { conversationId, sourceFolderId: folderId }, read: true };
+    const input = { target: { conversationId, sourceFolderId: folderId }, read: true };
 
     const review = await mailCapabilities.actions["conversation.mark"].review(input, context);
     const result = await mailCapabilities.actions["conversation.mark"].run(input, { ...context, idempotencyKey: "mark-read" });
@@ -2707,10 +2973,7 @@ describe("mail capabilities", () => {
     } as never);
     const deleteTag = spyOn(localTags, "deleteLocalTag").mockResolvedValue({ ok: true, data: { deleted: true } } as never);
 
-    await mailCapabilities.actions["mailbox.tag.delete"].run(
-      { mailboxId, tagId, expectedRevision: 2 },
-      { ...context, idempotencyKey: "tag-delete" },
-    );
+    await mailCapabilities.actions["mailbox.tag.delete"].run({ tagId, expectedRevision: 2 }, { ...context, idempotencyKey: "tag-delete" });
 
     expect(deleteTag.mock.calls[0]?.[0]).toMatchObject({ context: { requestId: context.requestId } });
   });
@@ -2749,7 +3012,6 @@ describe("mail capabilities", () => {
 
     const result = await mailCapabilities.actions["conversation.tag.update"].run(
       {
-        mailboxId,
         conversationId,
         expectedRevision: 4,
         addTagIds: [tagId],
@@ -2790,7 +3052,7 @@ describe("mail capabilities", () => {
       data: { items: [subscription("list one&two"), subscription("x".repeat(4096))], nextCursor: null },
     });
 
-    const result = await mailCapabilities.queries["mailing-list.subscription.list"].run({ mailboxId, limit: 25 }, context);
+    const result = await mailCapabilities.queries["mailing-list.subscription.list"].run({ limit: 25 }, context);
     expect(result).toMatchObject({
       ok: true,
       data: {
@@ -2831,7 +3093,7 @@ describe("mail capabilities", () => {
       },
     } as never);
 
-    const result = await mailCapabilities.queries["conversation.activity.list"].run({ mailboxId, limit: 25 }, context);
+    const result = await mailCapabilities.queries["conversation.activity.list"].run({ limit: 25 }, context);
 
     expect(listActivity.mock.calls[0]?.[0]).toMatchObject({ mailboxId: internalMailboxId, conversationId: null });
     expect(result).toMatchObject({
@@ -3159,7 +3421,6 @@ describe("mail capabilities", () => {
 
   test("keeps draft creation bounded and closed", () => {
     const base = {
-      mailboxId,
       senderIdentityId,
     };
     expect(DraftCreateInputSchema.safeParse(base).success).toBeTrue();
@@ -3174,7 +3435,6 @@ describe("mail capabilities", () => {
 
   test("requires the exact safety approval shape for sending", () => {
     const input = {
-      mailboxId,
       draftId: "DrG789",
       expectedRevision: 2,
       senderIdentityId,
@@ -3268,7 +3528,7 @@ describe("mail capabilities", () => {
       updatedAt: "2026-08-19T00:00:00.000Z",
     });
 
-    const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset: 0, length: 256 }, context);
+    const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset: 0, length: 256 }, context);
     if (!result.ok) throw new Error("Expected attachment content success");
     expect(AttachmentContentReadDataSchema.parse(result.data.data)).toMatchObject({
       id: attachmentId,
@@ -3287,6 +3547,64 @@ describe("mail capabilities", () => {
     expect(result.data.summary).toBe("Read attachment text from “roadmap.pdf”.");
   });
 
+  test("attachment file offers are metadata-only and the stream rechecks current access and source identity", async () => {
+    spyOn(resourceParents, "attachment").mockResolvedValue({ mailboxId: internalMailboxId, messageId: internalMessageId });
+    const opened = {
+      blobId: "11111111-1111-4111-8111-111111111111",
+      total: 3,
+      chunkSize: 65536,
+      chunkCount: 1,
+      contentHash: "a".repeat(64),
+      contentType: "application/pdf",
+      filename: "invoice.pdf",
+    };
+    const open = spyOn(messages, "openAttachment").mockResolvedValue({ ok: true, data: opened });
+    const stream = spyOn(messages, "createAttachmentStream").mockImplementation(
+      (params) =>
+        new ReadableStream({
+          async start(controller) {
+            await params.assertCurrentAccess?.();
+            controller.enqueue(new Uint8Array([1, 2, 3]));
+            controller.close();
+          },
+        }),
+    );
+    const definition = mailCapabilities.queries["attachment.content.read"];
+    const result = await definition.run({ id: attachmentId }, context);
+    if (!result.ok) throw new Error("Expected attachment file offer");
+    expect(result.data.data).toEqual({ name: "invoice.pdf", mediaType: "application/pdf", size: 3 });
+    expect(stream).not.toHaveBeenCalled();
+    const response = await definition.stream.read(result.data.stream, context);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+    expect(open).toHaveBeenCalledTimes(3);
+    expect(open.mock.calls[0]![0]).toMatchObject({
+      context: { actor: context.actor, accessSubject: context.accessSubject },
+      attachmentId: internalAttachmentId,
+    });
+    open.mockResolvedValue({ ok: false, error: err.forbidden("Revoked") });
+    await expect(definition.stream.read(result.data.stream, context)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    open.mockResolvedValue({ ok: true, data: { ...opened, blobId: "22222222-2222-4222-8222-222222222222" } });
+    await expect(definition.stream.read(result.data.stream, context)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+  test("attachment file offers enforce Mail's existing 100 MiB limit before opening a body", async () => {
+    spyOn(resourceParents, "attachment").mockResolvedValue({ mailboxId: internalMailboxId, messageId: internalMessageId });
+    spyOn(messages, "openAttachment").mockResolvedValue({
+      ok: true,
+      data: {
+        blobId: "11111111-1111-4111-8111-111111111111",
+        total: 100 * 1024 * 1024 + 1,
+        chunkSize: 65536,
+        chunkCount: 1601,
+        contentHash: "a".repeat(64),
+        contentType: "application/pdf",
+        filename: "large.pdf",
+      },
+    });
+    const body = spyOn(messages, "createAttachmentStream");
+    const result = await mailCapabilities.queries["attachment.content.read"].run({ id: attachmentId }, context);
+    expect(result).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+    expect(body).not.toHaveBeenCalled();
+  });
   test("keeps the canonical attachment reader metadata-only", async () => {
     spyOn(resourceParents, "attachment").mockResolvedValue({ mailboxId: internalMailboxId, messageId: internalMessageId });
     spyOn(messages, "getMessage").mockResolvedValue({
@@ -3351,7 +3669,7 @@ describe("mail capabilities", () => {
     spyOn(messages, "openAttachment").mockResolvedValue({ ok: true, data: { blobId: "blob-id" } } as never);
     const enqueue = spyOn(attachmentExtraction, "enqueueAttachmentExtraction").mockResolvedValue({ id: "job-id" } as never);
 
-    const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset: 0, length: 256 }, context);
+    const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset: 0, length: 256 }, context);
 
     if (!result.ok) throw new Error("Expected pending attachment content result");
     expect(AttachmentContentReadDataSchema.parse(result.data.data)).toMatchObject({
@@ -3373,7 +3691,7 @@ describe("mail capabilities", () => {
       error: { code: "FORBIDDEN", message: "Forbidden", status: 403 },
     });
     const load = spyOn(attachmentExtraction, "loadAttachmentExtraction");
-    const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset: 0, length: 256 }, context);
+    const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset: 0, length: 256 }, context);
     expect(result).toEqual({ ok: false, error: { code: "FORBIDDEN", message: "Forbidden", status: 403 } });
     expect(load).not.toHaveBeenCalled();
   });
@@ -3400,7 +3718,7 @@ describe("mail capabilities", () => {
     });
 
     for (const offset of [2, 7]) {
-      const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset, length: 256 }, context);
+      const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset, length: 256 }, context);
       expect(result.ok).toBeFalse();
       if (!result.ok) expect(result.error).toMatchObject({ code: "BAD_INPUT", status: 400 });
     }
@@ -3408,7 +3726,6 @@ describe("mail capabilities", () => {
 
   test("accepts only explicit unsubscribe targets", () => {
     const valid = {
-      mailboxId,
       listKey: "example.list",
       href: "https://example.com/unsubscribe",
     };
@@ -3655,7 +3972,7 @@ test("a created draft is named in refs and its reader opens compose", async () =
 
   // The Assistant and MCP attach the permalink to exactly this ref; `/open` then follows the reader's open link.
   const create = mailCapabilities.actions["draft.create"];
-  const created = await create.run(create.input.parse({ mailboxId, senderIdentityId, subject: mutableDraftFixture.subject }), {
+  const created = await create.run(create.input.parse({ senderIdentityId, subject: mutableDraftFixture.subject }), {
     ...context,
     idempotencyKey: "draft-link-test",
   });
@@ -3703,6 +4020,7 @@ test("batch status reviews allow assigned writers, bound subjects and run with i
     ok: true,
     data: { scope: "assigned", permission: "write", userId },
   });
+  const visible = spyOn(mailboxAccess, "requireVisibleConversation").mockResolvedValue({ ok: true, data: undefined });
   const wide = spyOn(mailboxAccess, "requireMailboxPermission");
   const subjects = spyOn(messages, "listConversationMessages").mockResolvedValue({
     ok: true,
@@ -3710,17 +4028,19 @@ test("batch status reviews allow assigned writers, bound subjects and run with i
   } as never);
   const action = mailCapabilities.actions["conversation.status.update.batch"];
   const ids = [conversationId, relatedConversationId, "CvB236", "CvB237", "CvB238"];
+  spyOn(publicResources, "resolveMailboxPublicIds").mockResolvedValue(ids);
   for (const [status, locale] of [
     ["done", "en"],
     ["open", "de"],
   ] as const) {
     subjects.mockClear();
-    const review = await action.review({ mailboxId, conversationIds: ids, status }, { ...context, locale });
+    const review = await action.review({ conversationIds: ids, status }, { ...context, locale });
     expect(review).toMatchObject({ ok: true, data: { effects: 5, slots: { count: { value: 5 } }, scope: `mailbox:${mailboxId}` } });
     if (review.ok) expect(review.data.sentence.action).toContain(locale === "en" ? "Complete" : "öffnen");
     expect(subjects.mock.calls.length).toBeLessThanOrEqual(3);
     expect(access).toHaveBeenCalledWith(expect.anything(), internalMailboxId, "write");
     expect(wide).not.toHaveBeenCalled();
+    expect(visible).toHaveBeenCalledWith(expect.objectContaining({ scope: "assigned" }), ids[0]);
     const data = {
       completion: status,
       results: [
@@ -3734,7 +4054,7 @@ test("batch status reviews allow assigned writers, bound subjects and run with i
       ],
     };
     const run = spyOn(collaboration, "applyConversationCompletions").mockResolvedValue({ ok: true, data });
-    const result = await action.run({ mailboxId, conversationIds: ids, status }, { ...context, locale });
+    const result = await action.run({ conversationIds: ids, status }, { ...context, locale });
     expect(result).toMatchObject({ ok: true, data: { data } });
     expect(run).toHaveBeenCalledWith({
       context: expect.anything(),
@@ -3745,13 +4065,12 @@ test("batch status reviews allow assigned writers, bound subjects and run with i
   }
   expect(
     action.input.safeParse({
-      mailboxId,
       conversationIds: Array.from({ length: 51 }, (_, i) => `Cv${String(i).padStart(4, "0")}`),
       status: "done",
     }).success,
   ).toBeFalse();
   access.mockResolvedValue(fail(err.forbidden("Forbidden")));
-  expect((await action.review({ mailboxId, conversationIds: [conversationId], status: "done" }, context)).ok).toBeFalse();
+  expect((await action.review({ conversationIds: [conversationId], status: "done" }, context)).ok).toBeFalse();
 });
 
 test("panel place refs select the owning app's public resource reader", () => {
@@ -3782,7 +4101,7 @@ const automationMessageFixture = {
 describe("Mail safe unattended actions", () => {
   test("automated summary requires an idempotency key and exposes a person-edit skip", async () => {
     const action = mailCapabilities.actions["conversation.summary.write"];
-    const input = { mailboxId, conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared text" };
+    const input = { conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared text" };
     const write = spyOn(conversationSummaries, "writeAutomatedConversationSummary").mockResolvedValue({
       ok: true,
       data: {
@@ -3815,7 +4134,6 @@ describe("Mail safe unattended actions", () => {
     for (const locale of ["de", "en"]) {
       const result = await mailCapabilities.actions["conversation.summary.write"].review(
         {
-          mailboxId,
           conversationId,
           expectedRevision: 4,
           expectedSummaryRevision: 2,
@@ -3836,9 +4154,9 @@ describe("Mail safe unattended actions", () => {
       data: { reference: referenceFixture, conversationRevision: 4, created: false },
     });
     const action = mailCapabilities.actions["conversation.reference.ensure"];
-    expect((await action.run({ mailboxId, conversationId }, context)).ok).toBeFalse();
+    expect((await action.run({ conversationId }, context)).ok).toBeFalse();
     expect(ensure).not.toHaveBeenCalled();
-    const result = await action.run({ mailboxId, conversationId }, { ...context, locale: "en", idempotencyKey: "reference-key" });
+    const result = await action.run({ conversationId }, { ...context, locale: "en", idempotencyKey: "reference-key" });
     expect(result).toMatchObject({ ok: true, data: { data: { value: "REF-42", created: false } } });
     expect(ensure).toHaveBeenCalledWith(expect.objectContaining({ input: { idempotencyKey: expect.stringMatching(/^[a-f0-9]{64}$/) } }));
   });
@@ -3855,7 +4173,6 @@ describe("Mail safe unattended actions", () => {
       const target = { conversationId, sourceFolderId: folderId, messageId };
       const action = mailCapabilities.actions[`conversation.${kind}`];
       const input = action.input.parse({
-        mailboxId,
         target,
         ...(kind === "mark" ? { read: true, answered: true, draft: false } : { destination: { kind: "role", role: "archive" } }),
       });
@@ -3884,7 +4201,7 @@ describe("Mail safe unattended actions", () => {
         );
     }
     for (const locale of ["en", "de"]) {
-      const input = { mailboxId, target: { conversationId, sourceFolderId: folderId, messageId }, answered: true, draft: false };
+      const input = { target: { conversationId, sourceFolderId: folderId, messageId }, answered: true, draft: false };
       const review = await mailCapabilities.actions["conversation.mark"].review(input, { ...context, locale });
       expect(review.ok).toBeTrue();
       const states = locale === "en" ? "answered and not a draft" : "beantwortet und kein Entwurf";
@@ -3907,7 +4224,7 @@ describe("Mail safe unattended actions", () => {
     create.mockClear();
     spyOn(resourceParents, "messageConversation").mockResolvedValue(internalRelatedConversationId);
     const result = await mailCapabilities.actions["conversation.mark"].run(
-      { mailboxId, target: { conversationId, sourceFolderId: folderId, messageId }, read: true },
+      { target: { conversationId, sourceFolderId: folderId, messageId }, read: true },
       { ...context, idempotencyKey: "foreign-message" },
     );
     expect(result).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
@@ -3923,7 +4240,6 @@ describe("Mail safe unattended actions", () => {
       fail(err.conflict("Conversation already has an assignee")),
     );
     const input = {
-      mailboxId,
       conversationId,
       assigneeUserIds: [userId],
       mode: "add" as const,
@@ -3947,15 +4263,253 @@ describe("Mail safe unattended actions", () => {
       ok: true,
       data: { completion: "needs_action", results: [] },
     });
-    await mailCapabilities.actions["conversation.status.set"].run(
-      { mailboxId, conversationId, expectedRevision: 4, status: "waiting" },
-      context,
-    );
+    await mailCapabilities.actions["conversation.status.set"].run({ conversationId, expectedRevision: 4, status: "waiting" }, context);
     expect(single).toHaveBeenCalledWith(expect.objectContaining({ input: { expectedRevision: 4, completion: "waiting" } }));
     await mailCapabilities.actions["conversation.status.set.batch"].run(
-      { mailboxId, conversationIds: [conversationId], expectedRevisions: { [conversationId]: 4 }, status: "needs_action" },
+      { conversationIds: [conversationId], expectedRevisions: { [conversationId]: 4 }, status: "needs_action" },
       context,
     );
     expect(batch).toHaveBeenCalledWith(expect.objectContaining({ completion: "needs_action", expectedRevisions: { [conversationId]: 4 } }));
+  });
+});
+
+test.each(["conversation.status.update.batch", "conversation.status.set.batch"] as const)(
+  "%s rejects an invisible member before review or mutation",
+  async (id) => {
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({
+      ok: true,
+      data: { scope: "assigned", permission: "write", userId },
+    });
+    spyOn(mailboxAccess, "requireVisibleConversation").mockResolvedValue(fail(err.notFound("Conversation")));
+    const assign = spyOn(conversationAssignments, "assignConversations");
+    const complete = spyOn(collaboration, "applyConversationCompletions");
+
+    const action = mailCapabilities.actions[id];
+    const input = action.input.parse({ conversationIds: [conversationId], status: "done" });
+    expect(await action.review(input, context)).toEqual(fail(err.notFound("Conversation")));
+    expect(await action.run(input, context)).toEqual(fail(err.notFound("Conversation")));
+
+    expect(assign).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+  },
+);
+
+test("Code message selection and preview answer unreadable mailboxes like unknown ones", async () => {
+  spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied")));
+  const members = spyOn(publicResources, "resolveMailboxPublicId");
+  const read = mock(async () => fail(err.notFound("Message")));
+  expect(await selectMailCodeMessages(mailboxId, {}, context)).toEqual(await selectMailCodeMessages("Unknow", {}, context));
+  expect(await previewMailCodeMessage(mailboxId, messageId, context, read)).toEqual(
+    await previewMailCodeMessage("Unknow", messageId, context, read),
+  );
+  expect(members).not.toHaveBeenCalled();
+  expect(read).not.toHaveBeenCalled();
+});
+
+test("Code event lookup authorizes before classifying the message", async () => {
+  const parent = spyOn(resourceParents, "message").mockResolvedValue(internalMailboxId);
+  const access = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied")));
+  const unknown = await resolveMailCodeEvent("Unknow", context);
+  expect(unknown).toEqual(fail(err.forbidden("Access denied")));
+  expect(await resolveMailCodeEvent(messageId, context)).toEqual(unknown);
+  access.mockResolvedValue({ ok: true, data: { scope: "assigned", permission: "read", userId } });
+  expect(await resolveMailCodeEvent(messageId, context)).toEqual(unknown);
+  parent.mockResolvedValue(null);
+  expect(await resolveMailCodeEvent(messageId, context)).toEqual(unknown);
+});
+
+describe("draft FileRef attachment capability", () => {
+  const action = mailCapabilities.actions["draft.attachment.import.v1"];
+  const uploadId = "aaaaaaaa-0000-4000-8000-000000000099";
+  const upload = {
+    id: uploadId,
+    draftId: internalDraftId,
+    filename: "report.csv",
+    contentType: "text/csv",
+    byteLength: 4,
+    receivedBytes: 0,
+    chunkSize: 1024 * 1024,
+    state: "uploading" as const,
+    attachmentId: null,
+    createdAt: "2026-11-11T10:00:00.000Z",
+    updatedAt: "2026-11-11T10:00:00.000Z",
+  };
+  const input = { draftId, expectedRevision: 2, file: { name: "report.csv", mediaType: "text/csv", size: 4 } };
+  const caller = { ...context, locale: "en", idempotencyKey: "chat-attachment-one" };
+  beforeEach(() => {
+    setSystemTime(new Date(upload.createdAt));
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+  });
+  afterEach(() => setSystemTime());
+
+  test("prepares the existing uploader with actor, revision and a stable retry key", async () => {
+    const create = spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: upload });
+    const first = await action.run(input, caller);
+    expect(first).toMatchObject({
+      ok: true,
+      data: { data: { draftId, uploadId }, stream: { direction: "write", name: "report.csv", size: 4 } },
+    });
+    await action.run(input, caller);
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      context: { actor: caller.actor, accessSubject: caller.accessSubject },
+      mailboxId: internalMailboxId,
+      draftId: internalDraftId,
+      capability: { expectedRevision: 2 },
+    });
+    expect(create.mock.calls[0]?.[0].capability?.uploadId).toBe(create.mock.calls[1]?.[0].capability?.uploadId);
+    await action.run(input, { ...caller, idempotencyKey: "another-transfer" });
+    expect(create.mock.calls[0]?.[0].capability?.uploadId).not.toBe(create.mock.calls[2]?.[0].capability?.uploadId);
+  });
+
+  test("preserves source media metadata through preparation while the uploader owns storage sanitization", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: { ...upload, contentType: "application/octet-stream" },
+    });
+    const prepared = await action.run({ ...input, file: { ...input.file, mediaType: "text/csv; charset=utf-8" } }, caller);
+    expect(prepared).toMatchObject({ ok: true, data: { stream: { mediaType: "text/csv; charset=utf-8" } } });
+  });
+
+  test("a cancelled stream stays visibly aborted and cancels rejected bodies", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: upload });
+    spyOn(draftUploads, "claimCapabilityAttachmentWrite").mockResolvedValue(ok());
+    spyOn(draftUploads, "capabilityAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: {
+        upload: { ...upload, state: "cancelled" },
+        expectedRevision: 2,
+        finalizedRevision: null,
+      },
+    });
+    const attach = spyOn(draftUploads, "uploadDraftAttachmentStream");
+    const prepared = await action.run(input, caller);
+    if (!prepared.ok || !prepared.data.stream) throw new Error("expected stream");
+    expect(await action.stream.status(prepared.data.stream, caller)).toEqual({ state: "aborted" });
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel: () => {
+        cancelled = true;
+      },
+    });
+    await expect(action.stream.write(prepared.data.stream, body, caller)).rejects.toMatchObject({ status: 409 });
+    expect(cancelled).toBe(true);
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  test("completed preparations return a usable receipt stream after the original transfer window", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: { ...upload, state: "attached", attachmentId: internalDraftAttachmentId },
+    });
+    setSystemTime(new Date("2026-11-13T10:00:00.000Z"));
+    const prepared = await action.run(input, caller);
+    expect(prepared).toMatchObject({ ok: true, data: { stream: { expiresAt: "2026-11-14T10:00:00.000Z" } } });
+  });
+
+  test("a second writer is refused without cancelling the first writer's reservation", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: upload });
+    spyOn(draftUploads, "capabilityAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: { upload, expectedRevision: 2, finalizedRevision: null },
+    });
+    spyOn(draftUploads, "claimCapabilityAttachmentWrite").mockResolvedValue(fail(err.conflict("Transfer already started")));
+    const attach = spyOn(draftUploads, "uploadDraftAttachmentStream");
+    const cancel = spyOn(draftUploads, "cancelDraftAttachmentUpload");
+    const prepared = await action.run(input, caller);
+    if (!prepared.ok || !prepared.data.stream) throw new Error("expected stream");
+    await expect(action.stream.write(prepared.data.stream, new Blob(["data"]).stream(), caller)).rejects.toMatchObject({ status: 409 });
+    expect(attach).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  test("cancelling during preparation closes the source without an unhandled node error", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: upload });
+    spyOn(draftUploads, "claimCapabilityAttachmentWrite").mockResolvedValue(ok());
+    spyOn(draftUploads, "capabilityAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: { upload, expectedRevision: 2, finalizedRevision: null },
+    });
+    const abort = new AbortController();
+    const attach = spyOn(draftUploads, "uploadDraftAttachmentStream").mockImplementation(async (params) => {
+      abort.abort();
+      // The real uploader can still be awaiting its initial database read here.
+      await Promise.resolve();
+      expect(params.signal?.aborted).toBe(true);
+      return fail(err.conflict("Transfer cancelled"));
+    });
+    const prepared = await action.run(input, caller);
+    if (!prepared.ok || !prepared.data.stream) throw new Error("expected stream");
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel: () => {
+        cancelled = true;
+      },
+    });
+    await expect(action.stream.write(prepared.data.stream, body, { ...caller, signal: abort.signal })).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(attach).toHaveBeenCalledTimes(1);
+    expect(cancelled).toBe(true);
+  });
+
+  test("refuses write denial and excessive size without transferring bytes", async () => {
+    const create = spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue(fail(err.forbidden("Access denied")));
+    expect(await action.run(input, caller)).toMatchObject({ ok: false, error: { status: 403 } });
+    create.mockClear();
+    expect(await action.run({ ...input, file: { ...input.file, size: 100 * 1024 * 1024 + 1 } }, caller)).toMatchObject({
+      ok: false,
+      error: { status: 400 },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  test("uses the sibling review sentence and refuses a changed draft", async () => {
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    const review = await action.review(input, caller);
+    expect(review.ok).toBe(true);
+    if (!review.ok) throw new Error("expected review");
+    expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBe(true);
+    expect(review.data.sentence.action).toContain("{file}");
+    expect(await action.review({ ...input, expectedRevision: 99 }, caller)).toMatchObject({ ok: false, error: { status: 409 } });
+  });
+
+  test("a completed stream replays its durable receipt without adding a second attachment", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: upload });
+    spyOn(draftUploads, "claimCapabilityAttachmentWrite").mockResolvedValue(ok());
+    let completed = false;
+    const read = spyOn(draftUploads, "capabilityAttachmentUpload").mockImplementation(async () => ({
+      ok: true,
+      data: {
+        upload: completed ? { ...upload, state: "attached", attachmentId: internalDraftAttachmentId } : upload,
+        expectedRevision: 2,
+        finalizedRevision: completed ? 3 : null,
+      },
+    }));
+    const attach = spyOn(draftUploads, "uploadDraftAttachmentStream").mockImplementation(async (params) => {
+      const chunks = [];
+      for await (const chunk of params.stream) chunks.push(chunk);
+      expect(Buffer.concat(chunks).toString()).toBe("data");
+      expect(params).toMatchObject({ uploadId, expectedRevision: 2, mailboxId: internalMailboxId, draftId: internalDraftId });
+      completed = true;
+      return { ok: true, data: mutableDraftFixture };
+    });
+    const cancel = spyOn(draftUploads, "cancelDraftAttachmentUpload");
+    const offer = await action.run(input, caller);
+    if (!offer.ok || !offer.data.stream) throw new Error("expected prepared stream");
+    const stream = offer.data.stream;
+    const receipt = await action.stream.write(stream, new Blob(["data"]).stream(), caller);
+    expect(receipt.data).toEqual({ draftId, uploadId, revision: 3 });
+    expect(await action.stream.write(stream, new Blob(["data"]).stream(), caller)).toEqual(receipt);
+    expect(await action.stream.status(stream, caller)).toEqual({ state: "completed", result: receipt });
+    await action.stream.abort(stream, caller);
+    expect(attach).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
+    read.mockResolvedValue(fail(err.forbidden("Access denied")));
+    for (const call of [
+      () => action.stream.write(stream, new Blob(["data"]).stream(), caller),
+      () => action.stream.status(stream, caller),
+      () => action.stream.abort(stream, caller),
+    ])
+      await expect(call()).rejects.toMatchObject({ status: 403 });
   });
 });

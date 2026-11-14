@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import {
   type Message,
   memoryStore,
@@ -10,8 +10,14 @@ import {
   type ToolCallBlock,
   type ToolStreamIssue,
 } from "@k2b/nessi";
+import { openAICompatible } from "@k2b/nessi/ai";
+import { z } from "zod";
+import { compileCapabilities } from "../_internal/capabilities";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import { capabilityCallDigest } from "../capabilities/calls";
 import type { CapabilityActionReview } from "../contracts/capabilities";
+import { defineCapabilities } from "../contracts/capabilities";
+import { approvalArgsDigest } from "../services/approvals";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   aiTurnAllowsRememberedApprovals,
@@ -19,9 +25,10 @@ import {
   aiWebsiteApprovalScope,
   parseAiWebsiteApprovalScope,
 } from "./approvals";
+import { buildAiCapabilityCatalog } from "./capabilities";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { isMalformedToolCallId } from "./malformed-tool-calls";
-import { type AiTurnBlock, buildBlocksFromMessages, messageBlockId, streamBlockId, toolBlockId } from "./protocol";
+import { type AiTurnBlock, applyWireEventToBlocks, buildBlocksFromMessages, messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
 import { aiToolAudit } from "./tool-audit";
@@ -66,6 +73,7 @@ describe("malformed tool calls in a chat turn", () => {
       issue?: ToolStreamIssue;
       providerFailure?: boolean;
       validCall?: boolean;
+      unavailablePlaceCall?: boolean;
       emptyAnswer?: boolean;
       steerAfterTextAnswer?: boolean;
       /** Continue the stored turn without new input, as a resumed worker does. */
@@ -199,6 +207,8 @@ describe("malformed tool calls in a chat turn", () => {
         loop,
         pipeline,
         initialRoundFailed: false,
+        rejectedToolCallIds: new Set<string>(),
+        unavailablePlaceToolNames: new Set(options.unavailablePlaceCall ? ["missing_tool"] : []),
         conversationId: "chat",
         turnId: "turn",
         abortController: new AbortController(),
@@ -363,6 +373,16 @@ describe("malformed tool calls in a chat turn", () => {
     });
   });
 
+  test("a newly forced unavailable place tool is audited as rejected", async () => {
+    const completed = spyOn(aiToolAudit, "noteToolCompleted").mockResolvedValue(undefined);
+    try {
+      await run(1, false, { validCall: true, unavailablePlaceCall: true });
+      expect(completed).toHaveBeenCalledWith({ turnId: "turn", callId: "valid-call", isError: true, rejected: true });
+    } finally {
+      completed.mockRestore();
+    }
+  });
+
   test("repairs never consume real user steers", async () => {
     const result = await run(1, true);
     expect(result.outcome).toMatchObject({ kind: "finished", status: "completed" });
@@ -386,6 +406,7 @@ test("website approvals apply only to a turn a person started in a signed-in ses
   // `cld`, an API key, or an inter-chat message starts a turn without the marker.
   expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run" })).toBe(false);
   expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run", signedInSession: true, mandate, background })).toBe(false);
+  expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run", signedInSession: true, background })).toBe(false);
   expect(aiTurnAllowsWebsiteApprovals({ kind: "compact" })).toBe(false);
   expect(aiTurnAllowsWebsiteApprovals(null)).toBe(false);
 });
@@ -403,6 +424,9 @@ test("remembered approvals reject mandate-backed chats even when kind is omitted
   const mandate = { id: crypto.randomUUID(), revision: 1 };
   expect(aiTurnAllowsRememberedApprovals({ input: "Run", mandate })).toBe(false);
   expect(aiTurnAllowsRememberedApprovals({ kind: "chat", input: "Run", mandate })).toBe(false);
+  expect(aiTurnAllowsRememberedApprovals({ input: "Run", background: { taskId: "task01", occurrenceId: "run001", context: [] } })).toBe(
+    false,
+  );
   expect(aiTurnAllowsRememberedApprovals({ input: "Run" })).toBe(true);
   expect(aiTurnAllowsRememberedApprovals({ kind: "compact" })).toBe(true);
 });
@@ -548,6 +572,212 @@ describe("nessi block event mapping", () => {
       isError: false,
     } as OutboundEvent);
     expect(done[0]).toMatchObject({ type: "block_set", block: { status: "completed", result: { results: [] } } });
+  });
+
+  describe("arguments the model is still writing", () => {
+    const preview = (callId: string, delta: string) =>
+      ({ ...turn, type: "tool_args_delta", callId, name: "code_write", delta }) as OutboundEvent;
+    const toolOf = (op: unknown) => {
+      const value = op as { type?: string; block?: Extract<AiTurnBlock, { kind: "tool" }> };
+      return value?.type === "block_set" && value.block?.kind === "tool" ? value.block : null;
+    };
+    const writer = () => {
+      const mapper = createEventMapper(1, []);
+      mapper.setStreamArgs(new Map([["code_write", ["path", "content"]]]));
+      return mapper;
+    };
+
+    test("a tool that streams arguments shows its path and the end of its content, bounded and a few times per second", () => {
+      setSystemTime(new Date("2026-11-11T12:00:00.000Z"));
+      try {
+        const mapper = writer();
+        // A nested project with a file of the same key never counts.
+        const [first] = mapper.translate(
+          preview("call-2", '{"project":{"files":{"content":"old"}},"path":"code.ts","content":"line 1\\nline'),
+        );
+        expect(first).toMatchObject({
+          type: "block_set",
+          block: {
+            id: toolBlockId("call-2"),
+            callId: "call-2",
+            name: "code_write",
+            status: "running",
+            args: { path: "code.ts", content: "line 1\nline" },
+            liveArgs: { omittedLines: { path: 0, content: 0 } },
+          },
+        });
+        // Within the interval each fragment is only read.
+        expect(mapper.translate(preview("call-2", " 2\\n"))).toEqual([]);
+        setSystemTime(new Date("2026-11-11T12:00:01.000Z"));
+        const long = Array.from({ length: 2000 }, (_, index) => `const line${index + 3} = ${index};`).join("\\n");
+        // Fragments arrive in any size, also cut inside an escape.
+        const chunks = long.match(/[\s\S]{1,7}/g) ?? [];
+        for (const chunk of chunks.slice(0, -1)) mapper.translate(preview("call-2", chunk));
+        setSystemTime(new Date("2026-11-11T12:00:02.000Z"));
+        const block = toolOf(mapper.translate(preview("call-2", chunks.at(-1) ?? ""))[0]);
+        const content = (block?.args as { content: string }).content;
+        expect(content.length).toBeLessThanOrEqual(4096);
+        expect(content.startsWith("const line")).toBe(true);
+        expect(content.endsWith("const line2002 = 1999;")).toBe(true);
+        // Lines before the shown end are counted, so the step numbers its lines like the whole file (2002 lines).
+        expect((block?.liveArgs?.omittedLines.content ?? 0) + content.split("\n").length).toBe(2002);
+        // The complete call replaces the live view.
+        const [end] = mapper.translate({
+          ...turn,
+          type: "block_end",
+          blockId: "block-2",
+          index: 2,
+          block: { type: "tool_call", id: "call-2", name: "code_write", args: { path: "code.ts", content: "done" } },
+        } as OutboundEvent);
+        expect(toolOf(end)).toMatchObject({ args: { path: "code.ts", content: "done" }, status: "running" });
+        expect(toolOf(end)?.liveArgs).toBeUndefined();
+        // A late fragment of the same call id never turns the final call back into a preview.
+        setSystemTime(new Date("2026-11-11T12:00:03.000Z"));
+        expect(mapper.translate(preview("call-2", '"}'))).toEqual([]);
+      } finally {
+        setSystemTime();
+      }
+    });
+
+    test("only tools that declare streamArgs show anything while written", () => {
+      const mapper = writer();
+      expect(
+        mapper.translate({ ...turn, type: "tool_args_delta", callId: "c", name: "web_search", delta: '{"query":"x"}' } as OutboundEvent),
+      ).toEqual([]);
+      // Nothing shows before a value starts.
+      expect(mapper.translate(preview("c2", '{"pa'))).toEqual([]);
+    });
+
+    test("a call cut off or malformed while written disappears, and a retried model call takes its previews back", () => {
+      const mapper = writer();
+      expect(toolOf(mapper.translate(preview("cut", '{"path":"a.ts","content":"x'))[0])?.liveArgs).toBeDefined();
+      const issue = (kind: "cancelled_tool_call" | "malformed_tool_call", callId: string) =>
+        ({
+          ...turn,
+          type: "issue",
+          issue: { kind, callId, name: "code_write", reason: "stream_ended_before_tool_call", message: "cut off", argsText: "" },
+        }) as OutboundEvent;
+      expect(mapper.translate(issue("cancelled_tool_call", "cut"))).toEqual([{ type: "block_remove", blockId: toolBlockId("cut") }]);
+      expect(
+        applyWireEventToBlocks([{ id: toolBlockId("cut"), kind: "tool", callId: "cut", name: "code_write", status: "running" }], {
+          v: 1,
+          conversationId: "c",
+          turnId: "t",
+          attempt: 1,
+          seq: 2,
+          type: "block_remove",
+          blockId: toolBlockId("cut"),
+        }),
+      ).toEqual([]);
+
+      mapper.translate(preview("bad", '{"path":"b.ts","content":"y'));
+      expect(mapper.translate(issue("malformed_tool_call", "bad"))).toEqual([{ type: "block_remove", blockId: toolBlockId("bad") }]);
+
+      mapper.translate(preview("retried", '{"path":"c.ts","content":"z'));
+      mapper.translate(preview("kept", '{"path":"d.ts","content":"w'));
+      expect(mapper.retirePreviews(["retried", "never-shown"])).toEqual([{ type: "block_remove", blockId: toolBlockId("retried") }]);
+      // A preview the loop delivers after the retry began is stale and shows nothing; other calls keep theirs.
+      expect(mapper.translate(preview("retried", "more"))).toEqual([]);
+      expect(mapper.retirePreviews(["retried"])).toEqual([]);
+    });
+
+    test("a call nessi finds malformed after its previews leaves no running step behind", async () => {
+      const originalFetch = globalThis.fetch;
+      const records = ['{"path":"code.ts",', '"content":"cut'].map((args, index) => ({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  ...(index === 0 ? { id: "call-bad", type: "function" } : {}),
+                  function: { ...(index === 0 ? { name: "code_write" } : {}), arguments: args },
+                },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      }));
+      const sse = `${records.map((record) => `data: ${JSON.stringify(record)}\n\n`).join("")}data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]\n\n`;
+      globalThis.fetch = (async () => new Response(sse, { headers: { "Content-Type": "text/event-stream" } })) as unknown as typeof fetch;
+      setSystemTime(new Date("2026-11-11T12:00:00.000Z"));
+      try {
+        const mapper = writer();
+        const loop = nessi({
+          provider: openAICompatible({ name: "mock", model: "mock", baseURL: "https://example.test/v1" }),
+          store: memoryStore(),
+          systemPrompt: "sys",
+          input: "write",
+          maxTurns: 1,
+          toolArgsPreview: true,
+        });
+        let blocks: AiTurnBlock[] = [];
+        let seq = 0;
+        for await (const event of loop) {
+          for (const op of mapper.translate(event))
+            blocks = applyWireEventToBlocks(blocks, { v: 1, conversationId: "c", turnId: "t", attempt: 1, seq: ++seq, ...op });
+          if (event.type === "issue") break;
+        }
+        expect(seq).toBeGreaterThan(1);
+        expect(blocks.filter((block) => block.kind === "tool")).toEqual([]);
+      } finally {
+        globalThis.fetch = originalFetch;
+        setSystemTime();
+      }
+    });
+
+    test("nessi's opt-in previews from a streaming OpenAI-compatible call reach the step before the call is final", async () => {
+      const originalFetch = globalThis.fetch;
+      const fragments = ['{"path":"code.ts",', '"content":"const a = 1;\\n', 'const b = 2;"}'];
+      const records = fragments.map((args, index) => ({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  ...(index === 0 ? { id: "call-live", type: "function" } : {}),
+                  function: { ...(index === 0 ? { name: "code_write" } : {}), arguments: args },
+                },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      }));
+      const sse = `${records.map((record) => `data: ${JSON.stringify(record)}\n\n`).join("")}data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]\n\n`;
+      globalThis.fetch = (async () => new Response(sse, { headers: { "Content-Type": "text/event-stream" } })) as unknown as typeof fetch;
+      setSystemTime(new Date("2026-11-11T12:00:00.000Z"));
+      try {
+        const mapper = writer();
+        const loop = nessi({
+          provider: openAICompatible({ name: "mock", model: "mock", baseURL: "https://example.test/v1" }),
+          store: memoryStore(),
+          systemPrompt: "sys",
+          input: "write",
+          maxTurns: 1,
+          toolArgsPreview: true,
+        });
+        const shown: Array<Extract<AiTurnBlock, { kind: "tool" }>> = [];
+        for await (const event of loop) {
+          for (const op of mapper.translate(event)) {
+            const block = toolOf(op);
+            if (block) shown.push(block);
+          }
+          if (event.type === "block_end") loop.abort();
+        }
+        // The first fragment with a value shows at once; the final call replaces the preview.
+        expect(shown[0]).toMatchObject({ callId: "call-live", args: { path: "code.ts" }, liveArgs: { omittedLines: { path: 0 } } });
+        expect(shown.at(-1)).toMatchObject({ callId: "call-live", args: { path: "code.ts", content: "const a = 1;\nconst b = 2;" } });
+        expect(shown.at(-1)?.liveArgs).toBeUndefined();
+      } finally {
+        globalThis.fetch = originalFetch;
+        setSystemTime();
+      }
+    });
   });
 
   test("tool_action_request marks the tool block awaiting with approval metadata", () => {
@@ -1086,7 +1316,7 @@ test("web search sources retain the query above the activity description", async
   }
 });
 
-test("an app is a result only when the browser opened it", async () => {
+test("retired Studio opens never create executable app results", async () => {
   const index = spyOn(aiConversations, "indexConversationSource").mockResolvedValue(undefined);
   const call = {
     conversationId: "conversation",
@@ -1102,32 +1332,21 @@ test("an app is a result only when the browser opened it", async () => {
       await __aiExecutorTest.indexConversationToolSource({ ...call, result });
     expect(index).not.toHaveBeenCalled();
     await __aiExecutorTest.indexConversationToolSource({ ...call, result: { opened: "App002", started: false } });
-    expect(index).toHaveBeenCalledWith({
-      conversationId: "conversation",
-      turnId: "turn",
-      callId: "open",
-      source: {
-        kind: "result",
-        key: "assistant.artifact:App002",
-        title: "Studio app",
-        icon: "ti ti-app-window",
-        ref: { type: "assistant.artifact", id: "App002" },
-      },
-    });
+    expect(index).not.toHaveBeenCalled();
   } finally {
     index.mockRestore();
   }
 });
 
-test("direct code tools index returned Studio references without a capability wrapper", async () => {
+test("direct code tools index returned resource references without a capability wrapper", async () => {
   const index = spyOn(aiConversations, "indexConversationResources").mockResolvedValue(undefined);
   const call = {
     conversationId: "conversation",
     turnId: "turn",
     callId: "create",
-    name: "code_create",
+    name: "code_init",
     args: {},
-    result: { refs: [{ type: "assistant.artifact", id: "app-id", title: "Dashboard" }] },
+    result: { refs: [{ type: "core.code", id: "code-id", title: "Dashboard" }] },
     isError: false,
   };
   try {
@@ -1136,7 +1355,7 @@ test("direct code tools index returned Studio references without a capability wr
       conversationId: "conversation",
       turnId: "turn",
       callId: "create",
-      resources: [{ ref: { type: "assistant.artifact", id: "app-id" }, title: "Dashboard" }],
+      resources: [{ ref: { type: "core.code", id: "code-id" }, title: "Dashboard" }],
     });
     index.mockClear();
     await __aiExecutorTest.indexConversationToolSource({ ...call, isError: true });
@@ -1361,6 +1580,7 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
       loop,
       pipeline,
       initialRoundFailed: false,
+      rejectedToolCallIds: new Set<string>(),
       conversationId: "chat",
       turnId: "turn",
       abortController: new AbortController(),
@@ -1466,6 +1686,7 @@ test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s cl
           canonicalNames: new Map(),
           approvalPolicies: new Map([[name, "never"]]),
           frontendModes: new Map([[name, mode === "interaction" ? "client_interaction" : "client"]]),
+          streamArgs: new Map(),
         },
         allowRememberedApprovals: false,
         rememberableCapabilityApprovals: new Map(),
@@ -1595,4 +1816,65 @@ test("the pipeline keeps the review and check after an approval and execution en
     save.mockRestore();
     publish.mockRestore();
   }
+});
+
+test("chat approval snapshots use the loaded target contract and exclude model-only wording", () => {
+  const manifest = compileCapabilities(
+    "demo",
+    defineCapabilities({
+      protocolVersion: 2,
+      types: { book: { title: "Book", description: "A book." } },
+      actions: {
+        move: {
+          title: "Move",
+          description: "Move a contact.",
+          target: "book",
+          refs: { destination: "book" },
+          input: z.object({ contactId: z.string().describe("Contact ID.") }).strict(),
+          data: z.object({}).strict(),
+          destructive: false,
+          openWorld: false,
+          idempotency: "none",
+          approval: "rememberable",
+          review: () => ({ ok: true, data: { message: "Move contact?", approvalScope: "move-contact" } }),
+          run: () => ({ ok: true, data: { data: {} } }),
+        },
+      },
+    }),
+  ).manifest;
+  const entry = buildAiCapabilityCatalog([
+    {
+      appId: "demo",
+      appName: "Demo",
+      appIcon: "ti ti-book",
+      appDescription: "Demo",
+      endpoint: "http://demo.test",
+      manifest,
+    },
+  ])[0]!;
+  const args = { book: "source", destination: "destination", contactId: "contact", approvalReason: "Needed for this task." };
+  const call = __aiExecutorTest.capabilityApprovalArgs(entry, args);
+  expect(call).toEqual({
+    capability: "demo.move",
+    target: { type: "demo.book", id: "source" },
+    refs: { destination: { type: "demo.book", id: "destination" } },
+    input: { contactId: "contact" },
+  });
+  const normalized = {
+    capability: "demo.move",
+    target: { type: "demo.book", id: "source" },
+    refs: { destination: { type: "demo.book", id: "destination" } },
+    input: { contactId: "contact" },
+  };
+  expect(approvalArgsDigest(call)).toBe(capabilityCallDigest(normalized));
+  expect(approvalArgsDigest(__aiExecutorTest.capabilityApprovalArgs(entry, { ...args, book: "other" }))).not.toBe(approvalArgsDigest(call));
+  const legacy = { ...entry, operation: { ...entry.operation, target: undefined, refs: undefined } };
+  expect(__aiExecutorTest.capabilityApprovalArgs(legacy, args)).toBe(args);
+  const appWideArgs = { contactId: "contact" };
+  const migratedAppWide = { capability: "demo.move", target: null, refs: {}, input: appWideArgs };
+  expect(__aiExecutorTest.capabilityApprovalArgs(legacy, appWideArgs, migratedAppWide)).toEqual(migratedAppWide);
+  expect(approvalArgsDigest(__aiExecutorTest.capabilityApprovalArgs(legacy, appWideArgs, migratedAppWide))).toBe(
+    capabilityCallDigest(migratedAppWide),
+  );
+  expect(__aiExecutorTest.capabilityApprovalArgs(undefined, args)).toBe(args);
 });

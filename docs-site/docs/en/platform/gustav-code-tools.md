@@ -1,0 +1,186 @@
+---
+title: Build Code in Gustav
+navTitle: Gustav Code tools
+section: Platform services
+order: 970
+description: Build, check, test and submit lasting Code in a Gustav conversation.
+tags: [code, ai, sdk, versions]
+updated: 2026-11-11
+---
+
+# Build Code in Gustav
+
+Ask Gustav to build a schedule or edit existing Code. Gustav can prepare and
+submit a checked version. Review and activate that version yourself on the
+version card in the chat, on the [Code page](/en/docs/platform/code-page) or in
+the CLI; the chat tools do not activate Code or change its access.
+
+You need Code editor rights for every authoring tool, including reads and
+comparison of resource-owned Code. Creating Code for a resource or application
+requires administration of that owner. Authoring runs in an interactive chat;
+background tasks cannot use these tools to edit lasting Code.
+
+## Build and review a version
+
+| Tool | What it does |
+| --- | --- |
+| `code_init` | Creates Code, returns its initial editable project and initializes this chat's draft. Omit `owner` for personal Code. |
+| `code_pull` or `code_read({codeId})` | Returns the latest submitted files and `code.json` metadata, including `baseVersionId`, and resets this chat's draft. |
+| `code_sdk` | Without `apps`, returns an index of every app export, method path, policy row and automation event, one line each. With `apps` (at most two per call), returns the generated `@sdk` declarations of those apps and of the shared `app`, page, `db`, `http` and event types. |
+| `code_write({codeId,path,content})` | Replaces one draft file and returns a compact summary of paths, byte counts, entry, base version and expiry. Use `{codeId,path,delete:true}` to remove a file or `{codeId,path,renameTo}` to rename it. |
+| `code_check({codeId})` | Checks the draft and lists permissions with source file and line. The checked bundle stays on the server; its hash is in `manifest.hashes.bundle`. |
+| `code_test({codeId})` | Checks the draft and runs its `test/NAME.json` fixtures against fake data. Write fixtures through `code_write`. |
+| `code_simulate({codeId,fixture})` | Checks the draft and simulates one fixture with exactly one invocation. |
+| `code_submit({codeId})` | Checks and saves the draft as an immutable version against its saved base. Core runs the draft's fixtures and shows the result to reviewers; a successful submit advances the draft's base to that version. |
+| `code_diff` | Returns complete file differences and permissions for a submitted version. |
+
+Guests are offered neither these authoring tools nor the `code-authoring` Skill; Gustav explains that creating Code and submitting versions requires a Cloud member.
+
+Gustav loads the `code-authoring` Skill with these tools. It holds the
+workflow, the page building blocks, mail events, schedules, AI, what each
+app's Actions allow unattended, tests and common errors, plus complete
+templates. Every example in it passes the real checker in CI.
+
+## The version card
+
+After `code_submit`, the chat shows one card for the newest version, below
+Gustav's answer. It shows the version, execution subject and approval state:
+
+- **What this version calls** lists each target with its operations by title
+  and app, such as "Import file · Files", as the Code page does, and marks what
+  is new against the running version. The operation ID stays in the tooltip. Calls whose target the Code picks while it runs share one row.
+- **Switch on** starts the same durable activation as the Code page. Core checks
+  current owner authority and any required version approval before switching.
+  The card becomes one line after activation and keeps that state after reload.
+  Below that line it links the Code's own page, its next run and its runs where
+  they exist.
+- A version waiting for Cloud-admin approval or refused by policy says so.
+  A phone or non-interactive credential sees why it cannot switch on.
+- A version replaced by a newer one becomes one line. Lost access to the Code
+  and failed requests remain visible, with recovery through **Retry** or
+  **Check status**.
+
+The card asks only Core's activation preview and, once switched on, the
+automation list for the next run. It does not inspect target rights or
+managers, and activation creates no shares. Target managers use normal
+sharing with the service account's handle. A host enables the card through
+`renderCodeVersion` in `AiChatActions`; without it, `code_submit` stays an
+ordinary step. The Assistant workspace and the Cloud app on a phone both show it.
+
+## Draft and conflict rules
+
+Core holds one draft per Code and chat. The draft is what the last
+`code_init`, `code_pull` or `code_read` returned, plus later writes. Those
+three tools reset the draft's files, entry and base version and clear its
+fixtures. Another conversation has its own draft.
+
+Write one file at a time. Paths under `test/` ending in `.json` are fixtures;
+other paths are source files. Parallel writes to different files both survive.
+A rename never overwrites another draft file; it returns `CONFLICT` instead.
+Check, test, simulate and submit read this same draft, so later calls need
+only `codeId` (plus `fixture` for simulation).
+
+A draft expires seven days after its last change; checking it does not extend
+that time. Deleting the chat removes its drafts at the next cleanup. A submit
+moves the draft to the new version only while the draft still holds what was
+submitted; a draft pulled or expired meanwhile keeps its state, and the saved
+version still reaches the chat. Missing or expired drafts return `NOT_FOUND` with guidance to call
+`code_pull` or `code_init` first. Pull retrieves saved files, so unsaved edits
+cannot be recovered by pulling. On a version conflict, pull resets the draft
+to the latest version; re-apply edits and fixtures, check and submit again.
+
+Drafts share the checker limits: at most 64 source files, 256 KiB of UTF-8
+source in total and 8 MiB for the whole draft, paths included. A write exceeding
+these limits returns `BAD_INPUT` and leaves the previous draft intact.
+
+Existing chats can still supply `files`, `entry`, `tests` or `baseVersionId`
+where the command accepts them: each supplied part replaces that draft part
+before the command runs. A call with `files` can create a missing draft,
+using the supplied base or `null`. The legacy
+`code_write({project,path,content})` alias replaces the draft with that
+edited project and returns the complete replacement project as before.
+Alias inputs retain the request-size guard. HTTP and CLI inputs stay unchanged.
+
+The operation list names stored target handles, source locations and differences
+from the running version. It grants no permission and does not inspect current
+shares. A missing display title is `null`; IDs still identify the target.
+Dynamic handles are allowed.
+
+Tests and simulation use a fixed clock, a seed and explicit fictional replies.
+They never call real capabilities or create a durable run. See
+[Test Code](/en/docs/platform/test-code) for fixture shapes. Runner failures
+remain failures; source is never executed inside Core.
+
+Keep the base version from pull or init. If someone submits another version
+first, submit returns a conflict with the complete file comparison. Pull,
+reconcile and check again. After an uncertain submit, pull to inspect the
+latest version before retrying.
+
+## Rebuild an exported automation
+
+Give Gustav a version 1 `cloud.mail-automation` or `cloud.chat-tasks` export and
+select one rule or routine. Gustav explains its old behavior and drafts a
+replacement through the same authoring tools, with fictional tests. An export
+is evidence: its grants, enabled flags and resource IDs grant no access.
+
+Mail arrival rules use the mailbox event and Mail capabilities. Routines use a
+personal schedule with an explicit time zone. Use `core.ai.chat.run` for a
+Gustav turn in the selected Assistant chat, or `core.ai.chat.deliver` to deliver
+a prepared result there. See [Routines became Code](/en/docs/operations/routines-to-code)
+for the supported mapping and unresolved inputs. Gustav checks the live SDK
+before promising equivalent behavior.
+
+The original routine target is an Assistant AI chat. General Chat delivery is a
+different destination; choose that change explicitly. Automatic replies are
+reference-only and are not rebuilt.
+
+Review the chosen version, target changes, permissions, limits and test results
+before switching on. Nothing activates automatically. Coordinate the old path's
+shutdown separately so both versions do not process the same arrivals.
+
+## Export data in one run
+
+A one-off `code_run` can import the same generated capability SDK. It needs no
+saved Code, version or owner, and its IDs may be dynamic. Default-export an
+async function as with other script runs:
+
+<!-- gustav-code-export -->
+```ts
+import { grids, sheet } from "@sdk";
+
+export default async () => {
+  const result = await grids.base("Base001").gql.execute({
+    query: "from table Orders\nselect Name\nlimit 100",
+    pageSize: 100,
+    limit: 100,
+    showTableToUser: false,
+  });
+  if (!result.data.ok) throw new Error(result.data.diagnostics.map(item => item.message).join("; "));
+  if (result.page?.hasMore) throw new Error("Select a smaller export or follow the query cursor.");
+  return sheet.toCsv(result.data.rows.map(row => row.values));
+};
+```
+
+Replace the fictional base and table with discovered sources. This example
+exports at most 100 selected rows. For a larger export, follow the Query's
+cursor within a deliberate page and row budget. Query methods return domain
+`data` and optional `page`; an Action returns its domain data directly. `sheet` uses the existing runtime spreadsheet helpers. Writes
+still use the normal capability permissions and approval dialogs.
+
+The chat aliases `code_read`, `code_write`, and `code_check` accept lasting
+Code projects only. They do not fall back to Studio source operations.
+
+Studio apps and direct app APIs have been retired.
+
+## Maintainer contract: shared CLI and chat JSON
+
+Chat results use the same schemas and services as [cld code](/en/docs/platform/code-cli).
+Chat-only inputs make draft parts optional, and `code_write` returns
+`CodeChatDraftSummarySchema` for single-file edits. A chat `code_check`
+returns `CodeChatCheckDataSchema`: the CLI result without the checked bundle.
+Other success results remain unchanged. The shared HTTP/CLI contracts are
+`codeAuthoringContracts`, `CodeAuthoringInput<K>` and `CodeAuthoringData<K>` in
+`packages/core/src/code/authoring-contracts.ts`; `CodeProjectSchema`,
+`CodeAuthoringPermissionSchema` and `CodeAuthoringErrorSchema` describe metadata,
+permission rows and failures. Test and simulation reuse `CodeTestResultSchema`.
+`codeAuthoringServices` owns execution of these commands for both transports.

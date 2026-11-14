@@ -10,7 +10,7 @@ import { errorMessage } from "../utils/api-helpers";
 type GrantableLevel = Exclude<PermissionLevel, "none">;
 type AllowedLevel = GrantableLevel | { level: GrantableLevel; label?: string; icon?: string };
 
-type PermissionScope = { type: "base"; id: string } | { type: "customApp"; id: string };
+type PermissionScope = { type: "base"; id: string } | { type: "customApp"; id: string; baseId: string };
 
 type Props = {
   scope: PermissionScope;
@@ -136,6 +136,7 @@ export function ScopedAccessSection(props: Props) {
     if (!current || !manageable() || owner.signal.aborted) return;
     wrote = false;
     await openAccessDialog({
+      target: { type: "grids.base", id: props.scope.type === "base" ? props.scope.id : props.scope.baseId },
       resourceName: props.resourceName,
       subtitle: props.scope.type === "base" ? t().baseAccessSubtitle : t().appAccessSubtitle,
       initialEntries: current,

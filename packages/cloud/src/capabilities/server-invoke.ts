@@ -49,7 +49,12 @@ export type CapabilityCaller = {
   /** App authority authenticated only by the configured Ed25519 app key. */
   app?: { appId: string };
   /** Durable background authority. The platform authenticates each transmission to Core. */
-  mandate?: { id: string; revision: number; callingAppId: string };
+  mandate?: {
+    id: string;
+    revision: number;
+    callingAppId: string /** Which run of this workload the call belongs to; history links reach it through your reader. */;
+    run?: string;
+  };
 };
 
 /** Call as the started application, without a person, service account token, or mandate. */
@@ -153,6 +158,8 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
         appId: invocation.appId,
         capabilityId: invocation.capabilityId,
         input: invocation.input,
+        ...(invocation.target ? { target: invocation.target } : {}),
+        ...(invocation.refs ? { refs: invocation.refs } : {}),
         authority: caller.authority,
         locale: caller.locale ?? undefined,
         origin: caller.origin ?? "app",
@@ -183,7 +190,10 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
               targetApp: invocation.appId,
               capabilityId: invocation.capabilityId,
               input: invocation.input,
+              ...(invocation.target ? { target: invocation.target } : {}),
+              ...(invocation.refs ? { refs: invocation.refs } : {}),
               ...(caller.mandate ? { mandateId: caller.mandate.id, mandateRevision: caller.mandate.revision } : {}),
+              ...(caller.mandate?.run ? { workloadRun: caller.mandate.run } : {}),
               ...(invocation.idempotencyKey ? { idempotencyKey: invocation.idempotencyKey } : {}),
               ...(caller.requestId || caller.traceparent || caller.tracestate || caller.locale
                 ? {
@@ -196,7 +206,11 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
                   }
                 : {}),
             }
-          : { input: invocation.input },
+          : {
+              input: invocation.input,
+              ...(invocation.target ? { target: invocation.target } : {}),
+              ...(invocation.refs ? { refs: invocation.refs } : {}),
+            },
       ),
     });
     const workloadAppId = caller.app?.appId ?? caller.mandate?.callingAppId ?? caller.workload?.appId;

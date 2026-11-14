@@ -1,10 +1,12 @@
 import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
 import { createSignal, type JSX } from "solid-js";
-import type { Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
+import type { CloudResourceRef } from "../contracts/capabilities";
+import { CODE_ACCOUNT_HANDLE_PATTERN, type Principal, type ServiceAccountKind, type ServiceAccountStatus } from "../contracts/shared";
 import { accessMessages } from "./messages";
 import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
 import { serviceAccountKindDisplay } from "./service-account-kind";
+import { findTargetServiceAccount } from "./service-account-lookup";
 
 export { principalKey };
 
@@ -23,15 +25,26 @@ type Entity =
         status: "active" | "disabled";
       };
     };
+/** A service account found by its handle, ready to become a row. */
+export type FoundServiceAccount = {
+  principal: Principal;
+  display: { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind };
+  /** The server's line under the name, such as "Service account of a mailbox". */
+  description?: string;
+};
 /** The service-account facts a consumer can check before offering an account. */
 export type PrincipalPickerServiceAccount = Extract<Entity, { kind: "service_account" }>["serviceAccount"];
 /** Shared identity selector; the consumer owns the meaning of the assignment. */
 export default function PrincipalPicker(props: {
   existing?: Principal[];
+  /** Resource being shared; Core verifies Manage before resolving a Code handle. */
+  target?: CloudResourceRef;
   allowPublic?: boolean;
   allowAuthenticated?: boolean;
   /** Defaults to true; disable only for a documented user-backed workflow. */
   allowServiceAccounts?: boolean;
+  /** Directory kinds on offer, such as only groups for a group rule; defaults to people and groups. */
+  kinds?: readonly ("user" | "group")[];
   /** Optional directory filters for the resource's accepted credential kinds. */
   serviceAccountKinds?: ServiceAccountKind[];
   serviceAccountStatus?: ServiceAccountStatus;
@@ -49,7 +62,13 @@ export default function PrincipalPicker(props: {
    */
   takenReason?: (principal: Principal) => string | undefined;
   /** Shown instead of the default text when a search finds nothing, with the typed search. */
-  empty?: (query: string) => JSX.Element;
+  empty?: JSX.Element | ((query: string) => JSX.Element);
+  /**
+   * Looks up an exact Code handle (`code-` and 10 characters) with the resource as the target, as the consumer's
+   * own handle field does. Such a query asks only this lookup, never the directory, so names never find these
+   * accounts; the hit carries the "Service account" badge.
+   */
+  findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<FoundServiceAccount | null>;
   /** `serviceAccountKind` is set for service accounts so a new row can show the same kind as the result. */
   onSelect: (
     principal: Principal,
@@ -65,6 +84,7 @@ export default function PrincipalPicker(props: {
     description?: string;
     avatarHash?: string | null;
     serviceAccountKind?: ServiceAccountKind;
+    badge?: string;
   };
   let selectable = new Map<string, Entry>();
   const [lastQuery, setLastQuery] = createSignal("");
@@ -84,10 +104,34 @@ export default function PrincipalPicker(props: {
         label: principalLabel({ principal: { type: "public" } }, locale()),
         icon: "ti ti-world",
       });
-    if (search.length >= 2) {
+    const handle = search.trim();
+    const target = props.target;
+    // Explicit lookup owns its accepted accounts; directory filters apply to the default lookup only.
+    const acceptsCode =
+      props.allowServiceAccounts !== false && (!props.serviceAccountKinds?.length || props.serviceAccountKinds.includes("code"));
+    const find =
+      props.findServiceAccount ??
+      (target && acceptsCode ? (value: string, abort: AbortSignal) => findTargetServiceAccount(target, value, abort) : undefined);
+    if (find && CODE_ACCOUNT_HANDLE_PATTERN.test(handle)) {
+      const found = await find(handle, signal);
+      if (found) {
+        const kind = found.display.serviceAccountKind ?? "code";
+        const display = serviceAccountKindDisplay(kind, t());
+        entries.push({
+          principal: found.principal,
+          label: found.display.displayName,
+          icon: `ti ${display.icon}`,
+          description: found.description ?? display.label,
+          avatarHash: found.display.avatarHash,
+          serviceAccountKind: kind,
+          badge: t().codeServiceAccount,
+        });
+      }
+    } else if (search.length >= 2) {
       const url = new URL("/api/accounts/entities", window.location.origin);
       url.searchParams.set("search", search);
-      url.searchParams.set("kinds", props.allowServiceAccounts !== false ? "user,group,service_account" : "user,group");
+      const kinds = (props.kinds ?? ["user", "group"]).join(",");
+      url.searchParams.set("kinds", props.allowServiceAccounts !== false ? `${kinds},service_account` : kinds);
       if (props.allowServiceAccounts !== false && props.serviceAccountKinds?.length) {
         url.searchParams.set("service_account_kinds", props.serviceAccountKinds.join(","));
       }
@@ -152,14 +196,18 @@ export default function PrincipalPicker(props: {
     const existing = new Set(props.existing?.map(principalKey));
     const taken = (e: Entry) => (existing.has(principalKey(e.principal)) ? (props.takenReason?.(e.principal) ?? null) : undefined);
     // A principal on the list stays visible when a reason is given, so the search never looks like it missed someone.
-    const shown = entries.filter((e) => taken(e) !== null);
+    // A search lists only what it finds, so "everyone" does not answer a name and hide that nobody matched.
+    const query = search.trim().toLowerCase();
+    const found = (e: Entry) =>
+      search.length < 2 || (e.principal.type !== "authenticated" && e.principal.type !== "public") || e.label.toLowerCase().includes(query);
+    const shown = entries.filter((e) => taken(e) !== null && found(e));
     if (signal.aborted) return [];
     selectable = new Map(shown.filter((e) => taken(e) === undefined).map((e) => [principalKey(e.principal), e]));
     return shown.map((e): ComboboxOption => {
       const reason = taken(e);
       return typeof reason === "string"
         ? { id: principalKey(e.principal), label: e.label, icon: e.icon, description: reason, disabled: true }
-        : { id: principalKey(e.principal), label: e.label, icon: e.icon, description: e.description };
+        : { id: principalKey(e.principal), label: e.label, icon: e.icon, description: e.description, badge: e.badge };
     });
   };
   return (
@@ -177,7 +225,7 @@ export default function PrincipalPicker(props: {
             : t().addBasic)
       }
       fetchData={load}
-      empty={props.empty ? props.empty(lastQuery()) : undefined}
+      empty={typeof props.empty === "function" ? props.empty(lastQuery()) : props.empty}
       onSelect={(option) => {
         const entry = selectable.get(option.id);
         if (entry)

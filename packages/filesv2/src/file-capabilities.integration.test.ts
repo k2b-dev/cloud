@@ -5,6 +5,7 @@ import { requireInfra, testFor } from "../../../scripts/fixtures/test-infra";
 import { assertPrivateDatabase } from "../test/private-database";
 import type { FileEntry } from "./contracts";
 import { resolveEntryRefId } from "./data/references";
+import { entryRefId } from "./resource-ref";
 import { FilesError } from "./service/errors";
 
 const base = {
@@ -17,6 +18,7 @@ let saved: FileEntry = { name: "Ordner ä", path: folder, directory: true, size:
 mock.module("./service", () => ({
   FilesError,
   filesService: {
+    rootLocation: async () => ({ baseId: base.id }),
     mkdir: async () => ({ base, entry: saved }),
     capabilityUpload: async (_actor: unknown, _input: unknown, body: ReadableStream<Uint8Array>) => {
       await body.cancel();
@@ -78,7 +80,10 @@ testFor("database")("folder and completed upload refs persist long paths for the
     expect(read.data.data).toMatchObject({ name: saved.name, path: saved.path, base });
     expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
   };
-  const created = await filesCapabilities.actions["folder.create"].run({ baseId: base.id, path: folder }, context);
+  const created = await filesCapabilities.actions["folder.create"].run(
+    { path: folder },
+    { ...context, target: { type: "filesv2.entry", id: entryRefId(base.id, "")! } },
+  );
   if (!created.ok) throw new Error("expected created folder");
   await assertRef(created.data);
 

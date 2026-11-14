@@ -2,6 +2,7 @@ import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { ApprovalsNavStatus, approvalNavCount } from "@k2b/cloud/approvals/ui";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import {
@@ -9,6 +10,7 @@ import {
   createNavigation,
   Dropdown,
   dialogCore,
+  FilterToggle,
   IconButton,
   type IntentTone,
   type NavigationItem,
@@ -18,17 +20,15 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
-import { artifactMessages } from "../artifacts/messages";
-import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
 import { assistantCommandMessages } from "../commands";
-import { openAssistantActivities } from "./AssistantActivitiesDialog";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { openAssistantPrefsModal } from "./AssistantPrefsModals";
 import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
+import { conversationPlace } from "./assistant-place";
 import { assistantProjectSearchOptions, assistantProjectsSearchOptions, assistantSearchOptions } from "./assistant-search";
 import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
 import {
@@ -36,8 +36,10 @@ import {
   type ConversationStatusTone,
   conversationStatusPresentation,
   groupConversationsByAge,
+  isConversationBusy,
 } from "./conversation-view";
 import { assistantMessages } from "./messages";
+import { placeMessages } from "./place-messages";
 import { useAssistantText } from "./ui-copy";
 
 /** List status tones in the shared navigation's intent vocabulary. */
@@ -58,8 +60,7 @@ type AssistantSidebarProps = {
   renderedAt: string;
   doneCount?: number;
   activeConversationId?: Accessor<string | null>;
-  activeView?: "chat" | "all" | "apps" | "approvals";
-  activeAppId?: string;
+  activeView?: "chat" | "all" | "approvals" | "code";
   projects?: AiProject[];
   activeProjectId?: string | null;
   creatingConversation?: Accessor<boolean>;
@@ -74,7 +75,18 @@ type AssistantSidebarProps = {
   pendingApprovals?: number;
   /** Opens the approvals view in place; without it, the row is a link to the view. */
   onOpenApprovals?: () => void;
+  /** Whether the person owns Code; only then the sidebar lists "My apps & automations". */
+  hasPersonalCode?: Accessor<boolean>;
+  /** Opens the person's Code list in place; without it, the row is a link to the view. */
+  onOpenCode?: () => void;
   live: AssistantLiveHub;
+  /**
+   * The person's chats at places, which the normal list leaves out: their total for the "At places (n)" filter and
+   * the newest page for its list. Null when the snapshot could not list them.
+   */
+  placeChats?: Accessor<{ total: number; items: AiConversation[] } | null>;
+  /** The list opened on "At places" (`?places=1`), so a reload keeps the filter. */
+  initialPlacesFilter?: boolean;
 };
 
 function AssistantSearchButton(props: {
@@ -131,7 +143,7 @@ function ConversationSidebarItem(props: {
   const locale = useLocale();
   const [previewOpen, setPreviewOpen] = createSignal(false);
   const saving = () => props.donePhase !== undefined;
-  const busy = () => ["queued", "running", "needs_attention", "waiting_for_browser"].includes(props.conversation.runStatus);
+  const busy = () => isConversationBusy(props.conversation);
   const toggleDone = () => props.toggleDone(props.conversation);
   const href = () => assistantConversationHref(props.basePath ?? "/app/assistant", props.conversation.id);
   const handleClick = (event: MouseEvent) => {
@@ -150,28 +162,38 @@ function ConversationSidebarItem(props: {
       .catch(() => navigateTo(target));
   };
 
-  const status = () => conversationStatusPresentation(props.conversation, locale(), props.active);
-  const marker = () => {
-    const current = status();
-    if (current) return current;
-    return props.conversation.hasActiveSchedule ? { label: text("Active schedule"), icon: "ti ti-clock", tone: "muted" as const } : null;
-  };
+  const marker = () => conversationStatusPresentation(props.conversation, locale(), props.active);
+  // A chat at a place names its app and place, so it reads apart from the person's own chats wherever it shows.
+  const place = () => conversationPlace(props.conversation);
+  // An unread answer is weight and dot, never color alone.
+  const unread = () => marker()?.tone === "accent";
 
   return (
     <AppWorkspace.SidebarItem
       href={href()}
-      class={`assistant-chat-sidebar-item${props.donePhase ? ` assistant-chat-sidebar-item--${props.donePhase}` : ""}`}
+      class={`assistant-chat-sidebar-item${props.donePhase ? ` assistant-chat-sidebar-item--${props.donePhase}` : ""}${unread() ? " assistant-chat-sidebar-item--unread" : ""}`}
       onClick={handleClick}
       active={props.active}
+      icon={place() ? (place()!.app?.icon ?? "ti ti-map-pin") : undefined}
+      description={
+        place()
+          ? placeMessages
+              .resolve([locale()])
+              .t.placeOf({ app: place()!.app?.name ?? placeMessages.resolve([locale()]).t.atPlaces, title: place()!.title })
+          : undefined
+      }
       meta={
-        <Show when={marker()}>
-          {(item) => (
-            <span class="assistant-chat-marker" data-tone={item().tone} title={item().label}>
-              <i class={item().icon} aria-hidden="true" />
-              <span class="sr-only">{item().label}</span>
-            </span>
-          )}
-        </Show>
+        // The slot stays when the chat is quiet, so a status that comes or goes never changes the title's width.
+        <span class="assistant-chat-marker" data-tone={marker()?.tone} title={marker()?.label}>
+          <Show when={marker()}>
+            {(item) => (
+              <>
+                <i class={item().icon} aria-hidden="true" />
+                <span class="sr-only">{item().label}</span>
+              </>
+            )}
+          </Show>
+        </span>
       }
       preview={{
         label: text("Chat details"),
@@ -188,17 +210,13 @@ function ConversationSidebarItem(props: {
       }}
     >
       <AppWorkspace.SidebarItemLabel marquee={false}>{props.conversation.title}</AppWorkspace.SidebarItemLabel>
-      <Show when={!props.conversation.pinnedAt}>
+      {/* A chat whose run goes on cannot be marked done. Its status keeps the row's end instead of a disabled check that
+          covers it, also in the open row, which shows its actions without hover. */}
+      <Show when={!props.conversation.pinnedAt && (props.conversation.isDone || !busy())}>
         <AppWorkspace.SidebarItemAction
           icon={props.conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check"}
-          label={
-            props.conversation.isDone
-              ? text("Reopen chat")
-              : busy()
-                ? text("Stop the response before marking it done")
-                : text("Mark chat done")
-          }
-          disabled={saving() || (!props.conversation.isDone && busy())}
+          label={props.conversation.isDone ? text("Reopen chat") : text("Mark chat done")}
+          disabled={saving()}
           visibility="hover"
           onSelect={() => void toggleDone()}
         >
@@ -310,6 +328,20 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     onCleanup(() => window.clearInterval(timer));
   });
   const chatGroups = createMemo(() => groupConversationsByAge(chatConversations(), now(), props.timeZone));
+  // Chats at places stay out of the list (O3/O4 in the place model); "At places (n)" shows them instead of it.
+  const placeT = () => placeMessages.resolve([locale()]).t;
+  const [placesFilter, setPlacesFilter] = createSignal(Boolean(props.initialPlacesFilter));
+  const placeChats = () => props.placeChats?.() ?? null;
+  const placeTotal = () => placeChats()?.total ?? 0;
+  const showPlaceFilter = () => placesFilter() || placeTotal() > 0;
+  const choosePlacesFilter = (on: boolean) => {
+    if (placesFilter() === on) return;
+    setPlacesFilter(on);
+    const url = new URL(window.location.href);
+    if (on) url.searchParams.set("places", "1");
+    else url.searchParams.delete("places");
+    window.history.replaceState(window.history.state, "", url);
+  };
   const groupLabel = (group: ConversationAgeGroup) =>
     ({
       pinned: t().pinned,
@@ -334,38 +366,41 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     }
   };
   const openProjectSearch = () => openGlobalSearch(assistantProjectsSearchOptions(locale()));
-  // The Approvals row appears or leaves only when the person navigates, never while they point at the footer: a row
-  // that pushed Studio away under the pointer would make the next click land on something else.
+  // "Waiting for you" always keeps its place, so nothing in the footer moves under the pointer. "My apps &
+  // automations" exists only for a person with Code; the page renders it from the first paint.
   const approvalsActive = () => activeView() === "approvals";
-  const approvalsVisible = () => approvalNavCount("assistant", props.pendingApprovals ?? 0) > 0 || approvalsActive();
-  const [approvalsShown, setApprovalsShown] = createSignal(approvalsVisible());
-  createEffect(on([activeView, activeConversationId, activeProjectId], () => setApprovalsShown(approvalsVisible()), { defer: true }));
-  const openApprovals = (event: MouseEvent) => {
-    // Like a chat row: modified and middle clicks keep the link's own behavior, such as opening a new tab.
-    if (
-      !props.onOpenApprovals ||
-      event.defaultPrevented ||
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    )
-      return;
+  const codeActive = () => activeView() === "code";
+  const codeShown = () => Boolean(props.hasPersonalCode?.()) || codeActive();
+  // Like a chat row: modified and middle clicks keep the link's own behavior, such as opening a new tab.
+  const openInPlace = (open: (() => void) | undefined) => (event: MouseEvent) => {
+    if (!open || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    props.onOpenApprovals();
+    open();
   };
   const ApprovalsItem = () => (
-    <Show when={approvalsShown()}>
+    <AppWorkspace.SidebarItem
+      icon="ti ti-hand-stop"
+      title={t().waitingForYou}
+      href={`${props.basePath ?? "/app/assistant"}?approvals=1`}
+      active={approvalsActive()}
+      onClick={openInPlace(props.onOpenApprovals)}
+      meta={<ApprovalsNavStatus app="assistant" initial={props.pendingApprovals ?? 0} />}
+    >
+      {t().waitingForYou}
+    </AppWorkspace.SidebarItem>
+  );
+  const CodeItem = () => (
+    <Show when={codeShown()}>
       <AppWorkspace.SidebarItem
-        icon="ti ti-shield-check"
-        title={text("Approvals")}
-        href={`${props.basePath ?? "/app/assistant"}?approvals=1`}
-        active={approvalsActive()}
-        onClick={openApprovals}
-        meta={<ApprovalsNavStatus app="assistant" initial={props.pendingApprovals ?? 0} />}
+        title={t().myCode}
+        href={`${props.basePath ?? "/app/assistant"}?code=1`}
+        active={codeActive()}
+        onClick={openInPlace(props.onOpenCode)}
       >
-        {text("Approvals")}
+        <AppWorkspace.SidebarItemIcon>
+          <FeatCodeMark variant="glyph" tone="current" decorative />
+        </AppWorkspace.SidebarItemIcon>
+        <AppWorkspace.SidebarItemLabel>{t().myCode}</AppWorkspace.SidebarItemLabel>
       </AppWorkspace.SidebarItem>
     </Show>
   );
@@ -497,12 +532,17 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       </AppWorkspace.SidebarItem>
     </AppWorkspace.SidebarSection>
   );
+  // The collapsed rail's chat menu shows the same status as the rows, in place of the chat's icon.
   const collapsedChatMenu = () =>
-    chatConversations().map((conversation) => ({
-      label: conversation.title,
-      icon: conversation.pinnedAt ? "ti ti-pin text-accent" : conversation.hasActiveSchedule ? "ti ti-clock" : "ti ti-message",
-      action: () => openConversationFromCommand(conversation),
-    }));
+    chatConversations().map((conversation) => {
+      const status = conversationStatusPresentation(conversation, locale(), conversation.id === activeConversationId());
+      return {
+        label: conversation.title,
+        ariaLabel: status ? `${conversation.title}, ${status.label}` : undefined,
+        icon: status?.icon ?? (conversation.pinnedAt ? "ti ti-pin text-accent" : "ti ti-message"),
+        action: () => openConversationFromCommand(conversation),
+      };
+    });
 
   const searchProject = () => props.projects?.find((project) => project.id === activeProjectId());
   const openSearch = () => {
@@ -510,12 +550,10 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     openGlobalSearch(project ? assistantProjectSearchOptions(project) : assistantSearchOptions(locale()));
   };
   const chatItem = (conversation: AiConversation): NavigationItem => {
-    const busy = ["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus);
+    const busy = isConversationBusy(conversation);
     const active = activeConversationId() === conversation.id;
     // The same one marker as the desktop row, in a slot that stays reserved, so a status change keeps the row's size.
-    const marker =
-      conversationStatusPresentation(conversation, locale(), active) ??
-      (conversation.hasActiveSchedule ? { label: text("Active schedule"), icon: "ti ti-clock", tone: "muted" as const } : null);
+    const marker = conversationStatusPresentation(conversation, locale(), active);
     return {
       id: `chat:${conversation.id}`,
       label: conversation.title,
@@ -523,6 +561,8 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       action: `chat:${conversation.id}`,
       active,
       status: marker ? { icon: marker.icon, label: marker.label, tone: navigationTone[marker.tone] } : null,
+      // Unread is weight and dot, never color alone, as in the desktop list.
+      unread: marker?.tone === "accent",
       actions: [
         { id: `details:${conversation.id}`, action: `details:${conversation.id}`, label: text("Chat details"), icon: "ti ti-info-circle" },
         ...(!conversation.pinnedAt
@@ -543,25 +583,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       ],
     };
   };
-  const studioLifetime = new AbortController();
-  onCleanup(() => studioLifetime.abort());
-  let studioOpen = false;
-  const openStudio = async () => {
-    if (studioOpen) return;
-    studioOpen = true;
-    try {
-      await openStudioDialog({ activeAppId: props.activeAppId, signal: studioLifetime.signal });
-    } finally {
-      studioOpen = false;
-    }
-  };
-  onMount(() => {
-    const url = new URL(window.location.href);
-    if (url.searchParams.get("studio") !== "1") return;
-    url.searchParams.delete("studio");
-    window.history.replaceState(window.history.state, "", url);
-    void openStudio();
-  });
   // A Skill's Cloud link (`?skill=<id>`) opens that Skill once; reload and Back do not reopen it.
   onMount(() => {
     const url = new URL(window.location.href);
@@ -583,32 +604,44 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           children: entry.conversations.map(chatItem),
         }),
       ),
+      ...(placeTotal() > 0
+        ? [
+            {
+              id: "place-chats",
+              label: placeT().atPlaces,
+              icon: "ti ti-map-pin",
+              badge: placeTotal(),
+              children: (placeChats()?.items ?? []).map(chatItem),
+            } satisfies NavigationItem,
+          ]
+        : []),
       {
         id: "done-chats",
         label: text("Done"),
         badge: props.doneCount ?? doneConversations().length,
         children: [...doneConversations().map(chatItem), { id: "all", action: "all", label: t().allChats, icon: "ti ti-eye" }],
       },
-      ...(approvalsShown()
+      {
+        id: "approvals",
+        action: "approvals",
+        href: `${props.basePath ?? "/app/assistant"}?approvals=1`,
+        label: t().waitingForYou,
+        icon: "ti ti-hand-stop",
+        badge: approvalNavCount("assistant", props.pendingApprovals ?? 0),
+        active: approvalsActive(),
+      },
+      ...(codeShown()
         ? [
             {
-              id: "approvals",
-              action: "approvals",
-              href: `${props.basePath ?? "/app/assistant"}?approvals=1`,
-              label: text("Approvals"),
-              icon: "ti ti-shield-check",
-              badge: approvalNavCount("assistant", props.pendingApprovals ?? 0),
-              active: approvalsActive(),
+              id: "code",
+              action: "code",
+              href: `${props.basePath ?? "/app/assistant"}?code=1`,
+              label: t().myCode,
+              icon: "ti ti-stack-2",
+              active: codeActive(),
             },
           ]
         : []),
-      {
-        id: "apps",
-        action: "apps",
-        label: artifactMessages.resolve([locale()]).t.apps,
-        icon: "ti ti-app-window",
-        active: activeView() === "apps",
-      },
       {
         id: "projects",
         label: t().projects,
@@ -628,7 +661,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           })),
         ],
       },
-      { id: "activities", action: "activities", label: text("Background activity"), icon: "ti ti-inbox" },
       { id: "preferences", action: "preferences", label: t().personalize, icon: "ti ti-user-cog" },
     ],
     onAction: async (action) => {
@@ -640,13 +672,14 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         await props.onCreateProject?.();
         return;
       }
-      if (action === "apps") {
-        void openStudio();
-        return;
-      }
       if (action === "approvals") {
         if (props.onOpenApprovals) props.onOpenApprovals();
         else navigateTo(`${props.basePath ?? "/app/assistant"}?approvals=1`);
+        return;
+      }
+      if (action === "code") {
+        if (props.onOpenCode) props.onOpenCode();
+        else navigateTo(`${props.basePath ?? "/app/assistant"}?code=1`);
         return;
       }
       if (action === "search-projects") {
@@ -655,10 +688,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       }
       if (action === "search") {
         await openSearch();
-        return;
-      }
-      if (action === "activities") {
-        await openAssistantActivities(props.live);
         return;
       }
       if (action === "preferences") {
@@ -675,7 +704,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         if (project) await openProject(project);
         return;
       }
-      const conversation = props.conversations().find((item) => item.id === id);
+      const conversation = [...props.conversations(), ...(placeChats()?.items ?? [])].find((item) => item.id === id);
       if (!conversation) return;
       if (kind === "chat") {
         try {
@@ -750,12 +779,55 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarBody scrollPreserveKey="assistant-sidebar" sidebarMode="expanded">
+            <Show when={showPlaceFilter()}>
+              <div class="assistant-place-filter">
+                <FilterToggle
+                  label={
+                    <>
+                      {placeT().atPlaces} <span class="assistant-place-filter__count">{placeTotal()}</span>
+                    </>
+                  }
+                  icon="ti ti-map-pin"
+                  active={placesFilter()}
+                  onClick={() => choosePlacesFilter(!placesFilter())}
+                />
+              </div>
+            </Show>
+            <Show when={placesFilter()}>
+              <AppWorkspace.SidebarSection title={placeT().atPlacesSection}>
+                <For
+                  each={placeChats()?.items ?? []}
+                  fallback={
+                    <Placeholder
+                      variant="inline"
+                      align="left"
+                      description={placeChats() ? placeT().noPlaceChats : placeT().placeChatsFailed}
+                    />
+                  }
+                >
+                  {(conversation) => (
+                    <ConversationSidebarItem
+                      basePath={props.basePath}
+                      conversation={conversation}
+                      donePhase={doneFeedback().get(conversation.id)?.phase}
+                      toggleDone={toggleDone}
+                      active={conversation.id === activeConversationId()}
+                      open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
+                      edit={(item) => void openEditor(item)}
+                      update={(item) => props.onConversationUpdated?.(item)}
+                    />
+                  )}
+                </For>
+              </AppWorkspace.SidebarSection>
+            </Show>
             <Show
-              when={chatConversations().length > 0}
+              when={!placesFilter() && chatConversations().length > 0}
               fallback={
-                <AppWorkspace.SidebarSection>
-                  <Placeholder variant="inline" align="left" description={t().noChats} />
-                </AppWorkspace.SidebarSection>
+                <Show when={!placesFilter()}>
+                  <AppWorkspace.SidebarSection>
+                    <Placeholder variant="inline" align="left" description={t().noChats} />
+                  </AppWorkspace.SidebarSection>
+                </Show>
               }
             >
               {/* Keyed by section name, so a status change re-renders one row, not the whole list. */}
@@ -781,19 +853,15 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
                 )}
               </For>
             </Show>
-            <DoneSection />
+            <Show when={!placesFilter()}>
+              <DoneSection />
+            </Show>
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter sidebarMode="expanded">
             <ApprovalsItem />
-            <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
+            <CodeItem />
             <ProjectsItem />
-            <AppWorkspace.SidebarItem
-              icon="ti ti-inbox"
-              title={text("Background activity")}
-              onClick={() => void openAssistantActivities(props.live)}
-            >
-              {text("Background activity")}
-            </AppWorkspace.SidebarItem>
+
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
               {t().personalize}
             </AppWorkspace.SidebarItem>
@@ -803,15 +871,9 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
               {text("Done")}
             </AppWorkspace.SidebarItem>
             <ApprovalsItem />
-            <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
+            <CodeItem />
             <ProjectsItem />
-            <AppWorkspace.SidebarItem
-              icon="ti ti-inbox"
-              title={text("Background activity")}
-              onClick={() => void openAssistantActivities(props.live)}
-            >
-              {text("Background activity")}
-            </AppWorkspace.SidebarItem>
+
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" title={t().personalize} onClick={() => void openAssistantPrefsModal()}>
               {t().personalize}
             </AppWorkspace.SidebarItem>

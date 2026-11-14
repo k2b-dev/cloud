@@ -1,10 +1,13 @@
-import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
+import type { ChartFormat, ChartInput, ChartLimits } from "@k2b/ui/charts";
 import {
+  autoBin,
   BalanceFlowError,
   CALENDAR_MAX_DAYS,
   calendarDay,
+  computeDomain,
   lineDetailsEnabled,
   nestedDotOptions,
+  niceStep,
   sankeyGraph,
   validateBalanceFlow,
 } from "@k2b/ui/charts/core";
@@ -477,7 +480,8 @@ export const chartKinds = (limits?: ChartLimits) => {
       z.object({
         kind: z.literal("heatmap"),
         ...ChartKindCommon,
-        layout: z.undefined().optional(),
+        // An empty enum accepts no layout, exports as never, and lets optional() enumerate the absent discriminator.
+        layout: z.enum([]).optional(),
         data: list(ChartCell, 1, limits?.maxMarks),
         format: numberFormat.optional(),
         showValues: z.boolean().optional(),
@@ -662,6 +666,93 @@ export const chartDateTime = (value: string): number | undefined => {
   // Parts out of range roll over, so a date that does not read back as written does not exist.
   return date.toISOString().startsWith(`${year}-${month}-${day}T${hour}:${minute}:${second}`) ? date.getTime() : undefined;
 };
+
+export type ChartAxisInput = { label?: string; domain?: number[]; ticks?: number; scale?: "linear" | "log"; format?: ChartFormat };
+
+const dateTime = (value: number | string) => (typeof value === "number" ? value : (chartDateTime(value) ?? Number.NaN));
+/** The renderer's default tick count. */
+const TICKS = 5;
+
+export const chartReferenceValues = (input: ChartInput, name: "x" | "y") => {
+  const values =
+    "references" in input ? (input.references ?? []).filter((ref) => (ref.axis ?? "y") === name).map((ref) => dateTime(ref.value)) : [];
+  if (input.kind === "line") {
+    if (name === "x") {
+      if (input.forecast) values.push(dateTime(input.forecast.from));
+      if (input.marker) values.push(dateTime(input.marker.at));
+    } else {
+      if (input.threshold) values.push(input.threshold.value);
+      if (input.zero) values.push(0);
+      for (const bounds of input.forecast?.band ?? []) values.push(...bounds);
+    }
+  }
+  return values;
+};
+
+/** The value axes of a chart with what they show: the data checks and the label room read them alike. */
+export const chartValueAxes = (input: ChartInput): { values: number[]; axis?: ChartAxisInput; zero?: boolean; name: "x" | "y" }[] => {
+  if (input.kind === "bar")
+    return [
+      {
+        values: [
+          ...input.data.map((item) => item.value),
+          ...(input.series?.flatMap((s) => s.data.filter((v): v is number => v !== null)) ?? []),
+          ...(input.compare?.data.filter((v): v is number => v !== null) ?? []),
+        ],
+        axis: input.yAxis,
+        zero: true,
+        name: "y",
+      },
+    ];
+  if (input.kind === "boxplot") return [{ values: input.data.flatMap((item) => item.values), axis: input.yAxis, name: "y" }];
+  if (input.kind === "histogram") {
+    if (!input.references?.length) return [{ values: input.data, name: "x" }];
+    const { edges, counts } = autoBin(input.data, input.bins);
+    return [
+      { values: edges, name: "x" },
+      { values: counts, zero: true, name: "y" },
+    ];
+  }
+  if (input.kind !== "line" && input.kind !== "scatter") return [];
+  const points = input.series.flatMap((series) => series.data);
+  return [
+    { values: points.map((point) => dateTime(point.x)), axis: input.xAxis, name: "x" },
+    { values: points.map((point) => point.y), axis: input.yAxis, name: "y" },
+  ];
+};
+
+/**
+ * Whether the renderer can step from the lowest to the highest tick. Values that differ by less than the float
+ * precision of their size, such as 1e17 and 1e17 + 16, would make it count forever.
+ */
+const steppable = (values: number[], ticks = TICKS) => {
+  const [min, max] = computeDomain(values);
+  const step = niceStep(max - min, ticks);
+  return [Math.floor(min / step) * step, Math.ceil(max / step) * step].every((value) => value + step !== value && value - step !== value);
+};
+
+/** Rejects only precision ranges that would make the renderer count ticks forever. */
+export function chartSteppingIssue(input: ChartInput): string | undefined {
+  // Check raw observations before autoBin computes histogram edges.
+  if (input.kind === "histogram" && !steppable(input.data))
+    return "The values differ too little for their size to label an axis; subtract a common offset first.";
+  for (const { values: data, axis, zero, name } of chartValueAxes(input)) {
+    const values = [...data, ...chartReferenceValues(input, name)];
+    if (axis?.scale !== "log" && !axis?.domain && !steppable(zero ? [...values, 0] : values, axis?.ticks))
+      return "The values differ too little for their size to label an axis; subtract a common offset first.";
+  }
+  return undefined;
+}
+
+/** Application chart schema: permissive observations, with the renderer's tick-safety guard. */
+export const chartSchema = (limits?: ChartLimits) =>
+  chartKinds(limits).superRefine(
+    (chart, context) => {
+      const issue = chartSteppingIssue(chart);
+      if (issue) context.addIssue({ code: "custom", message: issue });
+    },
+    { when: (payload) => payload.issues.length === 0 },
+  );
 
 // Both directions are checked: a validator change must update the ui-owned description too.
 type Assert<T extends true> = T;

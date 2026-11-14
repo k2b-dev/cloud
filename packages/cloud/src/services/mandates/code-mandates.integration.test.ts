@@ -1,0 +1,441 @@
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { err, fail, ok } from "@k2b/stdlib";
+import { Hono } from "hono";
+import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
+import { z } from "zod";
+import { suiteFor, useMigratedDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../../_internal/capabilities";
+import * as registry from "../../_internal/registry";
+import { aiConversations } from "../../ai/store";
+import { dispatchCapability } from "../../api/capabilities";
+import { CapabilityInvocationBodySchema } from "../../contracts/capabilities";
+import type { CapabilityRegistryEntry } from "../../contracts/registry";
+import { sql } from "../../runtime/clients";
+import { type AuthContext, requireInvocation } from "../../server";
+import { getEffectivePermission, hasPermission } from "../../server/services/access";
+import { resolveInvocationAuthority } from "../identity/invocation-actor";
+import { type CloudInvocationClaims, verifyInvocationToken } from "../identity/invocation-token";
+import { issueInvocationToken } from "../identity/issue-invocation";
+import type { withActiveIdentitySigner } from "../identity/key-ring";
+import { CODE_VERSION_MANDATE_WORKLOAD_TYPE, type Mandate, mandates } from ".";
+
+// Real database, invocation signature, admission middleware and resource resolver.
+// The provider fixture substitutes only an app's domain storage and transport.
+const suite = suiteFor("database", "valkey");
+suite("Code version target mandates", () => {
+  let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
+  let appLookup: ReturnType<typeof spyOn<typeof registry, "getApp">>;
+  let capabilityLookup: ReturnType<typeof spyOn<typeof registry, "getCapability">>;
+  let userId: string;
+  let codeId: string;
+  let writeAccessId: string;
+  let codeMandate: Mandate;
+  let signingKey: CryptoKey;
+  let verificationKey: JWTVerifyGetKey;
+  let fetched = 0;
+  let ran = 0;
+  let lastClaims: CloudInvocationClaims | undefined;
+  let lastProviderRequest: Request | undefined;
+  let requestNumber = 0;
+  const accessByTarget = new Map<string, string[]>();
+  const issuer = "https://cloud.example.test";
+  const kid = "33333333-3333-4333-8333-333333333333";
+
+  const compiled = compileCapabilities("demo", {
+    protocolVersion: 2,
+    types: { folder: { title: "Folder", description: "A resource with independent grants." } },
+    actions: {
+      write: {
+        title: "Write",
+        description: "Write within one folder.",
+        target: "folder",
+        input: z.object({ title: z.string().describe("New title.") }).strict(),
+        data: z.object({ wrote: z.string() }).strict(),
+        destructive: false,
+        openWorld: false,
+        idempotency: "none",
+        policy: { silent: "shared" },
+        review: async (_, context) =>
+          ok({
+            locale: "en",
+            sentence: { action: "Write folder", running: "Writing folder", done: "Wrote folder", confirm: "Write", decline: "Cancel" },
+            slots: {},
+            scope: `folder:${context.target!.id}`,
+          }),
+        run: async (_, context) => {
+          const permission = await getEffectivePermission({
+            accessIds: accessByTarget.get(context.target!.id) ?? [],
+            subject: context.accessSubject,
+          });
+          const scopeAllows = context.actor.kind === "user" || context.actor.scopes.includes("write");
+          if (!scopeAllows || !hasPermission(permission, "write")) return fail(err.forbidden("No resource access"));
+          ran += 1;
+          return ok({ data: { wrote: context.target!.id } });
+        },
+      },
+    },
+  });
+  const entry: CapabilityRegistryEntry = {
+    appId: "demo",
+    appName: "Demo",
+    appIcon: "ti ti-folder",
+    appDescription: "Provider fixture",
+    endpoint: "http://demo.test/api/_internal/capabilities/v1",
+    manifest: compiled.manifest,
+  };
+  const withSigner: typeof withActiveIdentitySigner = async (_, use) =>
+    sql.begin((db) =>
+      use(
+        {
+          kid,
+          key: signingKey,
+          issuer,
+          groupsAdmin: [],
+          signUntil: new Date(Date.now() + 60_000),
+        },
+        db,
+      ),
+    );
+  const provider = new Hono<AuthContext>();
+  provider.post(
+    "/api/_internal/capabilities/v1/actions/write",
+    requireInvocation(
+      () => ({
+        targetAppId: "demo",
+        operation: "capability.action.run:write",
+        schemaHash: compiled.manifest.actions[0]!.schemaHash,
+      }),
+      {
+        verify: (token, expected, options) => verifyInvocationToken(token, expected, { ...options, issuer, key: verificationKey }),
+        resolve: (claims) => resolveInvocationAuthority(claims, sql, []),
+      },
+    ),
+    async (c) => {
+      const body = CapabilityInvocationBodySchema.parse(await c.req.json());
+      const result = await invokeCompiledCapability({
+        compiled,
+        localId: "write",
+        kind: "action",
+        expectedSchemaHash: compiled.manifest.actions[0]!.schemaHash,
+        ...body,
+        context: {
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+          user: c.get("user") ?? null,
+          requestId: c.req.header("x-request-id") ?? "fixture",
+          locale: "en",
+          origin: "app",
+          signal: c.req.raw.signal,
+        },
+      });
+      const serialized = serializeCapabilityProviderResult(result, { nonIdempotentAction: true });
+      return new Response(serialized.body, {
+        status: serialized.status,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  );
+  const invoke = (mandate: Pick<Mandate, "id" | "revision"> & Partial<Pick<Mandate, "ownerAppId" | "workloadType">>, targetId: string) =>
+    dispatchCapability({
+      request: new Request("http://core.test/capability", { headers: { "x-request-id": `code-c2-${++requestNumber}` } }),
+      kind: "actions",
+      appId: "demo",
+      capabilityId: "write",
+      origin: "app",
+      // Trusted Core admission; the runner bridge transport is covered by C4.
+      codeRun: mandate.workloadType === "code.version" ? true : undefined,
+      workloadRun: "fixture-code-run",
+      input: { title: "Example" },
+      target: { type: "demo.folder", id: targetId },
+      mandate: {
+        mandateId: mandate.id,
+        mandateRevision: mandate.revision,
+        ownerAppId: mandate.ownerAppId ?? "core",
+      },
+      dependencies: {
+        getCapability: async () => entry,
+        withActiveSigner: withSigner,
+        signInvocation: async (params) => {
+          expect(params.authority.scopes).toEqual([]);
+          const signed = await issueInvocationToken(params, { db: sql, groupsAdmin: [] });
+          lastClaims = signed.claims;
+          return signed;
+        },
+        fetch: async (url, init) => {
+          fetched += 1;
+          const request = new Request(url, init);
+          lastProviderRequest = request.clone();
+          return provider.fetch(request);
+        },
+      },
+    });
+
+  beforeAll(async () => {
+    database = await useMigratedDatabase("code_mandates");
+    const pair = await generateKeyPair("RS256", { extractable: true });
+    signingKey = pair.privateKey;
+    verificationKey = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid, alg: "RS256", use: "sig" }] });
+    appLookup = spyOn(registry, "getApp").mockImplementation(async (id) => ({
+      id,
+      name: id,
+      icon: "ti ti-folder",
+      description: "Fixture",
+      baseUrl: `http://${id}.test`,
+      routes: [],
+      // A code invocation must reach its own resource grants even when human entry needs an admin.
+      access: id === "demo" ? { kind: "roles", roles: ["admin"] } : { kind: "signedIn" },
+    }));
+    capabilityLookup = spyOn(registry, "getCapability").mockResolvedValue(entry);
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES ('code-c2-person', 'local', 'user', 'Example Person') RETURNING id`;
+    userId = user!.id;
+    const [account] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.service_accounts(name, kind, status) VALUES ('code-c2', 'code', 'active') RETURNING id`;
+    codeId = account!.id;
+    const [access] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(service_account_id, permission) VALUES (${codeId}::uuid, 'write') RETURNING id`;
+    writeAccessId = access!.id;
+    accessByTarget.set("a", [writeAccessId]);
+    accessByTarget.set("b", [writeAccessId]);
+    const created = await mandates.create({
+      authority: { kind: "admin", userId },
+      subject: { type: "service_account", id: codeId },
+      ownerAppId: "core",
+      workloadType: CODE_VERSION_MANDATE_WORKLOAD_TYPE,
+      workloadId: "version-a",
+      policy: {
+        version: 1,
+        apps: ["demo"],
+        operations: ["capability.action.run:write"],
+        actions: "preapproved",
+        grants: [{ appId: "demo", capabilityId: "write", kind: "action", target: { type: "demo.folder", id: "a" }, fixedInput: {} }],
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    codeMandate = created.data;
+  });
+  afterAll(async () => {
+    appLookup?.mockRestore();
+    capabilityLookup?.mockRestore();
+    await database?.drop();
+  });
+
+  test("right pair succeeds; the same operation at another accessible target never reaches the provider", async () => {
+    expect((await invoke(codeMandate, "a")).status).toBe(200);
+    const before = fetched;
+    expect((await invoke(codeMandate, "b")).status).toBe(403);
+    expect(fetched).toBe(before);
+    expect(ran).toBe(1);
+  });
+
+  test("Code admission rejects non-mandate credentials and a different version", async () => {
+    expect((await invoke(codeMandate, "a")).status).toBe(200);
+    if (!lastClaims) throw new Error("No invocation issued");
+    const resolved = await resolveInvocationAuthority(lastClaims, sql, []);
+    expect(resolved?.scopes).toEqual([]);
+    expect(resolved?.actor.kind === "service_account" && resolved.actor.scopes).toEqual(["read", "write"]);
+    for (const changed of [
+      { ...lastClaims, credential_kind: "api_key" as const },
+      { ...lastClaims, workload_id: "another-version" },
+      { ...lastClaims, scopes: ["admin"] },
+      { ...lastClaims, mandate_revision: lastClaims.mandate_revision! + 1 },
+    ])
+      expect(await resolveInvocationAuthority(changed, sql, [])).toBeNull();
+  });
+
+  test("a matching mandate cannot replace the Code grant or inherit a signed-in grant", async () => {
+    const [authenticated] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(authenticated_only, permission) VALUES (true, 'write') RETURNING id`;
+    accessByTarget.set("a", [authenticated!.id]);
+    const before = ran;
+    try {
+      const denied = await invoke(codeMandate, "a");
+      expect(denied.status).toBe(403);
+      expect(await denied.json()).toEqual({ code: "FORBIDDEN", message: "No resource access" });
+      expect(ran).toBe(before);
+    } finally {
+      accessByTarget.set("a", [writeAccessId]);
+    }
+  });
+
+  test("per-version revisions, pauses and disabled Code principals stop calls", async () => {
+    const denied = await mandates.create({
+      authority: { kind: "admin", userId },
+      subject: { type: "service_account", id: codeId },
+      ownerAppId: "demo",
+      workloadType: "other",
+      workloadId: "not-a-code-version",
+      policy: codeMandate.policy,
+    });
+    expect(denied.ok).toBe(false);
+    const paused = await mandates.pause({
+      mandateId: codeMandate.id,
+      expectedRevision: codeMandate.revision,
+      authority: { kind: "admin", userId },
+    });
+    expect(paused.ok).toBe(true);
+    if (!lastClaims) throw new Error("No invocation issued");
+    expect(await resolveInvocationAuthority(lastClaims, sql, [])).toBeNull();
+    expect((await invoke(codeMandate, "a")).status).toBe(403);
+    if (!paused.ok) throw new Error(paused.error.message);
+    const resumed = await mandates.resume({
+      mandateId: codeMandate.id,
+      expectedRevision: paused.data.revision,
+      authority: { kind: "admin", userId },
+    });
+    if (!resumed.ok) throw new Error(resumed.error.message);
+    expect((await invoke(codeMandate, "a")).status).toBe(409);
+    codeMandate = resumed.data;
+    await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${codeId}::uuid`;
+    expect((await invoke(codeMandate, "a")).status).toBe(403);
+    await sql`UPDATE auth.service_accounts SET status='active' WHERE id=${codeId}::uuid`;
+    expect((await invoke(codeMandate, "a")).status).toBe(200);
+  });
+
+  test("policy-free runner entries use current target rights while old Code mandates stay bounded", async () => {
+    const created = await mandates.createPending({
+      authority: { kind: "admin", userId },
+      subject: { type: "service_account", id: codeId },
+      ownerAppId: "runner",
+      workloadType: "code.version",
+      workloadId: "version-policy-free",
+      policy: null,
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    expect(created.data).toMatchObject({ ownerAppId: "runner", policy: null, confirmedAt: null });
+    await expect(sql`UPDATE auth.mandates SET owner_app_id='demo' WHERE id=${created.data.id}::uuid`.execute()).rejects.toThrow();
+    await expect(sql`UPDATE auth.mandates SET workload_type='other' WHERE id=${created.data.id}::uuid`.execute()).rejects.toThrow();
+    expect((await invoke(created.data, "b")).status).toBe(403);
+    const confirmed = await mandates.confirm({
+      mandateId: created.data.id,
+      expectedRevision: created.data.revision,
+      authority: { kind: "workload", ownerAppId: "runner" },
+    });
+    if (!confirmed.ok) throw new Error(confirmed.error.message);
+    expect((await invoke(confirmed.data, "b")).status).toBe(200);
+    // Reusing or updating the old entry cannot remove its policy, even for an administrator.
+    expect((await invoke(codeMandate, "b")).status).toBe(403);
+    expect(
+      (
+        await mandates.updatePolicy({
+          mandateId: codeMandate.id,
+          expectedRevision: codeMandate.revision,
+          authority: { kind: "admin", userId },
+          policy: null,
+        })
+      ).ok,
+    ).toBe(false);
+    const generic = await mandates.validateIssueAuthority({
+      mandateId: confirmed.data.id,
+      ownerAppId: "runner",
+      targetAppId: "demo",
+      operation: "capability.action.run:write",
+    });
+    expect(generic.ok).toBe(false);
+    const [authenticated] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(authenticated_only,permission) VALUES(true,'write') RETURNING id`;
+    const saved = accessByTarget.get("b")!;
+    accessByTarget.set("b", [authenticated!.id]);
+    try {
+      expect((await invoke(confirmed.data, "b")).status).toBe(403);
+    } finally {
+      accessByTarget.set("b", saved);
+    }
+    const paused = await mandates.pause({
+      mandateId: confirmed.data.id,
+      expectedRevision: confirmed.data.revision,
+      authority: { kind: "workload", ownerAppId: "runner" },
+    });
+    expect(paused.ok).toBe(true);
+    expect((await invoke(confirmed.data, "b")).status).toBe(403);
+  });
+
+  test("providers revalidate already-issued Code tokens for both people and service accounts", async () => {
+    appLookup.mockImplementation(async (id) => ({
+      id,
+      name: id,
+      icon: "ti ti-folder",
+      description: "Fixture",
+      baseUrl: `http://${id}.test`,
+      routes: [],
+      access: { kind: "signedIn" },
+    }));
+    const [personAccess] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'write') RETURNING id`;
+    accessByTarget.set("saved-token", [writeAccessId, personAccess!.id]);
+    for (const subject of [
+      { type: "user", id: userId },
+      { type: "service_account", id: codeId },
+    ] as const) {
+      const created = await mandates.createPending({
+        authority: { kind: "admin", userId },
+        subject,
+        ownerAppId: "runner",
+        workloadType: "code.version",
+        workloadId: `saved-token-${subject.type}`,
+        policy: null,
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      const confirmed = await mandates.confirm({
+        mandateId: created.data.id,
+        expectedRevision: created.data.revision,
+        authority: { kind: "workload", ownerAppId: "runner" },
+      });
+      if (!confirmed.ok) throw new Error(confirmed.error.message);
+      expect((await invoke(confirmed.data, "saved-token")).status).toBe(200);
+      if (!lastProviderRequest) throw new Error("No provider request issued");
+      const saved = lastProviderRequest.clone();
+      expect((await provider.fetch(saved.clone())).status).toBe(200);
+      const changes = [
+        { state: "paused", confirmed: true, expired: false, revision: confirmed.data.revision },
+        { state: "revoked", confirmed: true, expired: false, revision: confirmed.data.revision },
+        { state: "active", confirmed: false, expired: false, revision: confirmed.data.revision },
+        { state: "active", confirmed: true, expired: true, revision: confirmed.data.revision },
+        { state: "active", confirmed: true, expired: false, revision: confirmed.data.revision + 1 },
+      ];
+      for (const change of changes) {
+        await sql`UPDATE auth.mandates SET state=${change.state},revision=${change.revision},created_at=now()-interval '1 hour',
+          revoked_at=CASE WHEN ${change.state} = 'revoked' THEN now() ELSE NULL END,
+          revoke_reason=CASE WHEN ${change.state} = 'revoked' THEN 'Fixture revocation' ELSE NULL END,
+          confirmed_at=CASE WHEN ${change.confirmed} THEN now() ELSE NULL END,
+          confirmation_deadline=CASE WHEN ${change.confirmed} THEN NULL ELSE now()+interval '15 minutes' END,
+          expires_at=CASE WHEN ${change.expired} THEN now()-interval '1 second' ELSE NULL END WHERE id=${confirmed.data.id}::uuid`;
+        const before = ran;
+        const response = await provider.fetch(saved.clone());
+        expect(response.status).toBe(401);
+        expect(await response.json()).toMatchObject({ code: "UNAUTHORIZED" });
+        expect(ran).toBe(before);
+      }
+    }
+  });
+
+  test("an unconfirmed policy-free entry expires through the existing reconciler", async () => {
+    const created = await mandates.createPending({
+      authority: { kind: "admin", userId },
+      subject: { type: "service_account", id: codeId },
+      ownerAppId: "runner",
+      workloadType: "code.version",
+      workloadId: "version-expired-pending",
+      policy: null,
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    await sql`UPDATE auth.mandates SET created_at=now()-interval '20 minutes', confirmation_deadline=now()-interval '1 minute' WHERE id=${created.data.id}::uuid`;
+    expect(
+      (
+        await mandates.confirm({
+          mandateId: created.data.id,
+          expectedRevision: created.data.revision,
+          authority: { kind: "workload", ownerAppId: "runner" },
+        })
+      ).ok,
+    ).toBe(false);
+    await mandates.reconcileUnconfirmed();
+    expect(await mandates.get(created.data.id)).toMatchObject({ state: "revoked", policy: null });
+    expect((await invoke(created.data, "b")).status).toBe(403);
+  });
+});

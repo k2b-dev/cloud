@@ -111,13 +111,18 @@ suiteFor("database")("SQL dashboard permissions, publication and durable runs", 
       user: null,
       locale: "de",
       requestId: "dashboard-review",
+      target: { type: "pulse.base", id: "Dash01" },
       origin: "assistant",
       signal: new AbortController().signal,
       idempotencyKey: "dashboard-review",
     };
     const review = dashboardCapabilities.actions["dashboard.save"].review;
-    const draft = { baseId, dashboardId: dashboard.id, expectedRevision: 1, name: dashboard.name, definition };
+    const draft = { dashboardId: dashboard.id, expectedRevision: 1, name: dashboard.name, definition };
     expect(await review(draft, context)).toMatchObject({ ok: true, data: { scope: expect.any(String) } });
+    expect(await review(draft, { ...context, target: { type: "pulse.base", id: "Other1" } })).toMatchObject({
+      ok: false,
+      error: { status: 404 },
+    });
     const publication = await dashboards.publish({
       ...identity,
       dashboardId: dashboard.id,
@@ -136,7 +141,7 @@ suiteFor("database")("SQL dashboard permissions, publication and durable runs", 
     expect(changed.data).toMatchObject({ ask: "changes_access" });
     expect(changed.data).toMatchObject({ consequences: [{ text: "Der bisherige öffentliche Link endet." }] });
     const publicationReview = await dashboardCapabilities.actions["dashboard.publish"].review(
-      { baseId, dashboardId: dashboard.id, expectedRevision: 2, columns: { visits: ["visits"] } },
+      { dashboardId: dashboard.id, expectedRevision: 2, columns: { visits: ["visits"] } },
       context,
     );
     expect(publicationReview.ok).toBe(true);

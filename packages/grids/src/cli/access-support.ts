@@ -1,6 +1,6 @@
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import { resolveAccessPrincipal } from "@k2b/cloud/cli";
-import type { PermissionLevel, Principal } from "@k2b/cloud/contracts";
+import type { CloudResourceRef, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { resolveCustomApp } from "./custom-apps";
 import { resolveBase, resolveBaseFromCommand } from "./resources";
 import { requireRestArg } from "./runtime";
@@ -18,6 +18,7 @@ type AccessResource = {
   id: string;
   label: string;
   allowed: readonly AccessPermission[];
+  target?: CloudResourceRef;
 };
 
 export const accessPermissionsForResource = (type: AccessResourceType): readonly AccessPermission[] => {
@@ -46,13 +47,20 @@ export const resolveAccessResource = async (ctx: CloudCliContext, args: string[]
     return {
       type,
       id: base.id,
+      target: { type: "grids.base", id: base.id },
       label: `${base.name} (${base.id})`,
       allowed: accessPermissionsForResource(type),
     };
   }
   const { base, rest: appRest } = await resolveBaseFromCommand(ctx, rest, 1);
   const app = await resolveCustomApp(ctx, base.id, requireRestArg(appRest, 0, "App"));
-  return { type, id: app.id, label: `${app.name} (${app.id})`, allowed: accessPermissionsForResource(type) };
+  return {
+    type,
+    target: { type: "grids.base", id: base.id },
+    id: app.id,
+    label: `${app.name} (${app.id})`,
+    allowed: accessPermissionsForResource(type),
+  };
 };
 
 export const accessResourcePath = (resource: AccessResource): string =>
@@ -81,5 +89,8 @@ export const assertAccessPrincipal = (resource: AccessResource, principal: Princ
   }
 };
 
-export const resolvePrincipalForAccess = (ctx: CloudCliContext, flags: Record<string, unknown>): Promise<Principal> =>
-  resolveAccessPrincipal(ctx, flags, { allowPublic: true, allowServiceAccounts: true });
+export const resolvePrincipalForAccess = (
+  ctx: CloudCliContext,
+  flags: Record<string, unknown>,
+  resource: AccessResource,
+): Promise<Principal> => resolveAccessPrincipal(ctx, flags, { allowPublic: true, allowServiceAccounts: true, target: resource.target });

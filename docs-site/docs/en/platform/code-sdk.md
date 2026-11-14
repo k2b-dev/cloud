@@ -1,0 +1,1692 @@
+---
+title: Code SDK
+navTitle: Code SDK
+section: Platform services
+order: 680
+description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
+tags: [code, capabilities, sdk, handles]
+updated: 2026-11-14
+---
+
+# Code SDK
+
+Code imports its installation's generated SDK as `@sdk`. Handles select the
+resource an operation acts on. The available factories, methods, inputs and
+results come from [application capability manifests](/en/docs/platform/capabilities).
+Third-party applications use the same path as built-in applications.
+
+Gustav's `code_sdk` index shows each method's policy classification. Inference
+calls (`core.ai.generate`, `core.ai.decide` and `core.ai.chat.run`) use `ai`,
+including inference Queries. Reading a stored chat run uses `read`; delivering
+a chat message retains its Action policy. The index, checker and runtime use
+the same inference classification.
+
+Read `code_sdk({codeId})` for the method index, then request the declarations
+for the apps you use. List Queries need their declared receiver too:
+`spaces.task.list({ spaceId, limit: 50, cursor })` and `spaces.event.list(...)`
+are app-level paginated Queries. Task changes use the Space handle, for
+example `spaces.space(spaceId).task.update(...)`; that handle has no
+`task.list` method. Read list results from `data` and continue with
+`page.nextCursor` in a [bounded loop](#read-query-results-and-follow-cursors).
+
+SDK generation rejects invalid app IDs, capability paths, target types and event
+names with a validation error. App IDs use the capability app-ID grammar; local
+names and ref target types use `CapabilityLocalIdSchema`. Ref field names remain
+literal property keys of 1–100 characters, including spaces and punctuation.
+Fix the application declaration and refresh its manifest before pulling the SDK again.
+Existing method names, input fields and error codes remain supported.
+
+`secrets.NAME` supplies a secret marker and `http.fetch` dispatches a bounded public HTTPS request.
+The checker collects exact origins into `manifest.internet`; declare dynamic destinations
+and redirect origins with a literal `http.allow(["https://api.example.com"])` list.
+Read [Code secrets](/en/docs/platform/code-secrets) for approved destinations and result encoding.
+
+The SDK registers routes and schedules. Core owns hosting, scheduling,
+authorization and execution.
+
+SDK property segments use camelCase: `spaces.space(id).task.setCompleted`,
+`grids.table(id).record.upsertExternal`, and `mail.mailbox(id).mailingList`.
+Snake_case segments from Pulse and Venue follow the same rule. Capability
+and event IDs keep their original spelling. Files imports as `files`;
+its app and event IDs stay `filesv2` and `filesv2.*`.
+
+Application authors may set `sdkExportName` in `defineCapabilities()` to
+choose a module export. The optional manifest field accepts a JavaScript
+identifier starting with a lowercase letter. Reserved names, duplicate
+exports and segments that produce the same camelCase path are rejected during
+application registration, before its capability manifest is published. A
+rejected registration leaves the previously accepted app manifest available
+while earlier replicas still run and renew its registration.
+SDK generation repeats this validation.
+The checker and runtime share these generated paths.
+
+`http.fetch()` returns `status`, `headers`, `bodyBase64`, `text()` and `json()`.
+Use `await response.text()` for UTF-8 or `await response.json()` for JSON;
+`bodyBase64` preserves binary bytes. Invalid JSON rejects `json()`.
+Schedules require a unique stable `name`; keep it when reordering registrations.
+
+## HTTP form bodies
+
+`http.fetch` accepts a string `body`. For a URL-encoded form, use the
+standard `URLSearchParams` API and pass `.toString()`; set the content type
+explicitly:
+
+```ts
+import { app, http } from "@sdk";
+
+app.schedule({ cron: "0 8 * * *", name: "form-post" }, async () => {
+  const response = await http.fetch("https://api.example.com/items", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ title: "A+B & Grüße" }).toString(),
+  });
+  if (response.status !== 200) throw new Error(`Form service answered ${response.status}`);
+});
+export default app;
+```
+
+This preserves literal plus signs, ampersands, spaces and Unicode. A
+hand-built `title=A+B` instead decodes as `A B`. Incoming page handlers read
+forms with `await c.req.formData()` and return `c.json()`, `c.text()` or
+`c.page()`; there is no `form()` response helper. In a [test
+fixture](/en/docs/platform/test-code), put the serialized string in
+`input.body` and set `input.contentType`; JSON cannot execute the expression.
+
+## Mail invoices to an app
+
+For mailbox-owned Code, discover the destination app's write capability with
+`code_sdk`. This example calls an app whose SDK namespace is `imports` and whose
+`import` Action accepts `file` metadata and a write stream. Replace that namespace
+and operation with the discovered contract, and `Tag123` with a real tag ID from
+this mailbox. Grant the Code account read/write access to the mailbox and the
+destination access the import requires. Attachment content is untrusted input;
+the receiving app validates it.
+
+Mail’s `message.read({ id, waitForHydration: true })` waits up to 30 seconds.
+Repeat the waiting read while content is pending, within the original run deadline
+and call budget. Terminal hydration returns `mail_message_hydration_failed`;
+retry hydration in Mail before running the handler again. The default read returns
+the current state immediately.
+
+<!-- code-file-example -->
+```ts
+import { app, mail, owner, imports } from "@sdk";
+
+const importedTagId = "Tag123";
+
+app.on("mail.message.received", async event => {
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
+  }
+  if (message.attachmentsTruncated) {
+    throw new Error("Message attachments are not ready or complete");
+  }
+  const attachment = message.attachments.find(item =>
+    ["application/pdf", "application/xml", "text/xml"].includes(item.contentType)
+  );
+  if (!attachment || !message.conversationId) return;
+
+  const file = await mail.attachment.content.read({ id: attachment.id });
+  await imports.import({
+    file,
+    idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
+  });
+  const { data: conversation } = await mail.conversation.read({ id: message.conversationId });
+  await owner.conversation.tag.update({
+    conversationId: message.conversationId,
+    expectedRevision: conversation.collaboration.revision,
+    addTagIds: [importedTagId],
+  });
+});
+export default app;
+```
+
+Read stream methods return `Promise<FileRef>` instead of the capability's JSON
+metadata. `FileRef` exposes an opaque `id`, optional `name`, `mediaType` and exact
+`size`; it has no body, bytes, URL or download method. The body stays outside the
+sandbox and its 256 KiB bridge budget. Write stream methods with a `file` metadata
+input accept that reference and return the completed import's ordinary data.
+Core checks both providers' advertised limits and exact body length.
+
+A reference belongs to its issuing Code, immutable version, run, generation and
+mandate. It expires at the earlier of the provider's expiry and run-token deadline.
+Only that run may spend it, once, even if two imports race or the first fails.
+To recover after failure, inspect the destination's recorded outcome before
+reading a fresh reference and repeating the intended import with the same
+business idempotency key. A lost response does not imply that publication failed.
+
+Core rechecks current policy and source access when redeeming, and the destination
+checks its own access both when preparing and publishing the import. This example
+tags mail only after publication. Streaming Actions retain the normal Code policy
+and approval rules. Streams without the generic `file` input remain unavailable
+to Code; [Binary streams](/en/docs/platform/capabilities#binary-streams) describes
+the provider contract.
+
+## Generate a file
+
+Lasting Code can generate a file and pass its FileRef to a receiving app's
+Action. Read the `core` SDK declarations for the current inputs:
+
+| Helper | Output |
+| --- | --- |
+| `pdf.render({ name, html, title?, headerHtml?, footerHtml?, page?, tagged? })` | PDF from offline HTML; scripts and remote resources are disabled. |
+| `sheet.toCsv({ name, rows, delimiter?, bom? })` | UTF-8 CSV. Semicolon is the default separator; comma-separated files use dot decimals, other separators use the request locale. Text cells cannot become formulas. |
+| `sheet.toOds({ name, sheets })` | OpenDocument spreadsheet of plain cells. Worksheet names are unique, at most 31 characters. |
+| `finance.datev({ name, batch })` | DATEV CSV using stdlib's validation and exact amount strings. |
+| `finance.sepa({ name, batch })` | SEPA SCT XML using stdlib's validation and exact amount strings. |
+| `chart.render({ name, chart })` | SVG from the same checked chart description as Code pages, including a title. |
+
+Each helper is an alias of an ordinary versioned Core read Query under
+`core.file.*.v1`. The checker records its operation and `read` policy. File
+generation does not start an effect; storing or sending belongs to the
+receiving app's Action, with that app's access, review and idempotency rules.
+An existing app export keeps its name if it collides with a helper alias; use
+the corresponding `core.file.<helper>.<method>.v1` from the SDK in that case.
+
+```ts
+import { app, sheet, imports } from "@sdk";
+
+app.schedule({ cron: "0 8 * * 1", name: "weekly-file" }, async c => {
+  const file = await sheet.toCsv({
+    name: "weekly.csv",
+    rows: [{ item: "Example", amount: 12.5 }],
+  });
+  await imports.import({ file, idempotencyKey: `weekly-file:${c.scheduledAt ?? c.runId}` });
+});
+export default app;
+```
+
+`imports` is a fictional receiving app with a write Action whose input names
+`file`. Choose a compatible Action from the live SDK. Files offers
+`file.save.v1` and Mail offers `draft.attachment.import.v1` as receiving
+Actions; their existing confirmation and permission rules apply.
+
+Generation input fits the ordinary 256 KiB capability request budget. A run can
+attempt at most 64 files of up to 50 MiB each within a combined 250 MiB output
+budget. In-progress and failed generation reserve budget too. Calls outside a
+Code run share the same limits per principal for ten minutes. Temporary output
+is encrypted, single-use and expires after ten minutes; its run-bound FileRef
+expires earlier when the run-token deadline does. Cancellation stops new work
+and propagates to PDF rendering. PDF generation needs the operator's existing
+Gotenberg configuration. Finance generation neither submits payments nor
+claims bank acceptance or XSD validation.
+
+## Pass a Gustav chat attachment to an app
+
+`assistant.chat.file.read.v1({ chatId, path })` opens one exact file from the
+person's chat as a read stream. Its generated SDK method returns the same
+FileRef that a receiving Action's `file` input accepts. Use an ID and path
+returned by the chat's file list; neither is a grant.
+
+The read checks chat ownership, archive state, allowed tools and current Project
+access when issuing the stream and again on transfer. It pins the file revision
+and checks its size before loading bytes, up to 50 MiB. A different account,
+changed or deleted file, expired stream or second use fails. The stream lives
+ten minutes at most. The receiving Code host enforces its existing aggregate
+transfer limits and keeps the FileRef local to that run.
+Resource-owned Code cannot borrow a person's chat access.
+
+### Save in Files or attach to a Mail draft
+
+These one-off `code_run` examples use the current person's capability service.
+Replace the example IDs with exact IDs from authorized readers. Each call has
+its own idempotency key. Read the chat file again before each destination,
+because one FileRef can be used only once.
+
+Files accepts the storage-root entry target from `files.bases.list` and a path
+relative to that base, as its other upload Action does. It saves up
+to 50 MiB, with the same quota and versioning as an upload. The default
+`onConflict: "error"` refuses a taken name. To replace, read the file's current
+revision and pass `onConflict: "overwrite"` and `expectedRevision` with a new
+key; replacement asks again. Creating a file may remember approval for its
+storage base, except under an active public download share. This Action does
+not run unattended.
+
+<!-- chat-file-files-example -->
+```ts
+import { assistant, files } from "@sdk";
+
+export default async () => {
+  const file = await assistant.chat.file.read.v1({ chatId: "chat-one", path: "/report.csv" });
+  return files.entry("Root001").file.save.v1({
+    path: "Reports/report.csv", file,
+    idempotencyKey: "save-report:chat-one:revision-one",
+  });
+};
+```
+
+Mail accepts the same FileRef and a current `draft.read` revision. It requires
+write access and an available editor lock. Its limit is 100 MiB per attachment
+and in total per draft, with the existing attachment count limit. Chat files
+remain limited to 50 MiB. The Action uses the same `shared` policy as
+`draft.attachment.add`; it never sends the message.
+
+<!-- chat-file-mail-example -->
+```ts
+import { assistant, mail } from "@sdk";
+
+export default async () => {
+  const file = await assistant.chat.file.read.v1({ chatId: "chat-one", path: "/report.csv" });
+  return mail.mailbox("Mbx001").draft.attachment.import.v1({
+    draftId: "Drf001", expectedRevision: 2, file,
+    idempotencyKey: "attach-report:chat-one:revision-one",
+  });
+};
+```
+
+Both Actions prepare a write stream and return the final receipt only after
+publication. After a lost answer, inspect stream status before retrying with
+a fresh chat FileRef and the same key. A completed Mail transfer replays its
+original committed revision and never attaches twice. A cancelled Mail transfer
+cannot resume: use a new key after confirming cancellation. An incomplete
+transfer must be cancelled before a new one; abandoned Mail uploads are
+reclaimed by its existing upload cleanup.
+
+For chat-attachment integration, the one-off chat host must invoke this Query
+through its current person's capability service. The existing stream dispatcher
+supports registering that read stream as a run-local FileRef and accepting it
+in a destination SDK write call. Automatic attachment selection in the chat
+host is a separate integration step.
+This adds no URL, bearer credential or separate file-download endpoint.
+
+## Return a page
+
+Start with a TSX page:
+
+```sh
+cld code init --title 'Workshop' --owner-type work-shop.workshop --owner-id workshop-owner
+cld code sdk pull ./code/work-shop/workshop-owner
+cld code check ./code/work-shop/workshop-owner
+```
+ Resource- and app-owned projects start with
+`code.tsx`; personal projects start with a schedule and can add routes and pages
+the same way.
+
+Build a page from blocks and return it with `c.page(...)`. In a `.tsx` entry
+file, import `jsx` and the blocks from `@sdk`. The checker compiles TSX with
+this factory. The generated `tsconfig.json` includes `.ts` and `.tsx` files and
+sets `jsx: "react"` with `jsxFactory: "jsx"`. No React, Hono or Solid runtime is
+needed.
+
+<!-- code-page-example -->
+```tsx
+import { app, jsx, Page, Stats, Stat, Section, Chart, Table, Column, Form, Field, Option } from "@sdk";
+
+const items = [{ item: "Chair", status: "In repair", count: 2 }, { item: "Lamp", status: "Ready", count: 5 }];
+
+app.get("/", c => c.page(
+  <Page title="Workshop" subtitle="As of 09:40" icon="ti ti-tool" color="blue">
+    <Stats>
+      <Stat label="Received" value={128} delta={{ value: 0.12, better: "up" }} compare={{ label: "Last week", value: 114 }} />
+      <Stat label="Revenue" value={4610} format={{ style: "currency", currency: "EUR" }} />
+    </Stats>
+    <Section title="Today" icon="ti ti-calendar-event" color="blue">
+      <Chart.Bar width="twoThirds" title="Items per status" data={[{ label: "Received", value: 12 }, { label: "Ready", value: 4 }]} />
+      <Form width="third" title="Find an item" action="/find" submit="Find">
+        <Field.Scan name="barcode" label="Barcode" required />
+        <Field.Select name="status" label="Status" value="open">
+          <Option value="open" label="Open" />
+          <Option value="done" label="Done" />
+        </Field.Select>
+      </Form>
+      <Table title="Items" rows={items}>
+        <Column key="item" label="Item" />
+        <Column key="status" label="Status" />
+        <Column key="count" label="Count" />
+      </Table>
+    </Section>
+  </Page>
+));
+app.post("/find", async c => {
+  const form = await c.req.formData();
+  return c.redirect(`/items/${encodeURIComponent(String(form.get("barcode") ?? ""))}`);
+});
+export default app;
+```
+
+Blocks take typed props: an unknown prop or a value of the wrong type is a
+type error in your editor and in `cld code check`. An optional prop set to
+`undefined`, such as `error={errors.name}`, counts as absent. Data, such as a table's
+`rows` or a chart's `data`, is a prop; the parts of a block are its children.
+A part outside its block, or another element among a block's parts, fails
+`cld code check` with `code_page_child`; one kept in a variable fails when the
+route builds the page. Parts may come from data, such as
+`{statuses.map(status => <Option value={status} label={status} />)}`. Only
+pages built from blocks reach `c.page`; a hand-written object does not.
+
+| Block | Props | Children |
+| --- | --- | --- |
+| `Page` | `title`, optional `eyebrow`, `subtitle`, `asOf`, `icon`, `color`, `follow`; the root of every page | blocks |
+| `Section` | `title`, optional `description`, `icon`, `color` | blocks |
+| `Stats` | none | 1–6 `Stat` |
+| `Stat` | `label`, `value` (number, text or `null`), optional `format`, `icon`, `tone`, `delta`, `compare`, `trend` | none |
+| `Text` | none | text |
+| `Heading` | optional `level: 2 \| 3 \| 4` | text |
+| `Table` | `title`, `rows` of scalar values, optional `subtitle`, `search`, `empty` text and `width` | 1–20 `Column` |
+| `Column` | `key` (the row field), `label`, optional `type`, `format`, `states`, `priority` | none |
+| `Detail` | `title`, optional `width` and `height` | up to 100 `Item` |
+| `Item` | `label`, `value`, optional number `format` | none |
+| `Form` | `title`, `action`, `submit`, optional `width`; always POST | 1–40 `Field.*` |
+| `Field.Text`, `Field.Email`, `Field.Textarea`, `Field.Scan` | `name`, `label`, optional text `value`, `required`, `error` | none |
+| `Field.Number` | as above, number `value` | none |
+| `Field.Checkbox` | as above, boolean `value` | none |
+| `Field.Select` | as above, text `value` | `Option` |
+| `Option` | `value`, `label` | none |
+| `Chart.Bar`, `Chart.Line`, … | the chart's own props, such as `title`, `data` or `series`, optional `width` and `height` | none |
+| `Chart.Empty` | `title`, `empty`, optional `width` and `height` | none |
+| `Link` | `label`, `href` | none |
+| `Button` | `label`, `action`, optional string `values`; always POST | none |
+| `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` | none |
+
+Field names are unique; `_csrf` is reserved. On non-public pages, Cloud inserts
+the session-bound CSRF token into forms and actions and removes it before
+invoking the handler. Public forms and actions omit the token and must target
+public POST routes; open a non-public page before using its private actions.
+Links and POST destinations resolve inside `/code/<id>/`; they cannot leave that Code.
+
+Core checks every page before drawing it, whatever produced it. Text is
+escaped. HTML, SVG, event handlers, functions, accessors, foreign links and
+anything not built from these blocks are rejected. `c.html()` is unavailable.
+
+### Lay out a page
+
+A page reads like a Cloud dashboard: the head with the page's `icon` in a soft
+chip of its `color`, a short `eyebrow` that places the page (such as its
+source), the `title`, and a quiet line with the `subtitle` and when the data
+was read; then key figures, then sections. `asOf` is that read time as an ISO
+date-time, such as `new Date().toISOString()`; Cloud shows it in the reader's
+language and time zone. A `Section` names a topic with an optional `icon`, `color` and
+`description` beside its title.
+
+Blocks sit on a grid of six columns. Charts, `Table`, `Detail` and `Form`
+are framed panels; `width` gives a panel `third`, `half`, `twoThirds` or
+`full` (the default) of its row, and `height` gives a chart's or a detail's
+content `sm` (200 px), `md` (300 px) or `lg` (400 px); a table is as tall as its
+rows. Panels in one row share its height. The grid
+measures its own width: up to 1,000 px a third takes half a row and two thirds
+the whole row, up to 600 px every panel takes the row. All other blocks take
+the whole row.
+
+`Stats` shows up to six key figures in one row. A `Stat` has a `label` and a
+`value` (number, text or `null` for not counted), and optionally a `format`
+(the chart number format: `style`, `currency`, `unit`, `decimals`, `compact`),
+a `delta` with the change since the comparison (`value` is a share,
+`0.082` for 8.2 %; with `unit: "points"` it is percentage points), its
+`better` direction (`up` or `down`, which colours the change), a `compare`
+with `label` and `value`, and a `trend` of up to 60 numbers. `icon` sits in a
+chip of its `tone` colour.
+
+A `Column`'s `type` says what it holds: `text`, `number`, `date`, `status`,
+`bar`, `amount`, `flow` or `delta`. It decides alignment, the shown text and
+sorting. A `status` column shows a badge from `states`, such as
+`{ sending: { label: "Sending", tone: "running" } }` (tones `info`, `ok`,
+`warning`, `error`, `degraded`, `running`, `neutral`); `amount` and `flow` show
+money in the column's `format` currency. A table's `format` has `style`,
+`currency`, `decimals` and `compact`; put a unit into the column's label. A column of numbers without a `type`
+reads as numbers. `priority` 2 or 3 lets a column give way on a narrow screen,
+and `search` puts a search field in the table's head.
+
+`icon` is a Tabler class such as `ti ti-package`. `color` is one of `zinc`,
+`blue`, `emerald`, `amber` and `red`; the AI colour is reserved. A chart needs
+at least one value, so a chart with nothing to draw yet is
+`<Chart.Empty title="Items per status" empty="No item arrived today." />`: the
+frame keeps its title and place and says why it is empty.
+
+Cloud draws every block with its shared components, on the server and again in
+the browser with the same result, in light and dark and at phone width. Key
+figures, charts, tables and details are the same panels Chat, Pulse and the
+chart catalog draw, with the same loading, empty and stale states: when a live
+reload fails, every panel keeps its data and says when it was read, with
+**Try again**. A chart can switch to its data table. There is one chart block
+per kind of the portable chart data of `@k2b/editor/chart-schema`, such as
+`Chart.Bar`, `Chart.Line`, `Chart.Area`, `Chart.Heatmap`, `Chart.Waterfall` or `Chart.Sankey`;
+a kind the chart data gains becomes a block of its own. A table sorts by any column
+and shows `empty`, or a default text, when it has no rows. Neighbouring
+`Button` blocks share one row.
+
+For nested counts, `Chart.Bar` also accepts `layout: "nested"`, `marks: "dots"`,
+a positive `total`, an even `dots` count and aligned `x`/`series`. Each later
+series must fit inside the preceding one; unused capacity stays grey. Dots remain
+part of the `bar` description in `CodeChartDescription`.
+
+Line charts support `forecast`, `marker`, `threshold`, `zero`, `step`, and
+`legendValues`. With forecast, zero, threshold, marker, or legendValues enabled,
+an observation's `y: null` leaves a gap.
+
+A `scan` field is a text field with a **Scan** button. The button opens the
+device camera in Cloud's QR code scanner; the read text goes into the field and
+nothing is sent until the form is submitted. Typing, or a handheld scanner that
+types, works the same way. When the camera cannot start, the field says why.
+
+Forms and actions send without reloading the document. While a POST runs, its
+button shows that it is busy and nothing else on the page moves. A handler
+answers with a page or a redirect:
+
+- `c.page(...)` replaces the page in place. To report invalid input, return
+  the form again with the submitted values and an `error` on each field.
+- `c.redirect(path)` opens that page of this Code; Back returns to the
+  previous one.
+- `c.json` or `c.text` count as done; Cloud then loads the current page again.
+
+A failed form keeps its input and names the problem beside its button; a failed
+action names it in a notification. When the answer is lost, the page says that
+the step may have run. Cloud never repeats a POST by itself. Focus continues at
+the first field with an `error`, or at the heading of a new page. Without
+JavaScript, forms and actions submit as normal HTML forms.
+
+`follow` lists up to eight event types, such as `grids.record.changed`, after
+which Cloud loads the page again for its viewer through the same route. Several
+events in a row lead to one load. While the viewer is typing in a form, Cloud
+offers the new data in a notification instead of replacing their input. A
+following page also loads again when its tab becomes visible. Delivery of
+platform events to open pages arrives with the event service; until then only
+the return to the tab reloads a following page.
+
+A page is limited to 64 KiB, 256 blocks and 12 levels of nesting. A table has at most
+200 rows and 20 columns; a form has at most 40 fields. Portable chart budgets
+are eight series, 200 values per series and 1,600 marks. Request and response
+limits still apply to the complete envelope.
+
+### Where a page appears
+
+A page appears inside the Cloud layout, like every Cloud page, in the app card
+every app has from 768 px, without a sidebar. Signed-in people see it in their
+workspace, with the icon bar and their apps. Visitors
+who are not signed in, on a public route, see the signed-out header with the
+Cloud logo and **Sign in**, as on the legal pages; signing in returns to the
+page. Someone who opens a non-public page in a browser without a session goes
+to sign-in and comes back to it.
+
+Every Code page, with or without the layout, carries a small **Made with
+feat/code** label at the bottom edge. Cloud draws it outside the page, so a page
+cannot hide, move or restyle it. A press on it explains that someone built the
+page with feat/code and warns never to enter passwords or recovery codes there.
+While a page has a form, a quiet line beside the label says **Do not enter
+passwords here.** without a press. The label does not name the owner. Fields
+have no password or masked type and no credential autocomplete, so a page
+cannot ask for passwords like a sign-in form.
+
+`{ layout: "plain" }` on a route draws its pages alone, without the layout, for
+a page you hand out. There is no setting for the whole Code; each route
+decides. This public survey in personal Code files each answer as a Space task.
+A public route has no visitor, so it checks something else, here the closing
+date; it reads and writes with the Code's rights and shows only the form:
+
+<!-- code-survey-example -->
+```tsx
+import { app, Field, Form, jsx, Notice, Option, Page, spaces } from "@sdk";
+
+// Fictional Space ID; read the real one with spaces.space.list and keep it as a constant.
+const SPACE_ID = "Spc001";
+const space = spaces.space(SPACE_ID);
+// The last day for answers (UTC).
+const CLOSES = "2026-12-31";
+const RATINGS = ["5", "4", "3", "2", "1"];
+type Answer = { rating: string; comment: string };
+const issue = (message?: string) => (message ? { error: message } : {});
+const isClosed = () => new Date().toISOString().slice(0, 10) > CLOSES;
+
+const survey = (token: string, answer: Answer, errors: Partial<Answer> = {}) => (
+  <Page title="How was the workshop?" subtitle="Two questions, no sign-in needed" icon="ti ti-message-star" color="blue">
+    <Form title="Your feedback" action={`/answer/${token}`} submit="Send">
+      <Field.Select name="rating" label="How useful was it? (5 = very)" value={answer.rating} {...issue(errors.rating)} required>
+        {RATINGS.map(rating => <Option value={rating} label={rating} />)}
+      </Field.Select>
+      <Field.Textarea name="comment" label="What should we change?" value={answer.comment} {...issue(errors.comment)} />
+    </Form>
+  </Page>
+);
+const closed = (
+  <Page title="How was the workshop?" icon="ti ti-message-star" color="blue">
+    <Notice tone="info" title="The survey has closed" text="Thank you for your interest." />
+  </Page>
+);
+
+// Public, without the Cloud layout: the page stands alone, like a form you hand out.
+// A public route never sees who is signed in: c.user is always null, also for signed-in visitors. A page that
+// recognises its visitors leaves out public; then every signed-in member sees it and c.user names them.
+app.get("/", c => c.page(isClosed() ? closed : survey(crypto.randomUUID(), { rating: "", comment: "" })), {
+  public: true,
+  layout: "plain",
+});
+
+app.post("/answer/:token", async c => {
+  // The check: answers count only while the survey is open.
+  if (isClosed()) return c.page(closed);
+  // A changed address starts a new form.
+  const token = /^[0-9a-f-]{36}$/.test(c.req.param("token")) ? c.req.param("token") : crypto.randomUUID();
+  const form = await c.req.formData();
+  const answer: Answer = { rating: String(form.get("rating") ?? ""), comment: String(form.get("comment") ?? "").trim() };
+  const errors: Partial<Answer> = {};
+  if (!RATINGS.includes(answer.rating)) errors.rating = "Choose a rating.";
+  if (answer.comment.length > 1000) errors.comment = "Keep it under 1,000 characters.";
+  if (Object.keys(errors).length) return c.page(survey(token, answer, errors));
+  await space.task.create({
+    title: `Workshop feedback: ${answer.rating} of 5`,
+    ...(answer.comment ? { description: answer.comment } : {}),
+    idempotencyKey: `survey:${token}`,
+  });
+  return c.page(
+    <Page title="Thank you" icon="ti ti-message-star" color="blue">
+      <Notice tone="success" title="Your answer arrived" text="You can close this page." />
+    </Page>,
+  );
+}, { public: true, layout: "plain" });
+
+export default app;
+```
+
+## Call operations on a handle
+
+For a provider that declares a `workshop` Type and an `item.create` Action
+with `target: "workshop"` and `idempotency: "required"`:
+
+```ts
+import { app, owner, work_shop } from "@sdk";
+
+const destination = work_shop.workshop("workshop-finance");
+
+app.schedule({ cron: "0 8 * * 1", name: "weekly-review" }, async () => {
+  await destination.item.create({
+    title: "Weekly review",
+    idempotencyKey: "weekly-review:2026-11-02",
+  });
+});
+
+export default app;
+```
+
+Without `sdkExportName`, `work_shop` is the export for app ID `work-shop`. Hyphens become
+underscores; reserved export names receive an underscore prefix, such as
+`default` → `_default`. The generation manifest records the mapping.
+
+A handle offers only operations whose `target` is its Type. An operation
+without a target belongs directly to `work_shop`, such as
+`work_shop.catalog.list({})`. Method paths preserve the
+operation's local ID: `item.create` becomes `.item.create(...)`. A callable
+method can also have child methods, such as `.keep(...)` and `.keep.release(...)`.
+A resource factory can share a namespace with app methods: `customers.customer(id)`
+returns a handle while `customers.customer.search(...)` calls an app Query.
+The callable node carries both contracts. Generation rejects an app method whose
+full path equals a factory and top-level `id` or `type` paths. A resource Type
+named `app` keeps its typed `.app(id)` factory beside direct app methods.
+The zero-argument `.app()` factory is removed.
+Use string literals for element access, such as `core["ai"].generate(...)`;
+computed keys are rejected. Keep app namespace aliases as inferred constants,
+such as `const ai = core.ai;` then `await ai.generate(...)`. Resource handles and
+factories can also use inferred `const` aliases. Pass handles as declared refs
+into SDK calls. SDK values cannot be structurally erased through unions, type
+annotations, casts or helper arguments; pass data to a helper and call the SDK
+inside it. Methods themselves must stay attached to their namespace.
+`owner` is the fixed resource or application handle supplied when generating
+resource-owned Code. A handle grants no access: the dispatcher and the owning
+application check permissions on every call.
+
+All Code modes accept string IDs, including values from Query results and
+dynamic templates. Literal IDs remain visible in checker review evidence;
+dynamic ones retain only their Type there. The target checks the account's
+current rights at execution. A handle or setting that names a target grants
+no access.
+
+## Omit empty inputs and reuse named types
+
+When an operation requires no input fields, additional targets or retry key,
+call it without an argument: `spaces.space.list()`. Passing `{}` remains valid.
+Required fields, refs and `idempotencyKey` still require an input object.
+
+Each operation exports types named after its application and local path, such
+as `Mail_Message_ReadInput` and `Mail_Message_ReadData`. Import them from `@sdk`
+for helper parameters. Their concise JSDoc describes the operation and its fields.
+Repeated schemas are declared once and referenced across operations. Nested
+structures can share a declaration even when their field descriptions differ;
+shared shapes keep the first concise set of field descriptions. Operation root
+types retain their own field documentation.
+Names retain the app and path boundaries, independently of catalog order.
+Hyphens and underscores in IDs are encoded as `$h` and `$u`.
+The numbered `InputN` and `DataN` declarations remain compatibility aliases;
+prefer the named types because numbers depend on the selected catalog.
+
+## Read query results and follow cursors
+
+Queries returning domain data resolve to `CodeQueryResult<T>`, with typed
+`data` and optional `page` from the capability result envelope:
+
+```ts
+type CodeQueryResult<T> = {
+  data: T;
+  page?: { hasMore: true; nextCursor: string } | { hasMore: false };
+};
+```
+
+Use `const { data, page } = await handle.list(input)`. This applies to all
+Queries returning domain data, including reads and AI calls. Streaming reads
+return their existing `FileRef`; Actions return their domain data directly.
+Existing Code that reads Query fields directly must read them from `data` and
+pull the current SDK before checking and publishing again.
+
+For a paginated Query, pass `page.nextCursor` unchanged as the next input's
+`cursor`. Stop when `page` is absent or `page.hasMore` is false. Choose an
+explicit page or item budget for the task; each page consumes one ordinary
+capability call from the existing per-run limit. Reaching that limit fails
+with `code_call_limit`; pagination never resets it.
+
+For example, this helper reads at most three pages from a fictional workshop
+provider's `stock.list` Query:
+
+<!-- code-query-pagination -->
+```ts
+import { work_shop } from "@sdk";
+
+export default async function readStock() {
+  const workshop = work_shop.workshop("workshop-finance");
+  let cursor: string | undefined;
+  const rows = [];
+  for (let pageNumber = 0; pageNumber < 3; pageNumber++) {
+    const { data, page } = await workshop.stock.list({ cursor });
+    rows.push(...data.rows);
+    if (!page?.hasMore) return { rows, complete: true };
+    cursor = page.nextCursor;
+  }
+  return { rows, complete: false, cursor };
+}
+```
+
+`complete: false` lets the caller distinguish a deliberately capped read from
+an exhausted list. The same envelope applies to built-in Queries such as
+`mail.conversation.list` and `spaces.task.list`; their generated inputs and
+domain data retain each provider's own schema.
+
+## Supply additional targets and retry keys
+
+If an Action declares `refs: { destination: "workshop" }`, pass another
+workshop handle as `destination`. A plain ID or `{ type, id }` object does not
+satisfy the handle type.
+
+```ts
+await owner.item.move({
+  itemId: "item-in-owner",
+  destination: work_shop.workshop("workshop-finance"),
+});
+```
+
+The SDK removes ref fields from domain input and writes their coordinates into
+`call.refs`. It similarly lifts an Action's `idempotencyKey` into
+`metadata.idempotencyKey`. The key is required when the Action declares
+`idempotency: "required"`. Actions with `idempotency: "none"` reject a key,
+matching the dispatcher contract. Choose a stable key from
+the business operation, such as a message ID and revision. Keys are trimmed,
+contain 1–200 visible ASCII characters, and cannot contain spaces. Repeating a key
+has the platform's existing idempotency retention of at least 24 hours.
+All Actions, including chat delivery and chat turns, use the same scope:
+acting user or service account, capability and key, across runs. Personal Codes of one owner share this scope; prefix keys with the Code or business process and the intended occurrence.
+
+Methods resolve the operation's domain `data`, typed from `dataSchema`.
+Bridge refusals reject the promise; catch a failure only when the Code can
+recover. Read streams return opaque `FileRef` values; write streams need a `file` input.
+Other write streams, Actions marked `code: false`, and app-only Queries are
+absent from the SDK.
+
+## Choose the execution mode
+
+| Mode | Handle IDs | `app` | `owner` |
+| --- | --- | --- | --- |
+| `resource` | Dynamic strings allowed | Available | Required fixed resource or app |
+| `personal` | Dynamic strings allowed | Available | Absent |
+| `code_run` | Dynamic strings allowed | Absent | Absent |
+
+`code_run` uses the same operation signatures for one chat execution. It has
+no schedule registrations, version or owner. The chat execution path still
+asks for writing Actions as required by the normal approval policy.
+
+## Handle SDK errors
+
+SDK calls reject with `CodeError`, imported from `@sdk`. `KnownCodeErrorCode`
+lists platform codes; `CodeErrorCode` also accepts application-defined strings.
+Error strings keep their existing values. The checker still reports
+`code_code_false` and additionally supplies `aliases: ["code_false"]`.
+Checker messages follow the request locale (English fallback); codes do not.
+An unknown operation includes an “exists under `<path>`” hint when that
+operation is available at another SDK path.
+
+`CodeError` extends `Error`
+and exposes `{ code, status, message, details }`. Compare lowercase snake_case
+`code`, rather than parsing `message`. A target's 403 and 404 remain distinct
+in `status`; local validation uses 400 and unavailable transports use 503.
+`details` is null or safe structured metadata, such as an undeclared origin.
+
+## Schedule a recurring local time
+
+For a recurring local time, declare the cron expression and an IANA time zone
+on the first argument. Keep the declaration at module level and use constants,
+including imported `as const` objects:
+
+```ts
+app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async () => {
+  // Runs at 09:00 in Berlin, including after a daylight-saving change.
+});
+```
+
+Use one schedule object: `{ cron | at, timeZone?, name, title? }`. Without
+`timeZone`, Core uses the Cloud instance's default time zone (`app.timezone`,
+configured in Administration). Put `name` and `title` in this same object. A local minute skipped by the spring clock
+change does not run, and a repeated autumn minute runs once, at its first
+occurrence. The checked manifest retains the declared `timeZone`.
+
+The handler receives `{ runId, scheduledAt, input }`. `runId` identifies the
+same durable run on retries. `scheduledAt` is the original tick's ISO instant,
+retained when explicitly rerunning a failed tick,
+or `null` for a manual start. `input` is the manual `core.code.run` input,
+or `null` for a tick. Use `scheduledAt` in occurrence keys so a delayed retry
+keeps the original identity; use `runId` for a distinct effect per manual run.
+
+## Run once at a chosen time
+
+Pass an absolute date-time and an IANA time zone instead of a cron string:
+
+```ts
+app.schedule({ at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin", name: "summary-once", title: "Send summary" },
+  sendSummary);
+```
+
+The declared fields must be constants. `at` includes seconds and `Z` or a numeric UTC offset and
+selects the exact instant; optional `timeZone` controls its displayed local
+time and otherwise inherits `app.timezone`. The handler registers when the module
+loads and runs only when Core admits the due entrypoint. A changed date needs
+a new checked version and activation. Keep the name to retain the automation's
+identity. Manual starts remain available independently of its scheduled run.
+
+Core admits a due one-time schedule on its next recovery pass, normally within
+five seconds. It can recover it after downtime for seven days. Older dates do
+not run automatically. The run has the same retry and approval rules as a cron tick. If its previous
+run is queued or running, the one-time date stays pending until that run ends
+or the recovery window expires. A consumed date does not run again after a restart or version
+activation. The automation list shows its `at`, `timeZone`, and a null
+`nextRunAt` once consumed or expired.
+
+## Deliver a result to your Gustav chat
+
+Personal Code can append a result to one of its owner's own active Assistant
+chats through `core.ai.chat(chatId).deliver`. Discover the actual chat ID and generated
+handle before writing the call:
+
+```ts
+import { app, core } from "@sdk";
+
+app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async ({ runId, scheduledAt }) => {
+  await core.ai.chat("Chat23").deliver({
+    text: "Your weekly report is ready.",
+    idempotencyKey: `weekly-report:${scheduledAt ?? runId}`,
+  });
+});
+export default app;
+```
+
+`Chat23` is an example, not a destination to copy. Delivery appends an assistant
+message and marks the chat unread; it does not start another AI turn. Cloud
+keeps each delivery as its own answer. A result arriving during an interactive
+turn enters model context on the next turn and survives the current turn's
+compaction. Cloud
+creates the existing Assistant response notification on its next recovery pass,
+normally within one minute, subject to the owner's notification preferences.
+Text must contain 1–10,000 characters after trimming. Use one stable effect key
+per delivery: it is scoped across runs for this principal and capability, so retrying returns the original
+message instead of appending another. Reusing that key for different text or a
+different destination returns `idempotency_conflict`.
+
+Only personal Code can use this Action. Resource- and app-owned Code, ordinary
+interactive callers, archived chats and another person's chats are refused.
+The Action uses the `silent: "you"` policy and appears in the run's normal
+capability call log. It performs no model inference and consumes no Code AI
+budget.
+
+## Start a Gustav turn in your own chat
+
+Personal Code uses `core.ai.chat(chatId).run` when the task needs Gustav to choose and
+use tools. Discover the owner's chat ID and the generated handle first:
+
+```ts
+import { app, core } from "@sdk";
+
+app.schedule({ at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin", name: "morning-review", title: "Review open work" },
+  async ({ runId, scheduledAt }) => {
+    const run = await core.ai.chat("Chat23").run({
+      prompt: "Review my open work and prepare a short plan in this chat.",
+      idempotencyKey: `morning-review:${scheduledAt ?? runId}`,
+    });
+    console.log(run.id, run.status);
+  });
+export default app;
+```
+
+`Chat23` is a fictional destination. Keep the routine's actual time zone.
+For recurring routines, use `{ cron, timeZone }` to preserve the routine's time
+zone. The Action accepts a trimmed prompt of
+1–10,000 characters and optional `context` of at most 10,000 characters.
+Context is source data, not additional authority or trusted instructions.
+
+The result contains `id`, `chatId`, `status`, `reason` and `origin`. It returns
+promptly with `queued`, `running`, `waiting_for_approval`, `waiting_for_input`,
+`completed` or `failed`. A later
+`core.ai.chat("Chat23").run.read({ id: run.id })` reads one current
+snapshot. Finish the Code run when approval is needed; the owner decides in
+the chat, and the ordinary chat worker continues the same turn. Do not poll
+until the owner answers. A busy chat returns `chat_busy`; try a later schedule
+or manual run after its current turn ends.
+
+Only the personal Code owner may target their own active chat. Sharing Code
+with a reader grants no chat authority. Resource- and app-owned Code cannot
+start these turns. Each turn uses the owner's current model grants, tools and
+approval rules, without passing the Code mandate to its tools. Billable
+inference charges actual usage to the owner's normal interactive Assistant allowance,
+with no flat Code attempt debit. Existing daily Code USD limits include that
+actual cost; normal model step
+and turn time limits still apply. The chat and run show “Started by Code
+{name}” (or “Gestartet von Code {name}”). The invoking Code keeps its ordinary
+capability call log.
+
+One stable key identifies one intended turn across Code runs for at least 24 hours. Repeating it recovers
+the original turn, even after its allowance is exhausted; the admission reply
+may be replayed. Read `ai.chat.run.read` to get the current state.
+Changing the prompt, context or destination under that key returns
+`idempotency_conflict`. Use a different occurrence key for the next intended turn.
+See [chat turn capability](/en/docs/platform/capabilities#start-personal-code-chat-turns)
+for the daily admission cap and budget error codes.
+
+## Name an automation
+
+Give a schedule a stable name for manual execution and an optional readable
+title in the schedule options object:
+
+```ts
+app.schedule({ cron: "0 8 * * 1", name: "weekly-review",
+  title: "Weekly review",
+}, weeklyReview);
+```
+
+`title` is optional. It is trimmed, must contain 1–200 characters, and must be
+one line of plain text without HTML markup or control/format characters.
+Cloud displays it as escaped text. Declare a constant title; imported options
+need literal types, for example `as const`. The title appears wherever people
+see the automation; without one, Cloud names it by what starts it (an event
+and its place, a page's method and path, or a schedule's time) and otherwise
+shows its identifier. Changing a title
+creates a new checked version with the usual review and activation rules.
+Titles need not be unique; the stable name identifies the automation.
+
+Names contain letters,
+digits, dots, underscores or hyphens, start with a letter or digit, and must be
+unique in the module. Keep the name across versions to identify the same task.
+
+## React to resource events
+
+Personal, resource-owned and app-owned Code can react to a declared automation
+event at a place its executing account can read. Pass a handle from the flat
+SDK to select the place:
+
+```ts
+import { app, spaces, notebooks } from "@sdk";
+
+app.on(spaces.space("Spc001"), "spaces.item.due", async event => {
+  // Read the task through spaces.item.read({ id: event.subject.id }).
+});
+app.on(notebooks.notebook("Ntb001"), "notebooks.note.created", async event => {
+  // event.place is the notebook; event.subject is the new note.
+});
+export default app;
+```
+
+Use event names offered by the generated SDK. The event must declare the
+handle's type as its place. Event names and place IDs must be constants at
+module level. One handler per event and place is allowed; combine rules for
+that pair inside its handler. The same event may have handlers at several
+places. Events without a place and declarations with `automation: false`
+cannot start Code.
+
+Without a handle, `app.on(event, handler)` still uses the resource that owns
+this Code. For example, mailbox Code can keep
+`app.on("mail.message.received", handler)` unchanged. Personal Code has no
+implicit place and must supply a handle.
+
+The handler receives the typed reference envelope: `id`, `type`, `version`,
+`source`, `time`, `subject`, `place`, optional `cause`, and `data`. Data stays
+reference-only; the event grants no access. Actual SDK calls still check their
+current target permissions. Share each event place
+with the executing account before activation. Personal Code uses its owner's
+account, including its current source-app access; resource-owned and app-owned
+Code use their dedicated Code account.
+Activation refuses a place the account cannot read. Cloud checks again before
+every run, including catch-up, retries and deliberate reruns. A withdrawn
+share prevents the next run; Runs shows that the account can no longer read
+the event place, with retry available after access is restored.
+
+Checking records each exact place, event and version in the immutable manifest
+shown in the version approval. The checked bundle and Core refuse an event
+from any other place. Activation installs these subscriptions with the
+approved version's execution mandate. Own-place entrypoints retain
+`event:<event-type>@<version>`; foreign-place entrypoints use a checked `:place:<index>` suffix.
+Read the event metadata for the exact place; the name stays within the Runner
+entrypoint budget even when the place has a long identifier. Runs for one Code and place execute in order without overlapping,
+even across different event types. Existing run, backlog and capability
+budgets apply; `core.code.event_backlog` also bounds registrations per Code.
+See [Code runs](/en/docs/platform/code-runs#understand-event-deliveries) for
+pause, replay, deduplication and queue behavior.
+
+For an incoming-mail pattern, ordered helper functions, catch-up and real-message
+preview, see [Mail automations with Code](/en/docs/platform/mail-code-automations).
+
+## Serve routes
+
+Resource-, app-owned and personal Code can register routes. Register routes at
+module scope with literal paths. Core hosts the active, approved version at
+`/code/<code-id>/…`:
+
+```ts
+import { app } from "@sdk";
+
+app.get("/hello/:name", c => c.json({
+  hello: c.req.param("name"),
+  visitor: c.user?.id,
+}));
+app.get("/health", { public: true }, c => c.text("Ready"));
+app.post("/save", async c => {
+  const allowedUserIds = ["u_example"];
+  if (!c.user || !allowedUserIds.includes(c.user.id))
+    return c.json({ error: "forbidden" }, 403);
+  const input = await c.req.json();
+  // Validate input and perform any authorized SDK calls here.
+  return c.redirect("/hello/saved");
+});
+```
+
+`get`, `post`, `put`, `delete` and `all` accept a handler and optional
+`{ public: true | false, layout: "plain" }`; `layout` is described in
+[Where a page appears](#where-a-page-appears). Paths contain literal segments and named parameters
+such as `:id`; declarations match in order. `HEAD` uses the GET handler.
+Handlers return `c.json(value, status?)`, `c.text(text, status?)` or
+`c.redirect(path, status?)`. Redirects stay inside this Code's namespace;
+`/next` resolves to `/code/<code-id>/next`. Code cannot return arbitrary headers,
+cookies or HTML. Routes support `app.get(path, options, handler)` (and the same
+order for `post`, `put`, `delete` and `all`) so the handler stays last.
+`app.get(path, handler, options)` remains a compatibility overload.
+`c.req` provides `path`, `method`, `raw`, `param(name)`, `query(name)`, `json()`,
+`text()` and `formData()`. Core forwards only the request data and normalized content type, never
+incoming request headers, browser cookies or credentials.
+
+Non-public routes open for every signed-in member of the Cloud, for personal,
+resource and app Code alike. Guest accounts get 403 `code_members_only`
+before the Code runs. They run with the Code account's authority; personal Code
+uses its owner's mandate. Check `c.user` before reading private data or
+performing effects. For an owner-only page, compare `c.user.id` to the
+intended person's ID in shared middleware or in every protected handler.
+
+Routes require a signed-in member's session by default; guests are refused.
+Check `c.user` in the handler when access depends on the visitor:
+
+```ts
+type CodeUser = {
+  id: string;
+  username: string;
+  groupIds: string[];
+  groupNames: string[];
+  kind: "user" | "guest";
+  name: string;
+};
+```
+
+`id` is the Cloud user ID, `username` is its login handle, `groupIds` and
+`groupNames` are the effective groups' IDs and names respectively. `kind` is
+the account profile, always `"user"` on a page that is not public, and `name`
+is the display name.
+Agents and other service accounts cannot visit private pages and are never
+projected into `c.user`.
+
+Public routes never see who is signed in. To recognise visitors, leave out
+`public`; then every signed-in member sees the page.
+
+Public routes also require the `public_routes` policy classification and version-bound
+administrator approval by default. Existing policy tables initially forbid this new
+classification until an operator chooses its rule. Public routes require the literal `{ public: true }` in the checked
+version and always receive `c.user === null`, including for signed-in visitors.
+There is no platform audience or implicit access to underlying resources.
+SDK calls retain the Code's execution principal and its existing grants;
+the visitor's grants never become data authority.
+
+Signed-in page requests share a limit of 20 requests per minute per visitor,
+across Code pages. Public routes retain their per-IP and per-Code limits.
+
+Non-public POST, PUT, PATCH and DELETE routes need a session-bound CSRF token.
+Read `X-Code-CSRF` from a preceding GET response and send it as the same header,
+retaining the session cookie. URL-encoded forms may submit it as `_csrf`; Core
+removes that field before dispatch. A token from another session or another
+Code is refused. Public routes never use a session, CSRF token or binding
+cookie; public forms work without a token.
+
+Requests share runner slots and Code concurrency limits. Their eight-second
+budget includes queueing; busy admission returns 503 and a deadline returns
+504. Mutations are never automatically retried. JSON, plain text and
+URL-encoded bodies are supported, up to 8 KiB (4 KiB for public routes).
+Responses are at most 128 KiB. Public requests share a 20-per-minute limit per
+client network and per Code. The Code page lists route entrypoints and their
+last results; request runs appear in Runs with their timing and capability
+calls. Visitor input and response payloads are transient.
+
+Eligible event payloads come from event schemas; events with
+`automation: false` are absent. `nav`, `webhook` and `fetch` are not app
+methods; the typechecker rejects them.
+
+## Middleware and request variables
+
+`app.use(async (c, next) => …)` runs before all HTTP routes registered after
+it. `app.use("/private", …)` applies to `/private` and its child paths, but not
+`/privately`. Write the optional prefix as a string literal of path segments;
+path variables and casts are rejected. Use `/` or omit it for all paths. Several middleware functions run in
+registration order. Code after `await next()` runs in reverse order as the
+handler returns. Return a context Response to stop, or call `next()` once.
+Use `return next()` when no work follows it. Catch errors around `await next()`
+to return your own failure response. Check access before calling `next()`:
+work already started downstream is allowed to finish. Without a Response or
+a call to `next()`, the request fails with `code_invalid_response`.
+
+Declare request variables once with the generic on `use`, and capture its
+returned app for the later registrations:
+
+```ts
+import { app } from "@sdk";
+type Variables = { kunde: { id: string }; requestLabel: string };
+const routes = app.use<Variables>(async (c, next) => {
+  c.set("kunde", { id: c.req.query("kunde") ?? "default" });
+  c.set("requestLabel", "Account");
+  return next();
+});
+routes.get("/account", c => c.json({
+  customerId: c.get("kunde").id,
+  label: c.get("requestLabel"),
+}));
+export default routes;
+```
+
+`c.set` accepts only declared keys and their value types; `c.get` returns
+the declared value type. Values live for one request, including while it
+awaits SDK calls. They are never copied to the next request. Initialize a
+variable before reading it; if it may be missing, include `undefined` in
+its declared type. A prefix-scoped initializer must cover every route that
+reads its variables. `app` and the returned `routes` register on the same
+app; the return carries the variable types for subsequent handlers.
+
+Middleware runs on matching public routes too; `c.user` remains `null`.
+[Access checks](#check-access) shows how to keep public paths reachable.
+SDK calls in middleware use the same Code account, approval and declared-set
+checks as calls in handlers. Register `use` at module scope, as a statement
+or as the initializer of a `const` binding. Schedules and events do not run
+HTTP middleware.
+
+## Check access
+
+Every non-public route admits every signed-in member; guests are refused. Put shared access checks
+in `app.use()` before the routes they protect; add handler checks for rules
+specific to one route. SDK calls use the Code account's grants, including
+shares given to resource Code's service account. The visitor's permissions
+do not limit those calls. Public routes have `c.user === null`.
+
+`code_check` warns, without blocking the version, about two cases:
+
+- `code_route_unchecked`: a non-public route whose handler and matching
+  `app.use()` before it never read `c.user`. Every member can open it, and it
+  runs with the owner's rights.
+- `code_route_before_middleware`: a non-public route registered before an
+  `app.use()` whose prefix matches it. That middleware never runs for it.
+
+Only a read of `c.user` in the handler itself, or in middleware registered
+before it whose prefix covers the whole route, counts. A check in a helper or
+callback function is not recognized, and middleware in another module counts
+only while no module uses a top-level `await`.
+
+Start with middleware for a private path prefix. Returning a Response stops
+before the handler; `return next()` continues. This check also covers later
+POST, PUT, DELETE and ALL routes under the prefix:
+
+```ts
+import { app } from "@sdk";
+const allowedUserIds = ["u_example"];
+app.use("/private", async (c, next) => {
+  if (!c.user || !allowedUserIds.includes(c.user.id))
+    return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+app.get("/private/account", c => c.json({ allowed: true }));
+app.get("/public/status", c => c.text("Ready"), { public: true });
+export default app;
+```
+
+Without a prefix, middleware runs on **every** later HTTP route, including
+public routes. A global access check must explicitly let intended public
+routes through; a private prefix, as above, keeps the rule local. Public
+routes still run through matching middleware with `c.user === null`, even
+when the visitor is signed in. Registration order matters: earlier routes,
+schedules and event handlers are unaffected. Middleware changes neither the
+execution owner nor approval requirements; its own SDK calls are checked
+and must belong to the version's declared capability set.
+
+Use one explicit field per identifier. `id` is the immutable Cloud user ID;
+`username` is the short login handle. `groupIds` and `groupNames` contain the
+effective Cloud group IDs and names. IPA groups have Cloud UUIDs assigned on
+sync and their IPA group names. Names may change and may coincide with IDs or
+usernames. Prefer IDs when the rule must survive a rename. There is no mixed
+user/group or ID/name lookup. Group names can repeat across identity providers; a name check admits all matching groups. Prefer `groupIds` for an unambiguous group authorization rule.
+
+A fixed list of user IDs:
+
+```ts
+import { app } from "@sdk";
+const allowedUserIds = ["u_example"];
+app.get("/", c => {
+  if (!c.user || !allowedUserIds.includes(c.user.id))
+    return c.json({ error: "forbidden" }, 403);
+  return c.json({ allowed: true });
+});
+export default app;
+```
+
+A fixed list of login handles, compared only to `username`:
+
+```ts
+import { app } from "@sdk";
+const allowedUsernames = ["alex"];
+app.get("/", c => {
+  if (!c.user || !allowedUsernames.includes(c.user.username))
+    return c.json({ error: "forbidden" }, 403);
+  return c.json({ allowed: true });
+});
+export default app;
+```
+
+A group name, or independently a group ID. Each route below defines its own
+rule; the routes do not combine user and group identifiers:
+
+```ts
+import { app } from "@sdk";
+const allowedGroupNames = ["support"];
+const allowedGroupIds = ["00000000-0000-4000-8000-0000000000aa"];
+app.get("/by-group-name", c => {
+  if (!c.user || !c.user.groupNames.some(name => allowedGroupNames.includes(name)))
+    return c.json({ error: "forbidden" }, 403);
+  return c.json({ allowed: true });
+});
+app.get("/by-group-id", c => {
+  if (!c.user || !c.user.groupIds.some(id => allowedGroupIds.includes(id)))
+    return c.json({ error: "forbidden" }, 403);
+  return c.json({ allowed: true });
+});
+export default app;
+```
+
+A Grids allowlist can hold separate text columns for a user ID, username,
+group ID and group name. Discover the real Base, Table and Field IDs through
+Grids before writing the query. Give the Code account read access to this
+Base; allow only trusted editors to change the allowlist. Each non-empty
+cell below grants access through its matching identity field. Keep this
+allowlist within one complete page (at most 100 rows); an incomplete or
+failed result refuses access. The example IDs are fictional.
+
+```ts
+import { app, grids } from "@sdk";
+const allowlist = grids.base("Base01");
+app.get("/", async c => {
+  const user = c.user;
+  if (!user) return c.json({ error: "forbidden" }, 403);
+  const { data: result, page } = await allowlist.gql.execute({
+    query: "from table {Table01}\nselect {Field01} as uid, {Field02} as username, {Field03} as groupId, {Field04} as groupName\nlimit 100",
+    pageSize: 100,
+  });
+  if (!result.ok || result.truncated || page?.hasMore)
+    return c.json({ error: "forbidden" }, 403);
+  const allowed = result.rows.some(row => {
+    const { uid, username, groupId, groupName } = row.values;
+    return (typeof uid === "string" && uid !== "" && uid === user.id)
+      || (typeof username === "string" && username !== "" && username === user.username)
+      || (typeof groupId === "string" && groupId !== "" && user.groupIds.includes(groupId))
+      || (typeof groupName === "string" && groupName !== "" && user.groupNames.includes(groupName));
+  });
+  if (!allowed) return c.json({ error: "forbidden" }, 403);
+  return c.json({ allowed: true });
+});
+export default app;
+```
+
+## Generate and host an SDK
+
+Platform tools import `generateCodeSdk` from `@k2b/cloud/code`:
+
+```ts
+import { generateCodeSdk } from "@k2b/cloud/code";
+
+const sdk = generateCodeSdk(manifests, {
+  mode: "resource",
+  owner: { kind: "resource", ref: { type: "work-shop.workshop", id: "workshop-owner" } },
+});
+```
+
+Supply the current validated `CapabilityManifest[]`. Write `sdk.declarations`
+as `sdk.d.ts`, `sdk.runtime` as `sdk.js`, and resolve `@sdk` to that pair in
+the checker and bundler. Both generated files are standalone. JSON Schema
+shapes become structural TypeScript; constraints such as string lengths
+remain validated by the dispatcher. Local schema references are supported;
+unresolved or external references fail generation.
+
+`GeneratedCodeSdk` contains a version-1 `CodeSdkManifest` with:
+
+- `apps`: module export names and originating manifest hashes;
+- `handles`: target Types, factory property paths and app export names;
+- `operations`: qualified IDs, method paths, targets, refs, input/data schemas,
+  schema hashes and idempotency policy;
+- `omitted`: excluded operation IDs, targets, mapped method paths and reasons,
+  so the checker can explain unavailable camelCase calls;
+- `events` and `appMethods`: eligible events and supported app registration methods;
+- `mode` and optional `owner`: the execution mode and fixed owner.
+
+The checker uses these paths with the user's source to resolve handle literals and
+permissions. This generation manifest is not a checked version manifest or
+an authorization grant.
+
+The runtime exports an internal `__codeSdk` control object for the trusted
+host. Import the SDK and bind it once **before evaluating the user module**
+with `__codeSdk.bind(cloud)`, where `cloud` satisfies
+`CodeSdkBridge`. Each method calls `cloud.call(capability, invocation)`.
+`CodeSdkInvocation` separates the canonical `NormalizedCapabilityCall` in
+`call` from transport metadata in `metadata`; hash only `call` with
+`capabilityCallDigest`. The bridge resolves domain data and throws on refusal,
+matching the runner's `cloud.call(operation, input)` seam. It attaches run
+identity and credentials outside the sandbox. The checker must reserve
+`__codeSdk` for the host and reject imports of it from user code; hiding it
+from declarations alone does not enforce that rule.
+
+`__codeSdk.entries()` returns schedule and route descriptors. Schedules carry `kind`, `cron`, optional `at` and `timeZone`, and
+an `entrypoint` equal to the required schedule name, plus `title` when declared.
+Reordering registrations preserves each schedule’s identity across versions.
+Registration does not execute callbacks. The checker must import Code once
+to collect its registrations. Core uses those descriptors to schedule work;
+the trusted bundle wrapper invokes
+`__codeSdk.run(entrypoint, context)` for the selected callback. The one-shot host binds
+the bridge and executes its Code directly instead.
+
+`CodeSdkOptions`, `CodeSdkOwner`, `CodeSdkOperation`, `CodeSdkHandle`,
+`CodeSdkInvocation`, `CodeSdkCallMetadata`, and `CodeSdkBridge` are exported with doc comments for checker, test-kit,
+CLI and chat consumers. The SDK imports no database, broker, storage or
+credential clients.
+
+The [Code checker](/en/docs/platform/code-checker) consumes this generation
+manifest to produce the immutable `CodeVersionManifest`, source locations,
+permission changes, and the runner's ESM bundle.
+
+## Database
+
+Every lasting Code, personal or resource-owned, has its own SQLite database.
+Import `db` from `@sdk`. Cloud creates the database on its first call; checking,
+submitting and opening the Code page do not create it. Data survives new Code
+versions. Deleting the Code, or deleting its owner, also deletes its database.
+Code pages and `cld code show <code>` show storage used, the current limit and
+the owner's reserved capacity. Editors and administrators can export a SQLite
+snapshot from the page or with `cld code db export <code> --out <file>`.
+Pausing a Code preserves its data, including data used by historical versions.
+See [Code storage](/en/docs/operations/code-storage) for lifecycle and exports.
+
+```ts
+import { app, db } from "@sdk";
+
+app.schedule({ cron: "0 8 * * *", name: "daily-count" }, async () => {
+  await db.exec("CREATE TABLE IF NOT EXISTS counts (day TEXT PRIMARY KEY, total INTEGER NOT NULL)");
+  await db.batch([
+    { sql: "INSERT INTO counts(day, total) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET total = total + excluded.total", params: [new Date().toISOString().slice(0, 10), 1] },
+  ]);
+  const rows = await db.query<{ day: string; total: number }>(
+    "SELECT day, total FROM counts ORDER BY day DESC LIMIT ?", [7],
+  );
+  console.log(rows);
+});
+export default app;
+```
+
+| Method | Result |
+| --- | --- |
+| `db.query<Row>(sql, params?)` | Rows directly as `Row[]`; the generic describes the expected rows and does not validate them |
+| `db.exec(sql, params?)` | `{ changes: number }` for one write or schema statement |
+| `db.batch([{ sql, params }])` | `{ changes: number }[]` in statement order; all statements commit together or roll back |
+
+Use `?` placeholders and bound parameters for values. Parameters accept strings,
+finite numbers, booleans and `null`; they cannot substitute table or column names.
+Never concatenate outside input into SQL. `query` accepts read statements only.
+Keep database schema changes compatible with any overlapping older runs.
+
+Each call, including one batch, spends one run bridge call. The existing call
+input budget bounds SQL and parameters; each statement has a maximum of 15 seconds,
+within the remaining run deadline. Results are limited to 256 KiB, so select only
+the columns and rows you need. RSQL also enforces statement and storage limits.
+`core.code.database_bytes` sets the database quota. A write over the quota raises
+`CodeError` with `code_db_full`; a result over the response budget raises
+`code_db_limit`, and a statement timeout raises `code_db_timeout`. The owner-wide
+`core.code.database_owner_bytes` limit reserves each database's full ceiling
+before provisioning or quota increases. Its default is ten times the default
+per-Code allowance (1,000 MiB). `code_db_owner_full` means the owner has no
+remaining capacity: delete unused Code or ask an administrator to raise the
+owner limit. Existing reads and SQLite exports remain available. A timeout or
+lost connection can leave a write outcome unknown: check an application-owned
+idempotency key before retrying. Concurrent namespace initialization or deletion
+can return `code_db_busy` (503); retry shortly afterward.
+
+An administrator must configure the RSQL URL, secret token and allowed targets
+under **Administration → Code → Limits**. Without a working configuration, `db`
+raises `code_db_unavailable` (503) with a message to contact an administrator.
+Code that does not call `db` continues to run. DB use appears in the checked
+manifest and submission evidence. It has no per-call capability approval.
+
+One-off chat `code_run` cannot import `db`: it has no lasting Code to own a
+database. The checker explains this with `code_db_temporary`. Studio databases
+and their grants are removed during upgrade; no data transfers to Code. Export
+Studio data before upgrading, as described in [Upgrade to Code](/en/docs/operations/upgrade-to-code).
+
+## One-off chat runs
+
+Gustav's one-off `code_run` compiler supplies the same `generateCodeSdk` output
+with `mode: "code_run"` and executes it in the Code runner's isolated workerd
+runtime. It binds normalized targets, refs and idempotency metadata to the
+current person's Assistant turn, preserving capability access checks and
+approvals. It does not create a lasting Code, version or version mandate.
+The host admits only operations and target/ref Types from the authorized
+catalog captured for that run. Calls outside it fail with
+`code_capability_undeclared`; actual Actions still follow the turn's approval
+flow. This also applies to raw `cloud.capabilities.run` calls.
+SDK Queries return `{data, page?}`; read fields from `data` and follow the
+returned cursor when `page.hasMore`. Streaming reads return `FileRef`, and
+Actions return domain data directly. The older `cloud.capabilities.run` keeps
+returning its capability envelope. This mode has no `app` or `owner`,
+and accepts dynamic IDs. The host also exports its existing `cloud.sheet`
+helpers as `sheet` from `@sdk`. Other package imports remain unavailable.
+`http` and `secrets` use the person's existing chat HTTP approvals and secret
+bindings. Secret values remain in the Assistant host. Files, views, progress,
+logs, return values and script errors keep their chat result format.
+
+Pass a streaming read's `FileRef` to the `file` argument of a file-input write
+Action in the same run. The host transfers the bytes and returns the completed
+Action data. A destination may choose its own upload name. Files above the
+destination's declared byte limit are refused before preparation or approval.
+Each reference can be used for one write attempt. The usual Action review and
+approval still apply. File bytes stay outside the script bridge.
+One-off runs allow 50 MiB per file and 250 MiB of
+stream transfers in total, counting both the read and the upload. After an
+interrupted write, inspect its status before attempting another import.
+
+One-off runs share runner capacity and use its fixed wall-clock, memory and
+bridge budgets; see [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs).
+Scheduled chat routines are retired. Rebuild timed work as reviewed personal
+Code with `app.schedule` and `core.ai.chat(chatId).run` or `core.ai.chat(chatId).deliver`.
+Routine grants do not transfer. Studio RSQL `database` grants are unavailable in
+runner `code_run`. Chat accepts inline `code` and optional `inputPaths` only;
+saved script `id`, published `version`, and Studio `resourceId` contexts are
+rejected. App KV/files storage is also unavailable; use chat or Project files.
+Use an application's permission-aware capabilities for application data.
+Lasting Code has its own lazy database; Studio data and grants never transfer.
+
+See [Gustav Code tools](/en/docs/platform/gustav-code-tools) for a one-call CSV
+example and the lasting-Code workflow.
+
+The existing `cloud.capabilities.run(name, input, options?)` also accepts explicit
+normalized `target`, `refs` and `idempotencyKey` in its optional third argument.
+A key is allowed only for an Action declaring required idempotency; retain it
+for retries of the same effect. Omitting it preserves the existing per-call
+key. Scripts keep the same permissions and approvals.
+
+
+## Mail triage: category first
+
+Discover `core.ai.decide` in the live SDK before using it. It is a read-only query
+and returns typed answers with probabilities, plus model and usage. The checker
+marks this call as **AI** (**KI**); the Cloud-Admin policy controls release.
+The caller's person or service account pays from its own AI allowance.
+
+Ask category first. Ask urgency together with category or after it, never alone.
+This one-off `code_run` example returns a review flag only for confidently
+classified support messages. Urgent spam stays outside that category. Thresholds depend on the cost
+of mistakes; probabilities are estimates. The example changes no records.
+
+<!-- ai1-mail-triage -->
+```ts
+import { core } from "@sdk";
+
+export default async function triage() {
+  // Fictional mail; in real Code, read the mail through its authorized SDK first.
+  const { data: result } = await core.ai.decide({
+    task: "mail.triage",
+    input: { subject: "Urgent: claim your prize", text: "Act now to receive a prize." },
+    questions: {
+      category: {
+        type: "choice",
+        instructions: "What kind of message is this?",
+        criteria: { support: "Help with an existing order", spam: "Unsolicited advertising or deceptive messages" },
+      },
+      urgent: { type: "boolean", instructions: "Does this message need urgent attention within its category?" },
+    },
+  });
+  const category = result.answers.category;
+  if (category?.type !== "choice" || category.choice !== "support" || category.confidence < 0.9) return false;
+  const urgent = result.answers.urgent;
+  return urgent.confidence >= 0.9;
+}
+```
+
+For lasting Code, save this function in a helper module and call it from a
+schedule. Schedule callbacks return `void`; use the flag inside the callback
+when deciding whether a separate authorized action is appropriate.
+
+Optional `files: FileRef[]` and `model: { id }`, image support, quota
+failures and byte limits follow
+[Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).
+
+
+`input` aliases the earlier `state` field; `state` takes precedence if both
+are supplied. `type: "boolean"` aliases `"noul"`. Boolean answers retain
+`type: "noul"`, `value` and `probability`, and add `confidence` with the same
+value as `probability`. Existing names and their result types remain supported.
+Calls using the new
+`input` or `boolean` aliases infer each answer's type and named choices.
+For a legacy `state`/`noul` request, import `Core_Ai_DecideInput`, declare the
+request with `satisfies Core_Ai_DecideInput`, and opt into precise answers with
+`core.ai.decide<typeof request>(request)`; otherwise keep the existing
+discriminator checks.
+
+## Generate text and extract fields
+
+Discover `core.ai.generate` in the live SDK. It is a query classified
+as **AI / KI**, using the caller's allowance and Code's execution budgets.
+Use it for summaries, draft text or validated extraction. Put source data in
+`input` and trusted instructions in `prompt`.
+
+Only `generate` and `decide` reserve the synchronous Code AI attempt allowance.
+Skill, catalog and chat history reads remain available when that allowance
+is zero or reserved by another inference call, subject to ordinary permissions,
+policy and capability call limits. [Chat turns](#start-a-gustav-turn-in-your-own-chat)
+use their own daily Code and interactive allowance checks.
+
+<!-- gate-1a-generation -->
+```ts
+import { core } from "@sdk";
+
+export default async function summarize() {
+  // Fictional source; read real mail through its authorized SDK first.
+  const input = { body: "Please deliver three chairs by Friday." };
+  const { data: summary } = await core.ai.generate({
+    task: "mail.summary",
+    prompt: "Summarize the message in one sentence.",
+    input,
+    model: { class: "fast" },
+    output: { type: "text", maxChars: 500 },
+  });
+  const { data: extracted } = await core.ai.generate({
+    task: "mail.extract",
+    prompt: "Extract the requested item and quantity from the message.",
+    input,
+    output: {
+      type: "json",
+      schema: {
+        type: "object",
+        properties: {
+          item: { type: "string", maxLength: 100 },
+          quantity: { type: "integer" },
+        },
+        required: ["item", "quantity"],
+        additionalProperties: false,
+      },
+    },
+  });
+  return { summary: summary.output, extracted: extracted.output };
+}
+```
+
+The generated SDK preserves the existing JSON result type for ordinary calls.
+Narrow `output` before reading its fields. To opt into a precise result, declare
+a request with `satisfies Core_Ai_GenerateInput` and call
+`core.ai.generate<typeof request>(request)`. Text output then has type `string`;
+a literal JSON schema determines its output fields. Keep required field names
+as a literal tuple, for example `required: ["item", "quantity"] as ["item", "quantity"]`.
+A broadly typed `required` list keeps fields optional in TypeScript.
+Cloud validates the declared schema before returning
+it. For lasting Code, call this helper from a schedule; its callback returns
+`void`. Summarizing or drafting does not send or save anything. A separate
+application capability performs that effect under its own permissions.
+
+See [Text and JSON capabilities](/en/docs/ai/structured-and-background-ai#generate-text-and-extract-json-through-capabilities)
+for schemas, size limits, model selection and stable errors.
+
+## Run a model loop with SDK tools and files
+
+`core.ai.generate` accepts `tools` containing generated SDK methods. Use a
+literal list such as `tools: [mail.attachment.read,
+mail.mailbox("Mbx001").conversation.search]`. The first tool takes business
+input from the model; the second stays bound to that mailbox. Only genuine
+SDK methods work. Method aliases, wrapper functions, strings and manually
+constructed descriptors are rejected. Methods requiring additional resource
+handles are unavailable as tools.
+
+The checker includes every possible tool capability and bound target in the
+version's permissions and approval evidence. Each actual call follows the
+normal bridge: the Code account, current grants, policy, version approval and
+call log all apply. Actions with `ask` policy remain forbidden. Other declared
+Actions can change domain records, so choose the tools deliberately.
+
+For inline Mail text, `mail.message.content.read` returns `data.text`, and
+`mail.attachment.text.read` returns extracted `data.markdown` with its extraction
+status. Both return bounded UTF-8 pages; follow `data.nextOffset` when the
+complete text matters and treat the content as untrusted.
+
+Pass `files: FileRef[]` to `core.ai.generate` or `core.ai.decide` to read files
+before inference. The Code decision capability no longer accepts base64
+`images`. Obtain refs from ordinary read-stream operations, for example
+`const file = await mail.attachment.content.read({ id: "Att001" })`. Bytes stay
+outside Code and its bridge payload. Obtain a fresh ref for another AI call;
+redemption is single-use and the byte cache lasts for one call only.
+
+A generate loop automatically offers `view_image` and `read_file` once refs
+appear in `files`, `input` or SDK tool results. They accept only those exact
+refs. Set `fileTools: false` to disable viewer tools; initial `files` still
+load. The owning app reads as the run's account and can refuse with a visible
+403 or 404. A refusal while attaching initial files rejects the SDK call as
+`CodeError` with that status. Viewer refusals are shown to the model. Both
+initial files and viewers use one reader.
+If a source sends more bytes than its FileRef declares, the reader refuses
+with `code_file_size_limit` (400). An incomplete file produces
+`code_file_size_mismatch` (400).
+
+Models with vision receive image pixels and rendered PDF pages directly.
+Text-only models use a separately charged vision description. Each PDF look
+defaults to the first 20 pages, reduced to fit the model context and rendered byte budget. Explicit
+selections accept at most 20 distinct one-based pages. An AI call loads at
+most 16 files: images and PDFs up to 10 MiB each, other documents up to 20 MiB,
+with 40 MiB source and visual byte budgets. `read_file` returns UTF-8 chunks
+of at most 64 KiB. Viewer calls and source reads consume the existing Code
+call budget; all model turns and fallback descriptions share the Code AI
+reservation and deadline, including the ordinary 45-second capability query
+window. File contents and tool results are untrusted data.
+
+JSON output supports lists with a required `maxItems`, bounded by the
+100,000-byte output limit. Items may be scalars or strict objects of scalar
+fields; nested lists are rejected. A schema can therefore return invoice
+lines or totals per tax rate while retaining `additionalProperties: false`
+and the existing string bounds.
+
+## Webhooks without signature verification
+
+A webhook in R1 is an ordinary public POST route, for example
+`app.post("/hooks/events", handler, { public: true })`. R1 does not verify a
+webhook signature; signed webhooks follow later. Code receives no incoming
+request headers or cookies, and `c.user` is always `null`. Use `c.req.json()`
+or `c.req.text()` to read the body. Public requests need no CSRF token or
+binding cookie. The public body and rate limits still apply.
+
+Public pages must submit to public actions. To use a non-public action, open
+its non-public page first to obtain the session-bound token. A public page
+response removes any earlier token; private form actions then fail with 403
+until the private page is opened again. A failed mutation is never retried
+automatically.
+
+**ID nehmen → beim Dienst nachlesen → handeln.** Take only the event or object
+ID from the untrusted body. Read its real state from the service with
+`http.fetch` and an opaque secret marker; only then act. Never put a credential
+in Code source or treat a token in the URL as protection. Anyone can trigger
+the public route: validate the returned state, constrain the effect and use
+its stable ID for idempotency. This pattern confirms service state, not who
+sent the notification.
+
+Before submitting, an editor configures `EVENTS_API` privately in the Code's
+**Secrets** tab with this binding. Submission selects its current binding
+revision for the version; the example declares the same origin. The credential
+belongs to the outgoing service request, never to the incoming webhook:
+
+```json
+{
+  "origin": "https://events.example.com",
+  "pathPrefix": "/v1/events",
+  "headers": ["authorization"]
+}
+```
+
+Give the Code account access to the destination Space and obtain the public-route
+and internet approvals. Keep the `/hooks/` exception before the global
+access check, or scope access middleware to a private prefix.
+
+```ts
+import { app, http, secrets, spaces } from "@sdk";
+
+http.allow(["https://events.example.com"]);
+const team = spaces.space("Spc001");
+
+app.use(async (c, next) => {
+  if (c.req.path.startsWith("/hooks/")) return next();
+  if (!c.user) return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+app.post("/hooks/events", async c => {
+  // Only the ID comes from the untrusted notification.
+  const notification: unknown = await c.req.json();
+  if (!notification || typeof notification !== "object" || !("id" in notification)
+      || typeof notification.id !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(notification.id))
+    return c.json({ error: "invalid_id" }, 400);
+  const response = await http.fetch(`https://events.example.com/v1/events/${notification.id}`, {
+    headers: { authorization: `Bearer ${secrets.EVENTS_API}` },
+  });
+  if (response.status !== 200) return c.json({ error: "service_unavailable" }, 502);
+  let event: unknown;
+  try {
+    event = await response.json();
+  } catch {
+    return c.json({ error: "invalid_service_response" }, 502);
+  }
+  if (!event || typeof event !== "object" || !("id" in event) || event.id !== notification.id
+      || !("status" in event) || event.status !== "ready"
+      || !("title" in event) || typeof event.title !== "string")
+    return c.json({ error: "event_not_ready" }, 409);
+  // Only the service's confirmed state determines the effect.
+  await team.task.create({ title: event.title, idempotencyKey: `service-event:${event.id}` });
+  return c.json({ accepted: true });
+}, { public: true });
+export default app;
+```

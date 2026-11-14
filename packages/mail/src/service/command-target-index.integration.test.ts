@@ -4,8 +4,6 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { buildCommandTargetIndex, migrate } from "../migrate";
 import { undoMoveCopyQuery } from "./command-undo";
-import { pendingMoveClaimQuery } from "./incoming-automation-order";
-import { incomingAutomationSiblingQuery } from "./workflow-message-preconditions";
 
 const suite = suiteFor("database", "nats");
 
@@ -78,7 +76,7 @@ suite("per-message command lookup plans", () => {
           id, mailbox_id, kind, state, actor_kind, actor_id, correlation_id,
           idempotency_key, request_hash, target, payload, access_subject_kind, created_at
         ) VALUES (
-          ${commandId}::uuid, ${mailbox.id}::uuid, 'change_message_state', 'queued', 'workflow',
+          ${commandId}::uuid, ${mailbox.id}::uuid, 'change_message_state', 'confirmed', 'workflow',
           ${workflowVersionId}::uuid, ${runId}, 'subject', ${"d".repeat(64)},
           ${{ remoteMessageRefId: ref.id, expectedRemoteState: { flags: [], keywords: [] } }}::jsonb,
           '{}'::jsonb, 'system', ${firstSeenAt}::timestamptz
@@ -89,8 +87,6 @@ suite("per-message command lookup plans", () => {
       await sql`ANALYZE mail.message_placements`;
 
       const queries = [
-        incomingAutomationSiblingQuery(sql, [commandId]),
-        pendingMoveClaimQuery(sql, { mailboxId: mailbox.id, refId: ref.id, firstSeenAt, runId }),
         undoMoveCopyQuery(sql, {
           mailboxId: mailbox.id,
           commandId,

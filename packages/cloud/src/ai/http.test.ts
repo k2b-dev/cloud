@@ -212,17 +212,7 @@ describe("AI HTTP input helpers", () => {
               "code_secret",
             ],
           }).clientToolIds,
-        ).toEqual([
-          "local_bash",
-          "code_run",
-          "code_action",
-          "code_inspect",
-          "code_stop",
-          "code_open",
-          "code_export",
-          "code_present",
-          "code_secret",
-        ]);
+        ).toEqual(["local_bash", "code_run", "code_inspect", "code_stop", "code_export", "code_secret"]);
         expect(schema.parse({ ...input, clientToolIds: ["code_secret", "retired_tool", "code_run", "local_bash"] }).clientToolIds).toEqual([
           "code_secret",
           "code_run",
@@ -232,7 +222,7 @@ describe("AI HTTP input helpers", () => {
 
       test("accepts advertisements longer than the previous ten-item cap", () => {
         const knownIds: AiClientToolId[] = ["local_bash", ...CODE_RUNTIME_TOOL_NAMES];
-        const clientToolIds = ["code_interact", "future_tool", ...knownIds];
+        const clientToolIds = ["code_interact", ...Array.from({ length: 8 }, (_, i) => `future_tool_${i}`), ...knownIds];
         expect(clientToolIds.length).toBeGreaterThan(10);
         expect(schema.parse({ ...input, clientToolIds }).clientToolIds).toEqual(knownIds);
       });

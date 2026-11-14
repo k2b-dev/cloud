@@ -18,6 +18,43 @@ function GitHubIcon() {
   );
 }
 
+/** The feat/code mark from @k2b/ui's `ti-feat-code`: the wordmark's slash as a small commit graph. */
+function FeatCodeIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M10 14.5l4.8 -6" stroke-width="2.5" />
+      <circle cx="8" cy="17" r="3.4" />
+      <circle cx="16" cy="7" r="2.2" stroke-width="4.4" />
+    </svg>
+  );
+}
+
+/** Gustav's moustache (Tabler `moustache`). */
+function GustavIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M15 9a3 3 0 0 1 2.599 1.5c.933 1.333 2.133 1.556 3.126 1.556l.291 0l.77 -.044l.213 0c-.963 1.926 -3.163 2.925 -6.6 3l-.4 0l-.165 0a3 3 0 0 1 .165 -6l.001 -.012" />
+      <path d="M9 9a3 3 0 0 0 -2.599 1.5c-.933 1.333 -2.133 1.556 -3.126 1.556l-.291 0l-.77 -.044l-.213 0c.963 1.926 3.163 2.925 6.6 3l.4 0l.165 0a3 3 0 0 0 -.165 -6l-.001 -.012" />
+    </svg>
+  );
+}
+
 type HomePageProps = {
   theme: ThemeMode;
   themeCookieName: string;
@@ -31,6 +68,16 @@ export default function HomePage(props: HomePageProps) {
         <section class="cloud-hero">
           <div class="cloud-shell cloud-hero-grid">
             <div class="cloud-hero-copy">
+              <a class="cloud-news" href="/en/code">
+                <FeatCodeIcon />
+                <span>
+                  <b>feat/code</b>
+                  <span aria-hidden="true">·</span> Automate anything in plain TypeScript
+                </span>
+                <span class="cloud-news-arrow" aria-hidden="true">
+                  →
+                </span>
+              </a>
               <h1>
                 The open-source
                 <br />
@@ -111,6 +158,150 @@ export default function HomePage(props: HomePageProps) {
                 <b>24 ms</b>
               </div>
             </figure>
+          </div>
+        </section>
+
+        <section class="cloud-feat-code" aria-labelledby="cloud-feat-code-title">
+          <div class="cloud-shell">
+            <div class="cloud-head">
+              <div>
+                <p class="cloud-eyebrow">
+                  <FeatCodeIcon />
+                  feat/code
+                </p>
+                <h2 id="cloud-feat-code-title">What if n8n, Workers, TypeScript, SQL and S3 were one thing?</h2>
+              </div>
+              <div class="cloud-feat-code-intro">
+                <p class="cloud-feat-code-lead">
+                  Automate anything in plain TypeScript, with native access to every app, even your own. Your apps finally work as one.
+                </p>
+                <p>
+                  Gustav writes it, you approve it. Every call runs as one account, within what an administrator approved, and lands in the
+                  log.
+                </p>
+                <p class="cloud-formula">
+                  <span>n8n</span>
+                  <i>+</i>
+                  <span>Worker</span>
+                  <i>+</i>
+                  <span>TS</span>
+                  <i>+</i>
+                  <span>SQL</span>
+                  <i>+</i>
+                  <span>S3</span>
+                  <b>
+                    <i>=</i> feat/code
+                  </b>
+                </p>
+              </div>
+            </div>
+
+            <div class="cloud-feat-code-grid">
+              <figure class="cloud-gustav">
+                <figcaption class="cloud-gustav-head">
+                  <span class="cloud-gustav-mark">
+                    <GustavIcon />
+                  </span>
+                  <b>Gustav</b>
+                  <span>New chat</span>
+                </figcaption>
+                <div class="cloud-gustav-thread">
+                  <p class="cloud-gustav-msg is-person">
+                    Summarise every new mail to invoices@ in two sentences, right in the conversation.
+                  </p>
+                  <p class="cloud-gustav-msg">
+                    Done. “Invoice summaries” reads each new message, asks AI for two sentences and writes them to the conversation. Two
+                    tests pass with fictional mail.
+                  </p>
+                  <div class="cloud-version-card">
+                    <div class="cloud-version-card-head">
+                      <FeatCodeIcon />
+                      <b>Invoice summaries · v1</b>
+                      <span>Approved</span>
+                    </div>
+                    <ul>
+                      <li>Reads mail</li>
+                      <li>Uses AI</li>
+                      <li>Writes summaries in invoices@</li>
+                    </ul>
+                    <span class="cloud-version-card-action">Switch on</span>
+                  </div>
+                </div>
+              </figure>
+
+              <figure class="cloud-artifact cloud-code cloud-feat-code-sample">
+                <figcaption class="cloud-code-head">
+                  <span>code/mail/Mbx001/code.tsx</span>
+                  <span class="cloud-artifact-note">v1 · checked</span>
+                </figcaption>
+                <pre>
+                  <code>
+                    <span class="hl-keyword">import</span> {`{ app, core, mail, owner }`} <span class="hl-keyword">from</span>{" "}
+                    <span class="hl-string">"@sdk"</span>;{`\n\n`}
+                    app.on(<span class="hl-string">"mail.message.received"</span>, <span class="hl-keyword">async</span> (event){" "}
+                    <span class="hl-operator">=&gt;</span> {`{`}
+                    {`\n  `}
+                    <span class="hl-keyword">const</span> {`{ data: message }`} <span class="hl-operator">=</span>{" "}
+                    <span class="hl-keyword">await</span> mail.message.read({`{ id: event.subject.id }`});{`\n  `}
+                    <span class="hl-keyword">const</span> {`{ data: summary }`} <span class="hl-operator">=</span>{" "}
+                    <span class="hl-keyword">await</span> core.ai.generate({`{`}
+                    {`\n    `}task: <span class="hl-string">"mail.summary"</span>,{`\n    `}
+                    prompt: <span class="hl-string">"Summarise the request in two sentences."</span>,{`\n    `}
+                    input: {`{ subject: message.subject, body: message.text }`},{`\n    `}
+                    output: {`{`} type: <span class="hl-string">"text"</span>, maxChars: <span class="hl-number">400</span> {`}`},{`\n  `}
+                    {`});`}
+                    {`\n  `}
+                    <span class="hl-keyword">await</span> owner.conversation.summary.write({`{ summary: summary.output, … }`});{`\n`}
+                    {`});`}
+                  </code>
+                </pre>
+                <dl class="cloud-check-rows" aria-label="Checked operations">
+                  <div>
+                    <dt>mail.message.read</dt>
+                    <dd>app</dd>
+                  </div>
+                  <div>
+                    <dt>core.ai.generate</dt>
+                    <dd class="is-ai">AI · needs approval</dd>
+                  </div>
+                  <div>
+                    <dt>mail.conversation.summary.write</dt>
+                    <dd>own mailbox</dd>
+                  </div>
+                </dl>
+              </figure>
+            </div>
+
+            <ol class="cloud-feat-code-steps">
+              <li>
+                <b>Check</b>
+                <span>Every operation, with its file and line.</span>
+              </li>
+              <li>
+                <b>Approve</b>
+                <span>An administrator approves what the policy requires.</span>
+              </li>
+              <li>
+                <b>Switch on</b>
+                <span>A person decides when a version runs.</span>
+              </li>
+              <li>
+                <b>Run</b>
+                <span>As one account. Every call checked and logged.</span>
+              </li>
+            </ol>
+
+            <div class="cloud-actions">
+              <a class="cloud-btn cloud-btn-primary" href="/en/code">
+                Explore feat/code
+              </a>
+              <a class="cloud-btn" href="/en/code/first-code">
+                Your first Code
+              </a>
+              <a class="cloud-btn" href="/en/code/use-cases">
+                Use cases
+              </a>
+            </div>
           </div>
         </section>
 
@@ -268,7 +459,7 @@ export default function HomePage(props: HomePageProps) {
                   <li>Grids</li>
                   <li>Files</li>
                   <li>Contacts</li>
-                  <li>Assistant</li>
+                  <li>Gustav</li>
                 </ul>
                 <a href="/en/apps">Explore all applications →</a>
               </section>
@@ -279,6 +470,7 @@ export default function HomePage(props: HomePageProps) {
                   <li>Gateway and application registry</li>
                   <li>UI, settings, and administration</li>
                   <li>Jobs, workflows, and notifications</li>
+                  <li>feat/code automations and pages</li>
                   <li>Logging, tracing, and health</li>
                 </ul>
               </section>

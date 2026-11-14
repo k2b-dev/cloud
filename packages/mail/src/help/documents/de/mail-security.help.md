@@ -21,7 +21,7 @@ Mail entfernt aktive Skripte immer aus HTML-E-Mails. Externe Bilder blockiert Ma
 
 Die Cloud-Administration kann einen exakten Absender, eine Absenderdomain mit ihren Subdomains oder eine Link-Domain mit ihren Subdomains blockieren. Mail kennzeichnet passende Nachrichten dann als blockiert und schaltet ihre Links und Anhänge im Lesebereich ab. Das ist strenger als eine Warnung, und Mail nutzt es nur für ausdrückliche Regeln der Organisation.
 
-Dieser Schutz beschränkt sich bewusst auf den Lesebereich von Mail. Er verschiebt keine Nachrichten beim Anbieter und startet, beendet oder dupliziert keine Automatisierungsläufe. Sollen Nachrichten zusätzlich verschoben, mit Tags versehen oder von automatischen Antworten ausgeschlossen werden, richte separat eine Automatisierung für eingehende E-Mails ein.
+Dieser Schutz beschränkt sich bewusst auf den Lesebereich von Mail. Er verschiebt keine Nachrichten beim Anbieter und startet, beendet oder dupliziert keine Automatisierungsläufe. Zum Verschieben oder Markieren eingehender Nachrichten erstelle und prüfe Postfach-Code. Automatische Antworten gibt es nicht mehr.
 
 ## Eine verdächtige Nachricht melden {icon="flag"}
 

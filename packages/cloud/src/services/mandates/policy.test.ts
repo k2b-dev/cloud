@@ -141,58 +141,71 @@ describe("bounded background capability grants", () => {
   });
 });
 
-describe("one grant model for scheduled HTTP and database access", () => {
+describe("bounded Code HTTP grants", () => {
   const policy = parseMandatePolicy({
     version: 1,
-    apps: ["assistant"],
-    operations: ["runtime.http", "runtime.database"],
+    apps: ["core"],
+    operations: ["runtime.http"],
     actions: "preapproved",
-    grants: [
-      { kind: "http", fixedInput: { origin: "https://api.example.com", method: "GET" } },
-      { kind: "database", fixedInput: { resourceId: "aBc234", operation: "rows.insert", table: "invoices" } },
-    ],
+    grants: [{ kind: "http", fixedInput: { origin: "https://api.example.com", method: "GET" } }],
   });
-  const allows = (operation: string, input: unknown) =>
-    mandatePolicyAllows(policy, { appId: "assistant", operation, actionApproval: "none", input });
-  test("checks every fixed HTTP field and never borrows a database grant", () => {
-    expect(allows("runtime.http", { origin: "https://api.example.com", method: "GET", url: "https://api.example.com/invoices" })).toBe(
-      true,
-    );
+  const allows = (input: unknown) =>
+    mandatePolicyAllows(policy, { appId: "core", operation: "runtime.http", actionApproval: "none", codeVersion: true, input });
+
+  test("checks every fixed HTTP field and never borrows a capability grant", () => {
+    expect(allows({ origin: "https://api.example.com", method: "GET", url: "https://api.example.com/invoices" })).toBe(true);
     for (const input of [
       { origin: "https://api.example.com.evil.test", method: "GET" },
       { origin: "https://api.example.com", method: "POST" },
       { method: "GET" },
       null,
     ])
-      expect(allows("runtime.http", input)).toBe(false);
-    expect(allows("capability.query:read", {})).toBe(false);
+      expect(allows(input)).toBe(false);
+    expect(
+      mandatePolicyAllows(policy, {
+        appId: "core",
+        operation: "capability.query:read",
+        actionApproval: "none",
+        codeVersion: true,
+        input: {},
+      }),
+    ).toBe(false);
+    expect(
+      mandatePolicyAllows(
+        { ...policy, grants: [{ appId: "core", kind: "query", capabilityId: "read", fixedInput: {} }] },
+        { appId: "core", operation: "runtime.http", actionApproval: "approved", codeVersion: true, input: {} },
+      ),
+    ).toBe(false);
   });
-  test("checks database resource, operation and table independently", () => {
-    expect(allows("runtime.database", { resourceId: "aBc234", operation: "rows.insert", table: "invoices" })).toBe(true);
-    for (const input of [
-      { resourceId: "other", operation: "rows.insert", table: "invoices" },
-      { resourceId: "aBc234", operation: "rows.delete", table: "invoices" },
-      { resourceId: "aBc234", operation: "rows.insert", table: "other" },
-      { resourceId: "aBc234", operation: "query" },
-    ])
-      expect(allows("runtime.database", input)).toBe(false);
-  });
-  test("removing restrictions is an expansion, while adding them narrows authority", () => {
+
+  test("removing HTTP restrictions is an expansion, while adding them narrows authority", () => {
     expect(isMandatePolicyNarrowing({ ...policy, grants: undefined }, policy)).toBe(false);
     expect(isMandatePolicyNarrowing(policy, { ...policy, grants: [{ kind: "http", fixedInput: {} }] })).toBe(false);
     expect(
       isMandatePolicyNarrowing(policy, {
         ...policy,
-        grants: [{ kind: "http", fixedInput: { origin: "https://api.example.com", method: "GET", url: "https://api.example.com/one" } }],
+        grants: [
+          {
+            kind: "http",
+            fixedInput: {
+              origin: "https://api.example.com",
+              method: "GET",
+              url: "https://api.example.com/one",
+            },
+          },
+        ],
       }),
     ).toBe(true);
-    expect(isMandatePolicyNarrowing(policy, { ...policy, grants: [{ kind: "database", fixedInput: { resourceId: "aBc234" } }] })).toBe(
-      false,
-    );
     expect(
       mandatePolicyAllows(
         { ...policy, grants: [] },
-        { appId: "assistant", operation: "runtime.http", actionApproval: "approved", input: {} },
+        {
+          appId: "core",
+          operation: "runtime.http",
+          actionApproval: "approved",
+          codeVersion: true,
+          input: {},
+        },
       ),
     ).toBe(false);
   });
@@ -325,5 +338,198 @@ describe("live capability policy across mandate shapes", () => {
         });
       }
     }
+  }
+});
+
+describe("operation and target grants", () => {
+  const target = { type: "demo.folder", id: "a" };
+  const refs = { destination: { type: "demo.folder", id: "b" } };
+  const grant = { appId: "demo", capabilityId: "move", kind: "action" as const, target, refs, fixedInput: { id: "item" } };
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["demo"],
+    operations: ["capability.action.run:move", "capability.action.review:move"],
+    actions: "preapproved",
+    grants: [grant],
+  });
+  const call = { capability: "demo.move", target, refs, input: { id: "item", title: "New" } };
+  const check = {
+    appId: "demo",
+    operation: "capability.action.run:move",
+    actionApproval: "none" as const,
+    capabilityPolicy: { silent: "shared" } as const,
+    input: call.input,
+    call,
+  };
+
+  test("the complete pair is checked for both people and Code, before run and review", () => {
+    for (const legacyCodeAccount of [false, true]) {
+      for (const operation of policy.operations) {
+        expect(mandatePolicyAllows(policy, { ...check, operation, legacyCodeAccount })).toBe(true);
+        for (const changed of [
+          { ...call, target: { ...target, id: "other" } },
+          { ...call, target: { ...target, type: "other.folder" } },
+          { ...call, refs: { destination: { ...refs.destination, id: "other" } } },
+          { ...call, refs: {} },
+          { ...call, refs: { ...refs, extra: target } },
+          { ...call, capability: "demo.delete" },
+        ])
+          expect(mandatePolicyAllows(policy, { ...check, legacyCodeAccount, operation, call: changed })).toBe(false);
+      }
+    }
+    expect(
+      mandatePolicyCanPermitCapability(policy, {
+        appId: "demo",
+        capabilityId: "move",
+        kind: "action",
+        capabilityPolicy: { silent: "shared" },
+      }),
+    ).toBe(true);
+    expect(
+      mandatePolicyCanPermitCapability(policy, {
+        appId: "demo",
+        capabilityId: "other",
+        kind: "action",
+        capabilityPolicy: { silent: "shared" },
+      }),
+    ).toBe(false);
+  });
+
+  test("legacy and operation-only grants cannot authorize bound calls", () => {
+    const legacy = { ...grant, target: undefined, refs: undefined };
+    expect(mandatePolicyAllows({ ...policy, grants: [legacy] }, check)).toBe(false);
+    expect(mandatePolicyAllows({ ...policy, grants: undefined }, check)).toBe(false);
+    expect(mandatePolicyAllows(policy, { ...check, call: undefined })).toBe(false);
+    expect(mandatePolicyAllows({ ...policy, grants: [legacy] }, { ...check, legacyCodeAccount: true, call: undefined })).toBe(false);
+    expect(mandatePolicyAllows(policy, { ...check, input: { id: "other" } })).toBe(false);
+  });
+
+  test("app-wide Code Actions need an explicit null target and never inherit query grants", () => {
+    const appCall = { ...call, target: null, refs: {} };
+    const appGrant = { ...grant, target: null, refs: {} };
+    expect(mandatePolicyAllows({ ...policy, grants: [appGrant] }, { ...check, legacyCodeAccount: true, call: appCall })).toBe(true);
+    expect(
+      mandatePolicyAllows(
+        { ...policy, grants: [{ ...appGrant, target: undefined }] },
+        { ...check, legacyCodeAccount: true, call: appCall },
+      ),
+    ).toBe(false);
+    expect(
+      mandatePolicyAllows({ ...policy, grants: undefined }, { ...check, legacyCodeAccount: true, codeVersion: true, call: appCall }),
+    ).toBe(false);
+    expect(
+      mandatePolicyAllows({ ...policy, grants: [{ ...appGrant, kind: "query" }] }, { ...check, legacyCodeAccount: true, call: appCall }),
+    ).toBe(false);
+  });
+
+  test("Code queries check operations; person routines can additionally bind query targets", () => {
+    const queryPolicy = parseMandatePolicy({
+      version: 1,
+      apps: ["demo"],
+      operations: ["capability.query:read"],
+      actions: "deny",
+      grants: [{ appId: "demo", capabilityId: "read", kind: "query", fixedInput: {} }],
+    });
+    const queryCall = { capability: "demo.read", target, refs: {}, input: {} };
+    const queryCheck = { appId: "demo", operation: "capability.query:read", actionApproval: "none" as const, call: queryCall };
+    expect(mandatePolicyAllows(queryPolicy, { ...queryCheck, legacyCodeAccount: true })).toBe(true);
+    expect(mandatePolicyAllows(queryPolicy, queryCheck)).toBe(false);
+    const bound = { ...queryPolicy, grants: [{ ...queryPolicy.grants![0]!, target }] };
+    expect(mandatePolicyAllows(bound, queryCheck)).toBe(true);
+    expect(mandatePolicyAllows(bound, { ...queryCheck, call: { ...queryCall, target: { ...target, id: "other" } } })).toBe(false);
+    expect(mandatePolicyAllows({ ...queryPolicy, grants: undefined }, { ...queryCheck, codeVersion: true })).toBe(true);
+    expect(mandatePolicyAllows({ ...policy, grants: undefined }, { ...check, codeVersion: true })).toBe(true);
+  });
+
+  test("unattended target grants never authorize ask Actions", () => {
+    expect(
+      mandatePolicyAllows(policy, { ...check, legacyCodeAccount: true, actionApproval: "approved", capabilityPolicy: { ask: "sends" } }),
+    ).toBe(false);
+  });
+
+  test("removing or changing coordinates is expansion; fixed inputs can narrow", () => {
+    expect(isMandatePolicyNarrowing(policy, { ...policy, grants: [{ ...grant, target: { ...target, id: "other" } }] })).toBe(false);
+    expect(isMandatePolicyNarrowing(policy, { ...policy, grants: [{ ...grant, target: undefined }] })).toBe(false);
+    expect(isMandatePolicyNarrowing(policy, { ...policy, grants: [{ ...grant, refs: undefined }] })).toBe(false);
+    expect(isMandatePolicyNarrowing(policy, { ...policy, grants: [{ ...grant, fixedInput: { id: "item", title: "New" } }] })).toBe(true);
+    const legacy = { ...policy, grants: [{ ...grant, target: undefined, refs: undefined }] };
+    expect(isMandatePolicyNarrowing(legacy, policy)).toBe(false);
+    expect(isMandatePolicyNarrowing({ ...policy, grants: undefined }, policy)).toBe(false);
+  });
+
+  test("app-wide Action authority cannot be added by a workload narrowing", () => {
+    const appWide = { ...policy, grants: [{ ...grant, target: null, refs: {} }] };
+    const operationOnly = { ...policy, grants: [{ ...grant, target: undefined, refs: undefined }] };
+    expect(isMandatePolicyNarrowing(operationOnly, appWide)).toBe(false);
+    expect(isMandatePolicyNarrowing({ ...policy, grants: undefined }, appWide)).toBe(false);
+    expect(isMandatePolicyNarrowing(appWide, appWide)).toBe(true);
+  });
+});
+
+test("grant references retain the declaration's case-sensitive field names", () => {
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["demo"],
+    operations: ["capability.action.run:move"],
+    actions: "preapproved",
+    grants: [
+      {
+        appId: "demo",
+        capabilityId: "move",
+        kind: "action",
+        target: { type: "demo.book", id: "a" },
+        refs: { targetBookId: { type: "demo.book", id: "b" } },
+      },
+    ],
+  });
+  expect(policy.grants?.[0]).toMatchObject({ refs: { targetBookId: { type: "demo.book", id: "b" } } });
+});
+
+test("only trusted Core Code version issuance may use Core runtime.http grants", () => {
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["core"],
+    operations: ["runtime.http"],
+    actions: "preapproved",
+    grants: [{ kind: "http", fixedInput: { origin: "https://api.example:8443" } }],
+  });
+  const call = { appId: "core", operation: "runtime.http", actionApproval: "none" as const, input: { origin: "https://api.example:8443" } };
+  expect(mandatePolicyAllows(policy, call)).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...call, codeVersion: true })).toBe(true);
+  expect(mandatePolicyAllows(policy, { ...call, codeVersion: true, input: { origin: "https://api.example" } })).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...call, codeVersion: true, operation: "runtime.database" })).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...call, codeVersion: true, appId: "other" })).toBe(false);
+});
+
+test("personal Code operation grants retain dynamic targets alongside HTTP grants, while explicit restrictions bind", () => {
+  const target = { type: "demo.book", id: "dynamic" };
+  const call = { capability: "demo.move", target, refs: { destination: { ...target, id: "other" } }, input: { allowed: true } };
+  const grant = { kind: "action" as const, appId: "demo", capabilityId: "move", fixedInput: { allowed: true } };
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["core", "demo"],
+    operations: ["runtime.http", "capability.action.run:move"],
+    actions: "preapproved",
+    grants: [grant, { kind: "http", fixedInput: { origin: "https://api.example" } }],
+  });
+  const input = {
+    appId: "demo",
+    operation: "capability.action.run:move",
+    actionApproval: "none" as const,
+    codeVersion: true,
+    legacyCodeAccount: false,
+    capabilityPolicy: { silent: "shared" as const },
+    call,
+    input: call.input,
+  };
+  expect(mandatePolicyAllows(policy, input)).toBe(true);
+  expect(mandatePolicyAllows(policy, { ...input, codeVersion: false })).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...input, legacyCodeAccount: true })).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...input, input: { allowed: false } })).toBe(false);
+  for (const restricted of [
+    { ...grant, target: { ...target, id: "fixed" } },
+    { ...grant, refs: {} },
+  ]) {
+    expect(mandatePolicyAllows({ ...policy, grants: [restricted] }, input)).toBe(false);
   }
 });

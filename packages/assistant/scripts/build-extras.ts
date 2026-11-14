@@ -1,19 +1,31 @@
-import { cp, mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
 const output = process.env.DIST_DIR;
 if (!output) throw new Error("DIST_DIR is required");
-const build = await Bun.build({
-  entrypoints: [resolve(import.meta.dir, "../src/artifacts/runtime/worker.ts")],
-  target: "browser",
-  format: "iife",
-  minify: true,
-  define: { "import.meta.url": JSON.stringify("about:blank") },
-});
-if (!build.success) throw new Error(build.logs.join("\n"));
-await Bun.write(resolve(output, "assistant-artifact-worker.js"), await build.outputs[0]!.text());
+for (const runner of [false, true]) {
+  const build = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "../src/chat-code/runtime/worker.ts")],
+    target: "browser",
+    format: "iife",
+    minify: true,
+    define: { "import.meta.url": JSON.stringify("about:blank"), __CLOUD_CODE_RUNNER__: String(runner) },
+  });
+  if (!build.success) throw new Error(build.logs.join("\n"));
+  await Bun.write(
+    resolve(output, runner ? "assistant-artifact-runner-worker.js" : "assistant-artifact-worker.js"),
+    await build.outputs[0]!.text(),
+  );
+}
 
 const chunks: Record<string, string> = {};
+const prelude = await Bun.build({
+  entrypoints: [resolve(import.meta.dir, "../src/chat-code/runtime/runner-worker.ts")],
+  target: "browser",
+  format: "esm",
+  minify: true,
+});
+if (!prelude.success) throw new Error(prelude.logs.join("\n"));
+await Bun.write(resolve(output, "assistant-artifact-runner-prelude.js"), await prelude.outputs[0]!.text());
 for (const [name, entry] of Object.entries({
   csv: "sheet-lib.ts",
   sheet: "sheet-chunk.ts",
@@ -21,7 +33,7 @@ for (const [name, entry] of Object.entries({
   "pdf-read": "pdf-reader.ts",
 })) {
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, `../src/artifacts/runtime/${entry}`)],
+    entrypoints: [resolve(import.meta.dir, `../src/chat-code/runtime/${entry}`)],
     target: "browser",
     format: "esm",
     minify: true,
@@ -36,35 +48,6 @@ for (const [name, entry] of Object.entries({
 }
 await Bun.write(resolve(output, "assistant-artifact-chunks.json"), JSON.stringify(chunks));
 
-// HTML app frames: the hash-pinned prelude and the base stylesheet with fonts (also used by cloud.pdf.render).
-const { buildBaseCss, buildPrelude, buildCheckPrelude, buildChartParts } = await import("../src/artifacts/html/build-assets");
-await Bun.write(resolve(output, "assistant-app-prelude.js"), await buildPrelude());
-await Bun.write(resolve(output, "assistant-check-prelude.js"), await buildCheckPrelude());
+// PDF documents keep the shared stylesheet and fonts; rendering is owned by Gotenberg.
+const { buildBaseCss } = await import("../src/chat-code/build-document-css");
 await Bun.write(resolve(output, "assistant-app-base.css"), await buildBaseCss());
-await Bun.write(resolve(output, "assistant-chart-parts.json"), JSON.stringify(await buildChartParts()));
-
-const host = await Bun.build({
-  entrypoints: [resolve(import.meta.dir, "../src/artifacts/runtime/cli-host.ts")],
-  target: "browser",
-  format: "iife",
-  minify: true,
-});
-if (!host.success) throw new Error(host.logs.join("\n"));
-await Bun.write(resolve(output, "assistant-cli-host.js"), await host.outputs[0]!.text());
-
-const hostProcess = await Bun.build({
-  entrypoints: [resolve(import.meta.dir, "../src/cli/code-host-process.ts")],
-  target: "bun",
-  format: "esm",
-  external: ["playwright"],
-});
-if (!hostProcess.success) throw new Error(hostProcess.logs.join("\n"));
-await Bun.write(resolve(output, "assistant-code-host-process.js"), await hostProcess.outputs[0]!.text());
-await mkdir(resolve(output, "node_modules"), { recursive: true });
-for (const name of ["playwright", "playwright-core"]) {
-  const packagePath = Bun.resolveSync(
-    `${name}/package.json`,
-    dirname(Bun.resolveSync("playwright/package.json", resolve(import.meta.dir, ".."))),
-  );
-  await cp(dirname(packagePath), resolve(output, "node_modules", name), { recursive: true });
-}

@@ -32,6 +32,7 @@ const files: Record<string, Classification> = {
   movementChain: read,
   shareAccess: read,
   machineStorage: read,
+  machineStorageById: read,
   createMachineStorage: mutation(),
   storageGrants: read,
   grantStorage: read,
@@ -85,6 +86,8 @@ const files: Record<string, Classification> = {
   folderSearch: base(),
   publiclyShared: base(),
   folderLocation: base(),
+  // Root resolution can provision a missing auto-created Cloud home.
+  rootLocation: base(),
   mkdir: { kind: "mutation", coverage: "converted" },
   mkdirs: { kind: "mutation", coverage: "converted" },
   upload: mutation(),
@@ -133,6 +136,7 @@ const files: Record<string, Classification> = {
 const templates: Record<string, Classification> = {
   list: read,
   get: read,
+  read,
   upload: read,
   import: base(),
   update: read,

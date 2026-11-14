@@ -11,6 +11,8 @@ import { adminFixtureIdentity } from "./store/admin-identity.test-fixture";
 suiteFor("database")("saved query capability permissions, review, and retries", () => {
   beforeAll(migrate);
   test("read lists, save needs write, updates use revision, replay is stable, delete always asks", async () => {
+    const otherBaseId = crypto.randomUUID(),
+      otherBaseRef = newShortId();
     const baseId = crypto.randomUUID(),
       baseRef = newShortId();
     const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name)
@@ -25,11 +27,15 @@ suiteFor("database")("saved query capability permissions, review, and retries", 
       user: null,
       locale: "en",
       requestId: "pulse-capability-fixture",
+      target: { type: "pulse.base", id: baseRef },
       origin: "http",
       signal: new AbortController().signal,
       idempotencyKey: "create-query",
     };
-    const input = { baseId: baseRef, name: "Events", sql: "SELECT :message", params: { message: "'); DROP TABLE x; --" } };
+    await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${otherBaseId}::uuid,${otherBaseRef},'Other base')`;
+    await seedActiveBaseStore(otherBaseId);
+    await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${otherBaseId}::uuid,${grant!.id}::uuid)`;
+    const input = { name: "Events", sql: "SELECT :message", params: { message: "'); DROP TABLE x; --" } };
     try {
       expect(await pulseCapabilities.queries["saved_query.list"].run({ baseId: baseRef, limit: 25 }, context)).toMatchObject({
         ok: true,
@@ -43,6 +49,13 @@ suiteFor("database")("saved query capability permissions, review, and retries", 
       expect(created.ok).toBe(true);
       if (!created.ok) throw new Error("SAVE_FAILED");
       expect(created.data.data).toMatchObject({ revision: 1, params: input.params });
+      // Both bases are writable; a query ID from A still cannot be changed through B.
+      const foreign = { ...context, target: { type: "pulse.base", id: otherBaseRef }, idempotencyKey: "foreign-query" };
+      const foreignInput = { ...input, queryId: created.data.data.id, expectedRevision: 1 };
+      for (const operation of [pulseCapabilities.actions["saved_query.save"], pulseCapabilities.actions["saved_query.delete"]]) {
+        expect(await operation.review(foreignInput, foreign)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+        expect(await operation.run(foreignInput, foreign)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+      }
       expect(await pulseCapabilities.actions["saved_query.save"].run(input, context)).toEqual(created);
       const update = { ...input, queryId: created.data.data.id, expectedRevision: 1, name: "Updated" };
       const updated = await pulseCapabilities.actions["saved_query.save"].run(update, { ...context, idempotencyKey: "update-query" });
@@ -56,7 +69,7 @@ suiteFor("database")("saved query capability permissions, review, and retries", 
         error: { status: 409 },
       });
       const deletion = pulseCapabilities.actions["saved_query.delete"];
-      const deleteInput = { baseId: baseRef, queryId: created.data.data.id, expectedRevision: 1 };
+      const deleteInput = { queryId: created.data.data.id, expectedRevision: 1 };
       expect(await deletion.review(deleteInput, context)).toMatchObject({ ok: false, error: { status: 409 } });
       expect(await deletion.run(deleteInput, { ...context, idempotencyKey: "stale-delete" })).toMatchObject({
         ok: false,
@@ -65,18 +78,15 @@ suiteFor("database")("saved query capability permissions, review, and retries", 
       expect("approval" in deletion).toBe(false);
       expect(deletion.destructive).toBe(true);
       const deleted = await deletion.run(
-        { baseId: baseRef, queryId: created.data.data.id, expectedRevision: 2 },
+        { queryId: created.data.data.id, expectedRevision: 2 },
         { ...context, idempotencyKey: "delete-query" },
       );
       expect(deleted).toMatchObject({ ok: true, data: { data: { deleted: true } } });
       expect(
-        await deletion.run(
-          { baseId: baseRef, queryId: created.data.data.id, expectedRevision: 2 },
-          { ...context, idempotencyKey: "delete-query" },
-        ),
+        await deletion.run({ queryId: created.data.data.id, expectedRevision: 2 }, { ...context, idempotencyKey: "delete-query" }),
       ).toEqual(deleted);
     } finally {
-      await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;
+      await sql`DELETE FROM pulse.bases WHERE id IN (${baseId}::uuid, ${otherBaseId}::uuid)`;
       await sql`DELETE FROM auth.access WHERE id=${grant!.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
     }

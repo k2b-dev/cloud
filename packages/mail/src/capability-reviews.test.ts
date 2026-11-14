@@ -75,6 +75,8 @@ const silent = [
   "draft.intent",
   "draft.consolidation.acknowledge",
   "draft.attachment.add",
+  // FileRef import changes the same editable draft as inline attachment.add; it never sends.
+  "draft.attachment.import.v1",
   "conversation.mark",
   "conversation.move",
   "conversation.tag.update",
@@ -94,7 +96,13 @@ const silent = [
 ];
 
 describe("Mail review contract", () => {
-  test("all 34 policies compile exactly as decided, without legacy approval declarations", () => {
+  test("FileRef import uses the same shared draft-write policy as inline attachment add", () => {
+    expect(capabilityActionPolicy(manifest, "draft.attachment.import.v1")).toEqual({ silent: "shared" });
+    expect(capabilityActionPolicy(manifest, "draft.attachment.import.v1")).toEqual(
+      capabilityActionPolicy(manifest, "draft.attachment.add"),
+    );
+  });
+  test("all 35 policies compile exactly as decided, without legacy approval declarations", () => {
     const expected: Record<string, import("@k2b/cloud/contracts").CapabilityActionPolicy> = {
       ...Object.fromEntries(silent.map((id) => [id, { silent: "shared" }])),
       ...Object.fromEntries(Object.entries(askPolicies).map(([id, ask]) => [id, { ask }])),
@@ -102,7 +110,7 @@ describe("Mail review contract", () => {
       "conversation.reminder.cancel": { silent: "you" },
       "folder.display.set": { silent: "shared", routines: false },
     };
-    expect(Object.keys(expected)).toHaveLength(34);
+    expect(Object.keys(expected)).toHaveLength(35);
     expect(Object.keys(mailActionReviews).sort()).toEqual(Object.keys(expected).sort());
     expect(Object.keys(mailCapabilities.actions).sort()).toEqual(Object.keys(expected).sort());
     for (const [id, policy] of Object.entries(expected)) expect(capabilityActionPolicy(manifest, id)).toEqual(policy);
@@ -416,12 +424,12 @@ describe("Mail review contract", () => {
       "conversation.related",
       "conversation.read",
       "message.list",
-      "message.read-content",
+      "message.content.read",
       "message.read",
     ] as const)
       expect(mailCapabilities.queries[id].openWorld).toBeTrue();
     // A permission-scoped local lookup is closed-world; its content remains untrusted.
-    for (const id of ["attachment.read-content", "draft.read", "draft.list"] as const)
+    for (const id of ["attachment.text.read", "draft.read", "draft.list"] as const)
       expect(mailCapabilities.queries[id].openWorld).toBeFalse();
   });
 });

@@ -1,18 +1,25 @@
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { listCapabilities } from "../_internal/registry";
-import { resolveAiChatRequestContext } from "../ai/request-context";
 import type { ApprovalListQuery, ApprovalPage } from "../contracts/approvals";
 import { CapabilityActionReviewPresentationSchema, capabilityActionPolicy } from "../contracts/capabilities";
-import type { AuthContext } from "../server/middleware/auth";
+import { userFromActor } from "../server/actor";
+import { getLocale } from "../server/locale";
+import { type AuthContext, auth } from "../server/middleware/auth";
 import { listPending, presentPendingApproval } from "../services/approvals/list";
 import { logger } from "../services/logging";
 import { getLocalizedRuntimeContext } from "../ssr/runtime";
 
 export const loadPendingApprovals = async <T extends AuthContext>(c: Context<T>, query: ApprovalListQuery): Promise<ApprovalPage> => {
-  const ctx = await resolveAiChatRequestContext(c);
-  if (ctx instanceof Response) throw new HTTPException(403, { res: ctx });
-  const page = await listPending({ approverUserId: ctx.ownerUserId, appId: query.app, link: query.link, cursor: query.cursor });
+  const user = userFromActor(c.get("actor"));
+  if (!user) throw new HTTPException(403, { message: "Approvals require a user-backed actor." });
+  const page = await listPending({
+    roleContext: { kind: "request", authority: auth.getAuthority(c) },
+    approverUserId: user.id,
+    appId: query.app,
+    link: query.link,
+    cursor: query.cursor,
+  });
   const apps = getLocalizedRuntimeContext(c).apps;
   const needsPolicy = page.items.some((row) => {
     if (row.storedReview && "sentence" in row.storedReview) return false;
@@ -31,7 +38,7 @@ export const loadPendingApprovals = async <T extends AuthContext>(c: Context<T>,
     ...page,
     items: page.items.map((row) => {
       const manifest = capabilities.find((entry) => entry.appId === row.appId)?.manifest;
-      return presentPendingApproval(row, apps, manifest ? capabilityActionPolicy(manifest, row.action) : undefined);
+      return presentPendingApproval(row, apps, manifest ? capabilityActionPolicy(manifest, row.action) : undefined, getLocale(c));
     }),
   };
 };

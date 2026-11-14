@@ -1,0 +1,638 @@
+import type { CodeSecretVersionBinding } from "@k2b/cloud/contracts";
+import type { CodeRouteOwner } from "@k2b/cloud/ssr/code-page/messages";
+import { codeAutomationName } from "@k2b/cloud/ssr/code-page/targets";
+import { describeCodeTiming } from "@k2b/cloud/ssr/code-schedule";
+import { Button, ButtonLink, CodeDiff, type CodeDiffLocation, NoticeCard, prompts, Skeleton, useLocale } from "@k2b/ui";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { z } from "zod";
+import type { CodeAutomationView } from "../../../code/automation-view";
+import { type CodeVersionBinding, type CodeVersionDiffFile, codeVersionContracts } from "../../../code/version-contracts";
+import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
+import { codeAdminMessages } from "./messages";
+
+/** One permission row, already labelled by the page. `side` is old for a removed permission. */
+export type CodeApprovalRight = {
+  icon: string;
+  label: string;
+  sub: string;
+  change: "added" | "same" | "removed";
+  file?: string;
+  line?: number;
+};
+
+/** One operation of the trial run, with its count here and, when compared, in the earlier version. */
+export type CodeApprovalTrialCall = { label: string; operation: string; now: number; before: number };
+
+/** What Core recorded at submission, already worded by the page. `null` for a version submitted without a record. */
+export type CodeApprovalCheck = {
+  tests: string;
+  testsOk: boolean;
+  trial: string | null;
+  calls: CodeApprovalTrialCall[];
+  /** The earlier version's number when its trial run can be compared. */
+  comparedWith: number | null;
+};
+
+export type CodeApprovalReviewProps = {
+  versionId: string;
+  /** Self-approval recovery signs out only the version's author, never a newer browser account. */
+  authorUserId: string | null;
+  explanation: string | null;
+  check: CodeApprovalCheck | null;
+  number: number;
+  binding: CodeVersionBinding;
+  status: "submitted" | "pending" | "approved" | "rejected" | "expired" | "cancelled";
+  canApprove: boolean;
+  own: boolean;
+  soleAdminNotice: string | null;
+  staleComparison: boolean;
+  newer: { number: number; author: string; href: string } | null;
+  why: string[];
+  rights: CodeApprovalRight[];
+  /** Named as the Code page names them; the stable identifier shows beside a reviewed title. */
+  automations?: CodeAutomationView[];
+  /** Whose rights the version's pages that are not public run with. */
+  routeOwner: CodeRouteOwner;
+  internet: string[];
+  database?: boolean;
+  secrets: CodeSecretVersionBinding[];
+  diffHeader: string;
+  files: CodeVersionDiffFile[] | null;
+  decision: { approved: boolean; soleAdmin: boolean; by: string; when: string } | null;
+  /** The Code in Administration › Code, where it can be paused. */
+  codeHref: string;
+  nextHref: string | null;
+  listHref: string;
+};
+
+const short = (hash: string | null) => (hash ? `${hash.slice(0, 4)}…${hash.slice(-2)}` : "—");
+
+/** Survives the reload after a decision, so the reloaded page moves focus to the result once. */
+const DECIDED_KEY = "k2b-code-decided";
+const RESULT_ID = "code-review-result";
+const FAILURE_ID = "code-review-failure";
+
+/**
+ * The detail level of one version: why it needs you, what changes in permissions, the full Code difference and the
+ * decision bound to the exact hashes. Deciding sends the unchanged binding; the server rechecks everything.
+ */
+export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
+  const locale = useLocale();
+  const t = () => codeAdminMessages.resolve([locale()]).t;
+  const [mark, setMark] = createSignal<CodeDiffLocation>();
+  const [busy, setBusy] = createSignal<"approve" | "reject" | null>(null);
+  const [failure, setFailure] = createSignal<string | null>(null);
+  const [failureCode, setFailureCode] = createSignal<string>();
+  const [signingOut, setSigningOut] = createSignal(false);
+  const [signOutFailed, setSignOutFailed] = createSignal(false);
+  const [explanation, setExplanation] = createSignal(props.explanation);
+  // An open approval asks once by itself; the first render reserves the place, so the page does not shift.
+  const [explaining, setExplaining] = createSignal(props.explanation === null && props.status === "pending");
+  const [explainFailed, setExplainFailed] = createSignal(false);
+  const [callsOpen, setCallsOpen] = createSignal(false);
+  const explainAbort = new AbortController();
+  onCleanup(() => explainAbort.abort());
+
+  const explain = async () => {
+    setExplaining(true);
+    setExplainFailed(false);
+    try {
+      const result = await postCodeAdmin("explain", { versionId: props.versionId }, z.object({ text: z.string() }), explainAbort.signal);
+      setExplanation(result.text);
+    } catch {
+      if (!explainAbort.signal.aborted) setExplainFailed(true);
+    } finally {
+      setExplaining(false);
+    }
+  };
+  onMount(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("reauthenticate")) {
+      url.searchParams.delete("reauthenticate");
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+    if (explaining()) void explain();
+    // The decision was made in the footer; after the reload its result is at the top, so focus and screen readers go there.
+    try {
+      if (sessionStorage.getItem(DECIDED_KEY) !== props.versionId) return;
+      sessionStorage.removeItem(DECIDED_KEY);
+    } catch {
+      return;
+    }
+    document.getElementById(RESULT_ID)?.focus({ preventScroll: false });
+  });
+
+  const pending = () => props.status === "pending";
+  const blocked = () => (props.newer ? t().outdated({ n: props.number }) : props.files ? null : t().notLoaded);
+  const mayDecide = () => pending() && props.canApprove && !props.staleComparison;
+
+  const signInHref = (admin = false) => {
+    const target = new URL(window.location.href);
+    target.searchParams.delete("reauthenticate");
+    if (!admin) target.searchParams.set("reauthenticate", "1");
+    const query = new URLSearchParams({ redirectTo: `${target.pathname}${target.search}` });
+    if (admin) query.set("method", "admin");
+    return `/auth/login?${query}`;
+  };
+
+  const signInAdmin = async () => {
+    if (signingOut() || !props.authorUserId) return;
+    setSigningOut(true);
+    setSignOutFailed(false);
+    try {
+      const { signOutBrowserSession } = await import("@k2b/cloud/browser/session");
+      await signOutBrowserSession(props.authorUserId, t().signOutFailed);
+      window.location.assign(signInHref(true));
+    } catch {
+      setSignOutFailed(true);
+      setSigningOut(false);
+    }
+  };
+
+  const decide = async (approved: boolean) => {
+    if (!approved) {
+      const confirmed = await prompts.confirm(t().rejectBody, {
+        title: t().rejectTitle({ n: props.number }),
+        confirmText: t().rejectConfirm,
+        cancelText: t().cancel,
+        variant: "danger",
+      });
+      if (!confirmed) return;
+    }
+    setBusy(approved ? "approve" : "reject");
+    setFailure(null);
+    setFailureCode(undefined);
+    setSignOutFailed(false);
+    try {
+      await postCodeAdmin("decide", { binding: props.binding, approved }, codeVersionContracts.decide.data);
+      try {
+        sessionStorage.setItem(DECIDED_KEY, props.versionId);
+      } catch {
+        // Without storage the result still renders at the top; only the focus move is lost.
+      }
+      // The server renders the decision and the sidebar count of open approvals from the same state. The button keeps
+      // its busy state until the reloaded page replaces it, so nothing on this page moves in between.
+      reloadCodeArea();
+    } catch (error) {
+      setBusy(null);
+      const code = error instanceof CodeAdminRequestError ? error.code : undefined;
+      setFailureCode(code);
+      const reason =
+        code === "SELF_APPROVAL"
+          ? t().decideSelfApproval
+          : code === "REAUTHENTICATE"
+            ? t().decideReauthenticate
+            : code === "REJECT_ONLY"
+              ? t().decideRejectOnly
+              : code === "NOT_FOUND"
+                ? t().decideNotFound
+                : code === "BUSY"
+                  ? t().decideBusy
+                  : code === "UNAVAILABLE"
+                    ? t().decideUnavailable
+                    : null;
+      // Only a refusal proves nothing changed; a lost answer may follow a committed decision.
+      setFailure(
+        !(error instanceof CodeAdminRequestError) || error.status < 400 || error.status >= 500
+          ? `${t().unknownTitle} ${t().unknownDecideSub}`
+          : (reason ?? (error.status === 409 ? t().decideConflict : error.status === 403 ? t().decideForbidden : t().decideFailed)),
+      );
+      queueMicrotask(() => document.getElementById(FAILURE_ID)?.focus());
+    }
+  };
+
+  const showLine = (right: CodeApprovalRight) => {
+    if (!right.file || !right.line) return;
+    // CodeDiff centres the line in the detail column alone; the shell around it stays put.
+    setMark({ path: right.file, line: right.line, side: right.change === "removed" ? "old" : "new" });
+  };
+
+  const decidedNotice = () => {
+    const state = props.status === "approved" || props.status === "rejected" ? props.status : null;
+    if (!state) return null;
+    return (
+      <NoticeCard
+        id={RESULT_ID}
+        tabIndex={-1}
+        tone={state === "approved" ? "success" : "neutral"}
+        title={state === "approved" ? t().approvedTitle({ n: props.number }) : t().rejectedTitle({ n: props.number })}
+        detail={
+          <>
+            <p>{state === "approved" ? `${t().approvedSub} ${t().undoHint}` : t().rejectedSub}</p>
+            <Show when={props.decision}>
+              {(decision) => (
+                <p class="text-(--k2b-text-muted)">
+                  {t().decidedBy({ who: decision().by, when: decision().when })}
+                  {decision().soleAdmin ? ` · ${t().selfApproved}` : ""}
+                </p>
+              )}
+            </Show>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <Show when={state === "approved"}>
+                <ButtonLink size="sm" variant="secondary" href={props.codeHref}>
+                  {t().openCode}
+                </ButtonLink>
+              </Show>
+              <Show
+                when={props.nextHref}
+                fallback={
+                  <ButtonLink size="sm" variant="secondary" href={props.listHref}>
+                    {t().backToList}
+                  </ButtonLink>
+                }
+              >
+                {(href) => (
+                  <ButtonLink size="sm" href={href()}>
+                    {t().nextVersion}
+                  </ButtonLink>
+                )}
+              </Show>
+            </div>
+          </>
+        }
+      />
+    );
+  };
+
+  return (
+    <div class="flex min-h-full flex-col">
+      <div class="grid flex-1 content-start gap-6 px-2 pt-1 pb-6">
+        <Show when={decidedNotice()}>{(notice) => notice()}</Show>
+        <Show when={props.automations?.length}>
+          <section>
+            <h3 class="text-sm font-medium">{t().automations}</h3>
+            <ul class="mt-2 grid gap-1 text-sm text-secondary">
+              <For each={props.automations}>
+                {(entry) => (
+                  <li>
+                    <bdi>{codeAutomationName(entry, "", locale())}</bdi>
+                    {/* A reviewed title says what it does; when it runs follows, as on the Code page. */}
+                    <Show when={entry.title !== undefined && describeCodeTiming(entry, locale())}>{(timing) => <> · {timing()}</>}</Show>
+                    <Show when={entry.route}>
+                      {(route) => <> · {route().public ? t().routePublic : t().routePrivate({ owner: props.routeOwner })}</>}
+                    </Show>
+                    <Show when={entry.title}>
+                      <code class="ml-2 text-xs text-dimmed">{entry.entrypoint}</code>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </section>
+        </Show>
+
+        <Show when={props.status === "expired" || props.status === "cancelled"}>
+          <NoticeCard tone="neutral" title={t().closedTitle} detail={t().closedSub} />
+        </Show>
+        <Show when={pending() && props.newer}>
+          {(newer) => (
+            <NoticeCard
+              tone="warning"
+              icon="ti ti-git-branch"
+              title={t().newerTitle({ who: newer().author, n: newer().number })}
+              detail={
+                <>
+                  <p>{t().newerSub({ n: props.number })}</p>
+                  <div class="mt-2">
+                    <ButtonLink size="sm" href={newer().href}>
+                      {t().reviewNewer({ n: newer().number })}
+                    </ButtonLink>
+                  </div>
+                </>
+              }
+            />
+          )}
+        </Show>
+        <Show when={pending() && !props.newer && props.staleComparison}>
+          <NoticeCard tone="warning" title={t().staleTitle} detail={t().staleSub} />
+        </Show>
+        <Show when={pending() && props.own && !props.soleAdminNotice}>
+          <NoticeCard tone="neutral" icon="ti ti-user-x" title={t().ownTitle} detail={t().ownSub} />
+        </Show>
+        <Show when={pending() && props.soleAdminNotice}>
+          {(notice) => <NoticeCard tone="warning" icon="ti ti-user-shield" title={t().soleTitle} detail={notice()} />}
+        </Show>
+        <Show when={failure()}>
+          {(message) => (
+            <NoticeCard
+              id={FAILURE_ID}
+              tabIndex={-1}
+              tone="danger"
+              title={message()}
+              detail={signOutFailed() ? <span role="alert">{t().signOutFailed}</span> : undefined}
+              actions={
+                <div class="flex flex-wrap gap-2">
+                  <Show when={failureCode() === "REAUTHENTICATE"}>
+                    <Show
+                      when={!signOutFailed()}
+                      fallback={
+                        <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
+                          <i class="ti ti-refresh" aria-hidden="true" />
+                          {t().reload}
+                        </Button>
+                      }
+                    >
+                      <ButtonLink size="sm" href={signInHref()} navigation="document">
+                        {t().signInAgain}
+                      </ButtonLink>
+                    </Show>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      wrap
+                      loading={signingOut()}
+                      disabled={!props.authorUserId}
+                      onClick={() => void signInAdmin()}
+                    >
+                      {t().signInAdmin}
+                    </Button>
+                  </Show>
+                  <Show when={failureCode() === "NOT_FOUND"}>
+                    <ButtonLink size="sm" variant="secondary" href={props.listHref}>
+                      {t().backToList}
+                    </ButtonLink>
+                  </Show>
+                  <Show when={failureCode() !== "REAUTHENTICATE"}>
+                    <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
+                      <i class="ti ti-refresh" aria-hidden="true" />
+                      {t().reload}
+                    </Button>
+                  </Show>
+                </div>
+              }
+            />
+          )}
+        </Show>
+
+        <section class="grid gap-2" aria-labelledby="code-review-why">
+          <h3 id="code-review-why" class="text-base font-semibold">
+            {t().why}
+          </h3>
+          <Show when={props.why.length} fallback={<p class="text-sm text-(--k2b-text-muted)">{t().whyNone}</p>}>
+            <ul class="grid gap-2">
+              <For each={props.why}>
+                {(line) => (
+                  <li class="flex items-start gap-3 text-sm">
+                    <i class="ti ti-user-shield mt-0.5 text-(--k2b-text-muted)" aria-hidden="true" />
+                    <span>{line}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        </section>
+
+        <section class="grid gap-2" aria-labelledby="code-review-rights">
+          <div class="flex items-baseline justify-between gap-3">
+            <h3 id="code-review-rights" class="text-base font-semibold">
+              {t().rights}
+            </h3>
+            <span class="text-xs text-(--k2b-text-muted)">{t().rightsSub}</span>
+          </div>
+          <Show when={props.rights.length} fallback={<p class="text-sm text-(--k2b-text-muted)">{t().noRights}</p>}>
+            <ul class="grid gap-1">
+              <For each={props.rights}>
+                {(right) => (
+                  <li
+                    class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm"
+                    classList={{ "bg-(--k2b-success-surface)": right.change === "added" }}
+                    data-change={right.change}
+                  >
+                    <i
+                      class={`ti ${right.change === "added" ? "ti-plus text-(--k2b-success-text)" : right.change === "removed" ? "ti-minus text-(--k2b-text-muted)" : right.icon}`}
+                      aria-hidden="true"
+                    />
+                    <span class="min-w-0 flex-1" classList={{ "line-through text-(--k2b-text-muted)": right.change === "removed" }}>
+                      <span class="font-medium">{right.label}</span>
+                      <span class="block text-xs text-(--k2b-text-muted)">{right.sub}</span>
+                    </span>
+                    <span class="shrink-0 text-xs text-(--k2b-text-muted)">
+                      {right.change === "added" ? t().changeAdded : right.change === "removed" ? t().changeRemoved : t().changeSame}
+                    </span>
+                    <Show when={right.file && right.line && props.files}>
+                      <button
+                        type="button"
+                        class="k2b-text-link shrink-0 font-mono text-xs"
+                        aria-label={t().showLine({ file: right.file ?? "", n: right.line ?? 0 })}
+                        onClick={() => showLine(right)}
+                      >
+                        {t().lineRef({ n: right.line ?? 0 })}
+                      </button>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        </section>
+
+        <Show when={props.database}>
+          <p class="text-sm">
+            <i class="ti ti-database" aria-hidden="true" /> {t().usesDatabase}
+          </p>
+        </Show>
+        <section class="grid gap-2" aria-labelledby="code-review-internet">
+          <div class="flex items-baseline justify-between gap-3">
+            <h3 id="code-review-internet" class="text-base font-semibold">
+              {t().internetOrigins}
+            </h3>
+            <span class="text-xs text-(--k2b-text-muted)">{t().internetSub}</span>
+          </div>
+          <Show when={props.internet.length} fallback={<p class="text-sm text-(--k2b-text-muted)">{t().internetNone}</p>}>
+            <ul class="grid gap-1">
+              <For each={props.internet}>
+                {(target) => (
+                  <li class="flex items-center gap-3 px-3 py-1 text-sm">
+                    <i class="ti ti-world text-(--k2b-text-muted)" aria-hidden="true" />
+                    <span class="min-w-0 flex-1">
+                      <span class="font-mono">{target}</span>
+                    </span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        </section>
+
+        <Show when={props.secrets.length}>
+          <section class="grid gap-2" aria-labelledby="code-review-secrets">
+            <h3 id="code-review-secrets" class="text-base font-semibold">
+              {t().secretBindings}
+            </h3>
+            <ul class="grid gap-2">
+              <For each={props.secrets}>
+                {(binding) => (
+                  <li class="grid gap-1 px-3 py-1 text-sm">
+                    <span class="font-mono break-all">{binding.name}</span>
+                    <span class="font-mono break-all">
+                      {binding.origin}
+                      {binding.pathPrefix}
+                    </span>
+                    <span class="text-(--k2b-text-muted)">{t().secretHeaders({ names: binding.headers.join(", ") })}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </section>
+        </Show>
+        <section class="grid gap-2" aria-labelledby="code-review-explanation">
+          <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <h3 id="code-review-explanation" class="text-base font-semibold">
+              {t().whatHappens}
+            </h3>
+            <span class="text-xs text-(--k2b-text-muted)">
+              <i class="ti ti-sparkles text-(--k2b-ai-accent)" aria-hidden="true" /> {t().aiHint}
+            </span>
+          </div>
+          <Show
+            when={explanation()}
+            fallback={
+              <Show
+                when={!explaining()}
+                fallback={
+                  <div class="grid gap-2 py-0.5" role="status" aria-label={t().whatHappens}>
+                    <Skeleton class="h-3 w-full" />
+                    <Skeleton class="h-3 w-4/5" />
+                  </div>
+                }
+              >
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <Show when={explainFailed()}>
+                    <p class="text-sm text-(--k2b-text-muted)">{t().explainFailed}</p>
+                  </Show>
+                  <Button size="sm" variant="secondary" onClick={() => void explain()}>
+                    <i class={`ti ${explainFailed() ? "ti-refresh" : "ti-sparkles"}`} aria-hidden="true" />
+                    {explainFailed() ? t().explainRetry : t().explain}
+                  </Button>
+                </div>
+              </Show>
+            }
+          >
+            {(text) => <p class="max-w-prose text-sm">{text()}</p>}
+          </Show>
+        </section>
+
+        <section class="grid gap-2" aria-labelledby="code-review-check">
+          <h3 id="code-review-check" class="text-base font-semibold">
+            {t().check}
+          </h3>
+          <Show when={props.check} fallback={<p class="text-sm text-(--k2b-text-muted)">{t().evidenceMissing}</p>}>
+            {(check) => (
+              <ul class="grid gap-1">
+                <li class="flex items-center gap-3 px-3 py-1 text-sm" data-check="tests">
+                  <i
+                    class={`ti ${check().testsOk ? "ti-circle-check text-(--k2b-success-text)" : "ti-alert-triangle text-(--k2b-warning-text)"}`}
+                    aria-hidden="true"
+                  />
+                  <span class="min-w-0 flex-1">
+                    {t().checkTypes} · {check().tests}
+                  </span>
+                </li>
+                <Show when={check().trial}>
+                  {(trial) => (
+                    <li class="grid gap-2 px-3 py-1 text-sm" data-check="trial">
+                      <div class="flex items-center gap-3">
+                        <i class="ti ti-player-play text-(--k2b-text-muted)" aria-hidden="true" />
+                        <span class="min-w-0 flex-1">{trial()}</span>
+                        <Show when={check().calls.length}>
+                          <Button size="sm" variant="ghost" aria-expanded={callsOpen()} onClick={() => setCallsOpen(!callsOpen())}>
+                            {callsOpen() ? t().hideCalls : check().comparedWith === null ? t().showCalls : t().compare}
+                          </Button>
+                        </Show>
+                      </div>
+                      <Show when={callsOpen()}>
+                        <table class="w-full text-left text-xs">
+                          <thead class="text-(--k2b-text-muted)">
+                            <tr>
+                              <th class="py-1 pr-3 font-medium">{t().callColumn}</th>
+                              <Show when={check().comparedWith}>
+                                {(number) => <th class="py-1 pr-3 text-right font-medium">{t().callsBefore({ n: number() })}</th>}
+                              </Show>
+                              <th class="py-1 text-right font-medium">{t().callsNow}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <For each={check().calls}>
+                              {(call) => (
+                                <tr>
+                                  <td class="py-1 pr-3" title={call.operation}>
+                                    {call.label}
+                                  </td>
+                                  <Show when={check().comparedWith}>
+                                    <td class="py-1 pr-3 text-right tabular-nums">{call.before}</td>
+                                  </Show>
+                                  <td class="py-1 text-right tabular-nums">{call.now}</td>
+                                </tr>
+                              )}
+                            </For>
+                          </tbody>
+                        </table>
+                      </Show>
+                    </li>
+                  )}
+                </Show>
+              </ul>
+            )}
+          </Show>
+        </section>
+
+        <section class="grid gap-2" aria-labelledby="code-review-diff">
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h3 id="code-review-diff" class="text-base font-semibold">
+              {t().diff}
+            </h3>
+            <span class="text-xs text-(--k2b-text-muted)">{props.diffHeader}</span>
+          </div>
+          <CodeDiff
+            files={props.files ?? []}
+            mark={mark()}
+            status={props.files ? undefined : "error"}
+            errorDescription={t().diffFailedSub}
+            onRetry={() => reloadCodeArea()}
+            label={t().diff}
+          />
+        </section>
+      </div>
+
+      {/* The binding is one line on top, the decision one row below it, so the approve button never wraps alone. */}
+      <div class="sticky bottom-0 grid gap-2 bg-(--k2b-surface) px-2 py-3">
+        <p class="text-xs text-(--k2b-text-muted)">
+          <i class="ti ti-lock" aria-hidden="true" /> {t().boundTo({ n: props.number })}
+          <span class="hidden md:inline">
+            {" "}
+            · {t().sourceHash} <code title={props.binding.sourceHash}>{short(props.binding.sourceHash)}</code> · {t().bundleHash}{" "}
+            <code title={props.binding.bundleHash}>{short(props.binding.bundleHash)}</code>
+          </span>
+        </p>
+        <Show when={pending() && (!props.own || props.soleAdminNotice)}>
+          {/* Why approving is blocked sits on its own line, so the two buttons never split across rows. */}
+          <Show when={blocked() ?? (props.staleComparison ? t().staleTitle : null)}>
+            {(reason) => (
+              <p class="text-right text-xs font-medium text-(--k2b-warning-text)">
+                <i class="ti ti-alert-triangle" aria-hidden="true" /> {reason()}
+              </p>
+            )}
+          </Show>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              variant="secondary"
+              disabled={!mayDecide() || busy() !== null}
+              loading={busy() === "reject"}
+              onClick={() => void decide(false)}
+            >
+              {t().reject}
+            </Button>
+            <Button
+              disabled={!mayDecide() || blocked() !== null || busy() !== null}
+              loading={busy() === "approve"}
+              onClick={() => void decide(true)}
+            >
+              <i class="ti ti-check" aria-hidden="true" />
+              {t().approveVersion({ n: props.number })}
+            </Button>
+          </div>
+        </Show>
+      </div>
+    </div>
+  );
+}

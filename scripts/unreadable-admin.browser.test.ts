@@ -13,7 +13,7 @@ afterAll(async () => {
   await preview?.server.stop(true);
 });
 
-for (const surface of ["storage", "database", "linux", "outgoing", "directory", "logs"] as const) {
+for (const surface of ["linux", "outgoing", "directory", "logs"] as const) {
   test(`${surface}: unreadable keys require intent and a failed save preserves the draft for recovery`, async () => {
     preview.reset();
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -23,9 +23,8 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
       await page.getByText("Stored settings cannot be read", { exact: true }).waitFor();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const replacements = page.getByRole("checkbox", { name: /^Replace stored value/ });
-      expect(await replacements.count()).toBe(surface === "database" || surface === "directory" ? 2 : 1);
+      expect(await replacements.count()).toBe(surface === "directory" ? 2 : 1);
       await replacements.first().check();
-      if (surface === "storage") await page.getByLabel(/^Maximum file size \(MiB\)/).fill("60");
       // The Linux configuration is intentionally kept disabled; no range reservation is needed.
       const save = page.getByRole("button", { name: surface === "linux" ? "Disable identity assignment" : "Save", exact: true });
       await save.click();
@@ -38,11 +37,6 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
       expect(await replacements.first().isChecked()).toBe(true);
       expect(preview.requests).toHaveLength(1);
       const sent = preview.requests[0]!.body;
-      if (surface === "storage") {
-        expect(sent).toEqual({ fileMiB: 60, replaceUnreadable: ["assistant.storage_file_mib"] });
-        expect(await page.getByLabel(/^Maximum file size \(MiB\)/).inputValue()).toBe("60");
-      }
-      if (surface === "database") expect(sent).toEqual({ url: "", replaceUnreadable: ["assistant.rsql_url"] });
       if (surface === "directory")
         expect(sent).toEqual({ suggest: "contact.suggest", replaceUnreadable: ["mail.contact_directory.suggest"] });
       if (surface === "outgoing") expect(sent).toEqual({ contentDays: 30, replaceUnreadable: ["outgoing_mail.content_retention_days"] });
@@ -62,8 +56,8 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
   }, 30000);
 }
 
-test("all six unreadable warnings fit desktop and phone in light and dark, in English and German", async () => {
-  for (const surface of ["storage", "database", "linux", "outgoing", "directory", "logs"])
+test("all retained unreadable warnings fit desktop and phone in light and dark, in English and German", async () => {
+  for (const surface of ["linux", "outgoing", "directory", "logs"])
     for (const width of [390, 1280])
       for (const theme of ["light", "dark"])
         for (const locale of ["en", "de"]) {
@@ -84,24 +78,7 @@ test("all six unreadable warnings fit desktop and phone in light and dark, in En
         }
 }, 60000);
 
-test("unchecking an unreadable token replacement preserves the stored token despite the retained draft", async () => {
-  preview.reset();
-  const page = await browser.newPage();
-  try {
-    await page.goto(`${preview.server.url}?surface=database`);
-    const replace = page.getByRole("checkbox", { name: /^Replace stored value/ }).nth(1);
-    await replace.check();
-    await page.getByLabel("API token", { exact: true }).fill("fictional-new-token");
-    await replace.uncheck();
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await page.getByText("Fictional save rejected. Review the draft and retry.", { exact: true }).waitFor();
-    expect(preview.requests[0]!.body).toEqual({ replaceUnreadable: [] });
-  } finally {
-    await page.close();
-  }
-});
-
-for (const surface of ["storage", "database", "linux", "outgoing", "directory", "logs"] as const) {
+for (const surface of ["linux", "outgoing", "directory", "logs"] as const) {
   test(`${surface}: a late unreadable conflict refreshes metadata and recovers without losing the draft`, async () => {
     preview.reset();
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -109,8 +86,6 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
       await page.goto(`${preview.server.url}?surface=${surface}&late=true`);
       if (surface === "directory") await page.getByRole("button", { name: "Contact directory", exact: true }).click();
       expect(await page.getByRole("checkbox", { name: /^Replace stored value/ }).count()).toBe(0);
-      if (surface === "storage") await page.getByLabel(/^Maximum file size/).fill("60");
-      if (surface === "database") await page.getByLabel("API token", { exact: true }).fill("fictional-new-token");
       if (surface === "linux") {
         await page.getByRole("button", { name: "Set up local identities", exact: true }).click();
         await page.getByLabel("Login shell", { exact: true }).fill("/bin/zsh");
@@ -130,11 +105,6 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
       await replacement.waitFor();
       expect(await replacement.count()).toBe(1);
       expect(preview.requests).toHaveLength(1);
-      if (surface === "storage") expect(await page.getByLabel(/^Maximum file size/).inputValue()).toBe("60");
-      if (surface === "database") {
-        expect(await page.getByLabel("API token", { exact: true }).inputValue()).toBe("fictional-new-token");
-        expect(preview.requests[0]!.body).toEqual({ token: "fictional-new-token", replaceUnreadable: [] });
-      }
       if (surface === "linux") {
         expect(await page.getByLabel("Login shell", { exact: true }).inputValue()).toBe("/bin/zsh");
         expect(await page.getByRole("checkbox", { name: "I have reserved this range for Cloud", exact: true }).isChecked()).toBe(true);
@@ -154,15 +124,7 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
       expect(preview.requests[1]!.body.replaceUnreadable).toEqual(
         surface === "linux" || surface === "logs"
           ? true
-          : [
-              surface === "storage"
-                ? "assistant.storage_file_mib"
-                : surface === "database"
-                  ? "assistant.rsql_api_token"
-                  : surface === "outgoing"
-                    ? "outgoing_mail.content_retention_days"
-                    : "mail.contact_directory.suggest",
-            ],
+          : [surface === "outgoing" ? "outgoing_mail.content_retention_days" : "mail.contact_directory.suggest"],
       );
     } finally {
       await page.close();

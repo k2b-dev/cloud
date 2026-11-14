@@ -2,7 +2,7 @@ import { aiConversations } from "./store";
 import { publishAiTurnAbort, publishAiWireEvent } from "./stream";
 import type { AiTurnAbortRequest } from "./types";
 
-/** Finish a committed cancellation request; shared by interactive and routine cancellation. */
+/** Finish a committed cancellation request; used by chat cancellation. */
 export const finishAiTurnAbort = async (
   input: { conversationId: string; turnId: string },
   request: AiTurnAbortRequest,
@@ -14,8 +14,7 @@ export const finishAiTurnAbort = async (
 
   if (request.ownerless) {
     const finalized = await aiConversations.completeTurn({ ...input, status: "aborted", error: null });
-    const config = await aiConversations.getTurnRunConfig(input);
-    if (finalized === "completed" && !(config?.kind === "chat" && config.background)) {
+    if (finalized === "completed") {
       const attempt = active?.turn.id === input.turnId ? active.turn.attempt : 1;
       const seq = (active?.turn.id === input.turnId ? active.liveSeq : 0) + 1;
       await publishAiWireEvent({

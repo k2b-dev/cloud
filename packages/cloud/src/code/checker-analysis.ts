@@ -1,0 +1,1096 @@
+import { posix } from "node:path";
+import ts from "@typescript/typescript6";
+import { CodeInternetOriginSchema } from "../contracts/code-internet";
+import { CodeRouteSchema } from "../contracts/code-routes";
+import { CodeAutomationTitleSchema, CodeOnceScheduleSchema } from "../contracts/code-version";
+import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
+import { normalizeCronSchedule } from "../shared/cron-schedule";
+import type { CodeCheckDiagnostic, CodeCheckRequest, CodePermission, CodeVersionManifest } from "./checker-contract";
+import { codeCheckerMessages } from "./checker-messages";
+import type { CodeSdkOperation } from "./types";
+
+export type CodeAnalysis = {
+  diagnostics: CodeCheckDiagnostic[];
+  /** Hints that never block a version, such as a page that admits every member without checking who visits. */
+  warnings: CodeCheckDiagnostic[];
+  permissions: CodePermission[];
+  entrypoints: CodeVersionManifest["entrypoints"];
+  ai: boolean;
+  database: boolean;
+  internet: string[];
+  modules: string[];
+};
+const root = "/code/";
+/** Pure compiler analysis: user modules are virtual files. Only TypeScript's bundled standard libraries may be read from disk. */
+export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
+  const t = codeCheckerMessages.resolve(request.locale ? [request.locale] : []).t;
+  const options: ts.CompilerOptions = {
+    strict: true,
+    jsx: ts.JsxEmit.React,
+    jsxFactory: "jsx",
+    target: ts.ScriptTarget.ESNext,
+    module: ts.ModuleKind.Preserve,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    types: [],
+    noEmit: true,
+    skipLibCheck: true,
+    verbatimModuleSyntax: true,
+  };
+  const disk = ts.createCompilerHost(options);
+  const files = new Map(Object.entries(request.files).map(([name, value]) => [root + name, value]));
+  files.set(root + "sdk.d.ts", request.sdk.declarations);
+  const libDir = posix.dirname(ts.getDefaultLibFilePath(options));
+  const allowedLib = (name: string) => name.startsWith(`${libDir}/lib.`) && name.endsWith(".d.ts");
+  const readFile = (name: string) => files.get(name) ?? (allowedLib(name) ? disk.readFile(name) : undefined);
+  const host: ts.CompilerHost = {
+    ...disk,
+    getCurrentDirectory: () => root,
+    readFile,
+    fileExists: (name) => files.has(name) || (allowedLib(name) && disk.fileExists(name)),
+    getSourceFile: (name, languageVersion) => {
+      const source = readFile(name);
+      return source === undefined ? undefined : ts.createSourceFile(name, source, languageVersion, true);
+    },
+    resolveModuleNames: (names, containing) =>
+      names.map((name) => {
+        const resolved = name === "@sdk" ? root + "sdk.d.ts" : resolveLocal(name, containing.slice(root.length), request.files);
+        return resolved ? { resolvedFileName: name === "@sdk" ? resolved : root + resolved } : undefined;
+      }),
+  };
+  const program = ts.createProgram(
+    [
+      root + request.entry,
+      ...Object.keys(request.files)
+        .filter((name) => name !== request.entry)
+        .map((name) => root + name),
+      root + "sdk.d.ts",
+    ],
+    options,
+    host,
+  );
+  const reachable = new Set<string>();
+  const ordered: string[] = [];
+  function include(name: string) {
+    if (reachable.has(name)) return;
+    reachable.add(name);
+    const sf = program.getSourceFile(root + name);
+    for (const specifier of sf ? runtimeModuleSpecifiers(sf) : []) {
+      const dependency = resolveLocal(specifier, name, request.files);
+      if (dependency) include(dependency);
+    }
+    ordered.push(name);
+  }
+  include(request.entry);
+  let collecting = false;
+  const checker = program.getTypeChecker();
+  const result: CodeAnalysis = {
+    diagnostics: [],
+    warnings: [],
+    permissions: [],
+    entrypoints: [],
+    ai: false,
+    database: false,
+    internet: [],
+    modules: [...reachable],
+  };
+  const report = (node: ts.Node, code: string, message: string, list: CodeCheckDiagnostic[] = result.diagnostics) => {
+    const sf = node.getSourceFile();
+    const location = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+    list.push({
+      code,
+      ...(code === "code_code_false" ? { aliases: ["code_false"] } : {}),
+      message,
+      file: sf.fileName.slice(root.length),
+      line: location.line + 1,
+      column: location.character + 1,
+    });
+  };
+  function strings(type: ts.Type): string[] | null {
+    if (type.isStringLiteral()) return [type.value];
+    if (type.isUnion()) {
+      const values = type.types.map(strings);
+      return values.every((value) => value !== null) ? [...new Set(values.flatMap((value) => value ?? []))] : null;
+    }
+    return null;
+  }
+  const literals = (node: ts.Node) => strings(checker.getTypeAtLocation(node));
+  const propertyType = (type: ts.Type, key: string, node: ts.Node) => {
+    const property = checker.getPropertyOfType(type, key);
+    return property ? checker.getTypeOfSymbolAtLocation(property, node) : undefined;
+  };
+  function handle(node: ts.Node, type = checker.getTypeAtLocation(node)): { type: string; ids: string[] | null } | null {
+    const target = propertyType(type, "type", node);
+    const id = propertyType(type, "id", node);
+    const types = target && strings(target);
+    if (!types || types.length !== 1 || !id) return null;
+    return { type: types[0]!, ids: strings(id) };
+  }
+  const unparen = (node: ts.Expression): ts.Expression => (ts.isParenthesizedExpression(node) ? unparen(node.expression) : node);
+  function member(node: ts.Expression): { base: ts.Expression; path: string[] } {
+    const path: string[] = [];
+    let base = unparen(node);
+    while (ts.isPropertyAccessExpression(base) || ts.isElementAccessExpression(base)) {
+      if (handle(base)) break;
+      const names = ts.isPropertyAccessExpression(base)
+        ? [base.name.text]
+        : base.argumentExpression && ts.isStringLiteralLike(base.argumentExpression)
+          ? [base.argumentExpression.text]
+          : null;
+      if (!names || names.length !== 1) break;
+      path.unshift(names[0]!);
+      base = unparen(base.expression);
+    }
+    return { base, path };
+  }
+  function sdkOperation(expression: ts.Expression) {
+    for (const signature of checker.getTypeAtLocation(expression).getCallSignatures()) {
+      const op = signature.declaration && appOperations.get(signature.declaration);
+      if (op) return { op, target: null };
+    }
+    const { base, path } = member(expression);
+    const target = handle(base);
+    if (!target) return null;
+    const appId = target.type === "cloud.app" ? target.ids?.[0] : target.type.split(".")[0];
+    const op = request.sdk.manifest.operations.find(
+      (op) => op.appId === appId && (op.target ?? "cloud.app") === target.type && op.methodPath.join(".") === path.join("."),
+    );
+    return op ? { op, target: op.target ? target : null } : null;
+  }
+  /** The sole detached position is a literal tools element of a real generated AI call. */
+  function aiToolElement(node: ts.Expression) {
+    let value = node;
+    while (ts.isParenthesizedExpression(value.parent)) value = value.parent;
+    const array = value.parent;
+    if (!ts.isArrayLiteralExpression(array) || !array.elements.includes(value)) return null;
+    const property = array.parent;
+    if (
+      !ts.isPropertyAssignment(property) ||
+      property.initializer !== array ||
+      !((ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === "tools")
+    )
+      return null;
+    const object = property.parent;
+    if (!ts.isObjectLiteralExpression(object) || !ts.isCallExpression(object.parent) || object.parent.arguments[0] !== object) return null;
+    const call = sdkOperation(object.parent.expression);
+    if (!call || !["core.ai.generate", "core.ai.decide"].includes(call.op.capability)) return null;
+    return sdkOperation(node);
+  }
+  const operationHint = (expression: ts.Expression): string => {
+    const { base, path } = member(expression);
+    const selected = handle(base);
+    const appId = selected?.type === "cloud.app" ? selected.ids?.[0] : selected?.type.split(".")[0];
+    if (!appId || !path.length) return "";
+    const operations = request.sdk.manifest.operations.filter((op) => op.appId === appId);
+    // Prefer the exact method on a different receiver over every unrelated list/read operation.
+    const exact = operations.filter((op) => op.methodPath.join(".") === path.join("."));
+    const candidates = exact.length ? exact : operations.filter((op) => op.methodPath.at(-1) === path.at(-1));
+    const paths = candidates.map((op) => {
+      const factory = request.sdk.manifest.handles.find((h) => h.appId === appId && h.type === op.target)!;
+      return `${factory.exportName}${op.target ? `.${factory.factoryPath.join(".")}(id)` : ""}.${op.methodPath.join(".")}`;
+    });
+    return [...new Set(paths)]
+      .sort()
+      .map((path) => `; ${t.exists_under({ path })}`)
+      .join("");
+  };
+  const unknownMethod = (expression: ts.Expression): string => {
+    const { base, path } = member(expression);
+    // Name the receiver and method without copying arguments or multiline author source into feedback.
+    const receiver = ts.isIdentifier(base) ? base.text : `${handle(base)?.type ?? "SDK"}(id)`;
+    return t.unknown_method({ path: [receiver, ...path].join(".") }) + operationHint(expression) + ".";
+  };
+  const signatureInSdk = (node: ts.CallExpression) =>
+    checker.getResolvedSignature(node)?.declaration?.getSourceFile().fileName === root + "sdk.d.ts";
+  // Bind calls to declarations from this generated SDK, including namespace aliases and
+  // callable factory/method intersections. Spelling alone must never identify a factory.
+  const appOperations = new Map<ts.Node, CodeSdkOperation>();
+  const operationDeclarations = new Set<ts.Node>();
+  const sdkNamespaces = new Set<ts.Type>();
+  const factoryDeclarations = new Set<ts.Node>();
+  const sdkSource = program.getSourceFile(root + "sdk.d.ts")!;
+  const sdkSymbol = checker.getSymbolAtLocation(sdkSource)!;
+  const sdkExports = checker.getExportsOfModule(sdkSymbol);
+  const sdkMemberType = (exportName: string, path: string[]) => {
+    const exported = sdkExports.find((symbol) => symbol.name === exportName);
+    let type = exported && checker.getTypeOfSymbolAtLocation(exported, sdkSource);
+    for (const segment of path) type = type && propertyType(type, segment, sdkSource);
+    return type;
+  };
+  const codeAppSymbol = sdkMemberType("app", [])?.aliasSymbol;
+  const isCodeApp = (type: ts.Type) => !!codeAppSymbol && type.aliasSymbol === codeAppSymbol;
+  for (const spec of request.sdk.manifest.handles) {
+    if (spec.type === null) continue;
+    for (const signature of sdkMemberType(spec.exportName, spec.factoryPath)?.getCallSignatures() ?? []) {
+      if (signature.declaration) factoryDeclarations.add(signature.declaration);
+      for (const op of request.sdk.manifest.operations.filter((op) => op.target === spec.type)) {
+        let namespace: ts.Type | undefined = checker.getReturnTypeOfSignature(signature);
+        for (const segment of op.methodPath) {
+          if (namespace) sdkNamespaces.add(namespace);
+          namespace = namespace && propertyType(namespace, segment, sdkSource);
+        }
+        for (const method of namespace?.getCallSignatures() ?? []) if (method.declaration) operationDeclarations.add(method.declaration);
+      }
+    }
+  }
+  for (const op of request.sdk.manifest.operations) {
+    if (op.target !== null) continue;
+    const app = request.sdk.manifest.apps.find((app) => app.appId === op.appId)!;
+    const owner = request.sdk.manifest.owner;
+    const exports = owner?.kind === "app" && owner.appId === op.appId ? [app.exportName, "owner"] : [app.exportName];
+    for (const exportName of exports) {
+      for (let length = 0; length < op.methodPath.length; length++) {
+        const namespace = sdkMemberType(exportName, op.methodPath.slice(0, length));
+        if (namespace) sdkNamespaces.add(namespace);
+      }
+    }
+    for (const signature of sdkMemberType(app.exportName, op.methodPath)?.getCallSignatures() ?? [])
+      if (signature.declaration) {
+        appOperations.set(signature.declaration, op);
+        operationDeclarations.add(signature.declaration);
+      }
+  }
+  // Generated file helper aliases are SDK namespaces too. Keep their calls
+  // attributable when authors create inferred aliases, and reject type erasure.
+  for (const name of ["pdf", "sheet", "finance", "chart"]) {
+    if (request.sdk.manifest.apps.some((app) => app.exportName === name)) continue;
+    const namespace = sdkMemberType(name, []);
+    if (namespace) sdkNamespaces.add(namespace);
+  }
+  const sdkMemberAccess = (node: ts.Node, receiver: ts.Expression): boolean => {
+    if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) return false;
+    if (node.expression !== receiver) return false;
+    const names = ts.isPropertyAccessExpression(node)
+      ? [node.name.text]
+      : node.argumentExpression && ts.isStringLiteralLike(node.argumentExpression)
+        ? [node.argumentExpression.text]
+        : null;
+    if (!names || names.length !== 1) return false;
+    const property = checker.getPropertyOfType(checker.getTypeAtLocation(node.expression), names[0]!);
+    return !!property?.declarations?.length && property.declarations.every((declaration) => declaration.getSourceFile() === sdkSource);
+  };
+  // Keep reference admission shared by methods and callable namespace nodes.
+  // JSX tags are allowed for SDK methods; namespaces retain their stricter use rules.
+  function isAllowedSdkReference(node: ts.Expression, allowJsx = false): boolean {
+    let wrapped = node;
+    while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
+    const use = wrapped.parent;
+    return (
+      aiToolElement(node) !== null ||
+      sdkMemberAccess(use, wrapped) ||
+      (ts.isCallExpression(use) && use.expression === wrapped) ||
+      (allowJsx &&
+        (ts.isJsxOpeningElement(node.parent) || ts.isJsxSelfClosingElement(node.parent) || ts.isJsxClosingElement(node.parent)) &&
+        node.parent.tagName === node)
+    );
+  }
+  const sdkHandle = (type: ts.Type) =>
+    type
+      .getProperties()
+      .some((property) =>
+        property.declarations?.some(
+          (declaration) =>
+            declaration.getSourceFile() === sdkSource &&
+            ts.isPropertySignature(declaration) &&
+            ts.isComputedPropertyName(declaration.name) &&
+            ts.isTypeLiteralNode(declaration.parent) &&
+            ts.isTypeAliasDeclaration(declaration.parent.parent) &&
+            declaration.parent.parent.name.text === "CodeHandle",
+        ),
+      );
+  // Include typed inputs containing handle refs: a local function with an SDK
+  // signature must not pass those refs on through a structurally erased wrapper.
+  function sdkValue(type: ts.Type, ancestors = new Set<ts.Type>()): boolean {
+    if (
+      sdkNamespaces.has(type) ||
+      isCodeApp(type) ||
+      sdkHandle(type) ||
+      type.getCallSignatures().some((signature) => signature.declaration && factoryDeclarations.has(signature.declaration))
+    )
+      return true;
+    if (ancestors.has(type)) return false;
+    ancestors.add(type);
+    const contains = type.isUnionOrIntersection()
+      ? type.types.some((part) => sdkValue(part, ancestors))
+      : type
+          .getProperties()
+          .some(
+            (property) =>
+              property.declarations?.some((declaration) => files.has(declaration.getSourceFile().fileName)) &&
+              sdkValue(checker.getTypeOfSymbolAtLocation(property, sdkSource), ancestors),
+          );
+    ancestors.delete(type);
+    return contains;
+  }
+  function sdkRefArgument(node: ts.Expression): boolean {
+    const contextual = checker.getContextualType(node);
+    if (!contextual || !sdkValue(contextual)) return false;
+    let argument: ts.Node = node;
+    while (true) {
+      const parent = argument.parent;
+      if (
+        (ts.isPropertyAssignment(parent) && parent.initializer === argument) ||
+        (ts.isShorthandPropertyAssignment(parent) && parent.name === argument)
+      ) {
+        argument = parent.parent;
+        continue;
+      }
+      return ts.isCallExpression(parent) && parent.arguments.some((value) => value === argument) && signatureInSdk(parent);
+    }
+  }
+  // SDK values may be direct receivers, inferred const aliases, or branded refs
+  // in an attributed SDK call. Other escapes can erase their declarations.
+  function checkNamespaceUse(node: ts.Expression) {
+    if (ts.isPartOfTypeNode(node) || !sdkValue(checker.getTypeAtLocation(node))) return;
+    // `typeof core.ai.generate` reads a type, without exposing a runtime namespace.
+    let typeName: ts.Node = node;
+    while (ts.isQualifiedName(typeName.parent)) typeName = typeName.parent;
+    if (ts.isTypeQueryNode(typeName.parent)) return;
+    const parent = node.parent;
+    if (
+      ts.isIdentifier(node) &&
+      (ts.isImportSpecifier(parent) ||
+        ts.isImportClause(parent) ||
+        ts.isExportSpecifier(parent) ||
+        (ts.isVariableDeclaration(parent) && parent.name === node) ||
+        (ts.isBindingElement(parent) && (parent.name === node || parent.propertyName === node)) ||
+        (ts.isParameter(parent) && parent.name === node) ||
+        (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+        (ts.isPropertyAssignment(parent) && parent.name === node))
+    )
+      return;
+    let wrapped = node;
+    while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
+    const use = wrapped.parent;
+    const app = isCodeApp(checker.getTypeAtLocation(wrapped));
+    if (app && ts.isExportAssignment(use) && !use.isExportEquals) return;
+    if (ts.isCallExpression(wrapped) && ts.isExpressionStatement(use)) {
+      if (app && signatureInSdk(wrapped)) return;
+      const declaration = checker.getResolvedSignature(wrapped)?.declaration;
+      if (declaration && factoryDeclarations.has(declaration)) return;
+    }
+    if (isAllowedSdkReference(wrapped) || sdkRefArgument(wrapped)) return;
+    if (
+      ts.isVariableDeclaration(use) &&
+      use.initializer === wrapped &&
+      ts.isIdentifier(use.name) &&
+      !use.type &&
+      ts.getCombinedNodeFlags(use) & ts.NodeFlags.Const
+    )
+      return;
+    report(node, "code_unresolved_call", t.unresolved_call);
+  }
+  const permission = (node: ts.Node, operation: string, target: ReturnType<typeof handle>) => {
+    if (!collecting) return;
+    const sf = node.getSourceFile();
+    for (const id of target?.ids ?? [null]) {
+      placed.push({ index: result.permissions.length, node });
+      result.permissions.push({
+        operation,
+        target: target ? { type: target.type, id } : null,
+        file: sf.fileName.slice(root.length),
+        line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+      });
+    }
+    if (request.aiOperations.includes(operation)) result.ai = true;
+  };
+  const operationCall = (node: ts.CallExpression, op: CodeSdkOperation, target: ReturnType<typeof handle>) => {
+    permission(node, op.capability, op.target ? target : null);
+    const arg = node.arguments[0];
+    if (arg)
+      for (const [field, expected] of Object.entries(op.refs)) {
+        const refType = propertyType(checker.getTypeAtLocation(arg), field, arg);
+        const ref = refType && handle(arg, refType);
+        if (!ref || ref.type !== expected) report(arg, "code_unresolved_ref", t.unresolved_ref({ field: field }));
+        else permission(node, op.capability, ref);
+      }
+  };
+  const origins = new Set<string>();
+  const allowedOrigins = new Set<string>();
+  const dynamicHttp: ts.CallExpression[] = [];
+  // A prefix must finish the complete authority before any dynamic expression begins.
+  function prefix(node: ts.Expression): string | null {
+    node = unparen(node);
+    if (ts.isStringLiteralLike(node)) return node.text;
+    if (ts.isTemplateExpression(node)) return node.head.text;
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) return prefix(node.left);
+    return null;
+  }
+  function origin(value: string): string | null {
+    try {
+      const url = new URL(value);
+      return !url.username &&
+        !url.password &&
+        !/[\\\s\u0000-\u001f\u007f]/.test(value) &&
+        CodeInternetOriginSchema.safeParse(url.origin).success
+        ? url.origin
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  function httpCall(node: ts.CallExpression, method: string | undefined) {
+    const arg = node.arguments[0];
+    if (method === "allow") {
+      if (!arg || !ts.isArrayLiteralExpression(arg) || arg.elements.some((item) => !ts.isStringLiteralLike(item))) {
+        report(node, "code_http_allow_literal", t.http_allow_literal);
+        return;
+      }
+      for (const item of arg.elements) {
+        if (!ts.isStringLiteralLike(item)) continue;
+        if (!CodeInternetOriginSchema.safeParse(item.text).success) report(item, "code_http_origin_invalid", t.http_origin_invalid);
+        else if (collecting) allowedOrigins.add(item.text);
+      }
+      return;
+    }
+    const values = arg && literals(arg);
+    if (values) {
+      for (const value of values) {
+        const parsed = origin(value);
+        if (!parsed) report(node, "code_http_origin_invalid", t.http_origin_invalid2);
+        else if (collecting) origins.add(parsed);
+      }
+      return;
+    }
+    const head = arg && prefix(arg);
+    const parsed = head && /^https:\/\/[^/?#]+[/?#]/i.test(head) ? origin(head) : null;
+    if (parsed) {
+      if (collecting) origins.add(parsed);
+    } else if (collecting) dynamicHttp.push(node);
+  }
+  const events = new Set<string>();
+  const entryNames = new Set<string>();
+  // Permission calls and schedule handlers, joined after all files are visited: a handler may be declared anywhere.
+  const placed: { index: number; node: ts.Node }[] = [];
+  const handlers: { handler: ts.Expression; name: string }[] = [];
+  const middleware: { path: string; handler: ts.Expression; node: ts.Node }[] = [];
+  /** Routes that are not public, with the middleware registered before them that matches their path. */
+  const privateRoutes: { node: ts.Node; path: string; handler: ts.Expression | undefined; middleware: ts.Expression[] }[] = [];
+  const validMiddlewarePath = (path: string) => path.length <= 200 && /^\/(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/?)?$/.test(path);
+  /** The SDK block a JSX tag names, such as `Form` or `Field.Select`, also under an import alias; null otherwise. */
+  const sdkFile = root + "sdk.d.ts";
+  function sdkTag(tag: ts.JsxTagNameExpression): string | null {
+    const exported = (name: ts.Identifier) => {
+      let symbol = checker.getSymbolAtLocation(name);
+      if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+      return symbol?.declarations?.some((declaration) => declaration.getSourceFile().fileName === sdkFile) ? symbol.name : null;
+    };
+    if (ts.isIdentifier(tag)) return exported(tag);
+    if (ts.isPropertyAccessExpression(tag) && ts.isIdentifier(tag.expression)) {
+      const owner = exported(tag.expression);
+      return owner ? `${owner}.${tag.name.text}` : null;
+    }
+    return null;
+  }
+  /** Blocks whose children are parts, with the parts they take. A Map, so no tag name reaches inherited properties. */
+  const blockParts = new Map<string, { allows: (child: string) => boolean; names: string }>([
+    ["Form", { allows: (child) => child.startsWith("Field."), names: t.field_parts }],
+    ["Field.Select", { allows: (child) => child === "Option", names: "<Option>" }],
+    ["Stats", { allows: (child) => child === "Stat", names: "<Stat>" }],
+    ["Table", { allows: (child) => child === "Column", names: "<Column>" }],
+    ["Detail", { allows: (child) => child === "Item", names: "<Item>" }],
+  ]);
+  const partOwners = new Map([
+    ["Option", "Field.Select"],
+    ["Stat", "Stats"],
+    ["Column", "Table"],
+    ["Item", "Detail"],
+  ]);
+  const partBlock = (tag: string) => (tag.startsWith("Field.") ? "Form" : partOwners.get(tag));
+  /** The block whose children hold this element: the enclosing element, or the element of a `children={…}` prop. */
+  function parentBlock(node: ts.Node): string | null {
+    for (let current = node.parent; current; current = current.parent) {
+      if (ts.isJsxElement(current)) return sdkTag(current.openingElement.tagName);
+      if (ts.isJsxAttribute(current)) return current.name.getText() === "children" ? sdkTag(current.parent.parent.tagName) : null;
+    }
+    return null;
+  }
+  /**
+   * Parts sit inside their block and blocks with parts hold nothing else; JSX types cannot say which element a child
+   * is. A part kept in a variable is checked when Core builds the page.
+   */
+  function checkPageChild(node: ts.JsxElement | ts.JsxSelfClosingElement) {
+    const tag = sdkTag(ts.isJsxElement(node) ? node.openingElement.tagName : node.tagName);
+    if (!tag) return;
+    const parentTag = parentBlock(node);
+    const owner = partBlock(tag);
+    const block = parentTag ? blockParts.get(parentTag) : undefined;
+    if (block && !block.allows(tag))
+      report(node, "code_page_child", t.page_child({ parent: parentTag ?? "", allowed: block.names, child: tag }));
+    else if (owner && parentTag && parentTag !== owner) report(node, "code_page_child", t.page_child2({ child: tag, parent: owner }));
+    if (ts.isJsxElement(node) && blockParts.has(tag))
+      for (const child of node.children)
+        if (ts.isJsxText(child) && child.text.trim()) report(child, "code_page_child", t.page_child3({ tag: tag }));
+  }
+  function visit(node: ts.Node) {
+    if (ts.isPropertyAccessExpression(node)) {
+      const type = checker.getNonNullableType(checker.getTypeAtLocation(node.expression));
+      const name = type.aliasSymbol?.name ?? type.getSymbol()?.name;
+      if (
+        (name === "CodeApp" && ["nav", "webhook", "fetch"].includes(node.name.text)) ||
+        (name === "CodeUser" && ["provider", "groups"].includes(node.name.text))
+      )
+        report(node, "code_removed_api", t.removed_api);
+    }
+    if (ts.isExpression(node)) checkNamespaceUse(node);
+    if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) checkPageChild(node);
+    if (ts.isIdentifier(node) && node.text === "__codeSdk") report(node, "code_reserved_sdk", t.reserved_sdk);
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      const spec = node.moduleSpecifier;
+      if (spec) {
+        if (
+          !ts.isStringLiteral(spec) ||
+          (spec.text !== "@sdk" && !resolveLocal(spec.text, node.getSourceFile().fileName.slice(root.length), request.files))
+        ) {
+          report(node, "code_import_forbidden", t.import_forbidden);
+        }
+        if (
+          ts.isImportDeclaration(node) &&
+          ts.isStringLiteral(spec) &&
+          spec.text === "@sdk" &&
+          !node.importClause?.isTypeOnly &&
+          node.importClause?.namedBindings &&
+          ts.isNamedImports(node.importClause.namedBindings)
+        ) {
+          for (const binding of node.importClause.namedBindings.elements)
+            if (!binding.isTypeOnly && (binding.propertyName ?? binding.name).text === "db") {
+              if (request.sdk.manifest.mode === "code_run") report(binding, "code_db_temporary", t.db_temporary);
+              else if (collecting) result.database = true;
+            }
+        }
+        if (ts.isExportDeclaration(node) && ts.isStringLiteral(spec) && spec.text === "@sdk")
+          report(node, "code_reserved_sdk", t.reserved_sdk2);
+        if (
+          ts.isImportDeclaration(node) &&
+          ts.isStringLiteral(spec) &&
+          spec.text === "@sdk" &&
+          node.importClause?.namedBindings &&
+          ts.isNamespaceImport(node.importClause.namedBindings)
+        )
+          report(node, "code_reserved_sdk", t.reserved_sdk3);
+      }
+    }
+    if (
+      ts.isBindingElement(node) &&
+      ts.isIdentifier(node.name) &&
+      checker
+        .getTypeAtLocation(node.name)
+        .getCallSignatures()
+        .some((signature) => signature.declaration && operationDeclarations.has(signature.declaration))
+    )
+      report(node, "code_detached_sdk_method", t.detached_sdk_method);
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const memberType = checker.getTypeAtLocation(node);
+      if (memberType.flags & ts.TypeFlags.Any) {
+        const hint = operationHint(node);
+        if (hint && !(ts.isCallExpression(node.parent) && node.parent.expression === node))
+          report(node, "code_unresolved_call", unknownMethod(node));
+      }
+      const signatures = memberType.getCallSignatures();
+      const tool = aiToolElement(node);
+      if (tool) {
+        if (Object.keys(tool.op.refs).length) report(node, "code_unresolved_ref", t.unresolved_ref2);
+        else permission(node, tool.op.capability, tool.target);
+      }
+      if (
+        !tool &&
+        signatures.some((s) => s.declaration?.getSourceFile().fileName === root + "sdk.d.ts" && !factoryDeclarations.has(s.declaration)) &&
+        !isAllowedSdkReference(node, true)
+      )
+        report(node, "code_detached_sdk_method", t.detached_sdk_method2);
+    }
+    if (ts.isImportTypeNode(node)) {
+      const argument = node.argument;
+      const specifier = ts.isLiteralTypeNode(argument) && ts.isStringLiteral(argument.literal) ? argument.literal.text : undefined;
+      if (!specifier || (specifier !== "@sdk" && !resolveLocal(specifier, node.getSourceFile().fileName.slice(root.length), request.files)))
+        report(node, "code_import_forbidden", t.import_forbidden);
+    }
+    if (ts.isImportEqualsDeclaration(node)) report(node, "code_import_forbidden", t.import_forbidden2);
+    if (ts.isCallExpression(node)) {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) report(node, "code_import_forbidden", t.import_forbidden3);
+      const { base, path } = member(node.expression);
+      const target = handle(base);
+      const unresolved = !!(checker.getTypeAtLocation(node.expression).flags & ts.TypeFlags.Any);
+      if (!target && unresolved) report(node, "code_unresolved_call", t.unresolved_call2 + operationHint(node.expression));
+      const declaration = checker.getResolvedSignature(node)?.declaration;
+      const appOperation = declaration && appOperations.get(declaration);
+      const receiverCall =
+        ts.isPropertyAccessExpression(unparen(node.expression)) || ts.isElementAccessExpression(unparen(node.expression));
+      if (declaration && factoryDeclarations.has(declaration)) {
+        // A typed resource factory creates a handle; it does not call a capability.
+      } else if (appOperation && receiverCall) {
+        operationCall(node, appOperation, null);
+      } else if (target) {
+        const appId = target.type === "cloud.app" ? target.ids?.[0] : target.type.split(".")[0];
+        const method = path.join(".");
+        const op = request.sdk.manifest.operations.find(
+          (op) => op.appId === appId && (op.target ?? "cloud.app") === target.type && op.methodPath.join(".") === method,
+        );
+        const omitted = request.sdk.manifest.omitted.find(
+          (op) => op.capability.startsWith(`${appId}.`) && (op.target ?? "cloud.app") === target.type && op.methodPath.join(".") === method,
+        );
+        if (omitted)
+          report(
+            node,
+            `code_${omitted.reason}`,
+            omitted.reason === "stream" ? t.stream : omitted.reason === "code_false" ? t.code_false : t.app_only,
+          );
+        if (op) {
+          if (unresolved) report(node, "code_unresolved_call", t.unresolved_call2);
+          operationCall(node, op, target);
+        } else if (!omitted) report(node, "code_unresolved_call", unknownMethod(node.expression));
+      } else if (signatureInSdk(node)) {
+        const method = path.at(-1);
+        const appType = checker.getTypeAtLocation(base);
+        const declarationOwner = checker.getResolvedSignature(node)?.declaration?.parent.parent;
+        // Follow the SDK signature, including destructured HTTP methods.
+        const http = declarationOwner && ts.isTypeAliasDeclaration(declarationOwner) && declarationOwner.name.text === "CodeHttp";
+        if (http) {
+          const signature = checker.getResolvedSignature(node)?.declaration;
+          const name = signature && ts.isMethodSignature(signature) && ts.isIdentifier(signature.name) ? signature.name.text : method;
+          httpCall(node, name);
+        }
+        const app = appType.aliasSymbol?.name === "CodeApp" || appType.getSymbol()?.name === "CodeApp";
+        const database = declarationOwner && ts.isTypeAliasDeclaration(declarationOwner) && declarationOwner.name.text === "CodeDatabase";
+        if (database) {
+          if (collecting) result.database = true;
+        } else if (http) {
+          // HTTP origin evidence is collected by httpCall above.
+        } else if (app && method) {
+          if (method === "use" && collecting) {
+            const path = node.arguments[0];
+            // A type assertion is not evidence of the prefix evaluated at runtime.
+            const paths = node.arguments.length === 1 ? ["/"] : path && ts.isStringLiteralLike(path) ? [path.text] : undefined;
+            const handler = node.arguments[node.arguments.length - 1];
+            const statement = ts.isExpressionStatement(node.parent) && ts.isSourceFile(node.parent.parent);
+            const binding =
+              ts.isVariableDeclaration(node.parent) &&
+              node.parent.initializer === node &&
+              ts.isVariableDeclarationList(node.parent.parent) &&
+              (node.parent.parent.flags & ts.NodeFlags.Const) !== 0 &&
+              ts.isVariableStatement(node.parent.parent.parent) &&
+              ts.isSourceFile(node.parent.parent.parent.parent);
+            if (
+              node.arguments.length < 1 ||
+              node.arguments.length > 2 ||
+              !paths ||
+              paths.length !== 1 ||
+              !validMiddlewarePath(paths[0]!) ||
+              !handler ||
+              (!statement && !binding)
+            )
+              report(node, "code_static_middleware", t.static_middleware);
+            else {
+              const prefix = paths[0] === "/" ? "/" : paths[0]!.replace(/\/$/, "");
+              middleware.push({ path: prefix, handler, node });
+              // A route registered earlier never runs this middleware, whatever it checks.
+              const line = node.getSourceFile().getLineAndCharacterOfPosition(node.getStart(node.getSourceFile())).line + 1;
+              for (const route of privateRoutes)
+                if (routeUnder(prefix, route.path))
+                  report(
+                    route.node,
+                    "code_route_before_middleware",
+                    t.route_before_middleware({ file: node.getSourceFile().fileName.slice(root.length), line: line }),
+                    result.warnings,
+                  );
+            }
+          }
+          if (method === "on" && collecting) {
+            const explicit = node.arguments.length === 3;
+            const eventNode = node.arguments[explicit ? 1 : 0];
+            const eventNames = eventNode && literals(eventNode);
+            const owner = request.sdk.manifest.owner;
+            const place =
+              explicit && node.arguments[0]
+                ? handle(node.arguments[0])
+                : owner?.kind === "resource"
+                  ? { type: owner.ref.type, ids: [owner.ref.id] }
+                  : undefined;
+            const name = eventNames?.length === 1 ? eventNames[0] : undefined;
+            const spec = request.sdk.manifest.events.find((event) => event.type === name);
+            if (!name || !place?.ids || place.ids.length !== 1) report(node, "code_dynamic_event", t.dynamic_event);
+            else if (!spec || spec.place !== place.type) report(node, "code_event_owner", t.event_owner);
+            else if (!ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
+              report(node, "code_static_event", t.static_event);
+            else {
+              const key = JSON.stringify([name, place.type, place.ids[0]]);
+              if (events.has(key)) report(node, "code_duplicate_on", t.duplicate_on);
+              events.add(key);
+              const own = owner?.kind === "resource" && place.type === owner.ref.type && place.ids[0] === owner.ref.id;
+              const entrypoint = `event:${name}@${spec.version}${own ? "" : `:place:${result.entrypoints.filter((entry) => entry.kind === "event").length}`}`;
+              if (entryNames.has(entrypoint)) report(node, "code_duplicate_on", t.duplicate_on2);
+              entryNames.add(entrypoint);
+              const handler = node.arguments[explicit ? 2 : 1];
+              if (handler) handlers.push({ handler, name: entrypoint });
+              const sf = node.getSourceFile();
+              result.entrypoints.push({
+                kind: "event",
+                entrypoint,
+                cron: null,
+                event: { type: name, version: spec.version, place: { type: place.type!, id: place.ids[0]! } },
+                file: sf.fileName.slice(root.length),
+                line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+              });
+            }
+          }
+          if (["get", "post", "put", "delete", "all"].includes(method) && collecting) {
+            const paths = node.arguments[0] && literals(node.arguments[0]);
+            const handlerLast = !!node.arguments[1] && ts.isObjectLiteralExpression(node.arguments[1]);
+            const routeHandler = node.arguments[handlerLast ? 2 : 1];
+            const opts = node.arguments[handlerLast ? 1 : 2];
+            // Public exposure and the layout must be explicit literals, never a computed flag or spread.
+            let isPublic = false;
+            let plain = false;
+            let validOptions = !opts;
+            if (opts && ts.isObjectLiteralExpression(opts)) {
+              const seen = new Set<string>();
+              validOptions = opts.properties.every((prop) => {
+                if (!ts.isPropertyAssignment(prop) || !(ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name))) return false;
+                const name = prop.name.text;
+                if (seen.has(name)) return false;
+                seen.add(name);
+                const value = prop.initializer;
+                if (name === "public" && (value.kind === ts.SyntaxKind.TrueKeyword || value.kind === ts.SyntaxKind.FalseKeyword)) {
+                  isPublic = value.kind === ts.SyntaxKind.TrueKeyword;
+                  return true;
+                }
+                if (name !== "layout" || !ts.isStringLiteral(value) || value.text !== "plain") return false;
+                plain = true;
+                return true;
+              });
+            }
+            const route = CodeRouteSchema.safeParse({
+              method: method.toUpperCase(),
+              path: paths?.length === 1 ? paths[0] : null,
+              public: isPublic,
+              ...(plain ? { layout: "plain" } : {}),
+            });
+            if (!route.success || !validOptions || !ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
+              report(node, "code_static_route", t.static_route);
+            else {
+              const name = "route:" + route.data.method + ":" + route.data.path;
+              if (entryNames.has(name)) report(node, "code_duplicate_route", t.duplicate_route);
+              entryNames.add(name);
+              if (routeHandler) handlers.push({ handler: routeHandler, name });
+              // A parameterized route may overlap a literal middleware prefix. Attribute conservatively.
+              const matching = middleware.filter((item) => routeUnder(item.path, route.data.path));
+              for (const item of matching) handlers.push({ handler: item.handler, name });
+              if (!route.data.public)
+                privateRoutes.push({
+                  node,
+                  path: route.data.path,
+                  handler: routeHandler,
+                  // Only middleware that surely runs counts as a check: its prefix covers every path of the route, and
+                  // without a top-level await, a module evaluated earlier has registered it before this route.
+                  middleware: matching
+                    .filter((item) => routeCovered(item.path, route.data.path))
+                    .filter((item) => !topLevelAwait || item.node.getSourceFile() === node.getSourceFile())
+                    .map((item) => item.handler),
+                });
+              const sf = node.getSourceFile();
+              result.entrypoints.push({
+                kind: "route",
+                entrypoint: name,
+                route: route.data,
+                cron: null,
+                file: sf.fileName.slice(root.length),
+                line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+              });
+            }
+          }
+          if (method === "schedule" && collecting) {
+            const when = node.arguments[0];
+            const field = (name: string) => {
+              if (!when) return undefined;
+              const property = ts.isObjectLiteralExpression(when)
+                ? when.properties.find(
+                    (p) =>
+                      ts.isPropertyAssignment(p) &&
+                      (ts.isStringLiteralLike(p.name) || ts.isIdentifier(p.name) ? p.name.text : p.name.getText()) === name,
+                  )
+                : undefined;
+              if (property && ts.isPropertyAssignment(property)) return literals(property.initializer);
+              const type = propertyType(checker.getTypeAtLocation(when), name, when);
+              return type && strings(type);
+            };
+            const cron = field("cron");
+            const recurring = !!cron;
+            const at = field("at"),
+              timeZone = field("timeZone");
+            const once = at?.length === 1 ? CodeOnceScheduleSchema.omit({ timeZone: true }).safeParse({ at: at[0] }) : null;
+            const validKeys =
+              !when ||
+              (!ts.isObjectLiteralExpression(when)
+                ? checker
+                    .getTypeAtLocation(when)
+                    .getProperties()
+                    .every((property) =>
+                      (recurring ? ["cron", "timeZone", "name", "title"] : ["at", "timeZone", "name", "title"]).includes(property.name),
+                    )
+                : when.properties.every(
+                    (property) =>
+                      ts.isPropertyAssignment(property) &&
+                      (ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name)) &&
+                      (recurring ? ["cron", "timeZone", "name", "title"] : ["at", "timeZone", "name", "title"]).includes(
+                        property.name.text,
+                      ),
+                  ));
+            const staticTiming =
+              !!when &&
+              !literals(when) &&
+              node.arguments.length === 2 &&
+              validKeys &&
+              (!propertyType(checker.getTypeAtLocation(when), "timeZone", when) ||
+                (timeZone?.length === 1 && CodeOnceScheduleSchema.shape.timeZone.safeParse(timeZone[0]).success)) &&
+              ((cron?.length === 1 &&
+                !!cron[0]?.trim() &&
+                !at &&
+                (!recurring ||
+                  !propertyType(checker.getTypeAtLocation(when!), "timeZone", when!) ||
+                  (timeZone?.length === 1 && CodeOnceScheduleSchema.shape.timeZone.safeParse(timeZone[0]).success))) ||
+                once?.success);
+
+            const options = when;
+            const timingNames = field("name");
+            const name = timingNames?.length === 1 ? timingNames[0] : undefined;
+            const titleType = options && propertyType(checker.getTypeAtLocation(options), "title", options);
+            const titleProperty =
+              options && ts.isObjectLiteralExpression(options)
+                ? options.properties.find((p) => ts.isPropertyAssignment(p) && p.name.getText() === "title")
+                : undefined;
+            const titleValue = titleProperty && ts.isPropertyAssignment(titleProperty) ? titleProperty.initializer : undefined;
+            const titles = titleValue && ts.isStringLiteralLike(titleValue) ? [titleValue.text] : titleType && strings(titleType);
+            const title = titles?.length === 1 ? CodeAutomationTitleSchema.safeParse(titles[0]) : null;
+            if (titleType && !(titleType.flags & ts.TypeFlags.Undefined) && (!title || !title.success))
+              report(options!, "code_static_title", t.static_title);
+            if (
+              !staticTiming ||
+              !name ||
+              !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name) ||
+              !ts.isExpressionStatement(node.parent) ||
+              !ts.isSourceFile(node.parent.parent)
+            )
+              report(node, "code_static_schedule", t.static_schedule);
+            else {
+              try {
+                if (!once?.success) normalizeCronSchedule({ cron: cron![0]!, timezone: timeZone?.[0] ?? "UTC" });
+              } catch {
+                report(node, "code_invalid_cron", t.invalid_cron);
+              }
+              if (entryNames.has(name)) report(node, "code_duplicate_schedule", t.duplicate_schedule);
+              entryNames.add(name);
+              if (node.arguments[1]) handlers.push({ handler: node.arguments[1], name });
+              const sf = node.getSourceFile();
+              result.entrypoints.push({
+                kind: "schedule",
+                entrypoint: name,
+                ...(title?.success ? { title: title.data } : {}),
+                cron: once?.success ? null : cron![0]!,
+                ...(once?.success ? once.data : {}),
+                ...(timeZone?.length === 1 ? { timeZone: timeZone[0] } : {}),
+                file: sf.fileName.slice(root.length),
+                line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+              });
+            }
+          }
+        } else if (
+          !(
+            declaration &&
+            ts.isFunctionTypeNode(declaration) &&
+            ts.isTypeAliasDeclaration(declaration.parent) &&
+            declaration.parent.name.text === "CodeNext"
+          ) &&
+          !http &&
+          !(
+            declarationOwner &&
+            ts.isTypeAliasDeclaration(declarationOwner) &&
+            ["CodeContext", "CodeRequest", "CodeHttpResult", "CodePageComponent"].includes(declarationOwner.name.text)
+          )
+        ) {
+          report(node, "code_unresolved_call", t.detached_sdk_method2);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  const sourceOrder = [...ordered, ...Object.keys(request.files).filter((name) => !reachable.has(name))];
+  // A module suspended at a top-level await lets later modules register first, so file order no longer proves order.
+  const topLevelAwait = sourceOrder.some((name) => {
+    const sf = program.getSourceFile(root + name);
+    let found = false;
+    const walk = (node: ts.Node) => {
+      if (found || ts.isFunctionLike(node) || ts.isClassLike(node)) return;
+      if (ts.isAwaitExpression(node) || (ts.isForOfStatement(node) && node.awaitModifier)) found = true;
+      else if (ts.isVariableDeclarationList(node) && (node.flags & ts.NodeFlags.AwaitUsing) === ts.NodeFlags.AwaitUsing) found = true;
+      else ts.forEachChild(node, walk);
+    };
+    if (sf) walk(sf);
+    return found;
+  });
+  for (const name of sourceOrder) {
+    const sf = program.getSourceFile(root + name)!;
+    if (files.has(sf.fileName) && sf.fileName !== root + "sdk.d.ts") {
+      if (sf.referencedFiles.length || sf.typeReferenceDirectives.length || sf.libReferenceDirectives.length)
+        report(sf, "code_import_forbidden", t.import_forbidden4);
+      // A suppressed type error could hide an SDK call from permission analysis.
+      const comments = new Set<number>();
+      const checkComment = (start: number, end: number) => {
+        if (!comments.has(start) && /@ts-(?:ignore|expect-error|nocheck)\b/.test(sf.text.slice(start, end)))
+          report(sf, "code_type_suppression", t.type_suppression);
+        comments.add(start);
+      };
+      const checkTokenComments = (node: ts.Node) => {
+        ts.forEachLeadingCommentRange(sf.text, node.pos, checkComment);
+        ts.forEachTrailingCommentRange(sf.text, node.end, checkComment);
+        for (const child of node.getChildren(sf)) checkTokenComments(child);
+      };
+      checkTokenComments(sf);
+      collecting = reachable.has(sf.fileName.slice(root.length));
+      visit(sf);
+    }
+  }
+  attributeEntrypoints(checker, result.permissions, placed, handlers);
+  // Every member may open a page that is not public; one that never reads c.user serves them all alike.
+  /** Only the `user` of the route context counts, never an SDK response field that happens to share the name. */
+  const contextUser = (symbol: ts.Symbol | undefined) =>
+    !!symbol?.declarations?.some(
+      (declaration) =>
+        declaration.getSourceFile().fileName === sdkFile &&
+        ts.isPropertySignature(declaration) &&
+        ts.isTypeLiteralNode(declaration.parent) &&
+        ts.isTypeAliasDeclaration(declaration.parent.parent) &&
+        declaration.parent.parent.name.text === "CodeContext",
+    );
+  const assigned = (node: ts.Node) =>
+    ts.isBinaryExpression(node.parent) &&
+    node.parent.left === node &&
+    node.parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+    node.parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
+  /** Whether the function itself reads c.user; a nested function may never run, so its reads do not count. */
+  const readsUser = (fn: ts.Node): boolean => {
+    let found = false;
+    const walk = (node: ts.Node) => {
+      if (found || (node !== fn && ts.isFunctionLike(node))) return;
+      if (ts.isPropertyAccessExpression(node) && node.name.text === "user")
+        found = !assigned(node) && contextUser(checker.getSymbolAtLocation(node.name));
+      else if (
+        ts.isElementAccessExpression(node) &&
+        ts.isStringLiteralLike(node.argumentExpression) &&
+        node.argumentExpression.text === "user"
+      )
+        found = !assigned(node) && contextUser(checker.getTypeAtLocation(node.expression).getProperty("user"));
+      else if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
+        const key = node.propertyName ?? node.name;
+        if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && key.text === "user")
+          found = contextUser(checker.getTypeAtLocation(node.parent).getProperty("user"));
+      }
+      if (!found) ts.forEachChild(node, walk);
+    };
+    walk(fn);
+    return found;
+  };
+  for (const route of privateRoutes) {
+    const chain = [route.handler, ...route.middleware].map((handler) => (handler ? handlerFunction(checker, handler) : undefined));
+    if (!chain.some((fn) => fn && readsUser(fn))) report(route.node, "code_route_unchecked", t.route_unchecked, result.warnings);
+  }
+  if (!allowedOrigins.size && request.sdk.manifest.mode !== "code_run")
+    for (const node of dynamicHttp) report(node, "code_http_origin_dynamic", t.http_origin_dynamic);
+  result.internet = [...new Set([...origins, ...allowedOrigins])].sort();
+  if (request.sdk.manifest.mode !== "code_run" && result.internet.length) {
+    const grants =
+      result.internet.length +
+      (request.sdk.manifest.mode === "personal" ? new Set(result.permissions.map((item) => item.operation)).size : 0);
+    if (grants > MANDATE_POLICY_MAX_IDENTIFIERS / 2)
+      report(
+        program.getSourceFile(root + request.entry)!,
+        "code_http_grant_limit",
+        t.http_grant_limit({ limit: MANDATE_POLICY_MAX_IDENTIFIERS / 2 }),
+      );
+  }
+  if (request.sdk.manifest.mode === "code_run") {
+    const entry = program.getSourceFile(root + request.entry)!;
+    const module = checker.getSymbolAtLocation(entry);
+    const exported = module && checker.getExportsOfModule(module).find((s) => s.name === "default");
+    if (!exported || !checker.getTypeOfSymbolAtLocation(exported, entry).getCallSignatures().length)
+      report(entry, "code_run_entrypoint", t.run_entrypoint);
+    result.entrypoints.push({ kind: "manual", entrypoint: "run", cron: null, file: request.entry, line: 1 });
+  }
+  if (!result.entrypoints.length && !result.diagnostics.length)
+    report(program.getSourceFile(root + request.entry)!, "code_no_entrypoint", t.no_entrypoint);
+  return result;
+}
+
+/** Whether middleware registered for `prefix` runs on every path of `path`: each prefix segment is the same literal. */
+function routeCovered(prefix: string, path: string): boolean {
+  const segments = path.replace(/\/$/, "").split("/");
+  const parts = prefix === "/" ? [] : prefix.split("/");
+  return parts.length <= segments.length && parts.every((part, index) => segments[index] === part);
+}
+
+/** Whether middleware registered for `prefix` may run on `path`; a parameter segment may match any literal. */
+function routeUnder(prefix: string, path: string): boolean {
+  const segments = path.replace(/\/$/, "").split("/");
+  const parts = prefix === "/" ? [] : prefix.split("/");
+  return parts.length <= segments.length && parts.every((part, index) => segments[index]?.startsWith(":") || segments[index] === part);
+}
+
+/** The function a schedule runs: an inline function, or a function or const function the handler names directly. */
+function handlerFunction(checker: ts.TypeChecker, handler: ts.Expression): ts.Node | undefined {
+  while (ts.isParenthesizedExpression(handler)) handler = handler.expression;
+  if (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) return handler;
+  if (!ts.isIdentifier(handler) && !ts.isPropertyAccessExpression(handler)) return undefined;
+  let symbol = checker.getSymbolAtLocation(handler);
+  if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+  const declaration = symbol?.declarations?.length === 1 ? symbol.declarations[0] : undefined;
+  if (!declaration) return undefined;
+  // The type check refuses assigning to a function declaration (TS2630), so it always runs its own body.
+  if (ts.isFunctionDeclaration(declaration)) return declaration;
+  const value = ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
+  // Only a const binding is fixed; a let could run another function by the time the schedule fires.
+  const fixed = value && ts.getCombinedNodeFlags(declaration) & ts.NodeFlags.Const;
+  return fixed && (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) ? value : undefined;
+}
+
+/**
+ * Name each permission's entrypoints by the handler whose own body makes the call. The walk stops at the first function
+ * on the way up: a call inside a nested function, such as a callback, runs whenever that function runs, which the
+ * checker cannot prove, so it stays unnamed.
+ */
+function attributeEntrypoints(
+  checker: ts.TypeChecker,
+  permissions: CodePermission[],
+  placed: { index: number; node: ts.Node }[],
+  handlers: { handler: ts.Expression; name: string }[],
+) {
+  const names = new Map<ts.Node, Set<string>>();
+  for (const { handler, name } of handlers) {
+    const fn = handlerFunction(checker, handler);
+    if (fn) names.set(fn, (names.get(fn) ?? new Set()).add(name));
+  }
+  if (!names.size) return;
+  for (const { index, node } of placed) {
+    let current: ts.Node | undefined = node.parent;
+    while (current && !ts.isFunctionLike(current)) current = current.parent;
+    const found = current && names.get(current);
+    if (found) permissions[index]!.entrypoints = [...found].sort();
+  }
+}
+
+/** Resolve only supplied project files. No directories, packages, absolute paths or traversal outside the project. */
+export function resolveLocal(specifier: string, containing: string, files: Record<string, string>): string | undefined {
+  if (!specifier.startsWith("./") && !specifier.startsWith("../")) return undefined;
+  const base = posix.normalize(posix.join(posix.dirname(containing), specifier));
+  if (base.startsWith("../") || base.startsWith("/")) return undefined;
+  const candidates = [base, `${base}.ts`, `${base}.tsx`, base.replace(/\.js$/, ".ts"), `${base}/index.ts`];
+  return candidates.find((name) => Object.hasOwn(files, name));
+}
+
+/** Preserve ESM evaluation dependencies, including empty and inline-type imports/exports.
+ * Only a whole-statement import type/export type removes module evaluation. Shared by graph analysis and bundling. */
+export function runtimeModuleSpecifiers(sf: ts.SourceFile): string[] {
+  return sf.statements.flatMap((statement) => {
+    if (!(ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement))) return [];
+    if (ts.isImportDeclaration(statement) && statement.importClause?.isTypeOnly) return [];
+    if (ts.isExportDeclaration(statement) && statement.isTypeOnly) return [];
+    return statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier) ? [statement.moduleSpecifier.text] : [];
+  });
+}

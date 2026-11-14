@@ -199,7 +199,6 @@ export const aiFixtureUsage = (modelId: string): AiModelUsage => ({
   assignments: [],
   projects: modelId === "gpt-oss-120b" ? [{ id: "p1", name: "Website-Relaunch" }] : [],
   workflows: modelId === "gpt-oss-120b" ? [{ id: "w1", name: "Rechnungen prüfen" }] : [],
-  scheduledTasks: modelId === "gpt-oss-120b" ? [{ id: "t1", name: "Wochenbericht" }] : [],
   chats: modelId === "gpt-oss-120b" ? 128 : 12,
   budgetRules: modelId === "claude" ? [{ id: "r-claude", label: "Claude: Gruppe Entwicklung 30,00 € pro Woche" }] : [],
   peopleAtLimit: modelId === "claude" ? 4 : 0,

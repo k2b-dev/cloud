@@ -1,5 +1,6 @@
 import {
   type CapabilityExecutionContext,
+  CloudResourceReaderViewSchema,
   type CloudResourceView,
   capabilityPage,
   defineCapabilities,
@@ -38,6 +39,8 @@ import type { ShiftAssignment, Venue } from "./contracts";
 import { venueMessages } from "./messages";
 import { type UpcomingSlotSummary, venueService } from "./service";
 import { notifyShiftCancelled } from "./shift-notices";
+
+const venueTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "venue.venue" ? context.target.id : "");
 
 const messagesFor = (context: CapabilityExecutionContext) => venueMessages.resolve(context.locale ? [context.locale] : []).t;
 
@@ -167,7 +170,7 @@ const runVenueRead = async (input: z.infer<typeof VenueReadInputSchema>, context
   const venue = await requireVenue(input.id, scope.data, "read", true);
   if (!venue.ok) return venue;
   return ok({
-    data: mapVenue(venue.data),
+    data: { ...mapVenue(venue.data), view: { title: venue.data.name, permission: visiblePermission(venue.data) ?? "read" } },
     summary: t.capabilityReadVenue({ name: venue.data.name }),
     refs: [{ type: "venue.venue", id: venue.data.publicId }],
     links: [{ rel: "open" as const, href: openVenueHref(venue.data) }],
@@ -408,7 +411,7 @@ const validateFreeSignupWindow = (input: z.infer<typeof AssignmentFreeSignupInpu
 
 const runAssignmentSignup = async (input: z.infer<typeof AssignmentSignupInputSchema>, context: CapabilityExecutionContext) => {
   const t = messagesFor(context);
-  const actor = await requireUserAndVenue(input.venueId, context, "write");
+  const actor = await requireUserAndVenue(venueTargetId(context), context, "write");
   if (!actor.ok) return actor;
   if (actor.data.venue.signupMode === "free") return fail(err.badInput("Template shift signup is disabled for this Venue"));
   const templateId = await venueService.publicResources.resolveOwned("templates", actor.data.venue.id, input.templateId);
@@ -431,7 +434,7 @@ const runAssignmentSignup = async (input: z.infer<typeof AssignmentSignupInputSc
 
 const runAssignmentFreeSignup = async (input: z.infer<typeof AssignmentFreeSignupInputSchema>, context: CapabilityExecutionContext) => {
   const t = messagesFor(context);
-  const actor = await requireUserAndVenue(input.venueId, context, "write");
+  const actor = await requireUserAndVenue(venueTargetId(context), context, "write");
   if (!actor.ok) return actor;
   if (actor.data.venue.signupMode === "templates") return fail(err.badInput("Free shift signup is disabled for this Venue"));
   const window = validateFreeSignupWindow(input);
@@ -452,7 +455,7 @@ const runAssignmentFreeSignup = async (input: z.infer<typeof AssignmentFreeSignu
 
 const runAssignmentCancel = async (input: z.infer<typeof AssignmentCancelInputSchema>, context: CapabilityExecutionContext) => {
   const t = messagesFor(context);
-  const actor = await requireUserAndVenue(input.venueId, context, "read");
+  const actor = await requireUserAndVenue(venueTargetId(context), context, "read");
   if (!actor.ok) return actor;
   const assignmentId = await venueService.publicResources.resolveOwned("assignments", actor.data.venue.id, input.assignmentId);
   if (!assignmentId) return fail(err.notFound("Shift assignment"));
@@ -509,7 +512,7 @@ export const venueCapabilities = defineCapabilities({
       title: "Read Venue",
       description: "Read one venue.venue ref returned by venue.list or venue.search, without media.",
       input: VenueReadInputSchema,
-      data: VenueDataSchema,
+      data: VenueDataSchema.extend({ view: CloudResourceReaderViewSchema }),
       openWorld: false,
       run: runVenueRead,
     },
@@ -569,6 +572,7 @@ export const venueCapabilities = defineCapabilities({
   },
   actions: {
     "assignment.signup": {
+      target: "venue",
       title: "Take Venue shift",
       description: "Create one non-idempotent assignment for a weekly or one-off dated shift returned by shift.list.",
       input: AssignmentSignupInputSchema,
@@ -578,7 +582,7 @@ export const venueCapabilities = defineCapabilities({
       idempotency: "required",
       review: async (input, context) => {
         const t = messagesFor(context);
-        const actor = await requireUserAndVenue(input.venueId, context, "write");
+        const actor = await requireUserAndVenue(venueTargetId(context), context, "write");
         if (!actor.ok) return actor;
         if (actor.data.venue.signupMode === "free") return fail(err.badInput("Template shift signup is disabled for this Venue"));
         const templateId = await venueService.publicResources.resolveOwned("templates", actor.data.venue.id, input.templateId);
@@ -610,6 +614,7 @@ export const venueCapabilities = defineCapabilities({
       run: runAssignmentSignup,
     },
     "assignment.signup_free": {
+      target: "venue",
       title: "Add free Venue shift",
       description: "Create one non-idempotent free assignment with exact instants, for at most 24 hours within the next year.",
       input: AssignmentFreeSignupInputSchema,
@@ -619,7 +624,7 @@ export const venueCapabilities = defineCapabilities({
       idempotency: "required",
       review: async (input, context) => {
         const t = messagesFor(context);
-        const actor = await requireUserAndVenue(input.venueId, context, "write");
+        const actor = await requireUserAndVenue(venueTargetId(context), context, "write");
         if (!actor.ok) return actor;
         if (actor.data.venue.signupMode === "templates") return fail(err.badInput("Free shift signup is disabled for this Venue"));
         const window = validateFreeSignupWindow(input);
@@ -639,6 +644,7 @@ export const venueCapabilities = defineCapabilities({
       run: runAssignmentFreeSignup,
     },
     "assignment.cancel": {
+      target: "venue",
       title: "Leave my Venue shift",
       description:
         "Delete only the current user-backed actor's own assignment. Supply an idempotency key so an uncertain attempt can be repeated safely.",
@@ -650,7 +656,7 @@ export const venueCapabilities = defineCapabilities({
       idempotency: "required",
       review: async (input, context) => {
         const t = messagesFor(context);
-        const actor = await requireUserAndVenue(input.venueId, context, "read");
+        const actor = await requireUserAndVenue(venueTargetId(context), context, "read");
         if (!actor.ok) return actor;
         const assignmentId = await venueService.publicResources.resolveOwned("assignments", actor.data.venue.id, input.assignmentId);
         if (!assignmentId) return fail(err.notFound("Shift assignment"));

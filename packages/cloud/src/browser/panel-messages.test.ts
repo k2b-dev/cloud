@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isPanelCloseMessage, isPanelReadyMessage, isPanelSearchMessage } from "./panel-messages";
+import { isPanelCloseMessage, isPanelConsentAskMessage, isPanelReadyMessage, isPanelSearchMessage } from "./panel-messages";
 
 test("search requires exactly its type and version 1", () => {
   const search = { type: "cloud.panel.search", v: 1 };
@@ -56,4 +56,11 @@ test("close allows only its type and optional version 1", () => {
   ]) {
     expect(isPanelCloseMessage(value)).toBe(false);
   }
+});
+
+test("a consent ask carries nothing but its type and version", () => {
+  expect(isPanelConsentAskMessage({ type: "cloud.panel.consent.ask", v: 1 })).toBe(true);
+  expect(isPanelConsentAskMessage({ type: "cloud.panel.consent.ask" })).toBe(false);
+  expect(isPanelConsentAskMessage({ type: "cloud.panel.consent.ask", v: 1, allowed: true })).toBe(false);
+  expect(isPanelConsentAskMessage({ type: "cloud.panel.consent.ask", v: 2 })).toBe(false);
 });

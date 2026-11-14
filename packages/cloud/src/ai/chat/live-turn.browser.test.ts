@@ -457,14 +457,11 @@ for (const view of [
         await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
         const de = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
-        const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { id: "budget" } };
-        const issues = [
-          { severity: "error", kind: "layout", message: "Row is misaligned" },
-          { severity: "warning", kind: "layout", message: "Value is cut off" },
-        ];
+        const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { codeId: "c_1234" } };
+        const diagnostics = [{ code: "TS2339", message: "Property does not exist.", file: "code.ts", line: 4, column: 1 }];
         await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, { ...base, seq: 2, type: "block_set", block: { ...check, status: "running" } });
-        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft die App" : "Checking the app");
+        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft den Code" : "Checking the Code");
         await page.locator(".ai-turn-work > summary").click();
         await frames(page);
         // Without its shimmer, a busy label keeps a visible text colour, in the work line and in the steps below it.
@@ -480,13 +477,17 @@ for (const view of [
           ...base,
           seq: 3,
           type: "block_set",
-          block: { ...check, status: "completed", result: { passed: false, issues } },
+          block: {
+            ...check,
+            status: "completed",
+            result: { version: 1, result: { ok: false, diagnostics }, manifest: null, permissions: [] },
+          },
         });
         const checked = await layout(page);
         expect(checked.nodes.map(({ box }) => box)).toEqual(before.nodes.map(({ box }) => box));
         const row = page.locator(".ai-turn-steps .k2b-chat-activity").first();
-        expect(await row.innerText()).toContain(de ? "App-Prüfung" : "App check");
-        expect(await row.innerText()).toContain(de ? "1 Befund · 1 Warnung" : "1 finding · 1 warning");
+        expect(await row.innerText()).toContain(de ? "Prüft den Code" : "Checks the Code");
+        expect(await row.innerText()).toContain(de ? "1 Befund" : "1 finding");
         expect(await row.locator(".ti-alert-triangle").count()).toBe(1);
         expect(checked.overflowX).toBeLessThanOrEqual(0);
 
@@ -1557,3 +1558,183 @@ for (const view of [
         await context.close();
       }
     }, 60_000);
+
+for (const width of [1440, 390])
+  test(`a Code file grows in its step while Gustav writes it and keeps its place when written (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
+      const source = Array.from({ length: 40 }, (_, index) =>
+        index === 0 ? 'import { app, spaces } from "@sdk";' : `  await spaces.space("sp_team").task.create({ title: "Aufgabe ${index}" });`,
+      ).join("\n");
+      const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "code_write" };
+      const live = (lines: number) => ({
+        ...write,
+        status: "running" as const,
+        args: { path: "code.ts", content: source.split("\n").slice(0, lines).join("\n") },
+        liveArgs: { omittedLines: { path: 0, content: 0 } },
+      });
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      await emit(page, { ...base, seq: 2, type: "block_set", block: live(6) });
+      // The path is known while Gustav writes, so the work line names the file.
+      expect(await page.locator(".ai-turn-work > summary").innerText()).toContain("code.ts");
+      await page.locator(".ai-turn-work > summary").click();
+      await frames(page);
+      await page.locator(".ai-turn-steps .k2b-chat-activity").first().locator("summary").first().click();
+      await frames(page);
+      const sourceView = page.locator(".ai-code-step__source").first();
+      expect(await sourceView.innerText()).toContain("code.ts · Zeile 6");
+      // The file name carries the AI colour while it is written.
+      const title = sourceView.locator(".k2b-content-code-display__title");
+      await settled(page, ".ai-turn-work");
+      expect(await title.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(142, 27, 111)");
+      await emit(page, { ...base, seq: 3, type: "block_set", block: live(30) });
+      await settled(page, ".ai-turn-work");
+      const box = () => sourceView.evaluate((node) => node.getBoundingClientRect().toJSON() as DOMRect);
+      const growing = await box();
+      expect(await sourceView.innerText()).toContain("code.ts · Zeile 30");
+      // Only the newest lines show while written, numbered like the whole file.
+      expect(await sourceView.locator(".k2b-content-code-display__number").first().innerText()).toBe("17");
+      mkdirSync("/tmp/l28-gustav-live", { recursive: true });
+      await page.screenshot({ path: `/tmp/l28-gustav-live/code-write-live-light-${width}.png` });
+      // A line longer than the streamed end hides the lines before it; the step still keeps the written height.
+      await emit(page, {
+        ...base,
+        seq: 4,
+        type: "block_set",
+        block: {
+          ...live(30),
+          args: { path: "code.ts", content: `const data = "${"x".repeat(5000)}` },
+          liveArgs: { omittedLines: { path: 0, content: 30 } },
+        },
+      });
+      await settled(page, ".ai-turn-work");
+      expect((await box()).height).toBe(growing.height);
+      // The written file keeps the live height and stays at its end, so nothing moves under the reader.
+      await emit(page, {
+        ...base,
+        seq: 5,
+        type: "block_set",
+        block: { ...write, status: "completed", args: { codeId: "c_1234", path: "code.ts", content: source }, result: { version: 1 } },
+      });
+      await settled(page, ".ai-turn-work");
+      const written = await box();
+      expect([written.top, written.height]).toEqual([growing.top, growing.height]);
+      expect(await sourceView.locator(".k2b-content-code-display__body").evaluate((node) => node.scrollTop > 0)).toBe(true);
+      expect(await sourceView.innerText()).not.toContain("Zeile 30");
+      expect(await title.evaluate((node) => getComputedStyle(node).color)).not.toBe("rgb(142, 27, 111)");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.screenshot({ path: `/tmp/l28-gustav-live/code-write-written-light-${width}.png` });
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+for (const width of [1440, 390])
+  test(`a written Code file, its check and its tests read as source and rows, not JSON (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
+      const source = Array.from({ length: 30 }, (_, index) =>
+        index === 0 ? 'import { app, spaces } from "@sdk";' : `  await spaces.space("sp_team").task.create({ title: "Aufgabe ${index}" });`,
+      ).join("\n");
+      const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "code_write" };
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      await emit(page, {
+        ...base,
+        seq: 2,
+        type: "block_set",
+        block: { ...write, status: "completed", args: { codeId: "c_1234", path: "code.ts", content: source }, result: { version: 1 } },
+      });
+      const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { codeId: "c_1234" } };
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: {
+          ...check,
+          status: "completed",
+          result: {
+            version: 1,
+            result: {
+              ok: true,
+              diagnostics: [],
+              warnings: [
+                { code: "code_route_unchecked", message: "Diese Seite prüft c.user nicht.", file: "code.ts", line: 12, column: 1 },
+              ],
+            },
+            manifest: null,
+            permissions: [
+              {
+                operation: "spaces.task.create",
+                target: { type: "spaces.space", id: "sp_team" },
+                title: "Team",
+                typeTitle: "Space",
+                own: false,
+                file: "code.ts",
+                line: 2,
+                status: "new",
+              },
+            ],
+          },
+        },
+      });
+      const test = { id: "tool-test", kind: "tool" as const, callId: "test", name: "code_test", args: { codeId: "c_1234" } };
+      await emit(page, {
+        ...base,
+        seq: 4,
+        type: "block_set",
+        block: {
+          ...test,
+          status: "completed",
+          result: {
+            version: 1,
+            mode: "test",
+            ok: false,
+            error: null,
+            diagnostics: [],
+            cases: [
+              { name: "Montag", file: "test/montag.json", ok: true, runs: [] },
+              {
+                name: "Leere Woche",
+                file: "test/leer.json",
+                ok: false,
+                runs: [
+                  { entrypoint: "monday", ok: false, error: "code_assertion_failed", value: null, calls: [], failures: ["$.calls[0]"] },
+                ],
+              },
+            ],
+          },
+        },
+      });
+      await page.locator(".ai-turn-work > summary").click();
+      await frames(page);
+      for (const label of ["Bearbeitet eine Code-Datei", "Prüft den Code", "Testet mit erfundenen Daten"]) {
+        await page.locator(".ai-turn-steps .k2b-chat-activity", { hasText: label }).last().locator("summary").first().click();
+        await frames(page);
+      }
+      const steps = await page.locator(".ai-turn-steps").first().innerText();
+      expect(steps).toContain("Was der Code darf");
+      expect(steps).toContain("spaces.task.create");
+      expect(steps).toContain("1 von 2 Testfällen bestanden");
+      // The written file scrolls inside its step at a fixed height; the exact input and result stay one click away.
+      const sourceView = page.locator(".ai-code-step__source").first();
+      await settled(page, ".ai-turn-work");
+      const body = await sourceView
+        .locator(".k2b-content-code-display__body")
+        .evaluate((node) => ({ client: node.clientHeight, scroll: node.scrollHeight }));
+      expect(body.scroll).toBeGreaterThan(body.client);
+      expect(await page.locator(".ai-code-step__raw").count()).toBe(3);
+      expect(steps).not.toContain('"version"');
+      await settled(page, ".ai-turn-work");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      mkdirSync("/tmp/l23-code-steps-a", { recursive: true });
+      await page.screenshot({ path: `/tmp/l23-code-steps-a/code-steps-light-${width}.png`, fullPage: true });
+    } finally {
+      await context.close();
+    }
+  }, 60_000);

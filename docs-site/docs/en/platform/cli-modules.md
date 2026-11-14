@@ -48,6 +48,10 @@ Invalid explicit tags still produce an error. Regional tags use normal
 ancestor fallback, so `de-CH` uses German CLI text when no Swiss German
 message exists.
 
+`ctx.options.ci` reports whether the CLI host runs in a CI environment. Modules
+that change interactive authority must refuse those actions in CI. This hint
+grants no server permission; the server still authorizes the credential.
+
 The resolved tag is available as `ctx.options.locale` and is sent as
 `Accept-Language` with every authenticated application request. Without a
 usable locale, `ctx.options.locale` is undefined and CLI text falls back to
@@ -391,6 +395,7 @@ cld inventory items list --jsonl
 | `jsonLine()` | One compact JSON value |
 | `table()` | Text table |
 | `getDefault()` / `setDefault()` | Profile-scoped application defaults |
+| `confirm?()` | Ask one yes/no question; anything but yes is no. Absent without an interactive terminal, in CI and with `--json`, so offer an explicit flag and refuse clearly without it |
 | `openUrl?()` | Open an http(s) link in the user's browser; resolves false when the host cannot, so print the link too; absent in hosts without a browser |
 | `profiles?.saveClientCredentials()` | Store an OAuth client ID and secret as a client-credentials profile; absent in hosts without profiles |
 | `reloadCredentials?()` | Read the profile's credentials again, so a long-running command uses a `cld login` that happened after it started; rejects when the profile cannot sign in; absent in hosts without profiles |
@@ -777,9 +782,8 @@ the bundle once and fails if the exported name differs from the declared key.
 During development, the application builds the plugin from source on the
 first request.
 
-Served plugins using Playwright carry its package and browser metadata in the
-bundle. The client still needs a Chromium executable: for Assistant, install
-Playwright Chromium or set `CLOUD_CLI_CHROMIUM` to its local path.
+Plugins that use browsers own their runtime dependencies. Assistant chat code
+executes on the server's Code runner and requires no browser on the CLI client.
 
 The framework serves every declared module and adds `/cli/plugins/<name>` to
 the application's gateway routes. The registry entry lists the module names,

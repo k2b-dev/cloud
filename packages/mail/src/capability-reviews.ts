@@ -366,6 +366,7 @@ export const mailActionReviews = {
   "draft.consolidation.acknowledge": reviewBuilder<"draft">("draft.consolidation.acknowledge"),
   "draft.discard": reviewBuilder<"draft">("draft.discard"),
   "draft.attachment.add": reviewBuilder<"file" | "draft">("draft.attachment.add"),
+  "draft.attachment.import.v1": reviewBuilder<"file" | "draft">("draft.attachment.add"),
   "draft.attachment.remove": reviewBuilder<"file" | "draft">("draft.attachment.remove"),
   "delivery.cancel": reviewBuilder<"delivery">("delivery.cancel"),
   "conversation.move": reviewBuilder<"conversation" | "folder">("conversation.move"),

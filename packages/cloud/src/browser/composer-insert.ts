@@ -39,7 +39,7 @@ export type CloudInsertMenuOptions = {
   scopeWords?: Readonly<Record<string, readonly string[]>>;
   /**
    * Tags, keyed `appId:tag`, whose resources of one type this composer reads itself, such as
-   * `{ "assistant:studio-app": "assistant.app" }`. Their picker lists only that type, also without a Cloud reader, even
+   * `{ "example:document": "example.document" }`. Their picker lists only that type, also without a Cloud reader, even
    * after the person removes the scope chip. Every other picker lists only resources with a reader (`requireReader`).
    */
   ownReaders?: Readonly<Record<string, string>>;

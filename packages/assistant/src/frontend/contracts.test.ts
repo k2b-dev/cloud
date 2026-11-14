@@ -7,8 +7,8 @@ describe("Assistant frontend contracts", () => {
     const [client, apiRoutes, pageRoutes] = await Promise.all([read("../api/client.ts"), read("../api/index.ts"), read("./index.ts")]);
 
     expect(client).toContain("api.create<ApiType>");
-    expect(client.match(/fetch\(/g)).toHaveLength(1);
-    expect(client).toContain("/api/ai/tasks");
+    expect(client).not.toMatch(/fetch\(/);
+    expect(client).not.toContain("/api/ai/tasks");
     expect(apiRoutes).toContain("auth.requireUser()");
     expect(pageRoutes).toContain("auth.requireUser(ssr.access)");
   });
@@ -35,13 +35,12 @@ describe("Assistant frontend contracts", () => {
   });
 
   test("keeps Projects and chat context inside the Assistant workspace", async () => {
-    const [workspace, sidebar, projectsDialog, project, context, tasks, projectSettings] = await Promise.all([
+    const [workspace, sidebar, projectsDialog, project, context, projectSettings] = await Promise.all([
       read("./AssistantWorkspace.island.tsx"),
       read("./AssistantSidebar.tsx"),
       read("./AssistantProjectsDialog.tsx"),
       read("./AssistantProjectView.tsx"),
       read("./AssistantChatContext.tsx"),
-      read("./AssistantTasksDialog.tsx"),
       read("./AssistantProjectSettingsDialog.tsx"),
     ]);
 
@@ -77,12 +76,6 @@ describe("Assistant frontend contracts", () => {
     expect(context).toContain("openAssistantKnowledgeSearch");
     expect(context).not.toContain("AssistantChatDetailPanel");
     expect(context).not.toContain("IconButton");
-    expect(tasks).toContain('text("Adjust in chat")');
-    expect(tasks).toContain('text("Set up new routines and make changes in the chat.")');
-    expect(tasks).not.toContain("<form");
-    expect(tasks).not.toContain("DateTimePicker");
-    expect(tasks).not.toContain("<select");
-    expect(tasks).not.toContain('type="datetime-local"');
     expect(projectSettings).toContain("<SettingsModal");
   });
 
@@ -163,12 +156,12 @@ describe("Assistant frontend contracts", () => {
     ]);
 
     expect(preferences).toContain('title={text("Personalization")}');
-    expect(preferences).toContain("Facts, preferences, and workflow defaults Assistant may carry into future conversations.");
+    expect(preferences).toContain("Facts, preferences, and workflow defaults Gustav may carry into future conversations.");
     expect(preferences).toContain("Search personalization");
     expect(preferences).toContain("Add personalization");
     expect(preferences).toContain('variant="input"');
     expect(preferences).not.toContain("suffix={");
-    expect(preferences).toContain("Use personalization in Assistant chats");
+    expect(preferences).toContain("Use personalization in Gustav chats");
     expect(preferences).toContain("Learn personalization from private chats");
     expect(preferences).toContain('title={text("Saved personalization")}');
     expect(preferences).toContain("hasSavedPersonalization");
@@ -224,7 +217,7 @@ describe("Assistant frontend contracts", () => {
     expect(preferences).toContain("skillEditor()");
     expect(preferences).toContain("<AssistantSkillEditor");
     expect(skills).toContain("<NoticeCard");
-    expect(skills).toContain("Skills teach Assistant how to handle specific tasks");
+    expect(skills).toContain("Skills teach Gustav how to handle specific tasks");
     expect(skills).not.toContain('label="Enabled for me"');
     // Enabling stays a row action; the editor's only switch is the portable manual-only field.
     expect(skills.match(/<Switch/g)).toHaveLength(1);

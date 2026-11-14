@@ -1,5 +1,5 @@
 import { describe, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
-import { ok } from "@k2b/stdlib";
+import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
@@ -9,20 +9,29 @@ import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases } from "../_internal/capability-review.test-fixture";
 import { CAPABILITY_DISCOVERY_TIMEOUT_MS, capabilityTimeoutMs } from "../_internal/capability-timeout";
 import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
+import { CodeBridgeRefusal } from "../code/bridge-contract";
+import { generateCodeSdk } from "../code/generator";
+import * as runTokens from "../code/run-token";
+import { RUNNER_PATHS, type RunnerCallResponse, RunnerCallResponseSchema } from "../code/runner-protocol";
+import type { CodeSdkInvocation } from "../code/types";
 import { env } from "../config/env";
-import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
+import { CapabilityCatalogSchema, capabilityPage, capabilityResultSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { sql } from "../runtime/clients";
 import { stubConnections } from "../runtime/connections.test-fixture";
 import { auth, type RequestAuthority } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
 import { sessionOriginGuard } from "../server/middleware/session-origin";
-import { signInvocationToken } from "../services/identity/invocation-token";
+import { type CloudInvocationClaims, signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import * as settings from "../services/settings";
+import { loadCodeRunCalls } from "../ssr/code-page/calls";
+import type { CodePageInvoke } from "../ssr/code-page/data";
+import * as appRequests from "./authenticate-app-request";
 import {
   createCapabilityRoutes as buildCapabilityRoutes,
   type CapabilityRouteDependencies,
+  createCodeRunnerCallRoutes,
   loadCapabilityCatalogPage,
   dispatchCapability as performDispatch,
 } from "./capabilities";
@@ -34,11 +43,12 @@ stubConnections({ appSecret: { current: "capability-stream-tests-only" } });
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.
 const executionStore = await import("../capabilities/executions");
+let claimIdempotency: typeof executionStore.claimCapabilityIdempotency = async () => ({ state: "claimed" as const });
 let recordExecution: typeof executionStore.recordCapabilityExecution = async () => crypto.randomUUID();
 mock.module(new URL("../capabilities/executions.ts", import.meta.url).pathname, () => ({
   ...executionStore,
   recordCapabilityExecution: (input: Parameters<typeof recordExecution>[0]) => recordExecution(input),
-  claimCapabilityIdempotency: async () => ({ state: "claimed" as const }),
+  claimCapabilityIdempotency: (...args: Parameters<typeof claimIdempotency>) => claimIdempotency(...args),
   completeCapabilityClaim: async () => undefined,
   releaseCapabilityClaim: async () => undefined,
   markCapabilityClaimUncertain: async () => undefined,
@@ -1247,7 +1257,7 @@ test("the browser file chooser browses and reads a provider through Core's route
           input: contract.FileProviderListInputSchema,
           data: contract.FileProviderListDataSchema,
           openWorld: false,
-          run: async () => ok({ data: { writable: false, items: [listed], next: null } }),
+          run: async () => ok({ data: { writable: false, items: [listed], next: null }, page: capabilityPage(null) }),
         },
         "file.read": {
           title: "Read",
@@ -2000,7 +2010,7 @@ test("calendar sources are discovered and read through Core's normal capability 
           input: contract.CalendarListInputSchema,
           data: contract.CalendarListDataSchema,
           openWorld: false,
-          run: async () => ok({ data: { items: [descriptor], next: null } }),
+          run: async () => ok({ data: { items: [descriptor], next: null }, page: capabilityPage(null) }),
         },
         events: {
           title: "Events",
@@ -2008,7 +2018,7 @@ test("calendar sources are discovered and read through Core's normal capability 
           input: contract.CalendarEventsInputSchema,
           data: contract.CalendarEventsDataSchema,
           openWorld: false,
-          run: async () => ok({ data: { items: [deadline], next: null } }),
+          run: async () => ok({ data: { items: [deadline], next: null }, page: capabilityPage(null) }),
         },
       },
       calendarSource: { calendars: "calendars", events: "events" },
@@ -2080,6 +2090,135 @@ test("calendar sources are discovered and read through Core's normal capability 
   }
 });
 
+test("resource target and refs traverse HTTP, dispatcher, review and provider without entering input", async () => {
+  const { invokeCompiledCapability, reviewCompiledCapability } = await import("../_internal/capabilities");
+  const built = compileCapabilities(
+    "demo",
+    defineCapabilities({
+      protocolVersion: 2,
+      types: { folder: { title: "Folder", description: "A folder." } },
+      actions: {
+        move: {
+          target: "folder",
+          refs: { destination: "folder" },
+          title: "Move",
+          description: "Move an item between folders.",
+          input: z.object({ id: z.string().describe("Item in the folder.") }).strict(),
+          data: z.object({ from: z.string(), to: z.string() }).strict(),
+          destructive: false,
+          openWorld: false,
+          idempotency: "none",
+          review: (_, context) => ok({ message: `Move from ${context.target?.id} to ${context.refs?.destination?.id}.` }),
+          run: (_, context) => ok({ data: { from: context.target?.id ?? "missing", to: context.refs?.destination?.id ?? "missing" } }),
+        },
+      },
+    }),
+  );
+  const app = { ...entry(), manifest: built.manifest };
+  const body = {
+    target: { type: "demo.folder", id: "source" },
+    refs: { destination: { type: "demo.folder", id: "destination" } },
+    input: { id: "item" },
+  };
+  const calls: unknown[] = [];
+  const routes = createCapabilityRoutes({
+    authenticate,
+    getCapability: async () => app,
+    fetch: async (url, init) => {
+      const forwarded = JSON.parse(String(init?.body));
+      calls.push(forwarded);
+      const request = new Request(url, init);
+      const invocation = {
+        compiled: built,
+        localId: "move",
+        ...forwarded,
+        expectedSchemaHash: request.headers.get("x-cloud-capability-schema-hash"),
+        context: {
+          actor: resourceAuthority.actor,
+          accessSubject: resourceAuthority.accessSubject,
+          user: null,
+          requestId: "target-wire",
+          locale: "en",
+          origin: "http" as const,
+          signal: request.signal,
+        },
+      };
+      const result = String(url).endsWith("/review")
+        ? await reviewCompiledCapability(invocation)
+        : await invokeCompiledCapability({ ...invocation, kind: "action" });
+      return result.ok ? Response.json(result.data) : Response.json(result.error, { status: result.error.status });
+    },
+  });
+  for (const suffix of ["/review", ""]) {
+    const response = await routes.request(`/capabilities/v1/actions/demo/move${suffix}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(
+      suffix ? { message: "Move from source to destination." } : { data: { from: "source", to: "destination" } },
+    );
+  }
+  expect(calls).toEqual([body, body]);
+  const invalid = await routes.request("/capabilities/v1/actions/demo/move", {
+    method: "POST",
+    body: JSON.stringify({ ...body, target: { type: "other.folder", id: "source" } }),
+  });
+  expect(invalid.status).toBe(400);
+  expect(calls).toHaveLength(2);
+  const parentInvocation: CloudInvocationClaims = {
+    iss: "https://cloud.example.test",
+    aud: "app:demo",
+    token_use: "invocation",
+    sub: "11111111-1111-4111-8111-111111111111",
+    principal_type: "service_account",
+    access_subject_type: "service_account",
+    access_subject_id: "11111111-1111-4111-8111-111111111111",
+    act: { sub: "app:core" },
+    credential_kind: "mandate",
+    mandate_id: "22222222-2222-4222-8222-222222222222",
+    mandate_revision: 1,
+    scopes: ["read", "write"],
+    op: "capability.action:move",
+    schema_hash: app.manifest.actions[0]!.schemaHash,
+    ver: 1,
+    jti: "33333333-3333-4333-8333-333333333333",
+    iat: 1793404800,
+    nbf: 1793404800,
+    exp: 1793404860,
+  };
+  for (const targetId of ["source", "other"]) {
+    for (const source of ["direct", "parent"] as const) {
+      for (const review of [true, false]) {
+        const response = await dispatchCapability({
+          request: new Request("http://cloud.test/api/capabilities"),
+          origin: "app",
+          kind: "actions",
+          appId: "demo",
+          capabilityId: "move",
+          ...body,
+          target: { type: "demo.folder", id: targetId },
+          review,
+          authority: resourceAuthority,
+          ...(source === "direct"
+            ? { mandate: { mandateId: "11111111-1111-4111-8111-111111111111", mandateRevision: 1, ownerAppId: "core" } }
+            : { parentInvocation }),
+          dependencies: {
+            getCapability: async () => app,
+            withMandateIssueAuthority: async () => fail(err.forbidden("Mandate policy does not allow this operation")),
+            fetch: async () => {
+              throw new Error("Must not forward");
+            },
+          },
+        });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ code: source === "direct" ? "MANDATE_FORBIDDEN" : "MANDATE_POLICY_DENIED" });
+      }
+    }
+  }
+});
+
 test("invocation issuance preserves temporary app unavailability without calling the provider", async () => {
   const { AppAccessUnavailableError } = await import("../services/app-access");
   const fetch = mock(async () => Response.json({ data: { id: "one" } }));
@@ -2112,3 +2251,413 @@ test("Command resolution preserves temporary app unavailability", async () => {
     check.mockRestore();
   }
 });
+
+test.each(["all pages", "call limit"])("generated Code queries walk envelope cursors (%s)", async (mode) => {
+  const now = new Date("2026-11-08T12:00:00Z");
+  setSystemTime(now);
+  const claims: runTokens.CodeRunTokenClaims = {
+    ver: 1,
+    token_use: "code_run",
+    iss: "https://cloud.example",
+    aud: "cloud-code-bridge",
+    iat: now.getTime() / 1000,
+    nbf: now.getTime() / 1000,
+    exp: now.getTime() / 1000 + 300,
+    codeId: "c_fixture",
+    versionId: "11111111-1111-4111-8111-111111111111",
+    runId: "22222222-2222-4222-8222-222222222222",
+    generation: 1,
+    mandateId: "33333333-3333-4333-8333-333333333333",
+    mandateRevision: 1,
+    entrypoint: "weekly",
+    bundleHash: "a".repeat(64),
+  };
+  const auth = spyOn(appRequests, "authenticateSignedAppRequest").mockResolvedValue({
+    appId: "runner",
+    serviceAccountId: claims.mandateId,
+    credentialId: claims.mandateId,
+    scope: "identity:invoke",
+  });
+  const token = spyOn(runTokens, "verifyCodeRunToken").mockResolvedValue(claims);
+  const paginated = compileCapabilities(
+    "demo",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: {
+        list: {
+          title: "List",
+          description: "List fictional items.",
+          openWorld: false,
+          input: z.object({ cursor: z.string().optional().describe("Opaque next-page cursor.") }).strict(),
+          data: z.array(z.string()),
+          run: () => ok({ data: [] }),
+        },
+      },
+    }),
+  );
+  let admitted = 0;
+  const limit = 3;
+  const endless = mode === "call limit";
+  const inputs: unknown[] = [];
+  const route = createCodeRunnerCallRoutes({
+    ownOrigins: async () => [],
+    host: {
+      async withCall(_call, execute) {
+        if (admitted >= limit) throw new CodeBridgeRefusal("code_call_limit");
+        admitted++;
+        return execute({
+          mandateId: claims.mandateId,
+          mandateRevision: 1,
+          ownerAppId: "core",
+          withMandateIssueAuthority: async (input, use) =>
+            ok(
+              await use({
+                mandateId: claims.mandateId,
+                mandateRevision: 1,
+                ownerAppId: "core",
+                subject: { type: "user", id: claims.versionId },
+                workloadType: "code.version",
+                workloadId: claims.versionId,
+                targetAppId: input.targetAppId,
+                operation: input.operation,
+                policy: { version: 1, apps: ["demo"], operations: ["capability.query:list"], actions: "deny" },
+              }),
+            ),
+        });
+      },
+    },
+    dispatch: {
+      getCapability: async () => ({ ...entry(), manifest: paginated.manifest }),
+      withActiveSigner,
+      signInvocation: signInvocationToken,
+      fetch: async (_url, init) => {
+        const { input } = z.object({ input: z.object({ cursor: z.string().optional() }) }).parse(JSON.parse(String(init?.body)));
+        inputs.push(input);
+        const pages = [
+          { cursor: undefined, data: ["one", "two"], page: { hasMore: true, nextCursor: "opaque:two" } },
+          { cursor: "opaque:two", data: ["three", "four"], page: { hasMore: true, nextCursor: "opaque:three" } },
+          { cursor: "opaque:three", data: ["five"], page: { hasMore: false } },
+        ];
+        const page = endless ? pages[0]! : pages.find((page) => page.cursor === input.cursor);
+        if (!page) throw new Error("Unexpected cursor after the final page");
+        return Response.json({ data: page.data, page: page.page });
+      },
+    },
+  });
+  try {
+    const sdk = generateCodeSdk([paginated.manifest], { mode: "code_run" });
+    const loaded = await import(`data:text/javascript;base64,${Buffer.from(`${sdk.runtime}\n// ${mode}`).toString("base64")}`);
+    loaded.__codeSdk.bind({
+      async call(operation: string, input: CodeSdkInvocation) {
+        const response = await route.request(RUNNER_PATHS.call, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId: claims.runId, generation: 1, token: "fixture", operation, input }),
+        });
+        const result = RunnerCallResponseSchema.parse(await response.json());
+        if (!result.ok) throw new Error(result.error.code);
+        return result.data;
+      },
+    });
+    const list = loaded.demo.list;
+    const walk = async () => {
+      let cursor: string | undefined;
+      const items: string[] = [];
+      while (true) {
+        const { data, page } = await list({ cursor });
+        items.push(...data);
+        if (!page?.hasMore) return items;
+        cursor = page.nextCursor;
+      }
+    };
+    if (endless) {
+      await expect(walk()).rejects.toThrow("code_call_limit");
+      expect(inputs).toEqual([{}, { cursor: "opaque:two" }, { cursor: "opaque:two" }]);
+    } else {
+      const items = await walk();
+      expect(items).toEqual(["one", "two", "three", "four", "five"]);
+      expect(new Set(items).size).toBe(items.length);
+      expect(inputs).toEqual([{}, { cursor: "opaque:two" }, { cursor: "opaque:three" }]);
+    }
+    expect(admitted).toBe(limit);
+    expect(inputs).toHaveLength(limit);
+  } finally {
+    token.mockRestore();
+    auth.mockRestore();
+    setSystemTime();
+  }
+});
+
+test("local Core refusal status reaches the SDK independently of transport status", async () => {
+  const now = new Date("2026-11-03T12:00:00Z");
+  setSystemTime(now);
+  const claims: runTokens.CodeRunTokenClaims = {
+    ver: 1,
+    token_use: "code_run",
+    iss: "https://cloud.example",
+    aud: "cloud-code-bridge",
+    iat: now.getTime() / 1000,
+    nbf: now.getTime() / 1000,
+    exp: now.getTime() / 1000 + 300,
+    codeId: "c_fixture",
+    versionId: "11111111-1111-4111-8111-111111111111",
+    runId: "22222222-2222-4222-8222-222222222222",
+    generation: 1,
+    mandateId: "33333333-3333-4333-8333-333333333333",
+    mandateRevision: 1,
+    entrypoint: "weekly",
+    bundleHash: "a".repeat(64),
+  };
+  const auth = spyOn(appRequests, "authenticateSignedAppRequest").mockResolvedValue({
+    appId: "runner",
+    serviceAccountId: claims.mandateId,
+    credentialId: claims.mandateId,
+    scope: "identity:invoke",
+  });
+  const token = spyOn(runTokens, "verifyCodeRunToken").mockResolvedValue(claims);
+  try {
+    for (const [code, status] of [
+      ["code_policy_never", 403],
+      ["code_approval_required", 403],
+      ["code_unattended_forbidden", 403],
+      ["code_access_removed", 403],
+      ["code_rate_limited", 429],
+      ["code_wall_clock_limit", 429],
+      ["code_operation_not_found", 404],
+      ["code_ai_budget_reserved", 409],
+      ["code_bridge_unavailable", 503],
+    ] as const) {
+      const route = createCodeRunnerCallRoutes({
+        ownOrigins: async () => [],
+        host: {
+          async withCall() {
+            throw new CodeBridgeRefusal(code);
+          },
+        },
+        dispatch: { getCapability: async () => entry() },
+      });
+      const response = await route.request(RUNNER_PATHS.call, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runId: claims.runId,
+          generation: 1,
+          token: "fixture",
+          operation: "demo.get",
+          input: { call: { capability: "demo.get", target: null, refs: {}, input: { id: "one" } }, metadata: {} },
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(RunnerCallResponseSchema.parse(await response.json())).toEqual({ ok: false, error: { code, status } });
+    }
+  } finally {
+    token.mockRestore();
+    auth.mockRestore();
+  }
+});
+
+test("target HTTP statuses survive runner dispatch and Code page data without payload", async () => {
+  const now = new Date("2026-11-03T12:00:00Z");
+  setSystemTime(now);
+  const claims: runTokens.CodeRunTokenClaims = {
+    ver: 1,
+    token_use: "code_run",
+    iss: "https://cloud.example",
+    aud: "cloud-code-bridge",
+    iat: now.getTime() / 1000,
+    nbf: now.getTime() / 1000,
+    exp: now.getTime() / 1000 + 300,
+    codeId: "c_fixture",
+    versionId: "11111111-1111-4111-8111-111111111111",
+    runId: "22222222-2222-4222-8222-222222222222",
+    generation: 1,
+    mandateId: "33333333-3333-4333-8333-333333333333",
+    mandateRevision: 1,
+    entrypoint: "weekly",
+    bundleHash: "a".repeat(64),
+  };
+  const auth = spyOn(appRequests, "authenticateSignedAppRequest").mockResolvedValue({
+    appId: "runner",
+    serviceAccountId: claims.mandateId,
+    credentialId: claims.mandateId,
+    scope: "identity:invoke",
+  });
+  const token = spyOn(runTokens, "verifyCodeRunToken").mockResolvedValue(claims);
+  try {
+    // requireSpaceUuid uses err.notFound("Space"); spaceNotFound is its translation key, not its code.
+    for (const failure of [
+      err.notFound("Space"),
+      err.forbidden("Access denied"),
+      err.internal("Unavailable"),
+      { code: "accessRefused", message: "Zugriff fehlt", status: 404 },
+      { code: "ACCESS_LOOKUP_FAILED", message: "Lookup failed", status: 500 },
+    ]) {
+      for (const capabilityId of failure.status < 500 ? ["get", "rename"] : ["get"]) {
+        const operation = `demo.${capabilityId}`;
+        const input = capabilityId === "get" ? { id: "one" } : { id: "one", name: "New name" };
+        let stored: RunnerCallResponse | undefined;
+        let originalFailure: unknown;
+        let fetched = false;
+        const route = createCodeRunnerCallRoutes({
+          ownOrigins: async () => [],
+          host: {
+            async withCall(call, execute) {
+              const response = await execute({
+                onFailure: (error) => {
+                  originalFailure = error;
+                },
+                mandateId: claims.mandateId,
+                mandateRevision: 1,
+                ownerAppId: "core",
+                withMandateIssueAuthority: async (input, use) =>
+                  ok(
+                    await use({
+                      mandateId: claims.mandateId,
+                      mandateRevision: 1,
+                      ownerAppId: "core",
+                      subject: { type: "user", id: claims.versionId },
+                      workloadType: "code.version",
+                      workloadId: claims.versionId,
+                      targetAppId: input.targetAppId,
+                      operation: input.operation,
+                      policy: { version: 1, apps: ["demo"], operations: ["capability.query:get"], actions: "deny" },
+                    }),
+                  ),
+              });
+              // The real Core host validates this exact schema before finishCodeCall stores it.
+              stored = RunnerCallResponseSchema.parse(await response.clone().json());
+              expect(call.call.capability).toBe(operation);
+              return response;
+            },
+          },
+          dispatch: {
+            getCapability: async () => entry(),
+            withActiveSigner,
+            signInvocation: signInvocationToken,
+            fetch: async () => {
+              fetched = true;
+              return Response.json(
+                { code: failure.code, message: failure.message, details: { payload: "private" } },
+                { status: failure.status },
+              );
+            },
+          },
+        });
+        const response = await route.request(RUNNER_PATHS.call, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            runId: claims.runId,
+            generation: 1,
+            token: "fixture",
+            operation,
+            input: { call: { capability: operation, target: null, refs: {}, input }, metadata: {} },
+          }),
+        });
+        expect(response.status).toBe(200);
+        expect(fetched).toBe(true);
+        expect(stored).toEqual({ ok: false, error: { code: failure.code.toLowerCase(), status: failure.status } });
+        // Core can settle AI usage from the original error; runner/page errors remain payload-free.
+        expect(originalFailure).toEqual({ code: failure.code, message: failure.message, details: { payload: "private" } });
+        let pageResult = stored;
+        let pageKind: string | undefined = failure.status === 403 || failure.status === 404 ? "target_refused" : "bridge";
+        const invoke: CodePageInvoke = async (_invocation, schema) => ({
+          ok: true,
+          data: capabilityResultSchema(schema).parse({
+            data: {
+              run: {
+                id: claims.runId,
+                versionId: claims.versionId,
+                trigger: "schedule",
+                entrypoint: "weekly",
+                state: "failed",
+                outcome: "failed",
+                createdAt: now.toISOString(),
+                startedAt: null,
+                endedAt: null,
+              },
+              contents: {
+                input: null,
+                inputChunked: false,
+                content: null,
+                nextCursor: null,
+                calls: [
+                  {
+                    ordinal: 1,
+                    kind: capabilityId === "get" ? "query" : "action",
+                    capability: operation,
+                    call: null,
+                    result: pageResult,
+                    state: "failed",
+                    ...(pageKind ? { refusalKind: pageKind } : {}),
+                  },
+                ],
+              },
+            },
+          }),
+        });
+        const page = await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1);
+        expect(page?.calls[0]?.refusal).toBe(pageKind as never);
+        // Without the bridge's classification the page never guesses from a status or a code in the result.
+        pageResult = { ok: false, error: { code: "not_found", status: 404 } };
+        pageKind = undefined;
+        expect((await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1))?.calls[0]?.refusal).toBeNull();
+      }
+    }
+  } finally {
+    auth.mockRestore();
+    token.mockRestore();
+    setSystemTime();
+  }
+});
+
+test.each(["ai.chat.deliver", "ai.chat.run"])(
+  "%s and business-key Actions share one cross-run idempotency scope",
+  async (chatCapability) => {
+    const scopes: Parameters<typeof claimIdempotency>[0][] = [];
+    claimIdempotency = async (scope) => {
+      scopes.push(scope);
+      return { state: "claimed" };
+    };
+    const call = async (workloadRun?: string, delivery = true) => {
+      const appId = delivery ? "core" : "demo";
+      const capabilityId = delivery ? chatCapability : "rename";
+      const capability = entry(appId);
+      capability.manifest.actions[0] = { ...capability.manifest.actions[0]!, localId: capabilityId, idempotency: "required" };
+      const response = await dispatchCapability({
+        origin: "app",
+        appId,
+        capabilityId,
+        kind: "actions",
+        codeRun: true,
+        workloadRun,
+        request: new Request("https://cloud.example.test/action", { method: "POST", headers: { "idempotency-key": "result" } }),
+        input: { id: "one", name: "Two" },
+        dependencies: {
+          getCapability: async () => capability,
+          fetch: async (_url, init) => {
+            expect(new Headers(init?.headers).get("idempotency-key")).toBe("result");
+            return Response.json({ data: { id: "one", name: "Two" } });
+          },
+        },
+      });
+      expect(response.status).toBe(200);
+    };
+    try {
+      await call("run-1");
+      await call("run-1");
+      await call("run-2");
+      await call();
+      await call("run-1", false);
+      await call("run-2", false);
+      expect(scopes).toHaveLength(6);
+      expect(scopes[0]).toEqual(scopes[1]);
+      expect(scopes[0]).toEqual(scopes[2]);
+      expect(scopes[0]).toEqual(scopes[3]);
+      expect(scopes[4]).toEqual(scopes[5]);
+      expect(scopes.every((scope) => scope.keyHash === scopes[0]?.keyHash)).toBeTrue();
+    } finally {
+      claimIdempotency = async () => ({ state: "claimed" });
+    }
+  },
+);

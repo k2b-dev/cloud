@@ -49,7 +49,6 @@ Open **… → Settings → Accounts & identities → Sending identities**. An i
 - Recipients see the **Display name** and the **From address**.
 - A normal connection creates a default identity for the account address.
 - Mail can send with an identity only after it is verified. Two identities can use the same From address and keep different defaults.
-- **Automatic replies** is a separate setting of each identity. It is on by default for new identities. Mail sends automatic mail only after someone with **Manage** access creates and turns on an automatic reply or a workflow.
 
 ## Find your way in the mailbox {icon="layout-grid"}
 
@@ -65,7 +64,7 @@ The sidebar contains your mailboxes, with pinned mailboxes first. The open mailb
 The head contains:
 
 - The search field of the mailbox. Press `/` to go to it. The filter button next to it holds **Unread**, **Flagged**, **With attachment**, the date range, and a tag. While you search, it also holds **Search in** and the place. A number on the button shows how many filters are on. **Reset filters** removes them.
-- **…** with **Automations**, **Sync mailbox**, **Mailbox health**, and **Settings** first. Mailbox details, mailing lists, remote images, shared links, email-link handling, and the choice between conversations and individual messages follow. Your access determines the entries. Readers see **About this mailbox**.
+- **…** with **Retired rule history**, **Sync mailbox**, **Mailbox health**, and **Settings** first. Mailbox details, mailing lists, remote images, shared links, email-link handling, and the choice between conversations and individual messages follow. Your access determines the entries. Readers see **About this mailbox**.
 - **New message** as the primary action when you can send.
 
 The tabs stand above the list and the reader: **All**, **Needs action**, **Assigned to me**, **Waiting for reply**, **Unassigned**, **Later**, **Done**, **Recent activity**, **Kept**, and saved views. The row shows as many of them as its width allows, and **More** holds the rest. **Events** stays at the end. The open view always stays visible. Folders, Scheduled, and Send problems have no view tabs.
@@ -120,6 +119,8 @@ If the draft fails after Mail saved the event, Mail reports this partial result.
 - [Write and send messages](/app/mail/help/mail-compose)
 - [Work together in a mailbox](/app/mail/help/mail-collaboration)
 - [Set up and manage a mailbox](/app/mail/help/mail-admin)
-- [Automate responses and mailbox work](/app/mail/help/mail-automation)
-- [Mail workflow YAML reference](/app/mail/help/mail-workflows)
 - [Troubleshoot Mail](/app/mail/help/mail-troubleshooting)
+
+## Automate with Code
+
+Open the mailbox’s **Code** page to create an automation. Ask Gustav to rebuild an exported rule, review its access and effects, then activate it deliberately. Previous rule history remains read-only. Out-of-office replies, office-hours replies, and reference acknowledgements have been removed without replacement.

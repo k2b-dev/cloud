@@ -202,3 +202,21 @@ test("public HTTPS keeps the caller deadline active during a slow body", async (
     await fixture.close();
   }
 });
+
+test("hosts can inspect a redirect location without following it or exposing it in result headers", async () => {
+  const fixture = await networkTransportFixture((_req, res) => {
+    res.writeHead(307, { location: "https://next.example/items?opaque=token" });
+    res.end();
+  });
+  try {
+    const dependencies = { resolve: async () => [{ address: "1.1.1.1", family: 4 as const }], request: fixture.request };
+    const hidden = await requestPublicHttps({ ...base, url: "https://api.example/start" }, dependencies);
+    expect(hidden).not.toHaveProperty("redirectLocation");
+    const inspected = await requestPublicHttps({ ...base, url: "https://api.example/start", includeRedirectLocation: true }, dependencies);
+    expect(inspected.redirectLocation).toBe("https://next.example/items?opaque=token");
+    expect(inspected.headers).not.toHaveProperty("location");
+    expect(fixture.requests).toHaveLength(2);
+  } finally {
+    await fixture.close();
+  }
+});

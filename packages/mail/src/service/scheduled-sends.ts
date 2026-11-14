@@ -376,11 +376,6 @@ const cancelScheduledSendBy = async (params: {
         WHERE id = ${outbox.command_id}::uuid
       `;
       await tx`
-        UPDATE mail.automatic_reply_effects
-        SET state = 'cancelled'
-        WHERE command_id = ${outbox.command_id}::uuid AND state = 'queued'
-      `;
-      await tx`
         UPDATE mail.drafts
         SET
           state = ${draftState},

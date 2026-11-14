@@ -7,7 +7,7 @@ import { createDeviceActions } from "../../api/app-approval-actions";
 import { APPROVALS_PAGE_SIZE } from "../../contracts/approvals";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
-import { type ApprovalRequestInput, approvalReviewDigest, approvals, countPending, listPending, presentPendingApproval } from ".";
+import { type ActionApprovalRequestInput, approvalReviewDigest, approvals, countPending, listPending, presentPendingApproval } from ".";
 import { readApprovalContent } from "./content";
 
 const insertUser = async () => {
@@ -34,9 +34,9 @@ databaseSuite()("pending approval lists", () => {
       runConfig: { kind: "chat", input: "Write a letter" },
       userMessage: { role: "user", content: [{ type: "text", text: "Write a letter" }] },
     });
-    const ask = async (extra: Partial<ApprovalRequestInput> = {}, linked = true) => {
+    const ask = async (extra: Partial<ActionApprovalRequestInput> = {}, linked = true) => {
       const callId = crypto.randomUUID();
-      const input: ApprovalRequestInput = {
+      const input: ActionApprovalRequestInput = {
         appId: "mail",
         action: "draft.send",
         requester: { kind: "assistant_turn", appId: "assistant", ref: `${turn.id}/${callId}` },
@@ -133,7 +133,7 @@ databaseSuite()("pending approval lists", () => {
       approvalScope: "draft",
       resolvedEvent: null,
     });
-    const requester = await ask({ appId: "contacts", requester: { kind: "studio_app", appId: "mail", ref: crypto.randomUUID() } });
+    const requester = await ask({ appId: "contacts", requester: { kind: "assistant_turn", appId: "mail", ref: crypto.randomUUID() } });
     const sameApp = await ask({ appId: "mail", requester: { kind: "assistant_turn", appId: "mail", ref: crypto.randomUUID() } });
     const elsewhere = await ask({ appId: "spaces", review: null });
     expect((await approvals.get(elsewhere, undefined, true))?.details).toBeNull();
@@ -141,7 +141,7 @@ databaseSuite()("pending approval lists", () => {
     await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${expired}::uuid`;
     const cancelled = await ask();
     await approvals.cancel([cancelled]);
-    await ask({ requester: { kind: "studio_app", appId: "assistant", ref: crypto.randomUUID() } }, false);
+    await ask({ requester: { kind: "assistant_turn", appId: "assistant", ref: crypto.randomUUID() } }, false);
     const resolved = await ask();
     await sql`UPDATE ai.pending_actions SET status='resolved' WHERE approval_id=${resolved}::uuid`;
     const other = await fixture();
@@ -215,43 +215,38 @@ databaseSuite()("pending approval lists", () => {
       presentPendingApproval((await listPending({ approverUserId: userId })).items.find((row) => row.id === id)!, []).remember;
     expect(await options(standard)).toEqual({ chat: true, always: false, website: true });
     expect(await options(confirm)).toEqual({ chat: false, always: false, website: false });
-    await sql`UPDATE ai.turns SET run_config=run_config || '{"mandate":{}}'::jsonb WHERE id=${turn.id}::uuid`;
+    // Historical delegated turns stay readable, but cannot be made runnable again.
+    await sql`UPDATE ai.turns SET status='aborted', completed_at=now(), run_config=run_config || '{"mandate":{}}'::jsonb WHERE id=${turn.id}::uuid`;
     expect(await options(standard)).toEqual({ chat: false, always: false, website: true });
+    expect(await options(confirm)).toEqual({ chat: false, always: false, website: false });
+    await expect(sql`UPDATE ai.turns SET status='running' WHERE id=${turn.id}::uuid`.execute()).rejects.toThrow("routines are retired");
   });
 
-  test.each(["ai.messages", "ai.task_messages"])(
-    "reads the pending call's stored review from %s without changing approval details",
-    async (table) => {
-      const { userId, chat, turn, ask } = await fixture();
-      const review = reviewFixture();
-      const id = await ask({ review });
-      const query = { approverUserId: userId, id };
-      const before = (await listPending(query)).items[0]!;
-      expect(before.storedReview).toBeNull();
-      const [pending] = await sql<{ callId: string }[]>`SELECT call_id AS "callId" FROM ai.pending_actions WHERE approval_id=${id}::uuid`;
-      if (!pending) throw new Error("Missing pending call");
-      const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id });
-      await store.append({
-        role: "assistant",
-        content: [pending.callId, "other-call"].map((callId) => ({ type: "tool_call", id: callId, name: "mail.draft.send", args: {} })),
-      });
-      if (table === "ai.task_messages") {
-        await sql`WITH moved AS (
-        DELETE FROM ai.messages WHERE conversation_id=${chat.id}::uuid AND loop_id=${turn.id}::text AND role='assistant' RETURNING *
-      ) INSERT INTO ai.task_messages SELECT * FROM moved`;
-      }
-      const target = { conversationId: chat.id, turnId: turn.id };
-      const storedReview = { ...review, ask: "sensitive" as const };
-      await recordAiToolReview({ ...target, callId: pending.callId, review: storedReview });
-      await recordAiToolReview({ ...target, callId: "other-call", review: { ...review, ask: "deletes" } });
-      const row = (await listPending(query)).items[0]!;
-      expect(row.storedReview).toEqual(storedReview);
-      expect(row.details).toEqual(review);
-      expect(row.argsDigest).toBe(before.argsDigest);
-      expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual(storedReview);
-      expect(presentPendingApproval(row, []).review).toEqual(storedReview);
-    },
-  );
+  test("reads the pending call's stored review without changing approval details", async () => {
+    const { userId, chat, turn, ask } = await fixture();
+    const review = reviewFixture();
+    const id = await ask({ review });
+    const query = { approverUserId: userId, id };
+    const before = (await listPending(query)).items[0]!;
+    expect(before.storedReview).toBeNull();
+    const [pending] = await sql<{ callId: string }[]>`SELECT call_id AS "callId" FROM ai.pending_actions WHERE approval_id=${id}::uuid`;
+    if (!pending) throw new Error("Missing pending call");
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id });
+    await store.append({
+      role: "assistant",
+      content: [pending.callId, "other-call"].map((callId) => ({ type: "tool_call", id: callId, name: "mail.draft.send", args: {} })),
+    });
+    const target = { conversationId: chat.id, turnId: turn.id };
+    const storedReview = { ...review, ask: "sensitive" as const };
+    await recordAiToolReview({ ...target, callId: pending.callId, review: storedReview });
+    await recordAiToolReview({ ...target, callId: "other-call", review: { ...review, ask: "deletes" } });
+    const row = (await listPending(query)).items[0]!;
+    expect(row.storedReview).toEqual(storedReview);
+    expect(row.details).toEqual(review);
+    expect(row.argsDigest).toBe(before.argsDigest);
+    expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual(storedReview);
+    expect(presentPendingApproval(row, []).review).toEqual(storedReview);
+  });
 
   test("a capability's own approval reads the review stored under its parent call", async () => {
     const { userId, chat, turn, ask } = await fixture();

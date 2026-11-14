@@ -12,7 +12,7 @@ import { createRetryToasts } from "./mail-feedback";
 import { mailReaderMessages } from "./mail-reader-messages";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
-const SENDER_ACTION_ORDER: readonly SenderAction["id"][] = ["find", "automation", "block", "block-domain", "unsubscribe"];
+const SENDER_ACTION_ORDER: readonly SenderAction["id"][] = ["find", "unsubscribe"];
 
 /**
  * The card a click on a message's sender opens (Mail v5): the contact through the platform's contact directory, the
@@ -137,16 +137,7 @@ export default function MailSenderPopover(props: {
 
   const actions = createMemo<PersonPopoverAction[]>(() => {
     const own = [...props.actions].sort((left, right) => SENDER_ACTION_ORDER.indexOf(left.id) - SENDER_ACTION_ORDER.indexOf(right.id));
-    const label = (action: SenderAction) =>
-      action.id === "find"
-        ? t().allFromSender
-        : action.id === "automation"
-          ? t().senderAutomation
-          : action.id === "block"
-            ? t().blockSender
-            : action.id === "unsubscribe"
-              ? t().manageUnsubscribe
-              : action.label;
+    const label = (action: SenderAction) => (action.id === "find" ? t().allFromSender : t().manageUnsubscribe);
     const find = own.find((action) => action.id === "find");
     const rest = own.filter((action) => action.id !== "find");
     const entry = (action: SenderAction): PersonPopoverAction => ({

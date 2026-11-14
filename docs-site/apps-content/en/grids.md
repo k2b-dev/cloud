@@ -875,6 +875,22 @@ beside the identity heading and use saved values.
 
 ## Assistant capabilities and approvals
 
+GQL capabilities (`gql.context`, `gql.preview`, `gql.execute`, and
+`gql.view.execute`) and `view.create` name one `grids.base` as `target`.
+Record creation, updates, external upserts, and `document.create` name one
+`grids.table`; `workflow.record-action` names its `grids.base`. HTTP and SDK
+calls send this resource beside `input`. Chat and MCP tools use the flat field
+`base` or `table`. Remove the former `baseId` or `tableId` target field from
+that operation's input when upgrading a caller.
+
+Contained IDs stay in `input`: context table and field filters, saved Views,
+records, templates, and workflow launchers. Grids checks that every supplied
+object belongs to the declared container during review and execution. A record
+from another table or a source table from another base is rejected even when
+the caller can access both. Canonical readers and discovery keep their current
+input contracts. Refresh cached capability schemas before calling the new
+contracts; see [Capability targets](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on).
+
 `gql.preview`, `gql.execute`, and `gql.view.execute` accept
 `showTableToUser` (default `false`). Set it to `true` to request the existing
 Assistant/CLI table presentation. Research and intermediate queries can omit it.
@@ -925,10 +941,10 @@ REST document routes and a workflow run's generated documents. `document.read`
 also returns a semantic `download` link. Use the returned paths verbatim in
 ordinary authenticated Cloud UI. They do not grant access or create a public
 share; the endpoint checks current permissions again and returns the stored
-bytes in their original format (PDF, CSV, JSON, XML or a renderer artifact). Studio's isolated runtime
-should obtain a file through its capability stream API instead of fetching app
-routes directly. A shared Studio list can normalize each provider's file name,
-resource ref and download action while keeping provider-specific transfer logic.
+bytes in their original format (PDF, CSV, JSON, XML or a renderer artifact). Code and chat scripts
+should obtain a file through the capability stream API instead of fetching app
+routes directly. Keep each provider's resource ref and download operation when
+combining file lists.
 
 Use `document.content.read` to retrieve one stored artifact as an authenticated
 binary stream. Supply the public document `id` and optionally an `artifactKey`
@@ -980,6 +996,14 @@ are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-pri
 for the supported formats and limits.
 
 ### Change records and issue documents through capabilities
+
+Integrity Actions use the same fixed targets as other Grids Actions:
+`record.atomic` and `document.capture`/`document.issue`/`document.confirm` target
+`grids.base`; `record.close`, `record.finalize` and `record.correction-draft`
+target `grids.table`. Pass the container as `target`, outside `input`; flat
+Chat/MCP tools call it `base` or `table`. Nested atomic locks, checks and changes
+still name their tables, and every table must belong to the target base.
+`record.finalization.read` also uses a table target.
 
 Use `grids.record.atomic` to create or update several records together. Supply
 one base, at least one existing coordination record in `locks`, optional

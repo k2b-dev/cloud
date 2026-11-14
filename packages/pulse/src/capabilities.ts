@@ -3,6 +3,7 @@ import {
   type CapabilityError,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
+  CloudResourceReaderViewSchema,
   type CloudResourceView,
   capabilityPage,
   defineCapabilities,
@@ -49,6 +50,7 @@ import { pulseCapabilityPresentation } from "./capability-presentation";
 import { boundSqlCapabilityResult } from "./capability-sql-result";
 import type { PulseBase, PulseSource } from "./contracts";
 import { type Dashboard, DashboardSaveSchema, dashboardExposure } from "./dashboard-contracts";
+import { SHORT_ID_REGEX } from "./lib/short-id";
 import { resolvePulseMessages } from "./messages";
 import { pulseBaseHref, pulseSourceHref } from "./resource-hrefs";
 import { pulseService } from "./service";
@@ -171,9 +173,12 @@ const runBaseRead = async (input: z.infer<typeof BaseReadInputSchema>, context: 
   if (!id.ok) return id;
   const result = await pulseService.base.get(id.data, scope.data);
   if (!result.ok) return result;
+  const permission = await pulseService.base.access.require(id.data, scope.data, "read");
+  if (!permission.ok) return permission;
+  if (permission.data === "none") return fail(err.forbidden("Access denied"));
   const [base] = await projectBases([result.data]);
   return ok({
-    data: mapBase(base!),
+    data: { ...mapBase(base!), view: { title: base!.name, permission: permission.data } },
     summary: resolvePulseMessages(context.locale).t.readBase({ name: base!.name }),
     refs: [{ type: "pulse.base", id: base!.id }],
     links: [{ rel: "open" as const, href: pulseBaseHref(base!.id) }],
@@ -269,8 +274,11 @@ const savedIdentity = (context: CapabilityExecutionContext) => ({
   accessSubject: context.accessSubject,
   requestId: context.requestId,
 });
+const baseTargetId = (context: CapabilityExecutionContext) =>
+  context.target?.type === "pulse.base" && SHORT_ID_REGEX.test(context.target.id) ? context.target.id : "";
+
 const savedReview = async (
-  input: { baseId: string; queryId?: string; expectedRevision?: number; name?: string; sql?: string; params?: Record<string, string> },
+  input: { queryId?: string; expectedRevision?: number; name?: string; sql?: string; params?: Record<string, string> },
   context: CapabilityExecutionContext,
   deleting = false,
 ) => {
@@ -286,13 +294,13 @@ const savedReview = async (
   }
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const base = z.uuid().safeParse(input.baseId).success ? ok(input.baseId) : await internalId("bases", input.baseId, context.locale);
+  const base = await internalId("bases", baseTargetId(context), context.locale);
   if (!base.ok) return base;
   const access = await requireBaseAccess(base.data, scope.data, "write");
   if (!access.ok) return access;
   let name = input.name ?? "";
   if (input.queryId) {
-    const current = await savedQueries.get({ ...savedIdentity(context), baseId: input.baseId, queryId: input.queryId });
+    const current = await savedQueries.get({ ...savedIdentity(context), baseId: baseTargetId(context), queryId: input.queryId });
     if (!current.ok) return current;
     if (input.expectedRevision !== current.data.revision)
       return fail({
@@ -333,13 +341,13 @@ const alertReview = async (
   }
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const base = z.uuid().safeParse(input.baseId).success ? ok(input.baseId) : await internalId("bases", input.baseId, context.locale);
+  const base = await internalId("bases", baseTargetId(context), context.locale);
   if (!base.ok) return base;
   const access = await requireBaseAccess(base.data, scope.data, "write");
   if (!access.ok) return access;
   let name = "name" in input ? input.name : "";
   if (input.ruleId) {
-    const current = await alertRules.get({ ...savedIdentity(context), baseId: input.baseId, ruleId: input.ruleId });
+    const current = await alertRules.get({ ...savedIdentity(context), baseId: baseTargetId(context), ruleId: input.ruleId });
     if (!current.ok) return current;
     if (current.data.revision !== input.expectedRevision)
       return fail(err.conflict("Alert rule changed; read its current revision and retry."));
@@ -349,24 +357,24 @@ const alertReview = async (
   return ok({
     message: de ? `Alarmregel „${name}“ ${deleting ? "löschen" : "speichern"}?` : `${deleting ? "Delete" : "Save"} alert rule “${name}”?`,
     details: [
-      { label: "Base", value: input.baseId },
+      { label: "Base", value: baseTargetId(context) },
       ...(input.expectedRevision === undefined ? [] : [{ label: "Revision", value: String(input.expectedRevision) }]),
     ],
     ...(deleting ? {} : { approvalScope: `pulse:base:${base.data}:alert-rules` }),
   });
 };
 const sourceWriteTarget = async (
-  input: { baseId: string; sourceId?: string; expectedRevision?: number },
+  input: z.infer<typeof SourceCreateInputSchema> | z.infer<typeof SourceUpdateInputSchema>,
   context: CapabilityExecutionContext,
 ) => {
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const base = await internalId("bases", input.baseId, context.locale);
+  const base = await internalId("bases", baseTargetId(context), context.locale);
   if (!base.ok) return base;
   const access = await requireBaseAccess(base.data, scope.data, "write");
   if (!access.ok) return access;
   let sourceId: string | undefined;
-  if (input.sourceId) {
+  if ("sourceId" in input) {
     const id = await internalId("sources", input.sourceId, context.locale);
     if (!id.ok) return id;
     const current = await pulseService.source.get(id.data, scope.data);
@@ -388,7 +396,7 @@ const sourceReview = async (
   return ok({
     message: de ? (update ? "Quelle ändern?" : "Quelle anlegen?") : update ? "Update source?" : "Create source?",
     details: [
-      { label: "Base", value: input.baseId },
+      { label: "Base", value: baseTargetId(context) },
       ...Object.entries(input)
         .filter(([field]) => field !== "baseId" && field !== "metricFilters")
         .map(([label, value]) => ({ label, value: JSON.stringify(value) })),
@@ -407,12 +415,11 @@ const sourceReview = async (
 };
 
 const Base = z.string().min(1).describe("Base ID or short ID from base.list.");
-const Target = z.object({ baseId: Base, dashboardId: z.string().min(1).describe("Dashboard ID from dashboard.list.") }).strict();
+const Target = z.object({ dashboardId: z.string().min(1).describe("Dashboard ID from dashboard.list.") }).strict();
 const Revision = Target.extend({
   expectedRevision: z.number().int().positive().describe("Current dashboard revision from dashboard.read."),
 });
 const Save = DashboardSaveSchema.extend({
-  baseId: Base,
   dashboardId: z.string().min(1).optional().describe("Dashboard ID for an update; omit to create."),
 });
 const Publish = Revision.extend({
@@ -434,11 +441,12 @@ const review = async (
   context: CapabilityExecutionContext,
   action: "save" | "publish" | "unpublish" | "delete",
 ) => {
-  const access = await authorizeDashboardBase({ ...identity(context), baseId: input.baseId }, "write");
+  const baseId = baseTargetId(context);
+  const access = await authorizeDashboardBase({ ...identity(context), baseId }, "write");
   if (!access.ok) return access;
   let before: Dashboard | undefined;
   if (input.dashboardId) {
-    const current = await dashboards.get({ ...identity(context), baseId: input.baseId, dashboardId: input.dashboardId });
+    const current = await dashboards.get({ ...identity(context), baseId, dashboardId: input.dashboardId });
     if (!current.ok) return current;
     before = current.data;
     if (before.revision !== input.expectedRevision)
@@ -482,7 +490,7 @@ const review = async (
     delete: de ? "löschen" : "Delete",
   };
   const details = [
-    { label: "Base", value: input.baseId },
+    { label: "Base", value: baseId },
     { label: "Revision", value: String(input.expectedRevision ?? "new") },
   ];
   if (action === "publish" && "columns" in input) {
@@ -583,6 +591,7 @@ export const dashboardCapabilities = defineCapabilities({
   },
   actions: {
     "dashboard.save": {
+      target: "base",
       title: "Save Pulse dashboard",
       description:
         "Create or update JSON plus SQL panels. Updates require the current revision. Changes to published SQL or output revoke the public link and require fresh approval.",
@@ -595,11 +604,17 @@ export const dashboardCapabilities = defineCapabilities({
       review: (input, context) => review(input, context, "save"),
       async run(input, context) {
         if (!context.idempotencyKey) return fail(err.badInput("An Idempotency-Key is required."));
-        const result = await dashboards.save({ ...identity(context), ...input, idempotencyKey: context.idempotencyKey });
+        const result = await dashboards.save({
+          ...identity(context),
+          ...input,
+          baseId: baseTargetId(context),
+          idempotencyKey: context.idempotencyKey,
+        });
         return result.ok ? ok({ data: summarize(result.data) }) : result;
       },
     },
     "dashboard.publish": {
+      target: "base",
       title: "Publish Pulse dashboard",
       description:
         "Create a public link after reviewing every output column at the current revision. Always requires approval. Anyone with the link can read those results.",
@@ -612,11 +627,17 @@ export const dashboardCapabilities = defineCapabilities({
       review: (input, context) => review(input, context, "publish"),
       async run(input, context) {
         if (!context.idempotencyKey) return fail(err.badInput("An Idempotency-Key is required."));
-        const result = await dashboards.publish({ ...identity(context), ...input, idempotencyKey: context.idempotencyKey });
+        const result = await dashboards.publish({
+          ...identity(context),
+          ...input,
+          baseId: baseTargetId(context),
+          idempotencyKey: context.idempotencyKey,
+        });
         return result.ok ? ok({ data: result.data }) : result;
       },
     },
     "dashboard.unpublish": {
+      target: "base",
       title: "Unpublish Pulse dashboard",
       description: "Revoke a public dashboard link. Always requires approval.",
       input: Revision,
@@ -627,11 +648,18 @@ export const dashboardCapabilities = defineCapabilities({
       review: (input, context) => review(input, context, "unpublish"),
       async run(input, context) {
         if (!context.idempotencyKey) return fail(err.badInput("An Idempotency-Key is required."));
-        const result = await dashboards.remove({ ...identity(context), ...input, unpublish: true, idempotencyKey: context.idempotencyKey });
+        const result = await dashboards.remove({
+          ...identity(context),
+          ...input,
+          baseId: baseTargetId(context),
+          unpublish: true,
+          idempotencyKey: context.idempotencyKey,
+        });
         return result.ok ? ok({ data: result.data }) : result;
       },
     },
     "dashboard.delete": {
+      target: "base",
       title: "Delete Pulse dashboard",
       description: "Delete a dashboard and revoke its public link. Measurement data remains. Always requires approval.",
       input: Revision,
@@ -642,7 +670,12 @@ export const dashboardCapabilities = defineCapabilities({
       review: (input, context) => review(input, context, "delete"),
       async run(input, context) {
         if (!context.idempotencyKey) return fail(err.badInput("An Idempotency-Key is required."));
-        const result = await dashboards.remove({ ...identity(context), ...input, idempotencyKey: context.idempotencyKey });
+        const result = await dashboards.remove({
+          ...identity(context),
+          ...input,
+          baseId: baseTargetId(context),
+          idempotencyKey: context.idempotencyKey,
+        });
         return result.ok ? ok({ data: result.data }) : result;
       },
     },
@@ -662,7 +695,7 @@ const destroyTarget = async (input: z.infer<typeof BaseDestroyInputSchema>, cont
   if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const id = await internalId("bases", input.baseId, context.locale);
+  const id = await internalId("bases", baseTargetId(context), context.locale);
   if (!id.ok) return id;
   const access = await requireBaseAccess(id.data, scope.data, "admin");
   if (!access.ok) return access;
@@ -680,14 +713,14 @@ const destroyReview = async (input: z.infer<typeof BaseDestroyInputSchema>, cont
       ? `Base „${target.data.base.name}“ ${deleting ? "mit allen Quellen und Daten löschen" : "leeren und alle Messdaten löschen"}?`
       : `${deleting ? "Delete the base, all sources and data" : "Clear all measurements in the base"} “${target.data.base.name}”?`,
     details: [
-      { label: "Base", value: input.baseId },
+      { label: "Base", value: baseTargetId(context) },
       { label: de ? "Änderungsstand" : "Revision", value: input.expectedUpdatedAt },
     ],
   });
 };
 const ingestTarget = async (input: z.infer<typeof IngestWriteInputSchema>, context: CapabilityExecutionContext) => {
   if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
-  const base = await internalId("bases", input.baseId, context.locale);
+  const base = await internalId("bases", baseTargetId(context), context.locale);
   if (!base.ok) return base;
   const source = await internalId("sources", input.sourceId, context.locale);
   if (!source.ok) return source;
@@ -827,7 +860,7 @@ export const pulseCapabilities = defineCapabilities({
       title: "Read Pulse Base",
       description: "Read one pulse.base ref returned by base.list or base.search.",
       input: BaseReadInputSchema,
-      data: BaseDataSchema,
+      data: BaseDataSchema.extend({ view: CloudResourceReaderViewSchema }),
       openWorld: false,
       run: runBaseRead,
     },
@@ -887,6 +920,7 @@ export const pulseCapabilities = defineCapabilities({
       },
     },
     "base.clear_data": {
+      target: "base",
       title: "Clear Pulse base data",
       description:
         "Start clearing all measurements while preserving sources and configuration. Requires base admin, unchanged updatedAt and approval every time.",
@@ -905,6 +939,7 @@ export const pulseCapabilities = defineCapabilities({
       },
     },
     "base.delete": {
+      target: "base",
       title: "Delete Pulse base",
       description: "Start deleting a base, all sources and measurements. Requires base admin, unchanged updatedAt and approval every time.",
       input: BaseDestroyInputSchema,
@@ -922,6 +957,7 @@ export const pulseCapabilities = defineCapabilities({
       },
     },
     "ingest.write": {
+      target: "base",
       title: "Write Pulse telemetry",
       description:
         "Write at most 192 KiB through an HTTP ingest source created by the current access subject, at its current revision. Requires base write access. Can be planned after review.",
@@ -938,7 +974,7 @@ export const pulseCapabilities = defineCapabilities({
         return ok({
           message: de ? `Messdaten in „${target.data.name}“ schreiben?` : `Write telemetry to “${target.data.name}”?`,
           details: [
-            { label: "Base", value: input.baseId },
+            { label: "Base", value: baseTargetId(context) },
             { label: de ? "Quelle" : "Source", value: input.sourceId },
             { label: "Revision", value: String(input.expectedRevision) },
             ...(["metrics", "events", "states"] as const).map((key) => ({
@@ -979,6 +1015,7 @@ export const pulseCapabilities = defineCapabilities({
       },
     },
     "alert.save": {
+      target: "base",
       title: "Save Pulse alert rule",
       description:
         "Create or update an SQL key/value alert in a writable base. Minimum interval 300 seconds; at most 100 keys. Supply the current revision for updates. Can be planned after review.",
@@ -994,6 +1031,7 @@ export const pulseCapabilities = defineCapabilities({
         const result = await alertRules.save({
           ...savedIdentity(context),
           ...input,
+          baseId: baseTargetId(context),
           requestId: context.requestId,
           idempotencyKey: context.idempotencyKey,
         });
@@ -1001,6 +1039,7 @@ export const pulseCapabilities = defineCapabilities({
       },
     },
     "alert.delete": {
+      target: "base",
       title: "Delete Pulse alert rule",
       description: "Delete one alert rule at its current revision. Always asks for approval; telemetry remains.",
       input: AlertDeleteInputSchema,
@@ -1014,6 +1053,7 @@ export const pulseCapabilities = defineCapabilities({
         const result = await alertRules.remove({
           ...savedIdentity(context),
           ...input,
+          baseId: baseTargetId(context),
           requestId: context.requestId,
           idempotencyKey: context.idempotencyKey,
         });
@@ -1021,6 +1061,7 @@ export const pulseCapabilities = defineCapabilities({
       },
     },
     "source.create": {
+      target: "base",
       title: "Create Pulse source",
       description:
         "Create a metrics endpoint or HTTP ingest source after approval. Does not create or expose tokens. Endpoint requests obey the current network policy.",
@@ -1041,6 +1082,7 @@ export const pulseCapabilities = defineCapabilities({
       },
     },
     "source.update": {
+      target: "base",
       title: "Update Pulse source",
       description: "Update one source at its current revision after approval. Can set a push expectation; cannot read or set tokens.",
       input: SourceUpdateInputSchema,
@@ -1060,6 +1102,7 @@ export const pulseCapabilities = defineCapabilities({
       },
     },
     "saved_query.save": {
+      target: "base",
       title: "Save Pulse query",
       description:
         "Create or update saved SQL in a writable base. Updates require the current revision. This reviewed action can be planned and uses an Idempotency-Key for safe retries.",
@@ -1084,11 +1127,17 @@ export const pulseCapabilities = defineCapabilities({
             status: 422,
             message: "The saved query would exceed the capability result budget. Use cld pulse queries save.",
           });
-        const result = await savedQueries.save({ ...savedIdentity(context), ...input, idempotencyKey: context.idempotencyKey });
+        const result = await savedQueries.save({
+          ...savedIdentity(context),
+          ...input,
+          baseId: baseTargetId(context),
+          idempotencyKey: context.idempotencyKey,
+        });
         return result.ok ? ok({ data: result.data }) : result;
       },
     },
     "saved_query.delete": {
+      target: "base",
       title: "Delete saved Pulse query",
       description: "Delete one saved query from a writable base. Always asks for approval; measurement data remains.",
       input: SavedQueryDeleteInputSchema,
@@ -1099,7 +1148,12 @@ export const pulseCapabilities = defineCapabilities({
       review: (input, context) => savedReview(input, context, true),
       run: async (input, context) => {
         if (!context.idempotencyKey) return fail(err.badInput("An Idempotency-Key is required."));
-        const result = await savedQueries.remove({ ...savedIdentity(context), ...input, idempotencyKey: context.idempotencyKey });
+        const result = await savedQueries.remove({
+          ...savedIdentity(context),
+          ...input,
+          baseId: baseTargetId(context),
+          idempotencyKey: context.idempotencyKey,
+        });
         return result.ok ? ok({ data: { deleted: true } }) : result;
       },
     },

@@ -1,0 +1,64 @@
+import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext, capabilityPage } from "@k2b/cloud/contracts";
+import { err, fail, ok } from "@k2b/stdlib";
+import { ZodError } from "zod";
+import { type CodeContext, CodeDataError, CodeOwnerUnavailableError } from "./access";
+import { CodeJobError } from "./job-errors";
+import { CodeVersionDecisionError, CodeVersionError } from "./versions";
+
+const contextFor = (context: CapabilityExecutionContext): CodeContext => {
+  if (!context.authority) throw new CodeDataError("FORBIDDEN", "Code requires request authority.");
+  return {
+    authority: context.authority,
+    locale: context.locale,
+    signal: context.signal,
+    requestId: context.requestId,
+    query: context.query,
+  };
+};
+export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: (context: CodeContext) => Promise<T>) {
+  try {
+    const data = await run(contextFor(context));
+    const next = data && typeof data === "object" && "nextCursor" in data ? data.nextCursor : undefined;
+    return ok({ data, ...(typeof next === "string" || next === null ? { page: capabilityPage(next) } : {}) });
+  } catch (error) {
+    if (error instanceof CodeJobError)
+      return fail({
+        code: error.code,
+        status: error.code === "code_job_request_limit" ? (400 as const) : (409 as const),
+        message: error.code === "code_job_busy" ? "Code runners are busy. Retry later." : error.message,
+      });
+    if (error instanceof ZodError) return fail(err.badInput("Invalid Code input."));
+    if (error instanceof CodeVersionDecisionError)
+      return fail({
+        code: error.code,
+        message: error.message,
+        status:
+          error.code === "NOT_FOUND"
+            ? (404 as const)
+            : error.code === "BUSY" || error.code === "UNAVAILABLE"
+              ? (409 as const)
+              : (403 as const),
+      });
+    if (error instanceof CodeVersionError) {
+      let details = error.details;
+      if (details && Buffer.byteLength(JSON.stringify(details)) > CAPABILITY_MAX_RESULT_BYTES / 2) {
+        const { files: _files, ...locator } = details;
+        details = locator;
+      }
+      return fail({
+        code: error.code,
+        message: error.message,
+        status: error.code === "code_sends_not_yet" || error.code === "code_manifest_invalid" ? (400 as const) : (409 as const),
+        ...(details ? { details } : {}),
+      });
+    }
+    if (error instanceof CodeOwnerUnavailableError)
+      return fail(err.internal("Code owner is unavailable. Try again after its application recovers."));
+    if (!(error instanceof CodeDataError)) throw error;
+    if (error.code === "code_guests_cannot_author") return fail({ code: error.code, status: 403 as const, message: error.message });
+    if (error.code === "FORBIDDEN") return fail(err.forbidden(error.message));
+    if (error.code === "NOT_FOUND") return fail(err.notFound("Code"));
+    if (error.code === "CONFLICT") return fail(err.conflict(error.message));
+    return fail(err.badInput(error.message));
+  }
+}

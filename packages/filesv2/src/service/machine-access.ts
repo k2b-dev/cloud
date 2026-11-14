@@ -7,6 +7,7 @@ import {
   deleteAccess,
   getEffectivePermission,
   hasPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   type RequestActor,
@@ -49,7 +50,7 @@ export const filesAuditActor = (actor: RequestActor) =>
     : { uid: actor.serviceAccount.name, provider: "service_account" };
 export const storageBaseId = (binding: Binding) => `${binding.area}:${binding.kind}:${binding.identity_id}`;
 export const machineActor = (actor: RequestActor) =>
-  actor.kind === "service_account" && ["standalone", "agent"].includes(actor.serviceAccount.kind);
+  actor.kind === "service_account" && ["standalone", "agent", "code"].includes(actor.serviceAccount.kind);
 export function filesScope(actor: RequestActor): PermissionLevel {
   // Personal delegated credentials keep the existing human permission contract.
   if (actor.kind === "user" || (actor.serviceAccount.kind === "user_delegated" && actor.delegatedUser)) return "admin";
@@ -194,7 +195,15 @@ export async function listMachineStorage(after?: string): Promise<{ items: Machi
     next: rows.length > 50 ? rows[49]!.id : null,
   };
 }
-export async function storageGrants(baseId: string, after?: string, accessId?: string) {
+/** Which grants to list: Code accounts alone, as the Service accounts section shows them, or everyone else. */
+export type StorageGrantAccounts = "code" | "other";
+export async function storageGrants(
+  baseId: string,
+  after?: string,
+  accessId?: string,
+  permission: PermissionLevel = "none",
+  accounts?: StorageGrantAccounts,
+) {
   const rows = await sql<
     {
       id: string;
@@ -206,7 +215,9 @@ export async function storageGrants(baseId: string, after?: string, accessId?: s
       created_at: Date;
     }[]
   >`
-    SELECT a.*,s.path FROM filesv2.storage_access s JOIN auth.access a ON a.id=s.access_id WHERE s.base_id=${baseId}::uuid AND (${after ?? null}::uuid IS NULL OR a.id>${after ?? null}::uuid) AND (${accessId ?? null}::uuid IS NULL OR a.id=${accessId ?? null}::uuid) ORDER BY a.id LIMIT 51`;
+    SELECT a.*,s.path FROM filesv2.storage_access s JOIN auth.access a ON a.id=s.access_id WHERE s.base_id=${baseId}::uuid AND (${after ?? null}::uuid IS NULL OR a.id>${after ?? null}::uuid) AND (${accessId ?? null}::uuid IS NULL OR a.id=${accessId ?? null}::uuid)
+      AND (${accounts ?? null}::text IS NULL OR (${accounts ?? null}::text='code')=EXISTS(SELECT 1 FROM auth.service_accounts sa WHERE sa.id=a.service_account_id AND sa.kind='code'))
+    ORDER BY a.id LIMIT 51`;
   const items = await resolveDisplayNames(
     rows.slice(0, 50).map((row) => ({
       id: row.id,
@@ -219,17 +230,29 @@ export async function storageGrants(baseId: string, after?: string, accessId?: s
       path: row.path,
       createdAt: row.created_at.toISOString(),
     })),
+    { permission },
   );
   return { items, next: rows.length > 50 ? rows[49]!.id : null };
 }
-export async function grantStorage(baseId: string, path: string, principal: Principal, permission: "read" | "write" | "admin") {
+export async function grantStorage(
+  actor: RequestActor,
+  baseId: string,
+  path: string,
+  principal: Principal,
+  permission: "read" | "write" | "admin",
+) {
   relativePath(path);
   if (!(await machineStorage.owner(baseId))) throw new FilesError("not_found", 404);
   if (principal.type === "service_account") {
     const account = await serviceAccounts.get({ id: principal.serviceAccountId });
-    if (!account || account.status !== "active" || !["standalone", "agent"].includes(account.kind)) throw new FilesError("forbidden", 403);
+    if (!account || account.status !== "active" || !["standalone", "agent", "code"].includes(account.kind))
+      throw new FilesError("forbidden", 403);
   } else if (principal.type !== "user" && principal.type !== "group") throw new FilesError("forbidden", 403);
   const id = await sql.begin(async (tx) => {
+    if (!(await lockAccessMutationAuthority({ subject: filesSubject(actor), principal }, tx))) throw new FilesError("forbidden", 403);
+    const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
+    if (!user?.roles.includes("admin") || !(await accounts.users.getRoles(user.id, { db: tx })).includes("admin"))
+      throw new FilesError("forbidden", 403);
     const [storage] = await tx`SELECT base_id FROM filesv2.machine_storage WHERE base_id=${baseId}::uuid FOR UPDATE`;
     if (!storage) throw new FilesError("not_found", 404);
     const match =
@@ -253,14 +276,22 @@ export async function grantStorage(baseId: string, path: string, principal: Prin
     await tx`INSERT INTO filesv2.storage_access(base_id,path,access_id) VALUES(${baseId}::uuid,${path},${result.data.id}::uuid)`;
     return result.data.id;
   });
-  const grant = (await storageGrants(baseId, undefined, id)).items[0];
+  const grant = (await storageGrants(baseId, undefined, id, "admin")).items[0];
   if (!grant) throw new FilesError("not_found", 404);
   return grant;
 }
-export async function revokeStorage(baseId: string, accessId: string) {
-  const [grant] = await sql`SELECT access_id FROM filesv2.storage_access WHERE base_id=${baseId}::uuid AND access_id=${accessId}::uuid`;
-  if (!grant) throw new FilesError("not_found", 404);
-  await deleteAccess({ id: accessId });
+export async function revokeStorage(actor: RequestActor, baseId: string, accessId: string) {
+  await sql.begin(async (tx) => {
+    if (!(await lockAccessMutationAuthority({ subject: filesSubject(actor), accessId }, tx))) throw new FilesError("forbidden", 403);
+    const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
+    if (!user?.roles.includes("admin") || !(await accounts.users.getRoles(user.id, { db: tx })).includes("admin"))
+      throw new FilesError("forbidden", 403);
+    const [storage] = await tx`SELECT base_id FROM filesv2.machine_storage WHERE base_id=${baseId}::uuid FOR UPDATE`;
+    if (!storage) throw new FilesError("not_found", 404);
+    const [grant] = await tx`SELECT access_id FROM filesv2.storage_access WHERE base_id=${baseId}::uuid AND access_id=${accessId}::uuid`;
+    if (!grant) throw new FilesError("not_found", 404);
+    await deleteAccess({ id: accessId }, tx);
+  });
 }
 
 export type TransferPayload = { url: string; kind: "download" | "upload" | "archive"; manifest?: string; paths?: string[] };

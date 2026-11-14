@@ -64,6 +64,7 @@ const catalogs = {
   DetailSections: (await import("../layout/detail-sections-messages")).checkDetailSectionMessages,
   Resource: (await import("../surfaces/resource-messages")).checkResourceMessages,
   Pagination: (await import("../content/pagination-messages")).checkPaginationMessages,
+  CodeDiff: (await import("../content/code-diff-messages")).checkCodeDiffMessages,
   StructuredData: (await import("../content/structured-data-messages")).checkStructuredDataMessages,
   LogEntries: (await import("../content/log-entries-messages")).checkLogEntriesMessages,
   Docs: (await import("../content/docs-messages")).checkDocsMessages,

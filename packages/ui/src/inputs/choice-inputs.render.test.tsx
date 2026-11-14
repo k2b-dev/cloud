@@ -75,7 +75,7 @@ test("fields that share a grid align their controls through a subgrid", () => {
   expect(plain).toMatch(/^<div class="k2b-field "[^>]*><label [^>]*class="k2b-field__label"/);
   expect(plain).not.toContain("k2b-field__description");
   const paired = '.k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"])';
-  const fieldRule = indexCss.match(new RegExp(`\n  ${paired.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \{([^}]*)\}`))?.[1] ?? "";
+  const fieldRule = indexCss.match(new RegExp(`\n  ${paired.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} {([^}]*)}`))?.[1] ?? "";
   expect(fieldRule).toContain("grid-template-rows: subgrid");
   expect(fieldRule).toContain("grid-row: span 4");
   expect(indexCss).toContain(`${paired} > :is(.k2b-field__label, .k2b-field__label-row) {\n    grid-row: 1;`);
@@ -324,6 +324,11 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).toContain("Type to search...");
     expect(cssRule(".k2b-ui .k2b-combobox__input > i:first-child")).toContain("margin-inline: 0.625rem 0");
     expect(cssRule(".k2b-ui .k2b-combobox__input > i:last-child")).toContain("margin-inline: 0 0.625rem");
+    // A result's badge keeps its size at the end of the row; the text column never takes it in.
+    expect(cssRule(".k2b-ui .k2b-choice-option__badge")).toContain("flex: 0 0 auto");
+    expect(
+      cssRule(".k2b-ui .k2b-choice-option > span:not(.k2b-choice-option__checkbox, .k2b-choice-dot, .k2b-choice-option__badge)"),
+    ).toContain("flex: 1");
   });
 
   test("renders multi-select values and listbox state", () => {

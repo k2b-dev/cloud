@@ -86,7 +86,8 @@ export const createIdentityMandateRoutes = (overrides: Partial<OwnerMandateDepen
     const params = MandateParamsSchema.safeParse(c.req.param());
     if (!params.success) return { error: c.json({ code: "VALIDATION_FAILED", message: "Invalid mandate id" }, 400) };
     const mandate = await service.get(params.data.mandateId);
-    if (!mandate || mandate.ownerAppId !== workload.appId) {
+    // Code entries are confirmed and switched only by Core’s activation transaction.
+    if (!mandate || mandate.workloadType === "code.version" || mandate.ownerAppId !== workload.appId) {
       return { error: c.json({ code: "NOT_FOUND", message: "Mandate not found" }, 404) };
     }
     return { mandate, workload };

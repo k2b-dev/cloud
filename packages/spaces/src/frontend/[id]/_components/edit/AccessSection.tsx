@@ -63,6 +63,7 @@ export function PermissionsSection(props: {
     if (stale) await reload();
     wrote = false;
     await openAccessDialog({
+      target: { type: "spaces.space", id: props.spaceId },
       resourceName: props.spaceName,
       subtitle: m.accessDialogSubtitle,
       initialEntries: entries(),

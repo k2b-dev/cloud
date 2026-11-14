@@ -68,7 +68,12 @@ const fixture = async () => {
   if (!name.ok) throw name.error;
   const create = await gridsService.record.create(tableId, { [name.data.id]: "before" }, user.id, "direct");
   if (!create.ok) throw create.error;
-  const context = { ...userContext(user), requestId: uuid(), idempotencyKey: uuid() };
+  const context: CapabilityExecutionContext = {
+    ...userContext(user),
+    requestId: uuid(),
+    idempotencyKey: uuid(),
+    target: { type: "grids.base", id: base },
+  };
   return { baseId, tableId, base, table, name: name.data, record: create.data, context, grantId: grant.id };
 };
 const cleanup = async (f: Awaited<ReturnType<typeof fixture>>) => {
@@ -86,7 +91,6 @@ postgresTest("atomic capability rolls back earlier writes on a late stale versio
     const target = { tableId: f.table, recordId: f.record.shortId };
     const change = { kind: "update", ...target, ifVersion: f.record.version, values: { [f.name.shortId]: "after" } };
     const body = {
-      baseId: f.base,
       locks: [target],
       checks: [
         { ...target, ifVersion: f.record.version, values: { [f.name.shortId]: "before" } },
@@ -115,14 +119,14 @@ postgresTest("document capabilities capture, issue and read immutable bytes with
   try {
     const capture = gridsCapabilities.actions["document.capture"];
     const captured = await capture.run(
-      capture.input.parse({ baseId: f.base, query: `from table {${f.table}}\nselect {${f.name.shortId}} as item_name` }),
+      capture.input.parse({ query: `from table {${f.table}}\nselect {${f.name.shortId}} as item_name` }),
       f.context,
     );
     if (!captured.ok) throw captured.error;
     expect(captured.ok).toBeTrue();
     // Correlation IDs may repeat; only the operation key identifies a capture.
     const independent = await capture.run(
-      capture.input.parse({ baseId: f.base, query: `from table {${f.table}}\nselect {${f.name.shortId}} as otherName` }),
+      capture.input.parse({ query: `from table {${f.table}}\nselect {${f.name.shortId}} as otherName` }),
       { ...f.context, idempotencyKey: uuid() },
     );
     expect(independent.ok).toBeTrue();
@@ -134,7 +138,7 @@ postgresTest("document capabilities capture, issue and read immutable bytes with
       { kind: "csv" },
       { kind: "xml", body: "<items>{% for row in rows %}<item>{{ row[columns[0].key] }}</item>{% endfor %}</items>" },
     ]) {
-      const issued = await issue.run(issue.input.parse({ baseId: f.base, data: captured.data.data, output }), {
+      const issued = await issue.run(issue.input.parse({ data: captured.data.data, output }), {
         ...f.context,
         requestId: uuid(),
         idempotencyKey: uuid(),
@@ -159,7 +163,7 @@ postgresTest("document capabilities capture, issue and read immutable bytes with
       expect(bytes.byteLength).toBeGreaterThan(0);
       if (output.kind === "xml") expect(new TextDecoder().decode(bytes)).toContain("<item>before</item>");
     }
-    const zip = await issue.run(issue.input.parse({ baseId: f.base, data: captured.data.data, output: { kind: "zip", include: ids } }), {
+    const zip = await issue.run(issue.input.parse({ data: captured.data.data, output: { kind: "zip", include: ids } }), {
       ...f.context,
       requestId: uuid(),
       idempotencyKey: uuid(),
@@ -174,7 +178,6 @@ postgresTest("document capabilities capture, issue and read immutable bytes with
         await setSetting("gotenberg.url", testInfra.gotenberg);
         const pdf = await issue.run(
           issue.input.parse({
-            baseId: f.base,
             data: captured.data.data,
             output: { kind: "pdf", body: "<h1>Items</h1>{% for row in rows %}<p>{{ row[columns[0].key] }}</p>{% endfor %}" },
           }),
@@ -211,25 +214,19 @@ postgresTest("finalization capability pins versions and correction drafts preser
     const enabled = await enableFinalization(f.tableId, { mode: "direct" }, f.context.user!.id);
     if (!enabled.ok || !enabled.data.enabled) throw new Error("Requires finalization");
     const finalize = gridsCapabilities.actions["record.finalize"];
-    const input = {
-      tableId: f.table,
-      recordId: f.record.shortId,
-      ifVersion: f.record.version,
-      expectedPolicyRevision: enabled.data.policyRevision,
-    };
-    const rejected = await finalize.run(
-      finalize.input.parse({ ...input, expectedPolicyRevision: enabled.data.policyRevision + 1 }),
-      f.context,
-    );
+    const input = { recordId: f.record.shortId, ifVersion: f.record.version, expectedPolicyRevision: enabled.data.policyRevision };
+    const rejected = await finalize.run(finalize.input.parse({ ...input, expectedPolicyRevision: enabled.data.policyRevision + 1 }), {
+      ...f.context,
+      target: { type: "grids.table", id: f.table },
+    });
     expect(rejected.ok).toBeFalse();
-    const result = await finalize.run(finalize.input.parse(input), f.context);
+    const result = await finalize.run(finalize.input.parse(input), { ...f.context, target: { type: "grids.table", id: f.table } });
     expect(result.ok).toBeTrue();
     const original = await gridsService.record.get(f.tableId, f.record.id);
     if (!original) throw new Error("Original missing");
     const draft = gridsCapabilities.actions["record.correction-draft"];
     const created = await draft.run(
       draft.input.parse({
-        tableId: input.tableId,
         recordId: input.recordId,
         ifVersion: original.version,
         typeFieldId: type.data.shortId,
@@ -237,7 +234,7 @@ postgresTest("finalization capability pins versions and correction drafts preser
         originalFieldId: relation.data.shortId,
         values: { [f.name.shortId]: "Correction draft" },
       }),
-      f.context,
+      { ...f.context, target: { type: "grids.table", id: f.table } },
     );
     expect(created.ok).toBeTrue();
     expect((await gridsService.record.get(f.tableId, f.record.id))?.version).toBe(original.version);
@@ -264,39 +261,44 @@ postgresTest("Four-eyes capability requires an independent eligible approver and
     expect((await enableHistory(f.tableId, f.context.user!.id)).ok).toBeTrue();
     const enabled = await enableFinalization(f.tableId, { mode: "fourEyes", approverGroupId: groupId }, f.context.user!.id);
     if (!enabled.ok || !enabled.data.enabled) throw new Error("Missing policy");
-    const input = {
-      tableId: f.table,
-      recordId: f.record.shortId,
-      ifVersion: f.record.version,
-      expectedPolicyRevision: enabled.data.policyRevision,
-    };
+    const input = { recordId: f.record.shortId, ifVersion: f.record.version, expectedPolicyRevision: enabled.data.policyRevision };
     const close = gridsCapabilities.actions["record.close"];
-    expect((await close.run(close.input.parse(input), f.context)).ok).toBeTrue();
+    expect((await close.run(close.input.parse(input), { ...f.context, target: { type: "grids.table", id: f.table } })).ok).toBeTrue();
     const readiness = await gridsCapabilities.queries["record.finalization.read"].run(
-      { tableId: f.table, recordId: f.record.shortId },
-      f.context,
+      { recordId: f.record.shortId },
+      { ...f.context, target: { type: "grids.table", id: f.table } },
     );
     if (!readiness.ok || !readiness.data.data.request) throw new Error("Missing request");
     const approve = gridsCapabilities.actions["record.finalize"];
     const proposal = approve.input.parse({ ...input, approvalRequestId: readiness.data.data.request.id });
-    expect((await approve.run(proposal, f.context)).ok).toBeFalse();
+    expect((await approve.run(proposal, { ...f.context, target: { type: "grids.table", id: f.table } })).ok).toBeFalse();
     const approverContext = { ...userContext(testUser(approverId)), requestId: uuid(), idempotencyKey: uuid() };
     // Exercise resolver housekeeping independently of the ordinary writer's eager supersession.
     await sql`UPDATE grids.records SET version=version+1 WHERE id=${f.record.id}::uuid`;
     const currentVersion = f.record.version + 1;
-    expect((await approve.run({ ...proposal, ifVersion: currentVersion }, approverContext)).ok).toBeFalse();
+    expect(
+      (await approve.run({ ...proposal, ifVersion: currentVersion }, { ...approverContext, target: { type: "grids.table", id: f.table } }))
+        .ok,
+    ).toBeFalse();
     const [stale] = await sql<Array<{ status: string }>>`SELECT status FROM grids.record_finalization_requests
       WHERE table_id=${f.tableId}::uuid AND short_id=${proposal.approvalRequestId}`;
     expect(stale?.status).toBe("superseded");
     expect((await gridsService.record.get(f.tableId, f.record.id))?.finalizedAt).toBeNull();
-    expect((await close.run(close.input.parse({ ...input, ifVersion: currentVersion }), f.context)).ok).toBeTrue();
+    expect(
+      (
+        await close.run(close.input.parse({ ...input, ifVersion: currentVersion }), {
+          ...f.context,
+          target: { type: "grids.table", id: f.table },
+        })
+      ).ok,
+    ).toBeTrue();
     const latest = await gridsCapabilities.queries["record.finalization.read"].run(
-      { tableId: f.table, recordId: f.record.shortId },
-      f.context,
+      { recordId: f.record.shortId },
+      { ...f.context, target: { type: "grids.table", id: f.table } },
     );
     if (!latest.ok || !latest.data.data.request) throw new Error("Missing replacement request");
     const replacement = approve.input.parse({ ...input, ifVersion: currentVersion, approvalRequestId: latest.data.data.request.id });
-    const approved = await approve.run(replacement, approverContext);
+    const approved = await approve.run(replacement, { ...approverContext, target: { type: "grids.table", id: f.table } });
     expect(approved.ok).toBeTrue();
     const [resolved] = await sql<
       Array<{ status: string }>
@@ -401,17 +403,12 @@ postgresTest("DATEV and SEPA require exact confirmation and complete without wor
     const confirm = gridsCapabilities.actions["document.confirm"];
     for (const format of [output, sepaOutput]) {
       const context = { ...f.context, requestId: uuid(), idempotencyKey: uuid() };
-      const body = {
-        baseId: f.base,
-        data,
-        output: format,
-        sourceVersions: [{ tableId: f.table, recordId: f.record.shortId, version: f.record.version }],
-      };
+      const body = { data, output: format, sourceVersions: [{ tableId: f.table, recordId: f.record.shortId, version: f.record.version }] };
       const reserved = await issue.run(issue.input.parse(body), context);
       expect(reserved.ok).toBeTrue();
       if (!reserved.ok) throw reserved.error;
       if (reserved.data.data.state !== "confirmationRequired") throw new Error("Financial export escaped confirmation");
-      const input = { baseId: f.base, receiptId: reserved.data.data.receiptId, sha256: reserved.data.data.sha256 };
+      const input = { receiptId: reserved.data.data.receiptId, sha256: reserved.data.data.sha256 };
       const wrong = await confirm.run(confirm.input.parse({ ...input, sha256: "0".repeat(64) }), { ...context, idempotencyKey: uuid() });
       expect(wrong.ok).toBeFalse();
       const review = await confirm.review!(confirm.input.parse(input), context);
@@ -434,12 +431,7 @@ postgresTest("DATEV and SEPA require exact confirmation and complete without wor
     }
     // A preview cannot be confirmed after its explicitly pinned source changes.
     const pending = await issue.run(
-      issue.input.parse({
-        baseId: f.base,
-        data,
-        output,
-        sourceVersions: [{ tableId: f.table, recordId: f.record.shortId, version: f.record.version }],
-      }),
+      issue.input.parse({ data, output, sourceVersions: [{ tableId: f.table, recordId: f.record.shortId, version: f.record.version }] }),
       { ...f.context, requestId: uuid(), idempotencyKey: uuid() },
     );
     if (!pending.ok || pending.data.data.state !== "confirmationRequired") throw new Error("Expected pending export");
@@ -452,10 +444,11 @@ postgresTest("DATEV and SEPA require exact confirmation and complete without wor
       f.record.version,
     );
     expect(changed.ok).toBeTrue();
-    const refused = await confirm.run(
-      confirm.input.parse({ baseId: f.base, receiptId: pending.data.data.receiptId, sha256: pending.data.data.sha256 }),
-      { ...f.context, requestId: uuid(), idempotencyKey: uuid() },
-    );
+    const refused = await confirm.run(confirm.input.parse({ receiptId: pending.data.data.receiptId, sha256: pending.data.data.sha256 }), {
+      ...f.context,
+      requestId: uuid(),
+      idempotencyKey: uuid(),
+    });
     expect(refused.ok).toBeFalse();
   } finally {
     await cleanup(f);

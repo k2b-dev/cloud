@@ -1,7 +1,7 @@
 # How the Assistant works
 
 Read this before you set up Projects, knowledge, references, Skills, memories,
-or routines for someone. It explains what the Assistant can see, what it
+or Code for someone. It explains what the Assistant can see, what it
 may change, and in whose name. The [Assistant CLI](index.md) reference holds the
 full command syntax.
 
@@ -11,12 +11,12 @@ In short:
   current Cloud permissions. It never gets more access than they have.
 - A Project reference is a pointer that the Assistant reads live, with the
   reader's own access. It grants nothing. Project knowledge and files are
-  copies, and every Project member can read them. Linking a Skill or Studio App
+  copies, and every Project member can read them. Linking a Skill
   to a Project is the one exception that grants access: members can use it.
 - App reads never ask for approval. Changes to app data ask first, unless the
   app marks the Action as safe without approval.
-- Routines can use only the capabilities granted to the routine. Nothing
-  can be approved while a routine runs in the background.
+- Scheduled chat routines are retired. Rebuild reviewed personal Code to start
+  an ordinary owner-authorized turn with its normal approvals.
 - Your own direct `cld` calls are not Assistant turns. They run with your CLI
   profile's identity and skip the Assistant's approval prompts, so ask the user
   before you change their data.
@@ -32,12 +32,21 @@ Use `--no-bash` or `/permissions off` to stop offering local tools.
 It works with two kinds of tools:
 
 - **Built-in tools:** chat files, document reading, web search and import, PDF
-  creation, Code Mode, Studio Apps, memories, Skills, and the current Project's
+  creation, chat code, memories, Skills, and the current Project's
   knowledge and files.
 - **App capabilities:** typed Queries (reads) and Actions (changes) that each
   installed app publishes. The Assistant finds and loads them while it works,
   so a new app is usable without any Assistant setup. List them with
   `cld capabilities catalog --json`.
+
+## Find chats at places
+
+A chat at an application resource stays private to its owner. The ordinary
+chat list omits these chats. Use `cld assistant chats list --place any` to list
+them, or `--place example.conversation:Marta1` for an exact place. The table
+includes a `place` column; JSON includes `place.ref` and the stored `place.title`.
+Starting over archives the current place chat; its replacement is created with
+the next message. Unread and attention counts include place chats.
 
 ## Work in a local folder
 
@@ -148,7 +157,7 @@ For a shared Project this means:
 | A member can read the referenced note | The Assistant reads the current note in that member's chats |
 | A member cannot read the referenced note | The read fails in that member's chats; nothing is exposed |
 | A member has Project `read` access | They can read the Project's instructions, knowledge, and files, and the Assistant uses them in their chats |
-| A Skill or published Studio App is linked to the Project | Members can read and use it while they belong to the Project |
+| A Skill is linked to the Project | Members can read and use it while they belong to the Project |
 | A member loses Project access | New turns in their Project chats fail until access returns |
 
 Adding a reference to a Project grants no access to the resource. Share the
@@ -163,7 +172,6 @@ resource itself in its app.
 | Files | `projects files put` | A copy of the bytes | Read-only files below `/project` | 10 MiB per file |
 | Cloud references | `projects references add` | Type, ID, and label | The live resource at read time, with the reader's own access | First 500 are used |
 | Skills | `projects skills link` | A link that gives members Read and Use | Its current instructions, loaded when relevant | Skill limits |
-| Studio Apps | `code project-link` | A link that gives members Use | The latest publication | App limits |
 
 Each turn starts from the Project's current revision: its instructions, the
 knowledge and file lists, and the reference list. A retry reuses the revision
@@ -183,7 +191,7 @@ with Core access; granting a machine account access does not remove this
 requirement. Standalone and agent accounts can read Skills granted to them
 within their credential scopes. Resource-bound credentials are unsupported.
 Project and Skill grants do not change the user requirements of personal
-chats or Studio execution.
+chats or code execution.
 
 Changing instructions, the default model, or Project access needs Project
 `admin`. Knowledge, files, and references need `write`.
@@ -238,8 +246,8 @@ Skills with `projects skills link`, not as a reference.
 
 The Assistant can run any Action an installed app publishes, within the user's
 rights. Examples are creating Spaces tasks, editing notes, drafting or sending
-mail, updating Grids records, creating Skills, and scheduling routines. It
-can also change who may use a Skill or Studio App the user manages, after a
+mail, updating Grids records, creating Skills, and authoring reviewed Code. It
+can also change who may use a Skill the user manages, after a
 fresh review. Check `cld capabilities catalog --json` for the current set.
 
 Changes happen in the user's name. The app records the user as the author or
@@ -265,12 +273,10 @@ an explicit invocation and never asks.
 | Query, such as search or read | Never |
 | Action with `approval: "none"` | Never |
 | Action with `approval: "rememberable"` | Asks; the user may choose **Approve for this chat** or **Always approve** for the app's scope |
-| Action without an `approval` field | Asks for every call; cannot be remembered or granted to a routine |
+| Action without an `approval` field | Asks for every call; cannot be remembered |
 | Built-in tools on chat files, memories, web search, PDFs, and Code Mode | Never; capability calls and HTTP requests inside Code Mode still ask |
 | HTTP request from Code Mode | Asks; a GET or HEAD without a body, with at most `Accept`, `Accept-Language`, `Range`, `User-Agent`, `If-None-Match`, or `If-Modified-Since` (each value up to 128 characters) and no secret, offers **Allow this website for this chat** |
 | `web_extract` or `fetch_file` for an address the chat did not supply | Asks, like an HTTP request; an address from the user, a search result, or a read page's links never asks |
-| Studio App sharing, unpublishing, deletion, data clearing, and file copies, including into a Project | Asks for every call with a fresh review |
-| Capability calls from a shared Studio App the user does not manage | Asks for every call, reads included |
 | Ordinary local list, read, upload, and create inside the start folder | Never, except protected files or starting in home or above |
 | Local append, replace, move, or access outside the folder | Asks in the terminal; Enter denies |
 | `local_bash` in interactive `cld assistant` mode `ask` | The terminal asks `Run? [y/N]` for every command; Enter denies |
@@ -307,64 +313,9 @@ authorized. An unresolved approval exits with status `2`; resolve it with
 `cld assistant actions list|approve|reject`. `actions approve --always`
 remembers a rememberable approval, so use it only when the user asked for that.
 
-## Routines and their rights
+## Routines became Code
 
-The CLI and API call routines tasks: `cld assistant tasks`, `core.ai.task.*`.
-
-A routine belongs to one chat and runs as that chat's owner, with the
-owner's full account, including an administrator role. Each call checks the
-owner's current access when it runs.
-
-Creating a routine also creates its **mandate**: a stored, confirmed authorization
-for that one background workload. Its `grants` list names every capability the
-routine may call. Background runs work like this:
-
-- Every app capability needs a grant, including Queries. That also covers
-  opening a Project reference: grant the type's reader Query, such as
-  `notebooks` `note.read`. No grants means no app capabilities at all.
-  Background runs only discover and load capabilities their grants allow.
-- Built-in tools still work without grants, including chat files, memories,
-  and the Project's knowledge and files.
-- `fixedInput` values must match exactly. Omitted fields are unrestricted
-  within the user's access.
-- Nothing can be approved during a run. Remembered chat approvals do not apply.
-  A call rejected by the grants or fixed inputs returns a tool error the model
-  can recover from.
-- An unavailable, paused, revoked, expired, or changed mandate fails the run and
-  moves the routine to `needs_attention`. So does a target app rejecting the
-  sponsor with HTTP 401 or 403, an unknown Action outcome, or a tool that needs
-  approval or a browser.
-- Only Actions with `approval: "none"` or `"rememberable"` can be granted.
-  Cloud rejects any other grant with "Capability always requires interactive
-  approval".
-- Before each run, Cloud checks that the owner is active, the chat is not
-  archived, and the mandate is unchanged. Otherwise the routine moves to
-  `needs_attention` or stays paused.
-- A routine in a Project chat uses the Project state that is current when the run
-  starts.
-- Apps can limit background work further. For example, Grids document stream
-  references do not work in scheduled runs.
-
-With today's apps, a routine therefore cannot send mail or delete,
-because `mail.draft.send` and `spaces.item.delete` always ask. It can create
-and update tasks, add comments, edit notes, or create mail drafts when you
-grant those Actions. For anything else, let the routine write its proposal
-into the chat; the user can then ask the Assistant there to carry it out and
-approve each step.
-
-```bash
-cld capabilities catalog --json
-cld assistant tasks create --chat <chat-id> --prompt-file ./daily.md --cron "0 8 * * 1-5" --grants-file ./grants.json --yes
-cld assistant tasks get <task-id>
-```
-
-`--yes` is required only when the grants list is not empty. Show the user the
-exact grants, including unrestricted fields, and pass `--yes` only after they
-approve that scope.
-
-Before a run starts, Cloud checks the owner's Assistant cost budget. The run's
-model usage then counts as background AI usage, which the administrator's
-background stop limits, not the owner's chat budget.
+Scheduled chat routines and `cld assistant tasks` are retired. Ask Gustav to rebuild an exported definition as personal Code with `app.schedule`, an explicit `timeZone`, and `core.ai.chat.run`. Review the Code and its grants before activation. Old runs cannot resume.
 
 ## Instructions, Skills, memories, or knowledge
 
@@ -405,9 +356,9 @@ intermediate files below `/temp/` and saves results outside it, together with
 the `.md` or `.html` source of a PDF. The CLI names each delivered file on
 stderr, such as `present: completed /sales-report.pdf`. Project files are
 read-only inside a chat. To use a Project file as a base, the Assistant
-copies the text into a chat file. Copy between chats, Projects, and Apps with
-`cld assistant code file-copy`; the Assistant can do the same after approval,
-and copying into a Project needs Project `write`.
+copies the text into a chat file. Use `cld assistant files` and
+`cld assistant projects files` to download and upload files between locations.
+Uploading into a Project needs Project `write`.
 
 ## Models and limits
 
@@ -423,7 +374,7 @@ and copying into a Project needs Project `write`.
 
 - Exceed the user's own permissions, act as another user, or read another
   user's chats.
-- Change Project instructions, knowledge, references, linked Skills or Apps,
+- Change Project instructions, knowledge, references, linked Skills,
   or access. Those need `cld assistant projects` or the Project settings.
 - Use apps that publish no capabilities, or Actions an app does not offer.
 - Approve its own Actions. Scheduled runs cannot ask for approval at all.

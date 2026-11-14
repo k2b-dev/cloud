@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import * as publicAi from "@k2b/cloud/ai";
+import type { Provider } from "@k2b/nessi";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { aiGenerationInput, aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import { sql } from "../runtime/clients";
+import { geoTestContext } from "../services/geo/geo.test-fixture";
+import { type TraceContext, trace } from "../services/logging";
 import type { AiQuotaRule } from "../shared/ai-quotas";
+import { streamAnswer } from "./answer-stream.test-fixture";
 import { backgroundCostState, beginAiCall, finishAiCall, releaseBackgroundCostStop } from "./inference-calls";
 import { drainQueuedMessages } from "./message-queue";
 import { aiPeopleAtLimit } from "./quota-limits";
@@ -10,6 +16,7 @@ import { aiQuotas, quotaWindow } from "./quotas";
 import { migrateAiQuotas } from "./quotas-migrate";
 import * as modelSettings from "./settings";
 import { aiConversations } from "./store";
+import * as structuredRuns from "./structured-runs";
 import type { AiModelProfile } from "./types";
 
 const suite = databaseSuite();
@@ -18,6 +25,7 @@ const user = crypto.randomUUID(),
   group = crypto.randomUUID(),
   child = crypto.randomUUID(),
   service = crypto.randomUUID(),
+  codeService = crypto.randomUUID(),
   turn = crypto.randomUUID();
 const subject = { type: "user" as const, userId: user };
 const rule = (scope: string, limit: number | null): AiQuotaRule => ({
@@ -74,14 +82,19 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`CREATE SCHEMA ai`;
     await sql`CREATE TABLE auth.users(id UUID PRIMARY KEY,uid TEXT,display_name TEXT)`;
     await sql`CREATE TABLE auth.groups(id UUID PRIMARY KEY,name TEXT,provider TEXT)`;
-    await sql`CREATE TABLE auth.service_accounts(id UUID PRIMARY KEY,name TEXT,kind TEXT)`;
+    await sql`CREATE TABLE auth.service_accounts(id UUID PRIMARY KEY,name TEXT,kind TEXT,title TEXT,handle TEXT,status TEXT NOT NULL DEFAULT 'active')`;
+    // Match Core's auth/service-account-groups migration for machine quota checks.
+    await sql`CREATE TABLE auth.service_account_groups(
+      service_account_id UUID NOT NULL REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      group_id UUID NOT NULL REFERENCES auth.groups(id) ON DELETE CASCADE,
+      PRIMARY KEY(service_account_id,group_id))`;
     await sql`CREATE TABLE auth.user_groups_v2(user_id UUID,group_id UUID)`;
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id UUID,child_group_id UUID)`;
     await sql`CREATE TABLE ai.turns(id UUID PRIMARY KEY,status TEXT,attempt INTEGER,lease_expires_at TIMESTAMPTZ,conversation_id UUID,run_config JSONB)`;
     await sql`CREATE TABLE ai.conversations(id UUID PRIMARY KEY,created_by_user_id UUID,launched_by_app_id TEXT,archived_at TIMESTAMPTZ)`;
     await sql`CREATE TABLE ai.queued_messages(id UUID PRIMARY KEY,conversation_id UUID,submission JSONB,status TEXT,error TEXT,quota_checked_at TIMESTAMPTZ,position BIGSERIAL)`;
     await sql`INSERT INTO auth.users VALUES(${user}::uuid,'one','One'),(${other}::uuid,'two','Two')`;
-    await sql`INSERT INTO auth.service_accounts VALUES(${service}::uuid,'Service','agent')`;
+    await sql`INSERT INTO auth.service_accounts(id,name,kind) VALUES(${service}::uuid,'Service','agent'),(${codeService}::uuid,'Build service','code')`;
     await sql`INSERT INTO auth.groups VALUES(${group}::uuid,'Parent','local'),(${child}::uuid,'Child','local')`;
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${user}::uuid,${child}::uuid)`;
     await sql`INSERT INTO auth.group_groups_v2 VALUES(${group}::uuid,${child}::uuid)`;
@@ -272,12 +285,122 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await expect(aiQuotas.save(initial, user)).rejects.toThrow("Reload");
     await expect(aiQuotas.assertAllowed(subject, "a")).rejects.toThrow("limit reached");
   });
-  test("service accounts have separate personal usage", async () => {
+  test("authenticated quota assignments apply only to people, before any usage", async () => {
     await save([rule("*", 100)]);
-    const s = { type: "service_account" as const, serviceAccountId: service };
-    await fixtureCalls.finish(await fixtureCalls.begin(s, "a", turn), { input: 80, output: 20 });
-    await expect(aiQuotas.assertAllowed(s, "a")).rejects.toThrow();
+    expect((await aiQuotas.snapshot(subject, "a")).balances[0]).toMatchObject({ limit: 100, used: 0 });
     expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
+    for (const serviceAccountId of [service, codeService]) {
+      const account = { type: "service_account" as const, serviceAccountId };
+      expect((await aiQuotas.snapshot(account, "a")).balances[0]).toMatchObject({ limit: 0, used: 0, sources: [] });
+      await expect(aiQuotas.assertAllowed(account, "a")).rejects.toMatchObject({ code: "quota_exhausted" });
+    }
+  });
+  test("service accounts have separate personal usage", async () => {
+    const agent = { type: "service_account" as const, serviceAccountId: service };
+    const code = { type: "service_account" as const, serviceAccountId: codeService };
+    const allowance = rule("*", 100);
+    // The authenticated tier assigns allowances only to people.
+    allowance.grants.push({ principal: agent, limit: 100 }, { principal: code, limit: 100 });
+    await save([allowance]);
+    for (const account of [agent, code]) {
+      expect((await aiQuotas.snapshot(account, "a")).balances[0]).toMatchObject({ limit: 100, used: 0 });
+      expect(await aiQuotas.assertAllowed(account, "a")).toBe(true);
+      await fixtureCalls.finish(await fixtureCalls.begin(account, "a", turn), { input: 80, output: 20 });
+      await expect(aiQuotas.assertAllowed(account, "a")).rejects.toThrow("limit reached");
+      expect((await aiQuotas.snapshot(subject, "a")).balances[0]).toMatchObject({ limit: 100, used: 0 });
+      expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
+    }
+    await charge("a", 30, 20);
+    expect((await aiQuotas.snapshot(subject, "a")).balances[0]).toMatchObject({ limit: 100, used: 50 });
+    for (const account of [agent, code]) {
+      expect((await aiQuotas.snapshot(account, "a")).balances[0]).toMatchObject({ limit: 100, used: 100 });
+    }
+  });
+  test("Core text AI books the caller's ledger exactly once and refuses that caller's next call at quota", async () => {
+    const account = { type: "service_account" as const, serviceAccountId: codeService };
+    const allowance = rule("*", 1000);
+    allowance.grants.push({ principal: account, limit: 1000 });
+    await save([allowance]);
+    let providerCalls = 0;
+    const provider: Provider = {
+      name: "fixture",
+      family: "openai-compatible",
+      model: "a",
+      capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: true },
+      async *stream() {
+        providerCalls++;
+        yield* streamAnswer({
+          message: { role: "assistant", content: [{ type: "text", text: '{"text":"Summary"}' }] },
+          finishReason: "stop",
+          usage: { input: 900, output: 100, total: 1000 },
+        });
+      },
+    };
+    const selected = spyOn(publicAi, "selectAssistantAiModel").mockResolvedValue({ id: "a" });
+    const resolved = spyOn(publicAi, "resolveAiModel").mockResolvedValue({
+      profile: pricedModel("a"),
+      provider,
+      model: { id: "a", class: "balanced", requestedClass: "balanced" },
+    });
+    const traceContext: TraceContext = { traceId: "generation-accounting", spanId: "span", traceparent: "parent" };
+    const span = spyOn(trace, "withSpan").mockImplementation(
+      async <T>(_params: Parameters<typeof trace.withSpan>[0], run: (ctx: TraceContext) => Promise<T> | T) => run(traceContext),
+    );
+    const record = spyOn(trace, "record").mockResolvedValue(traceContext);
+    const metadata = spyOn(structuredRuns, "safelyRecordStructuredRun").mockResolvedValue(undefined);
+    try {
+      const input = aiGenerationInput.parse({
+        task: "mail.summary",
+        prompt: "Summarize.",
+        input: "Message",
+        output: { type: "text", maxChars: 500 },
+      });
+      for (const accessSubject of [subject, account]) {
+        const context = {
+          ...geoTestContext,
+          actor: geoTestContext.actor!,
+          accessSubject,
+          user: null,
+          locale: "en",
+          requestId: "accounting",
+          origin: "http" as const,
+          signal: new AbortController().signal,
+        };
+        expect(await aiGenerationQuery.run(input, context)).toMatchObject({ ok: true, data: { data: { output: "Summary" } } });
+        expect((await aiQuotas.snapshot(accessSubject, "a")).balances[0]).toMatchObject({ used: 1000 });
+        expect(await aiGenerationQuery.run(input, context)).toMatchObject({
+          ok: false,
+          error: { code: "quota_exhausted", details: { aiUsage: { model: { id: "a" }, usage: { input: 0, output: 0 } } } },
+        });
+      }
+      expect(providerCalls).toBe(2);
+      const calls = await sql<
+        { user_id: string | null; service_account_id: string | null; kind: string; task: string; app_id: string; cost: string }[]
+      >`
+        SELECT user_id,service_account_id,kind,task,app_id,cost::text FROM ai.inference_calls ORDER BY service_account_id NULLS FIRST`;
+      expect(calls).toEqual([
+        { user_id: user, service_account_id: null, kind: "chat", task: "mail.summary", app_id: "core", cost: "1000.000000000000" },
+        { user_id: null, service_account_id: codeService, kind: "chat", task: "mail.summary", app_id: "core", cost: "1000.000000000000" },
+      ]);
+    } finally {
+      selected.mockRestore();
+      resolved.mockRestore();
+      span.mockRestore();
+      record.mockRestore();
+      metadata.mockRestore();
+    }
+  });
+  test("user quota checks preserve nested groups without machine membership tables", async () => {
+    const r = rule("*", 100);
+    r.grants.push({ principal: { type: "group", groupId: group }, limit: 200 });
+    await save([r]);
+    await sql`ALTER TABLE auth.service_account_groups RENAME TO service_account_groups_unavailable`;
+    try {
+      expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
+      expect((await aiQuotas.snapshot(subject, "a")).balances[0]).toMatchObject({ limit: 200, sources: ["Parent"] });
+    } finally {
+      await sql`ALTER TABLE auth.service_account_groups_unavailable RENAME TO service_account_groups`;
+    }
   });
   test("admin config names service-account grants by their current name and kind", async () => {
     const principal = { type: "service_account" as const, serviceAccountId: service };

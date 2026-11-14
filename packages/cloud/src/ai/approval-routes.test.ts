@@ -115,6 +115,22 @@ describe("AI approval preference routes", () => {
     });
   });
 
+  test("keeps the app and title for a remembered place Action", async () => {
+    const manifest = {
+      ...capabilityManifest,
+      types: capabilityManifest.types.map((type) => ({ ...type, assistant: { provider: "place", tools: ["rename"], skills: [] } })),
+    };
+    const routes = createAiApprovalPreferenceRoutes({
+      limit: pass,
+      authenticate,
+      listPreferences: async () => [preference],
+      listCapabilities: async () => [{ ...capabilityApp, manifest }],
+    });
+    const response = await routes.request("/");
+    expect(response.status).toBe(200);
+    expect((await response.json()).approvals[0]).toMatchObject({ title: "Rename item", app: { id: "demo", name: "Demo" } });
+  });
+
   test("lists one chat's approvals only for a chat the user owns, and names a website by its host", async () => {
     const conversationId = "33333333-3333-4333-8333-333333333333";
     const asked: Array<{ conversationId?: string }> = [];

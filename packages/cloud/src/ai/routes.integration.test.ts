@@ -24,7 +24,6 @@ import * as platformSettings from "../services/settings";
 import { createAiApprovalPreferenceRoutes } from "./approval-routes";
 import { AI_WEBSITE_APPROVAL_TOOL, findRememberedAiToolApproval, hasRememberedAiToolApproval } from "./approvals";
 import * as assistantModels from "./assistant-models";
-import { aiChatTasks } from "./chat-tasks";
 import { aiFileStore } from "./files-store";
 import { aiLive } from "./live";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
@@ -221,34 +220,6 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
-  test("archive and restore routes pause and resume the chat's routines", async () => {
-    const userId = await insertUser();
-    const chat = await aiConversations.createConversation({ ownerUserId: userId });
-    const headers = { Authorization: `Bearer ${await createTestSession(userId)}` };
-    try {
-      const task = (await aiChatTasks.create({
-        userId,
-        chatId: chat.shortId,
-        prompt: "Save invoices",
-        schedule: { kind: "cron", cron: "0 9 * * *" },
-        timezone: "UTC",
-      }))!;
-      expect((await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers })).status).toBe(200);
-      expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject({ state: "paused", reasonCode: "chat_archived" });
-      // The phone app may restore the chat, but resuming background authority stays on the web.
-      const phone = { Authorization: `Bearer ${(await createTestAppSession(userId)).token}` };
-      expect((await aiRoutes.request(`/conversations/${chat.shortId}/restore`, { method: "POST", headers: phone })).status).toBe(200);
-      expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject({ state: "paused", reasonCode: "paused" });
-      expect((await aiChatTasks.setState({ userId, taskId: task.shortId, state: "active" }))?.state).toBe("active");
-      expect((await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers })).status).toBe(200);
-      expect((await aiRoutes.request(`/conversations/${chat.shortId}/restore`, { method: "POST", headers })).status).toBe(200);
-      expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject({ state: "active", reasonCode: null, reasonAt: null });
-    } finally {
-      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-    }
-  });
-
   test("image upload API sanitizes stored bytes and reports malformed images as 422", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
@@ -351,7 +322,7 @@ suite("global AI conversation boundaries", () => {
           kind: "chat",
           input: "Retry me",
           toolSource: { kind: "default" },
-          clientToolIds: ["local_bash", ...AI_LOCAL_TOOL_NAMES, "code_open"],
+          clientToolIds: ["local_bash", ...AI_LOCAL_TOOL_NAMES],
           client: { ...client, cwd: "/original" },
           localContext: { instructions: [{ path: "/original/AGENTS.md", content: "Old rules." }], skills: [], selectedSkills },
         },
@@ -369,7 +340,7 @@ suite("global AI conversation boundaries", () => {
       if (!active) throw new Error("Missing retry turn");
       const config = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: active.turn.id });
       if (!config || config.kind !== "chat") throw new Error("Missing retry run config");
-      expect(config.clientToolIds).toEqual(local ? ["local_read", "code_secret"] : ["code_open"]);
+      expect(config.clientToolIds).toEqual(local ? ["local_read", "code_secret"] : []);
       expect(config.client).toEqual(local ? client : undefined);
       expect(config.localContext).toEqual(local ? { ...localContext, selectedSkills } : undefined);
     } finally {
@@ -1506,6 +1477,16 @@ suiteFor(
       const userId = await insertUser();
       const conversation = await aiConversations.createConversation({ ownerUserId: userId });
       const compiled = compileReviewFixture();
+      // The aborted case also covers read-only recovery after a place Action is no longer offered.
+      if (status === "aborted")
+        compiled.manifest.types = [
+          {
+            localId: "item",
+            title: "Item",
+            description: "Original place",
+            assistant: { provider: "place", tools: ["send"], skills: [] },
+          },
+        ];
       const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([
         {
           appId: "demo",
@@ -1760,16 +1741,7 @@ suiteFor(
           role: "assistant",
           content: ["send", "no-check", "legacy"].map((id) => ({ type: "tool_call", id, name: "demo__action__send", args: {} })),
         });
-        // Exercise durable metadata in both message tables while the foreground turn remains live.
-        const messageTable = state === "failed" ? "ai.task_messages" : "ai.messages";
-        if (state === "failed") {
-          await sql`
-            WITH moved AS (
-              DELETE FROM ai.messages WHERE conversation_id=${conversation.id}::uuid AND role='assistant' RETURNING *
-            )
-            INSERT INTO ai.task_messages SELECT * FROM moved
-          `;
-        }
+        const messageTable = "ai.messages";
         const target = { conversationId: conversation.id, turnId: turn.id, callId: "send" };
         await recordAiToolReview({
           ...target,

@@ -29,6 +29,8 @@
 @import "./base-popover.css";
 @import "./effects.css";
 @import "./approvals.css";
+@import "./code-page.css";
+@import "./feat-code.css";
 @import "./input.css";
 @import "./resource-search.css";
 @import "./file-chooser.css";
@@ -151,6 +153,16 @@ html:has(> body > .cloud-app-canvas[data-layout-full-page="true"]) {
   font-family: var(--font-sans);
   scrollbar-width: thin;
   scrollbar-color: rgb(161 161 170 / 0.4) transparent;
+}
+
+/* The rule above is unlayered, so it would also replace the mono face the @k2b/ui base gives code: handles, IDs, and
+   other technical values stay monospace wherever they are shown. This rule is unlayered too and would beat a layered
+   utility, so an explicit `font-sans`, as on Mail's plain-text message bodies, keeps the sans face. */
+code:not(.font-sans),
+kbd:not(.font-sans),
+samp:not(.font-sans),
+pre:not(.font-sans) {
+  font-family: var(--font-mono);
 }
 
 .dark * {

@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-10-17
+updated: 2026-11-01
 ---
 
 # Monorepo development
@@ -33,6 +33,11 @@ background. It then stays in the foreground and runs the gateway, Gateway Ops,
 Core, Dashboard, Accounts, Assistant, and the Cloud app shell (`app-pwa`).
 
 Use `bun run dev:full` only when you need every optional application.
+
+Code checks, tests and runs need the separate `runner` profile. Before starting
+it, load the supplied AppArmor profile on the Docker host and enroll its app
+key as described in [Scaling runners](/en/docs/operations/code-runner).
+Docker refuses to start the runner when the named profile is missing.
 
 `bun run dev:down` removes the application stack but keeps the infrastructure
 available for quick restarts. Stop the infrastructure explicitly with
@@ -505,7 +510,7 @@ role needs permission to create databases. See
 [Run integration tests](/en/docs/contributing/testing#run-integration-tests)
 for the database name token rules.
 
-Files (`filesv2`), Grids PDF rendering, and Assistant Studio suites additionally read
+Files (`filesv2`), Grids PDF rendering, and Assistant chat suites additionally read
 `CLOUD_TEST_FILEGATE_URL`, `CLOUD_TEST_GOTENBERG_URL`, and `CLOUD_TEST_RSQL_URL`.
 [Testing](/en/docs/contributing/testing) lists every variable and what the pull
 request gate and the nightly run execute.

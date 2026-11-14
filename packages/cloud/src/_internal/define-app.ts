@@ -5,9 +5,12 @@ import { APP_MIGRATION_TRIGGER_PATH, createAppMigrationTriggerRoutes } from "../
 import { createResourceAppAccessRoutes } from "../api/app-resource-access";
 import { createSettingsOpsRoutes, settingsInvocationOperation } from "../api/settings-ops";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
+import { assertAssistantPlaceSkills } from "../contracts/assistant-place";
+import { CapabilityInvocationBodySchema } from "../contracts/capabilities";
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
 import { startLiveOutbox } from "../events/live";
+import { sql } from "../runtime/clients";
 import { appCatalogExists, usesLegacyCatalogRenewal } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
@@ -21,6 +24,7 @@ import { registerApplicationPackage, resolveApplicationPackage } from "./applica
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
 import { createCatalogPublication } from "./catalog-publication";
+import { createCodeOwnerRoutes } from "./code-owner";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
 /**
  * defineApp() — The single entry point for every cloud app.
@@ -75,6 +79,7 @@ import { requireAppAccess, stopAppAccessConnections } from "../server/middleware
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
 import { sessionOriginGuard } from "../server/middleware/session-origin";
+import { preloadAdminCodeApprovals } from "../ssr/admin-status";
 import { createPublicSurfaceHandler, validatePublicSurfaceRoutes } from "./public-surface";
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
@@ -508,6 +513,11 @@ const validateAppPanel = (opts: Pick<AppOptions, "id" | "routes" | "basePath" | 
   ) {
     throw new Error(`App "${opts.id}" declares panel.requiresRoles; it must be an array of strings`);
   }
+  if (panel.order !== undefined && !Number.isSafeInteger(panel.order)) {
+    throw new Error(`App "${opts.id}" declares panel.order; it must be a safe integer`);
+  }
+  if (panel.code !== undefined && typeof panel.code !== "boolean")
+    throw new Error(`App "${opts.id}" declares panel.code; it must be a boolean`);
   return { ...panel, requiresRoles: panel.requiresRoles ? [...panel.requiresRoles] : undefined };
 };
 
@@ -688,6 +698,7 @@ export const defineApp = <
         preloadLayoutHelp(c),
         user ? preloadPanelConsent(c) : undefined,
         user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,
+        user ? preloadAdminCodeApprovals(c) : undefined,
         // An unreadable preference keeps the page: Layout then applies the default, the privacy screen after two minutes.
         user
           ? screenPreferences.get(user.id).then(
@@ -791,6 +802,18 @@ export const defineApp = <
       // flag so the registry never points at a URL that 404s.
       const advertiseOpenapi = !!(opts.openapi && startOpts.openapi);
       const compiledCapabilities = startOpts.capabilities ? compileCapabilities(meta.id, startOpts.capabilities, meta.routes) : undefined;
+      if (compiledCapabilities) {
+        const requiredSkills = new Set(compiledCapabilities.manifest.types.flatMap((type) => type.assistant?.skills ?? []));
+        const available = new Set(appSkills?.map((skill) => skill.name) ?? []);
+        for (const name of requiredSkills) {
+          if (available.has(name)) continue;
+          // Published catalogs outlive deployments and do not depend on Core's asynchronous reconciliation.
+          const rows = await sql`SELECT 1 FROM ai.app_skill_catalogs catalog
+            WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(catalog.skills) skill WHERE skill->>'name' = ${name}) LIMIT 1`;
+          if (rows.length) available.add(name);
+        }
+        assertAssistantPlaceSkills(compiledCapabilities.manifest, available);
+      }
       if (startOpts.capabilities) bindAppEvents(meta.id, startOpts.capabilities, compiledCapabilities);
       const compiledHelp = startOpts.help
         ? compileHelp({
@@ -1033,6 +1056,8 @@ export const defineApp = <
         server.route("/api/_internal/events/v1", createAppEventDeliveryRoutes(compiledCapabilities));
 
       if (compiledCapabilities) {
+        if (startOpts.capabilities?.code?.owners?.length)
+          server.route("/api/_internal/capabilities/v1/code-owner", createCodeOwnerRoutes(meta.id, startOpts.capabilities));
         server.route("/api/_internal/capabilities/v1/app-queries", createAppQueryRoutes(compiledCapabilities));
         server.route("/api/_internal/capabilities/v1/app-capabilities", createAppCapabilityRoutes(compiledCapabilities));
         const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") =>
@@ -1046,29 +1071,17 @@ export const defineApp = <
               const message = parsedBody.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
               return c.json({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message }, 400);
             }
-            if (
-              typeof parsedBody.data !== "object" ||
-              parsedBody.data === null ||
-              Array.isArray(parsedBody.data) ||
-              !Object.hasOwn(parsedBody.data, "input") ||
-              Object.keys(parsedBody.data).length !== 1
-            ) {
-              return c.json(
-                {
-                  code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed,
-                  message: messages.requestInputOnly,
-                },
-                400,
-              );
-            }
-            const body = parsedBody.data as { input: unknown };
+            const parsedCall = CapabilityInvocationBodySchema.safeParse(parsedBody.data);
+            if (!parsedCall.success)
+              return c.json({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message: messages.requestInputOnly }, 400);
+            const body = parsedCall.data;
             const actor = c.get("actor");
             const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
             const idempotencyKey = c.req.header("idempotency-key") || undefined;
             const invocation = {
               compiled: compiledCapabilities,
               localId: c.req.param("capabilityId") ?? "",
-              input: body.input,
+              ...body,
               expectedSchemaHash: c.req.header("x-cloud-capability-schema-hash") ?? null,
               context: {
                 query: createNestedCapabilityQuery(c.req.raw),

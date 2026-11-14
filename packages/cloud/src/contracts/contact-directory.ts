@@ -114,7 +114,6 @@ const ContactNameFieldSchema = z.string().max(200).nullable().optional();
 
 export const ContactDirectoryCreateInputSchema = z
   .object({
-    bookId: ContactDirectoryIdSchema.describe("Writable book ID returned by the book list."),
     label: ContactNameFieldSchema.describe("Optional display label."),
     firstName: ContactNameFieldSchema.describe("Person first name."),
     lastName: ContactNameFieldSchema.describe("Person last name."),
@@ -144,6 +143,7 @@ export const contactDirectory = {
   listWritableBooks: { kind: "query", input: ContactDirectoryBookListInputSchema, data: ContactDirectoryBookListDataSchema },
   create: {
     kind: "action",
+    target: "book",
     idempotency: "required",
     input: ContactDirectoryCreateInputSchema,
     data: ContactDirectoryCreateDataSchema,

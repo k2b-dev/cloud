@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Resource authorization
@@ -17,8 +17,7 @@ The service that reads or changes a resource checks its permission.
 Every API route, SSR page, background action, and CLI command should reach the
 same permission-aware service.
 
-For Studio execution and its separate effect rights, see
-[Run Studio apps with a machine identity](/en/docs/identity/studio-machine-execution).
+Studio machine execution is retired. See [Studio retirement](/en/docs/operations/studio-retirement).
 
 For machine inference, [models-only API keys](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
 use the service account's explicit model grants and shared account allowance.
@@ -77,9 +76,9 @@ type Principal =
 | --- | --- |
 | User | One user |
 | Group | Direct and nested members |
-| Service account | One machine identity: resource-bound, standalone, or agent |
+| Service account | One machine identity: resource-bound, standalone, agent, or Code |
 | Authenticated | Any signed-in person, including guests |
-| Public | Every caller, including anonymous requests |
+| Public | Every caller, including anonymous requests, except Code accounts |
 
 The authenticated tier means **All signed-in people**. It matches only
 `AccessSubject.type === "user"`, including guests. Sessions, personal API keys
@@ -88,6 +87,12 @@ retain that person's access subject. Agents and other service accounts need
 a direct or group grant: authenticating a machine does not make it a person.
 Public grants retain their existing behavior. Before upgrading, run the
 [people-only access inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people).
+
+Public application reads can explicitly bypass the resource-grant resolver.
+Venue's `venue.read` and `venue.status` allow Code accounts to read a public
+Venue without a direct account grant. This is an exception to “only its own
+grant row”, not a grant inherited from the public tier. Non-public Venues
+still require the Code account's own row.
 
 ### Discover principals safely
 
@@ -562,6 +567,9 @@ transaction as its second argument:
 
 ```ts
 const result = await sql.begin(async (tx): Promise<Result<void>> => {
+  if (!(await lockAccessMutationAuthority({ subject: c.get("accessSubject"), accessId }, tx))) {
+    return fail(err.forbidden("Access denied"));
+  }
   await tx`SELECT id FROM items.items WHERE id = ${itemId}::uuid FOR UPDATE`;
   const before = await listItemAccess(itemId, tx);
   const accessIds = before.map((entry) => entry.id);
@@ -570,8 +578,7 @@ const result = await sql.begin(async (tx): Promise<Result<void>> => {
   const after = before.map((entry) => (entry.id === accessId ? { ...entry, permission } : entry));
   const guarded = ensureManagerRemains({ before, after, locale: getLocale(c) });
   if (!guarded.ok) return guarded;
-  await tx`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${accessId}::uuid`;
-  return ok();
+  return updateAccess({ id: accessId, permission }, tx);
 });
 ```
 
@@ -604,7 +611,12 @@ and adds optional `displayName`, optional `avatarHash`, and, for service-account
 principals, `serviceAccountKind`. A person's `displayName` is their display
 name, or their login name when they have none, so every permission editor names
 people the same way. Authorize the resource operation
-before resolving names. A confirmation should show both name and principal ID;
+before resolving names. Finish the grant transaction before calling the resolver:
+it can read other principal tables and registry metadata. If a registry read
+fails or expires, managers still see the stored Code title snapshot and handle.
+Other viewers see the generic Code type label; translated type details and
+resource links require registry metadata.
+A confirmation should show both name and principal ID;
 names are presentation, never identity or authorization.
 
 Missing principals have no `displayName`; audiences carry no stored name.
@@ -742,11 +754,38 @@ shows **General** in words, and offers only **Close**. Pass `loadEntries(signal)
 instead of `initialEntries` to open the dialog at once: rows that are still
 loading take the list's place, and a failure offers **Try again**.
 
-Pass `findServiceAccount(handle, signal)` to add such service accounts by their
-handle. Send the resource as the lookup's target: your server answers only
-someone who manages that resource, returns nothing for any other identifier,
-and never searches by name. Without the callback the **Service accounts**
-section shows existing rows only. `extraSections` adds further sections, such
+Pass the resource reference as `target: { type, id }`. The shared dialog
+provides **Add service account** and exact handle lookup automatically, including
+the same lookup from the search for people. It sends this target to Core, which
+checks current Manage and applies the shared rate limit. Applications do not
+implement a lookup callback. Code accounts (`serviceAccountKind: "code"`) appear in that section,
+never offer Manage, and the section shows one note, naming the resource,
+which includes "Whoever edits the code acts with this right." while accounts
+are listed. The empty section explains how to add one; the note and empty text
+hide while adding an account. Long names wrap instead of being cut. Each row's
+second line is the entry's `serviceAccountDescription` with its level, such as
+"Service account of a mailbox · may edit"; read-only, it says only "May edit",
+and the row has no controls. When the entry carries `serviceAccountHref`, the
+name links there in a new tab, so an unsaved draft stays. Read-only, the
+section appears only when accounts are listed.
+**Add service account** sits beside the section's title with its full label at
+every width and opens a field with
+**Cancel**; the sheet scrolls it into view. A complete handle is looked up
+as it is typed, and its hit appears below the field with the "Service account"
+badge; choosing it adds the row. A new account starts with Edit where the
+resource offers it, and "What changes" adds "The code may do everything Edit
+allows, not only what it calls today." Core answers only
+someone who manages that resource, returns nothing for any other handle,
+and never searches by name. The search for people uses the same lookup when
+someone types an exact Code handle (`code-` and 10 characters, exported as
+`CODE_ACCOUNT_HANDLE_PATTERN` from `@k2b/cloud/contracts`) instead of the
+directory. Its hit carries the "Service account" badge, says that it goes to
+Service accounts, and becomes a new row in that section; the sheet scrolls that
+row into view. The lookup carries
+the server's `serviceAccount.description`, such as "Service account of a mailbox",
+for its second line; the new row keeps it. A name, a prefix, or a handle Core
+refuses finds nothing there. Without a target or lookup override the
+**Service accounts** section shows existing rows only. `extraSections` adds further sections, such
 as the resource's object API keys. The caller builds them before the dialog
 owns them, so they cannot rely on cleanup; tie their requests to the `signal`
 you pass. The dialog is a presentation of the same
@@ -769,8 +808,10 @@ Settings open the dialog from a summary instead of a second list:
 as "3 people, groups and agents · All signed-in people: off · 1 service
 account". It counts each principal once, at its strongest grant, and leaves out
 a part without entries. API keys keep their own section. The faces open the
-full list with each level. Pass the same `allowedLevels` and `effectiveEntries` as to the
-dialog, so the levels read in the app's words and shadowed grants do not count.
+full list with each level. Pass the same `allowedLevels`, `effectiveEntries`, and
+`allowAuthenticated` as to the dialog, so the levels read in the app's words,
+shadowed grants do not count, and a resource without "All signed-in people"
+leaves General out of the line unless a stored entry for it remains.
 Put **Edit access** with the `ti-lock-access` icon beside it. Someone who
 cannot open the dialog still needs the full list, for example the read-only
 `PermissionEditor`.
@@ -781,6 +822,112 @@ A `beforeChange` confirmation keeps its opener focusable so Cancel can return
 to it. The editor prevents another change while confirmation is pending and
 disables controls once saving begins. If editing stops or the editor closes
 before confirmation finishes, the pending change is not sent.
+
+### Code with access
+
+A `code` service account receives `read` or `write` through the target's normal
+`grantAccess` callback, just like another principal. Pass
+`serviceAccountKind: "code"` in both selected display metadata and stored
+`AccessEntry` rows. `PermissionEditor` shows ordinary editable rows, filters out
+Manage even when `allowedLevels` includes it, and uses the normal update and
+revoke callbacks. Each row explains that anyone editing the Code acts with
+this permission. Existing loading, save, failure and retry feedback applies.
+
+`PermissionEditor` also accepts `target: { type, id }`. Editable resource
+sharing then includes **Add service account**, with exact handle lookup and the
+ordinary grant, failure, and retry behavior. Read-only editors offer no lookup.
+Neither editor requires a Code declaration in the application.
+
+For a share surface with additional grant fields, such as a relative path,
+compose `ServiceAccountSection` from `@k2b/cloud/access/ui` with those fields.
+It is the access dialog's own **Service accounts** section: the title with its
+count, **Add service account** beside it, the rows you pass as children, the
+handle field, and the note under the rows or the empty text. Pass `target`,
+`resourceName` for the note, `count`, `hasRows`, `disabled`, and
+`add(account)`, which saves the grant and resolves `false` when it failed so
+the field keeps the handle and the hit for retry. A complete handle is looked
+up as it is typed or pasted, and the hit shows the Code icon, its description
+and the **Service account** mark.
+
+Render each row with `AccessRowFrame`, `AccessRowControls` and
+`AccessLevelMenu`, the dialog's row parts. `serviceAccountLine(locale, ...)`
+gives the second line from the server's description, such as "Service account of
+a mailbox · may edit", and `serviceAccountLevels(locale)` the levels View and
+Edit; never offer Manage. Files machine storage keeps Code accounts in this
+section, each row with its path after the line, while people, groups, and agents
+stay in its path grants. `ServiceAccountLookup` remains for an inline editor
+that only needs the button and the field.
+
+`PrincipalPicker` accepts a Code account supplied in a result. It does not add a
+name-search path; the general directory excludes Code accounts. Pass
+`target: { type, id }` to use the shared exact-handle lookup by default, or
+override `findServiceAccount(handle, signal)` with the resource as the target to let an
+exact handle find the account: such a query asks only that lookup, and the
+hit carries a "Service account" badge. Exact handle
+lookup requires a target that the caller manages, as described in
+[Code account handles](/en/docs/identity/code-service-account-handles).
+
+The target application's access list supplies authorized Code names; see
+[Code account handles](/en/docs/identity/code-service-account-handles).
+Activation-created shares are normal access entries too. Activation no longer
+inspects, grants or removes target shares. Restoring access requires an explicit
+normal share operation by a target manager.
+
+`createAccess` and `updateAccess` reject `admin` for a Code account, and the
+database rejects direct inserts and updates too. Code accounts inherit no
+group, authenticated or public grant. Use the canonical principal predicates
+for joined queries and the shared permission resolvers for single or batched
+subjects. Credential ceilings and the exact `accessSubject` still apply;
+configuration that names a target supplies no permission.
+
+#### Retain manager authority while changing a grant
+
+Use `lockAccessMutationAuthority` from `@k2b/cloud/server` in the same SQL
+READ COMMITTED transaction that changes the share. Other isolation levels are
+refused. Pass the current `subject` and either the
+recipient `principal` on create or the `accessId` on update/removal. An access
+ID may also be a SQL fragment selecting the internal UUID from an application's
+public short ID. A subject whose account is missing, inactive or expired fails the check.
+
+Acquire this lock before the resource lock. Then lock the target with the same
+lock used by every grant or ownership change and recheck the current manager's
+permission on that transaction's connection, including credential ceilings.
+The helper retains account, person and directory authority; it grants no
+permission. It waits for settings and directory writers or maintenance before
+locking people and accounts. That wait uses at most half the ordinary
+10-second request budget: five seconds across all directory tables. It releases
+partial locks before waiting, so directory writers can finish even when they
+update tables in another order. A shorter transaction statement or lock timeout
+still applies, and the helper restores the previous statement timeout after
+waiting.
+
+An exhausted directory wait or a conflicting identity row lock throws
+`AccessMutationBusyError`, aborting the transaction. It carries HTTP 409 and
+`retryable: true`; pass that response through so the caller can retry the
+complete operation. A grant that waited for a revocation must recheck the
+manager's permission after acquiring the target lock.
+Only trusted initialization or recovery paths may pass `subject: null`.
+
+```ts
+const result = await sql.begin(async (tx) => {
+  if (!(await lockAccessMutationAuthority({ subject, principal }, tx))) {
+    return fail(err.forbidden("Access denied"));
+  }
+  // Lock the target, then reload and check its manager permission using tx.
+  // Insert the grant and its resource link in this same transaction.
+});
+```
+
+Code access adapters have been removed. Normal grants and their revocation
+use the same permission-aware service as other principals.
+
+To share a Code itself with its editors and readers, spread
+`codeSharing(locale)` from `@k2b/cloud/access/ui` into the editor. It offers
+Reader (`read`) and Editor (`write`) and allows only people and groups:
+
+```tsx
+<PermissionEditor {...codeSharing(locale())} initialEntries={shares} grantAccess={grant} updateAccess={update} revokeAccess={revoke} />
+```
 
 ### Restrict editor levels by principal
 
@@ -877,6 +1024,7 @@ kind:
 | --- | --- | --- |
 | `agent` | `ti-robot` | Agent |
 | `standalone` | `ti-key` | Agent (API key only) |
+| `code` | `ti-code` | Code |
 | `resource_bound` | `ti-key` | API key |
 | `user_delegated` | `ti-user-key` | Personal |
 

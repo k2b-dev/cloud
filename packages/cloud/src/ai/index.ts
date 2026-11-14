@@ -32,25 +32,11 @@ export {
 export { assistantAiSettingsState, listAssistantAiModels, peopleAiModels, selectAssistantAiModel } from "./assistant-models";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
-export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 export { CODE_RUNTIME_TOOL_NAMES, CodeResourceId, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
+/** Trusted runtime host: refresh the current conversation owner before calling a permission-aware service. */
+export { resolveAiCapabilityActor } from "./capability-execution";
 export { getAiChatQuotas } from "./chat-quotas";
-export {
-  type AiChatTaskOccurrenceView,
-  type AiChatTaskView,
-  AiConversationIdSchema,
-  ChatTaskGrantsSchema,
-  ChatTaskIdSchema,
-  ChatTaskOccurrenceIdSchema,
-  ChatTaskScheduleInputSchema,
-  chatTaskCreateFingerprint,
-  chatTaskName,
-  getChatTaskTimezone,
-  normalizeChatTaskSchedule,
-  toAiChatTaskOccurrenceView,
-  toAiChatTaskView,
-} from "./chat-task-contracts";
 export {
   ChatTaskExportEntrySchema,
   ChatTaskExportForbiddenError,
@@ -59,25 +45,6 @@ export {
   ChatTaskExportQuerySchema,
   exportChatTasks,
 } from "./chat-task-export";
-export {
-  CHAT_TASK_REASON_CODES,
-  type ChatTaskReason,
-  type ChatTaskReasonCode,
-  chatTaskLocale,
-  chatTaskNeedsNewTime,
-  chatTaskReasonSentence,
-  chatTaskReasonState,
-  chatTaskStopSentence,
-} from "./chat-task-reasons";
-export {
-  type AiChatTask,
-  AiChatTaskIdempotencyConflictError,
-  type AiChatTaskOccurrence,
-  type AiChatTaskOccurrenceState,
-  type AiChatTaskSchedule,
-  type AiChatTaskState,
-  aiChatTasks,
-} from "./chat-tasks";
 export { parseAiSse } from "./client/transport";
 // Framework-owned managed execution host transport.
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";
@@ -86,7 +53,7 @@ export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contra
 export { type AiConversationWatch, aiApprovalUnwatched, watchAiConversation } from "./conversation-watchers";
 export { listAiCredentialProviderIds } from "./credentials";
 export type { AiDecisionErrorCode, AiDecisionUsage, RunAiDecisionInput, RunAiDecisionResult } from "./decision";
-export { AI_DECISION_MAX_QUESTIONS, AiDecisionError, runAiDecision } from "./decision";
+export { AI_DECISION_MAX_QUESTIONS, AiDecisionError, resolveAiDecisionModel, runAiDecision } from "./decision";
 export {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
@@ -151,6 +118,7 @@ export {
   loadAiConversationFileOverview,
   normalizeAiFilePath,
   readAiConversationFile,
+  statAiConversationFile,
   writeAiConversationFile,
 } from "./files-store";
 export {
@@ -287,6 +255,8 @@ export {
 export { migrateCloudAi } from "./migrate";
 export { type AiOpenQuestion, type AiOpenQuestions, countAiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 export { personalAiModelPolicy } from "./personal-agent";
+/** Trusted platform host: read current place context as the person. */
+export { type PlaceProviderOptions, runPlaceProvider } from "./place-provider";
 export { type AiUserPrefs, aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 export {
   AI_PROJECT_DESCRIPTION_MAX_CHARS,
@@ -325,6 +295,7 @@ export { createAiProvider } from "./provider";
 export { AiQuotaError } from "./quotas";
 export { isConversationResourceCursor } from "./resource-refs";
 export type { AiRoutes } from "./routes";
+export { type AiRunFileRef, AiRunReadInput, AiRunViewInput, createAiRunFiles } from "./run-files";
 export {
   isAiVisionModelConfigured,
   listAiModels,
@@ -398,7 +369,13 @@ export {
   runAiStructured,
 } from "./structured";
 export { aiGlobalInstructionsContext, composeAiSystemPrompt, renderAiGlobalInstructions } from "./system-prompt";
-export { type AiTaskRequest, type AiTaskRequestInput, AiTaskRequestSchema } from "./task-contracts";
+export {
+  AI_TASK_REQUEST_MAX_BYTES,
+  type AiTaskRequest,
+  type AiTaskRequestInput,
+  AiTaskRequestSchema,
+  assertAiTaskRequestSize,
+} from "./task-contracts";
 export { executeAiTask } from "./task-execution";
 export { type AiToolApprovalState, type AiToolCallLocation, aiToolAudit } from "./tool-audit";
 export { defineAiTool, isFrontendToolMode, type PreparedAiTools, prepareAiTools } from "./tools";
@@ -414,9 +391,13 @@ export type {
   AiApprovalTarget,
   AiCapabilityToolPresentation,
   AiClientToolId,
+  AiCodeAuthoringStop,
   AiConversation,
+  AiConversationCounts,
   AiConversationDraft,
   AiConversationPage,
+  AiConversationPlace,
+  AiConversationPlaceFilter,
   AiConversationResourceOccurrence,
   AiConversationResourceRef,
   AiConversationRunStatus,

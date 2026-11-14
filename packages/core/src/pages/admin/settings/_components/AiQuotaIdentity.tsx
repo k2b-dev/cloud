@@ -18,7 +18,7 @@ const serviceAccountKinds = {
 } as const;
 // Without a known kind (usage reports, deleted accounts) the type-level icon and label apply.
 const serviceAccountKind = (type: keyof typeof icons, kind?: ServiceAccountKind) =>
-  type === "service_account" && kind ? serviceAccountKinds[kind] : undefined;
+  type === "service_account" && kind && kind !== "code" ? serviceAccountKinds[kind] : undefined;
 export const quotaIdentityIcon = (type: keyof typeof icons, kind?: ServiceAccountKind) =>
   serviceAccountKind(type, kind)?.icon ?? icons[type];
 export default function AiQuotaIdentity(props: { type: keyof typeof icons; label: string; kind?: ServiceAccountKind }) {

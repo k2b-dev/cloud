@@ -45,3 +45,15 @@ export function isPanelCloseMessage(value: unknown): value is { type: "cloud.pan
     (Reflect.ownKeys(value).length === 1 || (Reflect.ownKeys(value).length === 2 && Object.hasOwn(value, "v") && value.v === 1))
   );
 }
+
+/** The provider page asks the shell to show its consent question again. It can only ask; the person answers. */
+export function isPanelConsentAskMessage(value: unknown): value is { type: "cloud.panel.consent.ask"; v: 1 } {
+  return (
+    isRecord(value) &&
+    Reflect.ownKeys(value).length === 2 &&
+    Object.hasOwn(value, "type") &&
+    Object.hasOwn(value, "v") &&
+    value.type === "cloud.panel.consent.ask" &&
+    value.v === 1
+  );
+}

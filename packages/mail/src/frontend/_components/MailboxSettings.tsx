@@ -1,7 +1,8 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { AccessSummary, openAccessDialog } from "@k2b/cloud/access/ui";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
+  ButtonLink,
   confirmDiscardIfDirty,
   NoticeCard,
   NumberInput,
@@ -20,6 +21,7 @@ import { apiClient } from "../../api/client";
 import type { ConfigurableFolderRole, FolderDisplay, Mailbox } from "../../contracts";
 import type { MailboxSettingsContext } from "../../settings-context";
 import { readApiError } from "./api-response";
+import { codeSummaryText, MailboxDeleteDialog, type MailboxDeleteOutcome } from "./MailboxDeleteDialog";
 import MailCalendarSettings from "./MailCalendarSettings";
 import MailComposeSettings from "./MailComposeSettings";
 import { MailConnectionSettings } from "./MailConnectionSettings";
@@ -76,9 +78,6 @@ export default function MailboxSettings(props: {
   const [description, setDescription] = createSignal(props.context.mailbox.description ?? "");
   const [internalDomains, setInternalDomains] = createSignal(props.context.mailbox.composeSafety.internalDomains.join(", "));
   const [largeRecipientThreshold, setLargeRecipientThreshold] = createSignal(props.context.mailbox.composeSafety.largeRecipientThreshold);
-  const [automaticReplyManagementPermission, setAutomaticReplyManagementPermission] = createSignal<
-    Mailbox["automaticReplyManagementPermission"]
-  >(props.context.mailbox.automaticReplyManagementPermission);
   const [activeTab, setActiveTab] = createSignal(
     normalizeInitialTab(props.initialTab, canWrite(), canAdmin(), props.context.integrations.spacesCalendar),
   );
@@ -129,9 +128,6 @@ export default function MailboxSettings(props: {
     Number(description().trim() !== (props.context.mailbox.description ?? "")) +
     Number(internalDomains() !== props.context.mailbox.composeSafety.internalDomains.join(", ")) +
     Number(largeRecipientThreshold() !== props.context.mailbox.composeSafety.largeRecipientThreshold);
-  const accessChangeCount = () =>
-    automaticReplyManagementPermission() === props.context.mailbox.automaticReplyManagementPermission ? 0 : 1;
-
   const ownDirty = createMemo(() => {
     if (activeTab() === "reading") {
       return readingFormat() !== savedReadingFormat();
@@ -141,9 +137,6 @@ export default function MailboxSettings(props: {
     }
     if (activeTab() === "mailbox") {
       return mailboxDetailsDirty() || sendingSafeguardsDirty();
-    }
-    if (activeTab() === "access") {
-      return automaticReplyManagementPermission() !== props.context.mailbox.automaticReplyManagementPermission;
     }
     return false;
   });
@@ -162,8 +155,6 @@ export default function MailboxSettings(props: {
       setDescription(props.context.mailbox.description ?? "");
       setInternalDomains(props.context.mailbox.composeSafety.internalDomains.join(", "));
       setLargeRecipientThreshold(props.context.mailbox.composeSafety.largeRecipientThreshold);
-    } else if (activeTab() === "access") {
-      setAutomaticReplyManagementPermission(props.context.mailbox.automaticReplyManagementPermission);
     }
     setChildDirtyStates({});
   };
@@ -308,52 +299,106 @@ export default function MailboxSettings(props: {
     );
   };
 
-  const saveAutomaticReplyAccess = mutation.create<Mailbox, void>({
-    mutation: async (_input, { abortSignal }) => {
-      const response = await apiClient.mailboxes[":mailboxId"].$patch(
-        {
-          param: { mailboxId: props.context.mailbox.id },
-          json: { automaticReplyManagementPermission: automaticReplyManagementPermission() },
-        },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateAutomaticReplyAccess));
-      return response.json();
-    },
-    onSuccess: (mailbox) => {
-      props.onContextChange((context) => ({ ...context, mailbox }));
-      toast.success(messages().automaticReplyAccessUpdated);
-    },
-    onError: (error) => prompts.error(error.message),
-  });
-
-  const deleteMailbox = mutation.create<boolean, void>({
-    mutation: async (_input, { abortSignal }) => {
-      const confirmed = await prompts.confirm(messages().deleteMailboxDescription, {
-        title: messages().deleteMailboxTitle,
-        confirmText: messages().deleteMailbox,
-        variant: "danger",
+  const codeRowText = () => {
+    const code = props.context.admin?.code;
+    if (!code) return messages().codeUnknown;
+    return code.exists ? codeSummaryText(messages(), code) : messages().codeNone;
+  };
+  const openDeleteDialog = async () => {
+    const admin = props.context.admin;
+    const address = props.context.compose?.identities[0]?.fromAddress ?? props.context.mailbox.name;
+    let dismissed = false;
+    const finishedLate = (outcome: MailboxDeleteOutcome) => {
+      if (!dismissed) return;
+      if (outcome === "deleted") props.onDeleted();
+      else toast.error(outcome === "refused" ? messages().deleteFailedBody : messages().deleteUnknownBody);
+    };
+    const deleted = await prompts.dialog<boolean>(
+      (close) => (
+        <MailboxDeleteDialog
+          address={address}
+          mails={admin?.messageCount ?? null}
+          folders={admin?.folders.length ?? 0}
+          accessEntries={admin?.accessEntries.length ?? 0}
+          code={admin?.code ?? null}
+          close={close}
+          remove={async () => {
+            let outcome: MailboxDeleteOutcome = "unknown";
+            try {
+              const response = await apiClient.mailboxes[":mailboxId"].$delete({ param: { mailboxId: props.context.mailbox.id } });
+              outcome = response.ok ? "deleted" : response.status >= 400 && response.status < 500 ? "refused" : "unknown";
+            } catch {
+              // A lost answer may follow a committed delete.
+            }
+            finishedLate(outcome);
+            return outcome;
+          }}
+        />
+      ),
+      { title: messages().deleteMailboxTitle({ address }), icon: "ti ti-trash", size: "medium" },
+    );
+    dismissed = true;
+    if (deleted) props.onDeleted();
+  };
+  // Mailbox sharing is the shared access dialog: changes are collected there and saved together.
+  const accessDialog = new AbortController();
+  let editingAccess = false;
+  // Every level a person can hold, scoped ones included, so the summary names each entry's level.
+  const summaryLevels = () => mailboxAccessLevels(locale())({ type: "user", userId: "" });
+  const editAccess = () => {
+    if (editingAccess) return;
+    editingAccess = true;
+    const mailboxId = props.context.mailbox.id;
+    // Set by every saved change, also when a later one fails and the person discards the rest.
+    let wrote = false;
+    openAccessDialog({
+      target: { type: "mail.mailbox", id: props.context.mailbox.id },
+      resourceName: props.context.mailbox.name,
+      subtitle: messages().accessDialogSubtitle,
+      initialEntries: admin().accessEntries,
+      allowAuthenticated: false,
+      allowedLevels: mailboxAccessLevels(locale()),
+      signal: accessDialog.signal,
+      grantAccess: async (principal, permission, _display, scope) => {
+        const response = await apiClient.mailboxes[":mailboxId"].access.$post({
+          param: { mailboxId },
+          json: { principal, permission, scope: mailboxAccessScope(scope) },
+        });
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedGrantAccess));
+        wrote = true;
+        return response.json();
+      },
+      updateAccess: async (accessId, permission, scope) => {
+        const response = await apiClient.mailboxes[":mailboxId"].access[":accessId"].$patch({
+          param: { mailboxId, accessId },
+          json: { permission, scope: mailboxAccessScope(scope) },
+        });
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateAccess));
+        wrote = true;
+      },
+      revokeAccess: async (accessId) => {
+        const response = await apiClient.mailboxes[":mailboxId"].access[":accessId"].$delete({ param: { mailboxId, accessId } });
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedRevokeAccess));
+        wrote = true;
+      },
+    })
+      // The summary shows what is stored, so a saved change reads the list again.
+      .then(async () => {
+        if (wrote && !accessDialog.signal.aborted) await props.onReload();
+      })
+      .catch((error: Error) => {
+        if (!accessDialog.signal.aborted) void prompts.error(error.message);
+      })
+      .finally(() => {
+        editingAccess = false;
       });
-      if (!confirmed || abortSignal.aborted) return false;
-      const response = await apiClient.mailboxes[":mailboxId"].$delete(
-        { param: { mailboxId: props.context.mailbox.id } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedDeleteMailbox));
-      return true;
-    },
-    onSuccess: (deleted) => {
-      if (deleted) props.onDeleted();
-    },
-    onError: (error) => prompts.error(error.message),
-  });
+  };
   onCleanup(() => {
+    accessDialog.abort();
     saveReadingPreferences.abort();
     saveWritingPreferences.abort();
     saveMailboxSettings.abort();
     updateFolderRole.abort();
-    saveAutomaticReplyAccess.abort();
-    deleteMailbox.abort();
   });
 
   return (
@@ -484,6 +529,14 @@ export default function MailboxSettings(props: {
       <SettingsModal.Group title={messages().mailbox}>
         <Show when={canAdmin() && props.context.admin}>
           <SettingsModal.Tab id="mailbox" title={messages().general} icon="ti ti-id" description={messages().mailboxGeneralDescription}>
+            <SettingsGroup title={messages().codeSection} description={codeRowText()}>
+              <SettingsGroup.Action>
+                <ButtonLink variant="secondary" size="sm" href={`/app/mail/${props.context.mailbox.id}/code`}>
+                  <i class="ti ti-code" aria-hidden="true" />
+                  {messages().codeOpen}
+                </ButtonLink>
+              </SettingsGroup.Action>
+            </SettingsGroup>
             <SettingsGroup title={messages().identity} description={messages().identityDescription}>
               <SettingsField
                 label={messages().name}
@@ -656,76 +709,15 @@ export default function MailboxSettings(props: {
 
         <SettingsModal.Group title={messages().sharing}>
           <SettingsModal.Tab id="access" title={messages().access} icon="ti ti-shield" description={messages().accessDescription}>
-            <SettingsGroup title={messages().automaticReplies} description={messages().automaticRepliesDescription}>
-              <SettingsField
-                label={messages().managementAccess}
-                description={messages().managementAccessDescription}
-                error={() => undefined}
-                changed={() => accessChangeCount() > 0}
-              >
-                {(control) => (
-                  <Select
-                    aria-label={messages().automaticReplyManagementAccess}
-                    aria-describedby={control.describedBy()}
-                    icon="ti ti-message-cog"
-                    value={automaticReplyManagementPermission}
-                    onValueChange={(value) => setAutomaticReplyManagementPermission(value === "write" ? "write" : "admin")}
-                    options={[
-                      {
-                        id: "write",
-                        label: messages().writersAndAdministrators,
-                        description: messages().writersCanManageReplies,
-                        icon: "ti ti-pencil",
-                      },
-                      {
-                        id: "admin",
-                        label: messages().administratorsOnly,
-                        description: messages().onlyAdministratorsCanManageReplies,
-                        icon: "ti ti-shield",
-                      },
-                    ]}
-                  />
-                )}
-              </SettingsField>
+            <SettingsGroup title={messages().peopleAndIntegrations} description={messages().peopleAndIntegrationsDescription}>
+              <SettingsGroup.Action>
+                <Button size="sm" variant="secondary" type="button" onClick={editAccess}>
+                  <i class="ti ti-lock-access" aria-hidden="true" />
+                  {messages().editAccess}
+                </Button>
+              </SettingsGroup.Action>
+              <AccessSummary entries={admin().accessEntries} allowedLevels={summaryLevels()} allowAuthenticated={false} />
             </SettingsGroup>
-            <SettingsGroup title={messages().peopleAndIntegrations} description={messages().permissionChangesImmediate}>
-              <PermissionEditor
-                initialEntries={admin().accessEntries}
-                allowAuthenticated={false}
-                allowServiceAccounts
-                allowedLevels={mailboxAccessLevels(locale())}
-                canEdit
-                grantAccess={async (principal, permission, _display, scope) => {
-                  const response = await apiClient.mailboxes[":mailboxId"].access.$post({
-                    param: { mailboxId: props.context.mailbox.id },
-                    json: { principal, permission, scope: mailboxAccessScope(scope) },
-                  });
-                  if (!response.ok) throw new Error(await readApiError(response, messages().failedGrantAccess));
-                  return response.json();
-                }}
-                updateAccess={async (accessId, permission, scope) => {
-                  const response = await apiClient.mailboxes[":mailboxId"].access[":accessId"].$patch({
-                    param: { mailboxId: props.context.mailbox.id, accessId },
-                    json: { permission, scope: mailboxAccessScope(scope) },
-                  });
-                  if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateAccess));
-                }}
-                revokeAccess={async (accessId) => {
-                  const response = await apiClient.mailboxes[":mailboxId"].access[":accessId"].$delete({
-                    param: { mailboxId: props.context.mailbox.id, accessId },
-                  });
-                  if (!response.ok) throw new Error(await readApiError(response, messages().failedRevokeAccess));
-                }}
-              />
-            </SettingsGroup>
-            <SettingsModal.Footer>
-              <SettingsPanelFooter
-                changeCount={accessChangeCount}
-                loading={saveAutomaticReplyAccess.loading}
-                onDiscard={() => setAutomaticReplyManagementPermission(props.context.mailbox.automaticReplyManagementPermission)}
-                onSave={() => saveAutomaticReplyAccess.mutate()}
-              />
-            </SettingsModal.Footer>
           </SettingsModal.Tab>
         </SettingsModal.Group>
 
@@ -739,8 +731,8 @@ export default function MailboxSettings(props: {
           >
             <SettingsGroup title={messages().deleteMailbox} description={messages().deleteMailboxGroupDescription}>
               <SettingsGroup.Action>
-                <Button variant="danger" size="sm" type="button" onClick={() => deleteMailbox.mutate()} disabled={deleteMailbox.loading()}>
-                  <i class={`ti ${deleteMailbox.loading() ? "ti-loader-2 animate-spin" : "ti-trash"}`} aria-hidden="true" />
+                <Button variant="danger" size="sm" type="button" onClick={() => void openDeleteDialog()}>
+                  <i class="ti ti-trash" aria-hidden="true" />
                   {messages().deleteMailbox}
                 </Button>
               </SettingsGroup.Action>

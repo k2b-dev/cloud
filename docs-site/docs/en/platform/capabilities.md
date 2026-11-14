@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-27
+updated: 2026-11-05
 ---
 
 # App capabilities
@@ -142,20 +142,21 @@ export const inventoryCapabilities = defineCapabilities({
   },
   actions: {
     "item.rename": {
+      target: "item",
       title: "Rename inventory item",
       description: "Rename one inventory item the caller may edit.",
       input: z
         .object({
-          itemId: z.string().regex(/^[A-Za-z0-9]{6}$/).describe("Stable inventory item ID."),
           name: z.string().trim().min(1).max(120).describe("New item name."),
         })
         .strict(),
       data: z.object({ id: z.string().regex(/^[A-Za-z0-9]{6}$/), name: z.string() }).strict(),
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
-      review: async ({ itemId, name }, context) => {
+      review: async ({ name }, context) => {
+        const itemId = context.target?.type === "inventory.item" ? context.target.id : "";
         const item = visibleItem(itemId, context.accessSubject);
         if (!item) {
           return {
@@ -177,7 +178,8 @@ export const inventoryCapabilities = defineCapabilities({
           approvalScope: "inventory",
         });
       },
-      run: async ({ itemId, name }, context) => {
+      run: async ({ name }, context) => {
+        const itemId = context.target?.type === "inventory.item" ? context.target.id : "";
         const item = visibleItem(itemId, context.accessSubject);
         if (!item) {
           return {
@@ -284,7 +286,7 @@ base fallback (`de-CH` → `de` → `en`) and return final localized strings, so
 consumers never import another application's message keys.
 
 People see this presentation in the Assistant's tool rows, approval cards,
-and remembered approvals; in Studio app approvals; in search; and in the
+and remembered approvals; in chat-code approvals; in search; and in the
 capability catalog. Each surface resolves it for the reader's request locale,
 together with the localized app name from the app's own `presentation`. An
 entry without a translation shows its base text, so a missing locale never
@@ -440,6 +442,13 @@ Action, which then reads as its title.
 
 ### Types name resources
 
+A Type may supply `codeAccount: { name, description }` as final generic Code
+account labels, with translations in `presentation.translations.<locale>.types`.
+For example, Mail uses “Code eines Postfachs” and “Dienstkonto eines Postfachs”.
+These labels identify the type without naming a private resource. See
+[Code account handles](/en/docs/identity/code-service-account-handles) for the
+authorized title and rename contracts.
+
 A Type gives an addressable resource a stable identity such as `item`. Cloud
 qualifies local IDs with the application ID:
 
@@ -527,6 +536,43 @@ readers keep the Type and ordinary reader. Calling applications declare
 `platformPermissions: ["resources:readers"]`; admission, workload credentials,
 and limits are described in
 [App-to-app reader checks](/en/docs/platform/app-to-app-queries).
+
+### Code access at the target
+
+A Code service account receives ordinary View or Edit shares through the
+target's normal share dialog. No Code adapter or Code declaration is required
+for the target. Keep the same permission-aware domain services for API,
+capability and background calls. Each call checks the account's current direct
+grants. Code receives neither Manage nor inherited group, signed-in or public
+rights. See [Code with access](/en/docs/identity/authorization#code-with-access)
+for the shared editor, exact handle lookup and transactional manager checks.
+
+`access.readable` remains independent: it supplies app-to-app reader checks.
+An app that owns Code declares `code: { owners: ["item"], pages: { item:
+"/app/inventory/{id}/code" } }`. `owners` names local Types with a canonical
+reader; the reader supplies `codeResourceTitle(tx, id)` for the read-only owner
+existence check. `pages` maps those owner Types to their shared Code page:
+a path on this Cloud that contains `{id}`; a pattern starting with `//` is
+refused.
+The manifest publishes only `owners` and optional `pages`. See
+[Code lifecycle](/en/docs/platform/code-lifecycle).
+
+Activation creates a version entry and switches versions. It never grants
+permissions, chooses a permission level from source, or restores access. The
+[checker](/en/docs/platform/code-checker) keeps `manifest.permissions` as
+non-binding review evidence. Rights changes use the ordinary grant, update
+and revoke services with current manager authority.
+
+Core retains a title-only owner projection. `signCodeOwnerRead` and
+`verifyCodeOwnerRead` from `@k2b/cloud/capabilities/server` use invocation-purpose
+RS256 keys with `typ: "cloud-code-owner+jwt"`, `token_use: "code_owner_read"`,
+an exact Code-account `principal` and target-app audience. Lifetime and clock
+tolerance match invocation tokens. The framework's
+`/api/_internal/capabilities/v1/code-owner/queries/code.owner.title` endpoint
+checks the active account's exact owner binding before reading the supplied
+read-only transaction. It returns only `{ data: { title } }`, with null for a
+missing owner. It grants no resource permission and exposes no target rights.
+Applications implement the projection and never issue these tokens themselves.
 
 ### Resource links
 
@@ -853,11 +899,10 @@ Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
 on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.
 
-Routines check their mandate first, then call the review before every Action
-whose `approval` is not `"none"`, including background Code Mode; they run it
-only when the review returns an `approvalScope`. Omit the scope for consequences
-that need confirmation every time: routines will refuse them, and a review
-can only narrow the mandate.
+Personal Code versions check their mandate and the app's current policy and
+review before running an Action. The review can narrow authority and require a
+person's approval; a version mandate cannot override it. See
+[Code version mandates](/en/docs/identity/background-mandates#code-version-mandates).
 
 People decide [Action approvals](/en/docs/identity/approvals) in the chat,
 an app, or Cloud's approval lists.
@@ -874,6 +919,173 @@ must authorize both an optional review and the eventual Action against current
 state.
 
 Record security-sensitive mutations with [Audit events](/en/docs/platform/audit-events).
+
+The [Code SDK](/en/docs/platform/code-sdk) generates target-specific handles
+from these contracts, with typed refs and idempotency keys.
+
+### Name the resource an operation acts on
+
+Declare `target` when an Action acts on a resource. It names a local Type of
+this application. The caller supplies a resource ID for that fixed type;
+it cannot choose another type or containment level. A Query may also declare a
+target when it reads exactly one container. An operation without a target acts
+at application level. Every Action with resource ID input must declare a target,
+except Actions implementing a shared provider role, which keep that role's input
+contract, and the platform-generated access Actions described below. Foreign
+provider-owned refs and selectors inside an application-wide document also stay
+in input: they do not select a resource owned by the Action provider to mutate.
+Third-party application authors follow the same contract; `code: false` alone does not
+exempt a resource Action.
+Canonical resource readers, Universal Search, Action outcome checks and shared
+file, calendar, app-status and discussion provider contracts supply only their existing
+domain input. They cannot declare `target` or `refs`; publish a separate Query
+when an explicit caller needs a container target. Consumer contracts may name
+a fixed local `CapabilityContract.target`; the provider must match it exactly
+without additional refs. The contact directory's create Action uses `book`.
+
+```ts
+actions: {
+  "contact.move": {
+    target: "book",
+    refs: { targetBookId: "book" },
+    title: "Move contact",
+    description: "Move a contact to another book.",
+    input: z.object({
+      contactId: z.string().describe("Contact in the source book."),
+    }).strict(),
+    data: z.object({ id: z.string() }).strict(),
+    destructive: false,
+    openWorld: false,
+    idempotency: "required",
+    run: async (input, context) => {
+      // target and refs have been checked against this declaration.
+      if (!context.target || !context.refs?.targetBookId) {
+        throw new Error("Contact move requires source and destination books");
+      }
+      return moveContact(input.contactId, context.target.id, context.refs.targetBookId.id, context);
+    },
+  },
+},
+```
+
+The main resource ID belongs beside `input`, not inside the domain input.
+Keep IDs for contained objects in `input`, and check in the owning service that
+they belong to `context.target`. Check every member of a batch. A Type's
+existing `container` describes containment; it does not perform this check or
+grant access.
+
+Use `refs: { fieldName: "localType" }` only for additional targets. Each field
+is exactly one required resource, never a list. Both `target` and every ref
+type must be declared in the same application. References grant no permission;
+the owning service must authorize all affected resources.
+
+Declare `code: false` on an Action whose domain effect reaches another
+application. It records that the Action is unavailable to resource-owned Code;
+personal Code retains its person's authority. Code consumers enforce this
+marker when offering operations. It does not change ordinary person calls or
+replace the Action's service authorization.
+
+Call the public client with explicit coordinates:
+
+```ts
+await invokeCapability({
+  appId: "contacts",
+  capabilityId: "contact.move",
+  kind: "action",
+  target: { type: "contacts.book", id: sourceBookId },
+  refs: { targetBookId: { type: "contacts.book", id: destinationBookId } },
+  input: { contactId },
+  idempotencyKey: `move:${contactId}:${revision}`,
+}, caller);
+```
+
+HTTP uses the same `{ target, refs, input }` body. `reviewCapabilityAction`
+accepts the same coordinates. `run`, `review`, and app-authorized handlers
+receive validated `context.target` and `context.refs`. These context fields
+are optional because application-wide operations have no resource target.
+Supplying an undeclared target, the wrong resource type, extra ref fields, a
+list, or a missing declared ref fails with `VALIDATION_FAILED`.
+
+The generic CLI's `query`, `action` and `review` commands accept `--target`
+as a resource-reference JSON object and `--refs` as a named reference map.
+`--input` continues to contain only domain input:
+
+```bash
+cld capabilities action contacts contact.move \
+  --target '{"type":"contacts.book","id":"source"}' \
+  --refs '{"targetBookId":{"type":"contacts.book","id":"destination"}}' \
+  --input '{"contactId":"contact"}' --idempotency-key move-contact-1
+```
+
+Chat and MCP tools remain flat: the example has `book`, `targetBookId`, and
+`contactId` fields. The main field uses the declared Type name; refs retain
+their field names. Collisions with another target field, a domain input field,
+or reserved Action metadata (`idempotencyKey`, `approvalReason`) fail when the
+tool schema is generated, including at application startup. Tool names such as
+`contacts__action__contact.move` are transport encodings of
+`contacts.contact.move`, never capability IDs in a normalized call.
+
+#### Share a normalized call and digest
+
+`NormalizedCapabilityCall<Input>` and `NormalizedCapabilityCallSchema` from
+`@k2b/cloud/contracts` define the durable JSON contract:
+
+```ts
+{
+  capability: "contacts.contact.move",
+  target: { type: "contacts.book", id: sourceBookId },
+  refs: { targetBookId: { type: "contacts.book", id: destinationBookId } },
+  input: { contactId },
+}
+```
+
+An application-wide call uses `target: null` and `refs: {}`.
+`normalizeCapabilityCall(appId, operation, body)` from
+`@k2b/cloud/capabilities/server` checks the coordinates against a live operation.
+It leaves domain input validation to the operation's schema.
+`capabilityCallFromTool(appId, operation, args)` converts flat tool arguments;
+`capabilityToolInputSchema(operation)` generates their schema, and
+`capabilityInvocationBody(call)` returns the HTTP body.
+
+`capabilityCallDigest(call)` from the same server entry point returns a
+SHA-256 hexadecimal digest of the complete normalized call. It sorts object
+keys recursively, preserves array order, and excludes transport metadata.
+Validate domain input before hashing. Changing the capability, target, a ref,
+or domain input changes the digest. Review, approval snapshots, execution and
+idempotency use these same coordinates. Approval services receive the complete
+normalized call as their `input`, so `approvalArgsDigest(call)` equals
+`capabilityCallDigest(call)`.
+
+Application-wide operations with neither `target` nor `refs` retain their
+input-only approval and idempotency hashes. The repository's
+`capability-targets` rule now fails on ID-like input fields without a target;
+there is no report-only mode. It checks declarations, not resource permissions.
+
+The repository check reviews the following domain-input exceptions in this
+workspace; this list does not replace shared provider role contracts:
+
+- `gateway-ops.app-status.forget` keeps `appId`, as required by the shared
+  [app-status contract](/en/docs/platform/app-status). The app being forgotten
+  is not a resource Type owned by the status provider.
+- `chat.discussion.post` keeps `ref.id`, whose Type is chosen by the foreign
+  discussion provider. Chat cannot declare that Type locally. See
+  [item discussions](/en/docs/platform/chat-discussions#action-targets).
+- `spaces.calendar-invitation.response.commit` keeps `mailboxId`, `messageId`
+  and `draftId` to correlate a foreign Mail response. Spaces resolves the linked
+  event and rechecks its access before recording the draft; `code: false` keeps
+  this cross-application workflow out of resource Code.
+- `core.code.policy.update` keeps `definition.rules[].groupId`: these select
+  rules in the installation-wide policy document, not groups to mutate.
+  Code version and execution Actions instead target `core.code`.
+
+All four declare `code: false`. The check exempts only those named fields on
+those operations; another ID field or removal of `code: false` fails it.
+The retired `code.access.` namespace remains reserved and unavailable to Code,
+including when an old catalog still advertises it.
+Shared provider contracts continue to use their published shapes. Do not
+invent a local resource Type to re-label a foreign resource as the provider's.
+See [Roll out capability targets](/en/docs/operations/capability-targets) for
+upgrade order and existing-data migration.
 
 ### Retry an Action safely
 
@@ -1253,7 +1465,7 @@ A queued message's receipt says “queued” or “scheduled”, never “sent�
 that is known. The check contract lets a later consumer settle an unknown
 outcome; declaring it does not itself run a reconciliation or retry.
 
-#### Mixed versions and routine grants
+#### Mixed versions and Code grants
 
 Manifests publish policies in an optional top-level `policies` map keyed by
 Action local ID, with sorted keys. Action entries carry derived approval:
@@ -1267,12 +1479,11 @@ work. A policy for an unknown Action is dropped. Producers remain strict.
 Consumers use `capabilityActionPolicy(manifest, localId)` from
 `@k2b/cloud/contracts` to resolve the policy.
 
-Routine grants accept only silent policy Actions without `routines: false`,
-independently of their derived approval. Each unattended call still runs its
-review. A review with `ask`, or a missing or failed review, prevents
-execution with `NEEDS_APPROVAL`. A cancelled routine stops like any other
-cancelled routine step. Silent reviews need no scope in a routine.
-Legacy Actions retain their existing routine rules.
+Code versions require an explicit silent policy that permits routines; legacy
+`approval: "rememberable"` alone is insufficient. Their provider repeats the
+review before the Action runs and refuses per-call `ask` or failed reviews.
+Version approval never overrides `ask` or `unattended: false`. See
+[Code version mandates](/en/docs/identity/background-mandates#code-version-mandates).
 
 #### Migrate an application
 
@@ -1318,6 +1529,89 @@ For a multilingual app, resolve `forms` once from the app's catalog using
 `"{amount} {item} an {to} übergeben"`, with matching running, done, confirm,
 and decline forms.
 
+## Deliver personal Code results to a chat
+
+Core's `core.ai.chat.deliver` Action targets `core.ai.chat`. Its closed input is
+`{ text }`, with 1–10,000 characters after trimming; supply the required
+idempotency key as invocation metadata. It returns
+`{ id, status: "delivered", targetChatId }` and an open link to the destination.
+
+The caller must be a delegated personal Code run whose owner owns the active
+target chat. Core checks both identities on review and execution. Resource- and
+app-owned Code and ordinary person calls are refused. Its policy is
+`{ silent: "you" }`, so approved personal versions can deliver unattended.
+The destination is always explicit; no chat is created or selected implicitly.
+
+A committed call appends one assistant message, marks the chat unread and leaves
+a durable receipt for the existing Assistant response notification recovery.
+Messages retain their Code/run provenance, form separate answers, and enter
+model context after an already-running interactive turn finishes.
+Notification delivery follows the person's preferences. The Action starts no
+AI turn. A repeated key for the same Code principal and capability within 24 hours returns the original message; changed
+text or destination returns `IDEMPOTENCY_CONFLICT`. Each call uses the ordinary
+Code call log. See [Code SDK](/en/docs/platform/code-sdk#deliver-a-result-to-your-gustav-chat)
+for the generated handle and an example.
+
+## Start personal Code chat turns
+
+Core's `core.ai.chat.run` Action targets `core.ai.chat` and takes
+`{ prompt, context? }`. The prompt has 1–10,000 characters after trimming;
+source context has at most 10,000 characters. Invocation metadata supplies a
+required idempotency key. The Action uses `silent: "you"` and accepts only a
+delegated personal Code run whose owner owns the active target chat. Review
+and execution both check that binding. It never selects or creates a chat.
+
+It creates one ordinary durable Assistant turn with the owner's current
+permissions, model grants, loop and step limits, and approval rules. Tool requests that need approval
+wait in the chat. Code receives `{ id, chatId, status, reason, origin }` and an
+open link promptly; it does not wait for a human. `core.ai.chat.run.read`, on
+the same chat target with `{ id }`, returns a current snapshot of that turn.
+States are `queued`, `running`, `waiting_for_approval`, `waiting_for_input`,
+`completed` and `failed`. A failed turn includes its reason. A retry of the
+same Action key recovers the original turn; the dispatcher may replay the
+admission reply. Use `ai.chat.run.read` for its current state. Different
+instructions, context or destination under that key return
+`IDEMPOTENCY_CONFLICT`. A chat with another active turn or pending/failed queued
+messages returns `chat_busy`. A Project change during preparation returns
+`chat_changed`; reread the chat before trying again.
+
+Turn admission uses the owner's normal interactive Assistant budget. Each
+provider call reserves only affordable input/output and settles to its actual
+reported usage, exactly as an interactive turn does. An exhausted owner budget
+returns `quota_exhausted`; unknown priced usage returns `quota_usage_unknown`.
+The existing Assistant budget rules determine the amount and reset window
+(including a daily rule when configured). As with interactive chat, disabled
+Assistant budgets or unpriced models have no owner cost ceiling. There is no new turn-count setting
+or flat charge. Normal per-turn loop and step limits bound each invocation.
+
+The existing `core.code.ai_daily_budget_usd` and
+`core.code.ai_owner_daily_budget_usd` limits also include the actual costs of
+Code-started chat calls, alongside text AI usage, per installation calendar day
+in `app.timezone`. Live inference reservations count until they settle; unknown
+priced chat costs block new turn admission. They do not create an extra unknown-usage
+block for text AI calls; those retain the normal owner quota rules. Unknown
+Code chat costs block new turns until the next installation calendar day; an
+Assistant allowance reset does not reset the Code daily check. These limits
+default to 1 each and return
+`code_ai_daily_budget_limit` or `code_ai_owner_daily_budget_limit` when exhausted.
+For example, three turns costing 0.02 each use 0.06 of the daily allowance,
+leaving 0.94 for further turns or `core.ai.generate` / `core.ai.decide`.
+The Code daily checks refuse new invocations once that allowance is spent;
+an already admitted turn can exceed the remaining Code allowance. Its owner
+quota still applies at each provider call. Compaction retains normal background
+accounting and is excluded from these chat costs.
+Turns never allocate the full `core.code.ai_budget_usd` attempt allowance:
+that setting continues to bound the separate text AI calls. A receipt retry
+starts no inference and adds no cost. Model admission can also return
+`ai_disabled`, `ai_no_model` or `model_policy_mismatch` before starting a turn.
+
+Turn creation and its receipt commit together. The
+ordinary AI queue and sweep recover work after a failed queue wake-up. Chat
+history and the turn record retain the Code name, Code run and invocation
+request ID. Code call logging remains the standard bridge log. Read a later
+state once or show the chat link; never keep a Code run polling for approval.
+See the [SDK example](/en/docs/platform/code-sdk#start-a-gustav-turn-in-your-own-chat).
+
 ## Write valid contracts
 
 Cloud validates the declaration at startup:
@@ -1346,11 +1640,11 @@ Cloud validates the declaration at startup:
   `idempotency: "required"`;
 - every provider-owned Type used by `refs` or Universal Search is declared;
 - an app may declare at most 200 Types, 200 Queries, and 200 Actions;
-- the deterministic live manifest may not exceed 256 KiB.
+- the deterministic live manifest may not exceed 384 KiB.
 
 Every invocation transport caps the complete JSON request and result at 256
 KiB. The paginated discovery catalog has a separate 2 MiB page limit because
-one valid manifest may itself approach 256 KiB. Provider endpoints validate and
+one valid manifest may itself approach 384 KiB. Provider endpoints validate and
 serialize invocation results within the 256 KiB bound before returning them.
 Keep individual field limits comfortably below that envelope; large files,
 exports, and document bodies belong in app-owned upload or download APIs
@@ -1640,6 +1934,13 @@ for [Resource links](#resource-links); links on other results remain optional
 hints and do not require UI.
 When `hasMore` is true, `nextCursor` is required; on the final page it must be
 absent. Treat cursors as opaque values.
+
+Queries with a string `cursor` input, or a top-level string `next` or
+`nextCursor` in their data, must return the shared `page` envelope. Use
+`page: capabilityPage(next)` for the provider’s continuation cursor. A null cursor means
+`{ hasMore: false }`; a continuation means `{ hasMore: true, nextCursor }`.
+The result validator rejects a missing or inconsistent envelope. Keep the
+declared input name (`cursor` or `after`) when requesting the next page.
 
 When a provider-owned Type advertises a reader, every returned `ref.id` for
 that Type must be accepted by that reader. For a foreign ref, the foreign
@@ -2060,7 +2361,8 @@ cld capabilities read inventory.item k3P9xQ
 cld capabilities query inventory item.read \
   --input '{"id":"k3P9xQ"}'
 cld capabilities action inventory item.rename \
-  --input '{"itemId":"k3P9xQ","name":"Dock"}'
+  --target '{"type":"inventory.item","id":"k3P9xQ"}' \
+  --input '{"name":"Dock"}'
 ```
 
 The Capabilities playground at `/app/capabilities` lists the live catalog,
@@ -2350,10 +2652,89 @@ reservations independently. Keep receipts for their domain recovery period.
 
 References require the same caller and credential scope, an unchanged live
 operation schema and current provider access. Possessing a reference alone
-cannot invoke a different operation. This initial stream contract supports
-interactive and service-account authority; mandate-backed background
-invocations of streaming operations fail before execution. Existing operations
-without streams retain their contracts.
+cannot invoke a different operation. Interactive and service-account authority
+use this transport directly. Verified Code runs also use it through run-bound
+FileRefs as described below. Other mandate-backed background invocations of
+streaming operations fail before execution. Existing operations without streams
+retain their contracts.
+
+### Transfer a file from Code
+
+A read stream is offered in the generated Code SDK as `Promise<FileRef>`.
+For an import, declare a write stream and an ordinary input field
+`file: CapabilityFileMetadataSchema`, imported from `@k2b/cloud/contracts`.
+The schema contains optional `name`, `mediaType` and exact `size`. Core replaces
+the FileRef with that metadata before invoking the Action. Its `run` checks
+access and prepares a reservation of that size and media type; its `write`
+handler checks access again, consumes the whole body, validates and publishes
+it, then returns the final result. No app needs to know the source app.
+
+The SDK replaces this input field's type with `FileRef` and returns the write
+receipt's data only after transfer. Code cannot upload sandbox bytes through
+this path. Core bounds transfers at both providers and enforces the exact byte
+count with backpressure. Cancellation and the Code deadline stop the transfer;
+publication already committed by an app remains committed.
+
+References belong to one Code, version, run, generation and mandate, expire at
+the earlier provider/run-token deadline and are consumed once before target
+preparation. Failed attempts also spend them. Inspect the target's domain
+receipt before recovering with a fresh reference and the same business
+idempotency key. Current Code policy, mandate and provider access still apply.
+The ordinary HTTP stream endpoint cannot redeem these references.
+
+For mailbox-owned Code, replace `imports` with the destination app's discovered
+SDK namespace and `Tag123` with a real mailbox tag ID:
+
+Mail’s `message.read({ id, waitForHydration: true })` waits up to 30 seconds.
+Repeat the waiting read while content is pending, within the original run deadline
+and call budget. Terminal hydration returns `mail_message_hydration_failed`;
+retry hydration in Mail before running the handler again. The default read returns
+the current state immediately.
+
+<!-- code-file-example -->
+```ts
+import { app, mail, owner, imports } from "@sdk";
+
+const importedTagId = "Tag123";
+
+app.on("mail.message.received", async event => {
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
+  }
+  if (message.attachmentsTruncated) {
+    throw new Error("Message attachments are not ready or complete");
+  }
+  const attachment = message.attachments.find(item =>
+    ["application/pdf", "application/xml", "text/xml"].includes(item.contentType)
+  );
+  if (!attachment || !message.conversationId) return;
+
+  const file = await mail.attachment.content.read({ id: attachment.id });
+  await imports.import({
+    file,
+    idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
+  });
+  const { data: conversation } = await mail.conversation.read({ id: message.conversationId });
+  await owner.conversation.tag.update({
+    conversationId: message.conversationId,
+    expectedRevision: conversation.collaboration.revision,
+    addTagIds: [importedTagId],
+  });
+});
+export default app;
+```
+
+The Mail reader is `mail.attachment.content.read`, bounded to Mail's existing
+100 MiB attachment limit. It resolves current attachment access on issuance and
+again while reading the immutable blob. `attachment.read` remains metadata-only;
+`attachment.text.read` returns inline extracted Markdown pages in `data.markdown`,
+and `message.content.read` returns inline plain-text pages in `data.text`.
+Continue either text reader with `data.nextOffset`. The bytes never enter
+Code or its JSON bridge. See [Code SDK](/en/docs/platform/code-sdk#mail-invoices-to-an-app)
+for recovery and permissions.
+
+### Assistant code mode transfers
 
 Assistant code mode exposes `cloud.capabilities.streams.read/write/status/abort`.
 `read` returns a `File`, and `write` accepts a `Blob`, string, `ArrayBuffer` or
@@ -2390,3 +2771,19 @@ Stream read/write attempts have separate execution rows linked by the original
 request ID. They record direction, outcome and byte count without recording the
 content or stream reference. A read completes only when its body has been
 consumed; canceling it records an interrupted transfer.
+
+
+## Ask a decision model
+
+Core publishes `core.ai.decide` as an app-wide query. Gustav loads it from the
+capability catalog, `cld` invokes `capabilities query core ai.decide`, and Code
+uses its generated SDK through the existing bridge. No dedicated tool or
+binding is needed. Inputs, typed probabilities, caller accounting, limits and
+provider-dependent images are described in
+[Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).
+
+## Assistant context at a resource
+
+A Type can declare an `assistant` provider Query, allowed place Actions, and
+Skills for the person’s chat at that resource. See
+[Assistant at a place](/en/docs/ai/assistant-places) for the contract and limits.

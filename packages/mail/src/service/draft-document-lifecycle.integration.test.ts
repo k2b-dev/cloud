@@ -25,7 +25,6 @@ import { applyDraftTableAction } from "./draft-table-actions";
 import {
   createDeliveryRecoveryDraft,
   createDraft,
-  createWorkflowDraftInTransaction,
   deriveDraftFromMessage,
   discardDraft,
   getDraft,
@@ -231,7 +230,7 @@ suite("Mail document lifecycle boundaries", () => {
     }
   });
 
-  test("derived user drafts inherit shared while workflow authors retain lock editing", async () => {
+  test("derived user drafts inherit shared editing", async () => {
     const supported = spyOn(documentService, "sharedDraftsSupported").mockResolvedValue(true);
     try {
       value(await updateMailbox({ context, mailboxId, draftEditMode: "shared" }));
@@ -249,29 +248,9 @@ suite("Mail document lifecycle boundaries", () => {
         }),
       );
       expect(derived.editMode).toBe("shared");
-      await sql`UPDATE mail.sender_identities SET automation_policy='mailbox' WHERE id=${senderId}::uuid`;
-      const workflow = value(
-        await sql.begin((db) =>
-          createWorkflowDraftInTransaction({
-            db,
-            mailboxId,
-            senderIdentityId: senderId,
-            workflowVersionId: crypto.randomUUID(),
-            draftId: crypto.randomUUID(),
-            to: [{ address: "recipient@example.test" }],
-            cc: [],
-            bcc: [],
-            subject: "Workflow",
-            body: "Workflow body",
-            format: "plain",
-          }),
-        ),
-      );
-      expect(value(await getDraft(context, mailboxId, workflow.id)).editMode).toBe("lock");
     } finally {
       supported.mockRestore();
       value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
-      await sql`UPDATE mail.sender_identities SET automation_policy='disabled' WHERE id=${senderId}::uuid`;
     }
   });
 

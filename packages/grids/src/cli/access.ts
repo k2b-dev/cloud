@@ -103,7 +103,7 @@ export const accessCommands = [
       const resource = await resolveAccessResource(ctx, args.args);
       const permission = flags.permission as AccessPermission;
       assertAccessPermission(resource, permission);
-      const principal = await resolvePrincipalForAccess(ctx, flags);
+      const principal = await resolvePrincipalForAccess(ctx, flags, resource);
       assertAccessPrincipal(resource, principal);
       const created = await readApi<{ accessId: string }>(
         ctx,
@@ -151,7 +151,7 @@ export const accessCommands = [
         );
         return;
       }
-      const principal = await resolvePrincipalForAccess(ctx, flags);
+      const principal = await resolvePrincipalForAccess(ctx, flags, resource);
       assertAccessPrincipal(resource, principal);
       const entries = await readApi<AccessEntry[]>(ctx, accessResourcePath(resource));
       const existing = entries.find((entry) => principalKey(entry.principal) === principalKey(principal));
@@ -201,7 +201,7 @@ export const accessCommands = [
       const resource = await resolveAccessResource(ctx, args.args);
       let accessId = flags.accessId;
       if (!accessId) {
-        const principal = await resolvePrincipalForAccess(ctx, flags);
+        const principal = await resolvePrincipalForAccess(ctx, flags, resource);
         assertAccessPrincipal(resource, principal);
         const entries = await readApi<AccessEntry[]>(ctx, accessResourcePath(resource));
         const existing = entries.find((entry) => principalKey(entry.principal) === principalKey(principal));

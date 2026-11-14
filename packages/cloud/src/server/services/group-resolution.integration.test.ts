@@ -111,3 +111,26 @@ suite("authoritative local machine groups", () => {
     });
   }
 });
+
+suite("Code visitor group identities", () => {
+  for (const provider of ["local", "ipa"] as const) {
+    test(`${provider}: effective memberships preserve distinct Cloud IDs and group names`, async () => {
+      await sql.begin(async (db) => {
+        const userId = crypto.randomUUID();
+        const groupId = crypto.randomUUID();
+        const groupName = userId; // A name may look exactly like an identity ID.
+        try {
+          await db`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${userId}::uuid,${`visitor-${userId}`},${provider},'user')`;
+          await db`INSERT INTO auth.groups(id,cn,name,provider) VALUES(${groupId}::uuid,${groupName},${groupName},${provider})`;
+          await db`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${userId}::uuid,${groupId}::uuid)`;
+          expect(await getEffectiveGroups({ userId }, db)).toEqual([{ id: groupId, name: groupName }]);
+          expect(await getEffectiveGroupIds({ userId }, db)).toEqual([groupId]);
+        } finally {
+          await db`DELETE FROM auth.user_groups_v2 WHERE user_id=${userId}::uuid`;
+          await db`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+          await db`DELETE FROM auth.groups WHERE id=${groupId}::uuid`;
+        }
+      });
+    });
+  }
+});

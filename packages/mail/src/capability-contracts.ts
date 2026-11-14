@@ -1,4 +1,9 @@
-import { CapabilitySemanticLinkSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
+import {
+  CapabilityFileMetadataSchema,
+  CapabilitySemanticLinkSchema,
+  CloudResourceReaderViewSchema,
+  CloudResourceViewSchema,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
   completeConversationsSchema,
@@ -34,7 +39,6 @@ const TimestampSchema = z.string().datetime({ offset: true });
 const NullableTimestampSchema = TimestampSchema.nullable();
 const NullableTextSchema = z.string().nullable();
 const UuidSchema = z.uuid();
-const MailboxIdInputSchema = ResourceShortIdSchema.describe("Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref.");
 const ConversationIdInputSchema = ResourceShortIdSchema.describe(
   "Exact mail.conversation ID returned by a conversation list, search, focus result, or typed conversation ref.",
 );
@@ -110,6 +114,7 @@ const CapabilityMailSearchExpressionSchema: z.ZodType<MailSearchExpression> = z.
 
 export const MailboxDataSchema = z
   .object({
+    view: CloudResourceReaderViewSchema,
     id: ResourceShortIdSchema,
     name: z.string().min(1).max(160),
     description: z.string().max(2000).nullable(),
@@ -188,17 +193,26 @@ const resourceReadInputSchema = (type: string, source: string) =>
   z.object({ id: ResourceShortIdSchema.describe(`Exact ${type} ID returned by ${source} or a typed resource ref.`) }).strict();
 export const MailboxReadInputSchema = resourceReadInputSchema("mail.mailbox", "List mailboxes");
 export const ConversationReadInputSchema = resourceReadInputSchema("mail.conversation", "a conversation list, search, or focus result");
-export const MessageReadInputSchema = resourceReadInputSchema("mail.message", "List conversation messages or Search mail");
-export const MessageContentReadInputSchema = MessageReadInputSchema.extend({
-  offset: z.number().int().nonnegative().default(0).describe("UTF-8 byte offset; continue with nextOffset."),
-  length: z
-    .number()
-    .int()
-    .min(256)
-    .max(64 * 1024)
-    .default(16 * 1024)
-    .describe("Maximum UTF-8 bytes of plain text."),
-}).strict();
+export const MessageReadInputSchema = resourceReadInputSchema("mail.message", "List conversation messages or Search mail").extend({
+  waitForHydration: z
+    .boolean()
+    .optional()
+    .describe(
+      "Wait up to 30 seconds for message content. Repeat while pending within your original deadline. Terminal hydration failure returns MAIL_MESSAGE_HYDRATION_FAILED.",
+    ),
+});
+export const MessageContentReadInputSchema = MessageReadInputSchema.omit({ waitForHydration: true })
+  .extend({
+    offset: z.number().int().nonnegative().default(0).describe("UTF-8 byte offset; continue with nextOffset."),
+    length: z
+      .number()
+      .int()
+      .min(256)
+      .max(64 * 1024)
+      .default(16 * 1024)
+      .describe("Maximum UTF-8 bytes of plain text."),
+  })
+  .strict();
 export const MessageContentReadDataSchema = z
   .object({
     id: ResourceShortIdSchema,
@@ -265,7 +279,7 @@ export const SenderIdentityListDataSchema = z
       .strict(),
   )
   .max(100);
-export const SenderIdentityListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, ...VocabularyPageInputShape }).strict();
+export const SenderIdentityListInputSchema = z.object({ ...VocabularyPageInputShape }).strict();
 
 export const MailboxMemberDataSchema = z
   .object({
@@ -278,7 +292,6 @@ export const MailboxMemberDataSchema = z
 export const MailboxMemberListDataSchema = z.array(MailboxMemberDataSchema).max(100);
 export const MailboxMemberListInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     query: z.string().trim().max(500).optional().describe("Optional member name or user identifier search."),
     cursor: CursorSchema,
     limit: LimitSchema,
@@ -302,10 +315,9 @@ export const FolderDataSchema = z
   })
   .strict();
 export const FolderListDataSchema = z.array(FolderDataSchema).max(100);
-export const FolderListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, ...VocabularyPageInputShape }).strict();
+export const FolderListInputSchema = z.object({ ...VocabularyPageInputShape }).strict();
 export const FolderDisplaySetInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     folderId: ResourceShortIdSchema.describe("Folder ID returned by folder.list."),
     display: folderDisplaySchema.describe(
       "everywhere shows the folder's mail in All mail and the work views; folder_only keeps it inside the folder; hidden also hides the folder.",
@@ -340,7 +352,6 @@ export const ConversationDataSchema = compactResourceViewSchema("mail.conversati
 export const ConversationListDataSchema = z.array(ConversationDataSchema).max(100);
 export const ConversationListInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     folderId: ResourceShortIdSchema.nullable().optional().describe("Optional provider folder ID filter."),
     workStatus: z.enum(["needs_action", "waiting", "done"]).nullable().optional().describe("Optional collaboration work-status filter."),
     unread: z.boolean().nullable().optional().describe("Optional unread-state filter; true returns only conversations with unread mail."),
@@ -385,7 +396,6 @@ export const ConversationFocusInputSchema = z
 
 export const ConversationSearchInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     expression: CapabilityMailSearchExpressionSchema.describe("Structured, bounded mail search expression."),
     sort: z.enum(["relevance", "newest"]).default("relevance").describe("Result ordering."),
     cursor: CursorSchema,
@@ -409,7 +419,6 @@ export const ConversationSearchDataSchema = z.array(ConversationSearchItemDataSc
 
 export const ConversationRelatedInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema.describe("Conversation whose related Mail should be found."),
     limit: z.number().int().min(1).max(10).default(5).describe("Maximum number of related conversations to return."),
   })
@@ -438,7 +447,6 @@ export const ConversationRelatedDataSchema = z
 
 export const ConversationBySenderInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     email: z.email().max(320).describe("Exact sender From address."),
     excludeConversationId: ConversationIdInputSchema.optional().describe("Open conversation to leave out of the preview and total."),
     limit: z.number().int().min(1).max(5).default(5).describe("Maximum number of sender conversations to return, at most five."),
@@ -516,6 +524,8 @@ const HeaderDataSchema = z
     value: z.string().max(2048),
   })
   .strict();
+/** Provider-state snapshots accept at most 1,024 keywords; keep rule matching at that same bound. */
+export const MESSAGE_KEYWORD_LIMIT = 1024;
 export const MessageSummaryDataSchema = z
   .object({
     id: ResourceShortIdSchema,
@@ -531,7 +541,7 @@ export const MessageSummaryDataSchema = z
     addressesTruncated: z.boolean(),
     flags: z.array(z.string().max(128)).max(10),
     flagsTruncated: z.boolean(),
-    keywords: z.array(z.string().max(128)).max(10),
+    keywords: z.array(z.string().max(128)).max(MESSAGE_KEYWORD_LIMIT),
     keywordsTruncated: z.boolean(),
     hydrationStatus: z.string().min(1).max(100),
     remoteAvailable: z.boolean(),
@@ -558,7 +568,6 @@ export const MessageListItemDataSchema = compactResourceViewSchema("mail.message
 export const MessageListDataSchema = z.array(MessageListItemDataSchema).max(100);
 export const MessageListInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
     cursor: CursorSchema,
     limit: VocabularyLimitSchema,
@@ -730,10 +739,12 @@ export const DraftMutationDataSchema = z
       .describe("HTML in the Markdown body that email removes: unsupported elements, attributes such as class or style, and links."),
   })
   .strict();
-export const DraftListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, ...PageInputShape }).strict();
-export const DraftSendReviewInputSchema = z
-  .object({ mailboxId: MailboxIdInputSchema, draftId: DraftIdInputSchema, expectedRevision: ExpectedRevisionInputSchema })
-  .strict();
+export const DraftListInputSchema = z.object({ ...PageInputShape }).strict();
+export const DraftSendReviewInputSchema = z.object({ draftId: DraftIdInputSchema, expectedRevision: ExpectedRevisionInputSchema }).strict();
+/** Outcome checks retain their domain-only call shape, as required by Cloud's review contract. */
+export const DraftSendCheckInputSchema = DraftSendReviewInputSchema.extend({
+  mailboxId: ResourceShortIdSchema.describe("Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."),
+});
 export const DraftSendReviewDataSchema = draftSendReviewSchema;
 
 const InlineAttachmentInputSchema = z
@@ -749,7 +760,6 @@ const InlineAttachmentInputSchema = z
   .strict();
 export const DraftCreateInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     senderIdentityId: ResourceShortIdSchema.describe("Verified sender-identity ID."),
     signatureTemplateId: draftEditableContentInputSchema.shape.signatureTemplateId,
     quoteSource: draftEditableContentInputSchema.shape.quoteSource,
@@ -775,7 +785,6 @@ export const DraftCreateInputSchema = z
   .strict();
 export const DraftUpdateInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     draftId: DraftIdInputSchema,
     expectedRevision: ExpectedRevisionInputSchema,
     draft: draftEditableContentInputSchema.describe("Complete editable draft content replacing the current content."),
@@ -783,16 +792,14 @@ export const DraftUpdateInputSchema = z
   .strict();
 export const DraftSwitchIntentInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     draftId: DraftIdInputSchema,
     expectedRevision: ExpectedRevisionInputSchema,
     intent: z.enum(["reply", "reply_all", "forward"]).describe("Reply mode to derive from the source message, preserving body text."),
   })
   .strict();
-export const DraftAcknowledgeConsolidationInputSchema = z.object({ mailboxId: MailboxIdInputSchema, draftId: DraftIdInputSchema }).strict();
+export const DraftAcknowledgeConsolidationInputSchema = z.object({ draftId: DraftIdInputSchema }).strict();
 export const DraftPatchInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     draftId: DraftIdInputSchema,
     expectedRevision: ExpectedRevisionInputSchema,
     patch: z
@@ -822,20 +829,26 @@ export const DraftPatchInputSchema = z
       .describe("Fields to replace; omitted fields remain unchanged. Recipient arrays replace the entire list."),
   })
   .strict();
-export const DraftDiscardInputSchema = z
-  .object({ mailboxId: MailboxIdInputSchema, draftId: DraftIdInputSchema, expectedRevision: ExpectedRevisionInputSchema })
-  .strict();
+export const DraftDiscardInputSchema = z.object({ draftId: DraftIdInputSchema, expectedRevision: ExpectedRevisionInputSchema }).strict();
 export const DraftAttachmentAddInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     draftId: DraftIdInputSchema,
     expectedRevision: ExpectedRevisionInputSchema,
     attachment: InlineAttachmentInputSchema.describe("Attachment to add."),
   })
   .strict();
+export const DraftAttachmentImportInputSchema = z.strictObject({
+  draftId: DraftIdInputSchema,
+  expectedRevision: ExpectedRevisionInputSchema,
+  file: CapabilityFileMetadataSchema.describe("FileRef to attach to the draft; never sends the message."),
+});
+export const DraftAttachmentImportDataSchema = z.strictObject({
+  draftId: ResourceShortIdSchema,
+  uploadId: z.uuid(),
+  revision: z.number().int().positive().optional(),
+});
 export const DraftAttachmentRemoveInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     draftId: DraftIdInputSchema,
     attachmentId: ResourceShortIdSchema.describe("Draft attachment ID."),
     expectedRevision: ExpectedRevisionInputSchema,
@@ -843,7 +856,6 @@ export const DraftAttachmentRemoveInputSchema = z
   .strict();
 export const DraftSendInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     draftId: DraftIdInputSchema,
     expectedRevision: ExpectedRevisionInputSchema,
     expectedContentHash: z
@@ -896,10 +908,9 @@ export const DeliveryListDataSchema = z
       .strict(),
   )
   .max(100);
-export const DeliveryListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, ...PageInputShape }).strict();
+export const DeliveryListInputSchema = z.object({ ...PageInputShape }).strict();
 export const DeliveryCancelInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     deliveryId: ResourceShortIdSchema.describe("Scheduled-delivery ID."),
     disposition: z.enum(["draft", "discard"]).default("draft").describe("Whether cancellation restores or discards the draft."),
   })
@@ -917,7 +928,6 @@ const ConversationTargetSchema = z
   .strict();
 export const ConversationMarkInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     target: ConversationTargetSchema.describe("Conversation and its current provider folder."),
     read: z.boolean().optional().describe("Set true to mark read or false to mark unread."),
     answered: z.boolean().optional().describe("Set or clear the provider answered flag; requires target.messageId."),
@@ -938,7 +948,6 @@ export const ConversationMarkInputSchema = z
   );
 export const ConversationMoveInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     target: ConversationTargetSchema.describe("Conversation and its current provider folder."),
     destination: z
       .discriminatedUnion("kind", [
@@ -991,10 +1000,9 @@ export const TagListDataSchema = z
       .strict(),
   )
   .max(100);
-export const TagListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, ...VocabularyPageInputShape }).strict();
+export const TagListInputSchema = z.object({ ...VocabularyPageInputShape }).strict();
 export const ConversationTagUpdateInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
     expectedRevision: ExpectedRevisionInputSchema,
     addTagIds: z.array(ResourceShortIdSchema).max(100).default([]).describe("Tag IDs to add."),
@@ -1019,7 +1027,6 @@ export const TagMutationDataSchema = z
   .strict();
 export const TagCreateInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     name: z.string().trim().min(1).max(80).describe("Tag name."),
     color: z
       .string()
@@ -1029,7 +1036,6 @@ export const TagCreateInputSchema = z
   .strict();
 export const TagUpdateInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     tagId: ResourceShortIdSchema.describe("Tag ID."),
     expectedRevision: ExpectedRevisionInputSchema,
     name: z.string().trim().min(1).max(80).optional().describe("Replacement tag name."),
@@ -1043,7 +1049,6 @@ export const TagUpdateInputSchema = z
   .refine((value) => value.name !== undefined || value.color !== undefined, "At least one tag field is required");
 export const TagDeleteInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     tagId: ResourceShortIdSchema.describe("Tag ID."),
     expectedRevision: ExpectedRevisionInputSchema,
   })
@@ -1070,13 +1075,11 @@ export const CollaborationDataSchema = z
   })
   .strict();
 const CollaborationMutationBaseShape = {
-  mailboxId: MailboxIdInputSchema,
   conversationId: ConversationIdInputSchema,
   expectedRevision: ExpectedRevisionInputSchema,
 };
 export const ConversationAssignInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
     assigneeUserIds: z
       .array(UuidSchema)
@@ -1098,7 +1101,6 @@ export const ConversationAssignInputSchema = z
   .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one principal");
 export const ConversationAssignBatchInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationIds: z
       .array(ConversationIdInputSchema)
       .min(1)
@@ -1128,7 +1130,6 @@ export const ConversationAssignBatchDataSchema = z
   .strict();
 export const ConversationStatusSetBatchInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationIds: completeConversationsSchema.shape.conversationIds,
     status: z
       .enum(["done", "open", "waiting", "needs_action"])
@@ -1163,9 +1164,7 @@ export const ConversationStatusSetInputSchema = z
 export const ConversationStatusUpdateInputSchema = ConversationStatusSetInputSchema.extend({
   status: z.enum(["done", "open"]).describe("Mark the conversation done or reopen it."),
 });
-export const ConversationKeepInputSchema = z
-  .object({ mailboxId: MailboxIdInputSchema, conversationId: ConversationIdInputSchema })
-  .strict();
+export const ConversationKeepInputSchema = z.object({ conversationId: ConversationIdInputSchema }).strict();
 export const ConversationKeepReleaseInputSchema = ConversationKeepInputSchema.extend({
   reason: z.string().trim().max(500).optional().describe("Optional reason for lifting the keep, recorded in the audit trail."),
 });
@@ -1204,11 +1203,10 @@ export const ReminderDataSchema = z
     updatedAt: TimestampSchema,
   })
   .strict();
-export const ReminderGetInputSchema = z.object({ mailboxId: MailboxIdInputSchema, conversationId: ConversationIdInputSchema }).strict();
+export const ReminderGetInputSchema = z.object({ conversationId: ConversationIdInputSchema }).strict();
 export const ReminderGetDataSchema = ReminderDataSchema.nullable();
 export const ReminderSetInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
     dueAt: TimestampSchema.describe("Future time at which to notify the current user."),
     expectedRevision: z.number().int().positive().nullable().describe("Current reminder revision, or null when creating it."),
@@ -1216,7 +1214,6 @@ export const ReminderSetInputSchema = z
   .strict();
 export const ReminderCancelInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
     expectedRevision: ExpectedRevisionInputSchema,
   })
@@ -1269,7 +1266,6 @@ export const CommentMutationDataSchema = z
   .strict();
 export const CommentListInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
     order: z.enum(["oldest", "newest"]).default("oldest").describe("Comment ordering."),
     ...PageInputShape,
@@ -1277,7 +1273,6 @@ export const CommentListInputSchema = z
   .strict();
 export const CommentCreateInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
     body: z.string().trim().min(1).max(50_000).describe("Internal comment body."),
     referencedMessageId: ResourceShortIdSchema.nullable().optional().describe("Optional referenced message ID."),
@@ -1285,7 +1280,6 @@ export const CommentCreateInputSchema = z
   .strict();
 export const CommentUpdateInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
     commentId: ResourceShortIdSchema.describe("Comment ID."),
     expectedRevision: ExpectedRevisionInputSchema,
@@ -1294,7 +1288,6 @@ export const CommentUpdateInputSchema = z
   .strict();
 export const CommentDeleteInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
     commentId: ResourceShortIdSchema.describe("Comment ID."),
     expectedRevision: ExpectedRevisionInputSchema,
@@ -1326,7 +1319,6 @@ export const ActivityDataSchema = z
 export const ActivityListDataSchema = z.array(ActivityDataSchema).max(100);
 export const ActivityListInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema.optional().describe("Optional conversation ID filter."),
     ...PageInputShape,
   })
@@ -1371,18 +1363,16 @@ export const SubscriptionListDataSchema = z
   .max(100);
 export const SubscriptionListInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     cursor: CursorSchema,
     limit: z.number().int().min(1).max(25).default(10).describe("Maximum number of detected lists to return."),
   })
   .strict();
 export const SubscriptionGetInputSchema = z
-  .object({ mailboxId: MailboxIdInputSchema, listKey: z.string().trim().min(1).max(4096).describe("Stable detected mailing-list key.") })
+  .object({ listKey: z.string().trim().min(1).max(4096).describe("Stable detected mailing-list key.") })
   .strict();
 export const SubscriptionGetDataSchema = SubscriptionDataSchema.nullable();
 export const SubscriptionUnsubscribeInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     listKey: z.string().trim().min(1).max(4096).describe("Stable detected mailing-list key."),
     href: z.url().describe("Exact advertised one-click HTTPS unsubscribe URL."),
   })
@@ -1393,7 +1383,6 @@ export const SubscriptionUnsubscribeDataSchema = z
 
 export const ConversationSummaryWriteInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
     expectedRevision: ExpectedRevisionInputSchema,
     expectedSummaryRevision: ExpectedRevisionInputSchema.describe("Summary revision read before preparing the text."),
@@ -1415,7 +1404,6 @@ export const ConversationSummaryWriteDataSchema = z
   .strict();
 export const ConversationReferenceEnsureInputSchema = z
   .object({
-    mailboxId: MailboxIdInputSchema,
     conversationId: ConversationIdInputSchema,
   })
   .strict();

@@ -284,20 +284,6 @@ export const updateConversationSummaryInTransaction = async (params: {
   return allowed.ok ? applyConversationSummaryInTransaction(params) : allowed;
 };
 
-export const updateWorkflowConversationSummaryInTransaction = async (params: {
-  mailboxId: string;
-  workflowVersionId: string;
-  conversationId: string;
-  input: UpdateConversationSummary;
-  db: SqlClient;
-  activityMetadata?: Record<string, unknown>;
-}): Promise<Result<ConversationSummaryMutation>> =>
-  applyConversationSummaryInTransaction({
-    ...params,
-    context: null,
-    actorOverride: { kind: "workflow", workflowVersionId: params.workflowVersionId },
-  });
-
 export const updateConversationSummary = async (params: {
   context: MailRequestContext;
   mailboxId: string;

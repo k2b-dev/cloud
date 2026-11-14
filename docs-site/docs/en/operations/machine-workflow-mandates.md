@@ -5,7 +5,7 @@ description: Provision, pause, revoke and inspect automatic machine workflows.
 section: Operations
 order: 655
 tags: [identity, service-accounts, authorization]
-updated: 2026-10-23
+updated: 2026-11-01
 ---
 
 # Operate machine workflow mandates
@@ -34,3 +34,13 @@ needed for revocation.
 See [Machine workflow mandates](../identity/machine-workflow-mandates.md) for the
 permission contract. Purely human flows and resource-bound identities retain their
 separate contracts.
+
+## Code task automation
+
+Spaces task creation and updates declare an explicit `silent: "shared"`
+Action policy. This lets an approved Code version run those operations under
+its version mandate and the target's current access grant. It does not change
+chat's first confirmation or remembered Space scope. Calls that require their
+own confirmation, deletes, sends, and Actions with `unattended: false` remain
+blocked unattended. Deploy the updated Spaces declaration with the platform;
+legacy `approval: "rememberable"` alone does not admit a Code Action.

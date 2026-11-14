@@ -5,7 +5,7 @@ section: Operations
 order: 1226
 description: Configure a System One decision model and coordinate upgrades with older AI readers.
 tags: [operations, ai, models, migration]
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # Configure decision models
@@ -88,3 +88,18 @@ migration fails when restoring its narrower database CHECK constraints. Do
 not restart the new Core between cleanup and rollback: it recreates the empty
 assignment. Existing inference history can remain; its task and model metadata
 do not use the new catalog enums.
+
+
+## Enable decisions for Gustav and Code
+
+`core.ai.decide` makes the configured decision slot available through the normal
+capability catalog to Gustav, `cld` and Code. Model grants and AI allowances apply
+to the calling person or service account, including the Code service account.
+Resource- and app-owned Code service accounts need direct model grants and,
+when AI quotas are enabled, direct allowance grants. They do not inherit the
+authenticated-person defaults. Personal Code uses the person’s existing grants.
+The Code checker marks these calls as AI; review the **KI** row in the
+[Code policy](/en/docs/operations/code-policy) before releasing versions that use
+them. There is no new setting, environment variable or decision-specific binding.
+The capability's 256 KiB request limit includes images; image processing remains
+provider- and model-dependent.

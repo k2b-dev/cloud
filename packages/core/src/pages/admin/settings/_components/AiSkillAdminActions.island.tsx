@@ -101,6 +101,7 @@ const openPermissionDialog = async (props: Props, locale: string, signal: AbortS
     subtitle: t.skillAccessSubtitle,
     initialEntries,
     allowPublic: false,
+    target: { type: "core.ai.skill", id: props.skillId },
     signal,
     extraSections: <SkillProjects context={projects} retry={loadProjects} t={t} />,
     grantAccess: async (principal, permission) => {

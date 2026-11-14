@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
-import { ok } from "@k2b/stdlib";
+import { err, fail, ok } from "@k2b/stdlib";
 import { pulseCapabilities } from "./capabilities";
 import {
   BaseListDataSchema,
@@ -11,6 +11,7 @@ import {
   IngestWriteInputSchema,
   SourceReadInputSchema,
 } from "./capability-contracts";
+import { dashboards } from "./service/dashboards";
 import { savedQueries } from "./service/saved-queries";
 import { adminFixtureIdentity } from "./store/admin-identity.test-fixture";
 import { fixturePolicy } from "./store/base-store.test-fixture";
@@ -60,7 +61,6 @@ test("declares SQL and saved query capabilities with base and source readers", (
   }
   expect(
     pulseCapabilities.actions["source.create"].input.safeParse({
-      baseId: "Base01",
       kind: "http_ingest",
       name: "Web",
       bearerToken: "FORBIDDEN",
@@ -113,13 +113,14 @@ test("delete capability returns its declared receipt when the service returns no
     user: null,
     locale: "en",
     requestId: "pulse-delete-receipt-test",
+    target: { type: "pulse.base", id: "Base01" },
     origin: "http",
     signal: new AbortController().signal,
     idempotencyKey: "delete-receipt-test",
   };
   try {
     const action = pulseCapabilities.actions["saved_query.delete"];
-    const result = await action.run({ baseId: "Base01", queryId: "Query1", expectedRevision: 1 }, context);
+    const result = await action.run({ queryId: "Query1", expectedRevision: 1 }, context);
     expect(result).toEqual({ ok: true, data: { data: { deleted: true } } });
     if (!result.ok) throw new Error("DELETE_FAILED");
     expect(action.data.safeParse(result.data.data).success).toBe(true);
@@ -142,7 +143,7 @@ test("agent writes have bounded inputs and destructive base actions always ask",
     expect(pulseCapabilities.actions[key].destructive).toBe(false);
     expect(pulseCapabilities.actions[key].openWorld).toBe(false);
   }
-  const input = { baseId: "Base01", sourceId: "Source", expectedRevision: 1, batch: { events: [{ kind: "page_view" }] } };
+  const input = { sourceId: "Source", expectedRevision: 1, batch: { events: [{ kind: "page_view" }] } };
   expect(IngestWriteInputSchema.safeParse(input).success).toBe(true);
   const tooLarge = {
     ...input,
@@ -157,7 +158,6 @@ test("agent writes have bounded inputs and destructive base actions always ask",
 
 test("ingest.write accepts exactly 192 KiB and rejects one additional byte", () => {
   const input = {
-    baseId: "Base01",
     sourceId: "Source",
     expectedRevision: 1,
     batch: { events: Array.from({ length: 4 }, () => ({ kind: "page_view", payload: { text: "" } })) },
@@ -170,4 +170,77 @@ test("ingest.write accepts exactly 192 KiB and rejects one additional byte", () 
   expect(IngestWriteInputSchema.safeParse(input).success).toBe(true);
   input.batch.events[0]!.payload.text += "x";
   expect(IngestWriteInputSchema.safeParse(input).success).toBe(false);
+});
+
+test("Pulse actions name the base once and retain subordinate IDs", () => {
+  const manifest = compileCapabilityManifest("pulse", pulseCapabilities);
+  for (const action of manifest.actions) {
+    expect(action.target).toBe(action.localId === "base.create" ? undefined : "base");
+    expect(action.inputSchema.properties).not.toHaveProperty("baseId");
+  }
+  const source = manifest.actions.find((action) => action.localId === "source.update")!;
+  expect(source.inputSchema.properties).toHaveProperty("sourceId");
+});
+
+test("saved-query actions reject UUID Base targets instead of giving one Base two target identities", async () => {
+  const context: CapabilityExecutionContext = {
+    ...adminFixtureIdentity(),
+    user: null,
+    locale: "en",
+    requestId: "pulse-target-identity",
+    target: { type: "pulse.base", id: "11111111-1111-4111-8111-111111111111" },
+    origin: "http",
+    signal: new AbortController().signal,
+    idempotencyKey: "target-identity",
+  };
+  const action = pulseCapabilities.actions["saved_query.delete"];
+  const input = { queryId: "Query1", expectedRevision: 1 };
+  expect(await action.review(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  expect(await action.run(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+});
+
+test("dashboard mutations take the Base from the capability target", async () => {
+  const context: CapabilityExecutionContext = {
+    ...adminFixtureIdentity(),
+    user: null,
+    locale: "en",
+    requestId: "dashboard-target-test",
+    target: { type: "pulse.base", id: "Base01" },
+    origin: "http",
+    signal: new AbortController().signal,
+    idempotencyKey: "dashboard-target-test",
+  };
+  const definition = { panels: [] };
+  const draft = { name: "Dashboard", definition };
+  const revision = { dashboardId: "Dash01", expectedRevision: 1 };
+  const publication = { ...revision, columns: { visits: ["visits"] } };
+  const save = spyOn(dashboards, "save").mockResolvedValue(fail(err.conflict("Fixture")));
+  const publish = spyOn(dashboards, "publish").mockResolvedValue(fail(err.conflict("Fixture")));
+  const remove = spyOn(dashboards, "remove").mockResolvedValue(fail(err.conflict("Fixture")));
+  try {
+    const actions = pulseCapabilities.actions;
+    for (const [action, input] of [
+      [actions["dashboard.save"], draft],
+      [actions["dashboard.publish"], publication],
+      [actions["dashboard.unpublish"], revision],
+      [actions["dashboard.delete"], revision],
+    ] as const) {
+      expect(action.target).toBe("base");
+      expect(action.input.safeParse(input).success).toBeTrue();
+      expect(action.input.safeParse({ ...input, baseId: "Other1" }).success).toBeFalse();
+    }
+    await actions["dashboard.save"].run(draft, context);
+    await actions["dashboard.publish"].run(publication, context);
+    await actions["dashboard.unpublish"].run(revision, context);
+    await actions["dashboard.delete"].run(revision, context);
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ baseId: "Base01", ...draft }));
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ baseId: "Base01", ...publication }));
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenNthCalledWith(1, expect.objectContaining({ baseId: "Base01", ...revision, unpublish: true }));
+    expect(remove).toHaveBeenNthCalledWith(2, expect.objectContaining({ baseId: "Base01", ...revision }));
+  } finally {
+    save.mockRestore();
+    publish.mockRestore();
+    remove.mockRestore();
+  }
 });

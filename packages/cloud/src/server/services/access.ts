@@ -1,5 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SQLQuery } from "bun";
+import { HTTPException } from "hono/http-exception";
 import { type ManagerCandidate, removesLastManager } from "../../access/managers";
 import { accessMessages } from "../../access/messages";
 import { sql } from "../../runtime/clients";
@@ -7,6 +8,7 @@ import { recursiveGroupIdsSubquery, recursiveServiceAccountGroupIdsSubquery } fr
 import { toPgUuidArray } from "../../services/postgres";
 import type { ServiceAccountKind } from "../../services/service-accounts";
 import type { RequestAuthority } from "../middleware/auth";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../request-timeout";
 
 export type AccessDb = typeof sql;
 
@@ -73,6 +75,9 @@ export type AccessEntry = {
   displayName?: string;
   avatarHash?: string | null;
   serviceAccountKind?: ServiceAccountKind;
+  serviceAccountHandle?: string;
+  serviceAccountDescription?: string;
+  serviceAccountHref?: string;
 };
 
 export type AccessUserSource =
@@ -189,11 +194,14 @@ export const createAccess = async (
     }
   } else if (principal.type === "service_account") {
     serviceAccountId = principal.serviceAccountId;
-    const [serviceAccount] = await db<{ id: string }[]>`
-      SELECT id FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid AND status = 'active'
+    const [serviceAccount] = await db<{ id: string; kind: ServiceAccountKind }[]>`
+      SELECT id, kind FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid AND status = 'active' FOR SHARE
     `;
     if (!serviceAccount) {
       return fail(err.notFound("Service account"));
+    }
+    if (serviceAccount.kind === "code" && permission === "admin") {
+      return fail(err.badInput("Code accounts cannot receive manage access"));
     }
   } else if (principal.type === "authenticated") {
     authenticatedOnly = true;
@@ -229,6 +237,12 @@ export const getAccess = async (params: { id: string }, db: AccessDb = sql): Pro
  * Update an access entry's permission level.
  */
 export const updateAccess = async (params: { id: string; permission: PermissionLevel }, db: AccessDb = sql): Promise<Result<void>> => {
+  if (params.permission === "admin") {
+    const [account] = await db`SELECT account.id FROM auth.service_accounts account
+      JOIN auth.access entry ON entry.service_account_id = account.id
+      WHERE entry.id = ${params.id}::uuid AND account.kind = 'code' FOR SHARE OF account`;
+    if (account) return fail(err.badInput("Code accounts cannot receive manage access"));
+  }
   const result = await db`
     UPDATE auth.access
     SET permission = ${params.permission}::auth.permission_level
@@ -240,6 +254,130 @@ export const updateAccess = async (params: { id: string; permission: PermissionL
   }
 
   return ok();
+};
+
+// Leave half the ordinary request budget for authorization, the mutation and its response.
+const ACCESS_DIRECTORY_LOCK_TIMEOUT_MS = (REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2;
+
+const ACCESS_DIRECTORY_TABLES = [
+  "auth.groups",
+  "auth.group_groups_v2",
+  "auth.user_groups_v2",
+  "auth.service_account_groups",
+  "auth.ipa_user_effective_groups",
+  "settings.entries",
+] as const;
+
+/** Acquire the whole authority set without retaining partial locks while waiting on a writer. */
+const lockAccessDirectory = async (db: AccessDb): Promise<void> => {
+  const [settings] = await db<{ timeout: number; isolation: string }[]>`SELECT setting::int AS timeout,
+    current_setting('transaction_isolation') AS isolation FROM pg_settings WHERE name = 'statement_timeout'`;
+  if (!settings || settings.isolation !== "read committed") throw new Error("Access mutations require a READ COMMITTED transaction");
+  const deadline = performance.now() + Math.min(settings.timeout || ACCESS_DIRECTORY_LOCK_TIMEOUT_MS, ACCESS_DIRECTORY_LOCK_TIMEOUT_MS);
+  for (;;) {
+    if (performance.now() >= deadline) throw new AccessMutationBusyError();
+    let blockedTable: (typeof ACCESS_DIRECTORY_TABLES)[number] = ACCESS_DIRECTORY_TABLES[0];
+    await db`SAVEPOINT access_mutation_directory`;
+    try {
+      for (const table of ACCESS_DIRECTORY_TABLES) {
+        blockedTable = table;
+        // Identifiers come exclusively from the platform's constant table list.
+        await db.unsafe(`LOCK TABLE ${table} IN SHARE MODE NOWAIT`);
+      }
+      await db`RELEASE SAVEPOINT access_mutation_directory`;
+      return;
+    } catch (error) {
+      // IPA sync/provider transitions touch these tables in different orders.
+      // Release every partial lock before waiting, so that writer can finish.
+      await db`ROLLBACK TO SAVEPOINT access_mutation_directory`;
+      await db`RELEASE SAVEPOINT access_mutation_directory`;
+      if (!(error && typeof error === "object" && "errno" in error && error.errno === "55P03")) throw error;
+    }
+    const remaining = Math.ceil(deadline - performance.now());
+    if (remaining <= 0) throw new AccessMutationBusyError();
+    await db`SAVEPOINT access_mutation_directory_wait`;
+    try {
+      await db`SELECT set_config('statement_timeout', ${String(remaining)}, true)`;
+      // SHARE conflicts with autovacuum/ANALYZE as well as directory writes.
+      // Wait on this table alone, release it, then attempt the complete set.
+      await db.unsafe(`LOCK TABLE ${blockedTable} IN SHARE MODE`);
+    } catch (error) {
+      if (error && typeof error === "object" && "errno" in error && error.errno === "57014") throw new AccessMutationBusyError();
+      throw error;
+    } finally {
+      // This releases the wait lock and restores the caller's statement timeout.
+      await db`ROLLBACK TO SAVEPOINT access_mutation_directory_wait`;
+      await db`RELEASE SAVEPOINT access_mutation_directory_wait`;
+    }
+  }
+};
+
+/** Identity contention or an exhausted directory wait; retry the complete grant transaction. */
+export class AccessMutationBusyError extends HTTPException {
+  readonly code = "CONFLICT";
+  readonly retryable = true;
+
+  constructor() {
+    const message = "Access permissions are being updated. Try again.";
+    super(409, { message, res: Response.json({ code: "CONFLICT", message, retryable: true }, { status: 409 }) });
+    this.name = "AccessMutationBusyError";
+  }
+}
+
+/**
+ * Retain the live account and directory authority for a normal grant mutation.
+ * Call inside the write transaction BEFORE locking the target; then lock the
+ * target with the same lock every grant/ownership mutation uses and recheck the
+ * manager's effective permission on this connection. This helper grants nothing.
+ * `subject: null` is reserved for trusted initialization/recovery, not requests.
+ * Pass the recipient principal on create or accessId on update/delete so account
+ * deletion cannot invert the account -> target lock order through an FK cascade.
+ * Use READ COMMITTED. Wait for directory maintenance before taking identity locks, within half the
+ * ordinary request budget (or the caller's shorter timeout). Identity row
+ * contention still aborts immediately to avoid account-deletion cascade inversions.
+ */
+export const lockAccessMutationAuthority = async (
+  params: { subject: AccessSubject | null; principal?: Principal; accessId?: string | SQLQuery },
+  db: AccessDb,
+): Promise<boolean> => {
+  try {
+    await lockAccessDirectory(db);
+
+    const { subject, principal, accessId } = params;
+    const [entry] = accessId
+      ? await db<
+          { service_account_id: string | null; user_id: string | null }[]
+        >`SELECT service_account_id, user_id FROM auth.access WHERE id = ${accessId}::uuid`
+      : [];
+    const accountIds = uniqueIds([
+      subject?.type === "service_account" ? subject.serviceAccountId : (subject?.delegatedByServiceAccountId ?? ""),
+      principal?.type === "service_account" ? principal.serviceAccountId : (entry?.service_account_id ?? ""),
+    ]);
+    const accounts = accountIds.length
+      ? await db<
+          { id: string; status: string; delegated_user_id: string | null }[]
+        >`SELECT id, status, delegated_user_id FROM auth.service_accounts
+          WHERE id = ANY(${toPgUuidArray(accountIds)}::uuid[]) ORDER BY id FOR SHARE NOWAIT`
+      : [];
+    const subjectAccountId = subject?.type === "service_account" ? subject.serviceAccountId : subject?.delegatedByServiceAccountId;
+    if (subjectAccountId && !accounts.some((account) => account.id === subjectAccountId && account.status === "active")) return false;
+    const userIds = uniqueIds([
+      subject?.type === "user" ? subject.userId : "",
+      principal?.type === "user" ? principal.userId : (entry?.user_id ?? ""),
+      ...accounts.flatMap((account) => (account.delegated_user_id ? [account.delegated_user_id] : [])),
+    ]);
+    const people = userIds.length
+      ? await db<
+          { id: string; active: boolean }[]
+        >`SELECT id, (account_expires IS NULL OR account_expires > statement_timestamp()) AS active
+          FROM auth.users WHERE id = ANY(${toPgUuidArray(userIds)}::uuid[]) ORDER BY id FOR SHARE NOWAIT`
+      : [];
+    if (subject?.type === "user" && !people.some((person) => person.id === subject.userId && person.active)) return false;
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && "errno" in error && error.errno === "55P03") throw new AccessMutationBusyError();
+    throw error;
+  }
 };
 
 /**
@@ -341,29 +479,33 @@ export type ResourceAccessAdapter<TResourceId = string> = {
  * Resource binding, credential scopes, and permission precedence remain the
  * responsibility of the app using the predicate.
  */
-export const buildAccessPrincipalTierConditions = (params: {
-  subject: AccessSubject | null;
+const principalTierConditions = (params: {
+  userId: string | SQLQuery | null;
+  serviceAccountId: string | SQLQuery | null;
+  authenticated: boolean | SQLQuery;
   columns: AccessPrincipalColumns;
 }): AccessPrincipalTierConditions => {
-  const userId = params.subject?.type === "user" ? params.subject.userId : null;
-  const serviceAccountId = params.subject?.type === "service_account" ? params.subject.serviceAccountId : null;
-  const authenticated = params.subject?.type === "user";
-  const columns = params.columns;
-
+  const { userId, serviceAccountId, authenticated, columns } = params;
+  // One rule for ordinary resolvers and batched access.readable checks. Read the
+  // persisted kind, never a caller-provided kind or optional opt-in flag.
+  const inherits =
+    serviceAccountId === null
+      ? sql`TRUE`
+      : sql`NOT EXISTS (
+    SELECT 1 FROM auth.service_accounts code_account
+    WHERE code_account.id = ${serviceAccountId}::uuid AND code_account.kind = 'code'
+  )`;
+  // A known user or anonymous subject does not need machine-membership tables.
+  // Batched readers pass SQL expressions, so both membership branches remain.
+  const userGroups = userId === null ? sql`FALSE` : sql`${columns.groupId} IN (${recursiveGroupIdsSubquery(userId)})`;
+  const serviceAccountGroups =
+    serviceAccountId === null ? sql`FALSE` : sql`${columns.groupId} IN (${recursiveServiceAccountGroupIdsSubquery(serviceAccountId)})`;
   return {
     serviceAccount: sql`${columns.serviceAccountId} = ${serviceAccountId}::uuid`,
-    user: sql`${columns.userId} = ${userId}::uuid`,
-    group: sql`(
-      ${columns.groupId} IN (${
-        userId
-          ? recursiveGroupIdsSubquery(userId)
-          : serviceAccountId
-            ? recursiveServiceAccountGroupIdsSubquery(serviceAccountId)
-            : sql`SELECT NULL::uuid WHERE FALSE`
-      })
-    )`,
-    authenticated: sql`${authenticated} AND ${columns.authenticatedOnly} = true`,
-    public: sql`(
+    user: sql`${inherits} AND ${columns.userId} = ${userId}::uuid`,
+    group: sql`${inherits} AND (${userGroups} OR ${serviceAccountGroups})`,
+    authenticated: sql`${inherits} AND ${authenticated} AND ${columns.authenticatedOnly} = true`,
+    public: sql`${inherits} AND (
       ${columns.userId} IS NULL
       AND ${columns.groupId} IS NULL
       AND ${columns.serviceAccountId} IS NULL
@@ -372,10 +514,24 @@ export const buildAccessPrincipalTierConditions = (params: {
   };
 };
 
+export const buildAccessPrincipalTierConditions = (params: {
+  subject: AccessSubject | null;
+  columns: AccessPrincipalColumns;
+}): AccessPrincipalTierConditions =>
+  principalTierConditions({
+    userId: params.subject?.type === "user" ? params.subject.userId : null,
+    serviceAccountId: params.subject?.type === "service_account" ? params.subject.serviceAccountId : null,
+    authenticated: params.subject?.type === "user",
+    columns: params.columns,
+  });
+
+const anyPrincipalTier = (tiers: AccessPrincipalTierConditions): SQLQuery =>
+  sql`(${tiers.serviceAccount} OR ${tiers.user} OR ${tiers.group} OR ${tiers.authenticated} OR ${tiers.public})`;
+
 /** Build one predicate that matches every principal tier for the subject. */
 export const buildAccessPrincipalCondition = (params: { subject: AccessSubject | null; columns: AccessPrincipalColumns }): SQLQuery => {
   const tiers = buildAccessPrincipalTierConditions(params);
-  return sql`(${tiers.serviceAccount} OR ${tiers.user} OR ${tiers.group} OR ${tiers.authenticated} OR ${tiers.public})`;
+  return anyPrincipalTier(tiers);
 };
 
 /**
@@ -385,6 +541,7 @@ export const buildAccessPrincipalCondition = (params: { subject: AccessSubject |
  * - Direct and nested group memberships for users and active standalone/agent accounts
  * - Authenticated access for people, including guests
  * - Public access for every subject, including anonymous callers
+ * Code accounts match only their own direct entry in every resolver and reader.
  *
  * Pass the transaction that locked the resource as `db` to authorize a change
  * against the grants it writes.
@@ -508,20 +665,25 @@ export const getEffectivePermissions = async (
   if (Array.isArray(accessIds) && accessIds.length === 0) return subjects.map(() => "none");
   const userIds = subjects.map((subject) => (subject.type === "user" ? subject.userId : null));
   const serviceAccountIds = subjects.map((subject) => (subject.type === "service_account" ? subject.serviceAccountId : null));
-  // The tiers of buildAccessPrincipalTierConditions, evaluated per row of `s`.
+  const principalMatch = anyPrincipalTier(
+    principalTierConditions({
+      userId: sql`s.user_id`,
+      serviceAccountId: sql`s.service_account_id`,
+      authenticated: sql`s.user_id IS NOT NULL`,
+      columns: {
+        userId: sql`a.user_id`,
+        groupId: sql`a.group_id`,
+        serviceAccountId: sql`a.service_account_id`,
+        authenticatedOnly: sql`a.authenticated_only`,
+      },
+    }),
+  );
   const rows = await db<{ position: number; permission: PermissionLevel | null }[]>`
     SELECT s.position::int AS position, (
       SELECT a.permission
       FROM auth.access a
       WHERE ${Array.isArray(accessIds) ? sql`a.id = ANY(${toPgUuidArray(accessIds)}::uuid[])` : sql`a.id IN (${accessIds})`}
-        AND (
-          a.service_account_id = s.service_account_id
-          OR a.user_id = s.user_id
-          OR (s.user_id IS NOT NULL AND a.group_id IN (${recursiveGroupIdsSubquery(sql`s.user_id`)}))
-          OR (s.service_account_id IS NOT NULL AND a.group_id IN (${recursiveServiceAccountGroupIdsSubquery(sql`s.service_account_id`)}))
-          OR (s.user_id IS NOT NULL AND a.authenticated_only = true)
-          OR (a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL AND a.authenticated_only = false)
-        )
+        AND ${principalMatch}
       ORDER BY
         CASE a.permission
           WHEN 'admin' THEN 4
@@ -713,94 +875,4 @@ export const listUsersWithAccess = async (params: {
           groupName: row.source_group_name as string,
         },
   }));
-};
-
-/**
- * Resolve display names for access entries.
- * Missing principals and audiences have no displayName; render with principalLabel.
- * Includes serviceAccountKind for existing service-account principals.
- */
-export const resolveDisplayNames = async <T extends { principal: Principal }>(
-  entries: T[],
-): Promise<
-  (Omit<T, "displayName" | "avatarHash" | "serviceAccountKind"> & {
-    displayName?: string;
-    avatarHash?: string | null;
-    serviceAccountKind?: ServiceAccountKind;
-  })[]
-> => {
-  const userIds = entries.filter((e) => e.principal.type === "user").map((e) => (e.principal as { type: "user"; userId: string }).userId);
-
-  const groupIds = entries
-    .filter((e) => e.principal.type === "group")
-    .map((e) => (e.principal as { type: "group"; groupId: string }).groupId);
-
-  const serviceAccountIds = entries
-    .filter((e) => e.principal.type === "service_account")
-    .map((e) => (e.principal as { type: "service_account"; serviceAccountId: string }).serviceAccountId);
-
-  // Fetch user display names
-  const userNames = new Map<string, { displayName: string; avatarHash: string | null }>();
-  if (userIds.length > 0) {
-    const users = await sql<{ id: string; display_name: string; uid: string; avatar_hash: string | null }[]>`
-      SELECT id, display_name, uid, avatar_hash
-      FROM auth.users
-      WHERE id = ANY(${toPgUuidArray(userIds)}::uuid[])
-    `;
-    for (const u of users) {
-      userNames.set(u.id, { displayName: u.display_name || u.uid, avatarHash: u.avatar_hash });
-    }
-  }
-
-  const groupNames = new Map<string, string>();
-  if (groupIds.length > 0) {
-    const groups = await sql<{ id: string; name: string }[]>`
-      SELECT id, name
-      FROM auth.groups
-      WHERE id = ANY(${toPgUuidArray(groupIds)}::uuid[])
-    `;
-    for (const group of groups) {
-      groupNames.set(group.id, group.name);
-    }
-  }
-
-  const serviceAccountsById = new Map<string, { id: string; name: string; kind: ServiceAccountKind }>();
-  if (serviceAccountIds.length > 0) {
-    const serviceAccounts = await sql<{ id: string; name: string; kind: ServiceAccountKind }[]>`
-      SELECT id, name, kind
-      FROM auth.service_accounts
-      WHERE id = ANY(${toPgUuidArray(serviceAccountIds)}::uuid[])
-    `;
-    for (const serviceAccount of serviceAccounts) {
-      serviceAccountsById.set(serviceAccount.id, serviceAccount);
-    }
-  }
-
-  return entries.map((entry) => {
-    let displayName: string | undefined;
-    let avatarHash: string | null | undefined;
-    let serviceAccountKind: ServiceAccountKind | undefined;
-    switch (entry.principal.type) {
-      case "user": {
-        const user = userNames.get(entry.principal.userId);
-        displayName = user?.displayName;
-        avatarHash = user?.avatarHash ?? null;
-        break;
-      }
-      case "group":
-        displayName = groupNames.get(entry.principal.groupId);
-        break;
-      case "service_account": {
-        const serviceAccount = serviceAccountsById.get(entry.principal.serviceAccountId);
-        displayName = serviceAccount?.name;
-        serviceAccountKind = serviceAccount?.kind;
-        break;
-      }
-      case "authenticated":
-        break;
-      case "public":
-        break;
-    }
-    return { ...entry, displayName, avatarHash, serviceAccountKind };
-  });
 };

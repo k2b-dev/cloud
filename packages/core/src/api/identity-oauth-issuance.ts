@@ -2,7 +2,14 @@ import { timingSafeEqual } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import { authenticateSignedAppRequest } from "@k2b/cloud/api";
 import { env } from "@k2b/cloud/config";
-import { type AppApprovalConfig, AppApprovalError, isAccountAllowed, readAppApprovalConfig, toPgTextArray } from "@k2b/cloud/services";
+import {
+  type AppApprovalConfig,
+  AppApprovalError,
+  isAccountAllowed,
+  readAppApprovalConfig,
+  serviceAccountMayHoldCredentials,
+  toPgTextArray,
+} from "@k2b/cloud/services";
 import { recordLegacyAppUse } from "@k2b/cloud/services/app-migration-evidence";
 import { isAppRequestProof, withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
@@ -455,6 +462,7 @@ const validateAuthority = (requests: OAuthTokenRequest[], state: AuthorityState,
   if (first.kind === "service_access") {
     if (requests.length !== 1 || !state.serviceAccount || state.user) return false;
     const account = state.serviceAccount;
+    if (!serviceAccountMayHoldCredentials(account.kind)) return false;
     const resourceBound =
       account.kind === "resource_bound" && account.appId !== null && account.resourceType !== null && account.resourceId !== null;
     const standalone =

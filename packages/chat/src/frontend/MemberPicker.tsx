@@ -79,6 +79,7 @@ export default function MemberPicker(props: {
                 account.status === "active" &&
                 (account.kind === "standalone" ||
                   account.kind === "agent" ||
+                  account.kind === "code" ||
                   (account.kind === "resource_bound" &&
                     account.appId === "chat" &&
                     account.resourceType === "conversation" &&
@@ -129,7 +130,9 @@ export default function MemberPicker(props: {
                             ? t().standaloneAccount
                             : kind() === "resource_bound"
                               ? t().resourceAccount
-                              : t().delegatedAccount
+                              : kind() === "code"
+                                ? t().codeAccount
+                                : t().delegatedAccount
                       }
                     />
                   )}

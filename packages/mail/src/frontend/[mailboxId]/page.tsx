@@ -7,6 +7,7 @@ import { ssr } from "../../config";
 import { mailPageHelp } from "../../help";
 import { type MailRequestContext, mailboxAccess } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
+import { startMailboxCodeAttention } from "../../service/code-attention";
 import { requestContactDirectory } from "../../service/contact-directory";
 import { CountRefreshBusy } from "../../service/view-count-cache";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "../../service/workspace";
@@ -43,6 +44,8 @@ export default ssr<AuthContext>(async (c) => {
     const userPreferences = readMailUserPreferencesFromCookieHeader(cookieHeader, mailboxShortId);
     const themePreference = readThemePreferenceFromCookieHeader(cookieHeader);
     // The sidebar's mailboxes load beside the mailbox, so the page waits for neither one after the other.
+    // Started first and never awaited longer than the page's own data: a slow Core only loses the dot.
+    const codeAttention = startMailboxCodeAttention(c, mailboxShortId);
     const [internalData, spacesIntegration, sidebar, appUrl, liveDictation] = await Promise.all([
       loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
       getSpacesMailIntegrationAvailability(appAccessAuthority(c)),
@@ -51,7 +54,7 @@ export default ssr<AuthContext>(async (c) => {
       getLiveDictationStatus(c.get("accessSubject")),
     ]);
     if (!internalData.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, internalData.error.status));
-    const data = await projectMailboxPageData(internalData.data);
+    const data = { ...(await projectMailboxPageData(internalData.data)), codeAttention: await codeAttention.settle() };
     const dateConfig = getDateConfig(c);
 
     const directory = await requestContactDirectory(c);

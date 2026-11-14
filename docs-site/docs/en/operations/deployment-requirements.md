@@ -27,6 +27,35 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Code runner hosts
+
+Production Compose starts the Code runner service. Before starting it, install
+the matching Cloud release's AppArmor policy and seccomp file on every runner
+host. Core and runner versions must be upgraded together. See
+[runner host prerequisites](/en/docs/operations/code-runner) for the required
+Linux features, file paths and verification probe.
+
+## Check SDK names when upgrading applications
+
+The application runtime now rejects conflicting Code SDK exports or camelCase
+paths during capability registration. If startup reports an SDK name collision,
+choose a distinct `sdkExportName` or capability path in the app declaration and
+restart that application. Its previously accepted manifest remains available
+while earlier replicas still run and renew its registration.
+Upgrade all application runtimes to enforce this check across the installation;
+older runtimes still publish without it. Existing Code method names remain valid.
+
+## Wait for Mail during the Code upgrade
+
+Production Compose includes application readiness healthchecks for Core and
+Mail. During the coordinated Code upgrade, run the staged commands in
+[Upgrade to Code](/en/docs/operations/upgrade-to-code#4-upgrade): Core, then
+Mail with `--wait`, then the remaining services. Start Assistant only after
+Mail's readiness check succeeds, so Mail can refuse unresolved old sends
+before Studio cleanup begins. A running container alone is insufficient.
+Custom deployments must probe `/_cloud/ready` on Mail before starting
+Assistant; Compose does not enforce this order automatically.
+
 ## Applications start with a key file and Core address
 
 This release supplies a Compose template that gives ordinary apps only
@@ -196,20 +225,16 @@ workers do not understand these operators. Mail also adds reply text length,
 attachment count, bulk-message classification, and conversation message count
 for new run snapshots. No schema migration or new configuration is required.
 See [workflow conditions](/en/docs/automation/author-and-publish-workflows#compare-values-in-conditions)
-and Mail's workflow Help for the field semantics.
+for the field semantics.
 
-## Review Mail workflows that send automatically
+## Retire old Mail rules before upgrading
 
-Mail refuses automatic send effects in workflows containing AI actions or
-reading conversation summaries, which another AI workflow may have written.
-The rule covers the entire definition, including unused branches and AI actions
-after a send. It applies to existing versions, queued sends, and retries;
-blocked sends fail with `MAIL_WORKFLOW_SEND_REVIEW_REQUIRED` before SMTP.
-
-Replace generated replies with `createDraft` or `createReplyDraft` and have a
-person review and send the complete message. Fixed operator-approved reply
-templates in workflows without AI or summary reads keep working. Direct
-machine-token Mail permissions retain their documented authorization contract.
+Export definitions and back up run history before deploying the cut release.
+Stop old admission, timers and backfills, then drain or reconcile provider
+effects on the old release. Mail refuses startup while legacy effects remain
+unresolved. Automatic replies are removed without replacement. Rebuild supported
+rules as reviewed mailbox Code with Gustav; activation is explicit. Follow the
+[Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
 
 ## Size Mail for large messages
 
@@ -219,7 +244,7 @@ attachment from its size before it starts. Work waits in arrival order until it
 fits. A message or attachment larger than the budget runs alone. Mail never
 skips a message because of the budget. Large messages can take longer to
 appear, and the server answers pages and API requests while they wait. A body
-that a workflow or a person opens waits in the same order as background work,
+that Code or a person opens waits in the same order as background work,
 so it can take longer to load while large messages are processed.
 
 The budget comes on top of the process's own memory. A running Mail process
@@ -685,19 +710,27 @@ See [Identity key operations](/en/docs/operations/identity-key-operations) for
 signing-key rotation, KEK recovery and revocation. Keep these secrets independent;
 `APP_SECRET` is not a signing key or an OAuth broker credential.
 
-Managed Assistant code hosts serve every Assistant turn that runs code,
-including API clients, `cld assistant --detach`, and routines (scheduled tasks). They
-validate `CLOUD_CORE_INTERNAL_ORIGIN` when a host is created, before launching
-Chromium. It must be an HTTP(S) origin reachable
-from the Assistant service. Each host also uses an authenticated ephemeral
-loopback HTTP listener inside that service; allow local networking without
-publishing these ports. Binary bodies preserve backpressure across this hop.
-Eight simultaneous host requests per process are admitted; excess requests
-receive `operation_busy`. Size memory for the existing 50 MiB per-file and
-250 MiB per-run code budgets plus Chromium; streaming transport does not remove
-the memory occupied by files loaded for analysis. View files are ordinary chat
-files under `/views` and count toward the per-chat file budget; they need no
-configuration or migration.
+Managed chat `code_run`, including API clients and `cld assistant --detach`,
+executes on the Code runner pool. Deploy Core,
+Assistant and the runner together with the current schema. An unavailable or
+saturated runner produces a visible tool error; the Assistant never falls back
+to Chromium. Scheduled chat routines are retired, and Studio RSQL
+`database` grants are unavailable in runner chat scripts. Use application
+capabilities for data access.
+
+Lasting Code can use its own lazy database. Configure RSQL 1.1.0 through Core's
+`core.code.rsql_url`, secret `core.code.rsql_api_token` and
+`core.code.rsql_allowed_targets` settings. No environment variable is needed.
+`core.code.database_bytes` limits each Code's storage. Keep the original RSQL
+server reachable for execution and deletion; changing the URL does not migrate
+databases. Code without database calls continues to run without RSQL.
+
+Chat jobs share runner admission and execution budgets. Their fixed wall-clock
+budget includes queue and approval time; the JSON bridge also limits each file
+or capability transfer, including base64 overhead. See
+[One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs) for exact
+limits. View files remain ordinary chat files under `/views` and count toward
+the per-chat file budget.
 
 Notebooks PDF charts and browser print copies now use the eight-color UI
 palette, including violet for the fourth series. Notes share-image charts
@@ -706,56 +739,19 @@ different series colors; values, geometry and explicit semantic colors are
 unchanged. No configuration or data migration is required. Hosts that load
 the chart stylesheet retain their existing drawing markup.
 
-Assistant's `cloud.chart()` draws Studio app, chat app, script and PDF charts
-through the same options mapping as chat charts. Existing charts keep drawing:
-the chat's limits on series, points, labels and phone-width fit do not apply to
-apps, and empty, one-point or partly missing data still draws. Visible changes
-are a default logical width of 480 instead of 640 (height 280; sparkline remains
-160 × 40, and apps without explicit width redraw at their measured width), date
-axes in the viewer's wall-clock time, and stdlib-only options outside the chart
-contract, such as `padding`, being ignored. Renderer errors, such as a fixed
-domain that does not contain every value, now throw `invalid` instead of a plain
-error, and x strings must be ISO dates as documented. Chart groups and the
-additional chart kinds need no configuration or data migration. Studio and
-one-off HTML app charts show tooltips on hover, keyboard focus and tap without
-additional configuration. See
-[Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
+Assistant packages the runner prelude, worker and lazy CSV, sheet, finance and
+PDF-reader chunks. Preserve these outputs when packaging a custom image.
+`cloud.chart()` remains available for script-generated PDF markup, while native
+chat views use the shared chart renderer.
 
-App-frame builds include `assistant-chart-parts.json` alongside the prelude and
-base stylesheet. After the host becomes interactive, it prepares chart parts
-at low priority through the runtime or runner's `/chart-parts` endpoint, with
-the same origin and access policy as `/app-assets`. An early app start waits
-for that preparation, preserving first use offline. A frame receives only the
-kinds it draws plus one shared helper part over its existing host channel; renderer
-source is absent from srcdoc. The host verifies each part's SHA-256 before
-delivery, and the frame pins its parts to that build's hashes. No external
-origin, CSP exception or operator configuration is needed. Include the file
-when packaging Assistant outside its standard image. Scripts retain synchronous
-rendering for every kind.
+### Assistant execution host
 
-### Assistant Chromium isolation
+The Assistant image contains no Chromium or Playwright runtime. Chat scripts
+run on workerd in the Code runner; PDF generation uses Gotenberg. Keep one
+Assistant replica: host ownership and pending approvals live in that process,
+with durable records for deduplication. A call whose host is lost fails visibly
+and is never replayed.
 
-Assistant runs headless Chromium in its own container as the unprivileged
-`bun` user with `--no-sandbox`. Both Compose configurations set `user: bun`,
-drop all Linux capabilities and enable `no-new-privileges`; the container keeps
-the runtime-default seccomp profile. Chromium's inner sandbox stays off, so no
-custom seccomp profile, unprivileged user namespaces or node preparation is
-needed, and the service needs neither privileged mode, root, `SYS_ADMIN`, a
-Docker socket nor nested containers. Existing custom Assistant deployments must
-adopt these settings before using Code Mode. The equivalent Kubernetes
-`securityContext` is `runAsNonRoot: true` with a non-root `runAsUser`,
-`capabilities.drop: [ALL]`, `allowPrivilegeEscalation: false` and
-`seccompProfile.type: RuntimeDefault`.
-
-Each foreground chat host and scheduled turn has a separate browser process
-and ephemeral host credential. This is process isolation within one
-capability-free application container, not a separate VM per user; the
-residual risk of an unsandboxed renderer inside that container is accepted and
-tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
-Chromium into a dedicated sidecar. Keep one Assistant replica for now: Code
-Mode hosts and their approval waits live in the Assistant process, so a poll or
-an approval that reaches another replica marks the call lost. Lost hosts are not
-replayed. Studio previews continue running in the user's browser.
 
 ## Select applications and feature dependencies
 
@@ -802,7 +798,7 @@ or mutate real data without approval.
 | App ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
 | [Hosts](/en/apps/ipa-hosts) (`ipa-hosts`) | Baseline; starts the host-sync scheduler | Useful host data and mutations require FreeIPA and host/hostgroup privileges. With FreeIPA disabled, synchronization skips; enabling incomplete configuration causes sync failure. | Run a controlled sync and inspect mirrored hosts and its completion status. |
-| [Assistant](/en/apps/assistant) (`assistant`) | Baseline; can serve its UI with AI disabled | Core owns AI execution. Configure AI profiles and access, then optional Firecrawl/PDF tools. Studio PDF generation/embedding needs Gotenberg with Factur-X and request-directory isolation support (development uses 8.36.0); local Finance APIs and PDF text extraction need no Gotenberg. Resource databases additionally need `assistant.rsql_url` and the secret `assistant.rsql_api_token`, configured in Studio administration. Cross-app tools require their provider apps and current user permissions; the Assistant container does not need the OAuth broker secret. | Send a short test prompt, observe streamed output and durable history; test one permitted read-only tool. Run a database-free script. If databases are configured, explicitly connect a test resource and query it. |
+| [Assistant](/en/apps/assistant) (`assistant`) | Baseline; can serve its UI with AI disabled | Core owns AI execution. Configure AI profiles and access, then optional Firecrawl/PDF tools. Chat PDF generation/embedding needs Gotenberg with Factur-X and request-directory isolation support (development uses 8.36.0); local Finance APIs and PDF text extraction need no Gotenberg. Cross-app tools require their provider apps and current user permissions; the Assistant container does not need the OAuth broker secret. | Send a short test prompt, observe streamed output and durable history; test one permitted read-only tool. Run a database-free script. |
 | [Tools](/en/apps/tools) (`tools`) | Baseline | Browser utilities need no extra backend. Markdown-to-PDF and PDF page operations need Gotenberg; page operations require its PDF-engine and ExifTool metadata routes (8.36.0). Document extraction uses the native dependency bundled in the app image, not a separate Gotenberg conversion service. Speed tests need sufficient proxy/body/streaming limits; webhook delivery needs approved egress. | Open `/tools`; check a browser utility and, if enabled, convert a small document or Markdown PDF. |
 | [Quotes](/en/apps/quotes) (`quotes`) | Baseline | Fresh quotes require outbound HTTPS to `zenquotes.io`; no provider-key setting. This app has API/widget routes, not an `/app/quotes` page. | Read `/api/quotes` or its Dashboard widget and verify quote data. |
 | [Weather](/en/apps/weather) (`weather`) | Baseline; Core owns the weather schema migration | Forecasts need outbound HTTPS to `api.brightsky.dev`. City search additionally needs Core’s secret `geo.api_key` and available geo budget; optional `weather.default_lat` / `weather.default_lon` select a default location. | Search a German city and load its forecast; verify forecast and city-search dependencies separately. |
@@ -831,7 +827,7 @@ the Filegate 7.1.0 root and lease API; see [Files](/en/apps/filesv2) and the
 [Filegate upgrade procedure](#upgrade-filegate-to-710).
 
 Cloud refuses person- and administrator-chosen outbound requests from the Webhook Tester,
-workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, Notebook S3 snapshots, Notebook PDF external images, health webhooks, Geo city search, Assistant rsql, and outgoing mail SMTP and bounce IMAP connections to
+workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, Notebook S3 snapshots, Notebook PDF external images, health webhooks, Geo city search, Core Code RSQL, and outgoing mail SMTP and bounce IMAP connections to
 loopback, private, link-local, shared, and other reserved addresses, including
 names that resolve there. A failed DNS lookup also refuses the request. An
 address in the well-known NAT64 prefix `64:ff9b::/96` is judged by the IPv4
@@ -842,10 +838,11 @@ server.
 Administrators can allow internal administrator-configured endpoints with the settings
 `gateway.webhook_allowed_targets` owned by Gateway operations (default empty,
 public targets only),
-`assistant.rsql_allowed_targets` owned by Assistant (default `rsql`), and
+`core.code.rsql_allowed_targets` owned by Core (default `rsql`, for the
+Code database URL; edit under **Administration → Code → Limits**), and
 `outgoing_mail.allowed_targets` owned by the platform (default empty, covering both SMTP
 and bounce IMAP). Administrators edit them under **Observability → Health
-check**, in **Database settings** on the Studio administration page, and under
+check** and under
 **Base settings**. Each accepts exact host names, IP addresses and CIDRs.
 `host:port` and `[ipv6]:port` restrict a host or IP to one port (1–65535, no
 leading zeros); bare hosts, IPs and CIDRs still cover every port. CIDRs cannot
@@ -1219,6 +1216,16 @@ a healthy container alone does not prove that the caller can read a calendar.
 The aggregate reader has a 42-day view range, 100-calendar selection,
 60-call/six-concurrent-call budget, 4 MiB page budget, and caller deadline.
 
+### Enable Code access to Spaces
+
+Deploy Spaces with matching platform and Core versions that support
+[normal Code sharing](/en/docs/platform/capabilities#code-access-at-the-target).
+Spaces uses its existing access tables and live outbox. Verify View and Edit
+shares on a disposable Space, ordinary revocation, and refusal at another Space
+shared with all signed-in users. Code activation grants no target rights. See
+[Code activation recovery](/en/docs/operations/code-activation) for the journal
+migration and rollout constraints.
+
 ### Upgrade Spaces task writes
 
 Spaces creates `spaces.item_create_requests` on startup for actor-scoped,
@@ -1479,13 +1486,13 @@ interrupted build is replaced on the next start.
 ### Update Assistant approvals for chats and websites
 
 This release lets people remember an approval for one chat and allow a website
-for one chat or one Studio app. It needs no configuration change. The first
+for one chat. It needs no configuration change. The first
 Core start adds `conversation_id` to `ai.tool_approval_preferences`, replaces
 the unique constraint `ai_tool_approval_preferences_unique` with the index
 `ai_tool_approval_preferences_reach`, adds two columns to
 `ai.pending_actions`, and creates `ai.web_addresses` for the addresses a
 chat's searches returned and its read pages link to. Assistant adds two
-columns to `assistant.artifact_agent_approvals`. A chat approval and a chat's
+columns to `assistant.code_agent_approvals`. A chat approval and a chat's
 addresses are deleted with the chat, and an app's website approvals with the
 app.
 
@@ -1494,9 +1501,8 @@ Two behaviors change for people. More built-in Actions can be remembered, and
 chat did not supply, which means an address that is not in the person's
 message, a search result, or a link of a page read earlier. Search results and
 pages read before the update are not recorded, so reading one of their links
-in an existing chat asks once. A routine cannot ask, so a routine that
-reads such an address now fails with a message to run it in the normal chat;
-give it the address in its prompt instead.
+in an existing chat asks once. Scheduled chat routines are retired; see
+[Routines became Code](/en/docs/operations/routines-to-code).
 
 Roll Core and Assistant over together. Before rolling Core back to an earlier
 release, run the following in the Cloud database. An earlier Core expects the
@@ -1513,29 +1519,6 @@ After the rollout, ask Assistant in a chat to run code that reads one public
 JSON URL twice. The first request asks and offers
 **Allow this website for this chat**. After you choose it, the second request
 runs without asking and shows its full URL with **Revoke**.
-
-### Update Studio source writes
-
-`code_write` now saves one file per call with top-level `path` and `content`.
-File imports moved to the new `code_import` tool. Results report `lines` next to
-`length`. No configuration change or database migration is required. Stored
-source, revisions and chats are unchanged; older chat blocks keep their recorded
-arguments.
-
-Roll Core and Assistant over together. A mixed version rejects the other side's
-`code_write` input as invalid, and an older Assistant has no `code_import` route.
-Rollback is replacing both images; nothing needs undoing in the database. A turn
-running during the rollout may get one invalid-input error and then follows the
-new tool description.
-
-An app build now takes one tool round per source file instead of one round for
-all files. If a model profile sets a positive `maxToolRounds`, check that it
-still covers a typical multi-file build; otherwise the turn stops using tools
-earlier and answers with the files it saved so far.
-
-After rollout, ask Assistant to build a small app with `index.html` and `app.js`.
-The turn should show one `code_write` per file, no approval, and each result
-should list line counts that match the files.
 
 ### Store complete Action review content
 
@@ -1573,7 +1556,7 @@ the table `approvals.requests`, adds `approval_id` to `ai.pending_actions` and
 is still open a request. Assistant adds `approval_id` to
 `assistant.capability_calls`. Core deletes a request 90 days after it expired.
 
-Update Core before Assistant. Until Core has created the table, Studio code
+Update Core before Assistant. Until Core has created the table, Chat code
 that calls an Action which asks for approval fails. One behavior changes for
 people: when an Action's review changes between the question and the run, for
 example because a draft got another recipient, the chat asks again instead of
@@ -1878,72 +1861,21 @@ for new rows; the table files shrink only after `VACUUM FULL` or a similar
 rewrite. See
 [Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
-### Expire routine runs after 90 days
+### Retained routine archive
 
-This release expires finished routine runs after 90 days. It needs no
-configuration change. The first Core start adds the indexes
-`idx_ai_chat_task_occurrences_finished`, `idx_ai_chat_task_occurrences_turn`,
-and `idx_ai_turns_background_finished`.
-The latter uses a plain `CREATE INDEX` on `ai.turns`, briefly blocking writes
-to `ai.turns` while it builds; allow for a longer build on large installations.
-The routine recovery tick then
-deletes completed, failed and stopped runs older than 90 days, their background turns
-with tool calls, and their run transcripts (`ai.task_messages`) in batches of
-100 per minute. Queued and running runs, finished runs whose turns are still
-active, and chat result messages stay.
-The run row holding a one-off task's scheduled time stays, even after
-completion, until the task gets a new time or is deleted, so that time never
-runs twice; its turn and transcript expire on the same clock.
-The same start relaxes `ai_memory_learning_runs_evidence_check` so a workflow
-memory learning run keeps its evidence key when its source turn is deleted.
-Background turns and transcripts of runs whose task was deleted expire on the
-same 90-day clock, measured from when the turn finished.
-
-An installation with a large backlog drains it over time. PostgreSQL reuses
-the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
-See [Routine run history](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days).
+The routine scheduler and its 90-day pruning job are removed. Existing definitions,
+occurrences and run logs stay read-only, without live user/chat cascade deletion.
+Operators must include them in backup and retention procedures. Export definitions
+before upgrading; see [Routines became Code](/en/docs/operations/routines-to-code).
 
 ### Assistant approval choices
 
 **Always approve** is no longer offered on Assistant questions; choices made
 earlier still apply until the next major release.
 
-### Record why routines stop
+### Retired routine history
 
-This release gives every paused routine and every routine that needs its owner
-a reason. It needs no configuration change. The first Core start adds the
-columns `reason_code`, `reason_at`, `title`, and `locale` to `ai.chat_tasks`,
-fills the reason and locale of existing routines once, and adds the constraint
-`ai_chat_tasks_reason_state_check`. Adding the constraint locks
-`ai.chat_tasks` while it checks the existing rows.
-
-Earlier Core and Assistant processes write such states without a reason, which
-the constraint rejects. Stop them before the new Core starts instead of
-running both versions side by side. Before rolling Core back to an earlier
-release, run the following in the Cloud database:
-
-```sql
-ALTER TABLE ai.chat_tasks DROP CONSTRAINT IF EXISTS ai_chat_tasks_reason_state_check;
-```
-
-See [Routine names and stop reasons](/en/docs/ai/structured-and-background-ai#routine-names-and-stop-reasons).
-
-### Check the app's review before a routine changes anything
-
-Routines whose calls the app would ask about now stop with **Braucht dich** /
-**Needs you** instead of running. Before each Action with
-`approval: "rememberable"`, a routine asks the app's review. When the review
-gives no approval scope, fails, or is missing, the Action does not run, and
-the routine shows which Action needs the person. It needs no configuration
-change.
-
-The first Core start adds the column `reason_action` to `ai.chat_tasks` and the
-constraint `ai_chat_tasks_reason_action_length_check`, which only limits the
-action name to 200 characters. The change is backward-compatible: an earlier
-Core can run beside the new one and can be rolled back to without SQL. An
-earlier Core or Assistant still runs such Actions without the review, so
-finish the rollout of both before you rely on the stop. See
-[Routine Action reviews](/en/docs/ai/structured-and-background-ai#routine-action-reviews).
+Scheduled chat routines are retired. Export definitions before upgrading and keep an archive backup; see [Routines became Code](/en/docs/operations/routines-to-code).
 
 ### Approve OAuth sign-ins in Cloud Login
 
@@ -2424,18 +2356,6 @@ the other BM25 indexes exist; to stop using `pg_textsearch` entirely, follow
 [Return to native search](#return-to-native-search). See [Mail search in large mailboxes](/en/apps/mail#search-in-large-mailboxes)
 for how search bounds its work.
 
-### Studio HTML self-test runtime
-
-Assistant's existing Chromium host also runs `code_check`. Chromium launches
-with site isolation and isolated sandboxed iframes so an app loop cannot freeze
-the host. Only check mounts use the bundled inspection prelude with axe-core and
-its own pinned CSP hash; normal app mounts omit inspection code. No separate
-network asset or service is needed. Existing host admission and execution budgets
-apply, and each user holds at most 16 disposable check copies at a time. Disposable scopes are removed after checks; the service sweep reclaims
-scopes left by crashed hosts and queues unreachable database namespaces for deletion.
-See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
-for data-copy and output limits. No new configuration is required.
-
 ### Browser map images in PDF
 
 Map image exports reuse the browser's existing Cloud map and the isolated
@@ -2536,6 +2456,30 @@ claim tables in the same database backup. These captures and their issued
 artifacts remain domain evidence even when an automation is retired. Existing
 workflow documents keep their original bindings; this upgrade does not rewrite
 or remove their provenance.
+
+## Code-version role approvals
+
+Core adds the Code-version request kind and Cloud-admin recipient to the
+existing approvals table on startup. Existing Action requests, pending chat
+actions and remembered choices retain their data and recipient semantics.
+There is no separate Assistant migration for this change.
+
+Start the upgraded Core before a version service creates Code approval
+requests. Every Core process that handles decisions must install the version
+owner's transactional handler. A missing handler leaves the request pending
+and answers its decision with `503`; install the handler and retry. This does
+not block personal Action approvals. See
+[Code-version approvals](/en/docs/identity/approvals#code-version-approvals)
+for the service contract and device limits.
+
+## Code owner deletion
+
+Core must migrate the platform events outbox before applications use
+`codeOwnerDeleted`. Keep Core running to drain owner-deletion reports and
+durable Code account cleanup. Cleanup waits for the activation worker and
+owner reports to drain, then deletes the account and its normal shares through
+existing foreign keys. Failed deletion remains visible in the administrator
+cleanup read model. Do not erase pending jobs manually. See [Code lifecycle](/en/docs/platform/code-lifecycle).
 
 ## Collaboration room access events
 

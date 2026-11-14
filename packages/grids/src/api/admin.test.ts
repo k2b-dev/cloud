@@ -4,6 +4,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import type { MiddlewareHandler } from "hono";
 import { gridsService } from "../service";
 import { createAdminApi } from "./admin";
+import * as permissions from "./permissions";
 
 const baseId = "11111111-1111-4111-8111-111111111111";
 const basePublicId = "BASE01";
@@ -133,6 +134,7 @@ const jsonRequest = (method: "POST" | "PATCH", body: unknown): RequestInit => ({
 describe("Grids admin API", () => {
   beforeEach(() => {
     isPlatformAdmin = true;
+    spyOn(permissions, "gateAt").mockResolvedValue({ ok: true, data: "read" });
     failureStatus = "dead";
     baseGetCalls = 0;
     grantCalls = [];
@@ -169,6 +171,19 @@ describe("Grids admin API", () => {
   });
 
   afterEach(() => mock.restore());
+
+  for (const permission of ["none", "read", "admin"] as const) {
+    test(`administrative access lists retain the viewer's local ${permission} permission`, async () => {
+      spyOn(permissions, "gateAt").mockResolvedValue(
+        permission === "none"
+          ? { ok: false, error: { code: "FORBIDDEN", status: 403, message: "Access denied" } }
+          : { ok: true, data: permission },
+      );
+      const list = spyOn(gridsService.access, "listForBaseTree").mockResolvedValue([baseEntry, childEntry]);
+      expect((await app().request(`/bases/${basePublicId}/access`)).status).toBe(200);
+      expect(list).toHaveBeenCalledWith(baseId, permission);
+    });
+  }
 
   test("rejects non-platform-admin callers before reading base data", async () => {
     isPlatformAdmin = false;

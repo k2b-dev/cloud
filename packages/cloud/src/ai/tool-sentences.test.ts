@@ -5,7 +5,6 @@ import { cloudToolReview } from "./tool-sentences";
 
 const inputs = {
   code_run: { code: "export default () => 1" },
-  code_action: { id: "Ab3dEf", action: "send", publishedVersion: 1 },
   web_extract: { url: "https://example.com/page?private=value" },
   fetch_file: { url: "https://example.com/report.pdf" },
   write_file: { path: "/reports/report.txt", content: "Report" },
@@ -38,6 +37,9 @@ test("web tools keep the whole address in the preview and only the host in a pla
 });
 
 test("historical malformed inputs do not throw and long file names respect slot bounds", () => {
+  // Retired Studio actions keep their historical tool title, without a live per-call review.
+  for (const locale of ["de", "en"])
+    expect(cloudToolReview("code_action", { id: "Ab3dEf", action: "send", publishedVersion: 1 }, locale)).toBeNull();
   for (const name of Object.keys(inputs)) {
     for (const args of [null, [], 7]) expect(cloudToolReview(name, args, "en")).toBeNull();
   }

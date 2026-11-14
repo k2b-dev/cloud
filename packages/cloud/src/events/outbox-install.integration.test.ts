@@ -65,12 +65,12 @@ databaseSuite()("standalone app outbox installation", () => {
         { payload: { v: 1, k: "items", d: 2 } },
         { payload: { v: 1, k: "items", d: 3 } },
       ]);
-      await db`SELECT events.enqueue('00000000-0000-4000-8000-000000000001'::uuid, 'inventory', 'live', 'large', ${JSON.stringify({ v: 1, k: "large", d: "x".repeat(40_000) })}::jsonb)`;
+      await db`SELECT events.enqueue('00000000-0000-4000-8000-000000000001'::uuid, 'inventory', 'live', 'large', ${JSON.stringify({ v: 1, k: "large", d: "x".repeat(40_000) })}::text::jsonb)`;
       expect(await db<{ payload: unknown }[]>`SELECT payload FROM events.outbox WHERE ordering_key = 'large'`).toEqual([
         { payload: { v: 1, k: "large", r: true } },
       ]);
       await expect(
-        db`SELECT events.enqueue('00000000-0000-4000-8000-000000000002'::uuid, 'inventory', 'event', 'large', ${JSON.stringify({ d: "x".repeat(5000) })}::jsonb)`.execute(),
+        db`SELECT events.enqueue('00000000-0000-4000-8000-000000000002'::uuid, 'inventory', 'event', 'large', ${JSON.stringify({ d: "x".repeat(5000) })}::text::jsonb)`.execute(),
       ).rejects.toThrow();
       await expect(
         db`SELECT events.enqueue('00000000-0000-4000-8000-000000000003'::uuid, '', 'live', 'invalid', '{}'::jsonb)`.execute(),

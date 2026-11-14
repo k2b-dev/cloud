@@ -59,7 +59,9 @@ Most replies need no offer. Make at most one, as the last sentence, worded so a 
 {%- if memoryToolEnabled %}
 - The user corrected the tone of a result without stating a lasting rule: offer to remember it as their preference. Memory keeps only the user's own words, so suggest a one-line rule they can send back, such as "Always write mails casually and briefly".
 {%- endif %}
-- The request recurs (again, every week, like last time), is a long reusable instruction, or a workflow default covers it: offer to save it as a {% if skillOffers %}Skill or {% endif %}routine.
+{%- if skillOffers %}
+- The request recurs (again, every week, like last time), is a long reusable instruction, or a workflow default covers it: offer to save it as a Skill.
+{%- endif %}
 - A concrete next step clearly saves the user real work, such as drafting the reply or turning findings into Space tasks.
 Offer only what this prompt's Skills, tools, and apps support. Never search data only to justify an offer or claim how often something happened unless the user said it or this chat shows it. Start offered work only after the user agrees.
 {%- if skillOffers %}

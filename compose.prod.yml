@@ -38,8 +38,33 @@ networks:
     driver: bridge
   traefik:
     external: true
+  runner-core:
+    internal: true
 
 services:
+  # No shared environment or runtime: runner must never receive installation credentials.
+  runner:
+    init: true
+    image: ghcr.io/k2b-dev/cloud-app-runner:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    restart: unless-stopped
+    environment:
+      CLOUD_APP_KEY_FILE: /run/runner-key/source
+      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
+    secrets:
+      - source: runner-app-key
+        target: /run/runner-key/source
+    networks: [runner-core]
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
+    cap_drop: [ALL]
+    # DAC_OVERRIDE is entrypoint-only; the supervisor retains the other four.
+    cap_add: [SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE]
+    security_opt: ["no-new-privileges:true", "seccomp=./packages/runner/seccomp.json", "apparmor=cloud-code-runner", "systempaths=unconfined"]
+    mem_limit: 1g
+    pids_limit: 256
+    # Keep this above the largest Code wall-clock budget plus completion transport time.
+    stop_grace_period: 6m
+
   # Gateway — the only service exposed to Traefik.
   gateway:
     <<: *app-defaults
@@ -86,6 +111,7 @@ services:
 
   # Apps — internal only, reached through the gateway.
   app-core:
+    networks: [cloud-internal, runner-core]
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-core:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     healthcheck:
@@ -269,6 +295,16 @@ services:
       CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-mail:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - const response = await fetch("http://127.0.0.1:3000/_cloud/ready"); if (!response.ok) process.exit(1)
+      interval: 2s
+      timeout: 2s
+      retries: 90
+      start_period: 2s
 
   app-notebooks:
     secrets:
@@ -442,6 +478,8 @@ secrets:
     file: ./secrets/pwa.key
   quotes-app-key:
     file: ./secrets/quotes.key
+  runner-app-key:
+    file: ./secrets/runner.key
   spaces-app-key:
     file: ./secrets/spaces.key
   tools-app-key:

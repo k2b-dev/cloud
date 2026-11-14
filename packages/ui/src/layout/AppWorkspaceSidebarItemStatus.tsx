@@ -25,6 +25,11 @@ export type AppWorkspaceSidebarItemStatusProps = {
    * to zero while the row is still shown; leave the prop out when nothing waits.
    */
   waiting?: { count: number; label: string };
+  /**
+   * Something here needs the person, such as failed work or missing access: a warning dot, never a number. The text is
+   * the phrase a screen reader hears, for example "needs attention".
+   */
+  attention?: string;
 };
 export const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps): JSX.Element => {
   const workspaceMessages = useWorkspaceMessages();
@@ -46,6 +51,7 @@ export const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStat
               : "",
       props.mention ? workspaceMessages().sidebarMentioned : "",
       props.muted ? workspaceMessages().sidebarMuted : "",
+      props.attention ?? "",
     ]
       .filter(Boolean)
       .join(", ");
@@ -60,8 +66,13 @@ export const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStat
       data-unread={waiting() !== null ? undefined : count() ? "count" : dot() ? "dot" : undefined}
       data-waiting={waiting() === null ? undefined : waiting() ? "count" : "zero"}
       data-muted={props.muted ? "true" : undefined}
+      data-attention={props.attention ? "true" : undefined}
     >
       <Show when={description()}>
+        {/* Outermost, with its own fixed width: it never moves a count or another mark. */}
+        <Show when={props.attention}>
+          <span class="k2b-app-workspace__sidebar-status-attention" aria-hidden="true" />
+        </Show>
         <Show when={props.mention}>
           <span class="k2b-app-workspace__sidebar-status-mention" aria-hidden="true">
             @
@@ -72,20 +83,23 @@ export const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStat
             <i class="ti ti-bell-off" />
           </span>
         </Show>
-        <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
-          <Show
-            when={count() || waiting() === 0}
-            fallback={
-              <Show when={dot()}>
-                <span class="k2b-app-workspace__sidebar-status-dot" />
-              </Show>
-            }
-          >
-            <span class="k2b-app-workspace__sidebar-status-count" data-mention={props.mention ? "true" : undefined}>
-              {count() > 99 ? "99+" : count()}
-            </span>
-          </Show>
-        </span>
+        {/* Alone, the warning dot needs no reserved count slot beside it. */}
+        <Show when={!props.attention || count() || dot() || waiting() !== null || props.mention || props.muted}>
+          <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
+            <Show
+              when={count() || waiting() === 0}
+              fallback={
+                <Show when={dot()}>
+                  <span class="k2b-app-workspace__sidebar-status-dot" />
+                </Show>
+              }
+            >
+              <span class="k2b-app-workspace__sidebar-status-count" data-mention={props.mention ? "true" : undefined}>
+                {count() > 99 ? "99+" : count()}
+              </span>
+            </Show>
+          </span>
+        </Show>
         <span class="k2b-sr-only">, {description()}</span>
       </Show>
     </span>

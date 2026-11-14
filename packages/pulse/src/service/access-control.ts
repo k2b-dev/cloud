@@ -1,10 +1,11 @@
 import { sql } from "@k2b/cloud";
 import type { RequestActor, ServiceAccount } from "@k2b/cloud/contracts";
 import { type AccessSubject, buildAccessPrincipalCondition, err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
-import { isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 
 export type UserScope = {
   id: string;
+  delegatedByServiceAccountId?: string | null;
 };
 
 /**
@@ -27,11 +28,15 @@ const PERMISSION_RANK: Record<PermissionLevel, number> = { none: 0, read: 1, wri
 const isResourceScope = (scope: AccessScope): scope is ResourceScope => "subject" in scope;
 
 export const accessScopeFor = (actor: RequestActor, subject: AccessSubject): Result<AccessScope> => {
-  if (subject.type === "user") return ok({ id: subject.userId });
+  if (subject.type === "user")
+    return ok({
+      id: subject.userId,
+      ...(subject.delegatedByServiceAccountId ? { delegatedByServiceAccountId: subject.delegatedByServiceAccountId } : {}),
+    });
   if (actor.kind !== "service_account" || actor.delegatedUser) {
     return fail(err.forbidden("Resource access subject does not match the authenticated actor"));
   }
-  if (isStandaloneServiceAccountKind(actor.serviceAccount.kind) && subject.serviceAccountId !== actor.serviceAccount.id) {
+  if (serviceAccountUsesOwnGrants(actor.serviceAccount.kind) && subject.serviceAccountId !== actor.serviceAccount.id) {
     return fail(err.forbidden("Resource access subject does not match the authenticated actor"));
   }
   return ok({ subject, serviceAccount: actor.serviceAccount, scopes: actor.scopes });
@@ -59,7 +64,7 @@ const boundBaseShortId = (scope: AccessScope): string | null => {
 
 /** Only a resource-bound account needs a binding; a standalone or agent account is limited by its grants alone. */
 const missingBinding = (scope: AccessScope, bound: string | null): boolean =>
-  isResourceScope(scope) && !bound && !isStandaloneServiceAccountKind(scope.serviceAccount.kind);
+  isResourceScope(scope) && !bound && !serviceAccountUsesOwnGrants(scope.serviceAccount.kind);
 
 const canRequestPermission = (scope: AccessScope, required: PermissionLevel): boolean =>
   PERMISSION_RANK[scopedPermission(scope)] >= PERMISSION_RANK[required];
@@ -77,7 +82,7 @@ export const requireBaseAccess = async (
   scope: AccessScope,
   required: PermissionLevel,
   db: typeof sql = sql,
-): Promise<Result<void>> => {
+): Promise<Result<PermissionLevel>> => {
   if (!canRequestPermission(scope, required)) return fail(err.forbidden("Access denied"));
   const bound = boundBaseShortId(scope);
   if (missingBinding(scope, bound)) return fail(err.forbidden("Access denied"));
@@ -100,8 +105,10 @@ export const requireBaseAccess = async (
       AND (${bound}::text IS NULL OR b.short_id = ${bound})
       AND ${principalMatch}
   `;
-  const level = row?.permission ?? "none";
-  return PERMISSION_RANK[level] >= PERMISSION_RANK[required] ? ok() : fail(err.forbidden("Access denied"));
+  const granted = row?.permission ?? "none";
+  const cap = scopedPermission(scope);
+  const level = PERMISSION_RANK[granted] <= PERMISSION_RANK[cap] ? granted : cap;
+  return PERMISSION_RANK[level] >= PERMISSION_RANK[required] ? ok(level) : fail(err.forbidden("Access denied"));
 };
 
 export const listBaseIdsVisibleTo = async (

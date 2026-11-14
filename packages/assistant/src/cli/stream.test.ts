@@ -211,6 +211,31 @@ describe("Assistant CLI stream", () => {
       "spaces.task.create: completed",
     ]);
   });
+  test("a call still being written is no step: neither live, in a snapshot, nor after it is taken back", async () => {
+    const preview: Extract<AiTurnBlock, { kind: "tool" }> = {
+      id: "tool-write",
+      kind: "tool",
+      callId: "write",
+      name: "code_write",
+      status: "running",
+      args: { path: "code.ts", content: "const a" },
+      liveArgs: { omittedLines: { path: 0, content: 0 } },
+    };
+    const reply = await run(
+      [
+        [
+          state([preview]),
+          { ...wire(), type: "block_set", block: preview },
+          { ...wire(), type: "block_remove", blockId: "tool-write" },
+          delta("answer", "Fertig."),
+          finished(["Fertig."]),
+        ],
+      ],
+      "jsonl",
+    );
+    expect(reply.result.status).toBe("completed");
+    expect(reply.lines.filter((line) => typeof line === "object" && line !== null && "type" in line && line.type === "tool")).toEqual([]);
+  });
   test("prints a final answer that is a prefix of an earlier live block", async () => {
     const reply = await run([
       [delta("a", "Fertig. Ich prüfe noch X."), delta("b", "Fertig."), finished(["Fertig. Ich prüfe noch X.", "Fertig."])],

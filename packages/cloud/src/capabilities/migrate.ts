@@ -92,5 +92,9 @@ export const migrateCloudCapabilities = async (): Promise<void> => {
   `.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_capabilities_claims_created ON capabilities.idempotency_claims(created_at)`.simple();
 
+  // Former adapter routing metadata is never a source of authority. Actual shares
+  // stay in auth.access and the target application's ordinary access junction.
+  await sql`DROP TABLE IF EXISTS capabilities.code_access_grants`.simple();
+
   console.log("  ✓ capability execution history");
 };

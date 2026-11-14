@@ -48,16 +48,15 @@ replacement. NATS server changes discard the old broker access.
 Use the owning structured commands for Navigation (`admin rail`), Geo
 (`admin geo`), AI projects (`admin ai projects`), retention (`admin logs
 retention`), Weather (`admin weather config`), Files (`filesv2 admin configuration`),
-Proxy Auth (`admin proxy-auth`), Pulse (`pulse admin`), and Assistant
-(`assistant studio-admin`). New named JSON setters take `--from <file|->`
-and `--yes`; Assistant uses `--input-file` or `--stdin`. Check command help
+Proxy Auth (`admin proxy-auth`) and Pulse (`pulse admin`). New named JSON
+setters take `--from <file|->` and `--yes`. Check command help
 and the module reference before writing. Existing outgoing-mail, AI, OAuth,
 app key/domain, account and network settings keep their own documented flags.
 
 ## Explicit approval for dangerous actions
 
 App access repair, unredacted Sync payload/error content and recovery, app-event mutations, Pulse store backend
-operations and base recovery/deletion, Studio machine servers/secrets, and
+operations and base recovery/deletion, and
 Files machine provisioning/grants still need explicit `admin` scope. Only
 obtain it for an action the user authorized:
 

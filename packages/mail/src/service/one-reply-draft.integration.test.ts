@@ -49,6 +49,7 @@ suite("one reply draft per conversation", () => {
     locale: "en",
     signal: new AbortController().signal,
     idempotencyKey: crypto.randomUUID(),
+    target: { type: "mail.mailbox", id: mailboxShortId },
   });
   let messageSequence = 0;
   const thread = async () => {
@@ -133,6 +134,14 @@ suite("one reply draft per conversation", () => {
   const beginLegacyMigration = async () => {
     await sql`DROP INDEX IF EXISTS mail.drafts_one_open_reply_idx`.simple();
     await sql`DELETE FROM mail.schema_migrations WHERE version = 4`;
+    // 0.74 had no rule retirement either: no marker 5 and none of its admission fences.
+    await sql`DELETE FROM mail.schema_migrations WHERE version = 5 AND name = 'rules_retired'`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_event ON workflows.event`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_run ON workflows.run`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_replay ON workflows.run`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_command ON mail.commands`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_draft ON mail.drafts`;
+    await sql`DROP TRIGGER IF EXISTS mail_rules_retired_outbox ON mail.outbox_submissions`;
   };
   let bindingId: string;
   const submission = async (draftId: string, state: string) => {
@@ -330,15 +339,12 @@ suite("one reply draft per conversation", () => {
       const first = draftSchema.parse(await responses[0]!.json());
       const second = draftSchema.parse(await responses[1]!.json());
       expect(second.id).toBe(first.id);
-      const result = unwrap(
-        await mailCapabilities.actions["draft.create"].run(DraftCreateInputSchema.parse({ ...body, mailboxId: mailboxShortId }), cap()),
-      );
+      const result = unwrap(await mailCapabilities.actions["draft.create"].run(DraftCreateInputSchema.parse(body), cap()));
       expect(result.data.id).toBe(first.id);
       expect(result.data.creationOutcome).toBe("existing");
       const occupied = await mailCapabilities.actions["draft.create"].run(
         DraftCreateInputSchema.parse({
           ...body,
-          mailboxId: mailboxShortId,
           attachments: [{ filename: "do-not-add.txt", contentType: "text/plain", base64: "bm8=" }],
         }),
         cap(gustav),
@@ -363,10 +369,7 @@ suite("one reply draft per conversation", () => {
         message: expect.stringContaining(first.id),
       });
       for (const supplied of [{ body: "New text" }, { subject: "New subject" }, { to: [{ address: "new@example.test" }] }]) {
-        const conflict = await mailCapabilities.actions["draft.create"].run(
-          DraftCreateInputSchema.parse({ ...body, ...supplied, mailboxId: mailboxShortId }),
-          cap(),
-        );
+        const conflict = await mailCapabilities.actions["draft.create"].run(DraftCreateInputSchema.parse({ ...body, ...supplied }), cap());
         expect(conflict).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
       }
       const switched = await api.request(`/mailboxes/${mailboxShortId}/drafts/${first.id}/intent`, {
@@ -810,40 +813,26 @@ suite("one reply draft per conversation", () => {
     expect(reply.attachments).toHaveLength(0);
     unwrap(await drafts.discardDraft({ context: owner, mailboxId, draftId: reply.id, expectedRevision: reply.revision }));
   });
-  test("a failed automatic reply remains outside the person's reply box", async () => {
+  test("a retired automatic reply remains outside the person's reply box", async () => {
     const source = await thread();
     const automaticId = crypto.randomUUID();
+    // Open automatic replies cannot exist after the rule retirement; its retired draft keeps its row.
     const [automatic] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
       (id, short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id,
         origin, delivery_class, author_kind, author_id, last_editor_kind, last_editor_id, state, body_markdown)
       VALUES (${automaticId}::uuid, ${newShortId()}, ${mailboxId}::uuid, ${source.conversationId}::uuid,
         ${source.sourceMessageId}::uuid, 'reply', ${identityId}::uuid, 'workflow', 'automatic_reply',
-        'workflow', ${crypto.randomUUID()}::uuid, 'workflow', ${crypto.randomUUID()}::uuid, 'draft', 'Failed automatic reply') RETURNING id`;
+        'workflow', ${crypto.randomUUID()}::uuid, 'workflow', ${crypto.randomUUID()}::uuid, 'discarded', 'Failed automatic reply') RETURNING id`;
     const person = unwrap(await drafts.createDraft({ context: owner, mailboxId, input: input(source) }));
     expect(person.id).not.toBe(automatic!.id);
     expect((await drafts.getDraft(owner, mailboxId, automatic!.id)).ok).toBeFalse();
     const again = unwrap(await drafts.createDraft({ context: owner, mailboxId, input: input(source) }));
     expect(again.id).toBe(person.id);
-    const workflow = await sql.begin((tx) =>
-      drafts.createWorkflowReviewReplyDraftInTransaction({
-        db: tx,
-        mailboxId,
-        workflowVersionId: crypto.randomUUID(),
-        draftId: crypto.randomUUID(),
-        conversationId: source.conversationId,
-        sourceMessageId: source.sourceMessageId,
-        senderIdentityId: identityId,
-        body: "Review reply",
-        format: "markdown",
-      }),
-    );
-    expect(workflow).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
   });
   test("switching honors another editor's lease and capability revision checks", async () => {
     const draft = await create();
     const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.drafts WHERE id = ${draft.id}::uuid`;
     const operation = DraftSwitchIntentInputSchema.parse({
-      mailboxId: mailboxShortId,
       draftId: row!.short_id,
       expectedRevision: draft.revision,
       intent: "forward",

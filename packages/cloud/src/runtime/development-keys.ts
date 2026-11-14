@@ -135,6 +135,13 @@ export const DEVELOPMENT_APP_KEYS = [
     grants: [],
   },
   {
+    appId: "runner",
+    keyId: "f6f8e261-d5e9-42f7-9578-9ad9e5828715",
+    publicKey: "4b4L6lVdSv5kj1cupT8RSrTLM3UJoESXfD7jY82VoBM",
+    fingerprint: "1b86c666f2bdba371b25f11dd8181cdc",
+    grants: [],
+  },
+  {
     appId: "spaces",
     keyId: "752bb0c3-bf07-41d7-aa2a-f088ed17b9a2",
     publicKey: "CSFMP5-R52nLfgVZPu5trx5Sc3fOH3okHp2c4xE8JzU",

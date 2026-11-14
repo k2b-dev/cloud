@@ -121,7 +121,7 @@ for Cloud's approval rules.
 | New files | A diff of the new file, up to 16,000 characters |
 | Working checklist | The editor's plan |
 | Cards and charts | Text and Markdown tables |
-| Studio apps, secrets, and file previews | A link to the web chat |
+| Secrets and file previews | A link to the web chat |
 | Surveys and drafts | Forms when supported; otherwise Assistant can ask or show the draft in chat. An edited draft over 20,000 characters is not sent, and Assistant asks what to shorten |
 
 ## Use chat commands

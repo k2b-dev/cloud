@@ -11,7 +11,6 @@ import { generateUniqueShortId } from "../lib/short-id";
 import {
   buildNotebookVisibleAccessCondition,
   getNotebookPermission,
-  listNotebookAccess,
   mayReadAcrossNotebooks,
   NOTEBOOK_RESOURCE_TYPE,
   NOTEBOOKS_APP_ID,
@@ -631,7 +630,9 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
  * Delete a notebook.
  */
 export const remove = async (params: { id: string }): Promise<MutationResult<void>> => {
-  const accessEntries = await listNotebookAccess(params.id);
+  const accessEntries = await sql<
+    { id: string }[]
+  >`SELECT access_id AS id FROM notebooks.notebook_access WHERE notebook_id=${params.id}::uuid`;
   const result = await workspaceTransaction(async (tx) => {
     const result = await tx`DELETE FROM notebooks.notebooks WHERE id = ${params.id}::uuid`;
     if (result.count > 0)

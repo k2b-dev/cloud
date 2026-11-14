@@ -253,7 +253,13 @@ const storedItems = (
         id: item.id,
         role: "user",
         createdAt: item.entry.createdAt,
-        content: text ? <p class="whitespace-pre-wrap">{text}</p> : undefined,
+        content:
+          text || item.entry.meta?.codeOrigin ? (
+            <>
+              <Show when={item.entry.meta?.codeOrigin}>{(origin) => <p class="text-xs text-dimmed">{origin().label}</p>}</Show>
+              {text ? <p class="whitespace-pre-wrap">{text}</p> : undefined}
+            </>
+          ) : undefined,
         attachments: aiUserMessageAttachments(item.entry, actions),
         actions: createAiUserMessageActions(item.entry, actions, locale),
         actionDisplay: "menu",
@@ -322,7 +328,11 @@ const storedItems = (
       const segmentOpener = opener;
       const last = lastOfLoop && index === lastAssistant;
       const segmentPhase = last ? phase : "completed";
-      const layout = layoutAiTurn(segment.blocks, { phase: segmentPhase, codePresentations: Boolean(actions.renderCodePresentation) });
+      const layout = layoutAiTurn(segment.blocks, {
+        phase: segmentPhase,
+        codePresentations: Boolean(actions.renderCodePresentation),
+        codeVersions: Boolean(actions.renderCodeVersion),
+      });
       const messageActions =
         actionEntry && index === lastAssistant
           ? createAssistantMessageActions({ entry: actionEntry, entries: item.entries, copyText: finalText(layout), actions })
@@ -386,7 +396,11 @@ const activeItems = (
   const phaseOf = (index: number): AiTurnPhase =>
     index !== working ? "completed" : turn.status === "waiting_for_action" ? "waiting" : "running";
   const layoutOf = (blocks: AiTurnBlock[], index: number) =>
-    layoutAiTurn(blocks, { phase: phaseOf(index), codePresentations: Boolean(actions.renderCodePresentation) });
+    layoutAiTurn(blocks, {
+      phase: phaseOf(index),
+      codePresentations: Boolean(actions.renderCodePresentation),
+      codeVersions: Boolean(actions.renderCodeVersion),
+    });
   // The work line says in place that the turn reconnects. A turn without one yet says it in a row at its end, where a
   // row that comes and goes moves nothing above it.
   const workingSegment = segments[working];

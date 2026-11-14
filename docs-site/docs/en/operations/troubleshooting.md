@@ -209,22 +209,9 @@ profile still uses an `assistant` CLI plugin from an earlier release. Run
 `cld plugins update assistant` for that profile; see
 [Conversation streams announce provider retries](/en/docs/reference/deprecations-and-migrations#conversation-streams-announce-provider-retries).
 
-## Assistant routines need attention
+## Assistant routines no longer run
 
-Routine runs discover and load app capabilities only within their mandate
-policy and routine grants. A call rejected by a grant or fixed input returns a tool
-error and lets the model continue. Check a routine (scheduled task) marked `needs_attention` for
-unavailable or changed mandate authority, a target app denying the sponsor,
-an unknown action outcome, or an operation requiring approval or a browser.
-A `needs_approval` reason names the first Action whose app review required
-confirmation for every call. The mandate is checked before that review, both
-for direct tools and background Code Mode. The refused Action never runs;
-missing reviews and review errors also refuse it. Handle that change in an
-interactive chat, then resume the routine (or give a one-time routine a new
-time). Widening grants cannot replace a missing `approvalScope`.
-
-Review the routine's grants in the normal chat before changing its scope. See
-[Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-routine).
+This release retires scheduled chat routines. Restarting or restoring a chat does not resume them. See [Routines became Code](/en/docs/operations/routines-to-code).
 
 ## AI turns stop using tools before they finish
 
@@ -286,3 +273,20 @@ Each process emits at most one slow summary per app and hop per minute.
 `app-access` failures similarly include the app ID and a throttled
 `failureCount`. These counters describe observed probes, not unique users.
 Compare matching app IDs and hop timings across processes to locate the delay.
+
+## Gustav stops while authoring Code
+
+A message saying that work is repeating or growing too large means the
+[Code authoring safety budget](/en/docs/ai/chat-runtime-and-streaming#code-authoring-safety-budget)
+ended the turn. The chat shows confirmed completed work, saved drafts and
+remaining checks or version saves. The draft was saved at the stop; continuing
+checks its current state. Choose **Continue**
+(**Weiterarbeiten** in German) to start a new turn; nothing resumes automatically.
+If sending fails, the notice offers the same action again. Inspect the failed
+check before repeating it.
+
+For diagnosis, filter Core logs by `ai:executor` and
+`AI authoring turn reached its safety budget`. The event includes conversation
+and turn IDs and one reason: `model_calls`, `input_tokens`, or
+`repeated_error`. Inspect provider attempts in the AI usage report. No live
+configuration change or model price is needed for this guard.

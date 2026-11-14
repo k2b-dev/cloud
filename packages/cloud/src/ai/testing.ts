@@ -2,6 +2,8 @@ import { actionFixtures } from "./chat/action-question.fixtures";
 import { type AiOpenQuestion, openQuestionFromRow } from "./open-questions";
 import type { AiTurnBlock } from "./protocol";
 
+export { createArchivedTaskExportFixture } from "./chat-task-export.fixtures";
+
 /**
  * Demo Assistant questions for host tests and screenshots, in German and English, with fixed times. The demo data may
  * change in any release: assert on what your host renders from it, not on its wording.

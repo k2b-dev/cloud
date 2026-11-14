@@ -292,6 +292,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
         accessDialogOpen = true;
         try {
           await openAccessDialog({
+            target: { type: "pulse.base", id: options.base.id },
             resourceName: saved().name,
             subtitle: t().accessDialogSubtitle,
             initialEntries: entries,

@@ -2,6 +2,7 @@ import { listCapabilities } from "../../_internal/registry";
 import { type AiStoredActionReview, storedActionReview } from "../../ai/action-review";
 import type { ActionCard } from "../../ai/chat/action-card";
 import { approvalCard } from "../../approvals/approval-card";
+import { approvalMessages } from "../../approvals/messages";
 import {
   type CapabilityActionPolicy,
   CapabilityActionReviewPresentationSchema,
@@ -65,7 +66,15 @@ export const pendingApprovalCard = (
   const timeZone = row.runConfig?.kind === "compact" ? "UTC" : (row.runConfig?.timeZone ?? "UTC");
   const review = pendingApprovalReview(row, policy);
   return approvalCard(
-    { sentence: row.sentence, action: row.action, appName: appName(row.appId, locale), appIcon: null, review },
+    {
+      sentence: row.sentence,
+      action: row.action,
+      appName: appName(row.appId, locale),
+      appIcon: null,
+      review,
+      codeVersion: row.kind === "code_version",
+      ...(row.soleAdmin ? { soleAdminNotice: approvalMessages.resolve([locale]).t.soleAdminNotice } : {}),
+    },
     locale,
     timeZone,
   );

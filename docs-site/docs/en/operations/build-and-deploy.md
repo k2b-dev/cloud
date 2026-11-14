@@ -320,7 +320,7 @@ keys from Core and keep no shared signing secret.
 
 Apps calling Core's workload or mandate broker also need
 `CLOUD_CORE_INTERNAL_ORIGIN`. Core automatically delivers and rotates their
-app-bound `identity:invoke` credentials, including for Mail incoming automations.
+app-bound `identity:invoke` credentials.
 `CLOUD_APP_CREDENTIAL` is only an explicit host-run override. OAuth instead needs
 `CLOUD_CORE_INTERNAL_ORIGIN` and `CLOUD_OAUTH_BROKER_SECRET`; inject that same
 broker secret only into Core and OAuth. It requires no admin provisioning. See
@@ -532,7 +532,7 @@ Apps now ship their own Assistant Skills; Core no longer contains built-in
 Skill templates. The first Core start of this release links the installed
 built-in Skills to their apps: `cloud-grids` to Grids, `cloud-mail` to Mail,
 `cloud-notebooks` to Notebooks, `cloud-contacts` to Contacts, `cloud-spaces` to
-Spaces, `cloud-weather` to Weather, and `cloud-assistant`, `scheduled-tasks`,
+Spaces, `cloud-weather` to Weather, and `cloud-assistant`,
 `skill-creator`, `assistant-code-mode`, and `assistant-data-analysis` to
 Assistant. It keeps Skill IDs, access, personal **Enabled** settings, and
 administrator changes, and does not recreate deleted ones. It creates no
@@ -627,6 +627,11 @@ strings out of proxy logs and error reports. See the
 
 ## Roll out a release
 
+Before starting the production runner service, install the matching release's
+AppArmor policy on every runner host and place its seccomp file at the path
+configured in Compose. Coordinate Core and runner upgrades; see
+[runner host prerequisites](/en/docs/operations/code-runner).
+
 Render and inspect the deployment before changing platform containers:
 
 ```bash
@@ -677,22 +682,12 @@ setting container values.
 
 ### Assistant runtime assets
 
-Assistant script and action workers use the `cloud` runtime contract. Deploy its
-eager worker, content-hashed CSV/sheet/finance/PDF-reader chunks, and chunk manifest
-from the same image. Existing app source needs the migration described in
-[Studio library migration](/en/docs/reference/deprecations-and-migrations#studio-script-and-action-library).
-Startup adds personal server-side KV storage through Assistant migrations. App
-database tables gain nullable audit user columns on first access, without backfill.
+Assistant packages its chat runner worker, prelude and lazy CSV, sheet, finance
+and PDF-reader chunks. The document stylesheet and fonts support PDF generation
+through Gotenberg. Studio frames and local browser hosts have been retired; the
+Assistant image needs no Chromium or production Playwright package.
 
-Studio apps are HTML pages in a locked frame. The image ships their prelude
-(`assistant-app-prelude.js`, pinned by hash in every app document) and the
-`@k2b/ui` base stylesheet with IBM Plex as data URLs (`assistant-app-base.css`,
-also used by `cloud.pdf.render`). Both come from the same build as the worker;
-nothing is fetched from the network at runtime. The first start after the update
-clears chat presentations saved in the old format once; see
-[Studio apps are plain HTML](/en/docs/reference/deprecations-and-migrations#studio-apps-are-plain-html).
-Public links to Studio apps are switched off in this release: existing public
-grants stay listed but open nothing.
+Before upgrading an existing installation, follow [Studio retirement](/en/docs/operations/studio-retirement).
 
 ## Update theme preferences
 

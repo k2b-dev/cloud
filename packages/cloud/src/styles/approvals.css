@@ -152,6 +152,11 @@
   color: var(--k2b-text);
 }
 
+/* The feat/code sign before a Code version's name, in the line's size. */
+.k2b-ui .cloud-approval__origin-mark {
+  margin-right: 0.25em;
+}
+
 .k2b-ui .cloud-approval__text {
   margin: 0;
   color: var(--k2b-text-secondary);

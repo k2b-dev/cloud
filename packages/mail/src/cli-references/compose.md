@@ -239,7 +239,6 @@ A stale revision or a scheduled/sending draft returns a conflict. Shared editors
 it only after displaying the notice. Only a person with write access can
 acknowledge an open draft. Content-free autonomous suggestion requests can report
 `creationOutcome: suggestion_skipped`; supplied content conflicts instead.
-Private automatic replies do not occupy the box.
 
 `draft create` covers new messages and every draft field:
 

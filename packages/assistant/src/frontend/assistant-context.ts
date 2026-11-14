@@ -21,8 +21,8 @@ const resourceTypeLabel = (type: string): string =>
     .join(" ");
 
 export const assistantResourceTypeLabel = (ref: CloudResourceRef, text: (value: string) => string = (value) => value): string => {
-  if (ref.type === "assistant.artifact") return text("Assistant app");
-  if (ref.type === "core.ai.task") return text("Assistant routine");
+  if (ref.type === "assistant.artifact" || ref.type === "assistant.app") return text("Unavailable");
+  if (ref.type === "core.ai.task") return text("Gustav routine");
   if (ref.type === "core.ai.chat") return text("AI conversation");
   return resourceTypeLabel(ref.type) || text("Cloud resource");
 };
@@ -44,9 +44,5 @@ export const assistantChatContextFor = (
   snapshot: AssistantChatContextSnapshot | null | undefined,
 ): AssistantChatContextSnapshot | null => (snapshot?.chatId === chatId ? snapshot : null);
 
-export const visibleAssistantReferences = (items: AiConversationSource[], chatId: string, visibleTaskId?: string) =>
-  items.filter(
-    (source) =>
-      !(source.ref?.type === "core.ai.chat" && source.ref.id === chatId) &&
-      !(source.ref?.type === "core.ai.task" && source.ref.id === visibleTaskId),
-  );
+export const visibleAssistantReferences = (items: AiConversationSource[], chatId: string) =>
+  items.filter((source) => !(source.ref?.type === "core.ai.chat" && source.ref.id === chatId));

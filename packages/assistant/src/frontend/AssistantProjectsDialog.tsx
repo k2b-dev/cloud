@@ -25,7 +25,7 @@ export const openAssistantCreateProjectDialog = async (): Promise<AiProject | nu
       instructions: {
         type: "text",
         label: text("Instructions"),
-        placeholder: text("How should Assistant work in this Project?"),
+        placeholder: text("How should Gustav work in this Project?"),
         multiline: true,
         lines: 5,
         maxLength: 16_000,

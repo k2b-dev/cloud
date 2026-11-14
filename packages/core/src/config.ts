@@ -14,7 +14,16 @@ export const app = defineApp({
   // These routes keep their own authentication, including workload and models-only credentials.
   access: appAccess.signedIn({
     publicRoutes: [
+      "/code/:codeId/*",
       "/_internal/apps/bootstrap",
+      "/_internal/code/runner/call",
+      "/_internal/code/runner/config",
+      "/_internal/code/runner/fetch",
+      "/_internal/code/runner/bundle",
+      "/_internal/code/runner/heartbeat",
+      "/_internal/code/runner/complete",
+      "/_internal/code/runner/job-input",
+      "/_internal/code/runner/job-call",
       "/auth/continue",
       "/auth/login",
       "/auth/new-password",
@@ -104,8 +113,9 @@ export const app = defineApp({
       "/api/openapi.json",
     ],
   }),
-  platformPermissions: ["mail:send"],
+  platformPermissions: ["mail:send", "resources:readers"],
   cli: {
+    code: { module: "src/cli/code.ts", references: "src/cli-references/code" },
     account: { module: "src/cli/account.ts", references: "src/cli-references/account" },
     admin: { module: "src/cli/admin.ts", references: "src/cli-references/admin" },
     apps: { module: "src/cli/apps.ts", references: "src/cli-references/apps" },
@@ -156,6 +166,7 @@ export const app = defineApp({
     "/cli",
     "/me",
     "/open",
+    "/code",
     "/admin",
     "/legal/privacy",
     "/legal/terms",

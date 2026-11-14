@@ -30,7 +30,7 @@ const projectAccessCommands = createAccessCommands({
   async resolveResource(ctx, args) {
     if (args.length !== 1) throw new Error("Pass one Project name or ID.");
     const project = await resolveProject(ctx, args[0]!);
-    return { id: project.shortId, label: project.name };
+    return { id: project.shortId, label: project.name, target: { type: "core.ai.project", id: project.shortId } };
   },
   async list(ctx, resource) {
     return (await readProjectsApi<{ access: AiProjectAccess[] }>(ctx, path(resource.id, "/access"))).access;

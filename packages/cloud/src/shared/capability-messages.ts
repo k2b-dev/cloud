@@ -5,6 +5,8 @@ const catalog = i18n.define({
   baseLocale: DEFAULT_LOCALE,
   messages: {
     en: {
+      codeTargetDeleted: "Target deleted",
+      resourceCheckUnavailable: "The resource could not be checked; retry later",
       actionOutcomeUnknown: "The Action response was lost and its outcome is unknown; do not retry automatically",
       appCouldNotServe: ({ appId }: { appId: string }) => `App ${appId} could not serve the capability`,
       appUnavailable: ({ appId }: { appId: string }) => `App ${appId} is not currently available`,
@@ -35,11 +37,13 @@ const catalog = i18n.define({
       requestBodyJson: "Capability request body must be JSON",
       requestCancelled: "Capability request was cancelled",
       issuanceFailed: "Capability invocation issuance failed",
-      requestInputOnly: "Capability request must contain only an input field",
+      requestInputOnly: "Capability request must contain input and may contain target and refs",
       requestTooLarge: "Capability request is too large",
       unsupportedSchema: ({ appId }: { appId: string }) => `App ${appId} registered an unsupported capability schema`,
     },
     de: {
+      codeTargetDeleted: "Ziel gelöscht",
+      resourceCheckUnavailable: "Die Ressource konnte nicht geprüft werden; später erneut versuchen",
       actionOutcomeUnknown: "Die Antwort der Action ging verloren und ihr Ergebnis ist unbekannt; nicht automatisch erneut ausführen",
       appCouldNotServe: ({ appId }) => `App ${appId} konnte die Capability nicht ausführen`,
       appUnavailable: ({ appId }) => `App ${appId} ist derzeit nicht verfügbar`,
@@ -70,7 +74,7 @@ const catalog = i18n.define({
       requestBodyJson: "Der Capability-Request-Body muss JSON enthalten",
       requestCancelled: "Die Capability-Anfrage wurde abgebrochen",
       issuanceFailed: "Die Berechtigung für den Capability-Aufruf konnte nicht ausgestellt werden",
-      requestInputOnly: "Die Capability-Anfrage darf nur ein input-Feld enthalten",
+      requestInputOnly: "Die Capability-Anfrage muss input enthalten; target und refs sind optional",
       requestTooLarge: "Die Capability-Anfrage ist zu groß",
       unsupportedSchema: ({ appId }) => `App ${appId} hat ein nicht unterstütztes Capability-Schema registriert`,
     },

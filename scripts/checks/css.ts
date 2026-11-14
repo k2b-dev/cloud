@@ -18,6 +18,8 @@ const canonicalSharedStylesheetImports: readonly string[] = [
   "base-popover.css",
   "effects.css",
   "approvals.css",
+  "code-page.css",
+  "feat-code.css",
   "input.css",
   "resource-search.css",
   "file-chooser.css",
@@ -262,6 +264,7 @@ export const rule: Rule = {
       "--notebook-chart-height", // notebooks chart-blocks.ts: the height of a drawing taller than its frame
       "--spaces-calendar-color", // Spaces calendar EventDetail.tsx and AgendaList.tsx: the color of each item's calendar
       "--annotation-color", // Notebooks lib/editor/annotations.ts and NotePreview: the person color of a commented passage
+      "--ai-code-live-lines", // ai/chat/code-steps.tsx: the lines a Code file Gustav still writes will show once written
     ]);
     for (const [property, consumers] of customPropertyReferences) {
       if (customPropertyOwners.has(property) || uiCustomProperties.has(property)) continue;

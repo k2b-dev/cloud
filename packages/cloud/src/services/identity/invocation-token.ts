@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { createRemoteJWKSet, decodeProtectedHeader, errors, type JWTVerifyGetKey, jwtVerify, SignJWT } from "jose";
 import { z } from "zod";
+import { AppEventEnvelopeSchema } from "../../contracts/app-events";
 import {
   CLOUD_IDENTITY_ALGORITHM,
   CLOUD_INVOCATION_PROTOCOL_VERSION,
@@ -47,6 +48,9 @@ export const normalizeInvocationRequestId = (value: unknown): string | undefined
   return parsed.success ? parsed.data : undefined;
 };
 
+/** Only immutable occurrence coordinates, never message content or caller-selected hints. */
+const WorkloadTriggerSchema = AppEventEnvelopeSchema.pick({ type: true, subject: true, place: true });
+
 const InvocationPayloadBaseSchema = z
   .object({
     iss: z.string().url(),
@@ -76,7 +80,10 @@ const InvocationPayloadBaseSchema = z
     mandate_revision: z.number().int().positive().optional(),
     workload_type: BoundedIdentifierSchema.optional(),
     workload_id: BoundedIdentifierSchema.optional(),
+    workload_run: BoundedIdentifierSchema.optional(),
+    workload_generation: z.number().int().positive().safe().optional(),
     workload_event: z.uuid().optional(),
+    workload_trigger: WorkloadTriggerSchema.nullable().optional(),
     parent_invocation_id: z.uuid().optional(),
     jti: z.string().uuid(),
     iat: z.number().int().nonnegative(),
@@ -127,10 +134,21 @@ const validateInvocationClaims = (claims: z.infer<typeof InvocationPayloadBaseSc
   if (
     claims.workload_event &&
     (claims.credential_kind !== "mandate" ||
+      !!claims.workload_run ||
       !claims.workload_id ||
       !(claims.op.startsWith("capability.query:") || (subjectProbe && claims.op === "app-access.check")))
   )
     context.addIssue({ code: "custom", message: "Event visibility proofs permit only mandate-bound queries" });
+  if (
+    claims.workload_trigger !== undefined &&
+    (claims.credential_kind !== "mandate" || claims.workload_type !== "code.version" || !claims.workload_run || claims.workload_event)
+  )
+    context.addIssue({ code: "custom", message: "A workload trigger requires a Code run" });
+  if (
+    claims.workload_generation !== undefined &&
+    (claims.credential_kind !== "mandate" || claims.workload_type !== "code.version" || !claims.workload_run || claims.parent_invocation_id)
+  )
+    context.addIssue({ code: "custom", message: "A generation requires a direct Code run invocation" });
   const mandateFields = [claims.mandate_id, claims.mandate_revision, claims.workload_type, claims.workload_id];
   const mandateFieldCount = mandateFields.filter((value) => value !== undefined).length;
   if (
@@ -139,6 +157,9 @@ const validateInvocationClaims = (claims: z.infer<typeof InvocationPayloadBaseSc
       : mandateFieldCount !== 0
   ) {
     context.addIssue({ code: "custom", message: "Mandate provenance is incomplete or unexpected" });
+  }
+  if (claims.workload_run && !claims.workload_type) {
+    context.addIssue({ code: "custom", message: "A workload run requires a mandate workload" });
   }
 };
 
@@ -169,7 +190,10 @@ export type InvocationAuthority = Pick<
   | "mandate_revision"
   | "workload_type"
   | "workload_id"
+  | "workload_run"
+  | "workload_generation"
   | "workload_event"
+  | "workload_trigger"
 >;
 
 type RemoteSetState = { key: JWTVerifyGetKey; lastForcedRefreshAt: number };

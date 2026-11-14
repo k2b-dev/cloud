@@ -34,6 +34,8 @@ import { messages } from "./service/messages";
 import { notificationPreferences } from "./service/notification-preferences";
 import { threadFollows } from "./service/thread-follows";
 
+const messageTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "chat.message" ? context.target.id : "");
+
 const reviewChange = async (
   operation: "edit" | "delete",
   input: { id: string; revision: number; body?: string },
@@ -76,10 +78,10 @@ const NotificationReadInput = z.strictObject({
     "Six-character Chat conversation ID from a Chat link or conversation response.",
   ),
 });
-const NotificationSetInput = NotificationReadInput.extend({
+const NotificationSetInput = z.strictObject({
   notifications: NotificationUpdateSchema.describe("The new explicit level or reset to default, including duration only for none."),
 });
-const FollowInput = NotificationReadInput.extend({
+const FollowInput = z.strictObject({
   thread: ConversationParamSchema.shape.conversation.describe("Six-character item-thread ID from the conversation's thread list."),
   following: z.boolean().describe("True to follow the item discussion; false to stop following it."),
 });
@@ -98,7 +100,7 @@ export const chatCapabilities = defineCapabilities({
   types: {
     conversation: {
       title: "Chat conversation",
-      description: "An ordinary Chat conversation or channel.",
+      description: "A Chat conversation with current read access and participation.",
       icon: "ti ti-messages",
       reader: "conversation.read",
     },
@@ -228,6 +230,7 @@ export const chatCapabilities = defineCapabilities({
       },
     },
     "discussion.post": {
+      code: false,
       title: "Post to item discussion",
       description:
         "Post Markdown to one item discussion, creating its thread when necessary. Requires container write and item read. The provider defines item identity; the same ref always addresses the same discussion.",
@@ -248,32 +251,38 @@ export const chatCapabilities = defineCapabilities({
       run: postDiscussion,
     },
     "message.edit": {
+      target: "message",
+      code: false,
       title: "Edit discussion message",
       description: "Edit your own message within ten minutes. Use the content revision from message.read. Reactions do not change it.",
-      input: MessageEditInputSchema,
+      input: MessageEditInputSchema.omit({ id: true }),
       data: DiscussionMessageDataSchema,
       openWorld: false,
       destructive: false,
       idempotency: "required",
       policy: { ask: "cannot_undo" },
-      review: (input, context) => reviewChange("edit", input, context),
-      run: (input, context) => changeDiscussionMessage("edit", input, context),
+      review: (input, context) => reviewChange("edit", { ...input, id: messageTargetId(context) }, context),
+      run: (input, context) => changeDiscussionMessage("edit", { ...input, id: messageTargetId(context) }, context),
     },
     "message.delete": {
+      target: "message",
+      code: false,
       title: "Delete discussion message",
       description:
         "Permanently erase your own message and attachments within ten minutes. A placeholder retains replies. Use the content revision from message.read.",
-      input: MessageDeleteInputSchema,
+      input: MessageDeleteInputSchema.omit({ id: true }),
       data: DiscussionMessageDataSchema,
       openWorld: false,
       destructive: true,
       idempotency: "required",
       policy: { ask: "deletes" },
-      review: (input, context) => reviewChange("delete", input, context),
-      run: (input, context) => changeDiscussionMessage("delete", input, context),
+      review: (input, context) => reviewChange("delete", { ...input, id: messageTargetId(context) }, context),
+      run: (input, context) => changeDiscussionMessage("delete", { ...input, id: messageTargetId(context) }, context),
     },
 
     "notifications.set": {
+      target: "conversation",
+      code: false,
       title: "Set chat notifications",
       description:
         "Set your notification level in a known Chat conversation. Use default to reset, all or mentions for an explicit choice, or none with for=1h|8h|1w|forever. Requires participation; no notifications are sent by this operation.",
@@ -283,10 +292,18 @@ export const chatCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       approval: "none",
-      run: async ({ conversation, notifications }, context) =>
-        envelope(await notificationPreferences.set({ ...contextFor(context), conversationId: conversation, input: notifications })),
+      run: async ({ notifications }, context) =>
+        envelope(
+          await notificationPreferences.set({
+            ...contextFor(context),
+            conversationId: context.target?.type === "chat.conversation" ? context.target.id : "",
+            input: notifications,
+          }),
+        ),
     },
     "thread.follow": {
+      target: "conversation",
+      code: false,
       title: "Follow or unfollow a discussion",
       description:
         "Set whether you follow an item thread in a system conversation. Requires participation and current container and item read access. Ordinary chat threads are unsupported.",
@@ -296,8 +313,15 @@ export const chatCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       approval: "none",
-      run: async ({ conversation, thread, following }, context) =>
-        envelope(await threadFollows.set({ ...contextFor(context), conversationId: conversation, threadId: thread, following })),
+      run: async ({ thread, following }, context) =>
+        envelope(
+          await threadFollows.set({
+            ...contextFor(context),
+            conversationId: context.target?.type === "chat.conversation" ? context.target.id : "",
+            threadId: thread,
+            following,
+          }),
+        ),
     },
   },
   commands: {
@@ -314,7 +338,7 @@ export const chatCapabilities = defineCapabilities({
     translations: {
       de: {
         types: {
-          conversation: { title: "Chat-Unterhaltung", description: "Eine gewöhnliche Chat-Unterhaltung oder ein Kanal." },
+          conversation: { title: "Chat-Unterhaltung", description: "Eine Chat-Unterhaltung mit aktuellem Leserecht und Teilnahme." },
           message: { title: "Chatnachricht", description: "Eine Nachricht in einem zugänglichen Chat oder einer Element-Diskussion." },
         },
         events: {
@@ -324,6 +348,17 @@ export const chatCapabilities = defineCapabilities({
           },
         },
         queries: {
+          "conversation.readable": {
+            title: "Leser für Chat-Unterhaltung prüfen",
+            description: "Prüfen, welche aktuellen Konten diese Ressource lesen dürfen; ohne Inhaltszugriff.",
+            input: {
+              id: "Öffentliche ID der Ressource.",
+              container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
+              "container.type": "Typ des erwarteten Orts.",
+              "container.id": "Öffentliche ID des erwarteten Orts.",
+              principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+            },
+          },
           "conversation.read": {
             title: "Chat-Unterhaltung lesen",
             description:

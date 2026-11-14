@@ -262,7 +262,7 @@ const routineReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({
     seesChat: false,
   },
   ask: "keeps_working",
-  check: { query: "ai.task.read", input: { name: "summarize" } },
+  check: { query: "ai.chat.read", input: { name: "summarize" } },
 });
 
 const rightReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({

@@ -18,6 +18,7 @@ const invokeContactDirectory = async <T>(
     dataSchema: z.ZodType<T>;
     signal?: AbortSignal;
     idempotencyKey?: string;
+    resourceTarget?: { type: string; id: string };
   },
 ) => {
   if (!target) throw new ContactDirectoryUnavailableError();
@@ -26,6 +27,7 @@ const invokeContactDirectory = async <T>(
       appId: target.appId,
       capabilityId: target.capabilityId,
       kind: params.kind,
+      target: params.resourceTarget,
       input: params.input,
       signal: params.signal,
       idempotencyKey: params.idempotencyKey,
@@ -65,14 +67,17 @@ export const listWritableContactBooks = (
 
 export const createContact = (
   target: ContactDirectoryTarget | null,
-  input: z.input<typeof contactDirectory.create.input>,
+  input: z.input<typeof contactDirectory.create.input> & { bookId: string },
   idempotencyKey: string,
   signal?: AbortSignal,
-) =>
-  invokeContactDirectory(target, {
+) => {
+  const { bookId, ...data } = input;
+  return invokeContactDirectory(target, {
     kind: "action",
-    input,
+    input: data,
+    resourceTarget: target ? { type: `${target.appId}.${contactDirectory.create.target}`, id: bookId } : undefined,
     dataSchema: contactDirectory.create.data,
     idempotencyKey,
     signal,
   });
+};

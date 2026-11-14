@@ -239,7 +239,6 @@ export type AiModelUsage = {
   assignments: AiModelSlot[];
   projects: { id: string; name: string }[];
   workflows: { id: string; name: string }[];
-  scheduledTasks: { id: string; name: string }[];
   chats: number;
   budgetRules: { id: string; label: string }[];
   peopleAtLimit: number;

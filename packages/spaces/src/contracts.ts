@@ -1,5 +1,5 @@
 import type { MutationResult as CloudMutationResult } from "@k2b/cloud/contracts";
-import { CloudResourceRefSchema, ServiceAccountKindSchema } from "@k2b/cloud/contracts";
+import { AccessEntrySchema as CloudAccessEntrySchema, CloudResourceRefSchema, ServiceAccountKindSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CompletionInputSchema, WorkActorSchema } from "./work-contracts";
 
@@ -175,6 +175,7 @@ export const SpaceItemSchema = z.object({
   rank: z.string().describe("Item ordering rank within a column"),
   completedAt: z.string().nullable().describe("Completion timestamp (ISO)"),
   createdBy: UuidSchema.nullable().describe("Creator user UUID"),
+  createdByWorkload: z.boolean().optional().describe("Whether durable work such as Code created this item rather than a person directly"),
   createdAt: z.string().describe("Creation timestamp (ISO)"),
   updatedAt: z.string().describe("Last update timestamp (ISO)"),
   lastActivityAt: z.string().optional().describe("Most recent item or checklist activity timestamp (ISO); comments do not count"),
@@ -1011,14 +1012,12 @@ export const ItemFilterResponseSchema = ItemListResultSchema.extend({
 });
 
 export type {
-  AccessEntry,
   MessageResponse,
   PermissionLevel,
   Principal,
   User,
 } from "@k2b/cloud/contracts";
 export {
-  AccessEntrySchema,
   ErrorResponseSchema,
   GrantAccessSchema,
   hasRole,
@@ -1027,6 +1026,10 @@ export {
   PrincipalSchema,
   UpdateAccessSchema,
 } from "@k2b/cloud/contracts";
+
+/** Ordinary resource access entries, including Code service accounts. */
+export const AccessEntrySchema = CloudAccessEntrySchema;
+export type AccessEntry = z.infer<typeof AccessEntrySchema>;
 
 /** Item mutation conflicts retain their stable transport code. */
 export type MutationResult<T = void> = CloudMutationResult<T> & { code?: string };

@@ -746,6 +746,7 @@ suite("Files service and durable bindings", () => {
     await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
     await migratePosix();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id))`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.service_account_groups(service_account_id uuid,group_id uuid)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.ipa_user_effective_groups(user_id uuid,group_name text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS settings.entries(key text PRIMARY KEY,value text)`.simple();
@@ -3221,6 +3222,38 @@ suite("Files service and durable bindings", () => {
     privateSession(expired.id)!.state = "expired";
     await service.abortUpload(testCall(actor), { baseId, id: expired.id });
     expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${expired.id}`)[0]!.state).toBe("expired");
+  });
+  test("root targets preserve access to readable descendants below a traverse-only FreeIPA root", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice", 1001, 2001, "0110");
+    directory("freeipa", "users/alice/Shared");
+    const base = (await service.bases(testCall(actor))).items[0]!;
+    const id = entryRefId(base.id, "")!;
+    expect(await service.rootLocation(testCall(actor), id)).toEqual({ baseId: base.id });
+    await expect(
+      service.rootLocation(testCall(actor), stableEntryRefId(base.id, "11111111-1111-4111-8111-111111111111")!),
+    ).rejects.toMatchObject({
+      code: "root_target_required",
+    });
+    await expect(service.folderLocation(testCall(actor), id)).rejects.toMatchObject({ code: "forbidden" });
+    expect((await service.list(testCall(actor), { baseId: base.id, path: "Shared" })).path).toBe("Shared");
+    await expect(service.rootLocation(testCall(actor), entryRefId(base.id, "Shared")!)).rejects.toMatchObject({
+      code: "root_target_required",
+    });
+  });
+  test("root entry refs resolve through the canonical reader with current storage permissions", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const base = (await service.bases(testCall(actor))).items[0]!;
+    const id = entryRefId(base.id, "")!;
+    const root = await service.entryById(testCall(actor), id);
+    expect(root).toMatchObject({
+      base: { id: base.id },
+      entry: { path: "", directory: true, name: base.name, resourceId: id },
+      resourceId: id,
+    });
+    directory("freeipa", "users/alice", 1001, 2001, "0000");
+    await expect(service.entryById(testCall(actor), id)).rejects.toMatchObject({ code: "forbidden" });
   });
   test("long resource references persist complete paths without bypassing current rights", async () => {
     const actor = await user("alice", "ipa");

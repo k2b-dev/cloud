@@ -36,9 +36,11 @@ const isAssistantPart = (entry: AiStoredMessage): boolean =>
   entry.kind === "message" && (entry.message.role === "assistant" || entry.message.role === "tool_result");
 
 const sameLoop = (entry: AiStoredMessage, loopId: string | null): boolean => (loopId ? entry.loopId === loopId : entry.loopId === null);
-/** Each delivered routine run is its own answer, with its own run link and system line, also when runs follow each other. */
-const sameRoutineRun = (entry: AiStoredMessage, first: AiStoredMessage): boolean =>
-  (entry.meta?.scheduledTask?.occurrenceId ?? null) === (first.meta?.scheduledTask?.occurrenceId ?? null);
+/** Each delivered background result is its own answer, also when deliveries follow each other. */
+const sameBackgroundResult = (entry: AiStoredMessage, first: AiStoredMessage): boolean =>
+  (entry.meta?.scheduledTask?.occurrenceId ?? null) === (first.meta?.scheduledTask?.occurrenceId ?? null) &&
+  (entry.meta?.codeDelivery?.runId ?? null) === (first.meta?.codeDelivery?.runId ?? null) &&
+  (entry.meta?.codeDelivery?.effectKey ?? null) === (first.meta?.codeDelivery?.effectKey ?? null);
 
 const assistantActionEntry = (entries: AiStoredMessage[]): AiStoredMessage | null => {
   const assistantEntries = entries.filter((entry) => entry.kind === "message" && entry.message.role === "assistant");
@@ -114,7 +116,7 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
       index < messages.length &&
       isAssistantPart(messages[index]!) &&
       sameLoop(messages[index]!, loopId) &&
-      (loopId !== null || sameRoutineRun(messages[index]!, entry))
+      (loopId !== null || sameBackgroundResult(messages[index]!, entry))
     ) {
       entries.push(messages[index]!);
       index += 1;

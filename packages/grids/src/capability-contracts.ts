@@ -144,7 +144,6 @@ export const GqlContextDataSchema = z
 
 export const GqlContextInputSchema = z
   .object({
-    baseId: ShortIdSchema.describe("Public base ID whose permission-shaped GQL context should be loaded."),
     kind: ContextKindSchema.default("tables").describe(
       "Catalog section: tables, views, fields, select options, or typed object-list columns.",
     ),
@@ -177,7 +176,6 @@ const CurrentSourceSchema = z.discriminatedUnion("kind", [
 ]);
 
 const GqlInputShape = {
-  baseId: ShortIdSchema.describe("Public base ID in which the GQL source is resolved."),
   query: z.string().trim().min(1).max(20_000).describe("Grids Query Language source to execute."),
   currentTableId: ShortIdSchema.optional().describe("Optional public Table ID used when the source omits an explicit from clause."),
   currentSource: CurrentSourceSchema.optional().describe("Optional current Table or View source used when GQL omits from."),
@@ -189,7 +187,6 @@ const GqlInputShape = {
 
 export const ViewCreateInputSchema = z
   .object({
-    baseId: GqlInputShape.baseId,
     query: GqlInputShape.query,
     currentSource: CurrentSourceSchema.optional().describe("Source for a query without an explicit from clause."),
     name: z.string().trim().min(1).max(200).describe("Name for the new saved View."),
@@ -226,7 +223,6 @@ export const GqlExecuteInputSchema = z
 
 export const GqlViewExecuteInputSchema = z
   .object({
-    baseId: ShortIdSchema.describe("Public base ID containing the saved View."),
     viewId: ShortIdSchema.describe("Public saved View ID whose exact stored GQL should execute."),
     showTableToUser: ShowTableToUserSchema,
     pageSize: z.number().int().min(1).max(100).default(100).describe("Maximum rows to return on this cursor page."),
@@ -316,7 +312,6 @@ const RecordAuditSchema = z
 
 export const RecordCreateInputSchema = z
   .object({
-    tableId: ShortIdSchema.describe("Public ID of the writable stored Table that should receive the record."),
     values: RecordValuesSchema.describe("Public Field IDs mapped to explicitly supplied values."),
   })
   .strict();
@@ -356,7 +351,6 @@ const ExternalRecordIdentitySchema = z
 
 export const RecordExternalUpsertInputSchema = z
   .object({
-    tableId: ShortIdSchema.describe("Public ID of the writable stored Table that owns the Record."),
     externalRef: ExternalRecordIdentitySchema.describe("Case-sensitive durable identity of the source record outside Grids."),
     values: RecordValuesSchema.describe("Public Field IDs mapped to explicitly supplied values."),
     ifVersion: z
@@ -382,7 +376,6 @@ export const RecordExternalUpsertDataSchema = z
 
 export const RecordUpdateInputSchema = z
   .object({
-    tableId: ShortIdSchema.describe("Public ID of the writable stored Table containing the record."),
     recordId: ShortIdSchema.describe("Stable public live Record ID to update."),
     values: RecordValuesSchema.describe("Public Field IDs mapped to explicitly supplied replacement values."),
     ifVersion: z.number().int().positive().describe("Record version returned by record.read; stale versions are rejected."),

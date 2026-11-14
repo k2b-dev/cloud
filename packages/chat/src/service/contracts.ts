@@ -434,7 +434,7 @@ export const ConversationPageSchema = z.object({
 export const MemberSchema = z.object({
   accessId: z.uuid(),
   principal: MemberPrincipalSchema,
-  serviceAccountKind: z.enum(["standalone", "agent", "resource_bound", "user_delegated"]).optional(),
+  serviceAccountKind: z.enum(["standalone", "agent", "resource_bound", "user_delegated", "code"]).optional(),
   displayName: z.string(),
   avatarHash: z.string().nullable().optional(),
   guest: z.boolean(),

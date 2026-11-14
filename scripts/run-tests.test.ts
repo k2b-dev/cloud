@@ -93,15 +93,7 @@ describe("root test orchestration", () => {
     expect(byName.get("@k2b/pwa-auth src/status-bar.behavior.test.ts")?.command).toContain("--conditions=browser");
     expect(byName.has("@k2b/cloud-app-spaces src/frontend/[id]/_components/kanban/kanban-board.browser.test.ts")).toBeTrue();
     expect(suites.some((suite) => suite.name.includes("consent-browser.integration"))).toBeFalse();
-    // Assistant's artifact suites run nightly in Google Chrome; only the HTML app frame suites use the shared launcher.
-    expect(suites.filter((suite) => suite.name.startsWith("@k2b/cloud-app-assistant src/artifacts/")).map((suite) => suite.name)).toEqual(
-      expect.arrayContaining([
-        "@k2b/cloud-app-assistant src/artifacts/chat-presentation.browser.test.ts",
-        "@k2b/cloud-app-assistant src/artifacts/html/html-app.browser.test.ts",
-        "@k2b/cloud-app-assistant src/artifacts/runner.browser.test.ts",
-      ]),
-    );
-    expect(byName.has("@k2b/cloud-app-assistant src/artifacts/workspace.browser.test.ts")).toBeFalse();
+    expect(suites.some((suite) => suite.name.includes("assistant src/artifacts/"))).toBeFalse();
     expect(byName.has("@k2b/cloud-app-assistant src/frontend/AssistantChatSidebar.browser.test.ts")).toBeTrue();
   });
 
@@ -390,19 +382,18 @@ test("discovers ClickHouse and versioned Pulse migration files as isolated integ
   );
 });
 
-test("keeps the Mail workflow kernel in Cloud's isolated CI integration suites with Mail's fixture setup", async () => {
-  const suites = await discoverTestSuites(workspaceRoot, { integration: true, filters: ["mail-workflow-kernel"] });
+test("keeps the shared workflow engine in Cloud's isolated CI integration suites", async () => {
+  const suites = await discoverTestSuites(workspaceRoot, {
+    integration: true,
+    filters: ["src/workflows/store/events.integration.test.ts"],
+  });
   expect(suites).toEqual([
     {
-      name: "@k2b/cloud test/integration/mail-workflow-kernel.integration.test.ts",
+      name: "@k2b/cloud src/workflows/store/events.integration.test.ts",
       cwd: join(workspaceRoot, "packages/cloud"),
-      command: ["bun", "test", "--preload", preload, "--timeout", "30000", "test/integration/mail-workflow-kernel.integration.test.ts"],
+      command: ["bun", "test", "--preload", preload, "--timeout", "30000", "src/workflows/store/events.integration.test.ts"],
     },
   ]);
-  const source = await Bun.file(join(suites[0]!.cwd, suites[0]!.command.at(-1)!)).text();
-  const mailPreload = 'await import("../../../mail/test/integration-preload");';
-  expect(source).toContain(mailPreload);
-  expect(source.indexOf(mailPreload)).toBeLessThan(source.indexOf('await import("../../../mail/src/'));
 });
 
 for (const mode of ["unit", "webkit", "integration"] as const) {

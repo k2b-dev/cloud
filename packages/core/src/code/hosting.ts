@@ -1,0 +1,180 @@
+import { CODE_REQUEST_LIMITS, CodeRouteRequestSchema, codeOwnPath, matchCodeRoute, validateCodePage } from "@k2b/cloud/code";
+import { auth, clientIp, clientIpBucket, getEffectiveGroups, middleware, ratelimit } from "@k2b/cloud/server";
+import { createLoginRedirectUrl } from "@k2b/cloud/shared";
+import { Hono } from "hono";
+import { type CodePageHostingContext, codePageHandlers } from "./render-page";
+import { waitCodeRequest } from "./request-deadline";
+import { CodeRequestError, codeRequestVersion, requestCodeRoute } from "./requests";
+import { checkCodeCsrf, codeCsrf } from "./route-security";
+
+/** Stream into the budget, including chunked bodies; Content-Length alone is never sufficient. */
+export async function readCodeRequestBody(request: Request, maxBytes: number, signal: AbortSignal): Promise<string> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const abort = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    while (true) {
+      signal.throwIfAborted();
+      const chunk = await reader.read();
+      signal.throwIfAborted();
+      if (chunk.done) {
+        try {
+          return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
+        } catch {
+          throw new CodeRequestError("code_request_encoding", 400);
+        }
+      }
+      size += chunk.value.byteLength;
+      if (size > maxBytes) throw new CodeRequestError("code_request_size_limit", 413);
+      chunks.push(chunk.value);
+    }
+  } finally {
+    signal.removeEventListener("abort", abort);
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+export function createCodeHostingRoutes(deps = { version: codeRequestVersion, request: requestCodeRoute }) {
+  const router = new Hono<CodePageHostingContext>();
+  router.use("/code/:codeId/*", middleware.noTransform(), auth.requireRole("*"));
+  router.all(
+    "/code/:codeId/*",
+    async (c, next) => {
+      c.header("Cache-Control", "no-store");
+      c.header("X-Content-Type-Options", "nosniff");
+      c.header("Vary", "X-Code-Page");
+      const codeId = c.req.param("codeId");
+      const signal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(CODE_REQUEST_LIMITS.timeoutMs)]);
+      try {
+        if (!["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"].includes(c.req.method))
+          return c.json({ code: "code_request_method" }, 405);
+        if (Buffer.byteLength(c.req.url) > CODE_REQUEST_LIMITS.urlBytes) return c.json({ code: "code_request_size_limit" }, 413);
+        const version = await waitCodeRequest(deps.version(codeId), signal);
+        const path = new URL(c.req.url).pathname.slice(`/code/${codeId}`.length) || "/";
+        const selected = version.manifest.entrypoints.find(
+          (entry) => entry.kind === "route" && entry.route && matchCodeRoute(entry.route, c.req.method, path),
+        );
+        if (!selected?.route) return c.json({ code: "code_route_not_found" }, 404);
+        const isPublic = selected.route.public;
+        const actor = c.get("actor");
+        const subject = c.get("accessSubject");
+        // Interactive pages require a signed-in person. Workload credentials never impersonate a visitor.
+        if (
+          !isPublic &&
+          (c.get("credentialKind") !== "session" || actor?.kind !== "user" || subject?.type !== "user" || subject.userId !== actor.user.id)
+        ) {
+          // A visitor who opens the page goes to sign-in and comes back to it, as on every Cloud page.
+          if (!actor && c.req.method === "GET" && c.req.header("Accept")?.includes("text/html") && c.req.header("X-Code-Page") !== "tree")
+            return c.redirect(createLoginRedirectUrl(c.req.url));
+          return c.json({ code: "code_sign_in_required" }, 401);
+        }
+        // Pages that are not public belong to the Cloud's members, whoever owns the Code: they run with the owner's
+        // rights, which no guest account was given. A guest is refused before the Code is asked.
+        if (!isPublic && actor?.kind === "user" && actor.user.profile === "guest") return c.json({ code: "code_members_only" }, 403);
+        if (!isPublic && actor?.kind === "user") {
+          const limiter = ratelimit({ id: "code-visitor-requests", windowSecs: 60, limit: CODE_REQUEST_LIMITS.publicPerMinute });
+          if ((await waitCodeRequest(limiter.check(`user:${actor.user.id}`), signal)).limited) {
+            c.header("Retry-After", "60");
+            return c.json({ code: "code_request_rate_limit" }, 429);
+          }
+        }
+        if (isPublic) {
+          const limiter = ratelimit({ id: "code-public-requests", windowSecs: 60, limit: CODE_REQUEST_LIMITS.publicPerMinute });
+          if (
+            (await waitCodeRequest(limiter.check(`ip:${clientIpBucket(clientIp(c))}`), signal)).limited ||
+            (await waitCodeRequest(limiter.check(`code:${codeId}`), signal)).limited
+          ) {
+            c.header("Retry-After", "60");
+            return c.json({ code: "code_request_rate_limit" }, 429);
+          }
+        }
+        const contentType = c.req.header("Content-Type")?.split(";", 1)[0]?.trim() ?? "text/plain";
+        if (!["text/plain", "application/json", "application/x-www-form-urlencoded"].includes(contentType))
+          return c.json({ code: "code_request_content_type" }, 415);
+        let body = await readCodeRequestBody(
+          c.req.raw,
+          isPublic ? CODE_REQUEST_LIMITS.publicBodyBytes : CODE_REQUEST_LIMITS.bodyBytes,
+          signal,
+        );
+        // Public Code has no visitor authority: never bind it to a browser session or an anonymous cookie.
+        const binding = !isPublic && c.get("credentialKind") === "session" ? c.get("sessionToken") : undefined;
+        const mutating = !["GET", "HEAD", "OPTIONS"].includes(c.req.method);
+        let received = c.req.header("X-Code-CSRF");
+        if (contentType === "application/x-www-form-urlencoded") {
+          const form = new URLSearchParams(body);
+          received ??= form.get("_csrf") ?? undefined;
+          form.delete("_csrf");
+          body = form.toString();
+        }
+        if (Buffer.byteLength(body) > (isPublic ? CODE_REQUEST_LIMITS.publicBodyBytes : CODE_REQUEST_LIMITS.bodyBytes))
+          return c.json({ code: "code_request_size_limit" }, 413);
+        if (!isPublic && mutating && !checkCodeCsrf(binding, codeId, received)) return c.json({ code: "code_csrf_required" }, 403);
+        const csrf = binding ? codeCsrf(binding, codeId) : null;
+        if (csrf !== null) c.header("X-Code-CSRF", csrf);
+        const effectiveGroups =
+          !isPublic && subject?.type === "user" ? await waitCodeRequest(getEffectiveGroups({ userId: subject.userId }), signal) : [];
+        const user =
+          !isPublic && actor?.kind === "user" && subject?.type === "user"
+            ? {
+                id: actor.user.id,
+                username: actor.user.uid,
+                groupIds: effectiveGroups.map((group) => group.id),
+                groupNames: effectiveGroups.map((group) => group.name),
+                kind: actor.user.profile,
+                name: actor.user.displayName,
+              }
+            : null;
+        const response = await waitCodeRequest(
+          deps.request({
+            codeId,
+            versionId: version.versionId,
+            entrypoint: selected.entrypoint,
+            signal,
+            request: CodeRouteRequestSchema.parse({
+              codeId,
+              method: c.req.method,
+              path,
+              query: new URL(c.req.url).search,
+              contentType: contentType,
+              body,
+              params: matchCodeRoute(selected.route, c.req.method, path)!,
+              user,
+            }),
+          }),
+          signal,
+        );
+        if (response.kind === "page") {
+          const page = { tree: validateCodePage(response.tree, codeId), codeId, csrf };
+          // The page's own island asks for the checked tree alone after a submit or a followed event.
+          // Code responses cannot set headers, so this marker tells the island the tree passed validation.
+          if (c.req.header("X-Code-Page") === "tree") return c.json({ tree: page.tree, csrf: page.csrf }, 200, { "X-Code-Page": "tree" });
+          c.set("hostedCodePage", selected.route.layout === "plain" ? { ...page, layout: "plain" } : page);
+          await waitCodeRequest(next(), signal);
+          if (c.req.method === "HEAD") c.res = c.newResponse(null, c.res);
+          return c.res;
+        }
+        if (response.kind === "redirect") return c.redirect(codeOwnPath(codeId, response.location), response.status);
+        return c.newResponse(
+          ["HEAD"].includes(c.req.method) || [204, 205, 304].includes(response.status) ? null : response.body,
+          new Response(null, {
+            status: response.status,
+            headers: new Headers({
+              "Content-Type": response.kind === "json" ? "application/json; charset=utf-8" : "text/plain; charset=utf-8",
+            }),
+          }),
+        );
+      } catch (error) {
+        if (signal.aborted) return c.json({ code: "code_request_timeout" }, 504);
+        if (error instanceof CodeRequestError) return c.json({ code: error.code }, error.status);
+        return c.json({ code: "code_request_failed" }, 503);
+      }
+    },
+    ...codePageHandlers,
+  );
+  return router;
+}

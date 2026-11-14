@@ -20,6 +20,7 @@
     "./collab": "./src/collab/index.ts",
     "./formula": "./src/formula.ts",
     "./charts": "./src/charts.ts",
+    "./chart-schema": "./src/chart-schema.ts",
     "./markdown/pretty-table": "./src/markdown/pretty-table.ts",
     "./markdown/shared-tables": "./src/markdown/shared-tables.ts",
     "./markdown/pretty-table-messages": "./src/markdown/pretty-table-messages.ts",

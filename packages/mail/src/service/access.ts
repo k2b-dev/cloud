@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { type AccessMember, toAccessMember } from "@k2b/cloud/contracts";
+import { type AccessMember, type ResourcePrincipal, toAccessMember } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
@@ -9,13 +9,17 @@ import {
   getEffectivePermission,
   getEffectivePermissions,
   hasPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   resolveDisplayNames,
   updateAccess,
+  userFromActor,
 } from "@k2b/cloud/server";
-import { accounts, audit } from "@k2b/cloud/services";
+import { accounts, audit, type ServiceAccountKind } from "@k2b/cloud/services";
+import { resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
+import { MAIL_APP_ID, MAILBOX_RESOURCE_TYPE } from "../app-identity";
 import { auditActorFromRequest, capByCredentialScopes, isResourceBoundToMailbox, type MailRequestContext, userBackedActor } from "./auth";
 
 type SqlClient = typeof sql;
@@ -47,6 +51,7 @@ type DbAccess = {
   user_id: string | null;
   group_id: string | null;
   service_account_id: string | null;
+  service_account_kind?: ServiceAccountKind | null;
   authenticated_only: boolean;
   permission: PermissionLevel;
   created_at: Date | string;
@@ -304,6 +309,27 @@ export const getMailboxAccess = async (
   db: SqlClient = sql,
 ): Promise<MailboxAccess | null> => accessFromGrants(context, await resolveMailboxGrants(context, mailboxId, false, db));
 
+/** Current mailbox readers in either Mail scope, independent of credential scopes. */
+export const readableMailboxPrincipals = async (
+  mailboxId: string,
+  principals: readonly ResourcePrincipal[],
+): Promise<ResourcePrincipal[]> => {
+  const readers = await resolveResourceReaders(principals);
+  const permissions = await getEffectivePermissions({
+    accessIds: sql`SELECT grants.access_id FROM (${accessRows(mailboxId)}) grants
+      JOIN mail.mailboxes mailbox ON mailbox.id=${mailboxId}::uuid AND mailbox.deleted_at IS NULL`,
+    subjects: readers.map((reader) => reader.subject),
+  });
+  return readers
+    .filter(
+      ({ binding }, index) =>
+        permissions[index] !== undefined &&
+        permissions[index] !== "none" &&
+        (!binding || (binding.appId === MAIL_APP_ID && binding.resourceType === MAILBOX_RESOURCE_TYPE && binding.resourceId === mailboxId)),
+    )
+    .map((reader) => reader.principal);
+};
+
 /**
  * Requires `required` on the mailbox for a path that applies conversation visibility: it accepts an
  * assigned-only grant too. Callers must then restrict every conversation, message, draft and count
@@ -488,18 +514,32 @@ const authorizeAccessManagement = async (
     const allowed = await requireMailboxPermission(context, mailboxId, "admin", db);
     return allowed.ok ? ok() : fail(allowed.error);
   }
-  return (await isCurrentPlatformAdmin(context)) ? ok() : fail(err.forbidden("Cloud administration access is required"));
+  const user = userBackedActor(context);
+  const current =
+    db === sql
+      ? await isCurrentPlatformAdmin(context)
+      : user &&
+        (await accounts.users.hasInstallationAdminInTransaction(
+          context.actor.kind === "user" ? context.actor : { kind: "user", user },
+          db,
+        ));
+  return current ? ok() : fail(err.forbidden("Cloud administration access is required"));
 };
 
 /** Every grant on the mailbox in both scopes with display names, managers first. Callers authorize before they read it. */
-export const loadMailboxAccessEntries = async (mailboxId: string): Promise<MailboxAccessEntry[]> => {
+export const loadMailboxAccessEntries = async (
+  mailboxId: string,
+  display: { canManageTarget?: boolean; locale?: string; cloudAdmin?: boolean } = {},
+): Promise<MailboxAccessEntry[]> => {
   const rows = await sql<DbAccess[]>`
-    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope
+    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope,
+      account.kind AS service_account_kind
     FROM (${accessRows(mailboxId)}) grants
     JOIN auth.access a ON a.id = grants.access_id
+    LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id
     ORDER BY (grants.scope = 'assigned'), ${PERMISSION_ORDER()}, a.created_at, a.id
   `;
-  return resolveDisplayNames(rows.map(mapAccess));
+  return resolveDisplayNames(rows.map(mapAccess), display);
 };
 
 /** A read-only access row; `scope: "assigned"` marks access to assigned conversations only. */
@@ -524,7 +564,14 @@ const listMailboxAccessWithAuthority = async (
 ): Promise<Result<MailboxAccessEntry[]>> => {
   const allowed = await authorizeAccessManagement(context, mailboxId, authority);
   if (!allowed.ok) return allowed;
-  return ok(await loadMailboxAccessEntries(mailboxId));
+  const canManageTarget = authority === "mailbox_admin";
+  return ok(
+    await loadMailboxAccessEntries(mailboxId, {
+      canManageTarget,
+      locale: context.locale,
+      cloudAdmin: userFromActor(context.actor)?.roles.includes("admin"),
+    }),
+  );
 };
 
 const insertGrantLink = async (db: SqlClient, mailboxId: string, accessId: string, scope: MailboxAccessScope): Promise<void> => {
@@ -555,6 +602,8 @@ const grantMailboxAccessWithAuthority = async (params: {
   return tryCatch(
     async () => {
       const created = await sql.begin(async (tx) => {
+        if (!(await lockAccessMutationAuthority({ subject: params.context.accessSubject, principal: params.principal }, tx)))
+          unwrap(fail(err.forbidden("Access denied")));
         if (!(await lockMailbox(params.mailboxId, tx))) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await authorizeAccessManagement(params.context, params.mailboxId, params.authority, tx));
         if (await getPrincipalGrant(params.mailboxId, params.principal, tx)) unwrap(fail(err.conflict("Mailbox access")));
@@ -587,7 +636,11 @@ const grantMailboxAccessWithAuthority = async (params: {
         if (!row) throw new Error("Created access entry could not be loaded");
         return mapAccess(row);
       });
-      const [resolved] = await resolveDisplayNames([created]);
+      const [resolved] = await resolveDisplayNames([created], {
+        canManageTarget: params.authority === "mailbox_admin",
+        cloudAdmin: userFromActor(params.context.actor)?.roles.includes("admin"),
+        locale: params.context.locale,
+      });
       if (!resolved) throw new Error("Created access entry could not be resolved");
       return resolved;
     },
@@ -597,9 +650,11 @@ const grantMailboxAccessWithAuthority = async (params: {
 
 const lockAccessEntries = async (mailboxId: string, db: SqlClient): Promise<DbAccess[]> =>
   db<DbAccess[]>`
-    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope
+    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope,
+      account.kind AS service_account_kind
     FROM (${accessRows(mailboxId)}) grants
     JOIN auth.access a ON a.id = grants.access_id
+    LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id
     ORDER BY a.id
     FOR UPDATE OF a
   `;
@@ -612,9 +667,9 @@ const ensureAdminRemains = (
 ): Result<void> => {
   const current = entries.find((entry) => entry.id === accessId);
   if (!current) return fail(err.notFound("Mailbox access"));
-  const manages = (entry: { permission: PermissionLevel; scope: MailboxAccessScope }) =>
-    entry.permission === "admin" && entry.scope === "mailbox";
-  if (!manages(current) || (next && manages(next))) return ok();
+  const manages = (entry: { permission: PermissionLevel; scope: MailboxAccessScope; service_account_kind?: ServiceAccountKind | null }) =>
+    entry.permission === "admin" && entry.scope === "mailbox" && entry.service_account_kind !== "code";
+  if (!manages(current) || (next && manages({ ...current, ...next }))) return ok();
   if (entries.some((entry) => entry.id !== accessId && manages(entry))) return ok();
   return fail(err.badInput("A mailbox must keep at least one administrator"));
 };
@@ -631,6 +686,8 @@ const updateMailboxAccessWithAuthority = async (params: {
   tryCatch(
     () =>
       sql.begin(async (tx) => {
+        if (!(await lockAccessMutationAuthority({ subject: params.context.accessSubject, accessId: params.accessId }, tx)))
+          unwrap(fail(err.forbidden("Access denied")));
         if (!(await lockMailbox(params.mailboxId, tx))) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await authorizeAccessManagement(params.context, params.mailboxId, params.authority, tx));
         const entries = await lockAccessEntries(params.mailboxId, tx);
@@ -704,6 +761,8 @@ const revokeMailboxAccessWithAuthority = async (params: {
   tryCatch(
     () =>
       sql.begin(async (tx) => {
+        if (!(await lockAccessMutationAuthority({ subject: params.context.accessSubject, accessId: params.accessId }, tx)))
+          unwrap(fail(err.forbidden("Access denied")));
         if (!(await lockMailbox(params.mailboxId, tx))) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await authorizeAccessManagement(params.context, params.mailboxId, params.authority, tx));
         const entries = await lockAccessEntries(params.mailboxId, tx);

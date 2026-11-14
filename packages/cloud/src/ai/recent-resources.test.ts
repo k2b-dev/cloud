@@ -127,9 +127,6 @@ test("lists skills once with credential context and never calls readers for disa
     dispatch: async () => {
       throw new Error("No dispatch expected");
     },
-    studioReader: async () => {
-      throw new Error("No Studio read expected");
-    },
   });
   expect(calls).toBe(1);
   expect(resources).toEqual([

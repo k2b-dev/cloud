@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { CAPABILITY_MAX_REQUEST_BYTES } from "../contracts/capabilities";
+import { capabilityInvocationBody, normalizeCapabilityCall } from "../capabilities/calls";
+import { CAPABILITY_MAX_REQUEST_BYTES, CapabilityInvocationBodySchema } from "../contracts/capabilities";
 import { resolveLocale } from "../server/locale";
 import { getActiveAppKey } from "../services/app-keys";
 import { verifyAppCapabilityInvocation } from "../services/identity/invocation-token";
@@ -17,16 +18,16 @@ export const createAppCapabilityRoutes = (compiled: CompiledCapabilities) => {
         const operation = (kind === "query" ? compiled.queries : compiled.actions).get(c.req.param("capabilityId"));
         const deny = () => c.json({ code: "FORBIDDEN", message: "A permitted signed app capability invocation is required" }, 403);
         if (!operation?.manifest.appPermission || operation.manifest.stream) return deny();
-        const body = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
-        if (
-          !body.ok ||
-          !body.data ||
-          typeof body.data !== "object" ||
-          Array.isArray(body.data) ||
-          Object.keys(body.data).length !== 1 ||
-          !("input" in body.data)
-        )
-          return c.json({ code: "VALIDATION_FAILED", message: "Expected a bounded input object" }, 400);
+        const rawBody = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
+        const body = CapabilityInvocationBodySchema.safeParse(rawBody.ok ? rawBody.data : undefined);
+        if (!body.success) return c.json({ code: "VALIDATION_FAILED", message: "Expected a bounded capability call" }, 400);
+        let call: ReturnType<typeof normalizeCapabilityCall>;
+        try {
+          call = normalizeCapabilityCall(compiled.manifest.appId, operation.manifest, body.data);
+        } catch {
+          return c.json({ code: "VALIDATION_FAILED", message: "Invalid capability target" }, 400);
+        }
+        const boundCall = operation.manifest.target !== undefined || operation.manifest.refs !== undefined;
         const token = c.req.header("authorization")?.match(/^Bearer (\S+)$/)?.[1];
         if (!token) return deny();
         try {
@@ -36,7 +37,7 @@ export const createAppCapabilityRoutes = (compiled: CompiledCapabilities) => {
             capabilityId: operation.manifest.localId,
             schemaHash: operation.manifest.schemaHash,
             permission: operation.manifest.appPermission,
-            input: body.data.input,
+            input: boundCall ? call : body.data.input,
           });
           if (!claims) return deny();
           const locale = resolveLocale(c.req.raw.headers, await get<string>("app.locale"));
@@ -45,7 +46,7 @@ export const createAppCapabilityRoutes = (compiled: CompiledCapabilities) => {
             compiled,
             kind,
             localId: operation.manifest.localId,
-            input: body.data.input,
+            ...capabilityInvocationBody(call),
             expectedSchemaHash: claims.schema_hash,
             context: {
               actor: { kind: "app", appId: claims.sub, keyId: claims.key_id },

@@ -1,3 +1,5 @@
+export { appendAiBackgroundMessage } from "./background-message";
+
 import { isDeepStrictEqual } from "node:util";
 import type { InboundEvent, Input, Message } from "@k2b/nessi";
 import type { QueueMessage } from "@k2b/sync";
@@ -27,6 +29,7 @@ import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
 import { parseAiResourceMarker } from "./resource-markers";
+import { assertInteractiveChatTurn, isRetiredRoutineConfig } from "./retired-routines";
 import { isAiVisionModelConfigured, readAiSettingsState } from "./settings";
 import { aiConversations } from "./store";
 import { publishAiWireEvent } from "./stream";
@@ -41,6 +44,7 @@ import type {
   AiInterChatMessage,
   AiModelPolicy,
   AiPendingTurnAction,
+  AiRuntimeTool,
   AiStoredMessage,
   AiTurn,
   AiTurnFinalizedAction,
@@ -134,6 +138,7 @@ export type SubmitAiChatTurnInput = {
 };
 
 export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
+  assertInteractiveChatTurn(input);
   if (input.localContext && !input.client) throw new Error("Local context requires a local client.");
   if (input.clientToolIds?.length && input.toolSource?.kind !== "default") {
     throw new Error("Optional client tools require the default tool source.");
@@ -457,6 +462,7 @@ const runClaimedTurn = async (
   leaseOwner: string,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   onApprovalRequested?: ApprovalRequestedListener,
+  tools?: readonly AiRuntimeTool[],
 ): Promise<void> => {
   const timeoutMinutes = await coreSettings.get<number>("ai.turn_timeout_minutes");
   const runBudgetMs = Math.max(0, Number(timeoutMinutes ?? 30)) * 60_000;
@@ -482,6 +488,7 @@ const runClaimedTurn = async (
 
   const executor = new AiTurnExecutor({
     leaseOwner,
+    tools,
     heartbeatMs: AI_TURN_HEARTBEAT_MS,
     enqueueContinuation: (input) => enqueueAiTurn(input).then(() => undefined),
     onTurnFinalized,
@@ -495,6 +502,7 @@ const processMessage = async (
   signal: AbortSignal,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   onApprovalRequested?: ApprovalRequestedListener,
+  tools?: readonly AiRuntimeTool[],
 ): Promise<void> => {
   const leaseOwner = `${AI_WORKER_ID}:${message.messageId}:${crypto.randomUUID()}`;
   let heartbeatFailed = false;
@@ -517,7 +525,7 @@ const processMessage = async (
   }, AI_TURN_HEARTBEAT_MS);
   if (typeof touch === "object" && "unref" in touch) touch.unref();
   try {
-    await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized, onApprovalRequested);
+    await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized, onApprovalRequested, tools);
   } catch (error) {
     log.error("AI turn worker error", {
       conversationId: message.data.conversationId,
@@ -531,8 +539,8 @@ const processMessage = async (
 };
 
 const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: string }, status: "failed" | "aborted"): Promise<void> => {
-  const config = await aiConversations.getTurnRunConfig(turn);
-  if (config?.kind === "chat" && config.background) return;
+  // A legacy routine shares the conversation, but never owns its interactive stream.
+  if (isRetiredRoutineConfig(await aiConversations.getTurnRunConfig(turn))) return;
   await publishAiWireEvent({
     v: 1,
     conversationId: turn.conversationId,
@@ -588,6 +596,8 @@ let refCount = 0;
 
 export const startAiRuntime = (
   input: {
+    /** Host-owned tools for default Assistant turns. Register on the first runtime start. */
+    tools?: readonly AiRuntimeTool[];
     concurrency?: number;
     onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
     onApprovalRequested?: ApprovalRequestedListener;
@@ -628,7 +638,7 @@ export const startAiRuntime = (
     signal: controller.signal,
     run: async (signal) => {
       const worker = await aiTurnQueue().process({ concurrency, signal }, (message) =>
-        processMessage(message, message.signal, dispatchTurnFinalized, dispatchApprovalRequested),
+        processMessage(message, message.signal, dispatchTurnFinalized, dispatchApprovalRequested, input.tools),
       );
       try {
         await new Promise<void>((resolve) => {

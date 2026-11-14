@@ -11,8 +11,9 @@ import {
   getEffectivePermission,
   getEffectivePermissions,
   listUsersWithAccess,
-  resolveDisplayNames,
 } from "./access";
+
+import { resolveDisplayNames } from "./access-display";
 
 type Fixture = {
   accessIds: string[];
@@ -390,12 +391,12 @@ test("resolveDisplayNames batches each kind once and leaves missing names absent
       return [{ id: "11111111-1111-4111-8111-111111111111", name: "Research agent", kind: "agent" }];
     };
     Bun.plugin({ name: "principal-display-sql-fixture", setup(build) {
-      build.onLoad({ filter: /server\\/services\\/access[.]ts$/ }, async ({ path }) => ({
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
         contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.principalDisplaySql;'),
         loader: "ts",
       }));
     } });
-    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access.ts", import.meta.url).pathname)});
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
     const present = "11111111-1111-4111-8111-111111111111", missing = "22222222-2222-4222-8222-222222222222";
     const entries = [
       { principal: { type: "user", userId: present } },
@@ -429,4 +430,199 @@ test("resolveDisplayNames batches each kind once and leaves missing names absent
     new Response(child.stderr).text(),
   ]);
   expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+});
+
+test("Code titles are resolved in the existing batch only for a managed target", async () => {
+  const script = `
+    import { strict as assert } from "node:assert";
+    const calls = [];
+    const present = "11111111-1111-4111-8111-111111111111", app = "22222222-2222-4222-8222-222222222222";
+    globalThis.codeDisplaySql = async (parts) => {
+      assert.ok(parts.join("?").includes("FROM auth.service_accounts"));
+      calls.push("accounts");
+      return [
+        { id: present, name: "code:demo.item:secret-id", kind: "code", title: "Private mailbox", handle: "code-7k2q9m4xwt", status: "disabled" },
+        { id: app, name: "code:app:workshop", kind: "code", title: "Workshop", handle: "code-0123456789", status: "active" },
+      ];
+    };
+    globalThis.codeDisplayCatalog = async (id) => ({ appId: id, appName: id === "workshop" ? "Workshop" : "Demo",
+      appPresentation: id === "workshop" ? { baseLocale: "en", translations: { de: { name: "Werkstatt" } } } : undefined, manifest: {
+      appId: id, types: [{ localId: "item", title: "Postfach", codeAccount: { name: "Code eines Postfachs", description: "Dienstkonto eines Postfachs" } }], code: { pages: { item: "/app/demo/{id}/code" } },
+    } });
+    Bun.plugin({ name: "code-display-fixture", setup(build) {
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.codeDisplaySql;'), loader: "ts",
+      }));
+      build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text())
+          .replace('import { getApp, getCapability } from "../../_internal/registry";', 'const getCapability = globalThis.codeDisplayCatalog, getApp = async () => null;')
+          .replace('import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";', 'const resolveCapabilityManifestPresentation = (manifest) => manifest;'), loader: "ts",
+      }));
+    } });
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
+    const entries = [
+      { principal: { type: "service_account", serviceAccountId: present }, displayName: "Stale secret", serviceAccountHref: "/old-secret", serviceAccountHandle: "code-stale00000" },
+      { principal: { type: "service_account", serviceAccountId: app } },
+    ];
+    const reader = await resolveDisplayNames(entries, { locale: "de" });
+    assert.equal(reader[0].displayName, "Code eines Postfachs");
+    assert.equal(reader[0].serviceAccountHref, undefined);
+    assert.equal(reader[0].serviceAccountHandle, undefined);
+    assert.equal(reader[1].serviceAccountHandle, undefined);
+    assert.ok(!JSON.stringify(reader).includes("Private mailbox"));
+    assert.ok(!JSON.stringify(reader).includes("secret-id"));
+    // The app's name in the viewer's language, never the name stored with the account.
+    assert.equal(reader[1].displayName, "Code von Werkstatt");
+    assert.equal(reader[1].serviceAccountHref, undefined);
+    assert.deepEqual(calls.splice(0), ["accounts"]);
+    assert.equal((await resolveDisplayNames(entries, { locale: "en" }))[1].displayName, "Code of Workshop");
+    calls.splice(0);
+    const manager = await resolveDisplayNames(entries, { permission: "admin", locale: "de" });
+    assert.equal(manager[0].displayName, "Code von Private mailbox");
+    assert.equal(manager[0].serviceAccountHref, "/app/demo/secret-id/code");
+    assert.equal(manager[0].serviceAccountHandle, "code-7k2q9m4xwt");
+    assert.ok(manager[0].serviceAccountDescription.includes("deaktiviert"));
+    assert.equal(manager[1].serviceAccountHref, undefined);
+    assert.deepEqual(calls.splice(0), ["accounts"]);
+    const admin = await resolveDisplayNames(entries, { cloudAdmin: true, locale: "de" });
+    assert.equal(admin[1].serviceAccountHref, "/admin/code?sec=code&app=workshop");
+    assert.equal(admin[0].displayName, "Code eines Postfachs");
+    assert.equal(admin[0].serviceAccountHandle, undefined);
+    assert.equal(admin[1].serviceAccountHandle, undefined);
+    // The list length changes neither statement count nor app calls.
+    const legacyManager = await resolveDisplayNames(entries, { canManageTarget: true, locale: "de" });
+    assert.equal(legacyManager[0].serviceAccountHandle, "code-7k2q9m4xwt");
+    const capped = await resolveDisplayNames(entries, { permission: "read", canManageTarget: true, locale: "de" });
+    assert.equal(capped[0].serviceAccountHandle, undefined);
+    assert.equal(capped[0].displayName, "Code eines Postfachs");
+    calls.splice(0);
+    const many = await resolveDisplayNames(Array.from({ length: 50 }, () => entries[0]), { canManageTarget: true, locale: "de" });
+    assert.equal(many.length, 50);
+    assert.deepEqual(calls.splice(0), ["accounts"]);
+  `;
+  const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
+});
+
+for (const canManageTarget of [false, true])
+  test(
+    canManageTarget
+      ? "Code managers keep the snapshot title and handle after a rejected or stalled registry read"
+      : "Code readers get type-only after a rejected or stalled registry read",
+    async () => {
+      const script = `
+    import { strict as assert } from "node:assert";
+    const id = "11111111-1111-4111-8111-111111111111";
+    let mode = "reject", appOwned = false, fallback = false, started;
+    globalThis.degradedDisplaySql = async () => [{
+      id, name: appOwned ? "code:app:secret-app" : "code:demo.item:private-owner-id", kind: "code", title: "Private title", handle: "code-7k2q9m4xwt", status: "disabled",
+    }];
+    globalThis.degradedDisplayCatalog = async (catalog = false) => {
+      if (fallback && catalog) return null;
+      started.resolve();
+      if (mode === "reject") throw new Error("Registry unavailable");
+      return new Promise(() => {});
+    };
+    Bun.plugin({ name: "degraded-code-display", setup(build) {
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.degradedDisplaySql;'), loader: "ts",
+      }));
+      build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text()).replace('import { getApp, getCapability } from "../../_internal/registry";', 'const getCapability = () => globalThis.degradedDisplayCatalog(true), getApp = () => globalThis.degradedDisplayCatalog(false);'), loader: "ts",
+      }));
+    } });
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
+    const { REQUEST_IDLE_TIMEOUT_SECONDS } = await import(${JSON.stringify(new URL("../request-timeout.ts", import.meta.url).pathname)});
+    const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout;
+    for (const variant of [["reject", false, false], ["stall", false, false], ["reject", true, false], ["stall", true, false], ["reject", true, true], ["stall", true, true]]) {
+      [mode, appOwned, fallback] = variant;
+      started = Promise.withResolvers();
+      let expire, scheduled = 0, cleared = 0;
+      globalThis.setTimeout = (callback, ms, ...args) => {
+        assert.equal(ms, REQUEST_IDLE_TIMEOUT_SECONDS * 1_000 / 2);
+        scheduled++;
+        expire = () => callback(...args);
+        return originalSet(callback, ms, ...args);
+      };
+      globalThis.clearTimeout = (timer) => { cleared++; originalClear(timer); };
+      try {
+        const pending = resolveDisplayNames(Array.from({ length: 20 }, () => ({
+          principal: { type: "service_account", serviceAccountId: id }, displayName: "Stale private title", serviceAccountHref: "/private-owner-id", serviceAccountHandle: "code-stale00000",
+        })), { canManageTarget: ${canManageTarget}, locale: "de" });
+        await started.promise;
+        // Drive the deadline callback directly: no real-time sleep or timeout increase.
+        if (mode === "stall") expire();
+        const entries = await pending;
+        assert.equal(entries.length, 20);
+        for (const entry of entries) {
+          assert.equal(entry.displayName, ${canManageTarget} ? "Code von Private title" : appOwned ? "Code einer App" : "Code eines Objekts");
+          assert.equal(entry.serviceAccountKind, "code");
+          assert.equal(entry.serviceAccountHref, undefined);
+          assert.equal(entry.serviceAccountHandle, ${canManageTarget} ? "code-7k2q9m4xwt" : undefined);
+          assert.ok(entry.serviceAccountDescription.includes("deaktiviert"));
+        }
+        assert.equal(JSON.stringify(entries).includes("Private title"), ${canManageTarget});
+        assert.ok(!JSON.stringify(entries).includes("Stale private title"));
+        assert.ok(!JSON.stringify(entries).includes("code-stale00000"));
+        assert.ok(!JSON.stringify(entries).includes("private-owner-id"));
+        assert.ok(!JSON.stringify(entries).includes("secret-app"));
+        assert.ok(!JSON.stringify(entries).includes("code:demo.item:"));
+        assert.equal(scheduled, 1);
+        assert.equal(cleared, 1);
+      } finally {
+        globalThis.setTimeout = originalSet;
+        globalThis.clearTimeout = originalClear;
+      }
+    }
+  `;
+      const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
+      const [stdout, stderr, exit] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
+    },
+  );
+
+test("Code of an app without a capability catalog shows the app's name in the viewer's language", async () => {
+  // The account keeps the name stored when the Code was created; only an app that is gone shows it.
+  const script = `
+    import { strict as assert } from "node:assert";
+    const registered = "33333333-3333-4333-8333-333333333333", gone = "44444444-4444-4444-8444-444444444444";
+    const lookups = [];
+    globalThis.codeDisplaySql = async () => [
+      { id: registered, name: "code:app:workshop", kind: "code", title: "Workshop", handle: "code-0123456789", status: "active" },
+      { id: gone, name: "code:app:retired", kind: "code", title: "Retired tool", handle: "code-9876543210", status: "active" },
+    ];
+    globalThis.codeDisplayCatalog = async () => null;
+    globalThis.codeDisplayApp = async (id) => {
+      lookups.push(id);
+      return id === "workshop"
+        ? { id, name: "Workshop", description: "Repairs", presentation: { baseLocale: "en", translations: { de: { name: "Werkstatt" } } } }
+        : null;
+    };
+    Bun.plugin({ name: "code-display-fixture", setup(build) {
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.codeDisplaySql;'), loader: "ts",
+      }));
+      build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text())
+          .replace('import { getApp, getCapability } from "../../_internal/registry";', 'const getCapability = globalThis.codeDisplayCatalog, getApp = globalThis.codeDisplayApp;')
+          .replace('import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";', 'const resolveCapabilityManifestPresentation = (manifest) => manifest;'), loader: "ts",
+      }));
+    } });
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
+    const entries = [registered, gone, registered].map((serviceAccountId) => ({ principal: { type: "service_account", serviceAccountId } }));
+    const de = await resolveDisplayNames(entries, { locale: "de" });
+    assert.deepEqual(de.map((entry) => entry.displayName), ["Code von Werkstatt", "Code von Retired tool", "Code von Werkstatt"]);
+    assert.equal(de[0].serviceAccountDescription, "Dienstkonto einer App");
+    // One registry read per app in a list.
+    assert.deepEqual(lookups.splice(0), ["workshop", "retired"]);
+    assert.equal((await resolveDisplayNames(entries, { locale: "en" }))[0].displayName, "Code of Workshop");
+  `;
+  const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
 });

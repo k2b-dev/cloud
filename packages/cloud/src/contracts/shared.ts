@@ -105,8 +105,14 @@ export const BaseGroupSchema = z.object({
 });
 export type BaseGroup = z.infer<typeof BaseGroupSchema>;
 
-export const ServiceAccountKindSchema = z.enum(["user_delegated", "resource_bound", "standalone", "agent"]);
+export const ServiceAccountKindSchema = z.enum(["user_delegated", "resource_bound", "standalone", "agent", "code"]);
 export type ServiceAccountKind = z.infer<typeof ServiceAccountKindSchema>;
+
+/**
+ * The identifier of a Code service account, as its code page shows it: `code-` and 10 characters. Only this exact
+ * form finds the account, and only together with a target the searcher manages.
+ */
+export const CODE_ACCOUNT_HANDLE_PATTERN = /^code-[0123456789abcdefghjkmnpqrstvwxyz]{10}$/;
 
 export const EntityKindSchema = z.enum(["user", "group", "service_account"]);
 export type EntityKind = z.infer<typeof EntityKindSchema>;
@@ -130,6 +136,8 @@ export const EntityListItemSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("service_account"),
     serviceAccount: z.object({
+      handle: z.string().optional(),
+      description: z.string().optional(),
       id: z.uuid(),
       name: z.string(),
       kind: ServiceAccountKindSchema,
@@ -346,6 +354,9 @@ export const AccessEntrySchema = z.object({
   avatarHash: z.string().nullable().optional(),
   /** Kind of a `service_account` principal; presentation only, never authorization. */
   serviceAccountKind: ServiceAccountKindSchema.optional(),
+  serviceAccountHandle: z.string().optional(),
+  serviceAccountDescription: z.string().optional(),
+  serviceAccountHref: z.string().optional(),
   /**
    * A narrower part of the resource the grant covers, defined by the application, such as Mail's
    * `assigned` conversations. Absent for a grant on the whole resource.
@@ -457,11 +468,16 @@ export type InvocationProvenance = {
   callingAppId: string;
   credentialKind: "session" | "oauth" | "api_key" | "mandate";
   invocationId: string;
+  parentInvocationId?: string;
   requestId?: string | null;
   mandateId?: string;
   mandateRevision?: number;
   workloadType?: string;
   workloadId?: string;
+  /** One concrete run of this workload, when its owner tracks runs. */
+  workloadRun?: string;
+  /** Signed Code attempt fence; absent on nested queries. */
+  workloadGeneration?: number;
 };
 
 export type UserRequestActor = {

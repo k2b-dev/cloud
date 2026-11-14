@@ -42,7 +42,6 @@ import {
   saveAssistantContextFile,
 } from "./AssistantContextContent";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
-import { AssistantProjectApps } from "./AssistantProjectApps";
 import { openAssistantProjectSettingsDialog } from "./AssistantProjectSettingsDialog";
 import { AssistantProjectSkills } from "./AssistantProjectSkills";
 import { type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
@@ -502,7 +501,6 @@ export default function AssistantProjectView(props: Props) {
             >
               {(value) => (
                 <>
-                  <AssistantProjectApps project={props.project} initialPage={value().apps} />
                   <AssistantProjectSkills project={props.project} initialPage={value().skills} />
                   <AssistantContextSection
                     title={text("Project knowledge")}

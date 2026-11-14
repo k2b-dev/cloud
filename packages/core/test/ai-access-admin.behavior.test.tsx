@@ -23,6 +23,8 @@ const mia = entry("1", "Mia Hoffmann", "admin");
 const lea = entry("2", "Lea Schmitt", "read");
 const ben = entry("3", "Ben Albers", "read");
 
+const handle = "code-7k2q9m4xwt";
+const codeAccountId = "20000000-0000-4000-8000-000000000001";
 const calls: string[] = [];
 const state: {
   projectsFail: boolean;
@@ -39,7 +41,10 @@ const accessRoutes = (kind: string) => ({
       await state.accessHeld?.promise;
       return Response.json({ access: state.entries });
     },
-    $post: async () => Response.json({ access: lea }),
+    $post: async ({ json }: { json: { principal: AccessEntry["principal"]; permission: AccessEntry["permission"] } }) => {
+      calls.push(`${kind} POST ${JSON.stringify(json)}`);
+      return Response.json({ access: { ...lea, ...json, displayName: "Code von Werkstatt", serviceAccountKind: "code" } });
+    },
     ":accessId": {
       $patch: async ({ param, json }: { param: { accessId: string }; json: { permission: string } }) => {
         calls.push(`${kind} PATCH ${param.accessId.slice(-1)} ${json.permission}`);
@@ -55,6 +60,34 @@ const accessRoutes = (kind: string) => ({
 if (!isServer) {
   mock.module("@k2b/cloud/clients/core", () => ({
     coreClient: {
+      accounts: {
+        entities: {
+          $get: async ({ query }: { query: Record<string, string> }, options: { init: { signal: AbortSignal } }) => {
+            expect(options.init.signal).toBeInstanceOf(AbortSignal);
+            expect(query).toMatchObject({ kinds: "service_account", service_account_kinds: "code" });
+            // The platform rejects names before transport; the dialog supplies the lookup target.
+            expect(query.search).toBe(handle);
+            calls.push(`lookup ${query.target_type} ${query.target_id} ${query.search}`);
+            return Response.json({
+              items:
+                query.search === handle
+                  ? [
+                      {
+                        kind: "service_account",
+                        serviceAccount: {
+                          id: codeAccountId,
+                          kind: "code",
+                          handle,
+                          name: "Code von Werkstatt",
+                          status: "active",
+                        },
+                      },
+                    ]
+                  : [],
+            });
+          },
+        },
+      },
       admin: {
         core: {
           "ai-skills": {
@@ -142,9 +175,12 @@ describe("AI administration access", () => {
     Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
       .find((node) => node.textContent?.includes("Permissions"))!
       .click();
-    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
+    /** By accessible name: a button with a short label on phones keeps its full name. */
     const button = (text: string) =>
-      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
+        (item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text,
+      );
     let disposed = false;
     const dispose = () => {
       if (disposed) return;
@@ -166,6 +202,43 @@ describe("AI administration access", () => {
     const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
     return { dom, dialog, button, row, refreshed, error, dispose };
   };
+
+  for (const kind of ["skill", "project"] as const) {
+    test(`${kind} finds by Kennung, adds a service-account row and saves its UUID`, async () => {
+      const ui = await setup(kind);
+      ui.button("Add service account")!.click();
+      const input = ui.dialog()!.querySelector<HTMLInputElement>('input[aria-label="Handle of the service account"]')!;
+      // A name is never looked up; Enter says that no service account has this handle.
+      input.value = "Code von Werkstatt";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await until(() => ui.dialog()?.textContent?.includes("No service account with this handle") === true);
+      // A complete handle is looked up as it is typed; its hit below the field adds the row.
+      input.value = handle;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      const hit = () =>
+        Array.from(ui.dialog()!.querySelectorAll<HTMLButtonElement>("li button")).find((item) =>
+          item.textContent?.includes("Code von Werkstatt"),
+        );
+      await until(() => !!hit());
+      hit()!.click();
+      await until(() => ui.dialog()?.textContent?.includes("1 change") === true);
+      expect(ui.row("Code von Werkstatt").textContent).toContain("Service account");
+      expect(ui.dialog()!.textContent).toContain("Whoever edits the code acts with this right.");
+      ui.row("Code von Werkstatt").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+      expect(
+        Array.from(ui.row("Code von Werkstatt").querySelectorAll('[role="radio"]')).some((node) => node.textContent?.includes("Manage")),
+      ).toBe(false);
+      ui.row("Code von Werkstatt").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+      expect(calls).toEqual([`lookup core.ai.${kind} ${kind}-1 ${handle}`]);
+      ui.button("Save")!.click();
+      await until(() => !ui.dialog());
+      expect(calls.at(-1)).toBe(
+        `${kind} POST ${JSON.stringify({ principal: { type: "service_account", serviceAccountId: codeAccountId }, permission: "write" })}`,
+      );
+      expect(ui.refreshed).toHaveBeenCalledTimes(1);
+    });
+  }
 
   test("a Skill's dialog names the projects that include it and saves a change on Save", async () => {
     const ui = await setup("skill");

@@ -1,0 +1,42 @@
+/** Core-owned Code data contracts and permission-aware services for subsequent Code slices. */
+
+export { CodeCheckResultSchema, CodeTestResultSchema } from "@k2b/cloud/code";
+export * from "./access";
+export { activateCodeVersion, cancelCodeActivation, previewCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
+export * from "./activation-contracts";
+export { cleanupCodeActivation } from "./activation-maintenance";
+export {
+  CODE_ATTENTION_CACHE_MS,
+  type CodeAttentionReason,
+  CodeAttentionReasonSchema,
+  codeAttentionContracts,
+  readCodeAttention,
+  readCodeSummary,
+} from "./attention";
+export { codeAuthoringServices } from "./authoring";
+export { createCodeCheckRequest } from "./authoring-check";
+export * from "./authoring-contracts";
+export { type CodeAutomation, CodeAutomationSchema, codeAutomationContracts, listCodeAutomations } from "./automations";
+export { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
+export * from "./contracts";
+export { CodeJobError } from "./job-errors";
+export { listCodeCleanupJobs } from "./lifecycle";
+export * from "./lifecycle-contracts";
+export { checkCodeOwnerBeforeRun, readCodeRunOwnerTitle } from "./owner-check";
+export * from "./policy";
+export * from "./policy-contracts";
+export * from "./policy-effective";
+export { codeRunMessages } from "./run-messages";
+export { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
+export { createCodeBridgeRoutes } from "./runner-routes";
+export { processCodeScheduleTick, readCodeRunnerMetrics, startCodeRun } from "./scheduling";
+export * from "./scheduling-contracts";
+export * from "./secret-contracts";
+export * from "./secrets";
+export { CODE_SETTINGS, codeSettings } from "./settings";
+export * from "./store";
+export type { CodeSimulateRequest, CodeTestingHost, CodeTestRequest } from "./testing";
+export { simulateCode, testCode } from "./testing";
+export * from "./version-contracts";
+export * from "./version-diff";
+export * from "./versions";

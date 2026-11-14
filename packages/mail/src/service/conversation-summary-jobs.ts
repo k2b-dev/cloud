@@ -95,7 +95,8 @@ const reserve = async (db: SqlClient, scope: Scope, source: SummarySource, key: 
     }),
   );
 
-/** Trusted source adapter boundary. Authorize the source identity before calling; Mail rechecks the actor's resource permission.
+/** Retained summary source boundary, independent of rule admission or execution.
+ * Authorize the source identity before calling; Mail rechecks the actor's resource permission.
  * Reserve a whole future run separately with reserveAiDailyBudget before any earlier effects.
  * This helper reserves the summary's single call and writes no mail content on denial.
  */

@@ -58,7 +58,7 @@ Choose `restricted` for a provider that makes no data-protection commitment,
 such as a free API tier that may train on its inputs. Cloud keeps its models
 away from every use by a person:
 
-- Assistant chat, the model picker, routines, workflows, code and the
+- Assistant chat, the model picker, workflows, code and the
   OpenAI-compatible API never offer or run them;
 - classes, the image tool, the audio tool and live dictation cannot be
   assigned to them, so a class request never resolves to one;

@@ -20,15 +20,22 @@ import { type AppContext, type AuthContext, middleware } from "@k2b/cloud/server
 import { createIdentityPublicRoutes } from "@k2b/cloud/services/identity";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
-import { aiChatTaskRoutes } from "./ai-chat-task-routes";
+import { aiChatTaskExportRoutes } from "./ai-chat-task-export-routes";
 import { createAiNotificationService } from "./ai-notifications";
 import { createAdminAppListingRoutes } from "./api/admin-app-listing";
+import { managesAiPrincipalSearchTarget } from "./api/ai-principal-search-target";
+import { createCodeActivationRoutes } from "./api/code-activation";
+import { createCodeAdminRoutes } from "./api/code-admin";
+import { createCodeAuthoringRoutes } from "./api/code-authoring";
 import { createAnonymousGeoRoutes } from "./api/geo-anonymous";
 import identityInvocationRoutes from "./api/identity-invocation";
 import identityMandateRoutes from "./api/identity-mandates";
 import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identity-oauth-device-approval";
 import { createIdentityOAuthIssuanceRoutes } from "./api/identity-oauth-issuance";
 import { aiCapabilities } from "./capabilities";
+import { createChatRunnerRoutes } from "./code/chat-runner";
+import { createCodeHostingRoutes } from "./code/hosting";
+import { createCodeBridgeRoutes, createCodeRunnerRoutes } from "./code/runner-routes";
 import { app } from "./config";
 import { coreHelp } from "./help";
 import { buildSearchIndexes as buildOutgoingMailSearchIndexes } from "./migrate/core/outgoing-mail";
@@ -42,7 +49,12 @@ export type CoreAppContext = AppContext<typeof app>;
 
 const notificationSender = createCoreNotificationSender(app.notifications);
 const aiNotifications = createAiNotificationService(app.notifications);
-const { api } = createCoreApiRouter({ notifications: notificationSender, terminalLogins });
+const { api } = createCoreApiRouter({
+  codeChatRunner: createChatRunnerRoutes(),
+  notifications: notificationSender,
+  terminalLogins,
+  principalSearchTarget: managesAiPrincipalSearchTarget,
+});
 const pages = createPagesRouter();
 const mcpProtectedResource = createMcpProtectedResourceRoutes();
 const identityPublicRoutes = createIdentityPublicRoutes();
@@ -50,16 +62,21 @@ const identityPublicRoutes = createIdentityPublicRoutes();
 // Dedicated brokers must precede Task auth on /api/ai/*: models-only OpenAI keys
 // and non-user Skills readers cannot pass the Task router's user requirement.
 const coreApi = new Hono()
+  .route("/code/admin", createCodeAdminRoutes())
+  .route("/code", createCodeActivationRoutes())
+  .route("/code/authoring", createCodeAuthoringRoutes())
   .route("/admin/apps", createAdminAppListingRoutes())
   .route("/admin/apps", createAdminAppStatusRoutes())
   .route("/ai/openai/v1", createAiOpenAiRoutes())
   .route("/ai/skills", aiSkillsRoutes)
   .route("/ai/dictation", aiDictationRoutes)
-  .route("/ai", aiChatTaskRoutes)
+  .route("/ai", aiChatTaskExportRoutes)
   .route("/", api);
 
 const router = new Hono<AuthContext>()
   .route("/", createAppBootstrapRoutes())
+  .route("/", createCodeBridgeRoutes())
+  .route("/", createCodeRunnerRoutes())
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
   .route("/_cloud/app-access", createAppAccessRoutes())
@@ -75,6 +92,7 @@ const router = new Hono<AuthContext>()
   .route("/api", coreApi)
   // The mobile app's phone-side identity endpoints; only Core receives the device key.
   .route("/pwa/_auth", createPwaPhoneRoutes({ notify: notificationSender.sendAppDevicePaired }))
+  .route("/", createCodeHostingRoutes())
   .route("/", pages);
 
 const result = await app.start({

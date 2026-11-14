@@ -54,7 +54,7 @@ describe("Assistant chat sidebar, server render", () => {
     expect(html).toContain("Der fertige Bericht: Umsatz je Quartal");
     expect(html).toContain("Interaktives Dashboard zum Filtern");
     expect(html).toContain("Herunterladen");
-    expect(html).toContain("Link kopieren");
+    expect(html).not.toContain("Link kopieren");
     // The close control is static from the server on: it closes an open sidebar.
     expect(html).toMatch(
       /aria-label="Seitenleiste schließen"[^>]*aria-expanded="true"|aria-expanded="true"[^>]*aria-label="Seitenleiste schließen"/,
@@ -73,7 +73,7 @@ describe("Assistant chat sidebar, server render", () => {
   test("keeps the results heading and explains the empty state in a chat without results", () => {
     const html = renderSidebar(emptySidebarSnapshot());
     expect(html).toContain("Ergebnisse");
-    expect(html).toContain("Dateien, Apps und Visualisierungen, die der Assistent für dich erstellt, erscheinen hier.");
+    expect(html).toContain("Dateien, Apps und Visualisierungen, die Gustav für dich erstellt, erscheinen hier.");
     expect(html).not.toContain("Deine Dateien");
     expect(html).not.toContain("Quellen");
     expect(html).toContain("Kontext");

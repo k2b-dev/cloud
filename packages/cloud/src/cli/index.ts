@@ -12,6 +12,8 @@ export type CloudCliOptions = {
   server: string;
   token: string;
   output: CloudCliOutputMode;
+  /** Host reports CI so modules can refuse interactive authority changes. Never grants server permission. */
+  ci?: boolean;
   /** Explicit request locale selected by the CLI entry point. */
   locale?: string;
 };
@@ -57,6 +59,11 @@ export type CloudCliContext = {
    * link. Absent in hosts without a local browser.
    */
   openUrl?: (url: string) => Promise<boolean>;
+  /**
+   * Ask the person one yes/no question and resolve their answer; anything but yes is no. Absent without an
+   * interactive terminal or with structured output, so a command never waits for an answer nobody can give.
+   */
+  confirm?: (question: string) => Promise<boolean>;
   /**
    * Read the profile's credentials again, so a long-running command such as
    * `cld acp` uses a `cld login` that happened after it started. Updates

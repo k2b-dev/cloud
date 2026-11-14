@@ -132,6 +132,7 @@ suite("Mail service-account suggestions", () => {
     user: context.actor.kind === "user" ? context.actor.user : context.actor.delegatedUser,
     requestId: "draft-suggestions-test",
     origin: "assistant",
+    target: { type: "mail.mailbox", id: mailboxShortId },
     locale: "en",
     signal: new AbortController().signal,
   });
@@ -227,6 +228,77 @@ suite("Mail service-account suggestions", () => {
     for (const id of new Set(grants)) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
     await sql`DELETE FROM auth.service_accounts WHERE id IN (${accountId}::uuid, ${delegatedAccountId}::uuid, ${invoicesAccountId}::uuid)`;
     await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+  });
+
+  test("the retired-rule trigger permits Gustav suggestions through human takeover and still rejects retired drafts", async () => {
+    const [trigger] = await sql<{ enabled: string; function_name: string }[]>`
+      SELECT t.tgenabled AS enabled, p.proname AS function_name
+      FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+      WHERE t.tgrelid = 'mail.drafts'::regclass AND t.tgname = 'mail_rules_retired_draft'`;
+    expect(trigger).toEqual({ enabled: "O", function_name: "reject_retired_reply_draft" });
+
+    const thread = await conversation();
+    const [sender] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.sender_identities WHERE id = ${identityId}::uuid`;
+    const [source] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.message_contents WHERE id = ${thread.messageId}::uuid`;
+    const create = mailCapabilities.actions["draft.create"];
+    const created = unwrap(
+      await create.run(
+        create.input.parse({
+          ...input(thread, "Gustav suggestion after rule retirement"),
+          senderIdentityId: sender!.short_id,
+          conversationId: thread.shortId,
+          sourceMessageId: source!.short_id,
+        }),
+        { ...capability(gustav), idempotencyKey: crypto.randomUUID() },
+      ),
+    );
+    const [row] = await sql<{ id: string }[]>`SELECT id FROM mail.drafts WHERE short_id = ${created.data.id}`;
+    let draft = unwrap(await drafts.getDraft(owner, mailboxId, row!.id));
+    const patch = async (context: MailRequestContext, body: string) => {
+      const result = await mailCapabilities.actions["draft.patch"].run(
+        {
+          draftId: created.data.id,
+          expectedRevision: draft.revision,
+          patch: { body },
+        },
+        capability(context),
+      );
+      if (!result.ok) return result;
+      return drafts.getDraft(owner, mailboxId, draft.id);
+    };
+    expect(draft.suggestion).toBeTrue();
+    draft = unwrap(await patch(gustav, "Gustav revised suggestion"));
+    expect(draft.body).toBe("Gustav revised suggestion");
+    expect(draft.suggestion).toBeTrue();
+    draft = unwrap(await patch(owner, "Person took over the suggestion"));
+    expect(draft.body).toBe("Person took over the suggestion");
+    expect(draft.suggestion).toBeFalse();
+    expect(await adoption(draft.id)).not.toBeNull();
+    const [stored] = await sql<{ origin: string; author_kind: string; last_editor_kind: string; delivery_class: string }[]>`
+      SELECT origin, author_kind, last_editor_kind, delivery_class FROM mail.drafts WHERE id = ${draft.id}::uuid`;
+    expect(stored).toEqual({ origin: "user", author_kind: "service_account", last_editor_kind: "user", delivery_class: "normal" });
+    refused(await patch(gustav, "Automatic replacement after takeover"));
+
+    for (const deliveryClass of ["normal", "automatic_reply"] as const) {
+      for (const state of ["draft", "scheduled", "sending"] as const) {
+        await expect(
+          sql`INSERT INTO mail.drafts
+            (short_id, mailbox_id, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id, origin, delivery_class, state)
+            VALUES (${newShortId()}, ${mailboxId}::uuid, ${identityId}::uuid, 'workflow', ${accountId}::uuid,
+              'workflow', ${accountId}::uuid, 'workflow', ${deliveryClass}, ${state})`.execute(),
+        ).rejects.toThrow("Automatic replies are retired");
+      }
+      // Historical sent drafts remain readable, but cannot be reopened by an update either.
+      const [historical] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
+        (short_id, mailbox_id, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id, origin, delivery_class, state)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, ${identityId}::uuid, 'workflow', ${accountId}::uuid,
+          'workflow', ${accountId}::uuid, 'workflow', ${deliveryClass}, 'sent') RETURNING id`;
+      for (const state of ["draft", "scheduled", "sending"] as const) {
+        await expect(sql`UPDATE mail.drafts SET state = ${state} WHERE id = ${historical!.id}::uuid`.execute()).rejects.toThrow(
+          "Automatic replies are retired",
+        );
+      }
+    }
   });
 
   test("human creation is adopted; opening and leasing a suggestion are not edits", async () => {
@@ -392,16 +464,11 @@ suite("Mail service-account suggestions", () => {
       const draft = await suggest();
       const id = await publicDraftId(draft.id);
       const patch = mailCapabilities.actions!["draft.patch"]!;
-      unwrap(
-        await patch.run(
-          { mailboxId: mailboxShortId, draftId: id, expectedRevision: draft.revision, patch: { subject: "Human patch" } },
-          capability(human),
-        ),
-      );
+      unwrap(await patch.run({ draftId: id, expectedRevision: draft.revision, patch: { subject: "Human patch" } }, capability(human)));
       const current = unwrap(await drafts.getDraft(owner, mailboxId, draft.id));
       expect(current.suggestion).toBeFalse();
       const result = await patch.run(
-        { mailboxId: mailboxShortId, draftId: id, expectedRevision: current.revision, patch: { body: "Automatic patch" } },
+        { draftId: id, expectedRevision: current.revision, patch: { body: "Automatic patch" } },
         capability(gustav),
       );
       refused(result);
@@ -709,7 +776,6 @@ suite("Mail service-account suggestions", () => {
     const create = (body: string, filename: string, idempotencyKey: string) =>
       action.run(
         action.input.parse({
-          mailboxId: mailboxShortId,
           senderIdentityId: sender!.short_id,
           signatureTemplateId: null,
           conversationId: thread.shortId,

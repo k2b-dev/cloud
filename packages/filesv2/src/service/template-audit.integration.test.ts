@@ -3,6 +3,7 @@ import { sql } from "@k2b/cloud";
 import type { Principal, RequestActor } from "@k2b/cloud/server";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
+import { migrateCodeAccountHandles } from "../../../core/src/migrate/core/code-account-handles";
 import { migratePosix } from "../../../core/src/migrate/core/posix";
 import { testActor, testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
@@ -145,8 +146,11 @@ suite("Template administration security audit", () => {
     await sql`CREATE TABLE auth.groups(id uuid PRIMARY KEY,name text,provider text,gid_number integer)`.simple();
     // The grant path looks up a named service account; a missing one is refused before any write.
     await sql`CREATE TABLE auth.service_accounts(id uuid PRIMARY KEY,name text,kind text,status text,delegated_user_id uuid,app_id text,resource_type text,resource_id text,created_by uuid,created_at timestamptz)`.simple();
+    await migrateCodeAccountHandles();
     await migratePosix();
     await sql`CREATE TABLE auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id))`.simple();
+    await sql`CREATE TABLE auth.service_account_groups(service_account_id uuid,group_id uuid)`.simple();
+    await sql`CREATE TABLE auth.ipa_user_effective_groups(user_id uuid,group_name text)`.simple();
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id uuid REFERENCES auth.groups(id),child_group_id uuid REFERENCES auth.groups(id))`.simple();
     await sql`CREATE TABLE auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid REFERENCES auth.users(id),
       group_id uuid REFERENCES auth.groups(id),service_account_id uuid,authenticated_only boolean NOT NULL DEFAULT false,
@@ -340,6 +344,23 @@ suite("Template administration security audit", () => {
     }
   });
 
+  test("a template accepts a Code account through its normal read grant", async () => {
+    await seedTemplate();
+    const accountId = crypto.randomUUID();
+    const handle = "code-0000000001";
+    await sql`INSERT INTO auth.service_accounts(id,name,kind,title,handle,status,created_at)
+      VALUES(${accountId}::uuid,'Code template recipient','code','Template recipient',${handle},'active',${stamp}::timestamptz)`;
+    try {
+      const grant = await service.grant(call, templateId, { type: "service_account", serviceAccountId: accountId });
+      expect(grant).toMatchObject({ permission: "read", serviceAccountKind: "code", serviceAccountHandle: handle });
+      expect(await service.grants(call, templateId)).toEqual([grant]);
+      await service.revoke(call, templateId, grant.id);
+      expect(await service.grants(call, templateId)).toEqual([]);
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id=${accountId}::uuid`;
+    }
+  });
+
   test("unsupported and missing principals, missing templates and unrelated revokes do not mutate data", async () => {
     await seedTemplate();
     await seedTemplate(otherTemplateId);
@@ -420,5 +441,25 @@ suite("Template administration security audit", () => {
     const rows = await events();
     expect(rows).toHaveLength(1);
     expectEvent(rows[0], "upload", result.id);
+    await sql`INSERT INTO auth.service_accounts(id,name,kind,status,delegated_user_id)
+      VALUES(${missingId}::uuid,'Delegated admin','user_delegated','active',${actor.user.id}::uuid)`;
+    const delegatedCall: UserFilesCall = {
+      ...call,
+      actor: delegatedActor,
+      accessSubject: { type: "user", userId: actor.user.id, delegatedByServiceAccountId: missingId },
+    };
+    try {
+      const grant = await service.grant(delegatedCall, result.id, { type: "user", userId: readerId });
+      expect(grant).toMatchObject({ permission: "read" });
+      await service.revoke(delegatedCall, result.id, grant.id);
+      expect(await service.grants(delegatedCall, result.id)).toHaveLength(0);
+      await sql`UPDATE auth.users SET admin=false WHERE id=${actor.user.id}::uuid`;
+      await expect(service.grant(delegatedCall, result.id, { type: "user", userId: readerId })).rejects.toMatchObject({
+        code: "admin_required",
+        status: 403,
+      });
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id=${missingId}::uuid`;
+    }
   });
 });

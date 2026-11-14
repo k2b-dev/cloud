@@ -1,0 +1,66 @@
+{
+  "format": "cloud.chat-tasks",
+  "version": 1,
+  "authority": "none",
+  "scope": "person",
+  "exportedAt": "2026-11-07T00:00:00.000Z",
+  "nextCursor": null,
+  "items": [
+    {
+      "kind": "chat-task",
+      "id": "ExWeek",
+      "ownerUserId": "44bd0000-0000-4000-8000-000000000006",
+      "title": "Monday inbox review",
+      "prompt": "Review my inbox conversations needing action in the Review mailbox. Use our earlier decisions in this chat to choose which conversations need closer reading and decide the next steps. Read messages as needed, explain your recommendations, and report here. Ask for my approval before making any changes.",
+      "locale": "en",
+      "targetChat": {
+        "id": "ExMndy",
+        "title": "My Gustav inbox reviews"
+      },
+      "schedule": {
+        "kind": "cron",
+        "cron": "0 9 * * 1"
+      },
+      "timezone": "Europe/Berlin",
+      "grants": [
+        {
+          "appId": "mail",
+          "capabilityId": "conversation.list",
+          "kind": "query",
+          "fixedInput": {
+            "mailboxId": "ExRevw",
+            "workStatus": "needs_action"
+          }
+        },
+        {
+          "appId": "mail",
+          "capabilityId": "message.list",
+          "kind": "query",
+          "fixedInput": {
+            "mailboxId": "ExRevw"
+          }
+        },
+        {
+          "appId": "mail",
+          "capabilityId": "message.read",
+          "kind": "query",
+          "fixedInput": {}
+        }
+      ],
+      "mandateSummary": {
+        "id": "44bd0000-0000-4000-8000-000000000007",
+        "revision": 3,
+        "state": "paused",
+        "expiresAt": null,
+        "apps": ["mail"],
+        "operations": ["capability.query:conversation.list", "capability.query:message.list", "capability.query:message.read"],
+        "actions": "preapproved"
+      },
+      "state": "paused",
+      "revision": 4,
+      "reasonCode": null,
+      "createdAt": "2026-11-07T00:00:00+00:00",
+      "updatedAt": "2026-11-07T00:00:00+00:00"
+    }
+  ]
+}

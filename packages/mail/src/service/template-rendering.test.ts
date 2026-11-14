@@ -6,7 +6,6 @@ import {
   renderMailLiquidTemplate,
   validateMailLiquidTemplate,
 } from "./template-rendering";
-import { migrateWorkflowTextTemplateToLiquid, renderMailWorkflowTemplate } from "./workflow-template-rendering";
 
 describe("Mail Liquid templates", () => {
   test("preserves typed output and memory limit reasons", () => {
@@ -81,33 +80,6 @@ describe("Mail Liquid templates", () => {
       error: { message: 'Mail template variable "actor.email" is not available here. Available: mailbox, sender.' },
     });
     expect(validateMailLiquidTemplate("{{ actor.email | missing_filter }}")).toMatchObject({ ok: false });
-  });
-
-  test("renders workflow inputs, context, and saved step values from one snapshot", () => {
-    const rendered = renderMailWorkflowTemplate(
-      {
-        invocation: {
-          workflowId: "workflow",
-          mode: "execute",
-          channel: "mail",
-          actor: { userId: "user" },
-          inputs: { message: { subject: "Request" } },
-          idempotencyKey: "run",
-          occurredAt: "2026-07-28T12:00:00.000Z",
-          context: { mailboxId: "mailbox" },
-        },
-        variableSnapshot: () => ({ reference: { value: "REF-42" } }),
-      },
-      "{{ inputs.message.subject }} / {{ context.mailboxId }} / {{ reference.value }}",
-    );
-
-    expect(rendered).toBe("Request / mailbox / REF-42");
-  });
-
-  test("migrates embedded workflow expressions", () => {
-    expect(migrateWorkflowTextTemplateToLiquid("Re: ${{ inputs.message.subject }} / ${{ reference.value }}")).toBe(
-      "Re: {{ inputs.message.subject }} / {{ reference.value }}",
-    );
   });
 
   test("migrates legacy reference tokens", () => {

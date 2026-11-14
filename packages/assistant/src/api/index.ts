@@ -3,10 +3,11 @@ import { type AuthContext, auth, err, fail, getLocale, getTimeZone, ok, rateLimi
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
-import { artifactApi } from "../artifacts/api";
+import { chatCodeApi } from "../chat-code/api";
 import { loadAssistantChatContextSnapshot, loadAssistantChatSources } from "../chat-context";
+import { catalogPerApp } from "../code-place";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
-import { loadAssistantSidebarSnapshot } from "../sidebar";
+import { loadAssistantSidebarSnapshot, placeAppsFromCatalog } from "../sidebar";
 import { loadAssistantSidebarPreview } from "../sidebar-preview";
 
 const actorUser = (c: Context<AuthContext>) => {
@@ -37,7 +38,7 @@ const app = new Hono<AuthContext>()
   .use(rateLimit())
   .use("*", auth.requireRole("authenticated"))
   .use("*", auth.requireUser())
-  .route("/artifacts", artifactApi)
+  .route("/chat-code", chatCodeApi)
   .get("/workspace/sidebar", async (c) => {
     const user = actorUser(c);
     if (!user) return respond(c, fail(err.forbidden("Assistant requires a user-backed actor")));
@@ -47,6 +48,7 @@ const app = new Hono<AuthContext>()
         await loadAssistantSidebarSnapshot(
           { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
           { locale: getLocale(c), timeZone: getTimeZone(c) },
+          placeAppsFromCatalog(catalogPerApp(getLocale(c), auth.getAuthority(c))),
         ),
       ),
     );

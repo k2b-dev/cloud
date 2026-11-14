@@ -1,7 +1,7 @@
 import type { Input, Message } from "@k2b/nessi";
 import type { Context } from "hono";
 import { z } from "zod";
-import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { CapabilityAppIdSchema, CloudResourceRefSchema } from "../contracts/capabilities";
 import { type AuthContext, err, fail, respond } from "../server";
 import { AiModelRequestSchema } from "../shared/ai-models";
 import { aiAttachmentMarker } from "./attachments";
@@ -64,19 +64,35 @@ export const AiToolPreloadSchema = z.union([
   AiCapabilityRefSchema.strict(),
 ]);
 
-export const AiCreateConversationInputSchema = z.object({
-  requestId: z.uuid().optional(),
-  title: z.string().trim().min(1).max(120).optional(),
-  projectId: z.string().regex(AI_SHORT_ID_PATTERN).optional(),
-  draft: AiInitialConversationDraftInputSchema.optional(),
-  preloadTools: z.array(AiToolPreloadSchema).max(8).optional(),
-  allowedTools: z.array(z.string().min(1).max(200)).max(64).optional(),
-  skills: z
-    .array(z.string().trim().min(1).max(AI_SKILL_NAME_MAX_CHARS).regex(AI_SKILL_NAME_PATTERN))
-    .max(AI_TURN_ATTACHMENT_MAX_ITEMS)
-    .optional(),
-  launchedByAppId: CapabilityAppIdSchema.optional(),
-});
+export const AiCreateConversationInputSchema = z
+  .object({
+    place: CloudResourceRefSchema.optional(),
+    requestId: z.uuid().optional(),
+    title: z.string().trim().min(1).max(120).optional(),
+    projectId: z.string().regex(AI_SHORT_ID_PATTERN).optional(),
+    draft: AiInitialConversationDraftInputSchema.optional(),
+    preloadTools: z.array(AiToolPreloadSchema).max(8).optional(),
+    allowedTools: z.array(z.string().min(1).max(200)).max(64).optional(),
+    skills: z
+      .array(z.string().trim().min(1).max(AI_SKILL_NAME_MAX_CHARS).regex(AI_SKILL_NAME_PATTERN))
+      .max(AI_TURN_ATTACHMENT_MAX_ITEMS)
+      .optional(),
+    launchedByAppId: CapabilityAppIdSchema.optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (!input.place) return;
+    if (!input.draft?.content.some((part) => part.type === "resource" || part.text.trim())) {
+      ctx.addIssue({ code: "custom", path: ["draft"], message: "A place chat starts with its first message." });
+    }
+    for (const key of ["title", "projectId", "preloadTools", "allowedTools", "skills", "launchedByAppId"] as const) {
+      if (input[key] !== undefined)
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: "Place chats use the normal Assistant catalog and the place's title. Configure the chat after creation.",
+        });
+    }
+  });
 
 export const AiMessageFeedbackInputSchema = z
   .object({

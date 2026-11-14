@@ -31,7 +31,15 @@ input and result schemas are compatible with the contract.
 | `listWritableBooks` | Query | `ContactDirectoryBookListInputSchema` | `ContactDirectoryBookListDataSchema` | Choosing where **New contact** saves. Optional. | `book.list` |
 | `create` | Action | `ContactDirectoryCreateInputSchema` | `ContactDirectoryCreateDataSchema` | **New contact** in conversation details. Optional. | `contact.create` |
 
-`contactDirectory` bundles the kind and both schemas of each function, and
+`contactDirectory` bundles the kind and both schemas of each function.
+`create` declares the fixed local target Type `book`. The consumer sends
+`target: { type: "<provider-app>.book", id: selectedBookId }` beside the
+contact fields in `input`; `ContactDirectoryCreateInputSchema` no longer
+contains `bookId`. Providers declare that Type even when they expose only
+one collection. `CapabilityContract.target` checks this coordinate alongside
+the input and result schemas; a different target or additional refs do not
+match the directory contract.
+
 `CONTACT_DIRECTORY_FUNCTIONS` lists the function names. The `create` Action
 must declare `idempotency: "required"`. None of the functions may stream its
 result.
@@ -66,6 +74,7 @@ identifier formats:
 ```ts
 import { defineCapabilities } from "@k2b/cloud";
 import {
+  capabilityPage,
   ContactDirectoryMatchSchema,
   ContactDirectoryResolveInputSchema,
   ContactDirectorySuggestInputSchema,
@@ -99,8 +108,10 @@ export const crmCapabilities = defineCapabilities({
       input: ContactDirectorySuggestInputSchema,
       data: z.array(CustomerSuggestionSchema).max(25),
       openWorld: false,
-      run: async ({ query, limit }, context) =>
-        ok({ data: await suggestReadableCustomers(context.accessSubject, query, limit ?? 8) }),
+      run: async ({ query, cursor, limit }, context) => {
+        const result = await suggestReadableCustomers(context.accessSubject, query, cursor, limit ?? 8);
+        return ok({ data: result.items, page: capabilityPage(result.next) });
+      },
     },
     "customer.match": {
       title: "Match customers by email",
@@ -108,15 +119,19 @@ export const crmCapabilities = defineCapabilities({
       input: ContactDirectoryResolveInputSchema,
       data: z.object({ items: z.array(CustomerMatchSchema).max(50), matchedEmails: z.array(z.email().max(320)).max(100) }).strict(),
       openWorld: false,
-      run: async ({ emails, limit }, context) =>
-        ok({ data: await matchReadableCustomers(context.accessSubject, emails, limit ?? 25) }),
+      run: async ({ emails, cursor, limit }, context) => {
+        const result = await matchReadableCustomers(context.accessSubject, emails, cursor, limit ?? 25);
+        return ok({ data: result.data, page: capabilityPage(result.next) });
+      },
     },
   },
 });
 ```
 
 `suggestReadableCustomers` and `matchReadableCustomers` stand for your own
-permission-aware service functions.
+permission-aware service functions. They accept the previous cursor and return
+the next cursor or `null`; the match service also returns its domain result as
+`data`.
 
 Keep these rules in each result:
 
@@ -132,7 +147,8 @@ Keep these rules in each result:
   it.
 - Add an `open` [semantic link](/en/docs/platform/capabilities) to a contact to
   let Mail link to it. Without links, Mail shows the contact without a link.
-- Respect the input `limit` and return a `page` cursor when more results exist.
+- Respect the input `limit` and always return `page: capabilityPage(next)`,
+  using `null` for the final page.
 
 ## Understand compatibility
 
@@ -141,6 +157,9 @@ administrator saves the mapping. A capability is compatible when:
 
 - **Kind.** It is a Query or Action as listed above; the `create` Action
   requires an idempotency key; it does not stream.
+- **Target.** The `create` Action declares the local `book` Type as its
+  target and no additional refs. Other directory functions have no target
+  or refs.
 - **Input.** Your input accepts everything the contract may send. You may
   require only fields that the contract always sends; a closed input must
   declare every contract field; numeric and array bounds must include the

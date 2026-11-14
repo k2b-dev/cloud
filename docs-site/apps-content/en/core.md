@@ -107,3 +107,14 @@ administrator checks in both the route and service. Settings has its own
 control under **Settings → General**. App-bar invalidation remains on
 **App bar**. None of these actions flushes Valkey or clears sessions, signing
 keys, access state, rate limits, or other application caches.
+
+## Capability action targets
+
+Skill Actions except `ai.skill.create` target `core.ai.skill`; omit `skillId`
+from `input`. Chat tools and MCP use the flat field `ai.skill`. Reference paths
+and grant IDs remain subordinate selectors, checked within that Skill.
+
+`ai.chat.message` and `ai.chat.run` target `core.ai.chat`; omit `chatId`
+from `input`. Chat tools and MCP use the flat field `ai.chat`. Scheduled chat
+routine Actions are removed. Skill creation acts at the application. Queries
+keep their existing inputs and permissions.

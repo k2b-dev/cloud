@@ -165,6 +165,15 @@ substantial web extracts and file slices, while models without a known context
 window use a conservative fallback. Tool-specific safety and transport limits
 still apply, and historical projections stay compact for later loops.
 
+`streamArgs` names top-level string arguments the chat shows while the model
+is still writing the call, such as a file's `path` and `content`. The step
+receives them a few times per second, each cut to its last 4 KB and starting
+at a line, with the number of lines before that end (`liveArgs` on the tool
+block). The complete arguments replace them when the call is written out. A
+call that is cut off, malformed, or retried disappears again, so the chat only
+keeps calls that exist. The tool never runs from these previews. Never list
+arguments that can carry secrets.
+
 `promptHint` adds one short usage nudge to the system prompt. Use it when the
 model could finish with plain text but Cloud prefers the tool-backed experience,
 as with surveys, the long-form text editor, charts, or presented files. Keep
@@ -181,17 +190,16 @@ run, followed by `present({path})`.
 
 The built-in `chart` tool is a `clientView()` for a few values the model already
 has that did not come from a code run. It shares the chart contract of
-`cloud.chart()` in Studio code, without `width`, `height`, or format functions.
+`cloud.chart()` in Chat code, without `width`, `height`, or format functions.
 Set exactly one of `kind` or `charts` at the tool's flat root, with `title` and
 optional `subtitle` (unit, period or source).
 
-In Studio and one-off HTML apps, `cloud.chart()` shows tooltips by default on
+In chat code, `cloud.chart()` shows tooltips by default on
 hover, keyboard focus and tap, using the same text as chat charts and their data
 tables. Function formats also apply to tooltip values when `tooltip.format` is
 absent.
 
-Printed pages and PDFs (`cloud.pdf.render`, presentation PDF download and
-browser print) list the chart's values in a table below it, hidden on screen.
+Printed pages and PDFs (`cloud.pdf.render` and browser print) list the chart's values in a table below it, hidden on screen.
 The table is complete with no extra row limit; PDF size grows with the number
 of points.
 
@@ -271,8 +279,7 @@ Cloud answers chart calls without a browser, also in background and scheduled
 runs. The transcript shows them later. Readers can switch each chart to its
 data table and use Copy data. Filters, steps and comparison over computed rows
 use `cloud.view.explorer` in `code_run`. Anything else the person interacts
-with, such as a calculator, converter, timer or form, is a saved Studio App
-created with `code_create`, even when it keeps no data.
+with, such as a calculator, converter, timer or form, belongs in a Code page.
 
 Computed results stay in `code_run`: the script calls `cloud.view.chart`,
 `cloud.view.group`, `cloud.view.table`, `cloud.view.stats`,
@@ -485,7 +492,7 @@ Tool-capable personal chats keep three bounded discovery tools available:
   `mail.conversation.list`. Its
   optional `appId` searches that app first. If it has no matches, discovery
   returns matching tools from other available apps or built-ins, within the
-  same permissions, chat scope, and task grants. Successful scoped searches
+  same permissions and chat scope. Successful scoped searches
   stay scoped. Search includes operation titles in the request language as
   well as base titles and descriptions. `kind` is returned as metadata and is
   not a search filter. Searching never loads a tool;
@@ -503,7 +510,7 @@ Tool-capable personal chats keep three bounded discovery tools available:
   | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
   | `skill` | The name is an Assistant Skill this turn can load; `load_skill` loads it, not `load_tools` |
   | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
-  | `not_allowed` | The conversation's fixed tool scope or routine grants exclude it |
+  | `not_allowed` | The conversation's fixed tool scope excludes it |
   | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
 
   The model looks up an unknown name once with `search_tools`, loads a skill
@@ -512,13 +519,9 @@ Tool-capable personal chats keep three bounded discovery tools available:
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
 
-A routine (scheduled task) uses its mandate policy and grants for `search_tools`,
-`load_tools`, `list_apps`, and resource readers. Tools outside that scope stay
-unavailable even if the interactive chat loaded them earlier. When the scope
-allows no app operations, `search_tools` says so instead of reporting an outage.
-Fixed inputs are checked per call; a rejected call returns a tool error the
-model can recover from. Broken authority or required interaction still makes
-the routine need attention; see [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-routine).
+Scheduled chat routines are retired. See
+[Routines became Code](/en/docs/operations/routines-to-code) for the export and
+reviewed rebuild path.
 
 A loaded built-in or app operation becomes an ordinary named tool on the next model turn.
 Cloud gives the model the operation's structure, required fields,
@@ -705,7 +708,7 @@ editor to revoke remembered choices.
 
 ## Handle approval in the UI
 
-The Assistant's **Approvals** row above **Studio** opens a view of waiting
+The Assistant's **Approvals** row in the sidebar opens a view of waiting
 requests. **My account → Approvals** lists requests across apps.
 A **Pending approvals** notification and a Cloud Login push point to that
 list for requests that no open chat tab shows, including a chat that keeps
@@ -773,7 +776,7 @@ what the code can send beside the URL small.
 
 Every other request asks every time, and its card keeps the warning that it may
 change data or incur charges. That includes a secret reference, a header that
-one of the person's secrets in this chat or app is bound to, `Authorization`,
+one of the person's secrets in this chat is bound to, `Authorization`,
 an API key header, a method override, `Content-Type` or `Content-Language` (a
 read has no body to describe), a longer value, and every other header. The HTTP
 service never accepts `Cookie`, `Proxy-*`, or the other headers it controls, so
@@ -786,10 +789,10 @@ asking only if all of these hold:
 - the request has the exact same origin, so scheme, host, and port match;
 - it is GET or HEAD without a body, with only the headers above and no secret
   reference;
-- a person started the turn in a signed-in browser session, not a
-  routine, a mandate, `cld`, an API key, or another delegated credential;
-- the code is the chat's own code or a Studio app the person manages, never an
-  app they only use or HTML presented in the chat.
+- a person started the turn in a signed-in browser session, or their personal
+  Code started an owner-authorized turn with `core.ai.chat.run`; routines,
+  mandates, `cld`, API keys and other delegated credentials do not qualify;
+- the code runs in that chat's own context.
 
 Website approvals are never offered as **Always**. `cld`, an API key, or
 another delegated credential may approve the single request, but cannot
@@ -799,13 +802,6 @@ run or read that fails afterwards keeps it. The receipt and the chat's
 **Secrets & approvals** dialog both revoke it with one click. The
 remembered-approval name is the reserved `website:read`, which no tool or
 Capability can use.
-
-A Studio app the person manages gets the same choice in its request dialog as
-**Allow this website for this app**, under the same rules. An app that sends
-`Accept` and `User-Agent` with every read therefore asks once, not on every
-open or view. That approval lasts until it is revoked or the app is deleted.
-Each request it lets through shows a notice with the full URL and a **Revoke**
-action. The app's **Secrets & approvals** dialog lists these approvals.
 
 The operator of an allowed website still sees every full address the code
 requests, including the query, and the headers above, which may carry data from

@@ -1,5 +1,11 @@
 import type { z } from "zod";
-import type { CapabilityActionReviewData, CapabilityCatalog, CapabilityErrorSchema, CapabilityResult } from "../contracts/capabilities";
+import type {
+  CapabilityActionReviewData,
+  CapabilityCatalog,
+  CapabilityErrorSchema,
+  CapabilityInvocationBody,
+  CapabilityResult,
+} from "../contracts/capabilities";
 
 export type CapabilityKind = "query" | "action";
 export type CapabilityClientError = z.infer<typeof CapabilityErrorSchema> & { status: number; retryAfterMs?: number };
@@ -14,6 +20,8 @@ export type CapabilityInvocation<TInput = unknown> = {
   appId: string;
   capabilityId: string;
   kind: CapabilityKind;
+  target?: CapabilityInvocationBody["target"];
+  refs?: CapabilityInvocationBody["refs"];
   input: TInput;
   idempotencyKey?: string;
   signal?: AbortSignal;

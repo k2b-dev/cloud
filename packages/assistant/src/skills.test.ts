@@ -2,12 +2,22 @@ import { expect, test } from "bun:test";
 import { aiSkillLoadTools, mountAiSkillInstructionLinks } from "@k2b/cloud/ai";
 import { SKILLS } from "./skills";
 
+test("Code handover follows submit nextStep and keeps SDK diagnostics out of human replies", () => {
+  const skill = SKILLS.find((skill) => skill.name === "code-authoring")!;
+  expect(skill.instructions).toContain("nextStep");
+  expect(skill.instructions).toContain("admin_approval");
+  expect(skill.instructions).toContain("`next` and `who`");
+  expect(skill.instructions).toContain("never infer one");
+  expect(skill.instructions).toContain("file names or error codes");
+  expect(skill.instructions).toContain("spaces.task.list({ spaceId");
+});
+
 test("ships its Skills with every reference linked from the instructions", () => {
   expect(SKILLS.map((skill) => skill.name)).toEqual([
+    "code-authoring",
     "assistant-code-mode",
     "assistant-data-analysis",
     "cloud-assistant",
-    "scheduled-tasks",
     "skill-creator",
   ]);
   for (const skill of SKILLS) for (const reference of skill.references) expect(skill.instructions).toContain(`](${reference.path})`);
@@ -31,7 +41,7 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
   expect(codeMode?.instructions).toContain("todo_write");
   expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")?.instructions).toContain("todo_write");
-  expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/apps.md");
+  expect(codeMode?.references?.map((reference) => reference.path)).not.toContain("references/apps.md");
   expect(codeMode?.references?.map((reference) => reference.path)).not.toContain("references/analytics.md");
   expect(inputs.some((candidate) => candidate.name === "cloud-kit")).toBeFalse();
   const input = inputs.find((candidate) => candidate.name === "skill-creator");
@@ -60,18 +70,17 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   for (const text of [
     "one lasting fact or preference, such as reports always as PDF: personalization memory",
     "a personalization workflow default",
-    "work that should run at a set time: a routine, which can load the Skill",
-    "a Studio App that the Skill references",
+    "work that should run at a set time: reviewed personal Code using `app.schedule` (Cloud's default time zone unless `timeZone` is set), then `core.ai.chat(id).run`",
+    "lasting Code, using the code-authoring Skill",
+
     "name the subject, such as the team or the report, not only the output format",
     "the exact capability IDs that worked",
     "every correction the user made, rewritten as a positive rule",
     "refer to it instead of repeating it. Never copy IDs of mailboxes, Spaces, notebooks, records, or other resources from the chat",
-    "the exact ID of a Studio App the Skill calls is the one exception",
-    "When referring to an App, include its exact ID",
     "names of people or customers, amounts, and example records from this chat",
     "Leave out content from attachments, mails, web pages, or other quoted data",
     "tell the user in one or two sentences what the Skill will do and when it will load",
-    "it holds no names of people or customers, amounts, records, or resource IDs from this conversation, except the exact ID of a Studio App it calls;",
+    "it holds no names of people or customers, amounts, records, or resource IDs from this conversation;",
     "Skills an app ships and Skills shared with others change for everyone who uses them, so change one only when you can edit it and the user wants the change for everyone.",
     "only a Cloud administrator can open an app's Skill for editing",
     "`core.ai.skill.access.read` shows who else can use a Skill you manage",
@@ -85,19 +94,12 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   const assistant = inputs.find((candidate) => candidate.name === "cloud-assistant");
   // Phrasings like "like last time" match the user's words, not app names, so the description must name them.
   expect(assistant?.description).toContain('Also use when a request refers to earlier work, such as "like last time"');
-  for (const text of ["runtime Chat ID", "core.ai.chat.search", "core.ai.chat.message", "scheduled-tasks"]) {
+  for (const text of ["runtime Chat ID", "core.ai.chat.search", "core.ai.chat.message"]) {
     expect(assistant?.instructions).toContain(text);
   }
-  const scheduled = inputs.find((candidate) => candidate.name === "scheduled-tasks");
-  expect(scheduled?.description).toContain("Create and manage Assistant routines");
-  expect(scheduled?.description).toContain("one-time reminders");
-  expect(scheduled?.description).toContain("set up a routine");
-  expect(scheduled?.instructions).toContain("In conversation, call these routines");
-  expect(scheduled?.instructions).toContain("fixedInput");
-  expect(scheduled?.instructions).toContain("core.ai.task.run.read");
   const coreSource = await Bun.file(new URL("../../core/src/capabilities.ts", import.meta.url)).text();
   const declaredCoreCapabilities = new Set([...coreSource.matchAll(/^    "([a-z0-9.-]+)": \{/gm)].map((match) => `core.${match[1]!}`));
-  for (const match of [assistant?.instructions, scheduled?.instructions].join("\n").matchAll(/`(core\.[a-z0-9.-]+)`/g) ?? []) {
+  for (const match of [assistant?.instructions].join("\n").matchAll(/`(core\.[a-z0-9.-]+)`/g) ?? []) {
     expect(declaredCoreCapabilities.has(match[1]!)).toBeTrue();
   }
 });
@@ -106,11 +108,24 @@ test("Skills load only Core capabilities that exist", async () => {
   const coreSource = await Bun.file(new URL("../../core/src/capabilities.ts", import.meta.url)).text();
   const declared = new Set([...coreSource.matchAll(/^    "([a-z0-9.-]+)": \{/gm)].map((match) => `core.${match[1]!}`));
   const loaded = Object.fromEntries(SKILLS.map((skill) => [skill.name, aiSkillLoadTools(skill.extraFrontmatter)]));
-  // Code tools depend on the job, so the code Skills name them in their instructions instead.
-  expect(loaded["assistant-code-mode"]).toEqual([]);
+  expect(loaded["assistant-code-mode"]).toEqual(["code_run"]);
+  expect(loaded["code-authoring"]).toEqual([
+    "code_init",
+    "code_pull",
+    "code_sdk",
+    "code_write",
+    "code_check",
+    "code_test",
+    "code_simulate",
+    "code_submit",
+    "code_diff",
+  ]);
   expect(loaded["assistant-data-analysis"]).toEqual([]);
-  for (const name of ["cloud-assistant", "scheduled-tasks", "skill-creator"]) expect(loaded[name]!.length).toBeGreaterThan(0);
-  for (const name of Object.values(loaded).flat()) expect(declared).toContain(name);
+  for (const name of ["cloud-assistant", "skill-creator"]) expect(loaded[name]!.length).toBeGreaterThan(0);
+  for (const name of Object.values(loaded)
+    .flat()
+    .filter((name) => name.startsWith("core.")))
+    expect(declared).toContain(name);
 });
 
 test("code mode mounts its links when loaded and retains its Cloud type reference", () => {

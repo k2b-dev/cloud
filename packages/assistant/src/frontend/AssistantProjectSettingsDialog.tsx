@@ -106,6 +106,7 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
     if (access.error() || !entries || accessOwner.signal.aborted) return;
     wroteAccess = false;
     await openAccessDialog({
+      target: { type: "core.ai.project", id: props.project.id },
       resourceName: props.project.name,
       subtitle: text("Project · Assistant"),
       initialEntries: entries,
@@ -207,7 +208,7 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
               />
               <AiModelField
                 label={text("Default model")}
-                description={text("Routines in this Project use it. Without a default, they use the person's choice, otherwise Balanced.")}
+                description={text("Chats in this Project use it. Without a default, they use the person's choice, otherwise Balanced.")}
                 noneLabel={text("No Project default")}
                 state={
                   models.data() ? { status: "ready", models: models.data()! } : models.error() ? { status: "error" } : { status: "loading" }

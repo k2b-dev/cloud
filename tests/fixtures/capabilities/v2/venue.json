@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "venue",
-  "manifestHash": "475d8f7e6cb9521ff9d91993738ec53fc873bab7759c2e24dec722e4db174e5f",
+  "manifestHash": "f78848dfd1e6550367d9b40d64ef9f14c0b6adbcb3686bc82f24f628c6e8f383",
   "types": [
     {
       "localId": "assignment",
@@ -1198,18 +1198,13 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "venueId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
-          },
           "assignmentId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Own assignment ID returned by List my assignments or a venue.assignment ref."
           }
         },
-        "required": ["venueId", "assignmentId"],
+        "required": ["assignmentId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1229,11 +1224,12 @@
         "required": ["assignmentId", "cancelled"],
         "additionalProperties": false
       },
-      "schemaHash": "c59dafb852b195e7b7c4806e7c277a5bb4daa9c1690000b7718851e3b2843224",
+      "schemaHash": "2417b8448173e27df77cecdf902a19ccd36688e1c1cf7e137b322757a9bdddfe",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "venue"
     },
     {
       "localId": "assignment.signup",
@@ -1243,11 +1239,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "venueId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
-          },
           "templateId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -1260,7 +1251,7 @@
             "description": "Venue-local occurrence date returned by shift.list."
           }
         },
-        "required": ["venueId", "templateId", "date"],
+        "required": ["templateId", "date"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1334,11 +1325,12 @@
         "required": ["id", "venueId", "venueName", "venueTimezone", "templateId", "startsAt", "endsAt", "note", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "9434ac40077fa3fd3a29a1d19ac4dd873875f43daf9bfb3eb89827d30997d490",
+      "schemaHash": "b4cb51ff597c89ef0bbb981cb0695d1c71c93fbbf5e767320a228e1b1cb8c7ec",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "venue"
     },
     {
       "localId": "assignment.signup_free",
@@ -1348,11 +1340,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "venueId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
-          },
           "startsAt": {
             "type": "string",
             "format": "date-time",
@@ -1378,7 +1365,7 @@
             ]
           }
         },
-        "required": ["venueId", "startsAt", "endsAt"],
+        "required": ["startsAt", "endsAt"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1452,11 +1439,12 @@
         "required": ["id", "venueId", "venueName", "venueTimezone", "templateId", "startsAt", "endsAt", "note", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "1c16533902eb1794ae03a379a9ef04951d2373820017172b9880600ba50eea20",
+      "schemaHash": "8d4bba290b5f61f19454949a1b9a46da3fc1df41e23e6bdfc48b53070003aded",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "venue"
     }
   ],
   "commands": []

@@ -1,4 +1,5 @@
 import { AppWorkspace, type NavigationItem, useLocale } from "@k2b/ui";
+import { FeatCodeMark } from "../code/FeatCodeMark";
 import { activeAdminLink } from "./admin-active-link";
 import { type AdminLink, buildAdminGroups } from "./admin-navigation";
 import { platformMessages } from "./platform-messages";
@@ -15,8 +16,20 @@ const AdminNavigation = (props: { currentPath: string; groups: ReturnType<typeof
       {props.groups.map((group) => (
         <AppWorkspace.SidebarSection title={group.label}>
           {group.links.map((link: AdminLink) => (
-            <AppWorkspace.SidebarItem href={link.href} navigation="document" active={link.href === activeHref} title={link.label}>
-              <AppWorkspace.SidebarItemIcon icon={`ti ${link.icon}`} />
+            <AppWorkspace.SidebarItem
+              href={link.href}
+              navigation="document"
+              active={link.href === activeHref}
+              title={link.label}
+              meta={link.waiting ? <AppWorkspace.SidebarItemStatus waiting={link.waiting} /> : undefined}
+            >
+              {link.brand === "feat-code" ? (
+                <AppWorkspace.SidebarItemIcon>
+                  <FeatCodeMark variant="glyph" tone="current" decorative />
+                </AppWorkspace.SidebarItemIcon>
+              ) : (
+                <AppWorkspace.SidebarItemIcon icon={`ti ${link.icon}`} />
+              )}
               <AppWorkspace.SidebarItemLabel>{link.label}</AppWorkspace.SidebarItemLabel>
             </AppWorkspace.SidebarItem>
           ))}
@@ -26,10 +39,19 @@ const AdminNavigation = (props: { currentPath: string; groups: ReturnType<typeof
   );
 };
 
-export default function AdminSidebar({ currentPath, apps }: { currentPath: string; apps: readonly RuntimeContext["apps"][number][] }) {
+export default function AdminSidebar({
+  currentPath,
+  apps,
+  codeApprovals,
+}: {
+  currentPath: string;
+  apps: readonly RuntimeContext["apps"][number][];
+  /** Open Code-version approvals; shown on the "Code" entry. */
+  codeApprovals?: number;
+}) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
-  const groups = () => buildAdminGroups(apps, locale());
+  const groups = () => buildAdminGroups(apps, locale(), { codeApprovals });
 
   return (
     <>

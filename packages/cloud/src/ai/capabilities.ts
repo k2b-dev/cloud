@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
-import { isPersonVisibleCapabilityQuery, resolveCapabilityActionWording, resolveCapabilityOperationTitle } from "../_internal/capabilities";
+import {
+  isPersonVisibleCapabilityAction,
+  isPersonVisibleCapabilityQuery,
+  resolveCapabilityActionWording,
+  resolveCapabilityOperationTitle,
+} from "../_internal/capabilities";
 import { capabilityReviewView } from "../_internal/capability-reviews";
 import {
   CAPABILITY_APPROVAL_REASON_FIELD,
@@ -13,11 +18,12 @@ import {
 } from "../_internal/capability-sentences";
 import { HELP_READ_MAX_CHARS, HELP_SEARCH_MAX_LIMIT, readHelpArticle } from "../_internal/help-catalog";
 import type { listApps } from "../_internal/registry";
+import { capabilityToolInputSchema } from "../capabilities/calls";
 import {
   type CapabilityActionManifest,
   type CapabilityActionReviewData,
   type CapabilityQueryManifest,
-  capabilityActionPolicy,
+  type CloudResourceRef,
   cloudResourceRefAppId,
   LinkedCloudResourceReferenceSchema,
   resolveCapabilityResourceReader,
@@ -27,12 +33,10 @@ import type { RequestActor } from "../server";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { discoverableAppEntries } from "../services/app-discovery";
 import type { HelpReader, HelpReaderFactory } from "../services/help";
-import { type MandatePolicyV1, mandatePolicyCanPermitCapability } from "../services/mandates/policy";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { DEFAULT_LOCALE } from "../shared/locale";
 import { recordRejectedAiCapability } from "./capability-execution";
-import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
-import { createCodeSourceTool } from "./code-source-tools";
+import { AiCapabilityExecutionError } from "./capability-result";
 import { CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES } from "./default-tools";
 import { addCloudResourceHrefs } from "./resource-refs";
 import { type AiToolPreparationContext, defineAiTool, type PreparedAiTools, prepareAiTools } from "./tools";
@@ -60,6 +64,8 @@ export type AiCapabilityAppCatalogItem = {
 };
 
 export type AiCapabilityCatalogEntry = AiCapabilityCatalogItem & {
+  /** Trusted stored-chat binding, never a model-provided resource. */
+  place?: CloudResourceRef;
   app: CapabilityRegistryEntry;
   operation: CapabilityQueryManifest | CapabilityActionManifest;
   /**
@@ -93,7 +99,7 @@ export type AiRememberableCapabilityApprovals = ReadonlyMap<string, string>;
  * - `skill`: the name is an Assistant Skill; load_skill loads it, not load_tools;
  * - `unknown`: no tool has this exact name;
  * - `not_offered_in_turn`: the tool exists, but this turn's client or task does not provide it;
- * - `not_allowed`: the conversation's fixed tool scope or task grants exclude it;
+ * - `not_allowed`: the conversation's fixed tool scope excludes it;
  * - `app_offline`: the app operation is not in the live registry now.
  */
 export const AI_TOOL_UNAVAILABLE_REASONS = ["unknown", "skill", "not_offered_in_turn", "not_allowed", "app_offline"] as const;
@@ -148,7 +154,12 @@ export const buildAiCapabilityAppCatalog = (apps: readonly CapabilityRegistryEnt
  * Build one deterministic, immutable view of the current live registry. `locale` selects the human
  * presentation in `display`; model-facing fields always stay in the app's base presentation.
  */
-export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[], locale?: string): AiCapabilityCatalogEntry[] => {
+const buildCapabilityCatalog = (
+  apps: CapabilityRegistryEntry[],
+  locale?: string,
+  place?: { ref: CloudResourceRef; tools: readonly string[] },
+  history = false,
+): AiCapabilityCatalogEntry[] => {
   const entries = [...apps]
     .sort(
       (left, right) =>
@@ -163,7 +174,19 @@ export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[], locale
             .name
         : app.appName;
       return [
-        ...app.manifest.actions.map((operation) => ({ app, appName, operation, kind: "action" as const })),
+        ...app.manifest.actions
+          .filter(isPersonVisibleCapabilityAction)
+          .filter(
+            (action) =>
+              history ||
+              !app.manifest.types.some((type) => type.assistant?.tools.includes(action.localId)) ||
+              (place?.ref.type === `${app.appId}.${action.target}` &&
+                place.tools.includes(action.localId) &&
+                app.manifest.types.some(
+                  (type) => `${app.appId}.${type.localId}` === place.ref.type && type.assistant?.tools.includes(action.localId),
+                )),
+          )
+          .map((operation) => ({ app, appName, operation, kind: "action" as const })),
         ...app.manifest.queries
           .filter(isPersonVisibleCapabilityQuery)
           .map((operation) => ({ app, appName, operation, kind: "query" as const })),
@@ -171,6 +194,11 @@ export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[], locale
     })
     .map(
       ({ app, appName, operation, kind }): AiCapabilityCatalogEntry => ({
+        ...(kind === "action" &&
+        place?.ref.type === `${app.appId}.${operation.target}` &&
+        app.manifest.types.some((type) => type.assistant?.tools.includes(operation.localId))
+          ? { place: place.ref }
+          : {}),
         name: aiCapabilityId(app.appId, operation.localId),
         providerName: aiCapabilityToolName(app.appId, kind, operation.localId),
         appId: app.appId,
@@ -198,6 +226,17 @@ export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[], locale
     return true;
   });
 };
+
+/** Callable tools; place Actions are offered only with the current stored-place selection. */
+export const buildAiCapabilityCatalog = (
+  apps: CapabilityRegistryEntry[],
+  locale?: string,
+  place?: { ref: CloudResourceRef; tools: readonly string[] },
+): AiCapabilityCatalogEntry[] => buildCapabilityCatalog(apps, locale, place);
+
+/** Historical metadata and read-only recovery include place Actions even after access or consent was lost. */
+export const buildAiCapabilityHistoryCatalog = (apps: CapabilityRegistryEntry[], locale?: string): AiCapabilityCatalogEntry[] =>
+  buildCapabilityCatalog(apps, locale, undefined, true);
 
 const boundedLimit = (value: number | undefined, fallback: number, maximum: number): number => {
   if (!Number.isInteger(value) || Number(value) <= 0) return fallback;
@@ -617,8 +656,12 @@ const withApprovalReason = (schema: Record<string, unknown>): Record<string, unk
   },
 });
 
-const withoutApprovalReason = (entry: AiCapabilityCatalogEntry, args: unknown): unknown => {
-  if (!offersApprovalReason(entry) || !args || typeof args !== "object" || Array.isArray(args)) return args;
+/** Removes model-only approval wording before normalizing review, approval and execution arguments. */
+export const aiCapabilityArguments = (operation: CapabilityActionManifest | CapabilityQueryManifest, args: unknown): unknown => {
+  if (!("idempotency" in operation) || operation.approval === "none" || !args || typeof args !== "object" || Array.isArray(args))
+    return args;
+  const properties = operation.inputSchema.properties;
+  if (!properties || typeof properties !== "object" || Object.hasOwn(properties, CAPABILITY_APPROVAL_REASON_FIELD)) return args;
   const { [CAPABILITY_APPROVAL_REASON_FIELD]: _reason, ...appArgs } = args as Record<string, unknown>;
   return appArgs;
 };
@@ -692,7 +735,7 @@ export const createAiToolMetaTools = (input: {
   store: ToolStateStore;
   maxLoadedTools?: number;
   unavailableLoadedNames?: readonly string[];
-  /** Whether this turn offers app operations, offers none, or its fixed scope or task grants exclude all of them. */
+  /** Whether this turn offers app operations, offers none, or its fixed scope exclude all of them. */
   appOperations?: "not_offered" | "not_allowed" | "offered";
   /** Why a requested name that is not in `catalog` cannot be loaded; defaults to `unknown`. */
   unavailableReason?: (name: string) => AiToolUnavailableReason;
@@ -714,7 +757,7 @@ export const createAiToolMetaTools = (input: {
       : input.appOperations === "not_offered"
         ? " App operations are not offered in this turn."
         : input.appOperations === "not_allowed"
-          ? " This chat's tool scope or task grants allow no app operations. Do not search for app operations in this turn; continue with the available tools or tell the user which grant is missing."
+          ? " This chat's tool scope allows no app operations. Do not search for app operations in this turn; continue with the available tools or tell the user which grant is missing."
           : " No Cloud app publishes operations right now. Do not search for app operations again in this turn; tell the user which app is not reachable instead of claiming a permanent product limitation.";
   const unavailableLoadedNames = input.unavailableLoadedNames ?? [];
   const unavailableLoadedNotice =
@@ -767,7 +810,7 @@ export const createAiToolMetaTools = (input: {
   const load = defineAiTool({
     name: "load_tools",
     description:
-      "Load stable capability ids such as mail.conversation.list, or exact built-in names returned by search_tools, as ordinary tools for the next model turn. Skills may name capability ids directly, so load them without searching first. Call each loaded tool by the `call` name returned for it. `unavailable` gives a reason per name: unknown means no tool has this exact name, so look it up once with search_tools instead of guessing; not_offered_in_turn means this client or task does not provide the tool; not_allowed means this chat's fixed tool scope or task grants exclude it; app_offline means its app is not reachable now; skill means the name is an Assistant Skill: call load_skill with it instead. For not_offered_in_turn, not_allowed and app_offline, do not search or load the name again in this turn.",
+      "Load stable capability ids such as mail.conversation.list, or exact built-in names returned by search_tools, as ordinary tools for the next model turn. Skills may name capability ids directly, so load them without searching first. Call each loaded tool by the `call` name returned for it. `unavailable` gives a reason per name: unknown means no tool has this exact name, so look it up once with search_tools instead of guessing; not_offered_in_turn means this client or task does not provide the tool; not_allowed means this chat's fixed tool scope exclude it; app_offline means its app is not reachable now; skill means the name is an Assistant Skill: call load_skill with it instead. For not_offered_in_turn, not_allowed and app_offline, do not search or load the name again in this turn.",
     inputSchema: z.object({ names: z.array(z.string().trim().min(1)).min(1).max(25) }).strict(),
     outputSchema: z
       .object({
@@ -792,7 +835,6 @@ export const createLoadedAiCapabilityTools = (input: {
   /** Locale of the turn; the approval text a person reads is worded in it. */
   locale?: string;
   review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReviewData | null>;
-  authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<void>;
   onReview?: (
     callId: string,
     review: CapabilityActionReviewData,
@@ -800,6 +842,7 @@ export const createLoadedAiCapabilityTools = (input: {
     entry: AiCapabilityCatalogEntry,
   ) => void | Promise<void>;
   execute: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
+  onRejected?: (callId: string) => void;
 }): AiRuntimeTool[] => {
   const byName = new Map(input.catalog.map((entry) => [entry.name, entry]));
   return input.loadedNames.flatMap((name) => {
@@ -811,7 +854,9 @@ export const createLoadedAiCapabilityTools = (input: {
         canonicalName: entry.name,
         description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL. Never retry IDEMPOTENCY_UNCERTAIN or IDEMPOTENCY_IN_PROGRESS. After ACTION_NOT_DONE, ask the person before trying again. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
         inputSchema: aiCapabilityInputSchema(
-          offersApprovalReason(entry) ? withApprovalReason(entry.operation.inputSchema) : entry.operation.inputSchema,
+          offersApprovalReason(entry)
+            ? withApprovalReason(capabilityToolInputSchema(entry.operation, entry.place))
+            : capabilityToolInputSchema(entry.operation, entry.place),
         ),
         outputSchema: z.unknown(),
         // Capability Actions request a custom approval after their optional
@@ -820,33 +865,40 @@ export const createLoadedAiCapabilityTools = (input: {
         // A Query only reads, so it may run next to other Queries.
         ...(entry.kind === "query" ? { readOnly: true as const } : {}),
       }).server(async (modelArgs, context) => {
-        const args = withoutApprovalReason(entry, modelArgs);
-        await input.authorizeBackground?.(entry, args, context);
-        if (!input.authorizeBackground && entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
-          const review = (await input.review?.(entry, args, context)) ?? null;
-          if (review && context.callId)
-            await input.onReview?.(context.callId, review, "approval" in entry.operation ? entry.operation.approval : undefined, entry);
-          // Text-only readers such as the CLI read what the card shows: the app's sentence, its review, and the model's reason.
-          const locale = input.locale ?? DEFAULT_LOCALE;
-          const message = capabilityApprovalText({
-            appName: entry.display.appName,
-            subject: capabilityActionSubject(aiCapabilityActionWording(entry, locale), args, { locale, timeZone: context.timeZone }),
-            review: review
-              ? capabilityReviewView(review, {
-                  timeZone: context.timeZone ?? "UTC",
-                }).message
-              : undefined,
-            reason: offersApprovalReason(entry) ? capabilityApprovalReason(modelArgs) : null,
-            locale,
-          });
-          if (!(await context.requestApproval(message))) {
-            if (input.actor.kind === "user") {
-              await recordRejectedAiCapability({ entry, actor: input.actor, args }).catch(() => undefined);
+        const args = aiCapabilityArguments(entry.operation, modelArgs);
+        try {
+          if (entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
+            const review = (await input.review?.(entry, args, context)) ?? null;
+            if (review && context.callId)
+              await input.onReview?.(context.callId, review, "approval" in entry.operation ? entry.operation.approval : undefined, entry);
+            // Text-only readers such as the CLI read what the card shows: the app's sentence, its review, and the model's reason.
+            const locale = input.locale ?? DEFAULT_LOCALE;
+            const message = capabilityApprovalText({
+              appName: entry.display.appName,
+              subject: capabilityActionSubject(aiCapabilityActionWording(entry, locale), args, { locale, timeZone: context.timeZone }),
+              review: review
+                ? capabilityReviewView(review, {
+                    timeZone: context.timeZone ?? "UTC",
+                  }).message
+                : undefined,
+              reason: offersApprovalReason(entry) ? capabilityApprovalReason(modelArgs) : null,
+              locale,
+            });
+            if (!(await context.requestApproval(message))) {
+              if (input.actor.kind === "user") {
+                await recordRejectedAiCapability({ entry, actor: input.actor, args }).catch(() => undefined);
+              }
+              throw new Error("Capability Action was rejected by the user.");
             }
-            throw new Error("Capability Action was rejected by the user.");
           }
+          return addCloudResourceHrefs(await input.execute(entry, args, context), input.apps);
+        } catch (error) {
+          if (error instanceof AiCapabilityExecutionError && error.code === "PLACE_REJECTED") {
+            if (context.callId) input.onRejected?.(context.callId);
+            if (input.actor.kind === "user") await recordRejectedAiCapability({ entry, actor: input.actor, args }).catch(() => undefined);
+          }
+          throw error;
         }
-        return addCloudResourceHrefs(await input.execute(entry, args, context), input.apps);
       }),
     ];
   });
@@ -865,11 +917,8 @@ export const createAiResourceReaderTool = (input: {
     outputSchema: z.unknown(),
     approval: "never",
   }).server(async (ref, context) => {
-    if (ref.type === "assistant.artifact") {
-      const tool = createCodeSourceTool("code_read");
-      if (tool.location !== "server") throw new Error("Code reader must execute on the server.");
-      return addCloudResourceHrefs(await tool.run(CODE_SOURCE_TOOLS.code_read.input.parse({ id: ref.id }), context), input.apps);
-    }
+    if (ref.type === "assistant.artifact" || ref.type === "assistant.app")
+      throw new Error("Studio apps have been retired and are unavailable. They were not transferred to Code.");
     const appId = cloudResourceRefAppId(ref);
     const app = input.apps.find((candidate) => candidate.appId === appId);
     const reader = app ? resolveCapabilityResourceReader(app.manifest, ref) : null;
@@ -882,7 +931,7 @@ export const createAiResourceReaderTool = (input: {
   });
 
 /** Nessi resolver: one registry/load-state snapshot drives discovery, loading, schemas, and execution per model turn. */
-/** Background discovery belongs to one run, never the interactive conversation. */
+/** Isolated tool discovery state for standalone callers such as evaluations. */
 export const createRunToolStore = (initialNames: readonly string[]): Pick<AiConversationService, "getLoadedTools" | "loadTools"> => {
   let current = [...new Set(initialNames)];
   return {
@@ -904,11 +953,12 @@ export const createAiToolResolver =
   (input: {
     conversationId: string;
     actor: RequestActor;
+    place?: () => Promise<{ ref: CloudResourceRef; tools: readonly string[] } | null>;
+    onRejected?: (callId: string) => void;
+    onUnavailablePlaceTools?: (snapshot: { ref: CloudResourceRef; unavailable: readonly string[]; available: readonly string[] }) => void;
     authority?: RequestAuthority | null;
     staticTools: AiRuntimeTool[];
     allowedTools?: readonly string[] | null;
-    /** Undefined for interactive runs; null fails closed when a background mandate cannot be loaded. */
-    mandatePolicy?: MandatePolicyV1 | null;
     /** Built-in tools that exist but that this turn does not offer, such as client tools its client did not declare or tools outside `allowedTools`. */
     unofferedTools?: readonly string[];
     /** Assistant Skills this turn can load with load_skill. */
@@ -923,7 +973,6 @@ export const createAiToolResolver =
     maxLoadedTools?: number;
     execute?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
     review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReviewData | null>;
-    authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<void>;
     onReview?: (
       callId: string,
       review: CapabilityActionReviewData,
@@ -953,7 +1002,7 @@ export const createAiToolResolver =
         .flatMap((entry) => [entry.name, entry.providerName]),
     );
     const configuredLimit = Math.floor(input.maxLoadedTools ?? 0);
-    const loadedNames = configuredLimit > 0 ? persistedLoadedNames.slice(-configuredLimit) : persistedLoadedNames;
+    let loadedNames = configuredLimit > 0 ? persistedLoadedNames.slice(-configuredLimit) : persistedLoadedNames;
     if (loadedNames.length !== persistedLoadedNames.length) {
       await input.store.loadTools({
         conversationId: input.conversationId,
@@ -962,21 +1011,29 @@ export const createAiToolResolver =
       });
     }
     const allowed = input.allowedTools == null ? null : new Set(input.allowedTools);
-    const fullCapabilityCatalog = buildAiCapabilityCatalog(registry, input.locale);
-    const mandateAllows = (entry: AiCapabilityCatalogEntry) =>
-      input.mandatePolicy === undefined ||
-      (input.mandatePolicy !== null &&
-        mandatePolicyCanPermitCapability(input.mandatePolicy, {
-          appId: entry.appId,
-          capabilityId: entry.operation.localId,
-          kind: entry.kind,
-          approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
-          capabilityPolicy: capabilityActionPolicy(entry.app.manifest, entry.operation.localId),
-        }));
-    const mandateExcluded = new Set(
-      fullCapabilityCatalog.filter((entry) => !mandateAllows(entry)).flatMap((entry) => [entry.name, entry.providerName]),
-    );
-    const capabilityCatalog = fullCapabilityCatalog.filter((entry) => (!allowed || allowed.has(entry.name)) && mandateAllows(entry));
+    const place = await input.place?.();
+    const fullCapabilityCatalog = buildAiCapabilityCatalog(registry, input.locale, place ?? undefined);
+    const capabilityCatalog = fullCapabilityCatalog.filter((entry) => !allowed || allowed.has(entry.name));
+    // Place tools are a bounded addition for this round, not a remembered grant or load-state mutation.
+    loadedNames = [...new Set([...loadedNames, ...capabilityCatalog.filter((entry) => entry.place).map((entry) => entry.name)])];
+    if (place && input.onUnavailablePlaceTools) {
+      const offered = new Set(capabilityCatalog.map((entry) => entry.name));
+      const placeApp = cloudResourceRefAppId(place.ref);
+      const declared =
+        (liveRegistry ?? [])
+          .find((app) => app.appId === placeApp)
+          ?.manifest.types.find((type) => `${placeApp}.${type.localId}` === place.ref.type)?.assistant?.tools ?? [];
+      const candidates = new Set([
+        ...declared.map((id) => `${placeApp}.${id}`),
+        ...persistedLoadedNames.filter((name) => name.startsWith(`${placeApp}.`)),
+      ]);
+      const missing = [...candidates].filter((name) => !offered.has(name));
+      input.onUnavailablePlaceTools({
+        ref: place.ref,
+        unavailable: missing.flatMap((name) => [name, aiCapabilityToolName(placeApp, "action", name.slice(placeApp.length + 1))]),
+        available: capabilityCatalog.flatMap((entry) => [entry.name, entry.providerName]),
+      });
+    }
     // The turn's actor decides which apps' Help exists for the model, like every other Help surface.
     const helpTools = input.help
       ? createAiHelpTools(input.help(input.locale ?? "en", input.actor, { authority: input.authority ?? null }))
@@ -1009,18 +1066,14 @@ export const createAiToolResolver =
       if (input.skillNames?.includes(requested)) return "skill";
       const name = loadedByProviderName.get(requested) ?? requested;
       if (hiddenNames.has(requested) || hiddenNames.has(name)) return "unknown";
-      if (mandateExcluded.has(name)) return "not_allowed";
       if (allowed && outOfScope.has(name) && !allowed.has(name)) return "not_allowed";
       if (unoffered.has(name)) return "not_offered_in_turn";
       if (!name.includes(".")) return "unknown";
       if (!input.listRegistry) return "not_offered_in_turn";
       return liveRegistry === null || persistedLoadedNames.includes(name) ? "app_offline" : "unknown";
     };
-    // Independent of which apps are live: the fixed scope or task grants name no app operation at all.
-    const scopeExcludesAppOperations =
-      input.mandatePolicy === null ||
-      (input.mandatePolicy?.grants !== undefined && !input.mandatePolicy.grants.some((grant) => "appId" in grant)) ||
-      (allowed !== null && ![...allowed].some((name) => name.includes(".")));
+    // Independent of which apps are live: the fixed scope names no app operation at all.
+    const scopeExcludesAppOperations = allowed !== null && ![...allowed].some((name) => name.includes("."));
     const eagerNames = new Set(builtIns.map((tool) => tool.def.name).filter((name) => !CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has(name)));
     const loadTools = createAiToolLoader({
       catalog,
@@ -1033,10 +1086,7 @@ export const createAiToolResolver =
     const activeBuiltIns = builtIns.filter((tool) => eagerNames.has(tool.def.name) || loadedNames.includes(tool.def.name));
     const runtimeTools = [
       ...createAiToolMetaTools({
-        apps:
-          allowed || input.mandatePolicy !== undefined
-            ? registry.filter((app) => capabilityCatalog.some((entry) => entry.appId === app.appId))
-            : registry,
+        apps: allowed ? registry.filter((app) => capabilityCatalog.some((entry) => entry.appId === app.appId)) : registry,
         catalog,
         eagerNames,
         conversationId: input.conversationId,
@@ -1056,8 +1106,8 @@ export const createAiToolResolver =
             locale: input.locale,
             review: input.review,
             onReview: input.onReview,
-            authorizeBackground: input.authorizeBackground,
             execute: input.execute,
+            onRejected: input.onRejected,
           })
         : []),
     ];
@@ -1083,6 +1133,7 @@ export const createAiToolResolver =
         appAccent: entry.app.appAccent,
         title: entry.display.title,
         capabilityKind: entry.kind,
+        ...(entry.place ? { place: entry.place } : {}),
         ...(wording?.sentences ? { sentences: wording.sentences } : {}),
         ...(wording?.fields?.length ? { fields: [...wording.fields] } : {}),
         ...(offersApprovalReason(entry) ? { approvalReason: true as const } : {}),

@@ -15,8 +15,8 @@ import { resolveMailSearchRoute } from "../search-state";
 import type { MailActivityEvent } from "../service/collaboration";
 import type { MessageDetail } from "../service/messages";
 import type { MailboxListView, MailboxPageData, MailListItem } from "../service/workspace";
-import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
+import { logFixtureItems } from "./_components/mail-rule-history-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
@@ -91,7 +91,7 @@ const conversationDraftsFixture = (url: URL, selectedConversationId: string | nu
         ]
       : [];
 /** `?trace=` picks what rules did with the open conversation (fictional, from the approved mockup). */
-const traceFixture = (kind: string | null) => {
+const _traceFixture = (kind: string | null) => {
   const [sortUncertain, sortNora, sortAngebote, skippedCan, , , , manual] = [
     logFixtureItems[4]!,
     logFixtureItems[3]!,
@@ -719,7 +719,6 @@ export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>)
       : [],
     conversationSummary: selectedConversationId ? summaryFixture(url.searchParams.get("summary")) : null,
     conversationDrafts: conversationDraftsFixture(url, selectedConversationId),
-    automationTrace: selectedConversationId ? traceFixture(url.searchParams.get("trace")) : [],
     detailError: null,
     collaborationState: selectedConversationId
       ? {

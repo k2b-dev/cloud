@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "notebooks",
-  "manifestHash": "0e377a158302e04cb6c12b816abc84f186bf0d5c3a1e32da7b844bc322e89574",
+  "manifestHash": "c842c54186cb5c8323a2fe461e3f60d75ddcbfe0cc3e2ee5842360b3b459f64e",
   "types": [
     {
       "localId": "comment",
@@ -1933,12 +1933,13 @@
         "required": ["id", "notebookId", "noteId", "authorUserId", "authorDisplayName", "content", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "01a3b67a603a17f309d61f6b97eb6421e9fc88d91c6af4b01700a4d1bf5871b7",
+      "schemaHash": "6fc86ea92e62506e3205d644441cd1f41d040c4edda57882ef9fea9801de8170",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "notebook"
     },
     {
       "localId": "comment.delete",
@@ -1974,11 +1975,12 @@
         "required": ["id", "deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "2d45ac01e61be19cb444cd0520ff7074251070d6ef963bcac598d8bb54ad33e3",
+      "schemaHash": "81c3a06025b5bab479e137c34d4e8e4b801dde179773af49e5f238e37b7de3d4",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "notebook"
     },
     {
       "localId": "comment.update",
@@ -2062,11 +2064,12 @@
         "required": ["id", "notebookId", "noteId", "authorUserId", "authorDisplayName", "content", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "77ee88236e0251db97af0d2a897380d3a6686045b452c2c0acb23e37d8603b9f",
+      "schemaHash": "8a423d3e473772a7b98702d0711a3f29f212c361012b8b5c979f02b05b456718",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
-      "review": true
+      "review": true,
+      "target": "notebook"
     },
     {
       "localId": "note.create",
@@ -2076,11 +2079,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "notebookId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9]{6}$",
-            "description": "Writable notebook ID."
-          },
           "parentId": {
             "description": "Optional parent note ID in the same notebook.",
             "type": "string",
@@ -2098,7 +2096,6 @@
             "maxLength": 200000
           }
         },
-        "required": ["notebookId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2170,12 +2167,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "663a4527d18436c9802d07b90b49e4782006bd10190eee54f2889022922aba2e",
+      "schemaHash": "0f8720a064e66665ec0c57e67f026c2704431d305e1829b80d693fd42b085eeb",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "notebook"
     },
     {
       "localId": "note.edit",
@@ -2621,12 +2619,13 @@
         "required": ["note", "changed", "beforeHash", "afterHash", "blocks", "blocksTruncated"],
         "additionalProperties": false
       },
-      "schemaHash": "3a6b004abbf6916c3753e9930378a9fbd7065422e1c6952783c32383a38766b2",
+      "schemaHash": "875b479d4ced1869f221be9c0b432fa4c6e4fd8a3f9bc66f909407f987c7bc39",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "notebook"
     },
     {
       "localId": "note.move",
@@ -2733,12 +2732,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "9a010b7ca4bd07ec5e4b8b1efdc455af686e47f3de4dcc6e24d6b3dd292ad1f0",
+      "schemaHash": "0f693c18fcd4ad9ab2ee20de8e26601a8c0cda8562f2d68999106a55bb931a61",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "notebook"
     }
   ],
   "commands": [

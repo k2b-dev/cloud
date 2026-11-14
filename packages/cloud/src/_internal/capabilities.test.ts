@@ -4,7 +4,9 @@ import { z } from "zod";
 import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_MAX_RESULT_BYTES,
+  type CapabilityActionCallReview,
   type CapabilityActionManifest,
+  type CapabilityActionPolicy,
   type CapabilityDefinitions,
   type CapabilityManifest,
   CapabilityPageSchema,
@@ -710,7 +712,7 @@ describe("capability v1 compilation", () => {
     );
 
     expect(() => compileCapabilities("example", defineCapabilities({ protocolVersion: 2, queries }))).toThrow(
-      "manifest exceeds the 262144-byte",
+      "manifest exceeds the 393216-byte",
     );
   });
 
@@ -821,22 +823,25 @@ describe("capability v1 compilation", () => {
       run: async () => ok({ data: [] }),
     };
     const manifest = compileCapabilities("example", defineCapabilities({ protocolVersion: 2, queries: { search } })).manifest;
-    const untypedView = CloudResourceViewSchema.extend({
+    const untypedView = CloudResourceViewSchema.omit({ group: true }).extend({
       metadata: z
         .array(z.object({ label: z.string().min(1).max(120), value: z.string().max(1000) }).strict())
         .max(20)
         .optional()
         .describe("Small structured metadata shown with the result."),
     });
-    for (const view of [untypedView, untypedView.omit({ context: true, status: true })]) {
+    for (const view of [CloudResourceViewSchema.omit({ group: true }), untypedView, untypedView.omit({ context: true, status: true })]) {
       const copy = structuredClone(manifest);
       const query = copy.queries[0]!;
       query.dataSchema = projectSchema(z.array(view).max(100), "Universal Search data", "output");
       query.schemaHash = capabilityHash({ inputSchema: query.inputSchema, dataSchema: query.dataSchema });
       const { manifestHash: _previous, ...base } = copy;
-      expect(parseCapabilityManifest({ ...base, manifestHash: capabilityHash(base) }, "example").queries[0]?.universalSearch).toEqual(
-        search.universalSearch,
-      );
+      const sent = { ...base, manifestHash: capabilityHash(base) };
+      const parsed = parseCapabilityManifest(sent, "example");
+      expect(parsed.manifestHash).toBe(sent.manifestHash);
+      expect(parsed.queries[0]?.dataSchema).toEqual(query.dataSchema);
+      expect(parsed.queries[0]?.schemaHash).toBe(query.schemaHash);
+      expect(parsed.queries[0]?.universalSearch).toEqual(search.universalSearch);
     }
     // The data schema the release before `format` declared; the untyped view above must reproduce it.
     expect(capabilityHash(projectSchema(z.array(untypedView).max(100), "Universal Search data", "output"))).toBe(
@@ -1781,5 +1786,90 @@ test("capability execution caps OAuth actions even for direct and delegated call
       expect(result.ok).toBe(allowed);
       if (!allowed) expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
     }
+  }
+});
+
+describe("Code version call reviews", () => {
+  const sentence = { action: "Change task", running: "Changing task", done: "Changed task", confirm: "Change", decline: "Cancel" };
+  for (const scenario of [
+    "silent",
+    "call asks",
+    "no scope",
+    "review fails",
+    "no review",
+    "deletes",
+    "sends",
+    "unattended false",
+    "routines false",
+  ] as const) {
+    test(`${scenario} is checked before an unattended effect and leaves chat execution unchanged`, async () => {
+      const run = mock(async () => ok({ data: {} }));
+      const policy: CapabilityActionPolicy =
+        scenario === "deletes" || scenario === "sends"
+          ? { ask: scenario }
+          : { silent: "shared", ...(scenario === "routines false" ? { routines: false } : {}) };
+      const reviewed: CapabilityActionCallReview = {
+        locale: "en",
+        sentence,
+        slots: {},
+        ...(scenario !== "no scope" ? { scope: "task:one" } : {}),
+        ...(scenario === "call asks" ? { ask: "involves_people" } : {}),
+      };
+      const review = mock(async (_input: unknown, _context: unknown) =>
+        scenario === "review fails" ? fail({ code: "FORBIDDEN", message: "No access", status: 403 as const }) : ok(reviewed),
+      );
+      const compiled = compileCapabilities("example", {
+        protocolVersion: 2,
+        actions: {
+          change: {
+            title: "Change task",
+            description: "Change one task.",
+            input: z.object({}).strict(),
+            data: z.object({}).strict(),
+            destructive: scenario === "deletes",
+            openWorld: scenario === "sends",
+            idempotency: "required",
+            ...(scenario === "no review" ? {} : { policy, review }),
+            ...(scenario === "unattended false" ? { unattended: false } : {}),
+            run,
+          },
+        },
+      });
+      const args = {
+        compiled,
+        kind: "action" as const,
+        localId: "change",
+        input: {},
+        expectedSchemaHash: compiled.manifest.actions[0]!.schemaHash,
+      };
+      const codeContext = {
+        ...context,
+        idempotencyKey: "one",
+        actor: {
+          ...context.actor,
+          delegation: {
+            kind: "invocation" as const,
+            callingAppId: "core",
+            credentialKind: "mandate" as const,
+            invocationId: "invocation-one",
+            workloadType: "code.version",
+            workloadId: "version-one",
+          },
+        },
+      };
+      const result = await invokeCompiledCapability({ ...args, context: codeContext });
+      const allowed = scenario === "silent" || scenario === "no scope";
+      expect(result.ok).toBe(allowed);
+      expect(run).toHaveBeenCalledTimes(allowed ? 1 : 0);
+      if (scenario !== "no review") {
+        if (["silent", "call asks", "no scope", "review fails"].includes(scenario)) {
+          expect(review).toHaveBeenCalledTimes(1);
+          expect(review.mock.calls[0]).toEqual([{}, expect.objectContaining({ idempotencyKey: undefined })]);
+        }
+      }
+      // Interactive execution remains behind its existing Cloud approval flow.
+      expect((await invokeCompiledCapability({ ...args, context: { ...context, idempotencyKey: "two" } })).ok).toBe(true);
+      expect(run).toHaveBeenCalledTimes(allowed ? 2 : 1);
+    });
   }
 });

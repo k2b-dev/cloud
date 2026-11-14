@@ -19,7 +19,7 @@ import { CLOUD_CLI_MODULE_NAME, localizeCloudCliText, resolveCloudCliLocale } fr
 import { i18n } from "@k2b/stdlib";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
-import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken, posixLocale } from "./config";
+import { configPath, envIsCi, envLacksLocalBrowser, envLocale, envServer, envToken, posixLocale } from "./config";
 import { loginPageResponse } from "./login-page";
 import {
   collectAbandonedPluginDownloads,
@@ -1008,6 +1008,7 @@ const createContext = (
   options: ResolvedCliOptions,
   reload?: () => Promise<ResolvedCliOptions>,
 ): CloudCliContext => {
+  options.ci = envIsCi();
   let bearerToken = options.token;
   const cloudOrigin = options.server ? new URL(options.server).origin : null;
   const authHeaders = () => ({ Authorization: `Bearer ${bearerToken}` });
@@ -1098,6 +1099,20 @@ const createContext = (
       if (rendered) printLine(rendered);
     },
     profiles: { saveClientCredentials: saveClientCredentialsProfile },
+    confirm:
+      process.stdin.isTTY && process.stdout.isTTY && options.output === "text" && !envIsCi()
+        ? async (question) => {
+            const prompt = createInterface({ input: process.stdin, output: process.stdout });
+            // Ctrl-D closes the prompt without answering: that is a no, not a silent exit.
+            const closed = new Promise<boolean>((resolve) => prompt.once("close", () => resolve(false)));
+            const answered = prompt.question(question).then((answer) => /^(y|yes|j|ja)$/i.test(answer.trim()));
+            try {
+              return await Promise.race([answered, closed]);
+            } finally {
+              prompt.close();
+            }
+          }
+        : undefined,
     openUrl: async (url) => {
       try {
         if (!["http:", "https:"].includes(new URL(url).protocol)) return false;

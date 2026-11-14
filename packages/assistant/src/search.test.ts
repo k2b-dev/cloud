@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AiConversation, AiConversationService, AiStoredMessage } from "@k2b/cloud/ai";
 import { UniversalSearchDataSchema } from "@k2b/cloud/contracts";
-import { testIdentity } from "./artifacts/test-identity";
+import { testIdentity } from "./chat-code/test-identity";
 import { searchAssistant } from "./search";
 
 const chat: AiConversation = {
@@ -143,4 +143,28 @@ test("project search authorizes the project and filters owned chats before limit
     false,
   );
   expect(calls).toEqual([]);
+});
+
+test("place search groups ordinary chat refs and uses the current person's place filter", async () => {
+  const place = { ref: { type: "fixture.conversation", id: "Marta1" }, title: "Marta" };
+  const calls: unknown[] = [];
+  const result = await searchAssistant(
+    input,
+    context,
+    {
+      ...store,
+      listConversations: async (request) => {
+        calls.push(request);
+        return [{ ...chat, place }];
+      },
+    },
+    projects,
+    true,
+  );
+  expect(calls).toEqual([{ ownerUserId: "owner", search: "launch", place: "any", limit: 1 }]);
+  expect(result).toMatchObject({
+    ok: true,
+    data: { data: [{ ref: { type: "assistant.chat", id: "Chat01" }, group: "An Orten", context: "Marta" }] },
+  });
+  if (result.ok) expect(UniversalSearchDataSchema.safeParse(result.data.data).success).toBe(true);
 });

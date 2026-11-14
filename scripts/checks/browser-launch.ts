@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { discoverTestSuites } from "../run-tests";
 import { workspacePackages } from "../workspace";
 import { isTestFile, listFiles, sourceFilePattern } from "./files";
@@ -11,12 +11,6 @@ const directLaunch = /\b(?:chromium|firefox|webkit)\.(?:launch|connect)\w*\(/g;
 export const playwrightImport = /\bfrom\s+["'](?:playwright|[^"']*\/test\/browser(?:\.ts)?)["']/;
 /** Integration tests run with `bun run test --integration`, in Chromium only. */
 const integrationImport = /scripts\/fixtures\/test-infra/;
-/**
- * Assistant's artifact suites may still start Google Chrome, a Chromium channel, which runs only nightly.
- * The artifact suites that import the launcher run in the gate's WebKit job like any other browser test.
- */
-const exempt = /^packages\/assistant\/src\/artifacts\//;
-
 /**
  * A test starts its browser with `launchBrowser()` from
  * `packages/ui/test/browser.ts`, so `TEST_BROWSER` chooses the engine and the
@@ -35,7 +29,7 @@ export const rule: Rule = {
     const roots = workspacePackages(workspaceRoot).map((path) => join(workspaceRoot, path));
     for (const file of roots.flatMap((root) => listFiles(root, sourceFilePattern)).sort()) {
       const test = isTestFile(file);
-      if (!(test || file.endsWith(".browser-suite.ts")) || exempt.test(relative(workspaceRoot, file))) continue;
+      if (!(test || file.endsWith(".browser-suite.ts"))) continue;
       const source = readFileSync(file, "utf8");
       for (const call of source.matchAll(directLaunch)) {
         findings.push({

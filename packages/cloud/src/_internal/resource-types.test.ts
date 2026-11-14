@@ -152,12 +152,14 @@ test("generated readability requires expected container and only returns active 
   const principal: ResourcePrincipal = { type: "service_account", serviceAccountId: "11111111-1111-4111-8111-111111111111" };
   const instance = compileCapabilities("inventory", {
     protocolVersion: 2,
+    queries: { "item.read": reader(true) },
     types: {
       collection: { title: "Collection", description: "Collection." },
       item: {
         title: "Item",
         description: "Item.",
         container: "collection",
+        reader: "item.read",
         access: {
           readable: async (input) =>
             input.id === "invalid-subset" ? [principal] : input.container?.id === "current" ? input.principals : [],
@@ -214,7 +216,7 @@ test("generated readability requires expected container and only returns active 
   expect(() =>
     compileCapabilities("inventory", {
       protocolVersion: 2,
-      types: { item: { title: "Item", description: "Item.", access: { readable: () => [] } } },
+      types: { item: { title: "Item", description: "Item.", reader: "item.read", access: { readable: () => [] } } },
       queries: { "item.readable": reader() },
     }),
   ).toThrow(/collides/);
@@ -248,10 +250,11 @@ test("registry retains valid roles and ignores an incompatible role without losi
 test("readable advertisement requires the exact retained app-only query", () => {
   const manifest = compileCapabilities("inventory", {
     protocolVersion: 2,
-    types: { item: { title: "Item", description: "Item.", access: { readable: () => [] } } },
+    types: { item: { title: "Item", description: "Item.", reader: "item.read", access: { readable: () => [] } } },
+    queries: { "item.read": reader() },
   }).manifest;
   expect(CapabilityManifestSchema.parse(manifest).resourceTypes?.[0]?.readable).toBe(true);
-  const query = manifest.queries[0]!;
+  const query = manifest.queries.find((query) => query.localId === "item.readable")!;
   for (const queries of [
     [],
     [{ ...query, futureRestriction: true }],
@@ -276,10 +279,11 @@ test("generated reader titles compile for the full allowed type title range", ()
   for (const length of [104, 120]) {
     const instance = compileCapabilities("inventory", {
       protocolVersion: 2,
-      types: { item: { title: "x".repeat(length), description: "Item.", access: { readable: () => [] } } },
+      types: { item: { title: "x".repeat(length), description: "Item.", reader: "item.read", access: { readable: () => [] } } },
+      queries: { "item.read": reader() },
     });
-    expect(instance.manifest.queries[0]!.title).toBe("Check resource readers");
-    expect(instance.manifest.queries[0]!.description).toContain("x".repeat(length));
+    expect(instance.queries.get("item.readable")!.manifest.title).toBe("Check resource readers");
+    expect(instance.queries.get("item.readable")!.manifest.description).toContain("x".repeat(length));
   }
 });
 

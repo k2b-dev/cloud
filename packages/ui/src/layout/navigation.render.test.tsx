@@ -54,4 +54,16 @@ describe("Navigation rendering", () => {
     expect(/<a\b[^>]*aria-current="page"[^>]*>/.exec(html)?.[0]).toContain('href="/projects/work"');
     expect(html).not.toContain("aria-disabled");
   });
+
+  test("an unread row is marked for its stronger label weight, other rows are not", () => {
+    const navigation = createNavigation({
+      items: () => [
+        { id: "new", label: "New answer", href: "/new", unread: true, status: { icon: "dot", label: "New answer" } },
+        { id: "seen", label: "Seen", href: "/seen", unread: false, status: null },
+      ],
+    });
+    const html = renderToString(() => createComponent(Navigation, { navigation, label: "Chats" }));
+    expect(html.match(/data-unread/g)).toHaveLength(1);
+    expect(/<div[^>]*data-unread[^>]*>[\s\S]*?<\/div>/.exec(html)?.[0]).toContain('href="/new"');
+  });
 });

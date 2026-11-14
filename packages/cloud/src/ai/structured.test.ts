@@ -69,8 +69,12 @@ for (const [type, reasoningEffort] of [
     };
     const accounting = spyOn(quotaProvider, "inferenceProvider").mockReturnValue(provider);
     try {
+      const observed: unknown[] = [];
       const result = await runAiStructured({
         task: "test",
+        onUsage: (call) => {
+          observed.push(call);
+        },
         input: "Answer",
         output: z.object({ answer: z.string() }),
         resolveModel: async (request) => {
@@ -99,6 +103,13 @@ for (const [type, reasoningEffort] of [
       expect(result.output).toEqual({ answer: "ok" });
       expect(requests).toHaveLength(1);
       expect(requests[0]?.reasoningEffort).toBe(reasoningEffort);
+      const observer = accounting.mock.calls[0]?.[2].onUsage;
+      observer?.({ input: 20, output: 4, estimated: true });
+      observer?.(undefined);
+      expect(observed).toEqual([
+        { model: { id: "fixture" }, usage: { input: 20, output: 4, estimated: true } },
+        { model: { id: "fixture" }, usage: undefined },
+      ]);
     } finally {
       accounting.mockRestore();
       ledger.mockRestore();

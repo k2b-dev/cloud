@@ -92,7 +92,7 @@ const navigation = createNavigation({
 
 Items use stable, unique `id` values, a `label`, and either `href`, an `action`
 key, or `children`. Optional fields are `icon`, `iconLabel`, `badge` (string or
-number), `description`, `status`, `active`, `context`, `disabled`, `color`, secondary
+number), `description`, `status`, `unread`, `active`, `context`, `disabled`, `color`, secondary
 `actions`, and `inlineActions`. Everything in the item tree is serializable;
 functions remain in the controller.
 
@@ -112,6 +112,11 @@ move when a status appears.
 ```tsx
 { id: "offer", label: "Offer for Jana", href: "/chats/offer", status: running() ? { icon: "ti ti-loader-2", label: "Running" } : null }
 ```
+
+`unread: true` marks new activity the person has not seen: the row's label
+takes a stronger weight, as unread rows in the desktop sidebar do. Pair it with
+a `status` dot or a `badge`; the weight keeps unread distinct from other dots
+without relying on color.
 
 A group with `section: true` and no `href` or `action` is a section: a quiet
 heading over its rows, always open and not indented, for lists sorted into

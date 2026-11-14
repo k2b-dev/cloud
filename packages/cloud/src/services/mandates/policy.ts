@@ -1,5 +1,28 @@
 import { z } from "zod";
-import { type CapabilityActionPolicy, CapabilityAppIdSchema, CapabilityLocalIdSchema } from "../../contracts/capabilities";
+import {
+  type CapabilityActionPolicy,
+  CapabilityAppIdSchema,
+  CapabilityLocalIdSchema,
+  CloudResourceRefSchema,
+  type NormalizedCapabilityCall,
+} from "../../contracts/capabilities";
+
+/** Core stores one entry per immutable Code version, shared by all its entry points. */
+export const CODE_VERSION_MANDATE_WORKLOAD_TYPE = "code.version" as const;
+
+/** Durable binding consumed by Code activation and invocation. workloadId is the immutable version ID. */
+export type CodeVersionMandateBinding = {
+  ownerAppId: "runner";
+  workloadType: typeof CODE_VERSION_MANDATE_WORKLOAD_TYPE;
+  workloadId: string;
+};
+
+/** New Code entries name the authenticated execution app; Core manages their lifecycle. */
+export const CODE_VERSION_ENTRY_APP_ID = "runner" as const;
+/** Legacy Core mandates stay policy-bound until a new version is explicitly activated. */
+export const isCodeVersionWorkload = (value: { ownerAppId: string; workloadType: string }): boolean =>
+  (value.ownerAppId === CODE_VERSION_ENTRY_APP_ID || value.ownerAppId === "core") &&
+  value.workloadType === CODE_VERSION_MANDATE_WORKLOAD_TYPE;
 
 export const MANDATE_POLICY_VERSION = 1 as const;
 export const MANDATE_POLICY_MAX_IDENTIFIERS = 100;
@@ -13,7 +36,6 @@ const identifierList = <T extends z.ZodType<string>>(schema: T) =>
 const operationSchema = z.union([
   z.literal("search.query"),
   z.literal("runtime.http"),
-  z.literal("runtime.database"),
   z.literal("workflow.run"),
   z.string().refine((value) => {
     const [prefix, localId, extra] = value.split(":");
@@ -33,10 +55,25 @@ export const CapabilityGrantSchema = z
     appId: CapabilityAppIdSchema.describe("Exact discovered application ID."),
     capabilityId: CapabilityLocalIdSchema.describe("Exact local capability ID from discovery, without application prefix."),
     kind: z.enum(["query", "action"]).describe("Discovered capability kind."),
+    target: CloudResourceRefSchema.nullable()
+      .optional()
+      .describe("Exact primary target, or null for an app-wide operation. Omitted only for operation-only grants."),
+    refs: z
+      .record(z.string(), CloudResourceRefSchema)
+      .optional()
+      .describe("Exact additional targets, keyed by the declared reference field."),
     fixedInput: z.record(z.string(), z.json()).default({}).describe("Exact top-level input values. Omitted fields remain unrestricted."),
   })
   .strict();
 export const CapabilityGrantsSchema = z.array(CapabilityGrantSchema).max(MANDATE_POLICY_MAX_IDENTIFIERS / 2);
+/**
+ * One operation at one target, shared by Code versions and person-owned routines.
+ * appId + capabilityId + kind identify the operation. target is a qualified resource
+ * reference, or null for app-wide Actions; refs fixes the complete additional-target map.
+ * Omission is operation-only authority, never a wildcard target for a bound Action.
+ * fixedInput only restricts domain input; it never substitutes for target or refs.
+ * Code queries use operation-only grants; person routines may bind queries to a target.
+ */
 export type CapabilityGrant = z.output<typeof CapabilityGrantSchema>;
 
 const httpsUrl = z
@@ -47,11 +84,11 @@ const httpsUrl = z
     const url = new URL(value);
     return url.protocol === "https:" && !url.username && !url.password && !url.hash;
   }, "Use HTTPS without credentials or fragment");
-export const TaskGrantSchema = z.union([
+export const MandateGrantSchema = z.union([
   CapabilityGrantSchema,
   z
     .object({
-      kind: z.literal("http").describe("Authorize scheduled Code Mode HTTP requests."),
+      kind: z.literal("http").describe("Authorize HTTP requests from a reviewed personal Code version."),
       fixedInput: z
         .object({
           origin: httpsUrl
@@ -69,48 +106,9 @@ export const TaskGrantSchema = z.union([
         .describe("Fixed input values. Omitted fields are unrestricted; empty input permits every supported target and operation."),
     })
     .strict(),
-  z
-    .object({
-      kind: z.literal("database").describe("Authorize scheduled Code Mode RSQL operations."),
-      fixedInput: z
-        .object({
-          resourceId: z.string().min(1).max(80).optional().describe("Exact Studio app ID whose database may be used."),
-          operation: z
-            .enum([
-              "connect",
-              "status",
-              "export",
-              "clear",
-              "reset",
-              "tables.list",
-              "tables.create",
-              "tables.update",
-              "tables.delete",
-              "schema.get",
-              "rows.list",
-              "rows.get",
-              "rows.insert",
-              "rows.update",
-              "rows.delete",
-              "query",
-            ])
-            .optional()
-            .describe("Exact database operation; connect needs its own grant when operation is fixed."),
-          table: z
-            .string()
-            .min(1)
-            .max(63)
-            .optional()
-            .describe("Exact table; applies to row and schema operations, not arbitrary SQL queries."),
-        })
-        .strict()
-        .default({})
-        .describe("Fixed input values. Omitted fields are unrestricted; empty input permits every supported target and operation."),
-    })
-    .strict(),
 ]);
-export const TaskGrantsSchema = z.array(TaskGrantSchema).max(MANDATE_POLICY_MAX_IDENTIFIERS / 2);
-export type TaskGrant = z.output<typeof TaskGrantSchema>;
+export const MandateGrantsSchema = z.array(MandateGrantSchema).max(MANDATE_POLICY_MAX_IDENTIFIERS / 2);
+export type MandateGrant = z.output<typeof MandateGrantSchema>;
 
 const equalJson = (a: unknown, b: unknown): boolean => {
   if (a === b) return true;
@@ -123,11 +121,25 @@ const equalJson = (a: unknown, b: unknown): boolean => {
 };
 export const capabilityGrantAllows = (
   grant: CapabilityGrant,
-  input: { appId: string; capabilityId: string; kind: "query" | "action"; input: unknown },
+  input: {
+    appId: string;
+    capabilityId: string;
+    kind: "query" | "action";
+    input: unknown;
+    call?: NormalizedCapabilityCall;
+    /** Legacy personal Code may use dynamic targets; explicit target/refs stay binding. */
+    codeVersion?: boolean;
+  },
 ): boolean =>
   grant.appId === input.appId &&
   grant.capabilityId === input.capabilityId &&
   grant.kind === input.kind &&
+  (!input.call
+    ? grant.target === undefined && grant.refs === undefined
+    : (grant.target === undefined
+        ? input.call.target === null || input.codeVersion === true
+        : equalJson(grant.target, input.call.target)) &&
+      ((grant.refs === undefined && input.codeVersion === true) || equalJson(grant.refs ?? {}, input.call.refs))) &&
   Object.entries(grant.fixedInput).every(
     ([key, value]) =>
       input.input !== null &&
@@ -136,13 +148,24 @@ export const capabilityGrantAllows = (
       equalJson(value, Reflect.get(input.input, key)),
   );
 
+/** Preserve the exact authority of stored object/app Code policies until a new version is activated.
+ * New entries never call this matcher: they have no policy. */
+const legacyCodeGrantAllows = (grant: CapabilityGrant, input: Parameters<typeof capabilityGrantAllows>[1]): boolean => {
+  if (input.kind === "action" && (!input.call || grant.target === undefined)) return false;
+  return capabilityGrantAllows(input.kind === "query" ? { ...grant, target: undefined, refs: undefined } : grant, {
+    ...input,
+    call: input.kind === "query" ? undefined : input.call,
+    codeVersion: false,
+  });
+};
+
 export const MandatePolicyV1Schema = z
   .object({
     version: z.literal(MANDATE_POLICY_VERSION),
     apps: z.union([z.literal("*"), identifierList(CapabilityAppIdSchema)]),
     operations: z.union([z.literal("*"), identifierList(operationSchema)]),
     actions: z.enum(["deny", "require_approval", "preapproved"]),
-    grants: TaskGrantsSchema.optional(),
+    grants: MandateGrantsSchema.optional(),
   })
   .strict()
   .superRefine((policy, context) => {
@@ -184,13 +207,20 @@ export const isMandatePolicyNarrowing = (current: MandatePolicyV1, next: Mandate
   setAllows(current.operations, next.operations) &&
   ACTION_AUTHORITY[next.actions] <= ACTION_AUTHORITY[current.actions] &&
   (current.grants === undefined
-    ? !next.grants?.some((grant) => grant.kind === "http" || grant.kind === "database")
+    ? !next.grants?.some((grant) => grant.kind === "http" || grant.target !== undefined || Object.keys(grant.refs ?? {}).length > 0)
     : next.grants !== undefined &&
       next.grants.every((grant) =>
         current.grants!.some((existing) => {
           if (existing.kind !== grant.kind) return false;
           if ("appId" in existing && "appId" in grant && (existing.appId !== grant.appId || existing.capabilityId !== grant.capabilityId))
             return false;
+          if ("appId" in existing && "appId" in grant) {
+            if (existing.target !== undefined && !equalJson(existing.target, grant.target)) return false;
+            if (existing.refs !== undefined && !equalJson(existing.refs, grant.refs ?? {})) return false;
+            // An operation-only grant did not authorize Code Actions, including app-wide Actions.
+            if (existing.target === undefined && grant.target !== undefined) return false;
+            if (existing.refs === undefined && Object.keys(grant.refs ?? {}).length) return false;
+          }
           return Object.entries(existing.fixedInput).every(([key, value]) => equalJson(value, Reflect.get(grant.fixedInput, key)));
         }),
       ));
@@ -207,16 +237,23 @@ export const mandatePolicyAllows = (
     operation: string;
     actionApproval: "none" | "approved";
     input?: unknown;
+    /** Validated full call; required for target-bound authorization. */
+    call?: NormalizedCapabilityCall;
+    /** Legacy policy only: derived from the live Code account row, never request JSON. */
+    legacyCodeAccount?: boolean;
+    /** Core-owned code.version workload; personal Code retains dynamic targets. */
+    codeVersion?: boolean;
     capabilityPolicy?: CapabilityActionPolicy;
     capabilityApproval?: "none" | "rememberable" | "always";
   },
 ): boolean => {
   if (policy.apps !== "*" && !policy.apps.includes(input.appId)) return false;
   if (policy.operations !== "*" && !policy.operations.includes(input.operation)) return false;
-  if (input.operation === "runtime.http" || input.operation === "runtime.database") {
-    const kind = input.operation === "runtime.http" ? "http" : "database";
+  if (input.operation === "runtime.http") {
+    const kind = "http";
     return (
-      input.appId === "assistant" &&
+      input.codeVersion === true &&
+      input.appId === "core" &&
       !!policy.grants?.some(
         (grant) =>
           grant.kind === kind &&
@@ -237,12 +274,30 @@ export const mandatePolicyAllows = (
       : operation === "capability.action.run" || operation === "capability.action.review"
         ? "action"
         : null;
+  if (input.call && input.call.capability !== `${input.appId}.${capabilityId}`) return false;
+  if (kind === "action" && input.legacyCodeAccount && policy.grants === undefined) return false;
+  if (
+    policy.grants === undefined &&
+    input.call &&
+    (input.call.target !== null || Object.keys(input.call.refs).length > 0) &&
+    !input.codeVersion
+  )
+    return false;
   if (policy.grants !== undefined) {
     if (
       !kind ||
       !capabilityId ||
       !policy.grants.some(
-        (grant) => "appId" in grant && capabilityGrantAllows(grant, { appId: input.appId, capabilityId, kind, input: input.input }),
+        (grant) =>
+          "appId" in grant &&
+          (input.legacyCodeAccount ? legacyCodeGrantAllows : capabilityGrantAllows)(grant, {
+            appId: input.appId,
+            capabilityId,
+            kind,
+            input: input.input,
+            call: input.call,
+            codeVersion: input.codeVersion,
+          }),
       )
     )
       return false;
@@ -282,7 +337,19 @@ export const mandatePolicyCanPermitCapability = (
   return policy.grants.some(
     (grant) =>
       "appId" in grant &&
-      capabilityGrantAllows(grant, { ...input, input: grant.fixedInput }) &&
-      mandatePolicyAllows(policy, { ...call, input: grant.fixedInput }),
+      mandatePolicyAllows(policy, {
+        ...call,
+        input: grant.fixedInput,
+        ...(grant.target !== undefined || grant.refs !== undefined
+          ? {
+              call: {
+                capability: `${grant.appId}.${grant.capabilityId}`,
+                target: grant.target ?? null,
+                refs: grant.refs ?? {},
+                input: grant.fixedInput,
+              },
+            }
+          : {}),
+      }),
   );
 };

@@ -15,7 +15,6 @@ describe("resolveMailMessageActionVisibility", () => {
   test("shows inbound sender actions and message reuse", () => {
     expect(resolveMailMessageActionVisibility({ ...base, outgoing: false })).toEqual({
       findSender: true,
-      createIncomingAutomation: true,
       blockSender: true,
       manageUnsubscribe: true,
       conversationRepair: true,
@@ -27,7 +26,6 @@ describe("resolveMailMessageActionVisibility", () => {
   test("hides every inbound sender action for an own outbound message", () => {
     expect(resolveMailMessageActionVisibility({ ...base, outgoing: true })).toEqual({
       findSender: false,
-      createIncomingAutomation: false,
       blockSender: false,
       manageUnsubscribe: false,
       conversationRepair: true,
@@ -46,7 +44,6 @@ describe("resolveMailMessageActionVisibility", () => {
       }),
     ).toEqual({
       findSender: true,
-      createIncomingAutomation: false,
       blockSender: false,
       manageUnsubscribe: false,
       conversationRepair: false,
@@ -58,7 +55,6 @@ describe("resolveMailMessageActionVisibility", () => {
   test("keeps a writer of assigned conversations to their conversations", () => {
     expect(resolveMailMessageActionVisibility({ ...base, outgoing: false, canAdmin: false, mailboxWide: false })).toEqual({
       findSender: true,
-      createIncomingAutomation: false,
       blockSender: false,
       manageUnsubscribe: false,
       conversationRepair: false,

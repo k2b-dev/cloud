@@ -16,7 +16,11 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type CatalogSubscription, projectAppEventCatalog, readEventCatalogSubscriptions } from "../_internal/app-event-catalog";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { isPersonVisibleCapabilityQuery, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import {
+  isPersonVisibleCapabilityAction,
+  isPersonVisibleCapabilityQuery,
+  resolveCapabilityManifestPresentation,
+} from "../_internal/capabilities";
 import { capabilitySentenceText } from "../_internal/capability-sentences";
 import { withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import {
@@ -28,6 +32,7 @@ import {
 } from "../_internal/help-catalog";
 import { getCapability, listApps } from "../_internal/registry";
 import { addCloudResourceHrefs } from "../ai/resource-refs";
+import { capabilityCallFromTool, capabilityInvocationBody, capabilityToolInputSchema } from "../capabilities/calls";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -139,7 +144,7 @@ type CapabilityTool = {
 const cloneObjectSchema = (schema: Record<string, unknown>): Tool["inputSchema"] => structuredClone(schema) as Tool["inputSchema"];
 
 const actionInputSchema = (operation: CapabilityActionManifest): Tool["inputSchema"] => {
-  const schema = cloneObjectSchema(operation.inputSchema);
+  const schema = cloneObjectSchema(capabilityToolInputSchema(operation));
   if (operation.idempotency === "none") return schema;
   const properties = { ...(schema.properties ?? {}) };
   properties[IDEMPOTENCY_KEY_FIELD] = {
@@ -283,7 +288,7 @@ const projectTool = (
       name: capabilityToolName(app.appId, kind, operation.localId),
       title: `${app.appName}: ${operation.title}`,
       description: operation.description,
-      inputSchema: action ? actionInputSchema(action) : cloneObjectSchema(operation.inputSchema),
+      inputSchema: action ? actionInputSchema(action) : cloneObjectSchema(capabilityToolInputSchema(operation)),
       outputSchema: cloneObjectSchema(capabilityResultJsonSchema(operation.dataSchema, { consumer: true })),
       annotations: {
         title: operation.title,
@@ -308,7 +313,9 @@ const orderedCapabilityEntries = function* (app: CapabilityRegistryEntry): Gener
   kind: "queries" | "actions";
   operation: CapabilityQueryManifest | CapabilityActionManifest;
 }> {
-  for (const operation of [...app.manifest.actions].sort((left, right) => left.localId.localeCompare(right.localId))) {
+  for (const operation of app.manifest.actions
+    .filter(isPersonVisibleCapabilityAction)
+    .sort((left, right) => left.localId.localeCompare(right.localId))) {
     yield { app, kind: "actions", operation };
   }
   for (const operation of app.manifest.queries
@@ -375,7 +382,7 @@ const findCapabilityTool = async (
   const operations = kind === "query" ? app.manifest.queries : app.manifest.actions;
   const projectedKind = kind === "query" ? "queries" : "actions";
   const operation = operations.find((candidate) => capabilityToolName(appId, projectedKind, candidate.localId) === name);
-  if (operation) return projectTool(app, projectedKind, operation);
+  if (operation && !operation.localId.startsWith("code.access.")) return projectTool(app, projectedKind, operation);
   return null;
 };
 
@@ -835,13 +842,19 @@ const createMcpServer = (
     const headers = new Headers(request.headers);
     headers.delete("idempotency-key");
     if (typeof idempotencyKey === "string") headers.set("idempotency-key", idempotencyKey);
+    let bodyCall: ReturnType<typeof capabilityInvocationBody>;
+    try {
+      bodyCall = capabilityInvocationBody(capabilityCallFromTool(selected.app.appId, selected.operation, args));
+    } catch (error) {
+      return validationToolError(error instanceof Error ? error.message : "Invalid target");
+    }
     const response = await dispatchCapability({
       request: new Request(request.url, { method: "POST", headers, signal: request.signal }),
       kind: selected.kind,
       origin: "mcp",
       appId: selected.app.appId,
       capabilityId: selected.operation.localId,
-      input: args,
+      ...bodyCall,
       authority,
       dependencies,
     });

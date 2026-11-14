@@ -97,6 +97,21 @@ describe("@k2b/ui content style coverage", () => {
     expect(foreign(html)).toEqual([]);
   });
 
+  test("a file past 999 lines widens its number column so every line stays aligned", () => {
+    const html = renderToString(() => createComponent(CodeDisplay, { code: "x\n".repeat(999) + "x", language: "ts" }));
+    const numbers = [...html.matchAll(/k2b-content-code-display__number"[^>]*>(\d+)</g)].map((match) => match[1]);
+    expect(numbers.at(-1)).toBe("1000");
+    expect(html).toContain('data-digits="4"');
+    expect(renderToString(() => createComponent(CodeDisplay, { code: "a" }))).not.toContain("data-digits");
+  });
+
+  test("an excerpt numbers its lines from startLine and widens the column for the last number", () => {
+    const html = renderToString(() => createComponent(CodeDisplay, { code: "a\nb", startLine: 999 }));
+    const numbers = [...html.matchAll(/k2b-content-code-display__number"[^>]*>(\d+)</g)].map((match) => match[1]);
+    expect(numbers).toEqual(["999", "1000"]);
+    expect(html).toContain('data-digits="4"');
+  });
+
   test("files, media and structured data markup only uses classes the package styles", async () => {
     const tree = renderToString(() =>
       createComponent(FileTree, {

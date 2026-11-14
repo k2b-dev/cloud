@@ -2,7 +2,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { AiProjectLastAdminError, aiProjects } from "../ai/projects";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
-import { type AuthContext, auth, err, fail, ok, respond, v } from "../server";
+import { type AuthContext, auth, err, fail, getLocale, ok, respond, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
 
 const ListProjectsSchema = z
@@ -37,11 +37,11 @@ export const createAdminAiProjectsRoutes = (authenticate: MiddlewareHandler<Auth
     })
     .get("/:projectId/access", async (c) => {
       const project = await aiProjects.admin.getByShortId(c.req.param("projectId")!);
-      return project ? respond(c, ok({ access: await aiProjects.admin.listAccess(project.id) })) : notFound(c, "Project");
+      return project ? respond(c, ok({ access: await aiProjects.admin.listAccess(project.id, getLocale(c)) })) : notFound(c, "Project");
     })
     .post("/:projectId/access", v("json", ProjectAccessSchema), async (c) => {
       const project = await aiProjects.admin.getByShortId(c.req.param("projectId")!);
-      const access = project ? await aiProjects.admin.grantAccess(project.id, c.req.valid("json"), c.get("user").id) : null;
+      const access = project ? await aiProjects.admin.grantAccess(project.id, c.req.valid("json"), c.get("user").id, getLocale(c)) : null;
       return access ? respond(c, ok({ access }), 201) : notFound(c, "Project");
     })
     .patch("/:projectId/access/:accessId", v("json", ProjectAccessUpdateSchema), async (c) => {

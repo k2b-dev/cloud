@@ -7,7 +7,7 @@ import { canUseApp } from "@k2b/cloud/services";
 import { discoverableApps } from "@k2b/cloud/services/app-discovery";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
 import { visibleNavigationApps } from "@k2b/cloud/ssr/app-navigation";
-import { appIds } from "../../../scripts/workspace";
+import { httpAppIds } from "../../../scripts/workspace";
 
 // The workspace is authoritative: a newly added built-in must make a deliberate
 // migration choice here, rather than silently keeping the third-party fallback.
@@ -38,7 +38,7 @@ const rules = {
   weather: "signedIn",
 } satisfies Record<string, "signedIn" | "noGuests" | "roles">;
 const apps: AppMeta[] = await Promise.all(
-  appIds()
+  httpAppIds()
     .filter((id) => id !== "gateway")
     .map(async (id) => {
       const definition: { app: { meta: AppMeta } } = await import(`../../${id}/src/config.ts`);
@@ -97,7 +97,16 @@ const service = (
 // whose credentials ordinary Cloud authentication must never consume.
 const publicPaths: Record<string, string[]> = {
   core: [
+    "/code/c_fixture/",
     "/_internal/apps/bootstrap",
+    "/_internal/code/runner/call",
+    "/_internal/code/runner/config",
+    "/_internal/code/runner/fetch",
+    "/_internal/code/runner/bundle",
+    "/_internal/code/runner/heartbeat",
+    "/_internal/code/runner/complete",
+    "/_internal/code/runner/job-input",
+    "/_internal/code/runner/job-call",
     "/auth/login",
     "/auth/new-password",
     "/auth/password-reset",
@@ -173,15 +182,7 @@ const publicPaths: Record<string, string[]> = {
     ...["pwa-icon-192", "pwa-icon-512", "pwa-icon-maskable-512", "apple-touch-icon"].map((variant) => `/branding/${variant}.png`),
   ],
   "api-docs": ["/app/api-docs", "/api/api-docs/sources"],
-  assistant: [
-    "/_internal/assistant/tools/execute",
-    "/app/assistant/apps/studio/run",
-    "/api/assistant/runner/app-assets",
-    "/api/assistant/runner/chart-parts",
-    "/api/assistant/runner/chunks/bridge.js",
-    "/api/assistant/runner/studio",
-    "/api/assistant/runner/studio/app",
-  ],
+  assistant: ["/_internal/assistant/tools/execute"],
   faq: ["/faq"],
   filesv2: [
     "/share/filesv2/transfer/ticket",
@@ -265,7 +266,9 @@ const publicPaths: Record<string, string[]> = {
 };
 const protectedPaths: Record<string, string[]> = {
   core: [
+    "/code-other/c_fixture/",
     "/_internal/apps/bootstrap/private",
+    "/_internal/code/runner/call/private",
     "/me",
     "/admin",
     "/api/auth/pwa/v1/pairings",
@@ -296,7 +299,16 @@ const protectedPaths: Record<string, string[]> = {
     "/api/resources/resolve/private",
   ],
   "api-docs": ["/api/api-docs/private"],
-  assistant: ["/api/assistant/artifacts", "/app/assistant/apps/studio/edit", "/admin/assistant"],
+  assistant: [
+    "/api/assistant/chat-code",
+    "/app/assistant",
+    // Retired Studio paths must no longer bypass the application entry policy.
+    "/app/assistant/apps/studio/run",
+    "/api/assistant/runner/app-assets",
+    "/api/assistant/runner/chunks/bridge.js",
+    "/api/assistant/runner/studio",
+    "/api/assistant/runner/studio/app",
+  ],
   faq: ["/admin/faq", "/api/faq"],
   filesv2: [
     "/api/filesv2/bases",

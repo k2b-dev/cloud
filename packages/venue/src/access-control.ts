@@ -1,6 +1,6 @@
 import type { AccessSubject, PermissionLevel, RequestActor, User } from "@k2b/cloud/contracts";
 import { err, fail, hasPermission, ok, type Result } from "@k2b/cloud/server";
-import { isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 
 const VENUE_APP_ID = "venue";
 const VENUE_RESOURCE_TYPE = "venue";
@@ -31,7 +31,7 @@ export const venueAccessScopeFor = (actor: RequestActor, subject: AccessSubject)
     return ok({ user, subject, serviceAccountResourceId: null, serviceAccountScopes: [] });
   }
 
-  if (isStandaloneServiceAccountKind(actor.serviceAccount.kind)) {
+  if (serviceAccountUsesOwnGrants(actor.serviceAccount.kind)) {
     if (
       subject.type !== "service_account" ||
       subject.serviceAccountId !== actor.serviceAccount.id ||

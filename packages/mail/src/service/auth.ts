@@ -6,6 +6,7 @@ export type MailRequestContext = {
   actor: RequestActor;
   accessSubject: AccessSubject;
   requestId?: string | null;
+  locale?: string;
 };
 
 type DurableCredentialSnapshot = {

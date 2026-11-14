@@ -75,7 +75,7 @@ describe("admin AI Project routes", () => {
 
     const response = await routes.request(`/${projectShortId}/access`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-cloud-locale": "de" },
       body: JSON.stringify({ principal: access.principal, permission: "admin" }),
     });
 
@@ -87,6 +87,7 @@ describe("admin AI Project routes", () => {
         permission: "admin",
       },
       actorId,
+      "de",
     );
     expect(await response.json()).toEqual({ access });
   });

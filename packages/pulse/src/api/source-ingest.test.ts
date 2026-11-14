@@ -34,7 +34,7 @@ for (const outcome of outcomes) {
   test(`CLI source ingest route answers ${status} with the writer's headers and HTTP quota bytes`, async () => {
     const base = spyOn(resources, "resolvePublicId").mockResolvedValue(baseId);
     const source = spyOn(resources, "resolveBasePublicId").mockResolvedValue(sourceId);
-    const access = spyOn(pulseService.base.access, "require").mockResolvedValue(ok());
+    const access = spyOn(pulseService.base.access, "require").mockResolvedValue(ok("admin"));
     const ingest = spyOn(pulseService.ingest, "batch").mockResolvedValue(outcome);
     try {
       const body = ' { "metrics": [{"name":"ä", "value":1}] } ';
@@ -93,7 +93,7 @@ test("source ingest refuses missing write access before resolving the source or 
 test("source ingest parses public IDs and refuses a source outside the base", async () => {
   const base = spyOn(resources, "resolvePublicId").mockResolvedValue(baseId);
   const source = spyOn(resources, "resolveBasePublicId").mockResolvedValue(null);
-  const access = spyOn(pulseService.base.access, "require").mockResolvedValue(ok());
+  const access = spyOn(pulseService.base.access, "require").mockResolvedValue(ok("admin"));
   const ingest = spyOn(pulseService.ingest, "batch");
   const request = { method: "POST", headers: { "content-type": "application/json" }, body: '{"events":[{"kind":"refused"}]}' };
   try {

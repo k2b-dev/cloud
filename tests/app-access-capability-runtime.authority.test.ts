@@ -2,10 +2,11 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
-import { hostFetch } from "../packages/assistant/src/artifacts/agent-host";
-import { createArtifactServiceRoutes } from "../packages/assistant/src/artifacts/api";
-import { runtimeCapabilities } from "../packages/assistant/src/artifacts/capability-runtime";
-import { testIdentity } from "../packages/assistant/src/artifacts/test-identity";
+import { createChatCodeServiceRoutes } from "../packages/assistant/src/chat-code/api";
+import { runtimeCapabilities } from "../packages/assistant/src/chat-code/capability-runtime";
+import { hostFetch } from "../packages/assistant/src/chat-code/host-fetch";
+import { ArtifactError } from "../packages/assistant/src/chat-code/identity";
+import { testIdentity } from "../packages/assistant/src/chat-code/test-identity";
 import * as registry from "../packages/cloud/src/_internal/registry";
 import * as cloudAi from "../packages/cloud/src/ai/index.ts";
 import { aiConversations } from "../packages/cloud/src/ai/index.ts";
@@ -120,13 +121,11 @@ function setup() {
   return { app };
 }
 
-test("Studio check route keeps resolved invocation scopes/mobile limits and hides the target after access is revoked", async () => {
+test("Chat capability route keeps resolved invocation scopes/mobile limits and hides the target after access is revoked", async () => {
   const { app } = setup();
-  const prepare = spyOn(runtimeCapabilities, "prepare").mockResolvedValue({
-    status: "completed",
-    result: { ok: true, data: { data: { answer: 42 } } },
-  });
-  spies.push(prepare);
+  const prepare = spyOn(runtimeCapabilities, "prepare");
+  const review = spyOn(capabilityClient, "reviewCapabilityAction").mockRejectedValue(new ArtifactError("INVALID_INPUT"));
+  spies.push(prepare, review);
   let current = authority;
   const router = new Hono<AuthContext>()
     .use("*", async (c, next) => {
@@ -136,32 +135,33 @@ test("Studio check route keeps resolved invocation scopes/mobile limits and hide
       c.set("credentialScopes", current.scopes);
       await next();
     })
-    .route("/", createArtifactServiceRoutes());
+    .route("/", createChatCodeServiceRoutes());
   const request = () =>
-    router.request("/runtime/check/capability", {
+    router.request("/runtime/capabilities", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "demo.read", input: {}, conversationId }),
+      body: JSON.stringify({ id: "33333333-3333-4333-8333-333333333333", name: "demo.write", input: {}, conversationId }),
     });
-  expect(await (await request()).json()).toMatchObject({ data: { answer: 42 } });
+  expect((await request()).status).toBe(400);
+  expect(review).toHaveBeenCalledTimes(1);
   expect(prepare.mock.calls[0]?.[1].authority).toEqual(authority);
   expect(prepare.mock.calls[0]?.[1].authority?.actor).toBe(authority.actor);
   app.access = { kind: "roles", roles: ["admin"] };
   expect((await request()).status).toBe(404);
-  expect(prepare).toHaveBeenCalledTimes(1);
+  expect(review).toHaveBeenCalledTimes(1);
   app.access = { kind: "signedIn" };
   current = { ...authority, scopes: ["core:read"] };
   expect((await request()).status).toBe(404);
-  expect(prepare).toHaveBeenCalledTimes(1);
+  expect(review).toHaveBeenCalledTimes(1);
   current = mobileAuthority;
-  expect((await request()).status).toBe(200);
-  expect(prepare.mock.calls[1]?.[1].authority).toEqual(mobileAuthority);
+  expect((await request()).status).toBe(400);
+  expect(prepare.mock.calls[3]?.[1].authority).toEqual(mobileAuthority);
   app.access = { kind: "roles", roles: ["admin"] };
   expect((await request()).status).toBe(404);
-  expect(prepare).toHaveBeenCalledTimes(2);
+  expect(review).toHaveBeenCalledTimes(2);
 });
 
-test("Studio prepare reaches a declared app review only with actual authority and rechecks changed access", async () => {
+test("Chat prepare reaches a declared app review only with actual authority and rechecks changed access", async () => {
   const { app } = setup();
   const reviewed = new Error("Review reached with authorized metadata");
   const review = spyOn(capabilityClient, "reviewCapabilityAction").mockRejectedValue(reviewed);
@@ -182,7 +182,7 @@ test("Studio prepare reaches a declared app review only with actual authority an
   expect(review).toHaveBeenCalledTimes(1);
 });
 
-test("managed host carries its verified invocation authority through the local check route", async () => {
+test("managed host carries its verified invocation authority through the local capability route", async () => {
   const { app } = setup();
   const context = {
     ...identity,
@@ -213,11 +213,9 @@ test("managed host carries its verified invocation authority through the local c
       config: { kind: "chat", input: "Run" },
     }),
   );
-  const prepare = spyOn(runtimeCapabilities, "prepare").mockResolvedValue({
-    status: "completed",
-    result: { ok: true, data: { data: {} } },
-  });
-  spies.push(prepare);
+  const prepare = spyOn(runtimeCapabilities, "prepare");
+  const review = spyOn(capabilityClient, "reviewCapabilityAction").mockRejectedValue(new ArtifactError("INVALID_INPUT"));
+  spies.push(prepare, review);
   const session: Parameters<typeof hostFetch>[1] = {
     phase: "running",
     id: "55555555-5555-4555-8555-555555555555",
@@ -228,8 +226,6 @@ test("managed host carries its verified invocation authority through the local c
     context,
     lastUsed: Date.parse(at),
     busy: new Set(),
-    checks: new Map(),
-    checkScopes: new Set(),
     decisions: new Map(),
     capabilityTransport: async () => {
       throw new Error("Unexpected dispatch");
@@ -237,15 +233,17 @@ test("managed host carries its verified invocation authority through the local c
     host: Promise.resolve({ health: async () => {}, execute: async () => null, call: async () => null, close: async () => {} }),
   };
   const request = () =>
-    hostFetch(context, session, "/api/assistant/artifacts/runtime/check/capability", {
+    hostFetch(context, session, "/api/assistant/chat-code/runtime/capabilities", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "demo.read", input: {}, conversationId }),
+      body: JSON.stringify({ id: "33333333-3333-4333-8333-333333333333", name: "demo.write", input: {}, conversationId }),
     });
-  expect((await request()).status).toBe(200);
+  expect((await request()).status).toBe(400);
+  expect(review).toHaveBeenCalledTimes(1);
   expect(prepare.mock.calls[0]?.[1].authority).toEqual(mobileAuthority);
   expect(prepare.mock.calls[0]?.[2].transport).toBe(session.capabilityTransport);
   app.access = { kind: "roles", roles: ["admin"] };
   expect((await request()).status).toBe(404);
-  expect(prepare).toHaveBeenCalledTimes(1);
+  expect(prepare).toHaveBeenCalledTimes(2);
+  expect(review).toHaveBeenCalledTimes(1);
 });

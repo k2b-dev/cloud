@@ -41,9 +41,16 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { assistantApi } from "../api/client";
+import AssistantAuthoringStop from "../frontend/AssistantAuthoringStop";
+import AssistantCodeVersionCard from "../frontend/AssistantCodeVersionCard";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
 import { createAssistantDictation } from "../frontend/assistant-dictation";
-import { createAssistantLiveHub, followAssistantLive, matchesAssistantInvalidation } from "../frontend/assistant-live";
+import {
+  AssistantLiveProvider,
+  createAssistantLiveHub,
+  followAssistantLive,
+  matchesAssistantInvalidation,
+} from "../frontend/assistant-live";
 import { audioMessages } from "../frontend/audio-messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
@@ -967,11 +974,25 @@ export default function AssistantPwa(props: AssistantPwaProps) {
               <Match when={true}>
                 <AiChatActionsProvider
                   actions={{
+                    // The same version card as the workspace: on a phone it says where switching on works.
+                    renderCodeAuthoringStop: (state, continuable) => <AssistantAuthoringStop state={state} continuable={continuable} />,
+                    renderCodeVersion: (version) => (
+                      <AssistantLiveProvider value={liveHub}>
+                        <AssistantCodeVersionCard {...version} timeZone={props.timeZone} />
+                      </AssistantLiveProvider>
+                    ),
                     actionDisabled: () => chat.runStatus() === "stopping",
                     onCheckAction: (request) => chat.checkAction(request),
                     onApproval: async (request, input) => {
                       if (await chat.respondToApproval(request, input)) return;
                       // The card says itself that the answer is not confirmed; the field's hint line stays free.
+                      const reason = chat.error() ?? t().retry;
+                      chat.setError(null);
+                      throw new Error(reason);
+                    },
+                    // Questions in the chat are answered here as in the workspace.
+                    onFrontendToolResult: async (request, result) => {
+                      if (await chat.submitFrontendToolResult(request, result)) return;
                       const reason = chat.error() ?? t().retry;
                       chat.setError(null);
                       throw new Error(reason);
@@ -984,7 +1005,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                       if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retry);
                     },
                     onContinueTurn: async (message) => {
-                      await send({ intent: "send", text: message, attachments: [] }, false);
+                      if (!(await send({ intent: "send", text: message, attachments: [] }, false))) throw new Error(t().retry);
                     },
                     fileUrl: chat.fileContentUrl,
                   }}

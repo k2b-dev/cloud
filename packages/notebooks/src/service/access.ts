@@ -5,23 +5,27 @@ import {
   type AccessEntry,
   type AccessSubject,
   buildAccessPrincipalCondition,
+  type CodeAccountDisplayContext,
   createAccess,
   deleteAccess,
   ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
   getMemberPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   type RequestActor,
+  resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
 import {
-  isStandaloneServiceAccountKind,
+  accounts,
   type ServiceAccountCredential,
   type ServiceAccountKind,
   serviceAccountCredentials,
   serviceAccounts,
+  serviceAccountUsesOwnGrants,
 } from "@k2b/cloud/services";
 import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
@@ -45,7 +49,6 @@ type DbNotebookAccess = {
   user_uid: string | null;
   user_avatar_hash: string | null;
   group_name: string | null;
-  service_account_name: string | null;
   service_account_kind: ServiceAccountKind | null;
 };
 
@@ -71,7 +74,12 @@ const authorizeAccessMutation = async (
 ): Promise<boolean> => {
   if (!caller) return true;
   const user = caller.actor.kind === "user" ? caller.actor.user : caller.actor.delegatedUser;
-  if (user && hasRole(user, "admin")) return true;
+  if (
+    user &&
+    hasRole(user, "admin") &&
+    (await accounts.users.hasInstallationAdminInTransaction(caller.actor.kind === "user" ? caller.actor : { kind: "user", user }, db))
+  )
+    return true;
   const account = caller.actor.kind === "service_account" ? caller.actor.serviceAccount : null;
   if (
     account?.kind === "resource_bound" &&
@@ -97,7 +105,7 @@ export const mayReadAcrossNotebooks = async (params: {
 }): Promise<boolean> => {
   if (!params.serviceAccountId || params.boundNotebookId) return true;
   const account = await serviceAccounts.get({ id: params.serviceAccountId });
-  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
+  return Boolean(account && serviceAccountUsesOwnGrants(account.kind));
 };
 
 export const buildNotebookVisibleAccessCondition = (params: { userId?: string | null; serviceAccountId?: string | null }) => {
@@ -129,21 +137,11 @@ const mapAccessRow = (row: DbNotebookAccess): AccessEntry => {
           ? { type: "authenticated" }
           : { type: "public" };
 
-  const displayName =
-    principal.type === "user"
-      ? row.user_display_name || row.user_uid || undefined
-      : principal.type === "group"
-        ? row.group_name || undefined
-        : principal.type === "service_account"
-          ? row.service_account_name || undefined
-          : undefined;
-
   return {
     id: row.access_id,
     principal,
     permission: row.permission,
     createdAt: row.created_at.toISOString(),
-    displayName,
     ...(principal.type === "user" ? { avatarHash: row.user_avatar_hash } : {}),
     serviceAccountKind: row.service_account_kind ?? undefined,
   };
@@ -152,23 +150,34 @@ const mapAccessRow = (row: DbNotebookAccess): AccessEntry => {
 /**
  * List all access entries for a notebook with resolved display names.
  */
-export const listNotebookAccess = async (notebookId: string, db: SQL = sql): Promise<AccessEntry[]> => {
-  const result = await listNotebookAccessPage({ notebookId }, db);
+export const listNotebookAccess = async (
+  notebookId: string,
+  db: SQL = sql,
+  display: CodeAccountDisplayContext = {},
+): Promise<AccessEntry[]> => {
+  const result = await listNotebookAccessPage({ notebookId, display }, db);
   return result.items;
 };
 
-/**
- * List access entries with SQL-side filtering and pagination.
- */
+type NotebookAccessQuery = {
+  notebookId: string;
+  display?: CodeAccountDisplayContext;
+  query?: string;
+  principalType?: AccessEntry["principal"]["type"];
+  pagination?: { limit: number; offset: number };
+};
+
+/** List access entries with SQL-side filtering and pagination, then resolve presentation. */
 export const listNotebookAccessPage = async (
-  config: {
-    notebookId: string;
-    query?: string;
-    principalType?: AccessEntry["principal"]["type"];
-    pagination?: { limit: number; offset: number };
-  },
+  config: NotebookAccessQuery,
   db: SQL = sql,
 ): Promise<{ items: AccessEntry[]; total: number }> => {
+  const page = await readNotebookAccessPage(config, db);
+  return { ...page, items: await resolveDisplayNames(page.items, config.display) };
+};
+
+// Mutation checks stay on their transaction connection and never wait for presentation.
+const readNotebookAccessPage = async (config: NotebookAccessQuery, db: SQL): Promise<{ items: AccessEntry[]; total: number }> => {
   const query = config.query?.trim().toLowerCase();
   const pattern = query && query.length > 0 ? `%${query}%` : null;
   const principalType = config.principalType;
@@ -226,7 +235,6 @@ export const listNotebookAccessPage = async (
             u.uid AS user_uid,
             u.avatar_hash AS user_avatar_hash,
             g.name AS group_name,
-            sa.name AS service_account_name,
             sa.kind AS service_account_kind
           ${baseQuery}
           ORDER BY
@@ -252,7 +260,6 @@ export const listNotebookAccessPage = async (
             u.uid AS user_uid,
             u.avatar_hash AS user_avatar_hash,
             g.name AS group_name,
-            sa.name AS service_account_name,
             sa.kind AS service_account_kind
           ${baseQuery}
           ORDER BY
@@ -331,9 +338,11 @@ const mutateNotebookAccess = async (params: {
   caller?: NotebookAccessCaller;
 }): Promise<Result<void>> => {
   const result = await workspaceTransaction(async (tx): Promise<Result<void>> => {
+    if (!(await lockAccessMutationAuthority({ subject: params.caller?.accessSubject ?? null, accessId: params.accessId }, tx)))
+      return fail(err.forbidden("Access denied"));
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${params.notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
-    const before = await listNotebookAccess(params.notebookId, tx);
+    const before = (await readNotebookAccessPage({ notebookId: params.notebookId }, tx)).items;
     if (!(await authorizeAccessMutation(params.notebookId, before, params.caller, tx))) return fail(err.forbidden("Access denied"));
     if (!before.some((entry) => entry.id === params.accessId)) return fail(err.notFound("Access entry for this notebook"));
     const permission = params.permission;
@@ -420,9 +429,11 @@ export const grantNotebookAccess = async (params: {
 }): Promise<Result<AccessEntry>> => {
   const { notebookId, principal, permission } = params;
   const result = await workspaceTransaction(async (tx): Promise<Result<string>> => {
+    if (!(await lockAccessMutationAuthority({ subject: params.caller?.accessSubject ?? null, principal }, tx)))
+      return fail(err.forbidden("Access denied"));
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
-    const before = await listNotebookAccess(notebookId, tx);
+    const before = (await readNotebookAccessPage({ notebookId }, tx)).items;
     if (!(await authorizeAccessMutation(notebookId, before, params.caller, tx))) return fail(err.forbidden("Access denied"));
     const duplicate = before.some(({ principal: existing }) => {
       switch (principal.type) {
@@ -449,7 +460,14 @@ export const grantNotebookAccess = async (params: {
     return ok(created.data.id);
   });
   if (!result.ok) return result;
-  const created = (await listNotebookAccess(notebookId)).find((entry) => entry.id === result.data);
+  const viewer = params.caller?.actor.kind === "user" ? params.caller.actor.user : params.caller?.actor.delegatedUser;
+  const created = (
+    await listNotebookAccess(notebookId, sql, {
+      canManageTarget: true,
+      cloudAdmin: Boolean(viewer && hasRole(viewer, "admin")),
+      locale: params.caller?.locale,
+    })
+  ).find((entry) => entry.id === result.data);
   return created ? ok(created) : fail(err.internal("Failed to retrieve created access entry"));
 };
 

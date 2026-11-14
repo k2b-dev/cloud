@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
 import { invokeCapabilityStream } from "../_internal/capability-streams";
+import { CapabilityStreamSizeError } from "../capabilities/stream-body";
 import { type CapabilityExecutionContext, type CapabilityStream, defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { sql } from "../runtime/clients";
@@ -193,6 +194,24 @@ test("same generic transport reads PDF and audio from an independent provider ab
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(payload);
   }
 });
+test.each(["overflow", "underflow"] as const)("stream transport retains the checked %s error without returning bytes", async (reason) => {
+  const ref = await open("query", "invoice.pdf");
+  const response = await dispatchCapabilityStream(request(ref), authority, "read", {
+    ...deps,
+    fetch: async () => new Response(new Uint8Array(payload.length + (reason === "overflow" ? 1 : -1))),
+  });
+  await expect(response.arrayBuffer()).rejects.toBeInstanceOf(CapabilityStreamSizeError);
+});
+
+test("stream transport hides arbitrary provider errors", async () => {
+  const ref = await open("query", "invoice.pdf");
+  const response = await dispatchCapabilityStream(request(ref), authority, "read", {
+    ...deps,
+    fetch: async () => new Response(new ReadableStream({ start: (controller) => controller.error(new Error("private provider failure")) })),
+  });
+  await expect(response.arrayBuffer()).rejects.toThrow("Incomplete capability stream");
+});
+
 test("binary upload publishes only after complete input and exposes a receipt", async () => {
   const ref = await open("action", "archive.import");
   saved.clear();
@@ -390,4 +409,15 @@ test("stream continuation rechecks app access before provider execution and reco
   expect(await response.json()).toMatchObject({ code: "app_access_denied", app: entry.appId });
   expect(calls).toBe(before);
   expect(records).toMatchObject([{ status: "denied", errorCode: "app_access_denied" }]);
+});
+
+test("Core validates write and completed status data against the capability's current result schema", async () => {
+  const ref = await open("action", "archive.import");
+  for (const verb of ["write", "status"]) {
+    const response = await dispatchCapabilityStream(request(ref, verb === "write" ? payload : undefined), authority, verb, {
+      ...deps,
+      fetch: async () => Response.json(verb === "write" ? { data: { id: 42 } } : { state: "completed", result: { data: { id: 42 } } }),
+    });
+    expect(response.status).toBe(502);
+  }
 });

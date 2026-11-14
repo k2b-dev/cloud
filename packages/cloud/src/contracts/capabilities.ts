@@ -1,3 +1,4 @@
+import { CodeSdkExportNameSchema } from "./code-sdk-names";
 import {
   CapabilityQualifiedIdSchema,
   type CloudResourceRef,
@@ -22,6 +23,8 @@ import {
   CapabilityStreamPolicySchema,
   CapabilityStreamSchema,
 } from "./capability-streams";
+import type { CapabilityCodeDefinition } from "./code-owner";
+import { CapabilityCodeManifestSchema } from "./code-owner";
 import { RESOURCE_PAGE_MAX_LENGTH, RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "./resource-pages";
 
 export * from "./capability-streams";
@@ -36,7 +39,7 @@ import { AuthenticatedPrincipalSchema } from "./shared";
 
 export const CAPABILITY_PROTOCOL_VERSION = 2 as const;
 export const CAPABILITY_MAX_REQUEST_BYTES = 256 * 1024;
-export const CAPABILITY_MAX_RESULT_BYTES = 256 * 1024;
+export { CAPABILITY_MAX_RESULT_BYTES } from "./capability-limits";
 export const CAPABILITY_MAX_CATALOG_BYTES = 2 * 1024 * 1024;
 export const CAPABILITY_APP_ID_MAX_LENGTH = 80;
 
@@ -98,6 +101,51 @@ export const CapabilityLocalIdSchema = z
   .min(1)
   .max(100)
   .regex(CAPABILITY_LOCAL_ID_PATTERN, "Use a stable lower-case capability id");
+
+/**
+ * Canonical capability call shared by review, approval, execution and retry checks.
+ * `capability` is the qualified ID (never the transport's `__` tool name).
+ * An app-wide operation has a null target. Refs contain single resources only.
+ */
+export type NormalizedCapabilityCall<Input = unknown> = {
+  capability: string;
+  target: CloudResourceRef | null;
+  refs: Readonly<Record<string, CloudResourceRef>>;
+  input: Input;
+};
+
+/** Resource coordinates travel beside the domain input on every invocation transport. */
+export const CapabilityInvocationBodySchema = z
+  .object({
+    input: z.unknown(),
+    target: CloudResourceRefSchema.optional(),
+    refs: z.record(z.string(), CloudResourceRefSchema).optional(),
+  })
+  .strict()
+  .refine((body) => Object.hasOwn(body, "input"), { path: ["input"], message: "Input is required" });
+export type CapabilityInvocationBody = z.infer<typeof CapabilityInvocationBodySchema>;
+
+/** JSON form of NormalizedCapabilityCall, suitable for durable approval and execution snapshots. */
+export const NormalizedCapabilityCallSchema = z
+  .object({
+    // App ID (80), separator, and local operation ID (100), including legacy maximum-length calls.
+    capability: z
+      .string()
+      .min(3)
+      .max(CAPABILITY_APP_ID_MAX_LENGTH + 1 + 100)
+      .regex(/^[a-z][a-z0-9-]*\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/),
+    target: CloudResourceRefSchema.nullable(),
+    refs: z.record(z.string(), CloudResourceRefSchema),
+    input: z.unknown(),
+  })
+  .strict()
+  .refine((call) => Object.hasOwn(call, "input"), { path: ["input"], message: "Input is required" });
+
+/** A fixed target type and named, single additional targets, all declared by the same app. */
+export type CapabilityTargetDefinition = {
+  target?: string;
+  refs?: Readonly<Record<string, string>>;
+};
 
 export { cloudResourceHref } from "./resource-href";
 
@@ -777,6 +825,7 @@ export const CloudResourceViewSchema = z
   .object({
     ref: CloudResourceRefSchema.describe("Stable identity of the result."),
     title: z.string().min(1).max(500).describe("Primary result label."),
+    group: z.string().min(1).max(120).optional().describe("Localized result group within this app, such as At places."),
     preview: z.string().max(2000).optional().describe("Short plain-text result preview."),
     icon: z.string().min(1).max(120).optional().describe("Optional presentation icon."),
     context: CloudResourceReferenceSchema.shape.context,
@@ -808,7 +857,7 @@ export type UniversalSearchData = z.infer<typeof UniversalSearchDataSchema>;
 export type CapabilityExecutionContext = {
   /** One read-only cross-app dependency under this invocation, through Core. */
   query?: <T extends z.ZodType>(
-    invocation: { appId: string; capabilityId: string; input: unknown; signal?: AbortSignal },
+    invocation: CapabilityInvocationBody & { appId: string; capabilityId: string; signal?: AbortSignal },
     dataSchema: T,
   ) => Promise<import("../capabilities/types").CapabilityClientResult<z.output<T>>>;
   /**
@@ -820,6 +869,10 @@ export type CapabilityExecutionContext = {
   actor: RequestActor;
   accessSubject: AccessSubject;
   user: User | null;
+  /** Validated resource named by the operation's target declaration; absent for app-wide calls. */
+  target?: CloudResourceRef;
+  /** Validated additional targets. These references grant no authority. */
+  refs?: Readonly<Record<string, CloudResourceRef>>;
   idempotencyKey?: string;
   /**
    * Canonical BCP 47 locale of the originating request, transported as
@@ -846,7 +899,39 @@ export type CapabilityExecutionContext = {
 export const CAPABILITY_RESOURCE_COLORS = ["blue", "emerald", "violet", "orange", "red", "amber", "zinc", "cyan", "rose"] as const;
 export type CapabilityResourceColor = (typeof CAPABILITY_RESOURCE_COLORS)[number];
 
+/** Final localized labels for a resource owner's credentialless Code account; never an owner title. */
+export const CodeAccountTypeLabelsSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(500),
+  })
+  .strict();
+export type CodeAccountTypeLabels = z.infer<typeof CodeAccountTypeLabelsSchema>;
+
+export type CapabilityAssistantDefinition = {
+  provider: string;
+  tools: readonly string[];
+  skills: readonly string[];
+};
+
+export const CapabilityAssistantSchema = z
+  .object({
+    provider: CapabilityLocalIdSchema,
+    tools: z.array(CapabilityLocalIdSchema),
+    skills: z.array(
+      z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    ),
+  })
+  .strict();
+
 export type CapabilityResourceTypeDefinition = {
+  /** Additional context and fixed-target tools for a person's chat at this resource. */
+  assistant?: CapabilityAssistantDefinition;
+  codeAccount?: CodeAccountTypeLabels;
   title: string;
   description: string;
   icon?: string;
@@ -918,7 +1003,7 @@ export type CapabilityOperationPresentationTranslation = {
 
 export type CapabilityPresentationTranslation = {
   events?: Readonly<Record<string, { title?: string; description?: string }>>;
-  types?: Readonly<Record<string, { title?: string; description?: string }>>;
+  types?: Readonly<Record<string, { title?: string; description?: string; codeAccount?: CodeAccountTypeLabels }>>;
   /** The file provider's `title` in this locale; only for a provider that declares a `title`. */
   fileProvider?: { title?: string };
   queries?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
@@ -950,6 +1035,10 @@ export type CapabilityAppExecutionContext = {
   user: null;
   authority?: never;
   query?: never;
+  /** Validated resource named by the operation's target declaration; absent for app-wide calls. */
+  target?: CloudResourceRef;
+  /** Validated additional targets. These references grant no authority. */
+  refs?: Readonly<Record<string, CloudResourceRef>>;
   idempotencyKey?: string;
   locale: string;
   requestId: string;
@@ -967,7 +1056,19 @@ export type CapabilityAppHandler<Input extends z.ZodType, Data extends z.ZodType
   ) => CapabilityInvocationResult<z.output<Data>> | Promise<CapabilityInvocationResult<z.output<Data>>>;
 };
 
-export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
+export type CapabilityQueryDefinition<
+  Input extends z.ZodType = z.ZodType<any>,
+  Data extends z.ZodType = z.ZodType<any>,
+> = CapabilityTargetDefinition & {
+  /**
+   * Title-only projection of a resource reader for Code owner/target checks.
+   * Required for Code owners and resource targets. Use the supplied read-only
+   * transaction and return null for a deleted resource. The framework exposes
+   * only this title to Core with account-bound authority, never reader data or
+   * a person's authority. It also distinguishes deleted normalized targets from
+   * access refusals before Code calls run.
+   */
+  codeResourceTitle?: (tx: import("bun").SQL, id: string) => string | null | Promise<string | null>;
   appOnly?: never;
   app?: CapabilityAppHandler<Input, Data>;
   title: string;
@@ -986,7 +1087,14 @@ export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, 
 export type CapabilityIdempotencyPolicy = "none" | "required";
 export type CapabilityActionApprovalPolicy = "rememberable" | "none";
 
-export type CapabilityActionDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
+export type CapabilityActionDefinition<
+  Input extends z.ZodType = z.ZodType<any>,
+  Data extends z.ZodType = z.ZodType<any>,
+> = CapabilityTargetDefinition & {
+  /** Excludes this Action from resource-owned Code; personal Code retains person authority. */
+  code?: false;
+  /** This Action cannot execute under any background mandate. */
+  unattended?: false;
   appOnly?: never;
   app?: CapabilityAppHandler<Input, Data>;
   title: string;
@@ -1057,7 +1165,10 @@ export type CapabilityDiscussionsDeclaration = { item: string; containers: strin
 
 export type CapabilityDefinitions = {
   protocolVersion: typeof CAPABILITY_PROTOCOL_VERSION;
+  /** Optional SDK module export; capability and event IDs keep the app ID. */
+  sdkExportName?: string;
   presentation?: CapabilityPresentationCatalog;
+  code?: CapabilityCodeDefinition;
   types?: CapabilityDefinitionCatalog<CapabilityResourceTypeDefinition>;
   queries?: CapabilityDefinitionCatalog<CapabilityQueryDefinition>;
   actions?: CapabilityDefinitionCatalog<CapabilityActionDefinition>;
@@ -1090,6 +1201,8 @@ export function defineCapabilities(definitions: CapabilityDefinitions): Capabili
 
 export const CapabilityResourceTypeManifestSchema = z
   .object({
+    assistant: CapabilityAssistantSchema.optional(),
+    codeAccount: CodeAccountTypeLabelsSchema.optional(),
     localId: CapabilityLocalIdSchema,
     title: z.string().min(1).max(120),
     description: z.string().min(1).max(500),
@@ -1113,6 +1226,8 @@ const CapabilityOperationManifestBaseSchema = z
     localId: CapabilityLocalIdSchema,
     title: z.string().min(1).max(120),
     description: z.string().min(1).max(1000),
+    target: CapabilityLocalIdSchema.optional(),
+    refs: z.record(z.string().min(1).max(100), CapabilityLocalIdSchema).optional(),
     inputSchema: z.record(z.string(), z.unknown()),
     dataSchema: z.record(z.string(), z.unknown()),
     stream: CapabilityStreamPolicySchema.optional(),
@@ -1131,6 +1246,8 @@ export const CapabilityQueryManifestSchema = CapabilityOperationManifestBaseSche
 }).strict();
 
 export const CapabilityActionManifestSchema = CapabilityOperationManifestBaseSchema.extend({
+  code: z.literal(false).optional(),
+  unattended: z.literal(false).optional(),
   destructive: z.boolean(),
   openWorld: z.boolean(),
   idempotency: z.enum(["none", "required"]),
@@ -1177,6 +1294,7 @@ export const CapabilityEventManifestSchema = z
     dataSchema: z.record(z.string(), z.unknown()),
     schemaHash: z.string().regex(/^[a-f0-9]{64}$/),
     automation: z.literal(false).optional(),
+    catchup: CapabilityLocalIdSchema.optional(),
   })
   .strict();
 export type CapabilityEventManifest = z.infer<typeof CapabilityEventManifestSchema>;
@@ -1269,7 +1387,11 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
   const subscribes = sent.subscribes === undefined ? undefined : readEntries(sent.subscribes, CapabilitySubscriptionManifestSchema);
   if (events === null || subscribes === null) return value;
   const typeIds = new Set(types.map((type) => type.localId));
-  const readableQueries = queries.filter((query) => query.universalSearch?.scopeTypes?.every((type) => typeIds.has(type)) ?? true);
+  const targetsReadable = (operation: CapabilityTargetDefinition) =>
+    (!operation.target || typeIds.has(operation.target)) && Object.values(operation.refs ?? {}).every((type) => typeIds.has(type));
+  const readableQueries = queries.filter(
+    (query) => targetsReadable(query) && (query.universalSearch?.scopeTypes?.every((type) => typeIds.has(type)) ?? true),
+  );
   const queryIds = new Set(readableQueries.map((query) => query.localId));
   const policies: Record<string, CapabilityActionPolicy> = {};
   const sentPolicies = sent.policies;
@@ -1282,6 +1404,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
   )
     return value;
   const readableActions = actions.filter((action) => {
+    if (!targetsReadable(action)) return false;
     if (!sentPolicies || typeof sentPolicies !== "object" || !Object.hasOwn(sentPolicies, action.localId)) return true;
     const parsed = CapabilityActionPolicySchema.safeParse(Object.getOwnPropertyDescriptor(sentPolicies, action.localId)?.value);
     if (!parsed.success) return false;
@@ -1299,6 +1422,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     resourceTypes: sentModels,
     discussions: sentDiscussions,
     appStatus: sentAppStatus,
+    code: sentCode,
     ...rest
   } = sent;
   const models = readEntries(sentModels ?? [], CapabilityResourceTypeModelSchema) ?? [];
@@ -1348,6 +1472,12 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     readableActions.some((action) => action.localId === statusRole.data.forget)
       ? statusRole.data
       : undefined;
+  const codeRole = CapabilityCodeManifestSchema.safeParse(sentCode);
+  const code =
+    codeRole.success &&
+    codeRole.data.owners.every((id) => types.some((type) => type.localId === id && type.reader && queryIds.has(type.reader)))
+      ? codeRole.data
+      : undefined;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
   const calendar = CapabilityCalendarSourceManifestSchema.safeParse(sentCalendarSource);
   const pageCounts = new Map<string, number>();
@@ -1367,6 +1497,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     ...rest,
     ...(sentModels !== undefined ? { resourceTypes } : {}),
     ...(discussions ? { discussions } : {}),
+    ...(code ? { code } : {}),
     ...(appStatus ? { appStatus } : {}),
     ...(sentPages !== undefined ? { resourcePages } : {}),
     ...(provider.success ? { fileProvider: provider.data } : {}),
@@ -1402,6 +1533,7 @@ export const CapabilityManifestSchema = z.preprocess(
   z.object({
     protocolVersion: z.literal(CAPABILITY_PROTOCOL_VERSION),
     appId: CapabilityAppIdSchema,
+    sdkExportName: CodeSdkExportNameSchema.optional(),
     manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
     types: z.array(CapabilityResourceTypeManifestSchema).max(MAX_MANIFEST_ENTRIES),
     queries: z.array(CapabilityQueryManifestSchema).max(MAX_MANIFEST_ENTRIES),
@@ -1411,6 +1543,7 @@ export const CapabilityManifestSchema = z.preprocess(
     fileProvider: CapabilityFileProviderManifestSchema.optional(),
     calendarSource: CapabilityCalendarSourceManifestSchema.optional(),
     discussions: CapabilityDiscussionsManifestSchema.optional(),
+    code: CapabilityCodeManifestSchema.optional(),
     appStatus: CapabilityAppStatusManifestSchema.optional(),
     resourceTypes: z.array(CapabilityResourceTypeModelSchema).max(MAX_MANIFEST_ENTRIES).optional(),
     policies: z.record(CapabilityLocalIdSchema, CapabilityActionPolicySchema).optional(),

@@ -10,6 +10,55 @@ updated: 2026-11-08
 
 # Deprecations and migrations
 
+Studio entries below describe older releases. Studio apps, their APIs and app data
+are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## Code SDK declarations are simpler
+
+Resubmit Code sources after updating these preview SDK contracts:
+
+- Mail text readers use `mail.message.content.read` for inline message text
+  and `mail.attachment.text.read` for inline extracted Markdown. These replace
+  `mail.message.read-content` and `mail.attachment.read-content`, respectively,
+  without aliases. `mail.attachment.content.read` continues to return the
+  original attachment as a `FileRef`.
+- Put schedule timing and metadata in one object:
+  `app.schedule({ cron: "0 8 * * 1", name: "weekly" }, handler)`.
+  Omitted `timeZone` inherits the instance's `app.timezone` setting.
+  Schedule handlers receive `{ runId, scheduledAt, input }`.
+- Use `core.ai.chat(id).run(...)` and target methods without repeating the
+  target type prefix. For example, `owner.member.list(...)` replaces
+  `owner.mailbox.member.list(...)` for mailbox Code.
+- Read `CodeError.code` and `status`; codes use lowercase snake_case and
+  403 remains distinct from 404. Action keys share one principal/capability
+  scope across runs for 24 hours, including chat delivery and turns.
+- Use `Button` and `cld code submit`. `Action`, `cld code push`, and the
+  unfinished `app.nav`, `app.webhook` and `app.fetch` members are removed.
+- Use `c.user.id`, `username`, `groupIds`, `groupNames`, `kind` and `name`.
+  `groups` and `provider` are removed. Every signed-in person can reach
+  non-public routes of personal Code too. Check visitor access in each
+  handler; public routes always receive `c.user === null`.
+
+See the [Code SDK](/en/docs/platform/code-sdk) for explicit access checks
+and the [runtime notes](/en/docs/operations/code-runtime#schedule-and-result-delivery-compatibility)
+for the schedule and route behavior.
+
+## Mail rules and automatic replies are retired
+
+Guided incoming automations, YAML workflows, their timers, backfills and try
+commands, and rule Undo/Redo are removed. `cld mail automation export` remains
+available for frozen definitions; other `mail automation` and all `mail workflow`
+commands are removed. Rule logs and run snapshots remain read-only. Ordinary
+Mail commands, sends, drafts, contacts, tags, summaries, reference numbers and
+provider sync remain supported, as do Grids and `@k2b/cloud/workflows`.
+
+Export before upgrading, stop old workers, and drain or reconcile their provider
+effects before deploying the cut. The new schema marker rejects older Mail
+images. Automatic replies (out-of-office, office-hours and reference
+acknowledgements) have no replacement. Ask Gustav to rebuild supported rules as
+mailbox Code, then review, preview and activate it explicitly. See the
+[Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
+
 ## Saved signed bar rows render again
 
 Bar charts saved with `layout: "rows"` and negative values under Cloud 0.69
@@ -87,6 +136,140 @@ widens issued keys. New OAuth clients from `cld admin agents create` also
 include `admin`; existing clients are unchanged. Scopes do not grant roles or
 resource permissions. See [Standalone service accounts and agents](/en/docs/identity/service-accounts)
 for issuance and the `cld admin agents keys` commands.
+
+## Gustav release: major release operator note
+
+Code replaces Studio, Mail rules, automatic replies and scheduled Assistant
+routines. The upgrade is a one-way, coordinated cut; follow
+[Upgrade to Code](/en/docs/operations/upgrade-to-code) step by step.
+Studio, Mail rule and routine retirement ship together with Gustav's rebuild
+from exported definitions.
+
+- **Before the upgrade:** on the old release, run
+  `cld mail automation export --all --json` and
+  `cld assistant tasks export --all --json` with an explicit administrator
+  profile, validate both files, and back up the database. Nothing in Studio
+  moves into Code: back up Studio data and the external RSQL databases now
+  (one app's database: `cld assistant code database-export <app> --out
+  <file>`), or lose them.
+- **Gone without replacement:** Studio apps with their revisions, sharing,
+  storage, files and RSQL databases; out-of-office, office-hours and
+  reference automatic replies.
+- **Rebuilt as Code by Gustav, then reviewed and switched on:** Mail rules
+  become mailbox Code; routines become personal Code. No old definition,
+  grant or enabled flag becomes active Code by itself.
+- **Unchanged:** Grids workflows and apps, the public workflow engine
+  `@k2b/cloud/workflows`, health webhooks, ordinary Mail and chat code runs.
+- **Upgrade order:** freeze, export, stop and drain the old release
+  (reconcile accepted or unknown Mail sends there), stop every old Core,
+  Assistant and Mail replica, upgrade all applications, the Code runner and
+  the CLI plugins together, and start Mail before Assistant. Never run old
+  and new versions side by side.
+- **The upgrade stops** while old Mail commands or sends are unresolved, when
+  a pending chat HTTP request cannot be read (keep `APP_SECRET`), or when the
+  Studio RSQL cleanup cannot reach RSQL. Fix the cause and start again.
+- **History stays readable:** retired Mail rule logs and runs, routine
+  messages and the routine archive, and Studio execution evidence. Nothing
+  old runs again; old images refuse the new schema.
+- **Rollback:** switch replacement Code off first, then restore the
+  pre-upgrade backups, including external RSQL backups.
+
+[Removed in the Gustav release](/en/docs/reference/code-release-removals)
+lists every removed route, command, capability, setting and export with its
+replacement.
+
+## Capability targets: major release operator note
+
+Before upgrading, back up the database and inventory third-party capability
+providers and callers. Upgrade their `@k2b/cloud` dependency and declare
+`target` on every resource Action. Remove the primary resource ID from `input`,
+put additional destinations in `refs`, and retain child IDs with containment
+checks. `code: false` marks effects that reach another application; it does
+not replace a local target. Shared foreign-provider contracts keep their
+published shapes. See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on).
+
+Stop all old Core, Assistant and Mail replicas and workers. Deploy converted
+providers and callers in the same upgrade window. Start Core, then Mail, then
+Assistant using the staged [upgrade commands](/en/docs/operations/upgrade-to-code#4-upgrade).
+Core and Mail run their migrations before their workers. Refresh cached catalogs, schema hashes and
+generated clients. Do not run mixed old and new writers. A rollback requires
+the matching pre-upgrade database backup and previous application images.
+
+After startup, verify a target-bound Action and re-request aborted interactive
+approvals. Old routines and Mail rules stay retired. Rebuild only the needed
+definitions as reviewed Code, following [Upgrade to Code](/en/docs/operations/upgrade-to-code).
+The following sections describe retained application-specific input changes.
+
+## Existing Assistant routines and approvals adopt capability targets
+
+The previous routine migration is superseded by [Routines became Code](/en/docs/operations/routines-to-code). Pending interactive approvals still adopt capability targets; proposals whose authority cannot be preserved require a new request.
+
+## Incoming Mail automations become mailbox Code
+
+The earlier Mail target migration is superseded by Mail rule retirement.
+Export the old definitions before upgrading; the old editor and executable
+rules are removed. Gustav drafts mailbox Code from the export. Managers grant
+its service account direct access to the intended destinations before activation.
+Follow [Replace Mail rules with mailbox Code](/en/docs/operations/mail-automation-upgrade).
+
+## Spaces and Contacts Actions name their container
+
+Move `spaceId` out of Spaces creation and calendar-import inputs into
+`target: { type: "spaces.space", id: spaceId }`. All resource Actions require
+that Space target, including changes to existing items and templates.
+
+Contacts Actions require `target: { type: "contacts.book", id: bookId }`.
+Remove `bookId` from `contact.create` input. For `contact.move`, pass the
+source book as the target and the destination as
+`refs: { targetBookId: { type: "contacts.book", id: destinationBookId } }`.
+The contact-directory create contract uses the same book target.
+
+Flat chat and MCP calls use `space` or `book` alongside domain fields;
+`targetBookId` remains a flat destination argument for moves. Upgrade Mail
+with the providers. See [capability targets](/en/docs/operations/capability-targets)
+for rollout constraints and retained person-call behavior.
+
+## Grids and Files capabilities name their container
+
+Move capability container IDs from domain input to `target` and refresh cached
+catalogs and schema hashes. Grids uses a base or table; Files uses a storage-root
+entry. See [Grids and Files targets](/en/docs/operations/grids-files-capability-targets)
+for the affected operations, flat tool fields, and deployment order.
+
+## Mail capabilities name their mailbox
+
+The coordinated Code migration intentionally changes Mail's mailbox-scoped
+capability contract. For every Action and the mailbox-scoped Queries listed in
+[Mail capability targets](/en/docs/platform/mail-capabilities#choose-the-query-shape),
+move `input.mailboxId` to `target: { type: "mail.mailbox", id: mailboxId }`.
+Keep the other domain fields in `input`. Refresh the live catalog and schema
+hashes before reviewing or invoking these operations. Their local IDs stay the
+same; deploy the platform, Mail, and capability callers together.
+
+Chat and MCP tools remain flat, with `mailbox` naming the target. Canonical
+readers, discovery and cross-mailbox Queries keep their inputs.
+`draft.send.check` also keeps `{ mailboxId, draftId, expectedRevision }` for
+outcome recovery. Mail's REST API, `cld mail`, mailbox selection, and compose
+and send flows keep their behavior; no stored Mail data needs conversion.
+
+## Core Code Actions name the Code resource
+
+For `code.run`, `code.secret.set`, `code.secret.delete`, `code.version.submit`,
+`code.version.approve`, `code.version.reject`, `code.pause` and `code.resume`, move `input.codeId` to
+`target: { type: "core.code", id: codeId }`. Chat and MCP use the flat field
+`code`. Version binding results and exported domain service schemas still
+contain `codeId`; omit it from capability decision input. Installation-wide
+`code.policy.update` keeps group selectors in its policy document.
+
+## Service-account kind checks have separate purposes
+
+Replace `isStandaloneServiceAccountKind` with
+`serviceAccountUsesOwnGrants` for resource-grant resolution. For credential
+eligibility, use `serviceAccountMayHoldCredentials` and retain the credential
+type's binding checks. The `code` kind uses its own grants but cannot hold
+credentials. Keep administrator-managed account lists and normal directory,
+group, and sharing eligibility limited to their existing account kinds. See
+[Service accounts](/en/docs/identity/service-accounts#code-accounts).
 
 ## Application deployment moves to key files
 
@@ -731,7 +914,7 @@ Move `fromFile` imports to
 Imports remain atomic and require one fresh review for the batch. Ordinary
 source writes require no approval. Stored source and recorded chat arguments
 are unchanged. Operators must update Core and Assistant together; see
-[Update Studio source writes](/en/docs/operations/deployment-requirements#update-studio-source-writes).
+[Update Studio source writes](/en/docs/operations/studio-retirement).
 
 ## The dashboard becomes one board of widgets in three sizes
 
@@ -1201,22 +1384,15 @@ IDs other than a Studio App the Skill calls. The offer appears only while
 moves to version 3. An unmodified installation updates at the next start. A
 customized copy keeps its content and shows **Update available** under
 **Admin > AI > Skills** until an administrator resets it. No setting changes.
-Scheduled task runs are unaffected. See
+Scheduled chat routines are now retired. See
 [Turn recurring work into a Skill](/en/docs/ai/files-projects-and-personalization#turn-recurring-work-into-a-skill).
 
 ## Assistant offers code tools in every turn and says why a tool is missing
 
-Every Assistant turn with the default tool source now offers the server-run code
-tools `code_run`, `code_action`, `code_inspect`, `code_stop`, `code_export`,
-and `code_present`. Before, only turns whose client listed them
-in `clientToolIds` had them, so `cld assistant --detach`, API clients, and
-scheduled tasks could not run code. Scheduled tasks now run them with their
-task grants, as [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
-describes. `code_open`, `code_secret`, and the local client tools
-(`local_bash`, `local_list`, `local_read`, `local_upload`, `local_download`,
-`local_write`, `local_move`, `load_local_skill`) need a client that declares
-and handles them. Clients that list the server-run names keep working; the
-names have no effect.
+Assistant turns with the default tool source offer server-run chat code tools
+to browser, detached CLI and API clients. Scheduled chat routines are retired;
+see [Routines became Code](/en/docs/operations/routines-to-code). `code_secret`
+and local client tools require a client that declares and handles them.
 
 The `load_tools` result changed. `loaded` and `alreadyLoaded` hold
 `{name, call}` objects instead of names, and `missing` is replaced by
@@ -2827,3 +3003,10 @@ and effective roles. Anonymous read paths may pass `null`.
 Standalone and agent credentials use their own grants within their credential
 scopes. Resource-bound credentials are unsupported for Projects and Skills.
 See [Projects and Skills](/en/docs/ai/files-projects-and-personalization#reuse-shared-skills).
+
+## Code account name lookup
+
+`POST /api/resources/code-access/accounts` and `CodeAccessAccountsInputSchema`
+are removed. Return Code names with the target's rights list through
+`resolveDisplayNames` after the local permission check. See
+[Code account handles](/en/docs/identity/code-service-account-handles).

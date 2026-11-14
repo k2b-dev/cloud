@@ -110,22 +110,32 @@ export const spacesActionReview = (
       .replace(/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu, " ")
       .slice(0, 200)
       .toWellFormed() || "—";
-  const compact = (value: string, max: number) =>
-    value
-      .replace(/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu, " ")
-      .slice(0, max)
-      .toWellFormed() || "—";
+  const rows = proposal.details.map(({ label, value, format }) => ({
+    label,
+    value: String(value)
+      .toWellFormed()
+      .replace(/\r\n?/g, "\n")
+      .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, (char) => (char === "\n" || char === "\t" ? char : "")),
+    ...(format === "date" || format === "date-time" ? { format } : {}),
+  }));
+  // Keep date fields typed even when long text needs a page preview.
+  const completeBody = proposal.details.map(({ label, value }) => `${label}: ${value}`).join("\n\n");
+  const normalizedBody = rows.map(({ label, value }) => `${label}: ${value}`).join("\n\n");
+  const body = rows
+    .filter(({ format }) => format === undefined)
+    .map(({ label, value }) => `${label}: ${value}`)
+    .join("\n\n");
   return {
     preview: {
       kind: "page",
       title,
+      body: body.slice(0, 10_000).toWellFormed(),
       format: "plain",
-      body: proposal.details
-        .slice(0, 12)
-        .map(({ label, value }) => `${compact(label, 60)}: ${compact(value, 200)}`)
-        .join("\n"),
-      truncated: true,
+      truncated: body.length > 10_000 || normalizedBody !== completeBody,
     },
+    consequences: rows.flatMap(({ label, value, format }) =>
+      format ? [{ text: `${label}: {at}`, slots: { at: { kind: "time" as const, start: value, format } } }] : [],
+    ),
     locale: language,
     sentence: sentences[language][operation],
     slots: { item: { kind: "object", title } },

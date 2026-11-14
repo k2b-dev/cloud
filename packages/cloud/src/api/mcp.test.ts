@@ -1704,3 +1704,60 @@ test("MCP oversized event reads explain the schema and subscriber limit", async 
   });
   expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
 });
+
+test("MCP target fields stay flat and dispatch as structured coordinates", async () => {
+  const built = compileCapabilities(
+    "demo",
+    defineCapabilities({
+      protocolVersion: 2,
+      types: { folder: { title: "Folder", description: "A folder." } },
+      actions: {
+        move: {
+          target: "folder",
+          refs: { destinationId: "folder" },
+          title: "Move",
+          description: "Move an item between folders.",
+          input: z.object({ id: z.string().describe("Item in the source folder.") }).strict(),
+          data: z.object({}).strict(),
+          destructive: false,
+          openWorld: false,
+          idempotency: "required",
+          run: async () => ok({ data: {} }),
+        },
+      },
+    }),
+  );
+  const targeted = { ...app, manifest: built.manifest };
+  const forwarded: unknown[] = [];
+  const routes = createMcpRoutes({
+    listApps: async () => [summary(targeted)],
+    getCapability: async () => targeted,
+    authenticate: authenticated,
+    fetch: async (_, init) => {
+      forwarded.push(JSON.parse(String(init?.body)));
+      return Response.json({ data: {} });
+    },
+  });
+  const listed = await rpc(routes, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+  const result = z
+    .object({ result: z.object({ tools: z.array(z.object({ name: z.string(), inputSchema: z.record(z.string(), z.unknown()) })) }) })
+    .parse(await listed.json());
+  const schema = result.result.tools.find((item) => item.name === "demo__action__move")?.inputSchema;
+  expect(schema).toMatchObject({
+    properties: { folder: { type: "string" }, destinationId: { type: "string" }, id: { type: "string" } },
+    required: ["id", "folder", "destinationId", "idempotencyKey"],
+  });
+  const response = await rpc(routes, {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "demo__action__move",
+      arguments: { folder: "from", destinationId: "to", id: "item", idempotencyKey: "fixture-target-key" },
+    },
+  });
+  expect(await response.json()).toMatchObject({ result: { structuredContent: { data: {} } } });
+  expect(forwarded).toEqual([
+    { target: { type: "demo.folder", id: "from" }, refs: { destinationId: { type: "demo.folder", id: "to" } }, input: { id: "item" } },
+  ]);
+});

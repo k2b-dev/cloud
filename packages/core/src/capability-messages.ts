@@ -1,10 +1,106 @@
 import { i18n } from "@k2b/stdlib";
+import type { CodePolicyRow, CodePolicyValue } from "./code/policy-contracts";
 
 /** Runtime text of Core capabilities: approval reviews, result summaries, and search metadata in the caller's locale. */
 const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      codeCatchupSnapshot: ({ count, version }: { count: number; version: string }) =>
+        `${count} existing messages · pinned version ${version}`,
+      codeSecretDeleteReview: ({ name }: { name: string }) => `Delete the value of Code secret ${name} for every version.`,
+      codeSecretDeleteRunning: "Deleting Code secret value.",
+      codeSecretDeleteDone: "Code secret value deleted.",
+      codeSecretDeleteConfirm: "Delete secret value",
+      codePolicyReview: ({ revision, count }: { revision: number; count: number }) =>
+        `Update Code policy at revision ${revision}. ${count} ${count === 1 ? "Code will" : "Codes will"} be paused.`,
+      codeOperationAction: ({
+        operation,
+      }: {
+        operation: "run" | "submit" | "pause" | "resume" | "redeliver" | "catchup" | "catchup_resume" | "catchup_cancel";
+      }) =>
+        ({
+          catchup: "Apply {code} to existing messages",
+          catchup_resume: "Resume saved catch-up for {code}",
+          catchup_cancel: "Cancel catch-up for {code}",
+          redeliver: "Retry event delivery for {code}",
+          run: "Run {code}",
+          submit: "Submit a version for {code}",
+          pause: "Pause {code}",
+          resume: "Resume {code}",
+        })[operation],
+      codeOperationRunning: ({
+        operation,
+      }: {
+        operation: "run" | "submit" | "pause" | "resume" | "redeliver" | "catchup" | "catchup_resume" | "catchup_cancel";
+      }) =>
+        ({
+          catchup: "Starting catch-up for {code}",
+          catchup_resume: "Resuming catch-up for {code}",
+          catchup_cancel: "Canceling catch-up for {code}",
+          redeliver: "Retrying event delivery for {code}",
+          run: "Starting {code}",
+          submit: "Submitting a version for {code}",
+          pause: "Pausing {code}",
+          resume: "Resuming {code}",
+        })[operation],
+      codeOperationDone: ({
+        operation,
+      }: {
+        operation: "run" | "submit" | "pause" | "resume" | "redeliver" | "catchup" | "catchup_resume" | "catchup_cancel";
+      }) =>
+        ({
+          catchup: "Catch-up started for {code}",
+          catchup_resume: "Catch-up resumed for {code}",
+          catchup_cancel: "Catch-up canceled for {code}",
+          redeliver: "Event delivery queued for {code}",
+          run: "Started {code}",
+          submit: "Submitted a version for {code}",
+          pause: "Paused {code}",
+          resume: "Resumed {code}",
+        })[operation],
+      codeOperationConfirm: ({
+        operation,
+      }: {
+        operation: "run" | "submit" | "pause" | "resume" | "redeliver" | "catchup" | "catchup_resume" | "catchup_cancel";
+      }) =>
+        ({
+          catchup: "Apply to existing messages",
+          catchup_resume: "Resume catch-up",
+          catchup_cancel: "Cancel catch-up",
+          redeliver: "Retry delivery",
+          run: "Run Code",
+          submit: "Submit version",
+          pause: "Pause Code",
+          resume: "Resume Code",
+        })[operation],
+      codeOperationDecline: "Cancel",
+      codePolicyTitle: "Code policy",
+      codePolicyRunning: "Saving Code policy.",
+      codePolicyDone: "Code policy saved.",
+      codePolicyConfirm: "Save policy",
+      codePolicyDecline: "Cancel",
+      codePolicyDefault: "Default",
+      codePolicyValue: ({ value }: { value: CodePolicyValue }) =>
+        ({ automatic: "Automatic", admin: "Admin approval", never: "Never" })[value],
+      codePolicyRow: ({ row }: { row: CodePolicyRow }) =>
+        ({
+          read: "Read",
+          silent_you: "Only for the person",
+          silent_draft: "Drafts",
+          silent_shared: "Visible to others",
+          ask_sends: "Sends",
+          ask_deletes: "Deletes",
+          ask_cannot_undo: "Cannot undo",
+          ask_involves_people: "Involves people",
+          ask_changes_access: "Changes access",
+          ask_keeps_working: "Keeps working",
+          ask_sensitive: "Sensitive",
+          ask_app_asks: "App asks",
+          ai: "AI use",
+          internet: "Internet",
+          public_routes: "Public routes",
+        })[row],
       chat: "Chat",
       targetChat: "Target chat",
       message: "Message",
@@ -86,6 +182,84 @@ const messages = i18n.define({
       chatMessageQueued: ({ title }: { title: string }) => `Queued a message for “${title}”.`,
     },
     de: {
+      codeCatchupSnapshot: ({ count, version }) => `${count} vorhandene Nachrichten · gebundene Version ${version}`,
+      codeSecretDeleteReview: ({ name }) => `Wert des Code-Secrets ${name} für alle Versionen löschen.`,
+      codeSecretDeleteRunning: "Code-Secret-Wert wird gelöscht.",
+      codeSecretDeleteDone: "Code-Secret-Wert gelöscht.",
+      codeSecretDeleteConfirm: "Secret-Wert löschen",
+      codePolicyReview: ({ revision, count }) =>
+        `Code-Richtlinie am Stand ${revision} ändern. ${count} ${count === 1 ? "Code wird" : "Codes werden"} pausiert.`,
+      codeOperationAction: ({ operation }) =>
+        ({
+          catchup: "{code} auf vorhandene Nachrichten anwenden",
+          catchup_resume: "Gespeichertes Nachholen für {code} fortsetzen",
+          catchup_cancel: "Nachholen für {code} abbrechen",
+          redeliver: "Ereignis für {code} erneut zustellen",
+          run: "{code} ausführen",
+          submit: "Eine Version für {code} einreichen",
+          pause: "{code} pausieren",
+          resume: "{code} fortsetzen",
+        })[operation],
+      codeOperationRunning: ({ operation }) =>
+        ({
+          catchup: "Nachholen für {code} wird gestartet",
+          catchup_resume: "Nachholen für {code} wird fortgesetzt",
+          catchup_cancel: "Nachholen für {code} wird abgebrochen",
+          redeliver: "Ereignis für {code} wird erneut zugestellt",
+          run: "{code} wird gestartet",
+          submit: "Eine Version für {code} wird eingereicht",
+          pause: "{code} wird pausiert",
+          resume: "{code} wird fortgesetzt",
+        })[operation],
+      codeOperationDone: ({ operation }) =>
+        ({
+          catchup: "Nachholen für {code} gestartet",
+          catchup_resume: "Nachholen für {code} fortgesetzt",
+          catchup_cancel: "Nachholen für {code} abgebrochen",
+          redeliver: "Ereignis für {code} wartet auf Zustellung",
+          run: "{code} gestartet",
+          submit: "Eine Version für {code} eingereicht",
+          pause: "{code} pausiert",
+          resume: "{code} fortgesetzt",
+        })[operation],
+      codeOperationConfirm: ({ operation }) =>
+        ({
+          catchup: "Auf vorhandene Nachrichten anwenden",
+          catchup_resume: "Nachholen fortsetzen",
+          catchup_cancel: "Nachholen abbrechen",
+          redeliver: "Erneut zustellen",
+          run: "Code ausführen",
+          submit: "Version einreichen",
+          pause: "Code pausieren",
+          resume: "Code fortsetzen",
+        })[operation],
+      codeOperationDecline: "Abbrechen",
+      codePolicyTitle: "Code-Richtlinie",
+      codePolicyRunning: "Code-Richtlinie wird gespeichert.",
+      codePolicyDone: "Code-Richtlinie gespeichert.",
+      codePolicyConfirm: "Richtlinie speichern",
+      codePolicyDecline: "Abbrechen",
+      codePolicyDefault: "Standard",
+      codePolicyValue: ({ value }: { value: CodePolicyValue }) =>
+        ({ automatic: "Automatisch", admin: "Admin gibt frei", never: "Nie" })[value],
+      codePolicyRow: ({ row }: { row: CodePolicyRow }) =>
+        ({
+          read: "Lesen",
+          silent_you: "Nur für die eigene Person",
+          silent_draft: "Entwürfe",
+          silent_shared: "Für andere sichtbar",
+          ask_sends: "Sendet",
+          ask_deletes: "Löscht",
+          ask_cannot_undo: "Nicht rückgängig",
+          ask_involves_people: "Bezieht Personen ein",
+          ask_changes_access: "Ändert Zugriff",
+          ask_keeps_working: "Läuft weiter",
+          ask_sensitive: "Sensibel",
+          ask_app_asks: "App fragt nach",
+          ai: "KI-Nutzung",
+          internet: "Ins Internet",
+          public_routes: "Öffentliche Routen",
+        })[row],
       chat: "Chat",
       targetChat: "Zielchat",
       message: "Nachricht",

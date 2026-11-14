@@ -5,13 +5,14 @@ section: Operations
 order: 951
 description: Preserve all Mail rule versions and personal routines before an upgrade removes their authoring paths.
 tags: [mail, assistant, automation, migrations]
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # Export automation definitions before an upgrade
 
 Export Mail rules and Assistant routines **before upgrading** to a release that
-removes them. The commands below also work as a read-only inventory without an
+removes them. For the whole cut to Code, follow
+[Upgrade to Code](/en/docs/operations/upgrade-to-code). The commands below also work as a read-only inventory without an
 upgrade. They neither pause nor activate anything.
 
 Update the installed Mail and Assistant CLI plugins first. Select the intended

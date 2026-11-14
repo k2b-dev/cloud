@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { decisionInputFixture, decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
@@ -36,6 +37,21 @@ const createContext = (args: string[], flags: CloudCliFlags, fetch: CloudCliCont
 };
 
 describe("capabilities CLI", () => {
+  test("cld reaches core.ai.decide through the normal query path and preserves probabilities", async () => {
+    const requests: unknown[] = [];
+    const { ctx, lines } = createContext(
+      ["query", "core", "ai.decide"],
+      { input: JSON.stringify(decisionInputFixture) },
+      async (path, init) => {
+        requests.push({ path, body: JSON.parse(String(init?.body)) });
+        return Response.json({ data: decisionResultFixture });
+      },
+    );
+    await capabilitiesCliModule.run(ctx);
+    expect(requests).toEqual([{ path: "/api/capabilities/v1/queries/core/ai.decide", body: { input: decisionInputFixture } }]);
+    expect(JSON.parse(lines[0]!)).toEqual({ data: decisionResultFixture });
+  });
+
   test.each(["json", "jsonl", "text"] as const)(
     "discovers and invokes a canonical resource reader across catalog pages in %s",
     async (output) => {
@@ -449,3 +465,43 @@ test("resolve reports the same failure for inaccessible resources without echoin
   );
   await expect(capabilitiesCliModule.run(ctx)).rejects.toThrow("Resource not found.");
 });
+
+for (const kind of ["query", "action", "review"] as const) {
+  test(`CLI ${kind} forwards resource coordinates beside domain input`, async () => {
+    const target = { type: "demo.book", id: "source" };
+    const refs = { destination: { type: "demo.book", id: "destination" } };
+    const requests: unknown[] = [];
+    const { ctx } = createContext(
+      [kind, "demo", "move"],
+      {
+        input: '{"contactId":"contact"}',
+        target: JSON.stringify(target),
+        refs: JSON.stringify(refs),
+        ...(kind === "action" ? { "idempotency-key": "move-1" } : {}),
+      },
+      async (path, init) => {
+        requests.push({ path, body: JSON.parse(String(init?.body)), key: new Headers(init?.headers).get("idempotency-key") });
+        return Response.json(kind === "review" ? { message: "Move contact?" } : { data: {} });
+      },
+    );
+    await capabilitiesCliModule.run(ctx);
+    expect(requests).toEqual([
+      {
+        path: `/api/capabilities/v1/${kind === "query" ? "queries" : "actions"}/demo/move${kind === "review" ? "/review" : ""}`,
+        body: { input: { contactId: "contact" }, target, refs },
+        key: kind === "action" ? "move-1" : null,
+      },
+    ]);
+  });
+}
+
+for (const flag of ["target", "refs"] as const) {
+  test(`CLI identifies invalid --${flag} JSON without sending a request`, async () => {
+    for (const value of ["{", "[]", '"wrong"']) {
+      const { ctx } = createContext(["query", "demo", "move"], { input: "{}", [flag]: value }, async () => {
+        throw new Error("Must not send invalid coordinates");
+      });
+      await expect(capabilitiesCliModule.run(ctx)).rejects.toThrow(`--${flag} must be`);
+    }
+  });
+}

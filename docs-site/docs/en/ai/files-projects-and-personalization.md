@@ -58,12 +58,33 @@ inline, and readers revalidate the current file before rendering.
 The file-content response carries `X-Cloud-Ai-File-Origin` so readers can check
 that the current file still has assistant origin.
 
+### Pass a chat file to another app
+
+The versioned Query `assistant.chat.file.read.v1({ chatId, path })` opens one
+chat file as a ten-minute, single-use read stream. Its Code SDK method returns
+a FileRef; pass that reference to an app Action with a write stream and a
+`file` input. The app decides whether the person may store or use the file.
+
+Chat ownership, archive state, allowed tools and Project access are checked
+again when the stream is read. The reference pins the file revision and refuses
+files above 50 MiB before loading bytes. Changed, deleted, expired or already
+used files fail. Read [Generate and transfer files](/en/docs/platform/code-sdk#generate-a-file)
+for Code helpers, transfer limits and retry rules.
+
+An application issuing its own file continuation can use
+`statAiConversationFile({ conversationId, ownerUserId, path })` from
+`@k2b/cloud/ai` to read metadata without loading content. Both this helper and
+`readAiConversationFile` check conversation ownership and refuse archived
+conversations. The byte reader accepts optional `version` and `maxBytes`;
+both limits apply in the database before content is loaded. The application
+still checks its own Project and operation access before issuing and redeeming
+a continuation.
+
 ### Separate results from working files
 
 The assistant keeps intermediate steps below `/temp/` in the chat, one folder
 per purpose, for example `/temp/quarterly-report/`. A result is what it hands
-over: `present({ path, title?, description? })` for a file or a view, and
-`code_open` or `code_present({ id })` for a Studio app. The optional
+over: `present({ path, title?, description? })` for a file or a view. The optional
 `description` is one sentence of at most 160 characters in the user's
 language; a new delivery of the same file replaces it, also with none.
 Assistant shows results first and working files one level deeper, grouped by
@@ -79,9 +100,7 @@ count toward the chat's limit and are forked and deleted with the chat like any
 other file.
 
 Cloud indexes every successful delivery as a conversation source of kind
-`result` with the turn and call that made it; `code_open` is indexed when the
-turn continues with the browser's report, and a report with an `error` delivers
-nothing. Starting this release indexes the deliveries already stored in chat
+`result` with the turn and call that made it. Starting this release indexes the deliveries already stored in chat
 history once, so existing chats show their results too; files deleted since are
 skipped. That first start reads every stored tool result once, so it takes
 longer on installations with a long chat history; meanwhile
@@ -217,6 +236,19 @@ instructions and the default model change trusted agent behavior, only
 Universal Search and can be filtered by application. The HTTP API and
 `cld assistant projects` expose the same metadata, context, and access model.
 
+In **Administration > AI > Skills** and **Projects**, open **Permissions** and
+choose **Add service account**. Paste the Code account's exact handle
+(`code-` followed by ten characters); the dialog looks it up as you paste.
+Select the result and save the changes. Press Enter to retry a failed lookup. A name, UUID, partial handle, or unknown handle finds
+no Code account. The lookup requires Manage on this Skill or Project; Cloud
+administrators can use their existing access-recovery authority. Excessive
+lookups return a rate-limit error; the dialog keeps the handle for retry.
+Code accounts can receive View or Edit, never Manage.
+
+Resource-bound accounts behind object or app API keys have no handle in
+this contract. They cannot be added through this field. Their existing grants
+remain editable; the API and CLI can still grant their UUID.
+
 ## Reuse shared Skills
 
 A Skill gives Assistant a reusable workflow without attaching it to one person
@@ -298,7 +330,12 @@ catalog does not fit its hard prompt budget, Cloud selects whole entries relevan
 request and exposes the omitted entries through `search_skills`. The slash menu and
 `search_skills` share a permission-aware search over Skill names and descriptions.
 It supports partial words and minor typos, prioritizes name matches, and excludes
-disabled Skills before limiting results. Skill instructions and references are
+disabled Skills before limiting results. In the slash menu, built-in Skills have
+titles and descriptions in the person's interface language. The menu also searches
+these translated labels. Skills without a menu translation keep their own name
+and description. Customized app descriptions also keep their own text. English
+always shows the installed Skill text. Menu translations do not change the source
+descriptions used for model discovery. Skill instructions and references are
 not searched or loaded during discovery. Server callers use
 `aiSkills.search({ actor, accessSubject }, query, limit, { modelInvocableOnly })` and receive
 `{ skills, more }`. Set `modelInvocableOnly: true` for model discovery; omit it
@@ -332,8 +369,8 @@ The optional `load-tools` frontmatter field lists the tools a Skill needs for
 most requests: 1 to 25 unique capability IDs or built-in tool names.
 `load_skill` loads them together with the instructions, so Assistant can call
 them in its next step without a separate `load_tools` round. They pass the same
-checks as `load_tools`: a tool outside the chat's tool scope, a routine's
-grants, or the live app catalog is reported as unavailable with its reason, and
+checks as `load_tools`: a tool outside the chat's tool scope
+or the live app catalog is reported as unavailable with its reason, and
 the model's tool limit still applies. The list grants nothing; every call is
 authorized as usual. It comes from the pinned `SKILL.md`, like the
 instructions. Skills a person selects with `/` and local Skills load no tools
@@ -359,7 +396,7 @@ while the app runs. The built-in apps ship these Skills:
   lookup, join, and aggregation examples. It guides queries and daily work and
   routes product and administration questions to canonical Grids Help.
 - Assistant ships `cloud-assistant` for conversation history and resources,
-  inter-chat messaging, and routines; `scheduled-tasks`;
+  inter-chat messaging;
   `assistant-code-mode` and `assistant-data-analysis`; and `skill-creator`,
   which explains how to draft a concise Skill and names the `core.ai.skill`
   Capabilities Assistant can use to list, read, create, update, manage
@@ -396,12 +433,11 @@ that applies:
    change only when the user asks for that.
 4. The user says the request recurs ("again", "every week", "like last
    time", "always"), pastes a long reusable instruction, or a personalization
-   workflow default covers it: it offers a Skill or a routine.
+   workflow default covers it: it offers a Skill.
 
 A new Skill is offered only when no listed Skill already covers the approach.
 When Skills are omitted from the bounded catalog, the model also checks
-`search_skills`. A request that a Skill already handles can still lead to a
-routine offer. Cases 1 and 2 and the Skill part of case 4 need
+`search_skills`. Cases 1, 2 and 4 need
 `skill-creator`; if the user disabled it or it was deleted, they are left out,
 even when other Skills remain loadable. Case 3 needs the memory tool. A single
 preference such as tone belongs in memory, not in a Skill. The model claims
@@ -412,8 +448,7 @@ The general suggestion limits apply: at most one offer, in the last sentence
 of the final message, and none after a failure, while asking a clarifying
 question or waiting for approval, after a reply that already ended with an
 offer, or once the user declined or asked for no suggestions. Asking for a
-shorter draft is a correction, not a request for silence. Routine runs
-do not get these rules.
+shorter draft is a correction, not a request for silence.
 
 Cloud does not leave these cases to the model alone. At the start of a new
 followed turn, the server checks the user's message and the latest messages of
@@ -454,20 +489,18 @@ limits: the model skips the offer when it ends with a question, waits for
 approval, or could not finish, when its previous reply already ended with an
 offer, when the user declined one in the chat, or when the user, their
 preferences, or instructions ask for no suggestions or only a short answer.
-Turns that continue after an approval and routine runs get no
-instruction.
+Turns that continue after an approval get no instruction.
 
 After a yes to a Skill offer, the model loads `skill-creator` and drafts from
 the conversation. Its template first picks the lightest place: memory for a
 fact or preference, a workflow default for always using one mailbox or Space,
-Project instructions, a Skill for a recurring procedure or format, a routine
-for a set time, or a Studio App that the Skill references. A Skill draft
+Project instructions, a Skill for a recurring procedure or format, or reviewed
+personal Code for a set time or an interactive tool. A Skill draft
 keeps only the procedure, the output format, the capability IDs that worked,
 the user's corrections as positive rules, and inputs named by role and title.
 It leaves out content from attachments, mails, and web pages, names of people
 or customers, amounts, example records, and IDs of mailboxes, Spaces,
-notebooks, records, or other resources copied from the chat. The exact ID of a
-Studio App the Skill calls is the one exception. An existing workflow default
+notebooks, records, or other resources copied from the chat. An existing workflow default
 is referenced instead of repeated. Load triggers name the subject, such as the
 team or the report, not only the output format. The `core.ai.skill.create` or
 `core.ai.skill.update` review is the only confirmation. After saving, the model
@@ -706,8 +739,7 @@ tool execution boundaries.
 
 ### What the model knows about the chat
 
-Every turn except a routine run (`background` in the turn's run
-configuration) renders two extra platform sections, controlled by the Liquid
+Every chat turn renders two extra platform sections, controlled by the Liquid
 flag `interactive`. `cld assistant` turns count as followed turns; the CLI
 names each delivered file on standard error, such as
 `present: completed /sales-report.pdf`, so the final message need not list it
@@ -721,8 +753,7 @@ there either. The preview in **Assistant settings > System prompt** and
   questions out of status text, and does not list delivered files or visuals
   again.
 - **Suggestions** allows at most one offer, in the last sentence of the final
-  message. Corrections and recurring requests lead to a Skill, preference, or
-  routine offer, as described in
+  message. Corrections and recurring requests lead to a Skill or preference offer, as described in
   [Turn recurring work into a Skill](#turn-recurring-work-into-a-skill);
   otherwise the offer is a concrete next step that saves the user real work.
   The model makes no offer for simple requests or facts, while asking or waiting for
@@ -778,26 +809,6 @@ See [Models and providers](/en/docs/ai/models-and-providers#assign-classes-and-t
 for container and provider limits. Normal file storage limits do not imply
 that an audio endpoint accepts the same input size.
 
-## Store Studio app files
-
-Studio app files are shared by everyone who can use the app. They have a
-separate budget from personal and shared JSON storage. By default, a file can
-contain up to 50 MiB and each app has 250 MiB of shared file storage. Operators
-can change these limits in Studio administration; each binary transfer remains
-limited to 64 MiB. The `cloud.files.write` runtime API additionally limits each
-payload to 16 MiB.
-
-The total file budget counts payload bytes plus the PostgreSQL size of each
-file's key and media-type metadata record. Empty files are supported and consume
-metadata space. Listed file sizes show payload bytes only. Replacing a file
-replaces its quota charge, and deletion releases that charge.
-
-Existing files remain readable after an operator lowers a limit or after an
-upgrade changes accounting. A replacement may exceed a lowered limit only when
-it does not increase the corresponding usage: payload size for the per-file
-limit, or payload plus metadata for the total budget. To add more data after
-`STORAGE_FULL`, delete files or ask the operator to increase the budget.
-
 ## Explicit file transfers
 
 Assistant file references use the public `AiFileLocation` and `AiFileReference`
@@ -815,13 +826,8 @@ metadata is captured in that transaction. Project writes accept an optional
 `expectedVersion` and serialize permission and version checks with other Project
 file mutations. Existing UI callers retain their existing write behavior.
 
-Studio owns App file storage and its transfer adapter. File imports into App
-source use `code_import` with `fromFile` references in the same schema. One fresh
-review covers the whole batch, since imported private bytes may become shared
-or published source. Write source text with `code_write` using top-level `path`
-and `content`, one file per call. Keep binary bytes out of tool responses and
-never treat access to one chat as permission to mount all of its files into an
-App.
+Studio App stores and source imports are retired. Retained transfers support
+chat and Project file references only, with current access and version checks.
 
 ### Visual inspection of PDF pages
 

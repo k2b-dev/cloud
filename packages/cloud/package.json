@@ -68,6 +68,12 @@
     "./browser/storage-bucket-select": "./src/browser/storage-bucket-select.tsx",
     "./browser/composer-insert": "./src/browser/composer-insert.ts",
     "./browser/files": "./src/browser/files.tsx",
+    "./code": "./src/code/index.ts",
+    "./code/events": "./src/code/event-tools.ts",
+    "./code/chat-run": "./src/code/chat-run.ts",
+    "./code/chat-run-wake": "./src/code/chat-run-wake.ts",
+    "./code/ui": "./src/code/ui.ts",
+    "./code/feat-code.svg": "./src/code/feat-code.svg",
     "./capabilities": "./src/capabilities/client.ts",
     "./capabilities/server": "./src/capabilities/server.ts",
     "./capabilities/store": "./src/capabilities/executions.ts",
@@ -96,6 +102,7 @@
     "./ai/live": "./src/ai/live.ts",
     "./ai/live-events": "./src/ai/live-events.ts",
     "./ai/runtime": "./src/ai/runtime.ts",
+    "./ai/server": "./src/ai/server.ts",
     "./ai/solid": "./src/ai/solid.ts",
     "./ai/tasks": "./src/ai/tasks/index.ts",
     "./ai/testing": "./src/ai/testing.ts",
@@ -107,6 +114,9 @@
     "./approvals/ui": "./src/approvals/ui.ts",
     "./ssr": "./src/ssr/index.ts",
     "./ssr/islands": "./src/ssr/islands/index.ts",
+    "./ssr/code-page": "./src/ssr/code-page/CodePage.tsx",
+    "./ssr/code-nav-status": "./src/ssr/code-page/CodeNavStatus.tsx",
+    "./ssr/code-schedule": "./src/ssr/code-page/schedule.ts",
     "./ssr/WorkspaceNavigation.island": "./src/ssr/WorkspaceNavigation.island.tsx",
     "./ssr/layout-runtime": "./src/ssr/layout-runtime.ts",
     "./ssr/*": "./src/ssr/*",
@@ -129,7 +139,10 @@
     "./clients/core": "./src/clients/core.ts",
     "./styles/global.css": "./src/styles/global.css",
     "./app-pwa": "./src/app-pwa/index.ts",
-    "./app-pwa/browser": "./src/app-pwa/protocol.ts"
+    "./app-pwa/browser": "./src/app-pwa/protocol.ts",
+    "./app-proof": "./src/app-proof.ts",
+    "./code/runner": "./src/code/runner-protocol.ts",
+    "./code/run-token": "./src/code/run-token.ts"
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
@@ -146,7 +159,7 @@
     "@simplewebauthn/server": "14.1.0",
     "@tabler/icons": "3.50.0",
     "@tailwindcss/typography": "0.5.20",
-    "@k2b/nessi": "1.2.0",
+    "@k2b/nessi": "1.3.0",
     "@k2b/ssr": "0.21.2",
     "@k2b/ui": "0.58.0",
     "@k2b/stdlib": "0.32.0",
@@ -180,7 +193,8 @@
     "hash-wasm": "4.13.0",
     "@types/sanitize-html": "2.16.2",
     "@types/web-push": "3.6.4",
-    "@k2b/editor": "0.11.5"
+    "@k2b/editor": "0.11.5",
+    "@typescript/typescript6": "6.0.2"
   },
   "devDependencies": {
     "@babel/core": "8.1.0",

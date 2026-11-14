@@ -88,6 +88,7 @@ const spies = [
   } as unknown as Awaited<ReturnType<typeof ai.assistantAiSettingsState>>),
   spyOn(ai, "getLiveDictationStatus").mockResolvedValue({ available: false } as Awaited<ReturnType<typeof ai.getLiveDictationStatus>>),
   spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+    counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
     conversations: [{ ...own, id: own.shortId }],
     projects: [],
     doneCount: 0,
@@ -182,12 +183,12 @@ describe("The Assistant in the Cloud app", () => {
     const { response, document } = await render("/pwa/assistant");
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(document.querySelector("h1.k2b-mobile-shell__title")?.textContent).toBe("Assistant");
+    expect(document.querySelector("h1.k2b-mobile-shell__title")?.textContent).toBe("Gustav");
     expect(document.querySelector(".k2b-mobile-shell")?.hasAttribute("data-k2b-screen")).toBe(false);
     expect(document.querySelectorAll(".assistant-pwa-row").length).toBe(1);
     const props = islandProps(document);
     expect(props.initialAddress).toEqual({ level: "start" });
-    expect(props.name).toBe("Assistant");
+    expect(props.name).toBe("Gustav");
     // App sessions carry no administration, so the way to set up AI never shows in the app.
     expect(props.canConfigure).toBe(false);
   });
@@ -245,7 +246,7 @@ describe("The Assistant in the Cloud app", () => {
     signIn("app", guest);
     const { response, document } = await render("/pwa/assistant");
     expect(response.status).toBe(403);
-    expect(document.querySelector(".k2b-placeholder")?.textContent).toContain("Assistant is not available to you");
+    expect(document.querySelector(".k2b-placeholder")?.textContent).toContain("Gustav is not available to you");
   });
 
   test("the count route answers how many questions wait for the person", async () => {

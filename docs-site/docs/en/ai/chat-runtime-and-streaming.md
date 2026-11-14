@@ -49,6 +49,38 @@ promotion: once an entry becomes a turn, the queue endpoint returns not found.
 Normal submissions cannot overtake the queue. Chats with pending entries cannot
 be archived or marked done and do not become done through inactivity.
 
+## List place chats
+
+A place chat belongs to the person who sent its first message. Opening a place
+never creates a chat. There is one active chat per person and place; starting
+over archives it, and the next message creates its replacement.
+
+`GET /api/ai/conversations` and `/api/ai/conversations/page` accept `place`:
+
+| Value | Chats returned |
+| --- | --- |
+| `none` (default) | Chats without a place. |
+| `any` | Chats bound to a place. |
+| `<type>:<id>` | Chats bound to that exact resource reference. |
+
+The filter combines with the existing search, status, archive, and Project
+filters. Both endpoints return `place: { ref: { type, id }, title }` for place
+chats and `place: null` for ordinary chats. The title is the stored snapshot;
+listing a chat does not call the place provider. The place is also indexed as
+a conversation resource, so the existing exact `refs` filter can find it.
+
+`GET /api/ai/conversations/counts` returns `{ unread, needsAttention, places:
+{ total, unread, needsAttention } }` for the current person's non-archived chats.
+The first two counts include place chats; `places` gives their separate counts.
+Search presents place chats in **At places** (**An Orten** in German).
+The `ai.chats.search` and `ai.chats.resources` tools exclude place chats unless
+their `place` input gives an exact resource reference. Cross-chat resource
+listing at `GET /api/ai/resources` also excludes place chats; resources in a
+known chat remain available through its own resource endpoint.
+
+Use `cld assistant chats list --place any` or `--place example.conversation:Marta1`
+to list place chats. The default excludes them; table output has a `place` column.
+
 ## Observe work across conversations
 
 Sidebar snapshots include a compact `activity` projection: completed and total
@@ -216,16 +248,14 @@ schemas are deferred. These built-ins provide no arbitrary code execution,
 host access, or network access beyond the explicit web tools. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals).
 
-The default tool source also offers the server-run Code Mode tools `code_run`,
-`code_action`, `code_inspect`, `code_stop`, `code_export`, `code_present`, and `code_check`
-in every turn, whichever client submits it, including API
-clients, `cld assistant --detach`, and routines (scheduled tasks). They load on demand
-and run JavaScript in an isolated Assistant-owned host. That code can call
-Cloud capabilities, databases, and external HTTPS endpoints with the user's
-permissions; each call keeps its normal approvals or, in a routine, its
-routine grants. See
-[Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
-and [Advertise connected client tools](/en/docs/ai/chat-interface#advertise-connected-client-tools).
+The default tool source offers `code_run`, `code_inspect`, `code_stop` and
+`code_export` on the server, including API and detached CLI clients. Scripts
+execute on the Code runner under the turn's authority and approvals. `code_secret`
+uses the trusted web UI. Native views and chat files remain available; Studio
+app tools and app databases have been retired. See
+[Chat code execution](/en/docs/ai/chat-interface#chat-code-execution). Scheduled
+chat routines are retired; see [Routines became Code](/en/docs/operations/routines-to-code).
+
 
 The `text_editor` frontend interaction lets the model provide one complete
 plain-text or Markdown draft for the user to revise. The browser presents both
@@ -329,7 +359,7 @@ it does not infer resource identity from prose.
 ## Runtime ownership
 
 Core mounts `/api/ai`, migrates the AI schema, and exclusively owns the
-conversation workers, maintenance, routines, and durable
+conversation workers, maintenance, and durable
 continuations. Applications must not start a second AI conversation runtime.
 They publish domain Capabilities, launch a personal conversation through
 `launchAssistant()`, or use `runAiStructured()` for bounded server/workflow AI.
@@ -381,7 +411,10 @@ shows. These helpers do not initialize
 Cloud server services. Import AI types with `import type` from
 `@k2b/cloud/ai`. Solid applications should use
 `createAiChatController()` from `@k2b/cloud/ai/solid`; it subscribes to the
-visible conversation over SSE. Changing chats closes the previous stream and
+visible conversation over SSE. To reconcile a previous creation request without
+changing the visible chat, call `createConversation(input, { activate: false })`.
+The result is cached while a foreground chat load and its stream stay active.
+Changing chats closes the previous stream and
 opens one for the new chat; every connection, including a reconnect, starts
 from a fresh authorized state snapshot. Assistant, the CLI, and low-level
 consumers all use `/conversations/:id/stream`. Over HTTP/1.1 each open
@@ -435,7 +468,7 @@ event. The client then reconnects and continues from a fresh state snapshot.
 The controller folds the stream into one projection and exposes the
 active conversation's history, send, steer, abort, retry, fork, compaction,
 approval, and frontend-tool actions. Do not put conversation and Project lists,
-metadata, Sources, files, routines, Project context, or access changes
+metadata, Sources, files, Project context, or access changes
 into turn events. Those are durable server projections and refresh through
 [Realtime UI](/en/docs/frontend/realtime-ui).
 
@@ -447,7 +480,7 @@ interval (1.5 seconds in production). A result within that window continues in
 the same lease, without another claim or rebuilding the turn, and does not
 count as a resumed attempt. Otherwise the turn suspends and enqueues a
 continuation as before, including when the result arrives as the wait ends.
-Other client tools such as `code_open` and `code_secret`, human interactions
+Other client tools such as `code_secret`, human interactions
 such as `survey` and `text_editor`, and all approvals suspend immediately.
 
 `POST /conversations/:id/turns/:turnId/actions/:callId` validates results of
@@ -481,6 +514,10 @@ tables write each update in the transaction of the change, keyed
 written for every user who can read the Project at that moment, including
 nested groups and grants to all signed-in people; a grant change reaches the
 readers before and after it. A conversation change reaches only its owner.
+A Cloud administrator's decision on a submitted Code version writes
+`code-versions` for the person who submitted it, in the decision's
+transaction, so the version card in the chat shows the decision without
+polling.
 
 A socket follows only its own user's key, and its credential is checked again
 every 10 seconds; an ended session closes it with `1008`. A third-party UI
@@ -646,57 +683,9 @@ audio, or transcripts in logs. Filter Logs by `ai:transcription` or `ai:dictatio
 dictation worker entries also include the dictation ID, model profile, attempt,
 and retry decision. Dictations are not workflow runs.
 
-### Assistant routines
+### Retired Assistant routines
 
-A routine belongs to one chat and runs as that chat's owner. Creating
-it stores a confirmed [mandate](/en/docs/identity/background-mandates) whose
-`grants` list names every capability the routine may call. In a background run,
-every app capability needs a matching grant, Queries included, such as the
-reader Query behind a Project reference. A routine without grants can use only
-built-in tools such as chat files. Fixed input values must
-match exactly, and the owner's current access still applies to each call.
-
-A background run cannot ask for approval. Remembered approvals from the chat
-do not apply, and an operation that needs an approval or a browser fails the
-run, which moves the routine to `needs_attention`. A display-only `clientView()`
-tool such as `chart` needs neither: Cloud answers it, and the run's transcript
-shows it. Action grants are accepted only
-for Actions whose manifest declares `approval: "rememberable"` or `"none"`;
-Actions that ask for every call cannot be scheduled. Before each run, Core
-checks that the owner is active, the chat is not archived, and the mandate is
-confirmed and unchanged.
-
-Finished routine runs and their run evidence expire after
-[90 days](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days);
-the result messages delivered into the chat stay.
-
-### Scheduled Code Mode
-
-Scheduled turns can run Code Mode without a user tab. Core binds each call and
-capability callback to the persisted turn and its confirmed routine mandate.
-Foreground activity in the same chat does not share the scheduled host. Routine
-revocation, expiry, revision changes and cancellation deny subsequent requests.
-The normal capability dispatcher still checks current user access, fixed inputs
-and action approval policy; remembered foreground approvals never authorize a
-scheduled action. Always-approval actions remain unavailable.
-
-Scheduled code supports computation, chat files, AI helpers, presentations and
-exports, shared app storage, HTTP and RSQL. A task has one reviewed `grants` list:
-capability query/action entries, `{kind:"http",fixedInput:{origin,url,method}}`
-and `{kind:"database",fixedInput:{resourceId,operation,table}}`. All fixed fields
-are optional; omitted fields remain unrestricted. HTTP origins match exactly,
-not by suffix; URL restrictions match the full URL. Database operations match
-exactly. Flat `cloud.db` operations `list`, `get`, `insert`, `update`, and `delete` match grants `rows.list`, `rows.get`, `rows.insert`, `rows.update`, and `rows.delete`; `query` matches `query`.
-Runtime `cloud.db` calls need no `connect` grant; `code_database`
-`tables.create` provisions the database under its `tables.create` grant. Resource
-permissions and the HTTP service's public-HTTPS/secret-binding checks still apply.
-HTTP authority is rechecked against the stored request immediately before sending.
-The same access review and task-detail presentation show all three grant types.
-
-Tasks cannot open interactive dialogs, collect new secrets or use capability
-binary streams. Missing grants return an error for repair in the normal chat.
-AI helper usage is charged as background
-work and attributed to the scheduled turn.
+Scheduled chat routines are retired. See [Routines became Code](/en/docs/operations/routines-to-code) for export and rebuild instructions. Existing transcript text remains readable without run controls.
 
 ### Background Assistant tabs
 
@@ -704,11 +693,9 @@ Hiding the browser tab does not close the visible conversation's SSE stream,
 so a turn keeps streaming and its frontend tools keep running. The live socket
 closes while the tab is hidden and replays the missed updates when it returns.
 This does not override browser suspension, operating-system sleep, reload, or
-closing the tab. Agent Code Mode execution uses an Assistant-owned isolated Chromium host,
-so changing or closing the user tab does not pause code or simulated UI actions.
-The interactive Studio preview remains browser-owned. Opening an app, selecting
-local files, entering secrets and answering approval prompts still need a user
-client.
+closing the tab. Agent code execution uses the Code runner, so changing or
+closing the tab does not stop it. Entering secrets and answering approval
+prompts still require a client.
 
 When code in that host calls a capability Action or sends an external HTTP
 request, the chat approval names the app and Action, repeats the owning app's
@@ -927,6 +914,70 @@ reason `step_limit` instead of continuing without them. Each hint logs the warni
 and each switch to the final answer logs `AI turn answers without further
 tools`, both under `ai:executor` with the conversation and turn IDs.
 
+### Code authoring safety budget
+
+When Gustav invokes a lasting Code authoring tool or selects the authoring
+Skill, one turn can make at most 16 model attempts and admit at most 512,000 cumulative input tokens, including
+instructions, conversation, and tool schemas. Provider retries and automatic
+compaction share this allowance. Previously loaded tools alone do not activate
+the allowance in a later turn. Admission reserves the input estimate; reported input replaces it when higher. These
+estimates use the same four-characters-per-token convention as AI accounting,
+so they are a safety budget rather than an exact provider invoice ceiling.
+
+The same Code authoring error gets an initial attempt and two retries.
+Different diagnostic codes, source locations, messages, and assertion paths
+are separate errors; an undifferentiated failed check is not an error identity.
+Changing a fixture title, source text, or switching between test and simulation
+does not reset that error count. Successful fixtures that deliberately test
+an error do not count as failures. A response containing several checks cannot
+run more identical failing checks than this allowance.
+
+At a bound, Gustav completes the current tool, skips remaining authoring tools
+in that response when the repair allowance is spent, and ends with a short
+persisted receipt in the chat. Assistant renders it in English or German as one
+notice: the reason (the same problem repeated, the attempt limit or the input
+budget), what the receipt confirms as done (checks and example tests of drafts
+not yet submitted) and what is still open (checks, example tests and version
+saves), and whether a draft or version is saved. This summary comes from settled tool results,
+not model prose; a later draft edit invalidates earlier passing checks. No
+additional model call writes the notice. Saved results and the server-held
+draft remain available. The receipt describes the state at the stop, rather
+than promising indefinite draft retention. Forks omit this conversation-bound
+receipt because they do not copy its draft. **Continue** starts a new turn through the normal
+message send path only after a click; rendering, reconnecting and reloading
+never resume work. The action is disabled during other work and while sending;
+a failed send keeps the notice with a retry explanation. Stopping does not
+submit or activate the draft. Hosts of `createAiChatTimeline` provide localized
+presentation with `AiChatActions.renderCodeAuthoringStop` and use
+`useAiChatActions()` from `@k2b/cloud/ai/ui` for the shared continuation action.
+Worker recovery restores provider usage and check failures for the whole turn,
+including archived messages. Missing provider input usage reserves 64,000
+estimated tokens per call on recovery, rather than spending the entire turn
+allowance. Steering does not refill this safety budget.
+
+These are authoring limits, separate from the configured Assistant cost
+allowances, which still apply to every provider call. The F7 per-attempt and
+daily AI allowances apply to AI invoked **by saved Code**. They do not fund
+Gustav's interactive authoring, and an unpriced model supplies no conversion
+from those monetary allowances to authoring tokens.
+
+The authoring allocation is four 128,000-token reference windows (512,000 input
+tokens). A half-window (64,000) estimates a recovered call without usage and
+reserves room before compaction, whose source is already bounded to 60,000
+characters. The allocation allows 16 attempts at a quarter-window planning size
+(32,000). The two repair retries follow the existing malformed-response repair allowance. These fixed
+operational limits also cover free and unpriced models.
+
+After a successful check of a Code's draft, later requests replace its earlier
+SDK dumps with a short reload note. The complete results stay in conversation
+history. Gustav can request fresh signatures when editing again. Normal model
+compaction remains available for earlier turns and smaller context windows,
+subject to the same authoring allowance. Authoring asks for compaction when
+history exceeds the half-window reserve, so a model with a large window does
+not wait until history alone exceeds the turn allowance. There is no separate fixed request
+ceiling that could permanently block a long conversation. The representative
+context regression fixture pins requests below the 32,000-token planning size.
+
 ### Transient provider failures
 
 A chat turn, including one that runs scheduled or in the background, repeats a
@@ -996,17 +1047,37 @@ The feature is disabled by default and does not limit generic application AI,
 workflow or background inference. See [Assistant limits](/en/docs/ai/usage-and-feedback#set-assistant-budgets)
 for accounting, wildcard precedence and reset behavior.
 
-### HTML app self-tests
+## Register host-owned tools
 
-`code_check` is a server-managed tool available to web, CLI, API and background
-turns. Write main-flow steps in the app's `steps.json`, check, inspect every
-screenshot with `view_image`, and fix before showing or publishing. The agent's
-open/present/publish operations require a passing check for the current source,
-steps and table definitions in that user/conversation. Human Studio publication
-and scripts have no check gate. The self-test is not a security mechanism.
+The process that owns the AI worker can pass `tools: readonly AiRuntimeTool[]`
+to its first `startAiRuntime` call from `@k2b/cloud/ai/runtime`. These tools
+join default Assistant turns; a matching name replaces that default tool.
+The conversation's fixed `allowedTools` ceiling still applies, and deferred
+tools use the existing `load_tools` discovery. Later reference-counted starts
+do not replace the worker's configuration. Custom tool sources are unchanged.
 
-Desktop and phone run a saved app on separate disposable copies of its data;
-one-off apps have no storage, as in their chat card. AI runs for real; HTTP and
-capability effects are unavailable, and background checks reject all
-capabilities. See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
-for step matching, copy/output budgets, cancellation and the report contract.
+This advanced host seam lets Core register its permission-aware Code services
+without importing application contracts into the platform. Every tool must
+recheck its own authority. `resolveAiCapabilityActor` from `@k2b/cloud/ai`
+resolves the current conversation owner's user-backed session authority from
+a persisted actor and the conversation store, including account status and
+mobile-session limits. It is for the trusted runtime host, not an application
+credential exchange. `createCodeSourceTool` from `@k2b/cloud/ai/tools` exposes a retained chat/Project
+file tool through its authenticated transport.
+
+For a result that starts no model turn, trusted hosts share
+`appendAiBackgroundMessage(db, { conversationId, text, meta? })` from
+`@k2b/cloud/ai/runtime`. Call it only inside an authorized transaction holding
+the destination conversation's row lock. It appends the assistant message and
+marks the conversation unread. The host owns idempotency and notification
+recovery in that same transaction. Personal Code's
+[chat delivery Action](/en/docs/platform/capabilities#deliver-personal-code-results-to-a-chat)
+uses this seam; applications call the capability instead of this host helper.
+
+Trusted hosts may pass their open database transaction as the second argument
+to `aiConversations.submitChatTurn(input, db)` to commit a turn and a
+host-owned receipt together. Hold the authorized conversation lock first and
+enqueue with `enqueueExistingAiTurn` only after committing. Core uses this seam
+for [Code-started chat turns](/en/docs/platform/capabilities#start-personal-code-chat-turns).
+The optional host-owned `runConfig.codeOrigin` is copied to the user message
+and turn record for attribution; it grants no tool authority.

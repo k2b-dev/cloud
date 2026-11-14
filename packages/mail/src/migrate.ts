@@ -24,6 +24,7 @@ import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 import { migrateRoomAccessEvents, migrateRoomAccessIndexes } from "./service/room-access-events";
+import { MAIL_RULE_RETIREMENT_NAME, MAIL_RULE_RETIREMENT_VERSION, retireMailRules } from "./service/rule-retirement-migrate";
 import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 import { migrateWorkspacePreferences } from "./service/workspace-preferences-migrate";
@@ -38,6 +39,10 @@ const PRINCIPAL_ASSIGNEES_NAME = "principal_assignees";
 // Older images would recreate the one-suggestion-per-conversation index and fail on per-author suggestions.
 const SUGGESTIONS_PER_AUTHOR_VERSION = 3;
 const SUGGESTIONS_PER_AUTHOR_NAME = "suggestions_per_author";
+// Earlier Code-branch images recorded rules_retired at 3 and suggestions_per_author at 4, which F6 owns.
+// Accept that history and move both markers to the released numbering without changing applied_at.
+const LEGACY_RULE_RETIREMENT_VERSION = 3;
+const LEGACY_SUGGESTIONS_PER_AUTHOR_VERSION = 4;
 
 const MIGRATION_LOCK_KEY = "cloud.mail.migrations";
 const log = logger("mail:migrate");
@@ -51,7 +56,10 @@ const assertSupportedSchema = (applied: readonly { version: number; name: string
       !(row.version === BASELINE_VERSION && row.name === BASELINE_NAME) &&
       !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME) &&
       !(row.version === SUGGESTIONS_PER_AUTHOR_VERSION && row.name === SUGGESTIONS_PER_AUTHOR_NAME) &&
-      !(row.version === REPLY_DRAFT_MIGRATION_VERSION && row.name === REPLY_DRAFT_MIGRATION_NAME),
+      !(row.version === REPLY_DRAFT_MIGRATION_VERSION && row.name === REPLY_DRAFT_MIGRATION_NAME) &&
+      !(row.version === MAIL_RULE_RETIREMENT_VERSION && row.name === MAIL_RULE_RETIREMENT_NAME) &&
+      !(row.version === LEGACY_RULE_RETIREMENT_VERSION && row.name === MAIL_RULE_RETIREMENT_NAME) &&
+      !(row.version === LEGACY_SUGGESTIONS_PER_AUTHOR_VERSION && row.name === SUGGESTIONS_PER_AUTHOR_NAME),
   );
   if (baseline && foreign.length === 0) return;
   const versions = applied.map((row) => `${row.version} (${row.name})`).join(", ");
@@ -75,6 +83,12 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
     SELECT version, name FROM mail.schema_migrations ORDER BY version
   `;
   assertSupportedSchema(applied);
+  // Vacate 3 first; names are unique, so each move touches at most the one legacy row. Both
+  // moves finish before F6 reads marker 4.
+  await tx`UPDATE mail.schema_migrations SET version = ${MAIL_RULE_RETIREMENT_VERSION}
+    WHERE version = ${LEGACY_RULE_RETIREMENT_VERSION} AND name = ${MAIL_RULE_RETIREMENT_NAME}`;
+  await tx`UPDATE mail.schema_migrations SET version = ${SUGGESTIONS_PER_AUTHOR_VERSION}
+    WHERE version = ${LEGACY_SUGGESTIONS_PER_AUTHOR_VERSION} AND name = ${SUGGESTIONS_PER_AUTHOR_NAME}`;
   if (applied.length > 0) return;
   await tx.unsafe(baselineSchema).simple();
   await tx`
@@ -117,6 +131,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     END; $$`.simple();
   await tx`CREATE OR REPLACE TRIGGER drafts_touch_content_edited_at BEFORE UPDATE ON mail.drafts
     FOR EACH ROW EXECUTE FUNCTION mail.touch_draft_content_edited_at()`.simple();
+  await tx`ALTER TABLE mail.draft_attachment_uploads ADD COLUMN IF NOT EXISTS capability_revision bigint`;
+  await tx`ALTER TABLE mail.draft_attachment_uploads ADD COLUMN IF NOT EXISTS capability_write_started boolean NOT NULL DEFAULT false`;
   // One checkpoint per folder lets waiting sync commands finish without retaining empty runs.
   await tx`ALTER TABLE mail.folders ADD COLUMN IF NOT EXISTS last_sync_snapshot jsonb`;
   await tx`DO $$ BEGIN
@@ -777,8 +793,8 @@ const migrationErrorCode = (error: unknown): string | null => {
 };
 
 /**
- * Schema additions and each F6 batch run under the transaction-scoped
- * advisory guard, which also holds behind a transaction pooler. The final
+ * Schema additions, each F6 batch and the rule retirement run under the
+ * transaction-scoped advisory guard, which also holds behind a transaction pooler. The final
  * concurrent index build runs outside a transaction. A run
  * that waits longer than `lock_timeout` for the guard or for DDL locks fails
  * with `55P03` and is retried with backoff; deadlock victims (`40P01`) retry too.
@@ -800,7 +816,16 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
         await migrateWorkflowAi(tx);
       });
       await migrateRoomAccessIndexes();
-      return await migrateReplyDrafts();
+      // F6 first, then the rule retirement: this is the 0.74 -> 0.75 -> Code order. F6 refuses before its
+      // marker, and a refused retirement leaves at most F6's marker, so either refusal keeps a previous
+      // image that can start and reconcile the blocking sends.
+      const replyDrafts = await migrateReplyDrafts();
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout = '10s'`;
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
+        await retireMailRules(tx);
+      });
+      return replyDrafts;
     } catch (error) {
       if (!["55P03", "40P01"].includes(migrationErrorCode(error) ?? "") || attempt === 2) throw error;
       await Bun.sleep(250 * 2 ** attempt);

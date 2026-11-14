@@ -5,6 +5,7 @@ import type { ApprovalDecisionChannel } from "../services/approvals";
 /**
  * AI-specific tool-call state only: approval, turn linkage, and the request id
  * that correlates a capability call with its `capabilities.executions` row.
+ * The immutable conversation row supplies the place coordinates for every call.
  * Capability shape, outcome, and latency belong to the platform execution
  * record written by the capability dispatcher.
  */
@@ -173,11 +174,12 @@ export const aiToolAudit = {
     `;
   },
 
-  noteToolCompleted: async (input: { turnId: string; callId: string; isError?: boolean }): Promise<void> => {
+  noteToolCompleted: async (input: { turnId: string; callId: string; isError?: boolean; rejected?: boolean }): Promise<void> => {
     await sql`
       UPDATE ai.tool_calls
       SET
-        status = ${input.isError ? "failed" : "completed"},
+        status = CASE WHEN status = 'rejected' OR ${input.rejected === true} THEN 'rejected' ELSE ${input.isError ? "failed" : "completed"} END,
+        rejected_at = CASE WHEN ${input.rejected === true} THEN COALESCE(rejected_at, now()) ELSE rejected_at END,
         completed_at = now()
       WHERE turn_id = ${input.turnId}
         AND call_id = ${input.callId}

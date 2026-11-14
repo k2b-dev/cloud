@@ -14,7 +14,7 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { type AuditActor, audit, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 import { dates, err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import { annotationActions, annotationQueries } from "./annotation-capabilities";
@@ -159,7 +159,7 @@ const scopedNotebookId = (context: CapabilityExecutionContext, required: Permiss
     return context.accessSubject.type === "user" && context.user ? ok(null) : fail(err.forbidden(t.accessDenied));
   }
   // A standalone or agent account acts under its own grants, capped by its credential scopes.
-  if (isStandaloneServiceAccountKind(account.kind)) {
+  if (serviceAccountUsesOwnGrants(account.kind)) {
     return context.accessSubject.type === "service_account" &&
       context.accessSubject.serviceAccountId === account.id &&
       hasPermission(permissionFromScopes(context.actor.scopes), required)
@@ -190,6 +190,8 @@ const activityActor = (context: CapabilityExecutionContext) =>
 
 const authorizeNotebook = async (notebook: Notebook, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
   const t = capabilityMessages(context);
+  if (context.target && (context.target.type !== "notebooks.notebook" || context.target.id !== notebook.shortId))
+    return capabilityNotFound(t.notebookNotFound);
   const scope = scopedNotebookId(context, required);
   if (!scope.ok) return scope;
   if (scope.data && scope.data !== notebook.id) return capabilityNotFound(t.notebookNotFound);
@@ -971,7 +973,7 @@ const runPageTemplateList = async (input: z.infer<typeof PageTemplateListInputSc
 
 const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, context: CapabilityExecutionContext) => {
   const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
-  const access = await requireNotebookByShortId(input.notebookId, context, "write");
+  const access = await requireNotebookByShortId(context.target?.id ?? "", context, "write");
   if (!access.ok) return access;
   let parentId: string | undefined;
   if (input.parentId) {
@@ -1246,6 +1248,7 @@ export const notebooksCapabilities = defineCapabilities({
             items: result.data.data.map((container) => ({ ref: container.ref, title: container.name.slice(0, 500) })),
             next: result.data.page?.hasMore ? result.data.page.nextCursor : null,
           },
+          page: result.data.page,
         });
       },
     },
@@ -1412,6 +1415,7 @@ export const notebooksCapabilities = defineCapabilities({
   actions: {
     ...annotationActions,
     "comment.update": {
+      target: "notebook",
       title: "Edit page discussion post",
       description: "Replace the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
       input: CommentUpdateInputSchema,
@@ -1432,6 +1436,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentUpdate,
     },
     "comment.delete": {
+      target: "notebook",
       title: "Delete page discussion post",
       description: "Delete the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
       input: CommentDeleteInputSchema,
@@ -1452,6 +1457,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentDelete,
     },
     "comment.create": {
+      target: "notebook",
       title: "Add page discussion post",
       description: "Add Markdown discussion context to one writable note as the current user.",
       input: CommentCreateInputSchema,
@@ -1481,6 +1487,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentCreate,
     },
     "note.create": {
+      target: "notebook",
       title: "Create note",
       description:
         "Create one Markdown note in an explicitly selected writable notebook, from content or from a templateId returned by template.list.",
@@ -1492,7 +1499,7 @@ export const notebooksCapabilities = defineCapabilities({
       policy: { silent: "shared" },
       review: async (input, context) => {
         const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
-        const access = await requireNotebookByShortId(input.notebookId, context, "write");
+        const access = await requireNotebookByShortId(context.target?.id ?? "", context, "write");
         if (!access.ok) return access;
         let parentTitle = t.notebookRoot;
         if (input.parentId) {
@@ -1538,6 +1545,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runNoteCreate,
     },
     "note.edit": {
+      target: "notebook",
       title: "Edit note",
       description: "Apply conflict-aware structural Markdown edits through the collaborative note service.",
       input: NoteEditInputSchema,
@@ -1562,6 +1570,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runNoteEdit,
     },
     "note.move": {
+      target: "notebook",
       title: "Move note",
       description:
         "Move a note to another parent and/or place it among its siblings; placing switches that level to a hand order that the sidebar and Book follow.",

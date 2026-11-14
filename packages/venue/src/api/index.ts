@@ -427,7 +427,7 @@ const venueRoutes = new Hono<AuthContext>()
         venueService.openingRules.list(venue.data.id),
         venueService.overrides.list(venue.data.id),
         venueService.templates.list(venue.data.id),
-        isAdmin ? venueService.access.list(venue.data.id) : Promise.resolve([]),
+        isAdmin ? venueService.access.list(venue.data.id, venue.data.permission) : Promise.resolve([]),
         isAdmin ? listVenueApiKeys(venue.data.id) : Promise.resolve([]),
       ]);
       return respond(
@@ -503,13 +503,15 @@ const venueRoutes = new Hono<AuthContext>()
   .get("/:id/access", v("param", VenueIdParamSchema), async (c) => {
     const venue = await adminVenue(c, c.req.valid("param").id);
     if (!venue.ok) return respond(c, venue);
-    return respond(c, ok({ entries: await venueService.access.list(venue.data.id) }));
+    return respond(c, ok({ entries: await venueService.access.list(venue.data.id, venue.data.permission) }));
   })
   .post("/:id/access", v("param", VenueIdParamSchema), v("json", GrantAccessSchema), async (c) => {
     const venue = await adminVenue(c, c.req.valid("param").id);
     if (!venue.ok) return respond(c, venue);
     const body = c.req.valid("json");
-    return respond(c, () => venueService.access.grant(venue.data.id, body.principal, body.permission), 201);
+    const subject = getVenueAccessSubject(c);
+    if (!subject.ok) return respond(c, subject);
+    return respond(c, () => venueService.access.grant(venue.data.id, body.principal, body.permission, subject.data), 201);
   })
   .patch("/:id/access/:accessId", v("param", AccessParamSchema), v("json", UpdateAccessSchema), async (c) => {
     const param = c.req.valid("param");
@@ -569,6 +571,8 @@ const venueRoutes = new Hono<AuthContext>()
       const venue = await adminVenue(c, c.req.valid("param").id);
       if (!venue.ok) return respond(c, venue);
       const data = c.req.valid("json");
+      const subject = getVenueAccessSubject(c);
+      if (!subject.ok) return respond(c, subject);
 
       return respond(
         c,
@@ -586,11 +590,12 @@ const venueRoutes = new Hono<AuthContext>()
             await serviceAccounts.delete({ id: serviceAccount.data.id });
           };
 
-          const access = await venueService.access.grant(
-            venue.data.id,
-            { type: "service_account", serviceAccountId: serviceAccount.data.id },
-            data.permission,
-          );
+          const access = await venueService.access
+            .grant(venue.data.id, { type: "service_account", serviceAccountId: serviceAccount.data.id }, data.permission, subject.data)
+            .catch(async (error: unknown) => {
+              await cleanupServiceAccount();
+              throw error;
+            });
           if (!access.ok) {
             await cleanupServiceAccount();
             return access;

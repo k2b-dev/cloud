@@ -73,9 +73,9 @@ test("principal picker placeholder follows both audience and service-account fla
   const { PrincipalPicker: Picker } = await import("@k2b/cloud/access/ui");
   for (const [audience, service, expected] of [
     [false, false, "Add user or group"],
-    [false, true, "Add user, group, agent, or service account"],
+    [false, true, "Add user, group, or agent"],
     [true, false, "Add user, group, or audience"],
-    [true, true, "Add user, group, agent, service account, or audience"],
+    [true, true, "Add user, group, agent, or audience"],
   ] as const) {
     const html = renderToString(() =>
       createComponent(Picker, { allowAuthenticated: audience, allowServiceAccounts: service, onSelect: () => {} }),

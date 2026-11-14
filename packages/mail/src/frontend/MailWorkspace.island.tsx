@@ -20,7 +20,7 @@ import { type Accessor, batch, createEffect, createMemo, createSignal, on, onCle
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
-import type { AutomationLogItem, MailDraft, MailDraftSeed, MailWorkspaceHintId } from "../contracts";
+import type { MailDraft, MailDraftSeed, MailWorkspaceHintId } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
 import { mailFolderNames } from "../folder-names";
 import { mailFolderPaths } from "../folder-tree";
@@ -32,7 +32,6 @@ import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
 import type { MailboxListView, MailboxPageData, MailConversationDetailData, MailListItem } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
-import { UndoNotPossible } from "./_components/MailAutomationLog";
 import MailBulkActionBar from "./_components/MailBulkActionBar";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
 import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
@@ -59,11 +58,10 @@ import {
   spamActionForConversation,
 } from "./_components/mail-actions";
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
-import { formatLogTime, undoRevertedAssignment } from "./_components/mail-automation-log-format";
-import { mailAutomationLogMessages } from "./_components/mail-automation-log-messages";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
+import { mailCodeEntry } from "./_components/mail-code-entry";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { openDraftWindow } from "./_components/mail-compose-windows";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
@@ -2671,59 +2669,6 @@ function createMailboxController(props: MailboxControllerProps) {
       ),
     onError: (error) => toast.error(error.message),
   });
-  /** Undo of a rule's assignment from the reader: the rule never assigns this conversation again. */
-  const automationText = createMemo(() => mailAutomationLogMessages.resolve([locale()]).t);
-  const automationRequest = async (item: AutomationLogItem, action: "undo" | "redo") => {
-    const endpoint = apiClient.mailboxes[":mailboxId"]["automation-log"][":itemId"];
-    const response = await (action === "undo" ? endpoint.undo : endpoint.redo).$post({ param: { mailboxId, itemId: item.id } });
-    if (response.status === 409) {
-      // Someone changed the assignment since: the refreshed entry says who; nothing changed.
-      const body: unknown = await response.json();
-      // The schema loads only for this rare answer: Zod stays out of the mailbox's first load.
-      const { automationLogItemSchema } = await import("../contracts");
-      const parsed = automationLogItemSchema.safeParse(body && typeof body === "object" && "item" in body ? body.item : null);
-      throw new UndoNotPossible(parsed.success ? parsed.data : item);
-    }
-    if (!response.ok) throw new Error(await readApiError(response, automationText().undoFailed));
-  };
-  const automationUndo = mutation.create<void, AutomationLogItem>({
-    mutation: async (item) => {
-      await automationRequest(item, "undo");
-      await requireWorkspaceReconcile();
-      if (disposed) return;
-      const message = undoRevertedAssignment(item) ? automationText().undoneToast : automationText().undoneEffectsToast;
-      const notice = toast(message({ subject: item.conversation.subject }), {
-        action: {
-          label: automationText().redo,
-          onClick: () => {
-            notice.dismiss();
-            void automationRequest(item, "redo")
-              .then(() => requireWorkspaceReconcile())
-              .catch(() => toast.error(automationText().redoFailed));
-          },
-        },
-      });
-    },
-    onError: (error) => {
-      if (error instanceof UndoNotPossible) {
-        const by = error.item.undo.by;
-        void requireWorkspaceReconcile();
-        toast.error(
-          error.item.undo.reason === "provider_pending"
-            ? automationText().providerPending
-            : error.item.undo.reason === "conversation_gone" || !by
-              ? automationText().notPossibleGone
-              : automationText().notPossible({
-                  name: by.name,
-                  time: error.item.undo.at ? formatLogTime(error.item.undo.at, locale(), props.dateConfig.timeZone) : "",
-                }),
-          { title: automationText().notPossibleTitle },
-        );
-        return;
-      }
-      toast.error(error.message);
-    },
-  });
   const assignOpenConversation = () => {
     const conversationId = data.selectedConversationId;
     if (!canWrite() || structurePending() || !conversationId) return Promise.resolve();
@@ -3045,6 +2990,13 @@ function createMailboxController(props: MailboxControllerProps) {
         return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
       },
       onNavigate: navigateWorkspace,
+      // Administrators always reach the mailbox's Code; others once Core said they may see it.
+      code: mailCodeEntry({
+        mailboxAdmin: canAdmin() && !assignedOnly(),
+        // Each loaded mailbox brings its own answer, also after switching mailboxes in place.
+        attention: data.codeAttention ?? null,
+        active: false,
+      }),
     }),
     onOpenPlaceRowHiddenChange: setOpenPlaceRowHidden,
     preferences: () => ({
@@ -3087,7 +3039,6 @@ function createMailboxController(props: MailboxControllerProps) {
     sharedMailbox,
     assigneeNames,
     rowAssignees,
-    automationUndo,
     assignToMe,
     assignOpenConversation,
     assignOpenConversationToMe,
@@ -3597,11 +3548,9 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                         activity={controller().conversationActivity()}
                         conversationSummary={controller().data.conversationSummary}
                         conversationDrafts={controller().data.conversationDrafts}
-                        automationTrace={controller().data.automationTrace}
-                        onUndoAutomation={(item) => controller().automationUndo.mutate(item)}
                         onAssignConversation={controller().assignOpenConversation}
                         onAssignConversationToMe={controller().assignOpenConversationToMe}
-                        automationPending={controller().automationUndo.loading() || controller().assignToMe.loading()}
+                        automationPending={controller().assignToMe.loading()}
                         assignment={controller().assignment()}
                         workStatus={controller().selectedWorkStatus()}
                         completionPending={controller().completion.loading()}

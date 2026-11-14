@@ -89,7 +89,10 @@ describe("Mail contact-directory calls", () => {
       },
       {
         path: "/api/capabilities/v1/actions/crm/customer.create",
-        body: { input: { bookId: "customers", label: "Ada Example", emails: [{ label: "Email", email: "ada@example.test" }] } },
+        body: {
+          target: { type: "crm.book", id: "customers" },
+          input: { label: "Ada Example", emails: [{ label: "Email", email: "ada@example.test" }] },
+        },
         idempotencyKey: "create-once",
       },
     ]);

@@ -1,0 +1,379 @@
+# Tests and simulation
+
+Tests run the checked bundle in the same sandbox as production, with a fake
+bridge. Every call needs a fictional reply; a missing reply fails the test and
+never reaches a real app. Nothing is sent, saved or charged.
+
+- Write each fixture with `code_write({codeId, path: "test/NAME.json", content})`,
+  where `content` is the fixture's JSON text. `code_test({codeId})` runs the
+  draft's fixtures. `code_submit({codeId})` runs those same fixtures again and
+  shows the result to the reviewer.
+- `code_simulate({codeId, fixture})` runs one fixture on the draft with
+  exactly one run, for example to explore a branch.
+- On the mailbox's Code page, **Preview without effects** runs the active
+  version for one real message; see [Events](events.md).
+
+## The fixture format
+
+```json
+{
+  "version": 1,
+  "name": "short description of the case",
+  "now": 1794211200000,
+  "seed": 42,
+  "mocks": [],
+  "runs": [{ "entrypoint": "weekly-review", "expect": { "ok": true } }]
+}
+```
+
+- `now` is Unix milliseconds; `Date.now()` and `new Date()` return it, also
+  while the module loads. A run may set its own `now`. `Math.random()` uses
+  `seed`. Cron does not tick: a run names the entrypoint to start.
+- Entrypoints are the required schedule names (`weekly-review`) and `event:<type>@<version>` for events, such as
+  `event:mail.message.received@1`. An event run takes the envelope as `input`.
+  Page handlers use `route:<METHOD>:<path>`, such as `route:POST:/save`;
+  pass their request (method, path, query, params, contentType, body and user)
+  as `input`.
+- A mock names `operation` and the exact `target` (`null` for app-wide
+  operations) and lists `replies` in order: `{ "ok": true, "data": … }` or
+  `{ "ok": false, "error": "not_ready" }`. Optional `input` or `refs` make a
+  mock more specific; the most specific one wins, a tie fails with
+  `code_test_ambiguous_mock`. Each reply serves exactly one call, even if
+  another call has identical input. Calls that select a mock advance its
+  reply cursor across runs in the same fixture. Successful idempotency
+  replays and calls refused before mock selection consume no new reply.
+  Used-up replies fail with `code_test_mock_exhausted`;
+  its located `detail` names the operation and the missing reply, and
+  `reason` gives the non-replayed call count and configured reply count.
+- Inputs and reply data must match the operation's schemas, otherwise the
+  test fails with `code_test_invalid_input` or `code_test_invalid_fixture`.
+  A fixture refusal includes `detail` on the failed call's `result`, or on
+  the top-level result when JSON/fixture parsing failed. Read `operation`,
+  zero-based `mockIndex` and `replyIndex`, `path` (segments from the fixture
+  root), and `reason`; parsing failures also name `file`.
+  A Query mock keeps domain `data` and optional `page` beside it; the SDK
+  receives `{ data, page? }`. Its recorded `result` is
+  `{ ok: true, data: { data, page? } }`. Action and stream-read mocks cannot
+  include `page`.
+- `expect` checks `ok`, `error`, the returned `value` (schedules return
+  `null`) and `calls`: the exact number of calls and the given fields of
+  each, such as `operation`, `idempotencyKey`, `replayed` and `result`. An expected
+  failure needs both `ok: false` and the exact `error`; a missing or invalid
+  mock always fails the case.
+- Runs in one fixture share idempotency receipts: the same key and input
+  returns the first reply with `replayed: true`; the same key with other input
+  fails with `idempotency_conflict`. Fixtures share nothing.
+
+Use only fictional values: no real names, addresses, IDs or secrets.
+
+## Repair a refused fixture
+
+Use the first refusal's `detail` to correct that field in `test/NAME.json`
+with `code_write`, then run `code_test` again. Read the operation in
+`code_sdk` when the reason names a format or missing field. Fictional IDs
+must still match that format: Spaces task and column IDs have exactly six
+alphanumeric characters, for example `Itm001` and `Col001`; `Itm0001` and
+`ColBacklog01` are invalid. Include every required reply field, even when the
+Code only reads the ID.
+
+For example, `path: ["mocks", 0, "replies", 1, "data", "id"]` identifies
+the second reply of the first mock. For a Query, keep `data` and `page`
+beside each other as described above. For a stream read, return a FileRef
+within the declared byte limit ([Files](file-ref.md)).
+
+Do not remove a failing case, weaken its expectations, or submit with failed
+tests. Submit only after the corrected draft's tests pass. If the test
+service is unavailable, explain the blocker without claiming the tests passed.
+Keep codes, fixture paths and schema details in tool work; tell the person
+which behavior was checked and whether it passed.
+
+## Two calls need two replies
+
+This schedule calls `notebooks.notebook.browse` twice. Use one mock with two
+replies, even when both calls return the same data. There is no `repeat`
+fixture option; duplicate mock entries with the same matcher are ambiguous.
+
+<!-- check: personal -->
+```ts
+import { app, notebooks } from "@sdk";
+
+app.schedule({ cron: "0 8 * * *", name: "browse-twice" }, async () => {
+  await notebooks.notebook.browse({});
+  await notebooks.notebook.browse({});
+});
+export default app;
+```
+
+<!-- fixture -->
+```json
+{
+  "version": 1,
+  "name": "two notebook queries consume two replies",
+  "now": 1794211200000,
+  "seed": 42,
+  "mocks": [{
+    "operation": "notebooks.notebook.browse",
+    "target": null,
+    "replies": [
+      { "ok": true, "data": [] },
+      { "ok": true, "data": [] }
+    ]
+  }],
+  "runs": [{
+    "entrypoint": "browse-twice",
+    "expect": { "ok": true, "calls": [
+      { "operation": "notebooks.notebook.browse" },
+      { "operation": "notebooks.notebook.browse" }
+    ] }
+  }]
+}
+```
+
+## Form request bodies
+
+In Code, build a form body with `new URLSearchParams(values).toString()`
+([Internet requests](access.md#internet-requests-and-secrets)). Fixture JSON
+cannot run that expression: put its encoded string in the request's `body`
+and set `contentType` to `application/x-www-form-urlencoded`. A literal `+`
+in an unencoded body means a space. Here `A+B & C` becomes
+`title=A%2BB+%26+C` and the handler receives the original text.
+
+<!-- check: personal -->
+```ts
+import { app } from "@sdk";
+
+app.post("/form-echo", async c => {
+  const form = await c.req.formData();
+  return c.json({ title: String(form.get("title") ?? "") });
+});
+export default app;
+```
+
+<!-- fixture -->
+```json
+{
+  "version": 1,
+  "name": "form preserves a plus, a space and an ampersand",
+  "now": 1794211200000,
+  "seed": 42,
+  "mocks": [],
+  "runs": [{
+    "entrypoint": "route:POST:/form-echo",
+    "input": {
+      "method": "POST", "path": "/form-echo", "query": "", "params": {},
+      "contentType": "application/x-www-form-urlencoded",
+      "body": "title=A%2BB+%26+C", "user": null
+    },
+    "expect": {
+      "ok": true,
+      "value": { "kind": "json", "status": 200, "body": "{\"title\":\"A+B & C\"}" },
+      "calls": []
+    }
+  }]
+}
+```
+
+## Test a schedule
+
+<!-- check: personal -->
+```ts
+import { app, chat } from "@sdk";
+
+app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note", title: "Weekend note" }, async () => {
+  const day = new Date().toISOString().slice(0, 10);
+  await chat.message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
+});
+export default app;
+```
+
+`test/weekend-note.json`: the second run on the same day repeats the key and
+replays the first result; a run a week later posts again.
+
+<!-- fixture -->
+```json
+{
+  "version": 1,
+  "name": "weekend note posts once per Friday",
+  "now": 1794582000000,
+  "seed": 1,
+  "mocks": [
+    {
+      "operation": "chat.message.post",
+      "target": null,
+      "replies": [
+        { "ok": true, "data": { "id": "Msg0000001", "conversation": "Cnv001", "createdAt": "2026-11-13T15:00:00Z" } },
+        { "ok": true, "data": { "id": "Msg0000002", "conversation": "Cnv001", "createdAt": "2026-11-20T15:00:00Z" } }
+      ]
+    }
+  ],
+  "runs": [
+    { "entrypoint": "weekend-note", "expect": { "ok": true, "calls": [{ "operation": "chat.message.post", "idempotencyKey": "weekend:2026-11-13", "replayed": false }] } },
+    { "entrypoint": "weekend-note", "expect": { "ok": true, "calls": [{ "idempotencyKey": "weekend:2026-11-13", "replayed": true }] } },
+    { "entrypoint": "weekend-note", "now": 1795186800000, "expect": { "ok": true, "calls": [{ "idempotencyKey": "weekend:2026-11-20", "replayed": false }] } }
+  ]
+}
+```
+
+## Test an event handler
+
+<!-- check: resource mail.mailbox -->
+```ts
+import { app, chat, mail } from "@sdk";
+
+app.on("mail.message.received", async event => {
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
+  }
+  if (!/urgent/i.test(message.subject)) return;
+  // The subject is untrusted: post it only as a short code span, never as Markdown.
+  const subject = message.subject.replace(/[\r\n`]/g, " ").slice(0, 120);
+  await chat.message.post({
+    conversation: "Cnv001",
+    body: `Urgent mail: \`${subject}\``,
+    idempotencyKey: `urgent:${message.id}`,
+  });
+});
+export default app;
+```
+
+The envelope's `place` is this Code's mailbox; use its ID. The
+`mail.message.read` reply is a complete message, because replies must
+match the schema:
+
+<!-- fixture -->
+```json
+{
+  "version": 1,
+  "name": "urgent mail is announced, other mail is not",
+  "now": 1794211200000,
+  "seed": 1,
+  "mocks": [
+    {
+      "operation": "mail.message.read",
+      "target": null,
+      "input": { "id": "Msg001", "waitForHydration": true },
+      "replies": [{ "ok": true, "data": {
+        "id": "Msg001", "mailboxId": "Mbx001", "conversationId": "Cnv101", "subject": "Urgent: server down", "subjectTruncated": false,
+        "messageId": "<fictional-1@example.com>", "internalDate": "2026-11-09T07:59:00Z", "sentAt": "2026-11-09T07:58:00Z",
+        "from": [{ "name": "Alex Example", "address": "alex@example.com" }], "to": [{ "name": null, "address": "team@example.com" }],
+        "addressesTruncated": false, "flags": [], "flagsTruncated": false, "keywords": [], "keywordsTruncated": false,
+        "hydrationStatus": "complete", "remoteAvailable": true, "contentType": "text/plain", "sizeBytes": 512,
+        "replyTo": [], "cc": [], "detailAddressesTruncated": false, "headers": [], "headersTruncated": false,
+        "text": "The server is down since 07:50.", "bodyTruncated": false, "attachments": [], "attachmentsTruncated": false, "delivery": null
+      } }]
+    },
+    {
+      "operation": "mail.message.read",
+      "target": null,
+      "input": { "id": "Msg002", "waitForHydration": true },
+      "replies": [{ "ok": true, "data": {
+        "id": "Msg002", "mailboxId": "Mbx001", "conversationId": "Cnv102", "subject": "Lunch on Friday?", "subjectTruncated": false,
+        "messageId": "<fictional-2@example.com>", "internalDate": "2026-11-09T08:00:00Z", "sentAt": null,
+        "from": [{ "name": null, "address": "sam@example.com" }], "to": [], "addressesTruncated": false,
+        "flags": [], "flagsTruncated": false, "keywords": [], "keywordsTruncated": false,
+        "hydrationStatus": "complete", "remoteAvailable": true, "contentType": "text/plain", "sizeBytes": 200,
+        "replyTo": [], "cc": [], "detailAddressesTruncated": false, "headers": [], "headersTruncated": false,
+        "text": "Shall we?", "bodyTruncated": false, "attachments": [], "attachmentsTruncated": false, "delivery": null
+      } }]
+    },
+    {
+      "operation": "chat.message.post",
+      "target": null,
+      "replies": [{ "ok": true, "data": { "id": "Post000001", "conversation": "Cnv001", "createdAt": "2026-11-09T08:00:01Z" } }]
+    }
+  ],
+  "runs": [
+    {
+      "entrypoint": "event:mail.message.received@1",
+      "input": {
+        "id": "00000000-0000-4000-8000-000000000001", "type": "mail.message.received", "version": 1, "source": "mail",
+        "time": "2026-11-09T08:00:00Z", "subject": { "type": "mail.message", "id": "Msg001" },
+        "place": { "type": "mail.mailbox", "id": "Mbx001" }, "data": { "receiptId": "00000000-0000-4000-8000-000000000101" }
+      },
+      "expect": { "ok": true, "calls": [{ "operation": "mail.message.read" }, { "operation": "chat.message.post", "idempotencyKey": "urgent:Msg001" }] }
+    },
+    {
+      "entrypoint": "event:mail.message.received@1",
+      "input": {
+        "id": "00000000-0000-4000-8000-000000000002", "type": "mail.message.received", "version": 1, "source": "mail",
+        "time": "2026-11-09T08:00:00Z", "subject": { "type": "mail.message", "id": "Msg002" },
+        "place": { "type": "mail.mailbox", "id": "Mbx001" }, "data": { "receiptId": "00000000-0000-4000-8000-000000000102" }
+      },
+      "expect": { "ok": true, "calls": [{ "operation": "mail.message.read" }] }
+    }
+  ]
+}
+```
+
+## Test AI and refusals
+
+AI operations need explicit replies too; there is no live model in a test.
+A `core.ai.generate` reply is `{ "output": …, "model": { "id": … }, "usage": null }`.
+Simulate a refusal with `{ "ok": false, "error": "code_ai_daily_budget_limit" }`
+and check that the Code fails or recovers as intended.
+
+<!-- check: personal -->
+```ts
+import { app, core } from "@sdk";
+
+app.schedule({ cron: "0 7 * * 1", timeZone: "Europe/Berlin", name: "weekly-quote", title: "Weekly quote" }, async ({ runId, scheduledAt }) => {
+  const { data: quote } = await core.ai.generate({
+    task: "quote",
+    prompt: "Write one short encouraging sentence for the start of the week.",
+    input: {},
+    output: { type: "text", maxChars: 200 },
+  });
+  if (typeof quote.output !== "string") return;
+  // Fictional chat ID of the owner's chat.
+  await core.ai.chat("Chat23").deliver({ text: quote.output, idempotencyKey: `weekly-quote:${scheduledAt ?? runId}` });
+});
+export default app;
+```
+
+<!-- fixture -->
+```json
+{
+  "version": 1,
+  "name": "the quote is delivered; a spent AI budget fails the run",
+  "now": 1794211200000,
+  "seed": 1,
+  "mocks": [
+    {
+      "operation": "core.ai.generate",
+      "target": null,
+      "replies": [
+        { "ok": true, "data": { "output": "A fresh week, a fresh start.", "model": { "id": "fictional-model" }, "usage": null } },
+        { "ok": false, "error": "code_ai_daily_budget_limit" }
+      ]
+    },
+    {
+      "operation": "core.ai.chat.deliver",
+      "target": { "type": "core.ai.chat", "id": "Chat23" },
+      "replies": [{ "ok": true, "data": { "id": "Msg7Ab", "status": "delivered", "targetChatId": "Chat23" } }]
+    }
+  ],
+  "runs": [
+    { "entrypoint": "weekly-quote", "expect": { "ok": true, "calls": [{ "operation": "core.ai.generate", "result": { "ok": true, "data": { "data": { "output": "A fresh week, a fresh start.", "model": { "id": "fictional-model" }, "usage": null } } } }, { "operation": "core.ai.chat.deliver", "replayed": false }] } },
+    { "entrypoint": "weekly-quote", "scheduledAt": null, "expect": { "ok": false, "error": "code_ai_daily_budget_limit", "calls": [{ "operation": "core.ai.generate", "result": { "ok": false, "error": "code_ai_daily_budget_limit" } }] } }
+  ]
+}
+```
+
+## What a passing test proves
+
+A test proves the Code's logic against the replies you wrote, nothing more.
+Production still checks the policy, the version approval and the account's
+current access on every call. Write at least one case per branch that leads
+to an Action, and one for a refused call that the Code should survive or
+report. When a reply shape is unclear, read the operation's result type in
+`sdk.d.ts` from `code_sdk`.
+
+## Schedule context in fixtures
+
+Schedule handlers receive `{ runId, scheduledAt, input }` in tests too.
+`scheduledAt` defaults to the run's frozen `now` (or the fixture's `now`).
+Set a run's `scheduledAt` to an ISO instant to simulate a delayed retry, or
+to `null` to simulate a manual start. `input`
+is the run input, and the run ID is a deterministic `test-0`, `test-1`, …
+within each fixture. Use the same business key when testing retry recovery.

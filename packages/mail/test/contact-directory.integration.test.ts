@@ -5,6 +5,7 @@ import {
   ContactDirectoryResolveInputSchema,
   ContactDirectorySuggestDataSchema,
   ContactDirectorySuggestInputSchema,
+  capabilityPage,
   defineCapabilities,
 } from "@k2b/cloud/contracts";
 import type { AuthContext, RequestAuthority } from "@k2b/cloud/server";
@@ -79,7 +80,7 @@ suiteFor(
               openWorld: false,
               run: async (_input, context) => {
                 assertSender(context);
-                return { ok: true, data: { data: [contact] } };
+                return { ok: true, data: { data: [contact], page: capabilityPage(null) } };
               },
             },
             "contact.resolve": {
@@ -104,6 +105,7 @@ suiteFor(
                       ],
                       matchedEmails: ["ada@example.test"],
                     },
+                    page: capabilityPage(null),
                   },
                 };
               },

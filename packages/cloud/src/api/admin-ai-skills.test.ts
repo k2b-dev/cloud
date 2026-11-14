@@ -75,15 +75,19 @@ describe("admin AI Skill routes", () => {
 
     const response = await routes.request(`/${skillShortId}/access`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-cloud-locale": "de" },
       body: JSON.stringify({ principal: access.principal, permission: "admin" }),
     });
 
     expect(response.status).toBe(201);
-    expect(aiSkills.admin.grantAccess).toHaveBeenCalledWith(skillId, {
-      principal: access.principal,
-      permission: "admin",
-    });
+    expect(aiSkills.admin.grantAccess).toHaveBeenCalledWith(
+      skillId,
+      {
+        principal: access.principal,
+        permission: "admin",
+      },
+      "de",
+    );
   });
 
   test("deletes a Skill", async () => {

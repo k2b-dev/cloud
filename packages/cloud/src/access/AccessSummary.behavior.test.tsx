@@ -11,12 +11,11 @@ const lagerbot = entry("3", { type: "service_account", serviceAccountId: "s1" },
   displayName: "Lagerbot",
   serviceAccountKind: "agent",
 });
-// Code's own account; the kind arrives with the code lane, so the contract type does not list it yet.
 const code = (id: string) =>
-  ({
-    ...entry(id, { type: "service_account", serviceAccountId: `c${id}` }, "write", { displayName: `Code ${id}` }),
+  entry(id, { type: "service_account", serviceAccountId: `c${id}` }, "write", {
+    displayName: `Code ${id}`,
     serviceAccountKind: "code",
-  }) as unknown as AccessEntry;
+  });
 const apiKey = entry("6", { type: "service_account", serviceAccountId: "k1" }, "read", {
   displayName: "Einkauf 2027",
   serviceAccountKind: "resource_bound",
@@ -54,6 +53,39 @@ describe("AccessSummary", () => {
       expect(list?.querySelectorAll(".k2b-avatar-stack__row-copy")).toHaveLength(3);
     } finally {
       ui.cleanup();
+    }
+  });
+
+  // N4-summary-allgemein: like the dialog, the line names General only where the resource offers it, as Mail does not.
+  test("an app without All signed-in people leaves General out of the line", async () => {
+    const ui = await renderSummary("de", { entries: [mia, logistik, code("4")], allowAuthenticated: false });
+    try {
+      expect(ui.line()).toBe("2 Personen, Gruppen und Agenten · 1 Dienstkonto");
+    } finally {
+      ui.cleanup();
+    }
+  });
+
+  test("an app with All signed-in people names it, also when it is off", async () => {
+    const off = await renderSummary("de", { entries: [mia], allowAuthenticated: true });
+    try {
+      expect(off.line()).toBe("1 Person, Gruppe oder Agent · Alle angemeldeten Personen: aus");
+    } finally {
+      off.cleanup();
+    }
+    // A grant stored before the app stopped offering it still shows, as the dialog keeps its row to turn it off.
+    const stored = await renderSummary("de", { entries: [mia, entry("7", { type: "authenticated" }, "read")], allowAuthenticated: false });
+    try {
+      expect(stored.line()).toBe("1 Person, Gruppe oder Agent · Alle angemeldeten Personen: Ansehen");
+    } finally {
+      stored.cleanup();
+    }
+    // A stored denial is a row in the dialog too, so the line still names General, as off.
+    const denied = await renderSummary("de", { entries: [mia, entry("8", { type: "authenticated" }, "none")], allowAuthenticated: false });
+    try {
+      expect(denied.line()).toBe("1 Person, Gruppe oder Agent · Alle angemeldeten Personen: aus");
+    } finally {
+      denied.cleanup();
     }
   });
 

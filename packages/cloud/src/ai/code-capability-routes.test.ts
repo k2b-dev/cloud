@@ -4,7 +4,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } f
 import { dispatchCapabilityStream, sealCapabilityStream } from "../api/capability-streams";
 import { invokeCapability, reviewCapabilityAction, transferCapabilityStream } from "../capabilities/server";
 import { stubConnections } from "../runtime/connections.test-fixture";
-import type { RequestActor } from "../server";
+import type { AuthContext, RequestActor } from "../server";
 import { signInvocationToken, verifyInvocationToken } from "../services/identity/invocation-token";
 import type { PreparedIdentitySigner } from "../services/identity/key-ring";
 import type { Mandate } from "../services/mandates";
@@ -141,9 +141,15 @@ function fixture() {
       }),
       getTurnRunConfig: async () => config,
     },
-    getMandate: async () => mandate,
     dispatch,
     stream,
+    runner: new Hono<AuthContext>().post("/start", (c) =>
+      c.json({
+        userId: c.get("actor").kind === "user" ? userId : null,
+        conversationId: c.req.param("conversationId"),
+        turnId: c.req.param("turnId"),
+      }),
+    ),
   });
   return {
     app: new Hono().route("/api/_internal/ai/code", routes),
@@ -247,6 +253,9 @@ test("remote host routes invocation, review and binary continuations to Core wit
       ok: true,
       data: { message: "Write file?" },
     });
+    const allocation = await caller.transport(new Request("http://core.invalid/api/code-runner/start", { method: "POST", body: "{}" }));
+    expect(allocation.status).toBe(200);
+    expect(await allocation.json()).toEqual({ userId, conversationId, turnId });
     const payload = "a,b\n1,2\n".repeat(40000);
     const offer = {
       id: "opaque",
@@ -317,21 +326,17 @@ const backgroundConfig: AiTurnRunConfig = {
   mandate: { id: "44444444-4444-4444-8444-444444444444", revision: 1 },
 };
 
-test("background callbacks use their persisted task mandate while another foreground turn runs", async () => {
+test("retired routine callbacks cannot dispatch even with a valid mandate and another foreground turn", async () => {
   const f = fixture();
   f.set({ config: backgroundConfig, activeTurn: crypto.randomUUID() });
   const jwt = await token();
   for (const path of ["queries/demo/read", "actions/demo/write/review", "actions/demo/write"]) {
-    expect((await f.app.fetch(request(jwt, path, JSON.stringify({ input: { notebookId: "target" } })))).status).toBe(200);
+    expect((await f.app.fetch(request(jwt, path, JSON.stringify({ input: { notebookId: "target" } })))).status).toBe(403);
   }
-  for (const [call] of f.dispatch.mock.calls)
-    expect(call).toMatchObject({
-      mandate: { mandateId: backgroundConfig.mandate!.id, mandateRevision: 1, ownerAppId: "core" },
-      input: { notebookId: "target" },
-    });
+  expect(f.dispatch).not.toHaveBeenCalled();
   expect((await f.app.fetch(request(jwt, "streams/read"))).status).toBe(403);
   expect(f.stream).not.toHaveBeenCalled();
-  expect((await f.app.fetch(request(jwt, "queries/demo/read", JSON.stringify({ input: {}, mandate: { id: "other" } })))).status).toBe(400);
+  expect((await f.app.fetch(request(jwt, "queries/demo/read", JSON.stringify({ input: {}, mandate: { id: "other" } })))).status).toBe(403);
 });
 
 test("background callbacks stop after cancellation, mandate revocation, scope changes or expiry", async () => {
@@ -384,4 +389,29 @@ test("Code Mode keeps its JSON socket raised until dispatch settles and resets a
     expect((await pending).status).toBe(fail ? 500 : 200);
     expect(calls).toEqual([55, 10]);
   }
+});
+
+test("interactive code callbacks refuse all platform Code access operations before dispatch", async () => {
+  const f = fixture();
+  const jwt = await token();
+  for (const operation of ["queries/demo/code.access.list", "actions/demo/code.access.set", "actions/demo/code.access.rm"]) {
+    expect((await f.app.fetch(request(jwt, operation))).status).toBe(403);
+  }
+  expect(f.dispatch).not.toHaveBeenCalled();
+});
+
+test("chat runner allocation uses the same signed current-turn continuation and rejects cancellation", async () => {
+  const f = fixture();
+  const jwt = await token();
+  const send = () =>
+    f.app.request(`http://core.test${codeCapabilityPath(conversationId, turnId)}/runner/start`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${jwt}`, "content-type": "application/json" },
+      body: "{}",
+    });
+  const result = await send();
+  expect(result.status).toBe(200);
+  expect(await result.json()).toEqual({ userId, conversationId, turnId });
+  f.set({ cancelRequestedAt: new Date().toISOString() });
+  expect((await send()).status).toBe(403);
 });

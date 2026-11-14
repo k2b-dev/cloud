@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { chatCapabilities } from "../packages/chat/src/capabilities";
 import { compileCapabilities, resolveCapabilityManifestPresentation } from "../packages/cloud/src/_internal/capabilities";
 import type { CapabilityDefinitions, CapabilityPresentationTranslation } from "../packages/cloud/src/contracts/capabilities";
 import { contactsCapabilities } from "../packages/contacts/src/capabilities";
 import { aiCapabilities } from "../packages/core/src/capabilities";
+import { filesCapabilities } from "../packages/filesv2/src/capabilities";
 import { gridsCapabilities } from "../packages/grids/src/capabilities";
 import { mailCapabilities } from "../packages/mail/src/capabilities";
 import { notebooksCapabilities } from "../packages/notebooks/src/capabilities";
@@ -72,6 +74,47 @@ const missingPresentation = (appId: string, definitions: CapabilityDefinitions):
 describe("built-in Capability presentation", () => {
   test.each(builtIns)("%s ships complete German registry and input-schema presentation", (appId, definitions) => {
     expect(missingPresentation(appId, definitions)).toEqual([]);
+  });
+
+  test("Core file helpers localize every input field, including schema variants", () => {
+    const compiled = compileCapabilities("core", aiCapabilities);
+    const localized = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de-DE");
+    const queries = localized.queries.filter((entry) => entry.localId.startsWith("file."));
+    expect(queries).toHaveLength(6);
+
+    for (const query of queries) {
+      const input = compiled.presentation?.translations.de?.queries?.[query.localId]?.input;
+      const visit = (schema: unknown, prefix = ""): void => {
+        if (!schema || typeof schema !== "object" || Array.isArray(schema)) return;
+        const node = schema as Record<string, unknown>;
+        if (node.properties && typeof node.properties === "object" && !Array.isArray(node.properties)) {
+          for (const [field, definition] of Object.entries(node.properties)) {
+            const path = prefix ? `${prefix}.${field}` : field;
+            expect(input?.[path], `${query.localId}.${path}`).toBeTruthy();
+            expect(definition).toHaveProperty("description", input?.[path]);
+            visit(definition, path);
+          }
+        }
+        if (node.items) visit(node.items, `${prefix}[]`);
+        for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
+          if (Array.isArray(node[keyword])) node[keyword].forEach((variant) => visit(variant, prefix));
+        }
+      };
+      visit(query.inputSchema);
+    }
+  });
+
+  test.each([
+    ["chat", chatCapabilities, "conversation.readable"],
+    ["filesv2", filesCapabilities, "entry.readable"],
+  ] as const)("%s translates the generated event-place reader and every input field", (appId, definitions, localId) => {
+    const compiled = compileCapabilities(appId, definitions);
+    const query = compiled.manifest.queries.find((entry) => entry.localId === localId);
+    expect(query?.appOnly).toBe(true);
+    const copy = compiled.presentation?.translations.de?.queries?.[localId];
+    expect(copy?.title).toBeTruthy();
+    expect(copy?.description).toBeTruthy();
+    for (const path of schemaFieldPaths(query?.inputSchema)) expect(copy?.input?.[path]).toBeTruthy();
   });
 
   test("resolves declared German contact field descriptions through language ancestors", () => {

@@ -140,6 +140,7 @@ type AccessSubject =
 | Personal API key | Service account with delegated user | User |
 | Resource API key or client credentials | Resource-bound service account | Service account |
 | Standalone API key or client credentials | Standalone service account (`standalone` or `agent`) | Service account |
+| Verified Code run invocation | Code service account (`code`), without a delegated user | The exact Code service account |
 
 A delegated credential uses only its user's grants. Do not merge them with
 service-account grants.
@@ -403,8 +404,7 @@ is removed:
   password changes, account deletion, SSH public keys, background mandates,
   and browser push endpoints;
 - resource API keys of Spaces, Notebooks, Contacts, Pulse, and Venue, scheduled
-  Assistant tasks (create, change, resume), and Mail incoming automations with
-  Spaces steps answer the same `403`;
+  Assistant tasks (create, change, resume) answer the same `403`;
 - OAuth treats an app session as no session: `/oauth/authorize` leads to
   sign-in, and the consent and device pages ask the person to use the web;
 - Cloud Login pairing management and pairing another device answer

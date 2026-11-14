@@ -37,5 +37,6 @@ export const migrateAppBootstrap = async (): Promise<void> => {
       key_id UUID NULL
     )
   `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS app_proof_replays_key_retention ON auth.app_proof_replays (key_id,retain_until)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS app_proof_replays_retention ON auth.app_proof_replays (retain_until)`.simple();
 };

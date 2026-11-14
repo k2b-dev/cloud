@@ -47,6 +47,7 @@ suite("mail baseline schema", () => {
       { version: 2, name: "principal_assignees" },
       { version: 3, name: "suggestions_per_author" },
       { version: 4, name: "one_reply_draft" },
+      { version: 5, name: "rules_retired" },
     ]);
     await migrate();
     expect(
@@ -189,10 +190,48 @@ suite("mail baseline schema", () => {
     expect(await liveFunctionDefinition()).toBe(before);
   });
 
+  test("moves earlier Code-branch markers to the released numbering and keeps their timestamps", async () => {
+    await migrate();
+    const original = await sql<
+      { version: number; name: string; applied_at: Date; details: unknown }[]
+    >`SELECT * FROM mail.schema_migrations ORDER BY version`;
+    const retiredAt = new Date("2026-11-01T12:00:00Z");
+    const suggestionsAt = new Date("2026-11-02T12:00:00Z");
+    try {
+      // Earlier Code-branch history: retirement at 3, suggestions at 4, F6 not yet run.
+      await sql`DELETE FROM mail.schema_migrations WHERE version IN (3, 4, 5)`;
+      await sql`INSERT INTO mail.schema_migrations(version, name, applied_at)
+        VALUES (3, 'rules_retired', ${retiredAt}), (4, 'suggestions_per_author', ${suggestionsAt})`;
+      await migrate();
+      const after = await sql<{ version: number; name: string; applied_at: Date }[]>`
+        SELECT version, name, applied_at FROM mail.schema_migrations ORDER BY version`;
+      expect(after.map(({ version, name }) => ({ version, name }))).toEqual([
+        { version: 1, name: "baseline" },
+        { version: 2, name: "principal_assignees" },
+        { version: 3, name: "suggestions_per_author" },
+        { version: 4, name: "one_reply_draft" },
+        { version: 5, name: "rules_retired" },
+      ]);
+      expect(after.find((row) => row.name === "suggestions_per_author")!.applied_at).toEqual(suggestionsAt);
+      expect(after.find((row) => row.name === "rules_retired")!.applied_at).toEqual(retiredAt);
+      await migrate();
+      expect(
+        await sql<
+          { version: number; name: string; applied_at: Date }[]
+        >`SELECT version, name, applied_at FROM mail.schema_migrations ORDER BY version`,
+      ).toEqual(after);
+    } finally {
+      await sql`DELETE FROM mail.schema_migrations`;
+      for (const row of original)
+        await sql`INSERT INTO mail.schema_migrations(version, name, applied_at, details)
+          VALUES (${row.version}, ${row.name}, ${row.applied_at}, ${row.details}::jsonb)`;
+    }
+  });
+
   test("serializes concurrent runs behind a transaction-scoped guard", async () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations ORDER BY version`;
-    expect(rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
+    expect(rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }]);
     // pg_locks spans the whole server; other databases on it may hold advisory locks of their own.
     const [locks] = await sql<{ held: number }[]>`
       SELECT count(*)::int AS held
@@ -219,7 +258,7 @@ suite("mail baseline schema", () => {
     const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
       VALUES (${newShortId()}, 'Newer schema data') RETURNING id`;
     if (!mailbox) throw new Error("Newer schema fixture missing");
-    await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (5, 'future_schema')`;
+    await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (6, 'future_schema')`;
     try {
       const before = await sql`SELECT * FROM mail.schema_migrations ORDER BY version`;
       const live = await liveFunctionDefinition();
@@ -228,7 +267,7 @@ suite("mail baseline schema", () => {
         (error: unknown) => error,
       );
       expect(failure).toBeInstanceOf(Error);
-      expect(String(failure)).toContain("5 (future_schema)");
+      expect(String(failure)).toContain("6 (future_schema)");
       expect(String(failure)).toContain("Use an image compatible with this schema");
       expect(String(failure)).not.toContain("DROP SCHEMA");
       expect(await liveFunctionDefinition()).toBe(live);
@@ -237,10 +276,27 @@ suite("mail baseline schema", () => {
         { name: "Newer schema data" },
       ]);
     } finally {
-      await sql`DELETE FROM mail.schema_migrations WHERE version = 5`;
+      await sql`DELETE FROM mail.schema_migrations WHERE version = 6`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
     }
     await migrate();
+  });
+
+  test("adds capability upload metadata to an existing installation and preserves it on rerun", async () => {
+    await migrate();
+    await sql`ALTER TABLE mail.draft_attachment_uploads DROP COLUMN capability_revision`;
+    await sql`ALTER TABLE mail.draft_attachment_uploads DROP COLUMN capability_write_started`;
+    await migrate();
+    await migrate();
+    const columns = await sql<{ column_name: string; data_type: string; is_nullable: string; column_default: string | null }[]>`
+      SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns
+      WHERE table_schema = 'mail' AND table_name = 'draft_attachment_uploads'
+        AND column_name IN ('capability_revision', 'capability_write_started') ORDER BY column_name
+    `;
+    expect(columns).toEqual([
+      { column_name: "capability_revision", data_type: "bigint", is_nullable: "YES", column_default: null },
+      { column_name: "capability_write_started", data_type: "boolean", is_nullable: "NO", column_default: "false" },
+    ]);
   });
 
   test("upgrades a 0.76 mailbox without the explicit-mode flag and runs the shared-default migration", async () => {
@@ -333,7 +389,7 @@ suite("mail baseline schema", () => {
       receipt_pending: "false",
       signature_template_id: true,
       signature_template_fk: true,
-      versions: 4,
+      versions: 5,
     });
   });
 
@@ -380,12 +436,13 @@ suite("mail baseline schema", () => {
       >`SELECT user_id, assigned_at FROM mail.conversation_assignees WHERE conversation_id = ${conversation.id}::uuid`;
       expect(rows).toEqual([{ user_id: user.id, assigned_at: conversation.updated_at }]);
       // Simulate the existing user-only relation, not just a missing post-baseline table.
+      // Keep previousMailStartup frozen: a real retirement marker must still refuse old startup.
       await sql`ALTER TABLE mail.conversation_assignees DROP COLUMN principal_id`;
       await sql`ALTER TABLE mail.conversation_assignees DROP COLUMN service_account_id`;
       await sql`ALTER TABLE mail.conversation_assignees ALTER COLUMN user_id SET NOT NULL`;
       await sql`ALTER TABLE mail.conversation_assignees ADD PRIMARY KEY (conversation_id, user_id)`;
       // The schema before both compatibility markers.
-      await sql`DELETE FROM mail.schema_migrations WHERE version IN (2, 3, 4)`;
+      await sql`DELETE FROM mail.schema_migrations WHERE version IN (2, 3, 4, 5)`;
       // This is the preceding function body: only people receive assignment updates.
       const previousLive = (await liveFunctionDefinition()).replaceAll("assignee.principal_id", "assignee.user_id");
       expect(previousLive).toContain("assignee.user_id");
@@ -403,6 +460,7 @@ suite("mail baseline schema", () => {
         { version: 2, name: "principal_assignees" },
         { version: 3, name: "suggestions_per_author" },
         { version: 4, name: "one_reply_draft" },
+        { version: 5, name: "rules_retired" },
       ]);
       // The marker excludes the predecessor even before the first account assignment.
       await expect(previousMailStartup(previousLive)).rejects.toThrow("Previous Mail refuses non-baseline schema history");
@@ -782,7 +840,7 @@ suite("mail baseline schema", () => {
       expect((await displays())[older]).toBe("everywhere");
 
       const [shape] = await sql<{ versions: number }[]>`SELECT count(*)::int AS versions FROM mail.schema_migrations`;
-      expect(shape).toEqual({ versions: 4 });
+      expect(shape).toEqual({ versions: 5 });
       const invalid = await sql`UPDATE mail.folders SET display = 'sidebar' WHERE id = ${shown}::uuid`.then(
         () => null,
         (error: unknown) => error,
@@ -943,7 +1001,8 @@ suite("mail baseline schema", () => {
               'protect_conversation_reference_allocation', 'guard_outbox_requested_at',
               'enqueue_live_invalidation', 'enqueue_activity_live_invalidation',
               'search_reference_matches', 'touch_updated_at', 'carry_conversation_keep',
-              'invalidate_automation_observed_state',
+              'reject_retired_rule_admission', 'reject_retired_rule_execution', 'reject_retired_rule_command',
+              'reject_retired_reply_draft', 'reject_retired_reply_outbox',
               'enqueue_room_access_changed', 'enqueue_assignee_room_access_changed',
               'enqueue_message_room_access_changed', 'enqueue_mailbox_room_access_changed'
             )
@@ -956,9 +1015,9 @@ suite("mail baseline schema", () => {
         ) AS triggers,
         to_regclass('ai.workflow_task') IS NOT NULL AS workflow_ai_table
     `;
-    // Existing baseline remains; four access-hint functions and twelve narrowly scoped
-    // triggers revoke room writers without per-edit authorization queries.
-    expect(shape).toEqual({ extensions: 3, functions: 14, triggers: 48, workflow_ai_table: true });
+    // Retained domain/retention functions and permanent retirement fences replace the old Undo invalidation hooks;
+    // four access-hint functions and twelve narrowly scoped triggers revoke room writers without per-edit queries.
+    expect(shape).toEqual({ extensions: 3, functions: 18, triggers: 49, workflow_ai_table: true });
     const accessTriggers = await sql<{ table_name: string; trigger_name: string; enabled: string }[]>`
       SELECT pg_class.relname AS table_name, tgname AS trigger_name, tgenabled AS enabled
       FROM pg_trigger JOIN pg_class ON pg_class.oid = tgrelid

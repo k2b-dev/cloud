@@ -43,6 +43,32 @@ x-app: &app
     start_period: 2s
 
 services:
+  # No shared environment or runtime: runner must never receive installation credentials.
+  runner:
+    init: true
+    build:
+      context: .
+      dockerfile: packages/runner/Dockerfile
+    profiles: [runner]
+    restart: unless-stopped
+    environment:
+      CLOUD_APP_KEY_FILE: /run/runner-key/source
+      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
+    secrets:
+      - source: runner-app-key
+        target: /run/runner-key/source
+    networks: [runner-core]
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
+    cap_drop: [ALL]
+    # DAC_OVERRIDE is entrypoint-only; the supervisor retains the other four.
+    cap_add: [SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE]
+    security_opt: ["no-new-privileges:true", "seccomp=./packages/runner/seccomp.json", "apparmor=cloud-code-runner", "systempaths=unconfined"]
+    mem_limit: 1g
+    pids_limit: 256
+    # Keep this above the largest Code wall-clock budget plus completion transport time.
+    stop_grace_period: 6m
+
   # ══════════════════════════════════════════════════════════════════
   # Core set — started by `bun run dev`
   # ══════════════════════════════════════════════════════════════════
@@ -86,6 +112,7 @@ services:
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/gateway-ops/src/index.ts
 
   app-core:
+    networks: [default, runner-core]
     <<: *app
     container_name: app-core
     environment:
@@ -180,15 +207,10 @@ services:
       APP_ID: assistant
       CLOUD_APP_KEY_FILE: /run/secrets/assistant.key
       CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
-      CLOUD_CLI_CHROMIUM: /usr/bin/chromium
     <<: *app
     user: bun
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-      args: { INSTALL_CHROMIUM: "true" }
     container_name: app-assistant
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src
@@ -597,6 +619,10 @@ services:
       - ./styles.css:/app/styles.css
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/api-docs/src/index.ts
 
+networks:
+  runner-core:
+    internal: true
+
 secrets:
   accounts-app-key:
     file: ./.local/dev-app-keys/accounts.key
@@ -636,6 +662,8 @@ secrets:
     file: ./.local/dev-app-keys/pwa.key
   quotes-app-key:
     file: ./.local/dev-app-keys/quotes.key
+  runner-app-key:
+    file: ./.local/dev-app-keys/runner.key
   spaces-app-key:
     file: ./.local/dev-app-keys/spaces.key
   tools-app-key:

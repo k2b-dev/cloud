@@ -695,7 +695,7 @@ function notebooksCommands(locale?: string) {
     resolveResource: async (ctx, args) => {
       if (!args[0]) throw new Error("Missing notebook.");
       const notebook = await resolveNotebookRef(ctx, args[0]);
-      return { ...notebook, label: `${notebook.name} (${notebook.id})` };
+      return { ...notebook, label: `${notebook.name} (${notebook.id})`, target: { type: "notebooks.notebook", id: notebook.id } };
     },
     list: async (ctx, notebook) => ctx.readJson<AccessEntry[]>(await ctx.fetch(api(notebook.id, "/access"))),
     grant: async (ctx, notebook, principal: Principal, permission: PermissionLevel) =>

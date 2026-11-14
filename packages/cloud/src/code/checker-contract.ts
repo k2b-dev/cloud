@@ -1,0 +1,123 @@
+import { z } from "zod";
+import { CodeInternetOriginsSchema } from "../contracts/code-internet";
+import { CodeVersionEntrypointSchema } from "../contracts/code-version";
+import type { GeneratedCodeSdk } from "./types";
+
+/** Administrator budgets for C22. UTF-8 sizes; checkMs covers all child processes together. No environment overrides. */
+export const CODE_CHECK_LIMITS = Object.freeze({
+  sourceBytes: 256 * 1024,
+  bundleBytes: 1024 * 1024,
+  checkMs: 15_000,
+  memoryBytes: 512 * 1024 * 1024,
+  outputBytes: 2 * 1024 * 1024,
+  files: 64,
+  requestBytes: 8 * 1024 * 1024,
+});
+/** Compiler-owned recursion guard: TS2589 at depth 100 (or the compiler's instantiation-count guard).
+ * tsgo has no supported depth switch; the wall-clock and RSS guards also cover expensive types below this depth. */
+export const CODE_CHECK_TYPE_INSTANTIATION_DEPTH = 100;
+export const CodeCheckLimitsSchema = z
+  .object({
+    sourceBytes: z.number().int().positive().safe(),
+    bundleBytes: z.number().int().positive().safe(),
+    checkMs: z.number().int().positive().safe(),
+    memoryBytes: z.number().int().positive().safe(),
+    outputBytes: z.number().int().positive().safe(),
+    files: z.number().int().positive().safe(),
+    requestBytes: z.number().int().positive().safe(),
+  })
+  .strict();
+export type CodeCheckLimits = z.infer<typeof CodeCheckLimitsSchema>;
+
+const hash = z.string().regex(/^[a-f0-9]{64}$/);
+/** Null id means a dynamic personal/code_run target. Null target means an app-wide operation.
+ * Resource-owned Code never produces a dynamic id. A ref contributes another permission for the same operation.
+ * entrypoints names, sorted, the manifest entrypoints whose handler contains the call: an inline handler or a
+ * function the schedule names directly, or middleware registered before a matching route. A call the checker
+ * cannot place, such as one in a helper the handler calls, has no entrypoints field; it never guesses. */
+export const CodePermissionSchema = z
+  .object({
+    operation: z.string().min(1),
+    target: z
+      .object({ type: z.string().min(1), id: z.string().min(1).nullable() })
+      .strict()
+      .nullable(),
+    file: z.string().min(1),
+    line: z.number().int().positive(),
+    entrypoints: z.array(z.string().min(1)).min(1).optional(),
+  })
+  .strict();
+export type CodePermission = z.infer<typeof CodePermissionSchema>;
+/** Immutable checked-version contract consumed by C8. Store it with the exact source and bundle, never as a grant.
+ * entrypoint is the named ESM export understood by the runner and by manual-start/scheduler callers.
+ * source hashes { entry, files: sorted [path, source] pairs }; sdk hashes canonical recursively key-sorted SDK JSON.
+ * bundle hashes the exact UTF-8 ESM returned by checkCode. All hashes use SHA-256. */
+export const CodeVersionManifestSchema = z
+  .object({
+    version: z.literal(1),
+    entrypoints: z.array(CodeVersionEntrypointSchema),
+    permissions: z.array(CodePermissionSchema),
+    ai: z.boolean(),
+    database: z.boolean().optional(),
+    internet: CodeInternetOriginsSchema.optional(),
+    hashes: z.object({ source: hash, sdk: hash, bundle: hash }).strict(),
+  })
+  .strict();
+/** Immutable checked version stored with its exact source and bundle; validate with CodeVersionManifestSchema. */
+export type CodeVersionManifest = z.infer<typeof CodeVersionManifestSchema>;
+
+/** Stable checker diagnostics for CLI/chat. Lines and columns are one-based; no user code is executed by checking. */
+export type CodeCheckDiagnostic = { aliases?: string[]; code: string; message: string; file: string; line: number; column: number };
+/** The host supplies current grants and AI operation IDs from trusted platform metadata, never from source files. */
+export type CodeCheckRequest = {
+  files: Record<string, string>;
+  entry: string;
+  sdk: GeneratedCodeSdk;
+  aiOperations: readonly string[];
+  /** Request-scoped language for human diagnostics; codes remain stable. */
+  locale?: string;
+  existingPermissions?: readonly Pick<CodePermission, "operation" | "target">[];
+  limits?: CodeCheckLimits;
+};
+/** Failed checks have no bundle or manifest. Successful permissions retain source locations and mark newly needed access. */
+export type CodeCheckResult =
+  | { ok: false; diagnostics: CodeCheckDiagnostic[] }
+  | {
+      ok: true;
+      diagnostics: [];
+      /** Hints that never block the version, such as a page every member reaches unchecked; absent from older checkers. */
+      warnings?: CodeCheckDiagnostic[];
+      bundle: string;
+      manifest: CodeVersionManifest;
+      permissions: Array<CodePermission & { status: "new" | "existing" }>;
+    };
+
+const CodeCheckDiagnosticSchema = z
+  .object({
+    aliases: z.array(z.string()).optional(),
+    code: z.string(),
+    message: z.string(),
+    file: z.string(),
+    line: z.number().int().positive(),
+    column: z.number().int().positive(),
+  })
+  .strict();
+/** Strict JSON result returned by the isolated checker and validated again by Core. */
+export const CodeCheckResultSchema = z.discriminatedUnion("ok", [
+  z
+    .object({
+      ok: z.literal(false),
+      diagnostics: z.array(CodeCheckDiagnosticSchema),
+    })
+    .strict(),
+  z
+    .object({
+      ok: z.literal(true),
+      diagnostics: z.tuple([]),
+      warnings: z.array(CodeCheckDiagnosticSchema).optional(),
+      bundle: z.string(),
+      manifest: CodeVersionManifestSchema,
+      permissions: z.array(CodePermissionSchema.extend({ status: z.enum(["new", "existing"]) }).strict()),
+    })
+    .strict(),
+]);

@@ -9,19 +9,21 @@ import {
   fail,
   getEffectivePermission,
   hasPermission,
+  lockAccessMutationAuthority,
   ok,
   type PermissionLevel,
   type Principal,
   type Result,
   resolveDisplayNames,
+  updateAccess,
 } from "@k2b/cloud/server";
 import {
   coreSettings,
-  isStandaloneServiceAccountKind,
   isUniqueViolation,
   logger,
   type ServiceAccountKind,
   serviceAccounts,
+  serviceAccountUsesOwnGrants,
   toPgUuidArray,
 } from "@k2b/cloud/services";
 import { stripImageDataUrlMetadata } from "@k2b/cloud/services/image-metadata";
@@ -429,7 +431,8 @@ const readAccessEntries = async (venueId: string, db: SqlClient = sql): Promise<
   }));
 };
 
-const listAccess = async (venueId: string): Promise<AccessEntry[]> => resolveDisplayNames(await readAccessEntries(venueId));
+const listAccess = async (venueId: string, permission: PermissionLevel = "none"): Promise<AccessEntry[]> =>
+  resolveDisplayNames(await readAccessEntries(venueId), { permission });
 
 const createOwnerAccessInTx = async (tx: SqlClient, userId: string): Promise<Result<{ id: string }>> => {
   const [user] = await tx<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ${userId}::uuid`;
@@ -453,7 +456,7 @@ const mayReadAcrossVenues = async (subject: VenueAccessSubject): Promise<boolean
   if (subject.subject.type !== "service_account") return true;
   if (subject.serviceAccountResourceId) return UUID_PATTERN.test(subject.serviceAccountResourceId);
   const account = await serviceAccounts.get({ id: subject.subject.serviceAccountId });
-  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
+  return Boolean(account && serviceAccountUsesOwnGrants(account.kind));
 };
 
 /**
@@ -868,22 +871,29 @@ const deleteVenue = async (id: string): Promise<Result<void>> => {
   return ok();
 };
 
-const grantAccess = async (venueId: string, principal: Principal, permission: PermissionLevel): Promise<Result<AccessEntry>> => {
-  const existing = await listAccess(venueId);
-  const duplicate = existing.find((entry) => JSON.stringify(entry.principal) === JSON.stringify(principal));
-  if (duplicate) return fail(err.conflict("Access entry"));
-
-  const created = await createAccess({ principal, permission });
+const grantAccess = async (
+  venueId: string,
+  principal: Principal,
+  permission: PermissionLevel,
+  actor: UserLike | VenueAccessSubject,
+): Promise<Result<AccessEntry>> => {
+  const created = await sql.begin(async (tx) => {
+    const subject = toAccessSubject(actor);
+    if (!(await lockAccessMutationAuthority({ subject: subject.subject, principal }, tx)))
+      return fail(err.forbidden("You do not have access to this venue"));
+    const [venue] = await tx`SELECT id FROM venue.venues WHERE id = ${venueId}::uuid FOR UPDATE`;
+    if (!venue) return fail(err.notFound("Venue"));
+    if (!hasPermission(await grantedPermission(venueId, subject, tx), "admin"))
+      return fail(err.forbidden("You do not have access to this venue"));
+    const existing = await readAccessEntries(venueId, tx);
+    if (existing.some((entry) => JSON.stringify(entry.principal) === JSON.stringify(principal))) return fail(err.conflict("Access entry"));
+    const result = await createAccess({ principal, permission }, tx);
+    if (!result.ok) return result;
+    await tx`INSERT INTO venue.venue_access (venue_id, access_id) VALUES (${venueId}::uuid, ${result.data.id}::uuid)`;
+    return result;
+  });
   if (!created.ok) return created;
-
-  try {
-    await sql`INSERT INTO venue.venue_access (venue_id, access_id) VALUES (${venueId}::uuid, ${created.data.id}::uuid)`;
-  } catch (error) {
-    await deleteAccess({ id: created.data.id });
-    throw error;
-  }
-
-  const entries = await listAccess(venueId);
+  const entries = await listAccess(venueId, "admin");
   const entry = entries.find((candidate) => candidate.id === created.data.id);
   return entry ? ok(entry) : fail(err.internal("Failed to retrieve access entry"));
 };
@@ -892,7 +902,7 @@ const grantAccess = async (venueId: string, principal: Principal, permission: Pe
  * Change or remove one grant under the venue row lock, so concurrent changes see
  * each other: the actor must still manage the venue, and none of the changes
  * leaves it without a manager. The caller has resolved the venue for the actor,
- * as the routes do; under the lock only the grants can have changed since.
+ * as the routes do; identity, directory and target authority are retained together.
  */
 const writeAccess = (
   venueId: string,
@@ -902,6 +912,8 @@ const writeAccess = (
   locale?: string,
 ): Promise<Result<void>> =>
   sql.begin(async (tx): Promise<Result<void>> => {
+    if (!(await lockAccessMutationAuthority({ subject: toAccessSubject(actor).subject, accessId }, tx)))
+      return fail(err.forbidden("You do not have access to this venue"));
     await tx`SELECT id FROM venue.venues WHERE id = ${venueId}::uuid FOR UPDATE`;
     if (!hasPermission(await grantedPermission(venueId, toAccessSubject(actor), tx), "admin")) {
       return fail(err.forbidden("You do not have access to this venue"));
@@ -915,11 +927,7 @@ const writeAccess = (
     // Venue's editor calls the admin level “Admin”; the message uses the same word.
     const guarded = ensureManagerRemains({ before, after, locale, level: venueMessages.resolve(locale ? [locale] : []).t.admin });
     if (!guarded.ok) return fail(guarded.error);
-    const changed =
-      permission === null
-        ? await tx`DELETE FROM auth.access WHERE id = ${accessId}::uuid`
-        : await tx`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${accessId}::uuid`;
-    return changed.count === 0 ? fail(err.notFound("Access entry")) : ok();
+    return permission === null ? deleteAccess({ id: accessId }, tx) : updateAccess({ id: accessId, permission }, tx);
   });
 
 const changeAccess = async (
@@ -931,7 +939,7 @@ const changeAccess = async (
 ): Promise<Result<AccessEntry>> => {
   const updated = await writeAccess(venueId, accessId, permission, actor, locale);
   if (!updated.ok) return updated;
-  const next = await listAccess(venueId);
+  const next = await listAccess(venueId, "admin");
   const entry = next.find((candidate) => candidate.id === accessId);
   return entry ? ok(entry) : fail(err.internal("Failed to retrieve access entry"));
 };

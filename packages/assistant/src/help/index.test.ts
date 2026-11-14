@@ -19,8 +19,8 @@ describe("assistantHelp", () => {
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("**Always approve** is no longer offered");
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("**Check again** checks only the outcome");
     expect(assistantHelp.getMarkdown("assistant-workflow", "de")).toContain("wiederholt nie die");
-    expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Assistant works best when the request states");
-    expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Assistant settings > Skills");
+    expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Gustav works best when the request states");
+    expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Gustav settings > Skills");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Create a Skill that loads at the right time");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Write a direct description");
   });
@@ -38,7 +38,7 @@ describe("assistantHelp", () => {
     }
 
     expect(assistantHelp.getMarkdown("assistant-overview", "de")).toContain(
-      "Der Assistent ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Agenten",
+      "Gustav ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Agenten",
     );
     expect(assistantHelp.getMarkdown("assistant-workflow", "de")).toContain(
       "Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen",
@@ -49,7 +49,7 @@ describe("assistantHelp", () => {
   test("resolves regional and unknown locales through the fallback chain", () => {
     expect(assistantHelp.getMarkdown("assistant-overview", "de-CH")).toBe(assistantHelp.getMarkdown("assistant-overview", "de")!);
     expect(assistantHelp.getMarkdown("assistant-overview", "de-CH")).toContain(
-      "Der Assistent ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Agenten",
+      "Gustav ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Agenten",
     );
     expect(assistantHelp.getMarkdown("assistant-overview", "fr")).toBe(assistantHelp.getMarkdown("assistant-overview")!);
     expect(assistantHelp.getMarkdown("assistant-overview", "fr")).toContain("workspace for your personal Cloud agent");

@@ -176,8 +176,9 @@ as a text column. Keep decrypted credentials on the server.
 
 ## Keep the encryption key stable
 
-Every application instance must use the same stable `APP_SECRET`. Cloud has no
-built-in rotation or previous-key fallback.
+Every application instance must use the same stable `APP_SECRET`. The general `secrets.encrypt`/`secrets.decrypt` helpers have no
+built-in rotation or previous-key fallback. [Code secrets](/en/docs/platform/code-secrets)
+use a purpose-derived key and an explicit current/previous migration path.
 
 After a key change, `secrets.decrypt` throws for existing encrypted application
 values. Settings reads use `envFallback` or the default when a stored row cannot

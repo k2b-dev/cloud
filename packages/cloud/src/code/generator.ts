@@ -1,0 +1,373 @@
+import { z } from "zod";
+import { stableJsonValue } from "../_internal/capability-schemas";
+import { type CapabilityManifest, CLOUD_RESOURCE_ID_MAX_LENGTH, CloudResourceRefSchema } from "../contracts/capabilities";
+import * as authoringTypes from "./authoring-types.ts" with { type: "text" };
+import { CODE_DATABASE_MESSAGES } from "./database-contract";
+import { hasFileInput } from "./file-ref";
+import * as pageTypes from "./page-authoring-types.ts" with { type: "text" };
+import { CODE_PAGE_LIMITS, CodeChartDescriptionSchema, CodePageTreeSchema } from "./page-contract";
+import { CODE_PAGE_BUILDERS } from "./page-source";
+import { CODE_SDK_RUNTIME } from "./runtime-source";
+import { schemaTypes } from "./schema-types";
+import { codeSdkExportName as exportName, sdkPath as path, validateCodeSdkNames } from "./sdk-names";
+import { CODE_SDK_APP_PHASES, type CodeSdkManifest, type CodeSdkOperation, type CodeSdkOptions, type GeneratedCodeSdk } from "./types";
+
+type Tree = { values: string[]; children: Map<string, Tree> };
+const tree = (): Tree => ({ values: [], children: new Map() });
+const quote = JSON.stringify;
+const forbiddenProperties = new Set(["__proto__", "prototype", "constructor"]);
+const insert = (root: Tree, segments: string[], value: string, label: string): void => {
+  let branch = root;
+  for (const key of segments) {
+    if (forbiddenProperties.has(key)) throw new Error(`${label}: SDK path collision at ${key}`);
+    let child = branch.children.get(key);
+    if (!child) {
+      child = tree();
+      branch.children.set(key, child);
+    }
+    branch = child;
+  }
+  branch.values.push(`(${value})`);
+};
+const render = (root: Tree): string => {
+  const parts = [...root.values];
+  if (root.children.size)
+    parts.push(
+      `{ ${[...root.children]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, child]) => `readonly ${quote(key)}: ${render(child)}`)
+        .join("; ")} }`,
+    );
+  return parts.join(" & ") || "{}";
+};
+const byId = <T extends { localId: string }>(entries: readonly T[]): T[] => [...entries].sort((a, b) => a.localId.localeCompare(b.localId));
+
+/**
+ * Generates a deterministic, standalone @sdk module from live capability manifests.
+ * No app IDs or schemas are compiled into the generator. The checker consumes manifest.handles,
+ * operations and appMethods; hosts bind the runtime to the trusted cloud object.
+ */
+export function generateCodeSdk(manifests: readonly CapabilityManifest[], options: CodeSdkOptions): GeneratedCodeSdk {
+  if (
+    !options ||
+    !["resource", "personal", "code_run"].includes(options.mode) ||
+    (options.mode === "resource" ? !options.owner : options.owner !== undefined)
+  )
+    throw new Error("Invalid SDK options");
+  if (options.owner && options.owner.kind !== "resource" && options.owner.kind !== "app") throw new Error("Invalid SDK owner");
+  const apps = validateCodeSdkNames(manifests);
+  const manifest: CodeSdkManifest = {
+    version: 1,
+    mode: options.mode,
+    ...(options.owner ? { owner: structuredClone(options.owner) } : {}),
+    apps: [],
+    handles: [],
+    operations: [],
+    events: [],
+    omitted: [],
+    appMethods: { ...CODE_SDK_APP_PHASES },
+  };
+  if (options.owner) {
+    const owner = options.owner;
+    if (owner.kind === "app") {
+      if (!apps.some((app) => app.appId === owner.appId)) throw new Error("SDK owner app is not in the catalog");
+    } else {
+      CloudResourceRefSchema.parse(owner.ref);
+      if (!apps.some((app) => app.types.some((type) => `${app.appId}.${type.localId}` === owner.ref.type)))
+        throw new Error("SDK owner type is not in the catalog");
+    }
+  }
+  for (const app of apps) {
+    const name = app.sdkExportName ?? exportName(app.appId);
+    manifest.apps.push({ appId: app.appId, exportName: name, manifestHash: app.manifestHash });
+    manifest.handles.push({ appId: app.appId, exportName: name, type: null, factoryPath: [] });
+    for (const type of byId(app.types)) {
+      manifest.handles.push({ appId: app.appId, exportName: name, type: `${app.appId}.${type.localId}`, factoryPath: path(type.localId) });
+    }
+    for (const [kind, entries] of [
+      ["query", app.queries],
+      ["action", app.actions],
+    ] as const) {
+      for (const operation of byId(entries)) {
+        const capability = `${app.appId}.${operation.localId}`;
+        const rawPath =
+          operation.target && operation.localId.startsWith(`${operation.target}.`)
+            ? operation.localId.slice(operation.target.length + 1)
+            : operation.localId;
+        const methodPath = path(rawPath);
+        const reason =
+          operation.stream?.direction === "write" && !hasFileInput(operation.inputSchema)
+            ? "stream"
+            : "code" in operation && operation.code === false
+              ? "code_false"
+              : "appOnly" in operation && operation.appOnly
+                ? "app_only"
+                : null;
+        if (reason) {
+          manifest.omitted.push({ capability, target: operation.target ? `${app.appId}.${operation.target}` : null, methodPath, reason });
+          continue;
+        }
+        const refs = Object.fromEntries(
+          Object.entries(operation.refs ?? {})
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([field, type]) => [field, `${app.appId}.${type}`]),
+        );
+        if (operation.inputSchema.type !== "object" || operation.inputSchema.additionalProperties !== false)
+          throw new Error(`${capability}: SDK input must be a closed object`);
+        const properties = operation.inputSchema.properties;
+        for (const field of [...Object.keys(refs), ...(kind === "action" ? ["idempotencyKey"] : [])]) {
+          if (forbiddenProperties.has(field) || (properties && typeof properties === "object" && Object.hasOwn(properties, field)))
+            throw new Error(`${capability}: reserved SDK input field ${field}`);
+        }
+        manifest.operations.push({
+          capability,
+          appId: app.appId,
+          localId: operation.localId,
+          kind,
+          target: operation.target ? `${app.appId}.${operation.target}` : null,
+          refs,
+          methodPath,
+          inputSchema: structuredClone(operation.inputSchema),
+          dataSchema: structuredClone(operation.dataSchema),
+          schemaHash: operation.schemaHash,
+          idempotency: "idempotency" in operation && operation.idempotency === "required" ? "required" : "none",
+          ...(operation.stream ? { stream: { ...operation.stream } } : {}),
+        });
+      }
+    }
+    for (const event of byId(app.events ?? [])) {
+      if (event.automation === false) continue;
+      manifest.events.push({
+        type: `${app.appId}.${event.localId}`,
+        version: event.version,
+        subject: `${app.appId}.${event.subject}`,
+        place: event.place ? `${app.appId}.${event.place}` : null,
+        dataSchema: structuredClone(event.dataSchema),
+        schemaHash: event.schemaHash,
+      });
+    }
+  }
+  const methodPaths = new Set<string>();
+  for (const operation of manifest.operations) {
+    const key = JSON.stringify([operation.appId, operation.target, operation.methodPath]);
+    if (methodPaths.has(key)) throw new Error(`${operation.capability}: SDK path collision`);
+    methodPaths.add(key);
+  }
+  if (!("default" in authoringTypes) || typeof authoringTypes.default !== "string")
+    throw new Error("Expected Code SDK authoring type source");
+  const declarations = [
+    "// Generated from Cloud capability manifests. Do not edit.",
+    "// Numbered InputN and DataN types are legacy aliases.",
+    authoringTypes.default.replace(/^import[^\n]*\n/gm, "").trim(),
+  ];
+  const methods = new Map<CodeSdkOperation, string>();
+  const shapes = { types: new Map<string, string>(), names: new Set<string>() };
+  // Selecting other apps must not change the canonical exported alias for an operation.
+  const rootsByApp = new Map<string, Map<string, string>>();
+  // Preserve the app boundary and every path separator. Encoding raw hyphens and
+  // underscores avoids ambiguous PascalCase names and keeps names catalog-independent.
+  const typeName = (value: string) =>
+    value
+      .split(".")
+      .map((part) => part[0]!.toUpperCase() + part.slice(1).replaceAll("-", "$h").replaceAll("_", "$u"))
+      .join("_");
+  const jsdoc = (text: string) => `/** ${text.replaceAll("*/", "* /").replace(/[\r\n]+/g, " ")} */`;
+  for (const [index, op] of manifest.operations.entries()) {
+    const fields = Object.entries(op.refs).map(([name, type]) => ({ name, type: `CodeHandle<${quote(type)}>`, required: true }));
+    if (op.kind === "action")
+      fields.push({
+        name: "idempotencyKey",
+        type: op.idempotency === "required" ? "string" : "never",
+        required: op.idempotency === "required",
+      });
+    const inputSchema = structuredClone(op.inputSchema);
+    if (op.stream?.direction === "write") {
+      const properties = inputSchema.properties;
+      if (properties && typeof properties === "object")
+        inputSchema.properties = Object.fromEntries(Object.entries(properties).filter(([name]) => name !== "file"));
+      fields.push({ name: "file", type: "FileRef", required: true });
+    }
+    if (["core.ai.generate", "core.ai.decide"].includes(op.capability)) {
+      const properties = inputSchema.properties;
+      if (properties && typeof properties === "object")
+        inputSchema.properties = Object.fromEntries(Object.entries(properties).filter(([name]) => !["files", "tools"].includes(name)));
+      fields.push({ name: "files", type: "FileRef[]", required: false });
+      if (op.capability === "core.ai.generate") fields.push({ name: "tools", type: "CodeAiTool[]", required: false });
+    }
+    const source = apps.find((app) => app.appId === op.appId)!;
+    const entry = [...source.queries, ...source.actions].find((entry) => entry.localId === op.localId)!;
+    const stem = typeName(`${op.appId}.${op.localId}`);
+    const inputName = `${stem}Input`;
+    const dataName = `${stem}Data`;
+    let roots = rootsByApp.get(op.appId);
+    if (!roots) {
+      roots = new Map();
+      rootsByApp.set(op.appId, roots);
+    }
+    const input = schemaTypes(inputSchema, `Input${index}`, fields, shapes, { name: inputName, types: roots });
+    const output = schemaTypes(op.dataSchema, `Data${index}`, [], shapes, { name: dataName, types: roots });
+    declarations.push(
+      ...input.declarations,
+      ...output.declarations,
+      jsdoc(`${entry.title} input.`),
+      `export type ${inputName} = ${input.type};`,
+      jsdoc(`${entry.title} result.`),
+      `export type ${dataName} = ${output.type};`,
+    );
+    // Signatures name the exported types directly; a private alias per operation would only repeat them.
+    const result = op.stream?.direction === "read" ? "FileRef" : op.kind === "query" ? `CodeQueryResult<${dataName}>` : dataName;
+    const optional =
+      fields.every((field) => !field.required) && (!Array.isArray(inputSchema.required) || inputSchema.required.length === 0);
+    let signature = `(input${optional ? "?" : ""}: ${inputName}) => Promise<${result}>`;
+    // Original overloads bookend the precise one: preserve call resolution and ReturnType/Parameters.
+    if (op.capability === "core.ai.decide") {
+      signature = `(${signature}) & (<const Input extends CodeDecisionInput<${inputName}>>(input: Input) => Promise<CodeQueryResult<CodeDecisionData<Input, ${dataName}>>>) & (${signature})`;
+    }
+    if (op.capability === "core.ai.generate")
+      signature = `(${signature}) & (<const Input extends ${inputName}>(input: Input) => Promise<CodeQueryResult<Omit<${dataName}, "output"> & { output: CodeGenerationOutput<Input> }>>) & (${signature})`;
+    methods.set(op, Object.keys(op.refs).length ? `(${signature})` : `((${signature}) & CodeAiTool)`);
+  }
+  const handleNames = new Map<string, string>();
+  for (const [index, handle] of manifest.handles.entries()) {
+    const name = `Handle${index}`;
+    handleNames.set(handle.type ?? `app:${handle.appId}`, name);
+    const body = tree();
+    for (const op of manifest.operations.filter((op) => op.appId === handle.appId && op.target === handle.type)) {
+      if (["id", "type"].includes(op.methodPath[0] ?? "")) throw new Error(`${op.capability}: SDK path collision with handle identity`);
+      insert(body, op.methodPath, methods.get(op)!, op.capability);
+    }
+    declarations.push(`type ${name}<Id extends string = string> = CodeHandle<${quote(handle.type ?? "cloud.app")}, Id> & ${render(body)};`);
+  }
+  for (const app of manifest.apps) {
+    const factories = tree();
+    const appHandle = handleNames.get(`app:${app.appId}`)!;
+    factories.values.push(`${appHandle}<${quote(app.appId)}>`);
+    for (const handle of manifest.handles.filter((handle) => handle.appId === app.appId && handle.type !== null)) {
+      if (["id", "type"].includes(handle.factoryPath[0] ?? ""))
+        throw new Error(`${app.appId}.${handle.factoryPath.join(".")}: SDK path collision with app export`);
+      insert(factories, handle.factoryPath, `<const Id extends string>(id: Id) => ${handleNames.get(handle.type!)}<Id>`, app.appId);
+    }
+    declarations.push(`export declare const ${app.exportName}: ${render(factories)};`);
+  }
+  if (options.owner) {
+    const owner = options.owner;
+    const type = owner.kind === "app" ? handleNames.get(`app:${owner.appId}`) : handleNames.get(owner.ref.type);
+    declarations.push(`export declare const owner: ${type}<${quote(owner.kind === "app" ? owner.appId : owner.ref.id)}>;`);
+  }
+  if (options.mode !== "code_run") {
+    const events = manifest.events.map((event, index) => {
+      const data = schemaTypes(event.dataSchema, `Event${index}`, [], shapes);
+      declarations.push(...data.declarations);
+      return `${quote(event.type)}: CodeEvent<${quote(event.type)}, ${data.type}>`;
+    });
+    declarations.push(
+      `export type CodeEvent<Type extends string, Data> = {
+  id: string; type: Type; version: number; source: string; time: string;
+  subject: { type: string; id: string }; place: { type: string; id: string };
+  cause?: { requestId: string }; data: Data;
+};`,
+      `export type CodeEvents = { ${events.join("; ")} };`,
+      `/** \`public: true\` admits visitors who are not signed in. Pages render inside the Cloud layout; \`layout: "plain"\` renders them alone. */
+export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
+      `export type CodeApp<Variables extends object = {}> = {
+  /** Applies to later HTTP routes, optionally within a literal path prefix. Capture the return to type variables. */
+  use<Added extends object = {}>(middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
+  use<Added extends object = {}>(path: string, middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
+  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name: string; title?: string }, handler: CodeScheduleHandler): CodeApp<Variables>;
+  /** Without a handle, the checked event is scoped to this resource Code owner. An explicit handle binds a readable place. */
+  on<Event extends keyof CodeEvents>(event: Event, handler: (event: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
+  on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (event: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
+  get(path: string, options: CodeRouteOptions, handler: (c: CodeContext<Variables>) => Response | Promise<Response>): CodeApp<Variables>;
+  get(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  post(path: string, options: CodeRouteOptions, handler: (c: CodeContext<Variables>) => Response | Promise<Response>): CodeApp<Variables>;
+  post(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  put(path: string, options: CodeRouteOptions, handler: (c: CodeContext<Variables>) => Response | Promise<Response>): CodeApp<Variables>;
+  put(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  delete(path: string, options: CodeRouteOptions, handler: (c: CodeContext<Variables>) => Response | Promise<Response>): CodeApp<Variables>;
+  delete(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  all(path: string, options: CodeRouteOptions, handler: (c: CodeContext<Variables>) => Response | Promise<Response>): CodeApp<Variables>;
+  all(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+};`,
+      "export declare const app: CodeApp;",
+    );
+  }
+  if (!("default" in pageTypes) || typeof pageTypes.default !== "string") throw new Error("Expected page type source");
+  // Page and chart authors provide inputs, including null gaps that the renderer normalizes to NaN.
+  const authoringSchema = (schema: z.ZodType) =>
+    z.toJSONSchema(schema, {
+      io: "input",
+      override: ({ jsonSchema }) => {
+        // Strip-mode objects accept unknown input keys, but authoring exposes only the retained props.
+        // An open index signature would also erase their named types when Chart props omit `kind`.
+        if (jsonSchema.type === "object" && jsonSchema.additionalProperties === undefined) jsonSchema.additionalProperties = false;
+      },
+    });
+  const pageType = schemaTypes(authoringSchema(CodePageTreeSchema), "CodePage", [], shapes);
+  const chartType = schemaTypes(authoringSchema(CodeChartDescriptionSchema), "CodeChart", [], shapes);
+  declarations.push(
+    ...pageType.declarations,
+    `export type CodePageTree = ${pageType.type};`,
+    ...chartType.declarations,
+    `export type CodeChartDescription = ${chartType.type};`,
+    pageTypes.default.replace(/^import[^\n]*\n/gm, ""),
+  );
+  declarations.push("export declare const secrets: Readonly<Record<string, CodeSecret>>;", "export declare const http: CodeHttp;");
+  if (options.mode !== "code_run") declarations.push("export declare const db: CodeDatabase;");
+  const runtimeExports = [
+    "export const secrets = __codeSdk.secrets;",
+    "export const http = __codeSdk.http;",
+    "export { __codeSdk };",
+    "export const CodeError = __codeSdk.CodeError;",
+    ...manifest.apps.map((app) => `export const ${app.exportName} = __codeSdk.namespaces[${quote(app.exportName)}];`),
+    ...(options.owner ? ["export const owner = __codeSdk.owner;"] : []),
+    ...(options.mode === "code_run" ? [] : ["export const app = __codeSdk.app;", "export const db = __codeSdk.db;"]),
+  ];
+  // Aliases retain the exact generated Query signature, so the checker and policy
+  // attribute every helper to its ordinary versioned capability and stream.
+  const core = manifest.apps.find((app) => app.appId === "core");
+  if (core && options.mode !== "code_run") {
+    for (const name of ["pdf", "sheet", "finance", "chart"]) {
+      const helpers = manifest.operations.filter(
+        (op) =>
+          op.appId === "core" &&
+          op.kind === "query" &&
+          op.target === null &&
+          op.stream?.direction === "read" &&
+          op.methodPath.length === 4 &&
+          op.methodPath[0] === "file" &&
+          op.methodPath[1] === name &&
+          op.methodPath[3] === "v1",
+      );
+      if (!helpers.length || manifest.apps.some((app) => app.exportName === name)) continue;
+      declarations.push(
+        `export declare const ${name}: { ${helpers.map((op) => `readonly ${quote(op.methodPath[2])}: typeof ${core.exportName}${op.methodPath.map((part) => `[${quote(part)}]`).join("")}`).join("; ")} };`,
+      );
+      runtimeExports.push(
+        `export const ${name} = Object.freeze({ ${helpers.map((op) => `${quote(op.methodPath[2])}: ${core.exportName}${op.methodPath.map((part) => `[${quote(part)}]`).join("")}`).join(", ")} });`,
+      );
+    }
+  }
+  const runtimeManifest = {
+    apps: manifest.apps.map(({ exportName }) => ({ exportName })),
+    handles: manifest.handles,
+    operations: manifest.operations.map(({ capability, appId, kind, target, refs, methodPath, idempotency }) => ({
+      capability,
+      appId,
+      kind,
+      target,
+      refs,
+      methodPath,
+      idempotency,
+    })),
+    ...(manifest.owner ? { owner: manifest.owner } : {}),
+    appMethods: manifest.appMethods,
+    events: manifest.events.map(({ type, version, place }) => ({ type, version, place })),
+    pageLimits: CODE_PAGE_LIMITS,
+    databaseMessages: CODE_DATABASE_MESSAGES,
+  };
+  return {
+    declarations: `${declarations.join("\n")}\n`,
+    runtime: `// Generated from Cloud capability manifests. Do not edit.\nconst __codeSdk = (() => {\nconst manifest = ${JSON.stringify(stableJsonValue(runtimeManifest))};\nconst RESOURCE_ID_MAX = ${CLOUD_RESOURCE_ID_MAX_LENGTH};\n${CODE_SDK_RUNTIME}\nreturn __codeSdk;\n})();\n${runtimeExports.join("\n")}\n${CODE_PAGE_BUILDERS}\n`,
+    manifest,
+  };
+}

@@ -44,6 +44,31 @@ const request = (path: string, method = "GET", body?: unknown, appId = "mail") =
   });
 
 describe("owner mandate lifecycle routes", () => {
+  test("runner credentials cannot manage Core-owned Code version entries", async () => {
+    let mutations = 0;
+    const codeEntry: Mandate = { ...mandate, ownerAppId: "runner", workloadType: "code.version", policy: null };
+    const mutate = async () => {
+      mutations += 1;
+      return ok(codeEntry);
+    };
+    const routes = createIdentityMandateRoutes({
+      authenticateWorkload: async () => ({
+        appId: "runner",
+        serviceAccountId: SERVICE_ACCOUNT_ID,
+        credentialId: CREDENTIAL_ID,
+        scope: "identity:invoke",
+      }),
+      service: { get: async () => codeEntry, confirm: mutate, updatePolicy: mutate, pause: mutate, revoke: mutate },
+    });
+    expect((await routes.request(request(`/mandates/${MANDATE_ID}`, "GET", undefined, "runner"))).status).toBe(404);
+    for (const action of ["confirm", "policy", "pause", "revoke"]) {
+      expect((await routes.request(request(`/mandates/${MANDATE_ID}/${action}`, "POST", { expectedRevision: 3 }, "runner"))).status).toBe(
+        404,
+      );
+    }
+    expect(mutations).toBe(0);
+  });
+
   test("bounds every lifecycle body even with absent or forged Content-Length", async () => {
     let mutations = 0;
     const mutate = async () => {

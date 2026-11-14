@@ -11,6 +11,7 @@ import type {
   ToolContext,
 } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
+import type { SQL } from "bun";
 import type { z } from "zod";
 import type { CapabilitySentenceField } from "../_internal/capability-sentences";
 import type {
@@ -44,7 +45,7 @@ export type AiRecentSentResourceRef = {
   ref: CloudResourceRef;
   count: number;
   lastSentAt: string;
-  /** Internal conversation UUID, only for authorized Studio reads. */
+  /** Internal UUID of the conversation that supplied this reference. */
   conversationId: string;
 };
 
@@ -152,7 +153,17 @@ export type AiConversationTitleSource = AiConversationFieldSource;
 export type AiConversationRunStatus = "idle" | "queued" | "running" | "needs_attention" | "waiting_for_browser" | "failed";
 export type AiConversationStatusFilter = Exclude<AiConversationRunStatus, "idle" | "queued" | "waiting_for_browser"> | "unread";
 
+export type AiConversationPlace = { ref: CloudResourceRef; title: string };
+export type AiConversationCounts = {
+  unread: number;
+  needsAttention: number;
+  places: { total: number; unread: number; needsAttention: number };
+};
+export type AiConversationPlaceFilter = "none" | "any" | `${string}:${string}`;
+
 export type AiConversation = {
+  /** The owner’s place binding; absent or null for ordinary chats. */
+  place?: AiConversationPlace | null;
   activity?: { completed: number; total: number; step: string | null; tool: string | null };
   todoPlan?: { seq: number; todos: import("./todo-contracts").AiTodoPlan["todos"] };
   id: string;
@@ -171,7 +182,6 @@ export type AiConversation = {
   /** null: automatic after seven days without use; false: explicitly active; true: finished. */
   done: boolean | null;
   isDone: boolean;
-  hasActiveSchedule?: boolean;
   lastUsedAt: string;
   runStatus: AiConversationRunStatus;
   /** Error from the latest turn when `runStatus` is `failed`. */
@@ -278,6 +288,18 @@ export type AiConversationProjectUpdateResult =
   | { ok: true; conversation: AiConversation }
   | { ok: false; reason: "not_found" | "active_turn" | "already_assigned" };
 
+export type AiCodeOrigin = { codeId: string; title: string; runId: string; requestId: string; label: string };
+
+/** Receipt-based snapshot at an authoring stop; deliberately contains no source or paths. */
+export type AiCodeAuthoringStop = {
+  reason: "model_calls" | "input_tokens" | "repeated_error";
+  completedSteps: number;
+  drafts: number;
+  unchecked: number;
+  untested: number;
+  unsubmitted: number;
+};
+
 export type AiStoredMessage = {
   /** Personal composer hint, projected only for the person who triggered the latest completed answer. */
   suggestedNextMessage?: { text: string; dismissedAt: string | null };
@@ -303,6 +325,8 @@ export type AiStoredMessage = {
   meta: {
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
+    codeAuthoringStop?: AiCodeAuthoringStop;
+    codeOrigin?: AiCodeOrigin;
     modelRequest?: AiModelRequest;
     modelResolved?: AiResolvedModelRef;
     modelReplacement?: { kind: "model_replaced"; previousLabel: string; nextLabel: string };
@@ -316,9 +340,11 @@ export type AiStoredMessage = {
       sourceTitle: string;
       sourceHref?: string;
     };
+    /** A committed personal Code result; deferred from any already-running model turn. */
+    codeDelivery?: { codeId: string; runId: string; effectKey: string };
     scheduledTask?: {
-      reason?: import("./chat-task-reasons").ChatTaskReason;
-      /** The message text is only the reason sentence; the chat words the reason itself instead. */
+      reason?: { code: string; at: string; action?: string };
+      /** Historical marker; the original stored text remains the display source. */
       reasonOnly?: true;
       stop?: { cause: "paused" | "deleted"; done: string[] };
       taskId: string;
@@ -369,6 +395,7 @@ export type AiTurnErrorCode =
   | "context_full"
   | "time_limit"
   | "step_limit"
+  | "capability_changed"
   | "wait_expired"
   | "interrupted"
   | "not_allowed"
@@ -405,6 +432,7 @@ export type AiTurnFinalizedEvent = {
 };
 
 export type AiTurn = {
+  codeOrigin?: AiCodeOrigin;
   deadline?: string | null;
   runBudgetMs?: number | null;
   cancelRequestedAt?: string | null;
@@ -507,18 +535,7 @@ export type AiPendingTurnActionRecord = {
 
 export type AiTurnToolSource = { kind: "none" } | { kind: "default"; appTools?: boolean };
 
-export type AiClientToolId =
-  | "local_bash"
-  | AiLocalToolName
-  | "code_run"
-  | "code_action"
-  | "code_inspect"
-  | "code_stop"
-  | "code_open"
-  | "code_present"
-  | "code_check"
-  | "code_export"
-  | "code_secret";
+export type AiClientToolId = "local_bash" | AiLocalToolName | "code_run" | "code_inspect" | "code_stop" | "code_export" | "code_secret";
 
 /** Immutable project instructions and context manifest captured for one turn. */
 export type AiProjectPromptSnapshot = {
@@ -652,7 +669,8 @@ export type AiConversationFileSnapshot = {
   total: number;
 };
 
-export type AiBackgroundRunContext = {
+/** Read-only projection of retired routine transcripts. Never accepted for execution. */
+type RetiredRoutineContext = {
   scheduledFor?: string;
   trigger?: "scheduled" | "manual";
   timezone?: string;
@@ -664,7 +682,9 @@ export type AiBackgroundRunContext = {
 };
 
 export type AiChatTurnRunConfig = {
-  background?: AiBackgroundRunContext;
+  /** Trusted host attribution; never grants tool authority. */
+  codeOrigin?: AiCodeOrigin;
+  background?: RetiredRoutineContext;
   selectedSkillIds?: string[];
   /** Server-owned marker: model grants apply only to interactive Assistant chat. */
   assistantChat?: true;
@@ -701,7 +721,7 @@ export type AiChatTurnRunConfig = {
   toolApprovalContext?: {
     actorUserId: string;
   };
-  /** Durable Core-owned authority for a scheduled chat task. */
+  /** Historical routine binding; rejected for new execution. */
   mandate?: {
     id: string;
     revision: number;
@@ -758,6 +778,16 @@ export type AiConversationService = {
     allowedTools?: string[];
     launchedByAppId?: string;
   }): Promise<AiConversation>;
+  /** Read only: opening a place never creates a chat. */
+  findPlaceConversation(input: { ownerUserId: string; ref: CloudResourceRef }): Promise<AiConversation | null>;
+  /** Called only for the first sent message. Concurrent calls reuse the active chat. */
+  createPlaceConversation(input: {
+    requestId?: string;
+    ownerUserId: string;
+    place: AiConversationPlace;
+    draft: AiDraftContentPart[];
+  }): Promise<AiConversation>;
+  archivePlaceConversation(input: { ownerUserId: string; conversationId: string; ref: CloudResourceRef }): Promise<boolean>;
   forkConversation(input: {
     sourceConversationId: string;
     throughSeq: number;
@@ -767,6 +797,7 @@ export type AiConversationService = {
   listConversations(input: {
     ownerUserId: string;
     search?: string;
+    place?: AiConversationPlaceFilter;
     refs?: CloudResourceRef[];
     archived?: boolean;
     done?: boolean;
@@ -775,9 +806,10 @@ export type AiConversationService = {
     unassigned?: boolean;
     limit?: number;
   }): Promise<AiConversation[]>;
-  listSidebarConversations(input: { ownerUserId: string }): Promise<AiConversation[]>;
+  listSidebarConversations(input: { ownerUserId: string; place?: AiConversationPlaceFilter }): Promise<AiConversation[]>;
   listConversationsPage(input: {
     ownerUserId: string;
+    place?: AiConversationPlaceFilter;
     search?: string;
     archived?: boolean;
     done?: boolean;
@@ -787,6 +819,7 @@ export type AiConversationService = {
     page: number;
     perPage: number;
   }): Promise<AiConversationPage>;
+  getConversationCounts(input: { ownerUserId: string }): Promise<AiConversationCounts>;
   getConversation(input: { conversationId: string; ownerUserId?: string }): Promise<AiConversation | null>;
   getConversationByShortId(input: { shortId: string; ownerUserId?: string; archived?: boolean }): Promise<AiConversation | null>;
   saveDraft(input: {
@@ -816,6 +849,7 @@ export type AiConversationService = {
   listRecentSentResourceRefs(input: { ownerUserId: string }): Promise<AiRecentSentResourceRef[]>;
   listUserConversationResources(input: {
     ownerUserId: string;
+    place?: AiConversationPlaceFilter;
     search?: string;
     before?: string;
     limit?: number;
@@ -971,23 +1005,26 @@ export type AiConversationService = {
   /** Create a queued compaction turn. Chat turns must use submitChatTurn. */
   createCompactionTurn(input: { conversationId: string; modelId: string; runConfig: AiCompactionTurnRunConfig }): Promise<AiTurn>;
   /** Persist the user message and create its turn in one transaction. */
-  submitChatTurn(input: {
-    queuedMessageId?: string;
-    conversationId: string;
-    modelId: string;
-    runConfig: AiChatTurnRunConfig;
-    userMessage: Message;
-    /** Atomically consume this saved draft revision when present. */
-    expectedDraftRevision?: number;
-    /** Conversation Project observed while resolving this turn's immutable snapshot. */
-    expectedProjectId?: string | null;
-    /** Delete active messages with seq >= truncateFromSeq first (retry-in-place). */
-    truncateFromSeq?: number;
-    /** Resources introduced by this user message, indexed in the same transaction. */
-    resources?: AiConversationResourceObservation[];
-    /** Retry source whose immutable turn-file bytes are copied into the new turn. */
-    retrySourceTurnId?: string;
-  }): Promise<{ turn: AiTurn; message: AiStoredMessage }>;
+  submitChatTurn(
+    input: {
+      queuedMessageId?: string;
+      conversationId: string;
+      modelId: string;
+      runConfig: AiChatTurnRunConfig;
+      userMessage: Message;
+      /** Atomically consume this saved draft revision when present. */
+      expectedDraftRevision?: number;
+      /** Conversation Project observed while resolving this turn's immutable snapshot. */
+      expectedProjectId?: string | null;
+      /** Delete active messages with seq >= truncateFromSeq first (retry-in-place). */
+      truncateFromSeq?: number;
+      /** Resources introduced by this user message, indexed in the same transaction. */
+      resources?: AiConversationResourceObservation[];
+      /** Retry source whose immutable turn-file bytes are copied into the new turn. */
+      retrySourceTurnId?: string;
+    },
+    db?: SQL,
+  ): Promise<{ turn: AiTurn; message: AiStoredMessage }>;
   getTurnRunConfig(input: { conversationId: string; turnId: string }): Promise<AiTurnRunConfig | null>;
   getLatestTurn(input: { conversationId: string; kind?: AiTurnRunConfig["kind"] }): Promise<AiTurn | null>;
   getTurn(input: { conversationId: string; turnId: string }): Promise<AiTurn | null>;
@@ -1077,13 +1114,14 @@ export type AiConversationService = {
   /** Atomically make pending steers visible to the model and return them in order. */
   takePendingTurnSteers(input: { conversationId: string; turnId: string; leaseOwner: string }): Promise<AiTurnSteer[]>;
   createSessionStore(input: {
-    background?: AiBackgroundRunContext;
     /** Called after a durable append, for incremental usage/history projection. */
     onMessage?: (message: AiStoredMessage) => Promise<void>;
     conversationId: string;
     modelId?: string | null;
     turnId?: string | null;
     leaseOwner?: string | null;
+    /** Read only for the terminal assistant append, persisted with the message. */
+    codeAuthoringStop?: () => AiCodeAuthoringStop | null;
     /** Ephemeral provider input for this turn; user-message persistence remains reference-only. */
     turnInput?: Input;
     /** Mutable snapshot map read only when an assistant tool-call message is persisted. */
@@ -1138,6 +1176,8 @@ export type AiCapabilityToolPresentation = {
   appAccent?: string;
   title: string;
   capabilityKind: "query" | "action";
+  /** Trusted historical place binding used to reject a revoked pending call on resume. */
+  place?: CloudResourceRef;
   /** Actions: the app's sentences in the locale of the turn, worded for each call by the chat. */
   sentences?: CapabilityActionSentences;
   /** Actions: field formats for the sentences and labelled fields for the generic sentence, in schema order. */
@@ -1164,6 +1204,12 @@ export type AiToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput exten
   promptHint?: string;
   /** Optional compact representation sent to providers in later loops. The full result remains persisted and visible. */
   toHistoricalResult?: (context: { input: z.infer<TInput>; output: z.infer<TOutput>; callId: string }) => unknown | Promise<unknown>;
+  /**
+   * Top-level string arguments the chat shows while the model still writes them, such as a file's path and content.
+   * The step receives them a few times per second, each cut to its last few kilobytes; the complete arguments replace
+   * them when the call is written out, and a call that is cut off disappears. Never list arguments that can hold secrets.
+   */
+  streamArgs?: readonly string[];
 };
 
 export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends z.ZodType = z.ZodType> =

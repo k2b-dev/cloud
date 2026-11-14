@@ -14,7 +14,7 @@ import { createContext, createSignal, For, type JSX, Show, useContext } from "so
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
-import type { AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
+import type { AiCodeAuthoringStop, AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
 import {
   type AiForkMessageInput,
   type AiRetryMessageInput,
@@ -24,6 +24,7 @@ import {
   formatWorkedDuration,
 } from "./message-utils";
 import { aiChatMessages } from "./messages";
+import type { AiSubmittedCodeVersion } from "./turn-layout";
 
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
 export type AiTurnActionRequest = { turnId: string; callId: string; name: string };
@@ -35,12 +36,19 @@ type RetryMessageHandler = (entry: AiStoredMessage, input?: AiRetryMessageInput)
 type RetrySteerHandler = (block: Extract<AiTurnBlock, { kind: "steer_message" }>) => void | Promise<void>;
 
 export type AiChatActions = {
+  /** Host-localized authoring budget notice. Consent uses the normal onContinueTurn send path. */
+  renderCodeAuthoringStop?: (state: AiCodeAuthoringStop, continuable: () => boolean) => JSX.Element;
   /**
    * Host-owned visualizations, persisted independently of the execution session. Called once per `code_present`
    * call, from its first event: `result()` is undefined while the call runs and the saved result afterwards, so
    * the host reserves the frame early and keeps its state when the turn ends.
    */
   renderCodePresentation?: (result: () => unknown) => JSX.Element;
+  /**
+   * Host-owned view of a version `code_submit` saved, placed after the turn's text because it is what the person acts
+   * on next. Without it, the call is a step like any other.
+   */
+  renderCodeVersion?: (version: AiSubmittedCodeVersion) => JSX.Element;
   /** Prevents turn-continuation actions while the current turn is stopping. */
   actionDisabled?: () => boolean;
   onApproval?: ApprovalHandler;
@@ -61,8 +69,6 @@ export type AiChatActions = {
    */
   onContinueTurn?: (message: string) => void | Promise<void>;
   onMessageFeedback?: (entry: AiStoredMessage, feedback: Omit<AiMessageFeedback, "updatedAt"> | null) => void | Promise<void>;
-  /** Open the originating background run for a delivered scheduled result. */
-  onOpenScheduledTaskRun?: (taskId: string, occurrenceId: string) => void;
   /** Open a conversation VFS file in the host application's artifact surface. */
   onOpenFile?: (path: string) => void;
   /** Resolve a Markdown link only when it identifies a known conversation file. */

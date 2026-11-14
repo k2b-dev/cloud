@@ -370,7 +370,7 @@ function contactsCommands(locale?: string) {
     resolveResource: async (ctx, args) => {
       if (!args[0]) throw new Error(t({ en: "Missing contact book.", de: "Kontaktbuch fehlt." }));
       const book = await resolveBook(ctx, args[0]);
-      return { id: book.id, label: `${book.name} (${book.id})` };
+      return { id: book.id, label: `${book.name} (${book.id})`, target: { type: "contacts.book", id: book.id } };
     },
     list: async (ctx, book) => ctx.readJson<AccessEntry[]>(await ctx.fetch(bookApi(book.id, "/access"))),
     grant: async (ctx, book, principal: Principal, permission: PermissionLevel) =>

@@ -50,7 +50,7 @@ An app has no permissions of its own on objects: alone, it reaches objects only 
   process alone does not prove route readiness.
 - Cloud authenticates requests and resolves `actor` (identity and audit) and `accessSubject` (grants). Application services enforce resource permissions on every path;
   UI visibility and page context refs never grant access. Inside a transaction, pass its executor to `getEffectivePermission` or `getEffectivePermissions` (see **Resource authorization**). Grant changes keep a manager (`ensureManagerRemains()`).
-  Only `resource_bound` service accounts carry `appId`, `resourceType`, and `resourceId`; `standalone` and `agent` accounts use their own grants, capped by scopes.
+  Only `resource_bound` service accounts carry `appId`, `resourceType`, and `resourceId`; `standalone`, `agent`, and `code` use their own grants. Credential scopes cap standalone and agent accounts. A verified current Core Code-version invocation uses its mandate instead of credential scopes and human app-entry rules; the target still requires its own Code grant. Code accounts match only their exact account grant, including `access.readable`: no group, all-signed-in, or public entries and no credentials. Target managers grant Code accounts Read or Write through ordinary share services; Code accounts never receive Manage. General directory lookup still excludes Code accounts.
 - OAuth mutations require `write` or `admin`, including resource routes and forwarded capabilities; sessions and personal API keys keep their contracts.
   For read-only POST routes, put `auth.readOnly` first in the route's handlers; never use it for mutations or subtrees.
   Read **Route policies** (`/en/docs/identity/route-policies`).
@@ -139,7 +139,7 @@ SolidJS library remains independent of Cloud and application domains.
   persisted locale and theme, no Cloud header or navigation, and a shared legal and preferences footer. A custom
   root using none of these layouts must install one provider around its returned tree.
 - Pass each page's `Layout` title array; the shell derives the way up from it (**Layout and navigation**).
-  Build no back buttons for it; an app with its own header places `PageTrail` there.
+  Build no back buttons for it; an app with its own header places `PageTrail` there. For resource-specific Assistant context, declare an `assistant` block on the Type and publish its ref through `Layout.context.scope`; read **Assistant at a place** (`/en/docs/ai/assistant-places`) for consent, chat ownership and lifecycle, fixed targets, and checks of current access.
 ## Ship CLI commands and Assistant Skills with the app
 Read **Application CLI modules** (`/en/docs/platform/cli-modules`) and its *Design commands* section before adding `cld` commands.
 Declare modules as `defineApp({ cli: { <name>: { module, references } } })`: `module` exports `defineCliCommands()` named
@@ -151,13 +151,13 @@ Cloud validates Skills at start, updates them by content hash, and offers them o
 
 Request AI through `model: { class: "fast" | "balanced" | "thorough" | "maximum" }`; omitted requests mean balanced, and only empty assignments fall back. Read **Models and providers** and **Structured and background AI** for policy, explicit variant IDs and errors.
 ## Build and verify one complete slice
-For capability design or changes, read **App capabilities** in the Docs collection (`/en/docs/platform/capabilities`),
-especially its machine-composition and design-review guidance. Trace real task paths and consumers before choosing
-result fields or changing contracts; keep detailed API rules in that guide. Cloud records one execution row for every
+For capability changes, read **App capabilities** (`/en/docs/platform/capabilities`), including its machine-composition and design-review guidance. Every resource Action names its `target`; move its main resource ID out of `input`, use `refs` for additional targets, and check child containment in the owning service.
+Declare `code: false` when the effect reaches another application. Application-wide Actions and shared foreign-provider contracts follow the exceptions in that guide.
+Trace real task paths and consumers before changing contracts; detailed API rules stay in that guide. Cloud records one execution row for every
 capability call on every surface; an application writes `context.requestId` into its own audit rows so the two trails
 join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
 (`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.
-Every Type with a page declares a reader that returns the resource's `open` link, a page the caller may open; link resources with `cloudResourceHref`, never a hand-built URL, and check each reader with `assertResourceOpenLink` (*Resource links*). Cloud records every approval as one platform request and repeats the Action's review right before the approved call runs; a changed review asks again, so keep reviews deterministic and carry a revision in the input of Actions on changeable state. Routines check the mandate first, review each Action that needs approval, and refuse it without an `approvalScope`; a review only narrows. Use the public complete-review `content` contract for unsaved or large proposals; a link to the current resource is not a snapshot of the proposed change. Keep streams and lists compact and read stored content through Cloud's authorized reader. Apps show and decide their open approvals only through the shared `Approvals` component and `/api/approvals` route, with no app-owned approval routes or tables; an editor bridge can only reject `confirm` requests.
+Every Type with a page declares a reader that returns the resource's `open` link, a page the caller may open; link resources with `cloudResourceHref`, never a hand-built URL, and check each reader with `assertResourceOpenLink` (*Resource links*). Cloud records every approval as one platform request and repeats the Action's review right before the approved call runs; a changed review asks again, so keep reviews deterministic and carry a revision in the input of Actions on changeable state. Code versions check their mandate and current app policy and review before each Action; a review can only narrow authority. Use the public complete-review `content` contract for unsaved or large proposals; a link to the current resource is not a snapshot of the proposed change. Keep streams and lists compact and read stored content through Cloud's authorized reader. Apps show and decide their open approvals only through the shared `Approvals` component and `/api/approvals` route, with no app-owned approval routes or tables; an editor bridge can only reject `confirm` requests.
 For a shared cross-app contract, read `/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`. To review an application against Cloud's conventions, read **Conventions for Cloud applications** (`/en/docs/conventions`) and follow its audit procedure.
 
 For deployment questions, read **Deployment requirements** in the Docs

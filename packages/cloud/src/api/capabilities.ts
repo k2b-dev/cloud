@@ -1,9 +1,14 @@
+import { createHash } from "node:crypto";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { type CatalogSubscription, projectAppEventCatalog, readCatalogSubscriptions } from "../_internal/app-event-catalog";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { isPersonVisibleCapabilityQuery, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import {
+  isPersonVisibleCapabilityAction,
+  isPersonVisibleCapabilityQuery,
+  resolveCapabilityManifestPresentation,
+} from "../_internal/capabilities";
 import {
   capabilityActionReceiptIssues,
   capabilityActionReviewIssues,
@@ -11,6 +16,7 @@ import {
 } from "../_internal/capability-reviews";
 import { capabilityTimeoutMs, createCapabilityDeadline, withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import { getApp, getCapability, listApps } from "../_internal/registry";
+import { capabilityCallDigest, capabilityInvocationBody, normalizeCapabilityCall } from "../capabilities/calls";
 import { resolveCommandLink } from "../capabilities/command-link";
 import {
   type CapabilityClaimScope,
@@ -26,6 +32,18 @@ import {
   resolveCapabilityClaim,
 } from "../capabilities/executions";
 import {
+  type CodeBridgeAuthority,
+  type CodeBridgeHost,
+  CodeBridgeRefusal,
+  codeBridgeDispatchRefusalKind,
+  codeBridgeLocalRefusalKind,
+} from "../code/bridge-contract";
+import { type CodeDatabaseRequest, CodeDatabaseRequestSchema } from "../code/database-contract";
+import { CodeFileRefSchema, codeFileBinding, hasFileInput } from "../code/file-ref";
+import type { CodeRunTokenClaims } from "../code/run-token";
+import { type CodeRunTokenVerifyOptions, verifyCodeRunToken } from "../code/run-token";
+import { RUNNER_PATHS, RunnerCallRequestSchema } from "../code/runner-protocol";
+import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_CATALOG_BYTES,
   CAPABILITY_MAX_REQUEST_BYTES,
@@ -38,11 +56,17 @@ import {
   CapabilityCatalogSchema,
   CapabilityErrorSchema,
   CapabilityIdempotencyKeySchema,
+  type CapabilityInvocationBody,
+  CapabilityInvocationBodySchema,
   type CapabilityOrigin,
+  CapabilityPageSchema,
+  type CloudResourceRef,
   capabilityActionPolicy,
   capabilityResultJsonSchema,
+  NormalizedCapabilityCallSchema,
 } from "../contracts/capabilities";
 import { CapabilityStreamSchema } from "../contracts/capability-streams";
+import { type CodeHttpRequest, CodeHttpRequestSchema } from "../contracts/code-secrets";
 import { CommandLinkSchema, CommandRequestSchema } from "../contracts/commands";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { getLocale, LOCALE_HEADER, preferredLocale } from "../server/locale";
@@ -60,12 +84,14 @@ import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
 import { hasOAuthScope } from "../server/oauth-scope";
 import { ratelimit } from "../server/ratelimit";
+import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import { AppAccessUnavailableError, appAccessAuthority, canUseApp } from "../services/app-access";
 import { bootstrapRateLimit } from "../services/app-bootstrap";
 import { discoverableApps } from "../services/app-discovery";
 import { authorityFromParentInvocation, invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
+import { invocationAuthorityFromMandate } from "../services/identity/invocation-mandate";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
-import type { CloudInvocationClaims, InvocationAuthority } from "../services/identity/invocation-token";
+import type { CloudInvocationClaims } from "../services/identity/invocation-token";
 import { normalizeInvocationRequestId, signAppCapabilityInvocation, signAppQueryInvocation } from "../services/identity/invocation-token";
 import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
@@ -81,7 +107,8 @@ import { withMandateIssueAuthority } from "../services/mandates";
 import * as settings from "../services/settings";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
-import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
+import { authenticateSignedAppRequest } from "./authenticate-app-request";
+import { dispatchCapabilityStream, inspectCodeStream, rebindCodeWriteStream, sealCapabilityStream } from "./capability-streams";
 
 // Approved reader-check budget, shared across targets for each calling application.
 export const APP_QUERY_REQUESTS_PER_MINUTE = 1_501;
@@ -110,7 +137,7 @@ const schemaValidator = (key: string, schema: Record<string, unknown>): z.ZodTyp
   return validator;
 };
 
-const CapabilityInvocationRequestSchema = z.object({ input: z.unknown() }).strict();
+const CapabilityInvocationRequestSchema = CapabilityInvocationBodySchema;
 const CapabilityCatalogQuerySchema = z
   .object({
     cursor: z.string().max(80).optional(),
@@ -157,25 +184,6 @@ type MandatedCapabilityAuthority = {
   /** Internal proof from a completed approval flow. Public broker input cannot set this. */
   actionApproval?: "approved";
 };
-
-const invocationAuthorityFromMandate = (authority: {
-  mandateId: string;
-  mandateRevision: number;
-  subject: { type: "user" | "service_account"; id: string };
-  workloadType: string;
-  workloadId: string;
-}): InvocationAuthority => ({
-  sub: authority.subject.id,
-  principal_type: authority.subject.type,
-  access_subject_type: authority.subject.type,
-  access_subject_id: authority.subject.id,
-  credential_kind: "mandate",
-  scopes: [],
-  mandate_id: authority.mandateId,
-  mandate_revision: authority.mandateRevision,
-  workload_type: authority.workloadType,
-  workload_id: authority.workloadId,
-});
 
 export const loadCapabilityCatalogPage = async (
   query: { cursor?: string; limit: number },
@@ -235,7 +243,11 @@ export const loadCapabilityCatalogPage = async (
       appName: presentedEntry.name,
       appIcon: capability.appIcon,
       appDescription: presentedEntry.description,
-      manifest: { ...manifest, queries: manifest.queries.filter(isPersonVisibleCapabilityQuery) },
+      manifest: {
+        ...manifest,
+        queries: manifest.queries.filter(isPersonVisibleCapabilityQuery),
+        actions: manifest.actions.filter(isPersonVisibleCapabilityAction),
+      },
       ...(manifest.events ? { events: projectAppEventCatalog(manifest, manifest.events.length ? await loadSubscribers() : []) } : {}),
     };
     const projectedBytes = new TextEncoder().encode(JSON.stringify(projected)).byteLength;
@@ -277,6 +289,12 @@ const capabilityJsonResponse = (body: unknown, status: number): Response => {
 };
 
 export type CapabilityDispatchParams = {
+  /** Set only by the verified runner bridge. Generic mandate brokers cannot invoke Code versions. */
+  codeRun?: true;
+  /** Which run of the mandate's workload this call belongs to, stated by the workload's own app or the verified runner bridge. */
+  workloadRun?: string;
+  /** Verified runner attempt; signed only for direct Code calls. */
+  workloadGeneration?: number;
   /** Trusted Core continuation binding; never read from client headers. */
   continuation?: string;
   request: Request;
@@ -284,6 +302,8 @@ export type CapabilityDispatchParams = {
   review?: boolean;
   appId: string;
   capabilityId: string;
+  target?: CapabilityInvocationBody["target"];
+  refs?: CapabilityInvocationBody["refs"];
   input: unknown;
   locale?: string;
   /** Cloud surface this invocation came from; recorded on the execution row. */
@@ -293,6 +313,8 @@ export type CapabilityDispatchParams = {
   parentInvocation?: CloudInvocationClaims;
   /** Core-only turn coordinates used to recheck allowed tools at a child exchange. */
   assistantTurn?: { conversationId: string; turnId: string };
+  /** Core-only place binding after the Assistant refreshed the owner, consent and provider. Never populated from client input. */
+  assistantPlace?: CloudResourceRef;
   /** Core-only absolute child deadline; cannot be extended by the application. */
   deadline?: number;
   /** Core-only authenticated workload. Never populated from request JSON. */
@@ -303,6 +325,8 @@ export type CapabilityDispatchParams = {
   callingAppId?: string;
   /** Internal observation only: called immediately before attempting the app request. */
   onUpstreamAttempt?: () => void;
+  /** Internal observation of the actual provider status, before body validation or transport projection. */
+  onUpstreamResponse?: (status: number) => void;
   /** Core-only aggregate budget, charged on upstream bytes before parsing or validation. */
   consumeResponseBytes?: (bytes: number) => void;
   dependencies?: CapabilityDispatchDependencies;
@@ -357,6 +381,8 @@ const runCapabilityDispatch = async (
 
   const operations = params.kind === "queries" ? entry.manifest.queries : entry.manifest.actions;
   const operation = operations.find((candidate) => candidate.localId === params.capabilityId);
+  if (params.capabilityId.startsWith("code.access."))
+    return errorResponse("FORBIDDEN", "Code access capabilities have been removed; use ordinary target grants", 403);
   if (operation && "destructive" in operation) observed.destructive = operation.destructive;
   if (!operation) {
     const label = params.kind === "queries" ? messages.query : messages.action;
@@ -367,6 +393,28 @@ const runCapabilityDispatch = async (
     );
     return error;
   }
+  if (
+    params.origin === "assistant" &&
+    params.kind === "actions" &&
+    entry.manifest.types.some((type) => type.assistant?.tools.includes(params.capabilityId))
+  ) {
+    const ref = params.assistantPlace;
+    const declaration = ref && entry.manifest.types.find((type) => `${params.appId}.${type.localId}` === ref.type);
+    if (
+      !ref ||
+      !declaration?.assistant?.tools.includes(params.capabilityId) ||
+      ref.type !== `${params.appId}.${operation.target}` ||
+      params.target?.type !== ref.type ||
+      params.target.id !== ref.id
+    )
+      return errorResponse("PLACE_REJECTED", "Place Actions require the chat's checked, fixed place.", 403);
+  }
+  if (
+    "unattended" in operation &&
+    operation.unattended === false &&
+    (params.mandate || params.parentInvocation?.credential_kind === "mandate")
+  )
+    return errorResponse("FORBIDDEN", "This Action cannot execute unattended", 403);
   if ("appOnly" in operation && operation.appOnly !== undefined && !params.workload)
     return errorResponse("FORBIDDEN", "App authority required for this query", 403);
   if (params.appCaller) {
@@ -482,12 +530,28 @@ const runCapabilityDispatch = async (
     return invalid;
   }
 
-  if ((params.mandate || params.parentInvocation) && operation.stream)
+  let call: ReturnType<typeof normalizeCapabilityCall>;
+  try {
+    call = normalizeCapabilityCall(params.appId, operation, { input: input.data, target: params.target, refs: params.refs });
+  } catch (error) {
+    return errorResponse("VALIDATION_FAILED", error instanceof Error ? error.message : "Invalid capability target", 400);
+  }
+  const invocationBody = capabilityInvocationBody(call);
+  const boundCall = operation.target !== undefined || operation.refs !== undefined;
+  // Execution mandates retain their policy check. Event visibility dependencies use the claimed proof and ordinary read grants.
+  if (params.parentInvocation?.credential_kind === "mandate" && !params.parentInvocation.workload_event && !params.mandate)
+    return errorResponse("MANDATE_POLICY_DENIED", "A current mandate is required", 403);
+
+  if (
+    (params.mandate || params.parentInvocation) &&
+    operation.stream &&
+    !(params.codeRun && params.mandate && params.continuation && !params.parentInvocation)
+  )
     return errorResponse("STREAM_UNSUPPORTED_AUTHORITY", "Streams require an interactive user or service-account request", 403);
 
   let requestBody: string;
   try {
-    requestBody = JSON.stringify({ input: input.data });
+    requestBody = JSON.stringify(invocationBody);
   } catch {
     const invalid = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, messages.inputNotSerializable, 400);
     return invalid;
@@ -500,7 +564,7 @@ const runCapabilityDispatch = async (
   const invocationOperation = capabilityInvocationOperation(params.kind, params.capabilityId, params.review);
   const mandate = params.mandate;
   const lease: NestedInvocationLease | undefined =
-    !params.parentInvocation && (mandate || params.authority?.credentialProof || params.assistantTurn)
+    !params.codeRun && !params.parentInvocation && (mandate || params.authority?.credentialProof || params.assistantTurn)
       ? {
           appId: params.appId,
           deadline: Math.min(
@@ -522,6 +586,7 @@ const runCapabilityDispatch = async (
     return signed;
   };
   let headers: Headers;
+  let codeBridgeRequired = false;
   try {
     headers = mandate
       ? await (async () => {
@@ -538,13 +603,19 @@ const runCapabilityDispatch = async (
                     targetAppId: params.appId,
                     operation: invocationOperation,
                     actionApproval: mandate.actionApproval ?? "none",
-                    input: params.input,
+                    input: input.data,
+                    call,
                     capabilityApproval: "approval" in operation ? (operation.approval ?? "always") : "always",
                     capabilityPolicy: capabilityActionPolicy(entry.manifest, params.capabilityId),
                     requestId,
+                    codeRun: params.codeRun === true,
                   },
                   async (mandateAuthority) => {
                     deadline.check();
+                    if (mandateAuthority.workloadType === "code.version" && !params.codeRun) {
+                      codeBridgeRequired = true;
+                      throw new Error("Code version invocations require the runner bridge");
+                    }
                     observed.subject = mandateAuthority.subject;
                     return (params.dependencies?.signInvocation ?? signInvocationToken)(
                       {
@@ -554,7 +625,11 @@ const runCapabilityDispatch = async (
                         schemaHash: operation.schemaHash,
                         authority: params.parentInvocation
                           ? authorityFromParentInvocation(params.parentInvocation)
-                          : invocationAuthorityFromMandate(mandateAuthority),
+                          : {
+                              ...invocationAuthorityFromMandate(mandateAuthority),
+                              ...(params.workloadRun ? { workload_run: params.workloadRun } : {}),
+                              ...(params.workloadGeneration ? { workload_generation: params.workloadGeneration } : {}),
+                            },
                         parent: params.parentInvocation,
                         expiresAt: params.parentInvocation
                           ? Math.floor((params.deadline ?? params.parentInvocation.exp * 1000) / 1000)
@@ -573,6 +648,7 @@ const runCapabilityDispatch = async (
             ),
           );
           if (!issued.ok) {
+            if (codeBridgeRequired) throw new MandateDispatchError(403);
             if (issued.error.code === "INTERNAL") throw new Error("Mandate invocation issuance failed");
             throw new MandateDispatchError(issued.error.code === "CONFLICT" ? 409 : 403);
           }
@@ -598,7 +674,7 @@ const runCapabilityDispatch = async (
                     targetAppId: params.appId,
                     capabilityId: params.capabilityId,
                     schemaHash: operation.schemaHash,
-                    input: input.data,
+                    input: boundCall ? call : input.data,
                     requestId,
                     signer,
                   });
@@ -625,7 +701,7 @@ const runCapabilityDispatch = async (
                     targetAppId: params.appId,
                     capabilityId: params.capabilityId,
                     schemaHash: operation.schemaHash,
-                    input: input.data,
+                    input: boundCall ? call : input.data,
                     requestId,
                     signer,
                   });
@@ -698,6 +774,8 @@ const runCapabilityDispatch = async (
       );
       return failure;
     }
+    if (error instanceof CodeBridgeRefusal)
+      return errorResponse(error.code, "Code call refused", error.status === 200 ? 403 : error.status);
     console.error("[capabilities] Invocation issuance failed", { appId: params.appId, operation: invocationOperation });
     const failure = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.internal, messages.issuanceFailed, 500, { retrySafe: true });
     return failure;
@@ -746,6 +824,7 @@ const runCapabilityDispatch = async (
       ? {
           appId: params.appId,
           capability: `${params.appId}.${params.capabilityId}`,
+          // Every Action uses the same principal/capability/key scope across runs.
           principal: params.appCaller
             ? `app:${params.appCaller.appId}`
             : claimPrincipal
@@ -757,7 +836,7 @@ const runCapabilityDispatch = async (
   if (claimScope) {
     let claim: Awaited<ReturnType<typeof claimCapabilityIdempotency>>;
     try {
-      claim = await claimCapabilityIdempotency(claimScope, capabilityRequestHash(input.data));
+      claim = await claimCapabilityIdempotency(claimScope, boundCall ? capabilityCallDigest(call) : capabilityRequestHash(input.data));
     } catch (error) {
       // Nothing has been forwarded yet, so refusing the call is the safe answer.
       log.error("Capability idempotency claim failed", {
@@ -767,7 +846,23 @@ const runCapabilityDispatch = async (
       });
       return errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.internal, messages.cloudUnavailable, 503, { retrySafe: true });
     }
-    if (claim.state === "replay") return { body: claim.body, status: claim.status, replayed: true };
+    if (claim.state === "replay") {
+      if (params.codeRun && params.mandate && params.continuation && params.deadline && operation.stream?.direction === "write") {
+        const body = z.object({ stream: CapabilityStreamSchema }).passthrough().safeParse(claim.body);
+        if (!body.success) return errorResponse("STREAM_FAILED", "Stored upload reservation unavailable", 409);
+        try {
+          body.data.stream = await rebindCodeWriteStream(body.data.stream, {
+            binding: params.continuation,
+            call,
+            expiresAt: params.deadline,
+          });
+          return { body: body.data, status: claim.status, replayed: true };
+        } catch {
+          return errorResponse("STREAM_EXPIRED", "Upload reservation unavailable; inspect the provider receipt", 410);
+        }
+      }
+      return { body: claim.body, status: claim.status, replayed: true };
+    }
     if (claim.state === "conflict")
       return errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.idempotencyConflict, messages.idempotencyConflict, 409);
     if (claim.state === "in_flight") {
@@ -863,6 +958,7 @@ const runCapabilityDispatch = async (
     return settle(unavailable, "uncertain");
   }
 
+  params.onUpstreamResponse?.(response.status);
   let upstreamBody: Awaited<ReturnType<typeof readBoundedJson>>;
   try {
     upstreamBody = await deadline.wait(() =>
@@ -957,7 +1053,7 @@ const runCapabilityDispatch = async (
       stream.data.size > operation.stream.maxBytes ||
       Date.parse(stream.data.expiresAt) <= Date.now() ||
       Date.parse(stream.data.expiresAt) > Date.now() + 86_400_000 ||
-      !authority
+      (!authority && !(params.codeRun && params.mandate && params.continuation))
     )
       return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain");
     try {
@@ -971,6 +1067,9 @@ const runCapabilityDispatch = async (
           requestId,
           origin: params.origin,
           continuation: params.continuation,
+          ...(params.codeRun && params.mandate && params.continuation
+            ? { code: { binding: params.continuation, call, expiresAt: params.deadline ?? Date.now() } }
+            : {}),
         });
       body.stream = params.kind === "queries" ? await deadline.wait(seal) : await seal();
       if (Buffer.byteLength(JSON.stringify(body)) > CAPABILITY_MAX_RESULT_BYTES) throw new Error("Stream result too large");
@@ -1271,7 +1370,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
             origin: "http",
             appId: c.req.param("appId") ?? "",
             capabilityId: c.req.param("capabilityId") ?? "",
-            input: request.data.input,
+            ...request.data,
             authority: auth.getAuthority(c),
             locale,
             dependencies,
@@ -1324,7 +1423,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
             origin: "http",
             appId: c.req.param("appId") ?? "",
             capabilityId: c.req.param("capabilityId") ?? "",
-            input: request.data.input,
+            ...request.data,
             authority: auth.getAuthority(c),
             locale,
             dependencies,
@@ -1334,3 +1433,332 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
 };
 
 export type CapabilityApiType = ReturnType<typeof createCapabilityRoutes>;
+
+/** Dependencies for the private runner bridge. Production uses the shared signed-app transport seam. */
+export type CodeRunnerDispatchDependencies = {
+  host: CodeBridgeHost;
+  database?: (input: { claims: CodeRunTokenClaims; request: CodeDatabaseRequest; signal: AbortSignal }) => Promise<Response>;
+  /** Core-only HTTP dispatcher; it must use the admitted mandate wrapper before any effect or secret insertion. */
+  http?: (input: {
+    claims: CodeRunTokenClaims;
+    request: CodeHttpRequest;
+    authority: CodeBridgeAuthority;
+    ownOrigins: readonly string[];
+    signal: AbortSignal;
+  }) => Promise<Response>;
+  dispatch?: CapabilityDispatchDependencies;
+  appProof?: Parameters<typeof authenticateSignedAppRequest>[2];
+  token?: CodeRunTokenVerifyOptions;
+  /** Installation-owned public and internal origins, including registered application origins. */
+  ownOrigins: () => Promise<readonly string[]>;
+};
+
+const codeBridgeError = (code: string, status: CodeBridgeRefusal["status"] = 200, capabilityStatus?: number) =>
+  Response.json(
+    { ok: false, error: { code, status: capabilityStatus ?? new CodeBridgeRefusal(code, status).errorStatus } },
+    { status, headers: { "Cache-Control": "no-store" } },
+  );
+const CodeSdkInvocationSchema = z
+  .object({
+    call: NormalizedCapabilityCallSchema,
+    metadata: z.object({ idempotencyKey: CapabilityIdempotencyKeySchema.optional() }).strict(),
+  })
+  .strict();
+/** Exact origins include scheme and effective port. Invalid/non-HTTPS URLs are never eligible for Code HTTP. */
+export const codeHttpOriginAllowed = (url: string, ownOrigins: readonly string[]): boolean => {
+  try {
+    const canonical = (value: string) => {
+      const parsed = new URL(value);
+      parsed.hostname = parsed.hostname.replace(/\.+$/, "");
+      return parsed;
+    };
+    const target = canonical(url);
+    return (
+      target.protocol === "https:" &&
+      !target.username &&
+      !target.password &&
+      !ownOrigins.some((origin) => canonical(origin).origin === target.origin)
+    );
+  } catch {
+    return false;
+  }
+};
+/**
+ * Transport ingress for C4/C13. App proof authenticates the supervisor; the separate Core token
+ * identifies its attempt. Neither is accepted alone, and client headers never supply authority.
+ */
+export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDependencies) =>
+  new Hono().post(RUNNER_PATHS.call, async (c) => {
+    c.header("Cache-Control", "no-store");
+    // A runner key is shared by the fleet. Keep unsigned ingress protection, but
+    // authenticated call admission belongs to the durable per-run/per-Code budgets.
+    const signed = await authenticateSignedAppRequest(c, "identity:invoke", {
+      admit: async (keyId, appId) =>
+        appId === "runner"
+          ? { limited: false, remaining: 0, resetIn: 0 }
+          : ratelimit({ id: "app-bootstrap-key", limit: await bootstrapRateLimit() }).check(keyId),
+      ...dependencies.appProof,
+    });
+    if (signed instanceof Response) return signed;
+    if (signed.appId !== "runner") return codeBridgeError("code_runner_required", 403);
+    try {
+      const body = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES, c.req.raw.signal);
+      const parsed = RunnerCallRequestSchema.safeParse(body.ok ? body.data : null);
+      if (!parsed.success) return codeBridgeError("code_invalid_call", 400);
+      const request = parsed.data;
+      const claims = await verifyCodeRunToken(request.token, dependencies.token);
+      if (!claims) return codeBridgeError("code_invalid_token", 403);
+      if (claims.runId !== request.runId || claims.generation !== request.generation) return codeBridgeError("runner_lease_lost", 409);
+      // Execution is bounded by the caller/run signal; the bootstrap transport budget must not truncate inference.
+      setRequestTimeout(c, 240);
+      if (["db.query", "db.exec", "db.batch"].includes(request.operation)) {
+        return await dependencies.host.withCall(
+          {
+            claims,
+            kind: "database",
+            call: {
+              capability: request.operation,
+              target: null,
+              refs: {},
+              input: request.input,
+            },
+          },
+          async () => {
+            const input = request.input && typeof request.input === "object" && !Array.isArray(request.input) ? request.input : {};
+            const parsed = CodeDatabaseRequestSchema.safeParse({ ...input, operation: request.operation });
+            if (!parsed.success) return codeBridgeError("code_db_invalid");
+            return dependencies.database
+              ? dependencies.database({ claims, request: parsed.data, signal: c.req.raw.signal })
+              : codeBridgeError("code_db_unavailable", 503);
+          },
+        );
+      }
+      // HTTP retains the same fencing and observations; only the admitted Core dispatcher may inject secrets.
+      if (request.operation === "http.fetch") {
+        return await dependencies.host.withCall(
+          {
+            claims,
+            kind: "internet",
+            call: {
+              capability: "http.fetch",
+              target: null,
+              refs: {},
+              input: request.input,
+            },
+          },
+          async (authority) => {
+            const http = CodeHttpRequestSchema.safeParse(request.input);
+            const ownOrigins = [new URL(c.req.url).origin, ...(await dependencies.ownOrigins())];
+            if (!http.success) return codeBridgeError("code_http_invalid_call");
+            if (!codeHttpOriginAllowed(http.data.url, ownOrigins)) {
+              authority.onRefusal?.("policy");
+              return codeBridgeError("code_http_origin_forbidden");
+            }
+            return dependencies.http
+              ? dependencies.http({ claims, request: http.data, authority, ownOrigins, signal: c.req.raw.signal })
+              : codeBridgeError("code_operation_not_found");
+          },
+        );
+      }
+      return await dispatchCodeSdkCall({
+        claims,
+        invocation: request.input,
+        operationId: request.operation,
+        request: c.req.raw,
+        dependencies,
+      });
+    } catch (error) {
+      if (error instanceof CodeBridgeRefusal) return codeBridgeError(error.code, error.status);
+      return codeBridgeError("code_bridge_unavailable", 503);
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
+  });
+
+/** Core-only reusable bridge seam. Inputs must come from the verified runner or its signed Code invocation. */
+export async function dispatchCodeSdkCall({
+  claims,
+  invocation,
+  operationId,
+  request,
+  dependencies,
+}: {
+  claims: CodeRunTokenClaims;
+  invocation: unknown;
+  operationId: string;
+  request: Request;
+  dependencies: CodeRunnerDispatchDependencies;
+}): Promise<Response> {
+  const sdk = CodeSdkInvocationSchema.safeParse(invocation);
+  if (!sdk.success || operationId !== sdk.data.call.capability) return codeBridgeError("code_invalid_call");
+  const split = operationId.indexOf(".");
+  const appId = operationId.slice(0, split);
+  const capabilityId = operationId.slice(split + 1);
+  const entry = await (dependencies.dispatch?.getCapability ?? getCapability)(appId);
+  const query = entry?.manifest.queries.find((op) => op.localId === capabilityId);
+  const action = entry?.manifest.actions.find((op) => op.localId === capabilityId);
+  const operation = query ?? action;
+  const kind = query ? "query" : "action";
+  const policy = entry && kind === "action" ? capabilityActionPolicy(entry.manifest, capabilityId) : undefined;
+  const objectInput = z.record(z.string(), z.unknown()).safeParse(sdk.data.call.input);
+  const file =
+    operation?.stream?.direction === "write" ? CodeFileRefSchema.safeParse(objectInput.success ? objectInput.data.file : null) : null;
+  const call = file?.success
+    ? {
+        ...sdk.data.call,
+        input: {
+          ...(objectInput.success ? objectInput.data : {}),
+          file: {
+            ...(file.data.name ? { name: file.data.name } : {}),
+            mediaType: file.data.mediaType,
+            size: file.data.size,
+          },
+        },
+      }
+    : sdk.data.call;
+  const continuation = codeFileBinding(claims);
+  const execute = async (authority: CodeBridgeAuthority) => {
+    const refusePolicy = (code: string) => {
+      authority.onRefusal?.(codeBridgeLocalRefusalKind(code));
+      return codeBridgeError(code);
+    };
+    if (!entry || !operation) return codeBridgeError("code_operation_not_found");
+    if (capabilityId.startsWith("code.access.")) return refusePolicy("code_access_forbidden");
+    if (operation.stream?.direction === "write" && !hasFileInput(operation.inputSchema)) return refusePolicy("code_stream_forbidden");
+    if ("code" in operation && operation.code === false) return refusePolicy("code_disabled");
+    if (("unattended" in operation && operation.unattended === false) || ("appOnly" in operation && operation.appOnly))
+      return refusePolicy("code_unattended_forbidden");
+    let source: Awaited<ReturnType<typeof inspectCodeStream>> | undefined;
+    if (operation.stream?.direction === "write") {
+      if (!file?.success) return codeBridgeError("code_file_invalid");
+      try {
+        source = await inspectCodeStream(file.data.id, continuation);
+        if (
+          source.stream.direction !== "read" ||
+          source.stream.size !== file.data.size ||
+          source.stream.mediaType !== file.data.mediaType ||
+          source.stream.name !== file.data.name
+        )
+          return codeBridgeError("code_file_invalid");
+      } catch {
+        return codeBridgeError("code_file_invalid");
+      }
+      if (source.stream.size > operation.stream.maxBytes) return codeBridgeError("code_file_size_limit");
+      if (!authority.consumeFileRef) return codeBridgeError("code_bridge_unavailable");
+      if (!(await authority.consumeFileRef(createHash("sha256").update(source.redemptionId).digest("hex"))))
+        return codeBridgeError("code_file_spent");
+    }
+    let targetStatus: number | undefined;
+    const headers = new Headers({ "Content-Type": "application/json" });
+    if (sdk.data.metadata.idempotencyKey) headers.set("Idempotency-Key", sdk.data.metadata.idempotencyKey);
+    const response = await dispatchCapability({
+      request: new Request(request.url, { method: "POST", headers, signal: request.signal }),
+      kind: kind === "query" ? "queries" : "actions",
+      appId,
+      capabilityId,
+      target: call.target ?? undefined,
+      refs: call.refs,
+      input: call.input,
+      continuation,
+      origin: "app",
+      codeRun: true,
+      onUpstreamResponse: (status) => {
+        targetStatus = status;
+      },
+      workloadRun: claims.runId,
+      workloadGeneration: claims.generation,
+      callingAppId: "core",
+      deadline: claims.exp * 1000,
+      mandate: { mandateId: authority.mandateId, mandateRevision: authority.mandateRevision, ownerAppId: "core" },
+      dependencies: {
+        ...dependencies.dispatch,
+        getCapability: async (id) => (id === appId ? entry : null),
+        withMandateIssueAuthority: authority.withMandateIssueAuthority,
+      },
+    });
+    let result = await readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES, request.signal);
+    if (response.ok && operation.stream) {
+      const offered = z.object({ stream: CapabilityStreamSchema }).safeParse(result.ok ? result.data : null);
+      if (!offered.success) return codeBridgeError("code_file_unavailable");
+      const targetStream = offered.data.stream;
+      if (operation.stream.direction === "read") {
+        return Response.json({
+          ok: true,
+          data: {
+            id: targetStream.id,
+            ...(targetStream.name ? { name: targetStream.name } : {}),
+            mediaType: targetStream.mediaType,
+            size: targetStream.size,
+          },
+        });
+      }
+      if (!source || !file?.success || targetStream.size !== source.stream.size || targetStream.mediaType !== source.stream.mediaType)
+        return codeBridgeError("code_file_mismatch");
+      const sourceCall = source.codeCall;
+      let read: Response | undefined;
+      const transferSignal = AbortSignal.any([request.signal, AbortSignal.timeout(Math.max(1, claims.exp * 1000 - Date.now()))]);
+      const transferRequest = (id: string, body?: ReadableStream<Uint8Array>) =>
+        new Request(request.url, {
+          method: "POST",
+          headers: { "x-cloud-stream-id": id },
+          body,
+          signal: transferSignal,
+          // @ts-expect-error Bun and Node stream request bodies use duplex.
+          duplex: body ? "half" : undefined,
+        });
+      const transferDeps = (admitted: CodeBridgeAuthority) => ({
+        ...dependencies.dispatch,
+        continuation,
+        code: {
+          binding: continuation,
+          mandate: {
+            mandateId: admitted.mandateId,
+            mandateRevision: admitted.mandateRevision,
+            ownerAppId: admitted.ownerAppId,
+          },
+          runId: claims.runId,
+        },
+        withMandateIssueAuthority: admitted.withMandateIssueAuthority,
+      });
+      // Re-admit the actual source operation, including its current policy and resource access.
+      const sourceEntry = await (dependencies.dispatch?.getCapability ?? getCapability)(source.appId);
+      const admittedRead = await dependencies.host.withCall(
+        {
+          claims,
+          call: sourceCall,
+          kind: source.kind === "queries" ? "query" : "action",
+          policy: source.kind === "actions" && sourceEntry ? capabilityActionPolicy(sourceEntry.manifest, source.capabilityId) : undefined,
+        },
+        async (sourceAuthority) => {
+          read = await dispatchCapabilityStream(transferRequest(file.data.id), null, "read", transferDeps(sourceAuthority));
+          return read.ok ? Response.json({ ok: true, data: null }) : codeBridgeError("code_file_source_refused");
+        },
+      );
+      const readOutcome = z.object({ ok: z.boolean() }).safeParse(await admittedRead.clone().json());
+      if (!readOutcome.success || !readOutcome.data.ok || !read?.ok || !read.body) {
+        await read?.body?.cancel().catch(() => undefined);
+        if (admittedRead.status === 409) return admittedRead;
+        return codeBridgeError("code_file_source_refused");
+      }
+      try {
+        const written = await dispatchCapabilityStream(transferRequest(targetStream.id, read.body), null, "write", transferDeps(authority));
+        targetStatus = written.status;
+        result = await readBoundedJson(written, CAPABILITY_MAX_RESULT_BYTES, transferSignal);
+        if (!written.ok) {
+          authority.onRefusal?.(codeBridgeDispatchRefusalKind("stream_failed", written.status));
+          return codeBridgeError("code_file_target_refused", 200, written.status);
+        }
+      } finally {
+        if (!read.body.locked) await read.body.cancel().catch(() => undefined);
+      }
+    }
+    const payload = z.object({ data: z.json(), page: CapabilityPageSchema.optional() }).safeParse(result.ok ? result.data : null);
+    if (response.ok && payload.success) return Response.json({ ok: true, data: kind === "query" ? payload.data : payload.data.data });
+    const failure = z.object({ code: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,127}$/) }).safeParse(result.ok ? result.data : null);
+    const code = failure.success ? failure.data.code.toLowerCase() : "code_call_failed";
+    authority.onRefusal?.(failure.success ? codeBridgeDispatchRefusalKind(code, targetStatus) : "bridge");
+    if (result.ok) authority.onFailure?.(result.data);
+    return codeBridgeError(code, 200, response.status >= 400 && response.status <= 599 ? response.status : undefined);
+  };
+  return await dependencies.host.withCall({ claims, call, kind, policy }, execute, operation?.stream ? undefined : { receipt: "issuance" });
+}

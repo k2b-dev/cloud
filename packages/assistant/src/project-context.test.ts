@@ -7,8 +7,7 @@ import { canUseApp, oauthTokens } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
 import api from "./api";
-import { artifacts } from "./artifacts/service";
-import { testIdentity } from "./artifacts/test-identity";
+import { testIdentity } from "./chat-code/test-identity";
 import { loadAssistantProjectContextSnapshot } from "./project-context";
 
 useUnitClients();
@@ -61,7 +60,6 @@ function setup() {
   spies.push(spyOn(aiProjects, "listKnowledge").mockResolvedValue([]));
   spies.push(spyOn(aiProjects, "listFiles").mockResolvedValue([]));
   spies.push(spyOn(aiProjects, "listReferences").mockResolvedValue([]));
-  spies.push(spyOn(artifacts, "projectApps").mockResolvedValue({ items: [], page: 1, hasNext: false }));
   // Keep this test at the loader boundary; the Skill service's SQL is covered by its own suites.
   const skills = spyOn(aiSkills, "projectSkills").mockImplementation(async (_id, _subject, options) => ({
     items: (await canUseApp(options?.authority ?? null, app)) ? [skill] : [],

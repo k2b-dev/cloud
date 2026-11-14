@@ -38,11 +38,10 @@ import { readThemeFromCookieHeader } from "../shared/theme";
 import { type AiStoredActionReview, isLegacyActionReview, isUnknownActionOutcome, storedActionReview } from "./action-review";
 import { assistantAiSettingsState, peopleAiModels, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
-import { buildAiCapabilityCatalog } from "./capabilities";
+import { buildAiCapabilityCatalog, buildAiCapabilityHistoryCatalog } from "./capabilities";
 import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
-import { aiChatTasks } from "./chat-tasks";
 import { AI_CLIENT_TOOL_ACTION_MAX_BYTES, aiClientToolOutputSchemas } from "./client-tool-results";
 import { watchAiConversation } from "./conversation-watchers";
 import { createCloudAiLocalBashTool, createCloudAiLocalTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
@@ -82,6 +81,9 @@ import {
 } from "./message-queue";
 import { createAiNextMessageTool } from "./next-message";
 import { dismissAiNextMessage } from "./next-message-store";
+import { loadPlaceAssistant } from "./place-assistant";
+import { AiConversationPlaceFilterSchema } from "./place-filter";
+import { placeAssistantRoutes } from "./place-routes";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import type { AiResourceContext } from "./projects-authorization";
@@ -110,6 +112,7 @@ import { aiSkills } from "./skills";
 import {
   AI_TOOL_CHECK_STALE_MS,
   AiConversationCreationError,
+  AiConversationRestoreConflict,
   aiConversations,
   claimAiToolCheck,
   readAiToolCheck,
@@ -130,6 +133,7 @@ const retryInstruction = (mode: "retry" | "details" | "concise"): string | null 
 const ConversationListQuerySchema = z
   .object({
     q: z.string().trim().max(200).optional(),
+    place: AiConversationPlaceFilterSchema.optional(),
     limit: z.coerce.number().int().min(1).max(50).optional(),
     archived: z
       .enum(["true", "false"])
@@ -345,6 +349,7 @@ export const aiRoutes = (() => {
       .use("*", noTransform())
       .use(rateLimit())
       .use("*", auth.requireRole("authenticated"))
+      .route("/places", placeAssistantRoutes)
       .route("/conversations", aiMapRoutes)
       .get("/status", async (c) => {
         const [status, enabled] = await Promise.all([
@@ -565,6 +570,7 @@ export const aiRoutes = (() => {
               await aiConversations.listConversations({
                 ownerUserId: ctx.ownerUserId,
                 search: query.q,
+                place: query.place,
                 archived: query.archived,
                 done: query.done,
                 status: query.status,
@@ -586,6 +592,7 @@ export const aiRoutes = (() => {
         const page = await aiConversations.listConversationsPage({
           ownerUserId: ctx.ownerUserId,
           search: query.q,
+          place: query.place,
           archived: query.archived,
           done: query.done,
           status: query.status,
@@ -596,10 +603,36 @@ export const aiRoutes = (() => {
         });
         return respond(c, ok({ ...page, items: await publicConversations(page.items, resourceContext(c)) }));
       })
+      .get("/conversations/counts", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        return respond(c, ok(await aiConversations.getConversationCounts({ ownerUserId: ctx.ownerUserId })));
+      })
       .post("/conversations", v("json", AiCreateConversationInputSchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const body = c.req.valid("json");
+        if (body.place) {
+          const place = await loadPlaceAssistant(c, body.place);
+          if (place.state === "consent_required") return respond(c, fail(err.forbidden("Allow Assistant to see the current place first.")));
+          if (place.state !== "available") return respond(c, fail(err.notFound("Place")));
+          try {
+            const conversation = await aiConversations.createPlaceConversation({
+              requestId: body.requestId,
+              ownerUserId: ctx.ownerUserId,
+              place: { ref: body.place, title: place.title },
+              draft: body.draft!.content,
+            });
+            const project = conversation.projectId ? await aiProjects.get(conversation.projectId, resourceContext(c), "read") : null;
+            if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
+            return respond(c, ok(publicConversation(conversation, project?.shortId ?? null)), 201);
+          } catch (error) {
+            if (error instanceof AiConversationCreationError) {
+              return respond(c, fail(error.reason === "conflict" ? err.conflict(error.message) : err.notFound("Conversation")));
+            }
+            throw error;
+          }
+        }
         const project = body.projectId ? await aiProjects.getByShortId(body.projectId, resourceContext(c), "read") : null;
         if (body.projectId && !project) return respond(c, fail(err.notFound("Project")));
         const draft = await prepareLaunchDraft(body, resourceContext(c), appAccessAuthority(c));
@@ -903,13 +936,6 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
         });
         if (!archived) return notFound(c);
-        // The chat is archived either way; admission pauses a routine this step missed before its next run.
-        await aiChatTasks.pauseForArchivedChat({ conversationId: conversation.id, userId: ctx.ownerUserId }).catch((error) =>
-          logger("ai:chat-tasks").warn("Could not pause the routines of an archived chat", {
-            conversationId: conversation.id,
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
         return respond(c, ok({ ok: true }));
       })
       .post("/conversations/:conversationId/restore", async (c) => {
@@ -917,28 +943,17 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx, true);
         if (!conversation) return notFound(c);
-        await aiChatTasks.markRestoreStarted({ conversationId: conversation.id, userId: ctx.ownerUserId });
-        const restored = await aiConversations.restoreConversation({
-          conversationId: conversation.id,
-          ownerUserId: ctx.ownerUserId,
-        });
-        // A restored chat must not leave archive reasons on routines that stay paused.
-        // The phone app may restore the chat and relabel pauses, but may not resume background authority.
-        // If this step fails, the routine recovery relabels them after a grace period; it never resumes.
-        if (restored)
-          await aiChatTasks
-            .resumeForRestoredChat({
-              conversationId: conversation.id,
-              userId: ctx.ownerUserId,
-              resume: !isAppSessionActor(c.get("actor")),
-            })
-            .catch((error) =>
-              logger("ai:chat-tasks").warn("Could not resume the routines of a restored chat", {
-                conversationId: conversation.id,
-                error: error instanceof Error ? error.message : String(error),
-              }),
-            );
-        return restored ? respond(c, ok(await publicConversationFor(restored, resourceContext(c)))) : notFound(c);
+        try {
+          const restored = await aiConversations.restoreConversation({
+            conversationId: conversation.id,
+            ownerUserId: ctx.ownerUserId,
+          });
+          return restored ? respond(c, ok(await publicConversationFor(restored, resourceContext(c)))) : notFound(c);
+        } catch (error) {
+          if (error instanceof AiConversationRestoreConflict)
+            return respond(c, fail({ ...err.conflict("Place chat"), message: error.message }));
+          throw error;
+        }
       })
       .post("/conversations/:conversationId/viewed", async (c) => {
         const ctx = await resolveContext(c);
@@ -1321,7 +1336,7 @@ export const aiRoutes = (() => {
             message.message.role === "assistant"
               ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
               : undefined;
-          const catalog = buildAiCapabilityCatalog(await discoverableAppEntries(appAccessAuthority(c), await listCapabilities()));
+          const catalog = buildAiCapabilityHistoryCatalog(await discoverableAppEntries(appAccessAuthority(c), await listCapabilities()));
           const presentation = message.meta?.toolPresentations?.[callId];
           const entry = catalog.find(
             (entry) =>

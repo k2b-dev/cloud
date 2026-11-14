@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "pulse",
-  "manifestHash": "a110d7b068ecb70b1dd9c33a78141c8729b6c4eb9a89431a2e1119646e6a479a",
+  "manifestHash": "81d352e35ee19fb989c8291c5b82dfe5e32e0c06defef2d0a94cbf6a7eddc8b1",
   "types": [
     {
       "localId": "base",
@@ -1250,12 +1250,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "baseId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 36,
-            "description": "Pulse Base ID or short ID; get it from base.list."
-          },
           "queryId": {
             "type": "string",
             "minLength": 1,
@@ -1269,7 +1263,7 @@
             "description": "Revision returned by saved_query.list; deletion fails if it changed."
           }
         },
-        "required": ["baseId", "queryId", "expectedRevision"],
+        "required": ["queryId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1283,11 +1277,12 @@
         "required": ["deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "d13e6819e0ac2d8593fde59a878bff0f4b0506dbae60c4c6547faebd9faedadf",
+      "schemaHash": "3aa1c142c0e0b7976c85434603a29a838623c1ceab877aa7573cb1a9d47684a3",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "base"
     },
     {
       "localId": "saved_query.save",
@@ -1297,12 +1292,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "baseId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 36,
-            "description": "Pulse Base ID or short ID; get it from base.list."
-          },
           "sql": {
             "type": "string",
             "minLength": 1,
@@ -1337,7 +1326,7 @@
             "description": "Name unique within the base."
           }
         },
-        "required": ["baseId", "sql", "name"],
+        "required": ["sql", "name"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1395,12 +1384,13 @@
         "required": ["id", "baseId", "name", "sql", "params", "revision", "createdBy", "updatedBy", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "217c4783d2af5097ec2661b3fc1fd11022436b1ea79f91d10fc7b6b24f977e3a",
+      "schemaHash": "766d7857431216f6b6cb9162f284c00f59a1072eaf05da60344ee93617a730e0",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "base"
     }
   ],
   "commands": []

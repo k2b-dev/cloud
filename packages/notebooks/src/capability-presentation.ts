@@ -532,7 +532,6 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Erstellen Sie eine Markdown-Notiz in einem explizit ausgewählten beschreibbaren Notizbuch, aus Inhalt oder aus einer templateId von template.list.",
           input: {
-            notebookId: "Beschreibbares Notizbuch ID.",
             parentId: "Optionale Elternnotiz ID im selben Notizbuch.",
             position:
               "Optionale 0-basierte Position; Einordnen nummeriert alle Notizen der Ebene in der gewählten manuellen Reihenfolge. Ohne Position folgt die Notiz dem Ordnungsmodus der Ebene.",

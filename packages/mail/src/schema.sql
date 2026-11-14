@@ -920,6 +920,8 @@ CREATE TABLE mail.draft_attachment_uploads (
     finalized_revision bigint,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    capability_revision bigint,
+    capability_write_started boolean DEFAULT false NOT NULL,
     CONSTRAINT draft_attachment_upload_state_check CHECK ((((state = 'attached'::text) AND (attachment_id IS NOT NULL) AND (finalized_revision IS NOT NULL)) OR ((state <> 'attached'::text) AND (attachment_id IS NULL) AND (finalized_revision IS NULL)))),
     CONSTRAINT draft_attachment_uploads_blob_state_check CHECK ((((state = 'cancelled'::text) AND (blob_id IS NULL)) OR ((state <> 'cancelled'::text) AND (blob_id IS NOT NULL)))),
     CONSTRAINT draft_attachment_uploads_byte_length_check CHECK (((byte_length >= 0) AND (byte_length <= 104857600))),
@@ -2990,41 +2992,6 @@ ALTER TABLE mail.automation_log ADD COLUMN IF NOT EXISTS undo_kept jsonb NOT NUL
 ALTER TABLE mail.automation_log ADD COLUMN IF NOT EXISTS undo_reverted jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE UNIQUE INDEX IF NOT EXISTS automation_effect_target_idx ON mail.automation_effect (run_id, conversation_id, effect_class, target_id, value);
-
--- Observed provider changes also fence Undo, including changes away and back in another client.
-CREATE OR REPLACE FUNCTION mail.invalidate_automation_observed_state() RETURNS trigger
-LANGUAGE plpgsql AS $$
-BEGIN
-  IF TG_TABLE_NAME = 'conversations' THEN
-    UPDATE mail.automation_effect SET changed_at = now()
-    WHERE conversation_id = NEW.id AND effect_class = 'status' AND changed_at IS NULL;
-  ELSE
-    IF OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL THEN
-      UPDATE mail.automation_effect effect SET changed_at = now()
-      WHERE effect.target_id = NEW.message_id AND effect.effect_class = 'placement' AND effect.changed_at IS NULL
-        AND (CASE WHEN effect.undone THEN effect.before_value ELSE effect.after_value END) #>> '{}' = OLD.folder_id::text
-        AND EXISTS (SELECT 1 FROM mail.commands command WHERE command.id = effect.command_id AND command.state IN ('confirmed', 'reconciled'));
-    END IF;
-    UPDATE mail.automation_effect effect SET changed_at = now()
-    WHERE effect.target_id = NEW.message_id AND effect.changed_at IS NULL
-      AND (
-        (effect.effect_class = 'flag' AND (effect.value = ANY(OLD.flags)) IS DISTINCT FROM (effect.value = ANY(NEW.flags)))
-        OR (effect.effect_class = 'keyword' AND (effect.value = ANY(OLD.keywords)) IS DISTINCT FROM (effect.value = ANY(NEW.keywords)))
-      )
-      -- The command's initial application is the expected change, not an intervening edit.
-      AND EXISTS (SELECT 1 FROM mail.commands command WHERE command.id = effect.command_id AND command.state IN ('confirmed', 'reconciled'));
-  END IF;
-  RETURN NEW;
-END;
-$$;
-CREATE OR REPLACE TRIGGER conversations_invalidate_automation_status
-AFTER UPDATE OF work_status ON mail.conversations FOR EACH ROW
-WHEN (OLD.work_status IS DISTINCT FROM NEW.work_status)
-EXECUTE FUNCTION mail.invalidate_automation_observed_state();
-CREATE OR REPLACE TRIGGER placements_invalidate_automation_state
-AFTER UPDATE OF flags, keywords, deleted_at ON mail.message_placements FOR EACH ROW
-WHEN (OLD.flags IS DISTINCT FROM NEW.flags OR OLD.keywords IS DISTINCT FROM NEW.keywords OR OLD.deleted_at IS DISTINCT FROM NEW.deleted_at)
-EXECUTE FUNCTION mail.invalidate_automation_observed_state();
 
 CREATE TABLE mail.draft_suggestion_requests (
     mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,

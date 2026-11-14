@@ -781,6 +781,48 @@ Activity accepts `container` alongside the published `space` alias; when
 both are supplied they must identify the same space. The existing list
 and activity results remain compatible.
 
+## Call capabilities with a Space target
+
+Space Actions name a fixed `space` target. Pass the Space beside `input` as
+`target: { type: "spaces.space", id: spaceId }`. Creation inputs such as
+`task.create`, `event.create`, `template.create`, and
+`calendar-invitation.import` no longer contain `spaceId`.
+
+Keep item, column, tag, checklist, template, and blocker IDs in the domain
+input. They must belong to the selected Space. Runs and reviews reject an
+item from another Space even when the caller can write to both Spaces.
+Readers and discovery Queries retain their existing inputs.
+
+Chat and MCP tools keep flat arguments: use `space` for the target alongside
+fields such as `itemId`, `columnId`, and `title`. For example, `task.create`
+takes `{ space, title }`. Without `columnId`, it uses the first open column
+in board order (numeric rank, then public ID). Pass `columnId` only for an
+explicit column choice; no prior Space read is needed for the default.
+
+`event.invitation.prepare`, `event.invitation.commit`, and
+`calendar-invitation.response.commit` declare `code: false` for their Mail
+draft workflow. Resource-owned Code cannot use them; person calls retain
+their existing permissions. The response commit has no Space target and
+resolves the linked event from its Mail correlation values.
+
+See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
+for the invocation and review contract.
+
+## Code access to a Space
+
+A Space manager grants a Code service account View or Edit in the Space's
+normal share dialog, using its exact handle. The same dialog changes or removes
+the share. No Code declaration or adapter is needed; Spaces does not declare
+Code owners in Phase 1. Capabilities use `{ type: "spaces.space", id: spaceId }`
+with the public Space ID and check the account's current rights on every call.
+
+Code never receives Manage, inherits group, public or signed-in rights, or
+counts as a Space manager. Operations that need administration or declare
+`code: false` retain those restrictions. Activation and version approval grant
+no Space access. Removing a share takes effect at the next permission check;
+reactivation cannot restore it. See
+[Code with access](/en/docs/identity/authorization#code-with-access).
+
 ## Connect automations to a Space
 
 Automations can react when someone adds a comment, changes an item's assignees,

@@ -32,6 +32,7 @@ const openPermissionDialog = async (props: AdminNotebookActionsProps, locale: st
   // The page may have changed while the list loaded; never open the dialog over another page.
   if (signal.aborted) return;
   await openAccessDialog({
+    target: { type: "notebooks.notebook", id: props.notebookId },
     resourceName: props.notebookName,
     subtitle: t.accessDialogSubtitle,
     initialEntries,

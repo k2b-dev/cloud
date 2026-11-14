@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
-import { type AuthContext, createAccess, type PermissionLevel } from "@k2b/cloud/server";
+import { type AuthContext, createAccess, type PermissionLevel, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { serviceAccountCredentials, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { Hono } from "hono";
@@ -47,6 +47,31 @@ const request = (headers: Headers, path = "", method = "GET", body?: unknown) =>
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
+
+// Observe an actual PostgreSQL wait before releasing its blocker. No timing
+// sleep or request retry may make the contention regressions pass.
+const waitForBlockedGrant = async (blocker: number, pending: Promise<Response>) => {
+  let settled = false;
+  void pending.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  const deadline = performance.now() + (REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2;
+  for (;;) {
+    if (settled) throw new Error("Grant returned before its directory blocker committed");
+    const [waiting] = await sql<{ waiting: boolean }[]>`SELECT EXISTS (
+      SELECT 1 FROM pg_stat_activity a JOIN pg_locks l USING (pid)
+      WHERE a.datname = current_database() AND NOT l.granted
+        AND ${blocker} = ANY(pg_blocking_pids(a.pid))) AS waiting`;
+    if (waiting?.waiting) return;
+    if (performance.now() >= deadline) throw new Error("Grant did not wait on the directory lock within its budget");
+    await Bun.sleep(10);
+  }
+};
 
 suite("chat conversations, people, and directory groups", () => {
   const trackedUsers: string[] = [];
@@ -1039,6 +1064,117 @@ suite("chat conversations, people, and directory groups", () => {
     }
   });
 
+  test("directory maintenance waits within the request budget and mixed member additions succeed without retry", async () => {
+    const owner = await user();
+    const direct = await user();
+    const grouped = await user();
+    const groupId = await group([grouped]);
+    const headers = await cookie(owner);
+    const chat = await fixture(owner);
+    const members = [
+      { type: "group", groupId },
+      { type: "user", userId: direct },
+    ];
+    const writer = await sql.reserve();
+    let pending: Promise<Response> | undefined;
+    try {
+      await writer`BEGIN`;
+      // Exactly the lock held by autovacuum VACUUM ANALYZE auth.groups.
+      await writer`LOCK TABLE auth.groups IN SHARE UPDATE EXCLUSIVE MODE`;
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      const started = performance.now();
+      pending = Promise.resolve(request(headers, `/${chat.shortId}/members`, "POST", { members }));
+      await waitForBlockedGrant(backend!.pid, pending);
+      // Directory writers may also update identity rows. The waiting grant
+      // must not retain the manager row and deadlock that writer.
+      await writer`SELECT id FROM auth.users WHERE id = ${owner}::uuid FOR UPDATE NOWAIT`;
+      // The POSIX configuration writer locks groups before updating settings.
+      await writer`LOCK TABLE settings.entries IN ROW EXCLUSIVE MODE NOWAIT`;
+      await writer`COMMIT`;
+      const response = await pending;
+      expect(response.status, await response.clone().text()).toBe(200);
+      expect(await response.json()).toEqual({ added: 2 });
+      expect(performance.now() - started).toBeLessThan((REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2);
+      const [after] = await sql<{ grants: number; participants: number }[]>`SELECT
+        (SELECT count(*)::int FROM chat.conversation_access WHERE conversation_id = ${chat.id}::uuid) AS grants,
+        (SELECT count(*)::int FROM chat.participants WHERE conversation_id = ${chat.id}::uuid) AS participants`;
+      expect(after).toEqual({ grants: 3, participants: 3 });
+    } finally {
+      await writer`ROLLBACK`;
+      writer.release();
+      await pending?.catch(() => {});
+    }
+  });
+
+  for (const blockedTable of ["auth.user_groups_v2", "auth.ipa_user_effective_groups"] as const) {
+    test(`directory writers can finish reverse lock orders while a grant waits on ${blockedTable}`, async () => {
+      const owner = await user();
+      const recipient = await user();
+      const chat = await fixture(owner);
+      const headers = await cookie(owner);
+      const writer = await sql.reserve();
+      let pending: Promise<Response> | undefined;
+      try {
+        await writer`BEGIN`;
+        await writer.unsafe(`LOCK TABLE ${blockedTable} IN ROW EXCLUSIVE MODE`);
+        const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        pending = Promise.resolve(
+          request(headers, `/${chat.shortId}/members`, "POST", {
+            members: [{ type: "user", userId: recipient }],
+          }),
+        );
+        await waitForBlockedGrant(backend!.pid, pending);
+        // Full IPA sync can touch groups after stale-user cascades; provider
+        // transitions touch the effective projection before user membership.
+        await writer`LOCK TABLE auth.groups, auth.user_groups_v2 IN ROW EXCLUSIVE MODE NOWAIT`;
+        await writer`COMMIT`;
+        expect((await pending).status).toBe(200);
+      } finally {
+        await writer`ROLLBACK`;
+        writer.release();
+        await pending?.catch(() => {});
+      }
+    });
+  }
+
+  test("a grant waiting on group revocation rechecks the current manager without changing membership", async () => {
+    const owner = await user();
+    const manager = await user();
+    const recipient = await user();
+    const chat = await fixture(owner, [{ id: manager, permission: "read" }]);
+    const groupId = await group([manager]);
+    await groupGrant(chat, groupId, owner, "admin");
+    const headers = await cookie(manager);
+    expect((await requireConversation({ ...userContext(manager), conversationId: chat.shortId, required: "admin" })).ok).toBe(true);
+    const state = () => sql<{ grants: number; participants: number; messages: number; audits: number }[]>`SELECT
+      (SELECT count(*)::int FROM chat.conversation_access WHERE conversation_id = ${chat.id}::uuid) AS grants,
+      (SELECT count(*)::int FROM chat.participants WHERE conversation_id = ${chat.id}::uuid) AS participants,
+      (SELECT count(*)::int FROM chat.messages WHERE conversation_id = ${chat.id}::uuid) AS messages,
+      (SELECT count(*)::int FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ${chat.shortId}) AS audits`;
+    const before = await state();
+    const baseline = before[0];
+    if (!baseline) throw new Error("Missing conversation state");
+    const writer = await sql.reserve();
+    let pending: Promise<Response> | undefined;
+    try {
+      await writer`BEGIN`;
+      await writer`DELETE FROM auth.user_groups_v2 WHERE user_id = ${manager}::uuid AND group_id = ${groupId}::uuid`;
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      pending = Promise.resolve(request(headers, `/${chat.shortId}/members`, "POST", { members: [{ type: "user", userId: recipient }] }));
+      await waitForBlockedGrant(backend!.pid, pending);
+      await writer`COMMIT`;
+      expect((await pending).status).toBe(403);
+      expect(await state()).toEqual([{ ...baseline, audits: baseline.audits + 1 }]);
+      const [denial] = await sql<{ outcome: string }[]>`SELECT outcome FROM audit.events
+        WHERE target_type = 'chat_conversation' AND target_id = ${chat.shortId} AND action = 'chat.member.add' ORDER BY id DESC LIMIT 1`;
+      expect(denial?.outcome).toBe("denied");
+    } finally {
+      await writer`ROLLBACK`;
+      writer.release();
+      await pending?.catch(() => {});
+    }
+  });
+
   test("group adds seed ondemand state, retain it on direct upgrades, and grant future group members access", async () => {
     const owner = await user();
     const direct = await user();
@@ -1055,7 +1191,7 @@ suite("chat conversations, people, and directory groups", () => {
         { type: "user", userId: direct },
       ],
     });
-    expect(added.status).toBe(200);
+    expect(added.status, await added.clone().text()).toBe(200);
     expect(await added.json()).toEqual({ added: 2 });
     const participant = () =>
       sql<
@@ -1800,6 +1936,28 @@ suite("chat conversations, people, and directory groups", () => {
         managesGroupIds: [],
       }),
     },
+  });
+
+  test("ordinary member grants accept Code View/Edit and refuse Manage", async () => {
+    const owner = await user(),
+      headers = await cookie(owner),
+      chat = await fixture(owner);
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind) VALUES('Code member','code') RETURNING id`;
+    if (!account) throw new Error("Missing Code account");
+    trackedAccounts.push(account.id);
+    const response = await request(headers, `/${chat.shortId}/members`, "POST", {
+      members: [{ type: "service_account", serviceAccountId: account.id }],
+    });
+    expect(response.status).toBe(200);
+    const [grant] = await sql<{ id: string }[]>`SELECT a.id FROM auth.access a JOIN chat.conversation_access ca ON ca.access_id=a.id
+      WHERE ca.conversation_id=${chat.id}::uuid AND a.service_account_id=${account.id}::uuid`;
+    if (!grant) throw new Error("Missing Code grant");
+    for (const permission of ["read", "write"]) {
+      expect((await request(headers, `/${chat.shortId}/members/${grant.id}`, "PATCH", { permission })).status).toBe(200);
+      expect((await sql`SELECT permission FROM auth.access WHERE id=${grant.id}::uuid`)[0].permission).toBe(permission);
+    }
+    expect((await request(headers, `/${chat.shortId}/members/${grant.id}`, "PATCH", { permission: "admin" })).status).toBe(400);
+    expect((await request(headers, `/${chat.shortId}/members/${grant.id}`, "DELETE")).status).toBe(200);
   });
 
   test("bound and delegated service accounts cannot become inactive direct members", async () => {

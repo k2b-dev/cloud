@@ -20,6 +20,7 @@ import {
 } from "./approvals";
 import { aiCapabilityToolName } from "./capabilities";
 import { aiCapabilityCheckResult } from "./capability-execution";
+import { CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
 import { aiFileStore, readAiConversationFile } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
@@ -61,6 +62,52 @@ suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("authoring stop receipts survive reload but are omitted from forks without the draft", async () => {
+    const userId = await insertUser();
+    const source = await aiConversations.createConversation({ ownerUserId: userId });
+    const conversationIds = [source.id];
+    try {
+      const guard = createCodeAuthoringTurnBudget({
+        priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 1 },
+        selected: true,
+        finishedToolCalls: [],
+      });
+      const store = aiConversations.createSessionStore({ conversationId: source.id, codeAuthoringStop: guard.stopped });
+      const loop = nessi({
+        systemPrompt: "Prepare the task.",
+        input: "Prepare a task",
+        store,
+        provider: guard.wrap({
+          name: "stub",
+          model: "stub",
+          family: "openai-compatible",
+          capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: false },
+          async *stream() {
+            throw new Error("An exhausted turn must not dispatch");
+          },
+        }),
+      });
+      try {
+        for await (const _event of loop) {
+          /* Persist through the real session store. */
+        }
+      } finally {
+        loop.abort();
+      }
+      const messages = await aiConversations.listMessages({ conversationId: source.id });
+      const last = messages.at(-1)!;
+      expect(last.message).toMatchObject({ role: "assistant", content: [] });
+      expect(last.meta?.codeAuthoringStop).toEqual(guard.stopped()!);
+      const fork = await aiConversations.forkConversation({ sourceConversationId: source.id, ownerUserId: userId, throughSeq: last.seq });
+      conversationIds.push(fork.id);
+      expect((await aiConversations.listMessages({ conversationId: fork.id })).at(-1)?.meta?.codeAuthoringStop).toBeUndefined();
+      await store.append(assistantMessage("Summary"), { kind: "summary" });
+      expect((await aiConversations.listMessages({ conversationId: source.id })).at(-1)?.meta?.codeAuthoringStop).toBeUndefined();
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
   test("resource presentation survives indexing, updates and user listings", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];
@@ -134,97 +181,82 @@ suite("AI conversation store integration", () => {
     }
   });
 
-  test.each((["done", "not_done", "pending"] as const).flatMap((state) => [false, true].map((background) => ({ state, background }))))(
-    "projects $state Action checks into loaded model history (background=$background)",
-    async ({ state, background }) => {
-      const userId = await insertUser();
-      const chat = await aiConversations.createConversation({ ownerUserId: userId });
-      const task = {
-        taskId: "task",
-        occurrenceId: "run",
-        context: [{ seq: 1, kind: "message" as const, message: userMessage("Existing context") }],
+  test.each(["done", "not_done", "pending"] as const)("projects %s Action checks into loaded model history", async (state) => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const turnId = (
+        await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "test-model",
+          runConfig,
+          userMessage: userMessage("Send"),
+        })
+      ).turn.id;
+      const target = { conversationId: chat.id, turnId };
+      const leaseOwner = "check-projection";
+      expect(
+        await aiConversations.claimTurn({
+          ...target,
+          leaseOwner,
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        }),
+      ).not.toBeNull();
+      const session = aiConversations.createSessionStore({ ...target, leaseOwner });
+      await session.append({
+        role: "assistant",
+        content: ["send", "cut-off", "other"].map((id) => ({ type: "tool_call", id, name: "demo__action__send", args: {} })),
+        stopReason: "tool_use",
+      });
+      const original: Message = {
+        role: "tool_result",
+        callId: "send",
+        name: "demo__action__send",
+        result: "ACTION_OUTCOME_UNKNOWN: Do not retry the Action.",
+        isError: true,
       };
-      try {
-        const turnId = background
-          ? (
-              await sql<{ id: string }[]>`INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-            VALUES (${createAiShortId()}, ${chat.id}, 'test-model', 'queued', ${JSON.stringify({ ...runConfig, background: task })}::text::jsonb)
-            RETURNING id`
-            )[0]!.id
-          : (
-              await aiConversations.submitChatTurn({
-                conversationId: chat.id,
-                modelId: "test-model",
-                runConfig,
-                userMessage: userMessage("Send"),
-              })
-            ).turn.id;
-        const target = { conversationId: chat.id, turnId };
-        const leaseOwner = "check-projection";
-        expect(
-          await aiConversations.claimTurn({
-            ...target,
-            leaseOwner,
-            leaseMs: 30_000,
-            from: "queue",
-            maxAttempts: 5,
-            runBudgetMs: 60_000,
-          }),
-        ).not.toBeNull();
-        const session = aiConversations.createSessionStore({ ...target, leaseOwner, ...(background ? { background: task } : {}) });
-        await session.append({
-          role: "assistant",
-          content: ["send", "cut-off", "other"].map((id) => ({ type: "tool_call", id, name: "demo__action__send", args: {} })),
-          stopReason: "tool_use",
+      const other: Message = { ...original, callId: "other", result: { data: { id: "unrelated" } }, isError: false };
+      await session.append(original);
+      await session.append(other);
+      const check = { state, ...(state === "done" ? { receipt: { text: "Saved" } } : {}) };
+      for (const callId of ["send", "cut-off"]) await recordAiToolCheck({ ...target, callId, check });
+      let load = session;
+      {
+        expect(await aiConversations.completeTurn({ ...target, leaseOwner, status: "completed" })).toBe("completed");
+        const later = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "test-model",
+          runConfig,
+          userMessage: userMessage("What happened?"),
         });
-        const original: Message = {
-          role: "tool_result",
-          callId: "send",
-          name: "demo__action__send",
-          result: "ACTION_OUTCOME_UNKNOWN: Do not retry the Action.",
-          isError: true,
-        };
-        const other: Message = { ...original, callId: "other", result: { data: { id: "unrelated" } }, isError: false };
-        await session.append(original);
-        await session.append(other);
-        const check = { state, ...(state === "done" ? { receipt: { text: "Saved" } } : {}) };
-        for (const callId of ["send", "cut-off"]) await recordAiToolCheck({ ...target, callId, check });
-        let load = session;
-        if (!background) {
-          expect(await aiConversations.completeTurn({ ...target, leaseOwner, status: "completed" })).toBe("completed");
-          const later = await aiConversations.submitChatTurn({
-            conversationId: chat.id,
-            modelId: "test-model",
-            runConfig,
-            userMessage: userMessage("What happened?"),
-          });
-          load = aiConversations.createSessionStore({ conversationId: chat.id, turnId: later.turn.id });
-        }
-        const messages = (await load.load()).map((entry) => entry.message);
-        for (const callId of ["send", "cut-off"]) {
-          const results = messages.filter((message) => message.role === "tool_result" && message.callId === callId);
-          if (state === "pending") expect(results).toEqual(callId === "send" ? [original] : []);
-          else {
-            expect(results).toHaveLength(1);
-            expect(results[0]).toMatchObject({ role: "tool_result", callId, isError: state !== "done" });
-            if (state === "done") expect(results[0]).toMatchObject({ result: aiCapabilityCheckResult(check) });
-            else
-              expect(results[0]).toMatchObject({
-                result: "ACTION_NOT_DONE: The app's check confirmed nothing happened. Ask the person before trying again.",
-              });
-          }
-        }
-        expect(messages.find((message) => message.role === "tool_result" && message.callId === "other")).toEqual(other);
-        if (background) expect(messages[0]).toEqual(task.context[0]!.message);
-        // Loading changes only model context: the original error and the missing result stay as stored.
-        const stored = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turnId });
-        expect(stored.find(({ message }) => message.role === "tool_result" && message.callId === "send")?.message).toEqual(original);
-        expect(stored.some(({ message }) => message.role === "tool_result" && message.callId === "cut-off")).toBe(false);
-      } finally {
-        await cleanupFixture({ userId, conversationIds: [chat.id] });
+        load = aiConversations.createSessionStore({ conversationId: chat.id, turnId: later.turn.id });
       }
-    },
-  );
+      const messages = (await load.load()).map((entry) => entry.message);
+      for (const callId of ["send", "cut-off"]) {
+        const results = messages.filter((message) => message.role === "tool_result" && message.callId === callId);
+        if (state === "pending") expect(results).toEqual(callId === "send" ? [original] : []);
+        else {
+          expect(results).toHaveLength(1);
+          expect(results[0]).toMatchObject({ role: "tool_result", callId, isError: state !== "done" });
+          if (state === "done") expect(results[0]).toMatchObject({ result: aiCapabilityCheckResult(check) });
+          else
+            expect(results[0]).toMatchObject({
+              result: "ACTION_NOT_DONE: The app's check confirmed nothing happened. Ask the person before trying again.",
+            });
+        }
+      }
+      expect(messages.find((message) => message.role === "tool_result" && message.callId === "other")).toEqual(other);
+      // Loading changes only model context: the original error and the missing result stay as stored.
+      const stored = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turnId });
+      expect(stored.find(({ message }) => message.role === "tool_result" && message.callId === "send")?.message).toEqual(original);
+      expect(stored.some(({ message }) => message.role === "tool_result" && message.callId === "cut-off")).toBe(false);
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
+  });
 
   test("backfills legacy pending approvals with canonical digests and the original deadline", async () => {
     const userId = await insertUser();
@@ -283,7 +315,7 @@ suite("AI conversation store integration", () => {
       await cleanupFixture({ userId, conversationIds: [chat.id] });
     }
   });
-  test("ending a turn cancels its open and unused approvals but keeps used ones and a linked Studio decision", async () => {
+  test("ending a turn cancels open and unused approvals, including linked chat code, but keeps consumed decisions", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Approvals" });
     try {
@@ -293,7 +325,7 @@ suite("AI conversation store integration", () => {
         runConfig,
         userMessage: userMessage("Run"),
       });
-      const ask = async (callId: string, requester: { kind: "assistant_turn" | "studio_app"; ref: string }, decided: boolean) => {
+      const ask = async (callId: string, requester: { kind: "assistant_turn"; ref: string }, decided: boolean) => {
         const record = await approvals.request({
           appId: "demo",
           action: "write",
@@ -332,13 +364,23 @@ suite("AI conversation store integration", () => {
           requester: { kind: "assistant_turn", ref: `${turn.id}/used` },
         }),
       ).toEqual({ ok: true });
-      const linked = await ask("linked", { kind: "studio_app", ref: crypto.randomUUID() }, true);
+      const linked = await ask("linked", { kind: "assistant_turn", ref: `${chat.id}/code/${crypto.randomUUID()}` }, true);
+      const linkedUsedRef = `${chat.id}/code/${crypto.randomUUID()}`;
+      const linkedUsed = await ask("linked-used", { kind: "assistant_turn", ref: linkedUsedRef }, true);
+      expect(
+        await approvals.consume(linkedUsed, {
+          input: { callId: "linked-used" },
+          review: null,
+          requester: { kind: "assistant_turn", ref: linkedUsedRef },
+        }),
+      ).toEqual({ ok: true });
       expect(await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, status: "aborted" })).not.toBe("lost");
-      expect(await Promise.all([open, unused, used, linked].map(async (id) => (await approvals.get(id))?.status))).toEqual([
+      expect(await Promise.all([open, unused, used, linked, linkedUsed].map(async (id) => (await approvals.get(id))?.status))).toEqual([
         "cancelled",
         "cancelled",
         "consumed",
-        "approved",
+        "cancelled",
+        "consumed",
       ]);
     } finally {
       await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
@@ -413,7 +455,10 @@ suite("AI conversation store integration", () => {
     }
   });
 
-  test("an interactive turn defers new background results without losing or compacting them", async () => {
+  test.each([
+    { scheduledTask: { taskId: "task", occurrenceId: "run" } },
+    { codeDelivery: { codeId: "c_report", runId: "run", effectKey: "report" } },
+  ])("an interactive turn defers new background results without losing or compacting them: %j", async (meta) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
@@ -435,7 +480,7 @@ suite("AI conversation store integration", () => {
       const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground" });
       await sql`INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, meta)
         VALUES (${createAiShortId()}, ${chat.id}, 2, 'message', 'assistant', ${JSON.stringify(assistantMessage("Background result"))}::text::jsonb,
-          '{"scheduledTask":{"taskId":"task","occurrenceId":"run"}}'::jsonb)`;
+          ${JSON.stringify(meta)}::text::jsonb)`;
       await sql`UPDATE ai.conversations SET background_received_at = now() WHERE id = ${chat.id}`;
       expect((await session.load()).map((entry) => entry.message)).toEqual([userMessage("Hello")]);
       // Nessi's next local sequence is already occupied by the delivered result.
@@ -466,65 +511,6 @@ suite("AI conversation store integration", () => {
           JSON.stringify(entry.message).includes("Background result"),
         ),
       ).toBe(true);
-    } finally {
-      await cleanupFixture({ userId, conversationIds: [chat.id] });
-    }
-  });
-
-  test("background turns and summaries stay isolated from the active conversation turn", async () => {
-    const userId = await insertUser();
-    const chat = await aiConversations.createConversation({ ownerUserId: userId });
-    const background = {
-      taskId: "task",
-      occurrenceId: "run",
-      context: [{ seq: 1, kind: "message" as const, message: userMessage("Existing context") }],
-    };
-    try {
-      const [bg] = await sql<{ id: string }[]>`INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-        VALUES (${createAiShortId()}, ${chat.id}, 'test-model', 'queued', ${JSON.stringify({ ...runConfig, background })}::text::jsonb) RETURNING id`;
-      await aiConversations.claimTurn({
-        conversationId: chat.id,
-        turnId: bg!.id,
-        leaseOwner: "background",
-        leaseMs: 30_000,
-        from: "queue",
-        maxAttempts: 50,
-        runBudgetMs: 60_000,
-      });
-      expect(await aiConversations.getActiveTurn({ conversationId: chat.id })).toBeNull();
-      expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
-      const foreground = await aiConversations.submitChatTurn({
-        conversationId: chat.id,
-        modelId: "test-model",
-        runConfig,
-        userMessage: userMessage("Interact now"),
-      });
-      expect((await aiConversations.getActiveTurn({ conversationId: chat.id }))?.turn.id).toBe(foreground.turn.id);
-      const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: bg!.id, leaseOwner: "background", background });
-      await session.append(assistantMessage("Isolated summary"), { kind: "summary", seq: 200 });
-      await session.append(assistantMessage("Isolated answer"), { seq: 201 });
-      expect((await session.load()).map((entry) => entry.seq)).toEqual([1, 2, 3]);
-      const aggregate: LoopAggregate = {
-        turns: [],
-        usage: { input: 1, output: 2, total: 3 },
-        issueCount: 0,
-        issues: [],
-        toolCallCount: 0,
-        toolErrorCount: 0,
-        toolIssueCount: 0,
-        toolMalformedCount: 0,
-        toolCancelledCount: 0,
-        toolIssues: [],
-        assistantMessageCount: 1,
-      };
-      await aiConversations.setLatestAssistantLoopAggregate({ conversationId: chat.id, loopId: bg!.id, aggregate, doneReason: "stop" });
-      const transcript = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: bg!.id });
-      expect(transcript.at(-1)?.loopAggregate?.usage).toEqual(aggregate.usage);
-      expect(transcript.map((message) => message.loopId)).toEqual([bg!.id, bg!.id]);
-      expect(transcript.map((message) => message.kind)).toEqual(["summary", "message"]);
-      expect((await aiConversations.listMessages({ conversationId: chat.id })).map((message) => message.message)).toEqual([
-        userMessage("Interact now"),
-      ]);
     } finally {
       await cleanupFixture({ userId, conversationIds: [chat.id] });
     }

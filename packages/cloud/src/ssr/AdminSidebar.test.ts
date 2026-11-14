@@ -62,6 +62,16 @@ describe("buildAdminGroups", () => {
       expect(setup?.links.filter((link) => link.href === "/admin/ai")).toEqual([{ href: "/admin/ai", icon: "ti-sparkles", label }]);
     }
   });
+  it("shows open Code-version approvals on the Code entry as waiting, and nothing at zero", () => {
+    const code = (count?: number, locale = "de") =>
+      buildAdminGroups([], locale, { codeApprovals: count })
+        .flatMap((group) => group.links)
+        .find((link) => link.href === "/admin/code");
+    expect(code(3)?.waiting).toEqual({ count: 3, label: "3 offen" });
+    expect(code(1, "en")?.waiting).toEqual({ count: 1, label: "1 waiting" });
+    expect(code(0)?.waiting).toBeUndefined();
+    expect(code()?.waiting).toBeUndefined();
+  });
   it("leaves declared AI tools to the AI area instead of the sidebar", () => {
     const groups = buildAdminGroups([
       app({
@@ -117,7 +127,7 @@ describe("buildAdminGroups", () => {
       }),
     ]);
     const operations = groups.find((group) => group.label === "Operations")!;
-    expect(operations.links.map((link) => link.href)).toEqual(["/admin/apps", "/admin/rail", "/admin/observability"]);
+    expect(operations.links.map((link) => link.href)).toEqual(["/admin/apps", "/admin/rail", "/admin/code", "/admin/observability"]);
     expect(groups.some((group) => group.label === "Gateway" || group.label === "Observability")).toBe(false);
     expect(groups.some((group) => group.label === "Settings per app")).toBe(false);
     const links = groups.flatMap((group) => group.links);
@@ -131,7 +141,7 @@ describe("buildAdminGroups", () => {
         "Einrichten",
         ["Grundeinstellungen", "Speicher", "Anmeldung & Sicherheit", "Ausgehende Mail", "E-Mail-Vorlagen", "Ankündigungen", "KI"],
       ],
-      ["Betrieb", ["Apps", "App-Leiste"]],
+      ["Betrieb", ["Apps", "App-Leiste", "Code"]],
     ]);
   });
 

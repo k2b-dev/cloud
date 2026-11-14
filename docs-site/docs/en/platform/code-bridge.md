@@ -1,0 +1,244 @@
+---
+title: Code bridge
+navTitle: Code bridge
+section: Platform services
+order: 966
+description: Authenticate runner requests and check each actual Code call against the current lease, policy, approval and mandate.
+tags: [code, runner, capabilities, mandates]
+updated: 2026-11-07
+---
+
+# Code bridge
+
+Code in a runner reaches Cloud through `cloud.call(operation, input)`. Core
+checks every actual call before forwarding it to a capability provider. A
+checked manifest supplies review evidence; it grants no execution authority.
+The provider still resolves the subject's current resource access.
+
+## One-off chat authority
+
+The platform-owned `@k2b/cloud/code/chat-run` export defines the private
+chat-job payload, reply schemas and tagged file/byte codec. Core mounts its
+chat-job adapter through `CoreApiOptions.codeChatRunner`; applications do not
+mount this authority endpoint.
+
+One-off `code_run` uses a `chat` job rather than a version run token. Its
+generation and opaque lease key fence the private runner job-input, heartbeat,
+job-call and completion routes. Each transmission also requires the runner's
+fresh app proof. Check/test/simulate job proofs cannot use the chat mailbox.
+
+Core binds each chat job to its person, conversation and originating turn.
+The Assistant uses that turn's existing verified continuation to submit,
+read, resolve or cancel the job. Core rechecks current turn authority before
+admitting each runner call. The sandbox receives neither that continuation
+nor the job proof. Only the existing Assistant services execute capabilities
+and HTTP, with the turn's current approvals or background mandate.
+
+The platform-owned `@k2b/cloud/code/chat-run-wake` helper uses the existing
+process NATS connection to wake the Assistant mailbox and runner reply waits
+after Core commits a message, reply or terminal status. Hints carry no call
+payload. Each wait subscribes before its initial durable read or admission;
+ordinary idle ticks execute no SQL. A lost hint is recovered by a read every
+2 seconds. A reply read checks its result and current lease in one SQL
+snapshot. Mailbox delivery retains its durable claim transaction.
+
+Bridge requests are claimed once before the Assistant handles them. A lost
+response or host never replays an uncertain effect. Chat jobs expire without
+automatic retry. Script errors, logs and return values travel back to the
+originating chat; the version-run bridge below keeps its existing payload-free
+error contract. See [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs)
+for shared capacity, limits and the unavailable Studio database grants.
+
+## Authenticate a call
+
+The private `POST /_internal/code/runner/call` endpoint accepts
+`RunnerCallRequest` from `@k2b/cloud/code/runner`: `runId`, `generation`,
+`token`, `operation` and JSON `input`. It requires both:
+
+- A fresh Ed25519 `cloud-app+jwt` proof signed with an active key enrolled
+  for app ID `runner`. The shared [app transport](/en/docs/operations/app-keys)
+  binds the exact HTTP method, path and body, checks revocation, limits ingress
+  through Valkey and consumes each proof once across Core replicas. The shared
+  runner key has no fleet-wide call bucket; authenticated calls use Code budgets.
+  The transport retains its per-peer ingress budget from
+  `security.rate_limit_per_second` (default 60), shared by a runner replica
+  across its slots. Transport overload returns 429; domain rate refusals return
+  `code_rate_limited` in the successful HTTP envelope. Each accepted proof also
+  prunes one expired proof for its key; scheduled maintenance drains inactive
+  keys, so a growing runner fleet does not require a larger cleanup batch.
+- A Core-signed run token for this attempt. An interactive session, another
+  app's signature or a token without the runner signature cannot enter.
+
+The supervisor attaches the attempt identity. The sandbox receives neither
+the run token nor the runner's app key. Retrying a transmission requires a
+fresh app proof. Reusing the run token is expected until the attempt ends.
+
+## Run token contract
+
+Import `CodeRunTokenClaims`, `CodeRunTokenInput`,
+`CodeRunTokenClaimsSchema`, `signCodeRunToken`, `verifyCodeRunToken`,
+`CODE_RUN_TOKEN_TYPE` and `CODE_RUN_TOKEN_MAX_SECONDS` from
+`@k2b/cloud/code/run-token`.
+
+The version 1 token is an RS256 JWT using Core's existing invocation key ring
+and public invocation JWKS. Its protected header contains only `alg`, `typ`
+(`cloud-code-run+jwt`) and `kid`. Its claims are:
+
+| Field | Binding |
+| --- | --- |
+| `ver`, `token_use` | `1`, `code_run` |
+| `iss`, `aud` | Installation issuer, `cloud-code-bridge` |
+| `iat`, `nbf`, `exp` | Unix seconds; `nbf` equals `iat` |
+| `codeId`, `versionId` | Exact Code and immutable version |
+| `entrypoint`, `runId`, `generation` | Named entrypoint and one fenced attempt |
+| `mandateId`, `mandateRevision` | Exact version mandate and its revision |
+| `bundleHash` | Lowercase SHA-256 of the immutable UTF-8 bundle |
+
+`signCodeRunToken(input, { deadlineAt })` takes the original attempt deadline
+in Unix milliseconds. The lifetime is at most 300 seconds, matching the
+maximum Code wall-clock setting; the signer must remain valid through expiry.
+Heartbeats never extend this token. The verifier rejects expired tokens
+without clock tolerance. Any Core replica verifies the token from the public
+JWKS, with no token registry or sticky routing. Verification alone does not
+check the live lease or grant access.
+
+## Dispatch and record
+
+For capability operations, `operation` is the qualified capability ID and
+`input` is `CodeSdkInvocation`: `{ call, metadata }`. `call` contains
+`capability`, `target`, `refs` and domain `input`; `metadata` contains only an
+optional `idempotencyKey`. The operation must equal `call.capability`.
+Idempotency keys follow the capability's existing required/none contract.
+
+Core performs these checks for each call:
+
+1. Check the token against the running row, current generation, unexpired
+   lease, Code, version and entrypoint. The Code must be active. An old version
+   may drain while a new active version accepts new work.
+2. Compare the bundle and checked-version bindings. Check the current
+   wall-clock setting and both the saved and current calls-per-run limits.
+3. Commit the next bounded call observation in `code.calls` before forwarding
+   an effect. Refused admitted calls also receive a failed observation;
+   unauthenticated requests, invalid bindings and exhausted storage budgets
+   cannot allocate observations.
+4. Apply the shared Valkey rate limit per Code, using the installation's
+   `core.code.calls_per_second` budget (default 60, maximum 1,000).
+   Recorded refusals consume the calls-per-run budget, bounding retry loops.
+5. Refuse write streams without a `file` metadata input, Actions with `code: false`, app-only Queries,
+   `unattended: false`, asking Actions and every `code.access.*` operation.
+6. Classify the actual operation from live capability metadata and resolve
+   [current policy](/en/docs/platform/code-policy) with current groups. A Never
+   rule refuses immediately. Admin approval must cover this actual policy row
+   and remain bound to the exact source, bundle and manifest through
+   [version evidence](/en/docs/platform/code-versions).
+7. Bind the active entry to this version and the personal owner or credentialless
+   Code account. New `runner` entries have no policy; target providers decide
+   current resource access. Older `core` mandates retain their saved operation,
+   target, reference and fixed-input restrictions. Steps 6–7 run
+   inside the signing transaction, with a fresh fence check. Target applications
+   check current resource rights. Immutable version hashes and submission
+   bindings are checked without loading or hashing executable source or bundles
+   on each call.
+8. Save the result or refusal to the observation. A crash after reservation
+   leaves a visible unfinished call; the execution coordinator reconciles it
+   when terminating the attempt. Observations are never replay steps.
+
+Generic mandate brokers cannot execute a `code.version` workload: those
+calls must enter through this verified runner bridge. Code invocations do not
+create child-invocation exchange leases, so provider nesting cannot bypass
+the per-call bridge checks. Provider admission rechecks the active, confirmed,
+unexpired entry and subject for personal and service-account Code. The signed
+invocation includes `workload_run`, the approved version and entry revision;
+API keys or scopes cannot replace this chain.
+
+Responses use `RunnerCallResponse`: `{ ok: true, data }` or
+`{ ok: false, error: { code, status?, origin? } }`. For a failed capability call,
+`error.status` preserves the capability dispatch HTTP status (400–599) in the
+stored call result. This includes Core refusals and failures returned by Cloud
+before the target application runs. Supervisor failures and older stored calls
+may omit the status; the SDK defaults it to 503. Core separately records `refusalKind` on each failed admitted
+call: `target_refused` for a target application's 403 or 404, `policy` for a
+policy or unattended-operation refusal, `approval` for `code_approval_required`,
+`code_approval_revoked` or `code_hash_mismatch`, `app_not_allowed` when app
+access is denied, and `bridge` for other bridge/dispatch failures. Known policy
+and framework error codes take precedence over status, including
+a target-side review that requires confirmation. A broker's 403 or 404 alone
+is never a target refusal. Core observes the provider's status
+before validating or projecting its body; error codes and messages do not
+identify target refusals. A 404 can mean a missing object or missing access.
+
+The call result, classification and run's `firstRefusedCallOrdinal` commit in
+the same transaction. The ordinal is the smallest target-refused call ordinal,
+even when concurrent calls finish out of order; it survives a crash before run
+completion. Target coordinates come from the normalized call validated against
+the capability's target declaration, never from its response. Older calls remain
+unclassified. See [Read runs and calls](/en/docs/platform/code-runs#read-runs-and-calls)
+for the permission-aware read contract.
+
+Malformed sandbox calls return `code_invalid_call` in this envelope. Only
+domain data, stable error codes, refusal HTTP statuses and a validated refused
+HTTPS origin enter the sandbox. The SDK exposes `CodeError` with lowercase
+snake_case `code`, `status`, a safe `message` and `details`. The status also
+stays in the stored call result. Provider error messages,
+exception text and transport credentials do not. Stale generations and lost leases return HTTP 409 so the supervisor
+stops that attempt. Transport/authentication failures use non-2xx responses;
+ordinary capability refusals use the error envelope.
+
+## Core integration
+
+`@k2b/cloud/api` exports `createCodeRunnerCallRoutes`,
+`CodeRunnerDispatchDependencies`, `CodeBridgeHost`, `CodeBridgeCall`,
+`CodeBridgeAuthority`, `CodeBridgeRefusal` and `codeHttpOriginAllowed`.
+These are Core host contracts, not application entry points. `withCall`
+reserves and finishes the observation; every transport performing an effect
+must use the returned `withMandateIssueAuthority` wrapper inside its issuance
+transaction. The Core capability dispatcher selects `{ receipt: "issuance" }`
+for non-streaming calls so receipt admission and token issuance share that
+transaction. Its callback prepares dispatch; transport starts only after commit.
+Ordinary host callbacks, file transfers, AI reservation and internet calls keep
+the receipt committed before the callback starts. No authority is cached across calls.
+C11 supplies `kind: "internet"`, which selects the `internet`
+policy row and actual-row approval coverage; its C2 operation is `runtime.http`.
+HTTP calls retain Action observations so recovery does not automatically repeat external effects.
+
+Core's `createCodeBridgeHost()` and `createCodeBridgeRoutes()` implement the
+storage and policy boundary in `packages/core/src/code/bridge.ts`.
+`requireCodeRunFence(claims, db)` supplies the shared generation/lease check
+for the execution coordinator's bundle, heartbeat and completion handlers.
+Callers take locks in policy, Code, run order. Administrative budgets come
+from `CODE_SETTINGS` and `codeSettings`.
+
+`codeHttpOriginAllowed(url, ownOrigins)` rejects installation-owned origins,
+credentials in URLs and non-HTTPS URLs. Hostname comparison ignores final DNS dots. Core includes configured app domains
+and redirect hosts even while an application is offline. `http.fetch` already refuses own
+origins; its Core HTTP dispatcher injects only version-bound
+[Code secrets](/en/docs/platform/code-secrets) and uses `requestPublicHttps`. Other unknown operations return
+`code_operation_not_found`. Capability requests must use the structured
+capability envelope and cannot select an upstream URL.
+
+## Name the work in your own history
+
+Every capability call a Code run makes carries its workload as provenance. To
+show it in your own history, call `actorWorkload(context.actor)` from
+`@k2b/cloud/server` when you record the change and keep the result with your
+row. It returns `{ type, id }`, or null when a person or credential acts
+directly or another app continued the call. It works for any application's
+mandate workload, not only Code: `type` is `<owning app>.<workload type>`, and
+`id` is the workload ID, followed by `~<run>` when the call names a run. Your
+own workload names its run with `mandate.run` on the capability caller; declare
+a Type of that name with a reader to present it.
+
+Later, present it through the [resource reader](/en/docs/platform/resource-references)
+of that type with the viewer's own credentials. For `core.code.version`, the
+reader returns the title, the automation as `context`, and, for those who may
+read the owner, the Code page as the `open` link and the run as the `status`
+link. A viewer who may not read the Code gets the same refusal as for missing
+Code: show the kind of work from the Type's title and no name, because the
+owner's name is not theirs to learn. An account that no longer exists means the
+work was deleted. `actorWorkload` grants nothing. Spaces shows its item history
+this way, without knowing Code.
+
+Code read streams return run-bound, expiring FileRefs. For a write stream with a
+`file` metadata input, Core consumes the reference once and pipes source bytes
+to the target under freshly fenced mandate authority. No binary body crosses
+the runner bridge. See [Code SDK](/en/docs/platform/code-sdk#mail-invoices-to-an-app).

@@ -164,7 +164,6 @@ suite("Mail frame writers invalidate open mailboxes", () => {
           label: "Frame sender",
           displayName: "Sender",
           fromAddress: input(mailboxId).email,
-          authenticationPolicy: { automation: "mailbox" },
         },
       }),
     );

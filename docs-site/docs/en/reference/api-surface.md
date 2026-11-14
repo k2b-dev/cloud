@@ -29,9 +29,14 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/server` | Supported, server-only | Hono middleware, validation, actors, results, and access |
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
 | `@k2b/cloud/shared` | Supported, portable | Shared helpers, including `previewSourceKind` and `PreviewVariant` for [file previews](/en/docs/platform/previews) |
-| `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
+| `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts, including [`AssistantPlaceSchema`](/en/docs/ai/assistant-places) |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
+| `@k2b/cloud/app-proof` | Advanced, server-only | Sign each private Core transmission with `signAppProof`; [runner bridge contract](/en/docs/operations/code-runner#integrate-the-bridge) |
+| `@k2b/cloud/code/run-token` | Preview, platform-owned | Core-signed attempt tokens; [Code bridge](/en/docs/platform/code-bridge) |
+| `@k2b/cloud/code/chat-run-wake` | Preview, platform-owned, server-only | NATS wakeups for the private chat mailbox and replies; [Code bridge](/en/docs/platform/code-bridge#one-off-chat-authority) |
+| `@k2b/cloud/code/chat-run` | Preview, platform-owned | Assistant chat-job payloads and tagged value codec; [Code bridge](/en/docs/platform/code-bridge#one-off-chat-authority) |
+| `@k2b/cloud/code/runner` | Preview, portable | Strict run/job protocol schemas and lease types; [Code runner](/en/docs/operations/code-runner) |
 | `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, opt-in staff push to registered devices (`registeredDevices`), registration visit summaries and renaming, and their closed router |
 | `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
@@ -45,6 +50,8 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@k2b/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
+| `@k2b/cloud/code/events` | Preview, browser-safe | Catch-up and fake-only preview schemas for [Mail Code controls](/en/docs/platform/mail-code-automations#integrate-these-controls) |
+| `@k2b/cloud/code` | Preview, platform-owned | [Generate the SDK](/en/docs/platform/code-sdk), [check and bundle versions](/en/docs/platform/code-checker), [test and simulate](/en/docs/platform/test-code) |
 | `@k2b/cloud/cli` | Supported | Cloud CLI modules |
 | `@k2b/cloud/config` | Supported, server-only | Typed environment registries |
 
@@ -138,8 +145,7 @@ and [named recipients](/en/docs/identity/authorization#create-and-change-grants)
 for the permission, directory, binding, and audience boundaries.
 `isRequestCredentialCurrent(c, { oauthAudience })` rechecks the credential that
 admitted a continuing request. It does not replace resource authorization.
-See [Studio machine execution](/en/docs/identity/studio-machine-execution#call-the-api)
-for its use alongside effect checks.
+Studio machine API routes have been retired; see [Studio retirement](/en/docs/operations/studio-retirement).
 
 `ipCountry(ip: string): Promise<IpCountryResult>` and `DBIP_ATTRIBUTION` from
 `@k2b/cloud/server` provide a country-only lookup through Core for enrolled
@@ -167,7 +173,7 @@ The widget setting types `WidgetSettingField`, `WidgetSettingsDeclaration`,
 | `GET /api/approvals/counts` | Read total and per-app open counts | [Approval routes](/en/docs/identity/approvals#approval-routes) |
 | `GET /api/approvals/:id/content` | Read the complete pending snapshot | [Approval readers](/en/docs/identity/approvals#approval-routes) |
 | `GET /api/approvals/conversations/:conversationId/turns/:turnId/reviews/:callId` | Read an owned historical review snapshot | [Approval readers](/en/docs/identity/approvals#approval-routes) |
-| `POST /api/approvals/:id/decision` | Approve or reject a request and continue its chat | [Approval routes](/en/docs/identity/approvals#approval-routes) |
+| `POST /api/approvals/:id/decision` | Approve or reject; continue a waiting chat or atomically record a Code-version decision | [Approval routes](/en/docs/identity/approvals#approval-routes) |
 
 These routes require a user-backed actor.
 
@@ -194,7 +200,7 @@ Use the capability guide to choose the narrow API:
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
 - [App capabilities](/en/docs/platform/capabilities): `cloudResourceHref(ref)` from `@k2b/cloud/contracts` and `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` supply [resource permalinks](/en/docs/platform/capabilities#resource-links).
-- [Background mandates](/en/docs/identity/background-mandates): `sendAppRequest` from `@k2b/cloud/services/identity` signs final worker requests to Core, with legacy workload credentials retained for this release.
+- [Background mandates](/en/docs/identity/background-mandates): `CapabilityGrant`, `MandateGrant`, `CodeVersionMandateBinding` and `CODE_VERSION_MANDATE_WORKLOAD_TYPE` from `@k2b/cloud/services` define durable operation/target grants and per-version bindings; `sendAppRequest` from `@k2b/cloud/services/identity` signs final worker requests to Core, with legacy workload credentials retained for this release.
 - [Resource types and discussions](/en/docs/platform/resource-types-and-discussions): `resolveResourceReaders` and `ResourceReader` from `@k2b/cloud/services/identity` resolve current account subjects and resource bindings for provider-owned reader checks.
 - [Universal search](/en/docs/platform/search)
 - [Document extraction](/en/docs/platform/document-extraction)
@@ -251,6 +257,10 @@ For automatic home provisioning, the trusted server-only `provisioningUsers`
 projection and `provisioningIdentity` live check are documented under
 [application event operations](/en/docs/operations/app-events#check-files-home-provisioning).
 
+`serviceAccountUsesOwnGrants` and `serviceAccountMayHoldCredentials` separate
+resource-grant resolution from credential eligibility. Code accounts have only
+the first property; see [Service accounts](/en/docs/identity/service-accounts#code-accounts).
+
 `readAccountCategoryPolicy` supplies server-side presentation settings;
 `isAccountCategoryAllowed` and the per-account `isAccountAllowed` are for
 platform-owned credential eligibility checks, not application resource
@@ -258,6 +268,31 @@ authorization. The browser-safe contracts barrel
 exports `AccountCategory`, `AccountCategoryPolicySchema`, `accountCategory`
 and `accountCategoryLabel`. See
 [Account types](/en/docs/operations/account-categories) for their use.
+
+The platform-owned `@k2b/cloud/code` entry exports `CodeCheckResultSchema`
+and the remote form of `CodeCheckHost`. Core consumers use
+`createCodeCheckRequest`, `createRunnerCodeCheckHost`, and
+`createRunnerCodeTestingHost` from `packages/core/src/code/index.ts`; see
+[Code checker](/en/docs/platform/code-checker#use-the-core-runner-host) and
+[Test Code](/en/docs/platform/test-code#connect-cli-and-gustav-adapters).
+`@k2b/cloud/code/runner` exports `RunnerJobProofSchema`,
+`RunnerJobLeaseSchema`, `RunnerJobResultSchema`, `RunnerJobCompleteSchema`
+and their job proof/lease/result types. These are private runner transport
+contracts, not author-callable capabilities.
+
+The contracts barrel exports `CodeCheckedVersionManifestSchema`,
+`CodeCheckedVersionManifest`, `CodeAutomationTitleSchema`, `CodeVersionPermissionSchema`, `CODE_POLICY_ROWS`,
+`CodePolicyRowSchema` and `CodePolicyManifestSchema` for the checker and Core's
+version lifecycle. See [Code versions and approval](/en/docs/platform/code-versions).
+These schemas describe evidence; they grant no execution or resource access.
+`CodeSecretBindingSchema`, `CodeSecretVersionBindingSchema`, `CodeSecretNameSchema`,
+`CodeHttpRequestSchema`, `CodeHttpResultSchema`, `CodeInternetOriginSchema`,
+`CodeInternetOriginsSchema` and their types describe
+[Code secrets](/en/docs/platform/code-secrets) and the HTTP bridge.
+`codeSecretPlaceholder`, `codeSecretHeaderAllowed` and `codeSecretPathAllowed`
+supply the shared header-marker and destination grammar. The services barrel
+exports `PurposeSecretRoots` and `purposeSecretCipher` for purpose-separated
+encryption and root migration.
 
 The contracts barrel also exports the versioned app-approval input schemas,
 signing-message helpers and protocol limits for independent authenticator
@@ -327,9 +362,10 @@ inferring support from autocomplete.
 | --- | --- | --- |
 | `@k2b/cloud` | `defineApp`, `appAccess`, declaration types, typed notifications | Registry, heartbeat, and runtime composition are platform-owned |
 | `@k2b/cloud/services` | Feature services used by capability guides | Raw stores, lifecycle starters, gateway telemetry, and migrations are maintainer APIs |
-| `@k2b/cloud/ai` | `getLiveDictationStatus` with `LiveDictationStatus` for [live dictation availability](/en/docs/ai/live-dictation); [`runAiDecision` with typed probability answers](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions), structured model calls, durable application tasks through `runApplicationAiTask`, `releaseApplicationAiTask`, `listUnreleasedApplicationAiTaskSources`, and [`deleteApplicationAiTasks`](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job), local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
+| `@k2b/cloud/ai` | `getLiveDictationStatus` with `LiveDictationStatus` for [live dictation availability](/en/docs/ai/live-dictation); [`runAiDecision` with typed probability answers](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions), structured model calls, durable application tasks through `runApplicationAiTask`, `releaseApplicationAiTask`, `listUnreleasedApplicationAiTaskSources`, and [`deleteApplicationAiTasks`](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job), local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, maintenance helpers, and [`runPlaceProvider`](/en/docs/ai/assistant-places#platform-provider-dispatch) are platform-owned |
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
 | `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides; `workflowEffectKey(runId, stepKey)` preserves existing durable effect identities without loading the engine | Generic utility re-exports are compatibility-only |
+| `@k2b/cloud/code` | Preview SDK generation, checking and hosting | Generated `@sdk` modules run in Code; the generator and host controls are platform-owned |
 | `@k2b/cloud/cli` | APIs for application CLI modules | Built-in account, application, and admin modules are platform-owned |
 
 For theme-aware server work, `readThemeFromCookieHeader()` returns a resolved
@@ -446,7 +482,8 @@ from `@k2b/ui` accepts `legend` entries typed as `ChartLegendEntry`
 height; see [Chart presentation and controls](/en/ui/content/charts#chart-presentation-and-controls).
 
 `@k2b/cloud/ai` exposes `AiTaskRequestSchema`, `AiTaskRequest`,
-`AiTaskRequestInput`, and `executeAiTask` for bounded text generation,
+`AiTaskRequestInput`, `AI_TASK_REQUEST_MAX_BYTES`, `assertAiTaskRequestSize`,
+and `executeAiTask` for bounded text generation,
 classification, and extraction. The schema and types are also available from
 `@k2b/cloud/ai/browser`. See [Structured and background AI](/en/docs/ai/structured-and-background-ai)
 for execution, model access, and usage accounting.
@@ -467,13 +504,17 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/live` | Supported, server-only | `aiLive`: the cursor of AI live updates for server-rendered state; Core mounts its socket | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/live-events` | Supported, browser and server | `AiInvalidationSchema` and `AI_INVALIDATION_DOMAINS`, the data of AI live updates | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/question-text` | Platform-owned, browser and server | The plain-text form of an Assistant question (`approvalCard`, `actionCardText`, `actionQuestionLines`) that `cld`, notifications, and Cloud Login show | [Tools and approvals](/en/docs/ai/tools-and-approvals) |
-| `@k2b/cloud/ai/app-frame` | Platform-owned, browser | The chart, view, and task contracts that an Assistant app frame draws and checks, without the skill parser and schemas of `ai/browser`, because the frame inlines its script in every app | [Chat interface](/en/docs/ai/chat-interface#assistant-apps-and-browser-work) |
-| `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime and turn submission | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
+| `@k2b/cloud/ai/app-frame` | Platform-owned, browser/runner | Lightweight chart, native-view and text-AI contracts for the chat SDK, without the full `ai/browser` entrypoint | [Studio retirement](/en/docs/operations/studio-retirement) |
+| `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime, turn submission and transactional background message delivery | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
+| `@k2b/cloud/ai/server` | Supported, server-only | Load the consent-filtered place state and the person's chat with `loadPlaceAssistant(c, scope)`; share `PlaceAssistantState` with the panel | [Assistant at a place](/en/docs/ai/assistant-places) |
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting, model access, and masked request-header names for administration | [Models and providers](/en/docs/ai/models-and-providers), [Observability](/en/docs/operations/observability) |
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
+| `@k2b/cloud/services/approvals` | Platform-owned, server-only | `ApprovalKind`, `CodeVersionApprovalRequestInput`, `request`, `decide`, `registerApprovalDecisionHandler`, `ApprovalDecisionConflictError`, and recipient-aware lists for independent Code reviews | [Code-version approvals](/en/docs/identity/approvals#code-version-approvals) |
 | `@k2b/cloud/approvals/ui` | Supported, SolidJS | `Approvals`, `ApprovalsNavStatus`, and `approvalNavCount` for open Action requests | [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app) |
+| `@k2b/cloud/code/ui` | Supported, SolidJS | `FeatCodeMark` and `FEAT_CODE_NAME`, the feat/code brand for every place that shows Code | [Code page](/en/docs/platform/code-page#show-the-featcode-brand) |
+| `@k2b/cloud/code/feat-code.svg` | Supported, asset | The feat/code sign as a favicon or app icon that follows the light or dark color scheme | [Code page](/en/docs/platform/code-page#show-the-featcode-brand) |
 | `@k2b/cloud/access/members` | Supported | `accessMemberEntries` turns a resource's `AccessMember` list into `DetailAccess` rows in the words of the access dialog, without loading the access dialog's controls | [Detail panels](/en/docs/frontend/detail-panels) |
-| `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager) |
+| `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists; `codeSharing` for a Code's editors and readers; `ServiceAccountSection` with `AccessRowFrame`, `AccessRowControls`, `AccessLevelMenu`, `serviceAccountLine` and `serviceAccountLevels` for the access dialog's Service accounts section beside additional grant fields; `ServiceAccountLookup` for the add button and handle field alone | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager), [Code with access](/en/docs/identity/authorization#code-with-access) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@k2b/cloud/events` | Supported, server-only | `appEvents`: publish declared app events in a transaction; `defineLive`: transactional live updates; `routes(channels)` serves them over one socket per application with access checked at delivery | [App events](/en/docs/platform/app-events), [Live updates](/en/docs/automation/live-updates) |
 | `@k2b/cloud/events/testing` | Supported, tests only | `appEventFixture` and `deliverAppEvent` validate event fixtures and subscriber handlers; `installLiveOutbox(db)` installs Core’s events schema in `*_test` databases; real live engine, memory topic controls and integration outbox startup | [Test app events](/en/docs/platform/app-events#test-a-handler-locally), [Test channels](/en/docs/automation/live-updates#test-channels) |
@@ -487,7 +528,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/resource-links` | Supported, browser | Recognize pasted Cloud URLs with `resolveCloudUrl()` and read the canonical `cloudOrigin()` | [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
 | `@k2b/cloud/browser/cloud-id` | Supported, browser | "Copy Cloud ID" entry for a resource's "…" menu | [Resource copy and paste](/en/docs/platform/resource-references#copy-a-cloud-id) |
-| `@k2b/cloud/browser/panel` | Supported, browser | `openPanel`, `closePanel`, and `onPanelBeforeLeave`: open or close the panel and protect unfinished provider work | [Panels](/en/docs/platform/panels) |
+| `@k2b/cloud/browser/panel` | Supported, browser | `openPanel`, `closePanel`, `askPanelConsent`, and `onPanelBeforeLeave`: open or close the panel, ask the slot's consent question again, and protect unfinished provider work | [Panels](/en/docs/platform/panels) |
 | `@k2b/cloud/browser/search` | Supported, browser | Open global search with an optional context and register app navigation | [Universal search](/en/docs/platform/search) |
 | `@k2b/cloud/browser/widgets` | Supported, browser | `streamWidgets`: read dashboard widgets from Core as each one answers | [Dashboard widgets](/en/docs/platform/dashboard-widgets#read-widgets-from-a-browser) |
 | `@k2b/cloud/browser/commands` | Supported, browser | Open interactive Commands, handle command links, and register context actions | [Capabilities](/en/docs/platform/capabilities) |
@@ -508,6 +549,9 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/services/document-extraction` | Supported, server-only | Convert authorized document bytes to bounded untrusted Markdown | [Document extraction](/en/docs/platform/document-extraction) |
 | `@k2b/cloud/services/pdf` | Supported, server-only | Render PDFs; merge, extract, split, rotate and reorder pages; prepare print images | [PDF and templates](/en/docs/platform/pdf-and-templates), [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/services/outbox` | Supported, server-only | `createPgOutbox`: deliver the rows of an application's own outbox table after commit, in order per key | [Migrations and transactions](/en/docs/data/migrations-and-transactions#deliver-an-outbox) |
+| `@k2b/cloud/ssr/code-nav-status` | Supported, browser | `CodeNavStatus` and `codeNavAttentionLabel`: the warning dot of an owner's "Code" navigation entry | [Code page](/en/docs/platform/code-page) |
+| `@k2b/cloud/ssr/code-schedule` | Supported, browser | `describeCodeSchedule`: a five-field schedule as a short localized sentence | [Code page](/en/docs/platform/code-page) |
+| `@k2b/cloud/ssr/code-page` | Supported, browser | `CodePage`: the shared Code page of a resource, rendered in an island; `CodeDatabaseStatus`: authorized database usage, deadline and export controls; `CodeDatabaseDelete`: confirmed unused-database removal | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |
 | `@k2b/cloud/ssr/layout-runtime` | Supported, browser | `layout.update()` and `layout.handleUp()` for islands that navigate in place | [Layout and navigation](/en/docs/frontend/layout-and-navigation) |
@@ -518,7 +562,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/cli/capabilities` | Platform-owned | Built-in generic capability client | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/cli/events` | Platform-owned | Built-in app event commands | [App events](/en/docs/platform/app-events) |
 | `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability clients, `readCapabilityReviewContent`, and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability clients and typed `actionReview` builder; `listCalendarSources(credentials, { deadline, signal? })`, `readCalendarEvents({ credentials, calendars, from, to, deadline, signal?, onSource? })`, and `listCapabilityCatalog({ caller, cursor?, limit? })` read a caller's calendar sources | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability clients, typed `actionReview` builder, normalized calls (`normalizeCapabilityCall`, `capabilityCallFromTool`, `capabilityInvocationBody`), flat tool schemas (`capabilityToolInputSchema`) and `capabilityCallDigest`; `listCalendarSources(credentials, { deadline, signal? })`, `readCalendarEvents({ credentials, calendars, from, to, deadline, signal?, onSource? })`, and `listCapabilityCatalog({ caller, cursor?, limit? })` read a caller's calendar sources | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/store` | Platform-owned, server-only | Capability execution history: migration, recording, listing, summary, and retention | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest, evolution, resource-link and localized review checks | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/cli/account` | Platform-owned | Built-in account commands | — |
@@ -711,3 +755,34 @@ Core's routine definition export uses the framework-owned `exportChatTasks`,
 `ChatTaskExportPageSchema`, `ChatTaskExportEntrySchema`, `ChatTaskExportQuerySchema`
 and `ChatTaskExportForbiddenError` exports from `@k2b/cloud/ai`. See
 [Export automation definitions](/en/docs/operations/automation-definition-export).
+
+### Code owners and normal shares
+
+`CapabilityCodeDefinition` from `@k2b/cloud` declares optional `owners` and
+`pages`; `CapabilityCodeManifestSchema` and `CapabilityCodeManifest` are
+available from `@k2b/cloud/contracts`. Resource `access.readable` stays
+independent of Code ownership. Targets use normal share services without Code
+adapters. See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target).
+
+Core's title-only owner projection uses `signCodeOwnerRead` and
+`verifyCodeOwnerRead` from `@k2b/cloud/capabilities/server`. This is a
+platform-owned lifecycle transport, not an application grant API.
+
+Core activation services and status schemas are documented in
+[Code activation](/en/docs/platform/code-activation). These Core-owned services
+are consumed by the Code CLI, lifecycle, runner and resource UI slices; they are
+not application imports from the public platform package.
+
+`lockAccessMutationAuthority` from `@k2b/cloud/server` retains live identity and
+directory authority for normal share mutations. `AccessMutationBusyError`
+reports retryable lock contention. Use the helper before the target lock and
+recheck target management on the same transaction, as described in
+[Resource authorization](/en/docs/identity/authorization#retain-manager-authority-while-changing-a-grant).
+
+## Code account handles
+
+`codeOwnerTitleChanged` from `@k2b/cloud` updates a declared owner's title in its
+rename transaction. `resolveDisplayNames` and `CodeAccountDisplayContext` from
+`@k2b/cloud/server` present names inside locally authorized target lists.
+`codeAccountPresenter` supports adapters that already join account metadata in
+one query. See [Code account handles](/en/docs/identity/code-service-account-handles).

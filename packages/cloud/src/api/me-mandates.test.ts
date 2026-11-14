@@ -114,6 +114,29 @@ describe("self-service mandates", () => {
     expect(created).toBeFalse();
   });
 
+  test("reserves Code version entries for Core activation, including policy-bearing requests", async () => {
+    let created = false;
+    const routes = createMeMandateRoutes(
+      {
+        createPending: async () => {
+          created = true;
+          return ok(mandate);
+        },
+        list: async () => ({ items: [], page: 1, perPage: 50, total: 0, hasNext: false }),
+      },
+      authenticate("session"),
+    );
+    for (const ownerAppId of ["runner", "core"]) {
+      const response = await routes.request("/mandates", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ownerAppId, workloadType: "code.version", workloadId: "version-1", policy: mandate.policy }),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(created).toBe(false);
+  });
+
   test("lists only the current user's mandates with bounded pagination", async () => {
     const calls: unknown[] = [];
     const routes = createMeMandateRoutes(

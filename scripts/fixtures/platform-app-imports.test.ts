@@ -32,7 +32,6 @@ test("application data declarations load before platform startup", async () => {
     .flatMap((app) => ["config.ts", "migrate.ts", "service/index.ts"].map((entry) => `packages/${app}/src/${entry}`))
     .filter((path) => existsSync(resolve(root, path)));
   modules.push(
-    "packages/assistant/src/artifacts/database.ts",
     "packages/gateway-ops/src/observability/telemetry/service.ts",
     "packages/notebooks/src/service/tree-levels.ts",
     "packages/spaces/src/service/item-templates.ts",

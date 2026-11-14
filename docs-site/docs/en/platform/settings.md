@@ -254,5 +254,5 @@ when writes must instead use an application API for connection checks,
 rescheduling or a stronger OAuth scope. The internal generic setter then
 rejects that key, including for an administrator. Supply a named CLI command
 for the owning API; environment diagnostics remain readable without values.
-For example, Assistant's rsql target allowlist uses `assistant studio-admin
-configure`, preserving its connection preflight.
+The former Assistant Studio settings and their dedicated administration command
+have been retired; see [Studio retirement](/en/docs/operations/studio-retirement).

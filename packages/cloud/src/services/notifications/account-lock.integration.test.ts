@@ -233,7 +233,7 @@ suite("notifications to locked accounts", () => {
 
       const [batch] = await sql<{ id: string }[]>`
         INSERT INTO notifications.batches (subject, body_markdown, body_html, selection, selection_hash, status, target_count, deliverable_count)
-        VALUES ('Update', ${secret}, ${`<p>${secret}</p>`}, ${JSON.stringify({ userIds: [second] })}::jsonb, ${second}, 'ready', 1, 1)
+        VALUES ('Update', ${secret}, ${`<p>${secret}</p>`}, ${JSON.stringify({ userIds: [second] })}::text::jsonb, ${second}, 'ready', 1, 1)
         RETURNING id
       `;
       batchId = batch!.id;

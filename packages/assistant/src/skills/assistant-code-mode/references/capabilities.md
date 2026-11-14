@@ -11,6 +11,24 @@ Use a fresh short script for another question; no saved app is required. A
 sample is not evidence that all records were fetched. Shared writes and actions
 remain real even when the script is exploratory.
 
+One-off `code_run` modules can use the same generated SDK as lasting Code:
+
+```ts
+import { grids, sheet } from "@sdk";
+export default async () => {
+  const { data: rows } = await grids.table("t_fictional").record.list({});
+  return sheet.toCsv(rows);
+};
+```
+
+Use the discovered operation's actual result shape and pagination. This example
+assumes `data` is an array of row objects. SDK Queries return `{data, page?}`;
+follow the returned cursor when `page.hasMore` before treating a list as complete.
+Streaming reads return `FileRef`; Actions return domain data directly.
+`sheet` is the existing runtime helper. Dynamic IDs work in one-off runs.
+There is no `app`, version or owner, and writes still ask as usual. Do the
+read and transformation in one run; no saved resource or preflight run is needed.
+
 Inside a script or app, call:
 
 ```ts
@@ -23,6 +41,15 @@ capability result envelope, including `data` and any supplied references or
 files. Inspect its documented shape before chaining it into another call.
 Await dependent calls in order. Catch failures when the task has a useful
 recovery; do not swallow them and report success.
+
+For normalized calls, the optional third argument to `cloud.capabilities.run`
+contains `target: {type,id}`, `refs: {field: {type,id}}` and an optional
+`idempotencyKey`. Use the exact discovered target and ref types. Explicit keys
+are accepted only for Actions declaring required idempotency; retain the key
+for the same effect on a retry. Omitting it keeps the existing per-call key.
+This transport option applies to script runs; it grants no
+additional permission and does not answer approval dialogs. The generated SDK
+sets these coordinates from its handles.
 
 The current user's Cloud permissions still apply. Read queries and actions
 configured without approval run directly. Other actions request real user
@@ -85,13 +112,15 @@ Action and must follow the normal approval process.
 
 Filesv2 publishes discovery/listing and cursor-based search, `content.read`,
 `content.create`, folder creation, rename, move, copy, trash, and restore. Use
-exact returned base IDs and entry references. Overwriting requires current
+the root entry ref's `id` from `bases.list` as the flat `entry` target field.
+Keep paths relative to that root and use exact returned entry references.
+Overwriting requires current
 `expectedRevision`; default to creating a new output name. Follow `next` until
 null when an analysis needs every entry. Trash remains recoverable; no permanent
 delete capability is exposed.
 
 
-For a user download from a Studio list, Filesv2 also provides an on-demand
+For a file download, Filesv2 also provides an on-demand
 `content.download` lease. Keep resource refs in lists and request the URL only
 when selected; follow [Filesv2 and Grids downloads](files.md#list-filesv2-files-beside-grids-documents)
 for expiry, permissions and error recovery.

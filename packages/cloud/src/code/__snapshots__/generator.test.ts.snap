@@ -1,0 +1,1886 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`Code SDK generation Mail content paths distinguish inline text from original attachment FileRefs without aliases: Mail content operations 1`] = `
+[
+  {
+    "capability": "mail.attachment.content.read",
+    "dataSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "File metadata; send its bytes through the capability's write stream.",
+      "properties": {
+        "mediaType": {
+          "description": "Content media type.",
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[\\x20-\\x7e]+$",
+          "type": "string",
+        },
+        "name": {
+          "description": "File name, without a path.",
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string",
+        },
+        "size": {
+          "description": "Exact body length in bytes.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+      },
+      "required": [
+        "mediaType",
+        "size",
+      ],
+      "type": "object",
+    },
+    "methodPath": [
+      "attachment",
+      "content",
+      "read",
+    ],
+    "stream": {
+      "direction": "read",
+      "maxBytes": 104857600,
+    },
+  },
+  {
+    "capability": "mail.attachment.text.read",
+    "dataSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "contentType": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string",
+        },
+        "downloadHref": {
+          "format": "starts_with",
+          "pattern": "^\\/api\\/mail\\/.*",
+          "type": "string",
+        },
+        "extraction": {
+          "additionalProperties": false,
+          "properties": {
+            "available": {
+              "type": "boolean",
+            },
+            "errorCode": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+            "extractorVersion": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string",
+            },
+            "format": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+            "inputBytes": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+            "outputBytes": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "complete",
+                "unsupported",
+                "encrypted",
+                "ocr_required",
+                "resource_limit",
+                "malformed",
+                "failed",
+              ],
+              "type": "string",
+            },
+            "truncated": {
+              "type": "boolean",
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                  "type": "string",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+          },
+          "required": [
+            "status",
+            "extractorVersion",
+            "available",
+            "format",
+            "inputBytes",
+            "outputBytes",
+            "truncated",
+            "errorCode",
+            "updatedAt",
+          ],
+          "type": "object",
+        },
+        "filename": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "id": {
+          "description": "Stable 6-character resource ID",
+          "pattern": "^[0-9A-Za-z]{6}$",
+          "type": "string",
+        },
+        "length": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "markdown": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "messageId": {
+          "description": "Stable 6-character resource ID",
+          "pattern": "^[0-9A-Za-z]{6}$",
+          "type": "string",
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "offset": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "sizeBytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "totalBytes": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "trust": {
+          "const": "untrusted",
+          "type": "string",
+        },
+      },
+      "required": [
+        "id",
+        "filename",
+        "contentType",
+        "sizeBytes",
+        "downloadHref",
+        "extraction",
+        "messageId",
+        "markdown",
+        "offset",
+        "length",
+        "totalBytes",
+        "nextOffset",
+        "trust",
+      ],
+      "type": "object",
+    },
+    "methodPath": [
+      "attachment",
+      "text",
+      "read",
+    ],
+    "stream": undefined,
+  },
+  {
+    "capability": "mail.message.content.read",
+    "dataSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "conversationId": {
+          "anyOf": [
+            {
+              "description": "Stable 6-character resource ID",
+              "pattern": "^[0-9A-Za-z]{6}$",
+              "type": "string",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "id": {
+          "description": "Stable 6-character resource ID",
+          "pattern": "^[0-9A-Za-z]{6}$",
+          "type": "string",
+        },
+        "length": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "mailboxId": {
+          "description": "Stable 6-character resource ID",
+          "pattern": "^[0-9A-Za-z]{6}$",
+          "type": "string",
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "offset": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "subject": {
+          "maxLength": 998,
+          "type": "string",
+        },
+        "text": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "totalBytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "trust": {
+          "const": "untrusted",
+          "type": "string",
+        },
+      },
+      "required": [
+        "id",
+        "mailboxId",
+        "conversationId",
+        "subject",
+        "text",
+        "offset",
+        "length",
+        "totalBytes",
+        "nextOffset",
+        "trust",
+      ],
+      "type": "object",
+    },
+    "methodPath": [
+      "message",
+      "content",
+      "read",
+    ],
+    "stream": undefined,
+  },
+]
+`;
+
+exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: declarations 1`] = `
+"// Generated from Cloud capability manifests. Do not edit.
+// Numbered InputN and DataN types are legacy aliases.
+/** Opaque, expiring, single-use file from this run. Only Core can redeem it; it contains no bytes or URL. */
+declare const __codeFileRef: unique symbol;
+export type FileRef = {
+  readonly [__codeFileRef]: true;
+  readonly id: string;
+  readonly name?: string;
+  readonly mediaType: string;
+  readonly size: number;
+};
+
+/** A generated SDK method bound to its application and optional resource. Only accepted in AI tools arrays. */
+declare const __codeAiTool: unique symbol;
+export type CodeAiTool = { readonly [__codeAiTool]: true };
+
+/** A target identity created by a generated factory, never an authorization grant. */
+declare const __codeHandle: unique symbol;
+export type CodeHandle<Type extends string, Id extends string = string> = {
+  readonly [__codeHandle]: Type;
+  readonly type: Type;
+  readonly id: Id;
+};
+/** Query data and the capability envelope's optional pagination, shared by queries returning domain data. */
+export type CodeQueryResult<Data> = {
+  data: Data;
+  page?: { hasMore: true; nextCursor: string } | { hasMore: false };
+};
+/** Visitor identity is presentation and handler input, never the authority for SDK data calls. */
+export type CodeUser = {
+  id: string;
+  /** Cloud login handle, distinct from the immutable user ID. */
+  username: string;
+  groupIds: string[];
+  groupNames: string[];
+  /** The signed-in person's Cloud account profile. Workload accounts cannot visit private pages. */
+  kind: "user" | "guest";
+  name: string;
+};
+/** Request helpers for hosted routes. */
+export type CodeRequest = {
+  raw: Request;
+  readonly path: string;
+  readonly method: string;
+  param(name: string): string;
+  query(name: string): string | undefined;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+  formData(): Promise<FormData>;
+};
+/** Authenticated route context. */
+export type CodeContext<Variables extends object = {}> = {
+  /** Request-local variables, declared once on app.use<Variables>(). */
+  set<Key extends keyof Variables & string>(key: Key, value: Variables[Key]): void;
+  get<Key extends keyof Variables & string>(key: Key): Variables[Key];
+  req: CodeRequest;
+  user: CodeUser | null;
+  json(value: unknown, status?: number): Response;
+  text(value: string, status?: number): Response;
+  /** Draws a page built from SDK blocks; its root is \`<Page>\`. */
+  page(page: CodePageBlock): Response;
+  redirect(location: string, status?: number): Response;
+};
+/** Call once to run the next matching middleware or route handler. */
+export type CodeNext = () => Promise<Response>;
+/** Return a response to stop, or call next(); awaiting next() may also return void. */
+export type CodeMiddleware<Variables extends object = {}> = (
+  c: CodeContext<Variables>,
+  next: CodeNext,
+) => Response | void | Promise<Response | void>;
+/** One schedule occurrence, stable across retries. Manual runs have scheduledAt null. */
+export type CodeScheduleContext = { runId: string; scheduledAt: string | null; input: unknown };
+export type CodeScheduleHandler = (context: CodeScheduleContext) => void | Promise<void>;
+/** Known platform refusals. Applications may add their own stable codes. */
+export type KnownCodeErrorCode =
+  | "ai_disabled"
+  | "ai_input_too_large"
+  | "ai_invalid_output"
+  | "ai_model_unavailable"
+  | "ai_no_model"
+  | "chat_busy"
+  | "chat_changed"
+  | "code_access_forbidden"
+  | "code_access_removed"
+  | "code_activation_draining"
+  | "code_admission_refused"
+  | "code_ai_budget_limit"
+  | "code_ai_budget_reserved"
+  | "code_ai_daily_budget_limit"
+  | "code_ai_owner_daily_budget_limit"
+  | "code_ai_run_required"
+  | "code_ai_tool_invalid"
+  | "code_ai_tool_not_checked"
+  | "code_analysis_failed"
+  | "code_answer_lost"
+  | "code_approval_required"
+  | "code_approval_revoked"
+  | "code_bridge_unavailable"
+  | "code_bundle_failed"
+  | "code_bundle_limit"
+  | "code_bundle_mismatch"
+  | "code_call_limit"
+  | "code_capability_undeclared"
+  | "code_chat_call_limit"
+  | "code_chat_invalid_value"
+  | "code_check_cancelled"
+  | "code_check_failed"
+  | "code_check_memory_limit"
+  | "code_check_output_limit"
+  | "code_check_time_limit"
+  | "code_checker_unavailable"
+  | "code_code_false"
+  | "code_cleanup_binding_invalid"
+  | "code_cleanup_failed"
+  | "code_cleanup_not_deleting"
+  | "code_comparison_stale"
+  | "code_csrf_required"
+  | "code_db_busy"
+  | "code_db_full"
+  | "code_db_invalid"
+  | "code_db_limit"
+  | "code_db_owner_full"
+  | "code_db_sql"
+  | "code_db_temporary"
+  | "code_db_timeout"
+  | "code_db_unavailable"
+  | "code_db_undeclared"
+  | "code_detached_sdk_method"
+  | "code_disabled"
+  | "code_duplicate_on"
+  | "code_duplicate_route"
+  | "code_duplicate_schedule"
+  | "code_dynamic_event"
+  | "code_entrypoints_changed"
+  | "code_event_backlog_full"
+  | "code_event_input"
+  | "code_event_owner"
+  | "code_event_undeclared"
+  | "code_file_invalid"
+  | "code_file_mismatch"
+  | "code_file_observation_failed"
+  | "code_file_size_limit"
+  | "code_file_size_mismatch"
+  | "code_file_source_refused"
+  | "code_file_spent"
+  | "code_file_target_refused"
+  | "code_file_unavailable"
+  | "code_hash_mismatch"
+  | "code_http_allow_literal"
+  | "code_http_failed"
+  | "code_http_forbidden"
+  | "code_http_grant_limit"
+  | "code_http_input_limit"
+  | "code_http_invalid_call"
+  | "code_http_origin_dynamic"
+  | "code_http_origin_forbidden"
+  | "code_http_origin_invalid"
+  | "code_http_origin_undeclared"
+  | "code_http_path_forbidden"
+  | "code_http_redirect_limit"
+  | "code_http_result_limit"
+  | "code_http_secret_forbidden"
+  | "code_http_secret_unavailable"
+  | "code_http_timeout"
+  | "code_import_elided"
+  | "code_import_forbidden"
+  | "code_input_limit"
+  | "code_invalid_call"
+  | "code_invalid_cron"
+  | "code_invalid_response"
+  | "code_invalid_token"
+  | "code_job_busy"
+  | "code_job_call_limit"
+  | "code_job_cancelled"
+  | "code_job_failed"
+  | "code_job_not_found"
+  | "code_job_output_limit"
+  | "code_job_request_limit"
+  | "code_job_time_limit"
+  | "code_mandate_mismatch"
+  | "code_manifest_invalid"
+  | "code_members_only"
+  | "code_middleware_next_called_twice"
+  | "code_no_entrypoint"
+  | "code_not_active"
+  | "code_operation_not_found"
+  | "code_owner_deleted"
+  | "code_owner_read"
+  | "code_owner_reports_pending"
+  | "code_owner_source_invalid"
+  | "code_page_blocks"
+  | "code_page_chart"
+  | "code_page_child"
+  | "code_page_component"
+  | "code_page_data_only"
+  | "code_page_duplicate_field"
+  | "code_page_limit"
+  | "code_page_root"
+  | "code_page_table_columns"
+  | "code_page_text"
+  | "code_page_unknown_field"
+  | "code_policy_never"
+  | "code_rate_limited"
+  | "code_removed_api"
+  | "code_request_busy"
+  | "code_request_cancelled"
+  | "code_request_content_type"
+  | "code_request_encoding"
+  | "code_request_failed"
+  | "code_request_limit"
+  | "code_request_method"
+  | "code_request_rate_limit"
+  | "code_request_size_limit"
+  | "code_request_timeout"
+  | "code_reserved_sdk"
+  | "code_result_exceeds_capability_contract"
+  | "code_result_not_storable"
+  | "code_result_unknown"
+  | "code_route_account_required"
+  | "code_route_before_middleware"
+  | "code_route_changed"
+  | "code_route_not_found"
+  | "code_route_unchecked"
+  | "code_run_entrypoint"
+  | "code_run_lease_unavailable"
+  | "code_runner_metrics_unavailable"
+  | "code_runner_required"
+  | "code_runner_unavailable"
+  | "code_schedule_delete_failed"
+  | "code_schedule_sync_failed"
+  | "code_scheduling_recovery_failed"
+  | "code_sdk_bridge_unbound"
+  | "code_sdk_duplicate_route"
+  | "code_sdk_duplicate_schedule_name"
+  | "code_sdk_idempotency_not_allowed"
+  | "code_sdk_idempotency_required"
+  | "code_sdk_invalid_bridge"
+  | "code_sdk_invalid_handle"
+  | "code_sdk_invalid_id"
+  | "code_sdk_invalid_idempotency_key"
+  | "code_sdk_invalid_input"
+  | "code_sdk_invalid_middleware"
+  | "code_sdk_invalid_route"
+  | "code_sdk_invalid_schedule"
+  | "code_sdk_invalid_schedule_name"
+  | "code_sdk_invalid_schedule_title"
+  | "code_sdk_invalid_secret_name"
+  | "code_sdk_missing_entrypoint"
+  | "code_sdk_readonly_secrets"
+  | "code_sends_not_yet"
+  | "code_sign_in_required"
+  | "code_source_limit"
+  | "code_source_path"
+  | "code_static_event"
+  | "code_static_middleware"
+  | "code_static_route"
+  | "code_static_schedule"
+  | "code_static_title"
+  | "code_stream_forbidden"
+  | "code_test_ambiguous_mock"
+  | "code_test_cancelled"
+  | "code_test_case_limit"
+  | "code_test_check_failed"
+  | "code_test_checker_unavailable"
+  | "code_test_fixture_path"
+  | "code_test_invalid_call"
+  | "code_test_invalid_fixture"
+  | "code_test_invalid_idempotency"
+  | "code_test_invalid_input"
+  | "code_test_invalid_refs"
+  | "code_test_missing_mock"
+  | "code_test_mock_exhausted"
+  | "code_test_output_limit"
+  | "code_test_request_limit"
+  | "code_test_runner_unavailable"
+  | "code_type_suppression"
+  | "code_typecheck_failed"
+  | "code_unattended_forbidden"
+  | "code_unavailable"
+  | "code_unresolved_call"
+  | "code_unresolved_ref"
+  | "code_version_conflict"
+  | "code_version_explanation"
+  | "code_version_mismatch"
+  | "code_version_stale"
+  | "code_version_unavailable"
+  | "code_wall_clock_limit"
+  | "decision_images_not_supported"
+  | "decision_input_invalid"
+  | "decision_input_too_large"
+  | "decision_model_unavailable"
+  | "decision_not_configured"
+  | "model_policy_mismatch"
+  | "provider_aborted"
+  | "provider_error"
+  | "provider_stopped"
+  | "quota_conflict"
+  | "quota_exceeded"
+  | "quota_exhausted"
+  | "quota_usage_unknown"
+  | "runner_lease_lost";
+/** Keeps application-defined codes valid while offering the known codes in editors. */
+export type CodeErrorCode = KnownCodeErrorCode | (string & {});
+/** A refused SDK call. Codes are lowercase snake_case; status distinguishes forbidden and missing targets. */
+export declare class CodeError extends Error {
+  readonly code: CodeErrorCode;
+  readonly status: number;
+  readonly details: unknown;
+  constructor(code: CodeErrorCode, status?: number, message?: string, details?: unknown);
+}
+
+/** Opaque header placeholder. It never contains a value; only Core can substitute it at an approved destination. */
+declare const __codeSecret: unique symbol;
+export type CodeSecret = string & { readonly [__codeSecret]: true };
+/** Bounded public HTTPS result. Raw bytes are base64; text/json decode UTF-8 after Core redacts echoed credentials. */
+export type CodeHttpResult = {
+  status: number;
+  headers: Record<string, string>;
+  bodyBase64: string;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+};
+export type CodeHttp = {
+  /** Declare exact HTTPS origins for dynamic URLs and redirects. Literal array; never grants runtime authority. */
+  allow(origins: readonly string[]): void;
+  fetch(
+    url: string,
+    options?: {
+      method?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
+      headers?: Record<string, string>;
+      body?: string;
+    },
+  ): Promise<CodeHttpResult>;
+};
+
+/** SQLite scalar parameters are sent as bound values, never interpolated into SQL. */
+export type CodeDatabaseValue = string | number | boolean | null;
+export type CodeDatabaseStatement = { sql: string; params?: readonly CodeDatabaseValue[] };
+/** Persistent database owned by this Code, shared across its versions. */
+export type CodeDatabase = {
+  query<Row = Record<string, CodeDatabaseValue>>(sql: string, params?: readonly CodeDatabaseValue[]): Promise<Row[]>;
+  exec(sql: string, params?: readonly CodeDatabaseValue[]): Promise<{ changes: number }>;
+  batch(statements: readonly CodeDatabaseStatement[]): Promise<{ changes: number }[]>;
+};
+
+/** Decision questions accept boolean as an alias for the historical noul spelling. */
+export type CodeDecisionQuestion =
+  | { type: "noul" | "boolean"; instructions: unknown; criteria?: { true?: unknown; false?: unknown } }
+  | { type: "choice"; instructions: unknown; criteria: Record<string, unknown> }
+  | { type: "score"; instructions: unknown; criteria: readonly unknown[] };
+/** input aliases state; when both are present state retains precedence. */
+export type CodeDecisionInput<Input> = Omit<Input, "state" | "questions"> &
+  ({ state: unknown; input?: unknown } | { input: unknown; state?: unknown }) & { questions: Record<string, CodeDecisionQuestion> };
+export type CodeDecisionAnswer<Question, Answer> = Question extends { type: "boolean" | "noul" }
+  ? Extract<Answer, { type: "noul" }> & { confidence: number }
+  : Question extends { type: "choice"; criteria: infer Criteria }
+    ? Omit<Extract<Answer, { type: "choice" }>, "choice"> & { choice: keyof Criteria & string }
+    : Question extends { type: "score" }
+      ? Extract<Answer, { type: "score" }>
+      : Answer;
+export type CodeDecisionData<Input, Data extends { answers: Record<string, unknown> }> = Omit<Data, "answers"> & {
+  answers: Input extends { questions: infer Questions }
+    ? {
+        [Key in keyof Questions]: CodeDecisionAnswer<Questions[Key], Data["answers"][string]>;
+      }
+    : Data["answers"];
+};
+/** Broad required lists cannot prove which fields are present. */
+type CodeJsonRequiredKeys<Schema> = Schema extends { required: readonly (infer Required)[] }
+  ? string extends Required
+    ? never
+    : Required
+  : never;
+/** The supported JSON output schema projected into its validated result. */
+export type CodeJsonOutput<Schema> = Schema extends { enum: readonly (infer Value)[] }
+  ? Value
+  : Schema extends { type: "string" }
+    ? string
+    : Schema extends { type: "number" | "integer" }
+      ? number
+      : Schema extends { type: "boolean" }
+        ? boolean
+        : Schema extends { type: "array"; items: infer Item }
+          ? CodeJsonOutput<Item>[]
+          : Schema extends { type: "object"; properties: infer Properties }
+            ? {
+                [Key in keyof Properties as Key extends CodeJsonRequiredKeys<Schema> ? Key : never]: CodeJsonOutput<Properties[Key]>;
+              } & {
+                [Key in keyof Properties as Key extends CodeJsonRequiredKeys<Schema> ? never : Key]?: CodeJsonOutput<Properties[Key]>;
+              }
+            : unknown;
+export type CodeGenerationOutput<Input> = Input extends { output: infer Output }
+  ? Output extends { type: "text" }
+    ? string
+    : Output extends { type: "json"; schema: infer Schema }
+      ? CodeJsonOutput<Schema>
+      : unknown
+  : unknown;
+/** Catalog input. */
+export type Work$hshop_Catalog_ListInput = Record<string, never>;
+/** Catalog result. */
+export type Work$hshop_Catalog_ListData = Array<string>;
+/** Export input. */
+export type Work$hshop_Stock_ExportInput = Work$hshop_Catalog_ListInput;
+/** Export result. */
+export type Work$hshop_Stock_ExportData = Work$hshop_Catalog_ListInput;
+type S617d671a6f11 = { id: string; state: (("ready" | "empty")) & (string) };
+/** Stock input. */
+export type Work$hshop_Stock_ListInput = { /** Page cursor. */ cursor?: string };
+/** Stock result. */
+export type Work$hshop_Stock_ListData = { next: (string | null); rows: Array<S617d671a6f11> };
+type Sf404a16e7971 = { /** Stable app-owned resource identifier. */ id: string; /** Namespaced resource type declared by… */ type: string };
+type S47a5d34bde7f = { ref: Sf404a16e7971; title: string };
+type Se47ab38f12fe = { container?: S47a5d34bde7f; /** One line in the caller's locale that… */ context?: string; done?: boolean; permission: (("read" | "write" | "admin")) & (string); /** The resource's current state as a… */ status?: string; title: string };
+/** Read workshop input. */
+export type Work$hshop_Workshop_ReadInput = { /** Workshop ID. */ id: string };
+/** Read workshop result. */
+export type Work$hshop_Workshop_ReadData = { view: Se47ab38f12fe };
+type S2f2db2f4d25b = { /** Detail kind. */ kind: ("note") & (string); /** Note text. */ text: string; [key: string]: unknown };
+type S43be3d11d6c4 = { /** Item count. */ count: number; /** Detail kind. */ kind: ("count") & (string); [key: string]: unknown };
+/** Create item input. */
+export type Work$hshop_Item_CreateInput = { /** Item details. */ details?: (S2f2db2f4d25b | S43be3d11d6c4); /** Item title. */ title: string; idempotencyKey: string };
+/** Create item result. */
+export type Work$hshop_Item_CreateData = { id: string };
+/** Inspect input. */
+export type Work$hshop_Item_InspectInput = { idempotencyKey?: never };
+/** Inspect result. */
+export type Work$hshop_Item_InspectData = { ok: boolean };
+/** Move item input. */
+export type Work$hshop_Item_MoveInput = { /** Item to move. */ itemId: string; destination: CodeHandle<"work-shop.workshop">; idempotencyKey?: never };
+/** Move item result. */
+export type Work$hshop_Item_MoveData = { moved: boolean };
+type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": ((((input?: Work$hshop_Catalog_ListInput) => Promise<CodeQueryResult<Work$hshop_Catalog_ListData>>) & CodeAiTool)) }; readonly "workshop": { readonly "read": ((((input: Work$hshop_Workshop_ReadInput) => Promise<CodeQueryResult<Work$hshop_Workshop_ReadData>>) & CodeAiTool)) } };
+type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "inspect": ((((input?: Work$hshop_Item_InspectInput) => Promise<Work$hshop_Item_InspectData>) & CodeAiTool)) };
+type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((((input: Work$hshop_Item_CreateInput) => Promise<Work$hshop_Item_CreateData>) & CodeAiTool)); readonly "move": (((input: Work$hshop_Item_MoveInput) => Promise<Work$hshop_Item_MoveData>)) }; readonly "stock": { readonly "export": ((((input?: Work$hshop_Stock_ExportInput) => Promise<FileRef>) & CodeAiTool)); readonly "list": ((((input?: Work$hshop_Stock_ListInput) => Promise<CodeQueryResult<Work$hshop_Stock_ListData>>) & CodeAiTool)) } };
+export declare const work_shop: Handle0<"work-shop"> & { readonly "item": (<const Id extends string>(id: Id) => Handle1<Id>); readonly "workshop": (<const Id extends string>(id: Id) => Handle2<Id>) };
+export declare const owner: Handle2<"owner-shop">;
+export type CodeEvent<Type extends string, Data> = {
+  id: string; type: Type; version: number; source: string; time: string;
+  subject: { type: string; id: string }; place: { type: string; id: string };
+  cause?: { requestId: string }; data: Data;
+};
+export type CodeEvents = { "work-shop.changed": CodeEvent<"work-shop.changed", { title: string }> };
+/** \`public: true\` admits visitors who are not signed in. Pages render inside the Cloud layout; \`layout: "plain"\` renders them alone. */
+export type CodeRouteOptions = { public?: boolean; layout?: "plain" };
+export type CodeApp<Variables extends object = {}> = {
+  /** Applies to later HTTP routes, optionally within a literal path prefix. Capture the return to type variables. */
+  use<Added extends object = {}>(middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
+  use<Added extends object = {}>(path: string, middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
+  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name: string; title?: string }, handler: CodeScheduleHandler): CodeApp<Variables>;
+  /** Without a handle, the checked event is scoped to this resource Code owner. An explicit handle binds a readable place. */
+  on<Event extends keyof CodeEvents>(event: Event, handler: (event: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
+  on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (event: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
+  get(path: string, options: CodeRouteOptions, handler: (c: CodeContext<Variables>) => Response | Promise<Response>): CodeApp<Variables>;
+  get(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  post(path: string, options: CodeRouteOptions, handler: (c: CodeContext<Variables>) => Response | Promise<Response>): CodeApp<Variables>;
+  post(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  put(path: string, options: CodeRouteOptions, handler: (c: CodeContext<Variables>) => Response | Promise<Response>): CodeApp<Variables>;
+  put(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  delete(path: string, options: CodeRouteOptions, handler: (c: CodeContext<Variables>) => Response | Promise<Response>): CodeApp<Variables>;
+  delete(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  all(path: string, options: CodeRouteOptions, handler: (c: CodeContext<Variables>) => Response | Promise<Response>): CodeApp<Variables>;
+  all(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+};
+export declare const app: CodeApp;
+type Sfec6469122ed = { kind: ("Text") & (string); text: string };
+type S3d52bedc5066 = { kind: ("Heading") & (string); level?: ((2) & (number) | (3) & (number) | (4) & (number)); text: string };
+type S6b47cabf9ccc = { compact?: boolean; currency?: string; decimals?: number; style?: (("number" | "percent" | "currency")) & (string) };
+type Sd70754363e0d = { label: string; tone: (("info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral")) & (string) };
+type Sdbd6429195b8 = { [key: string]: Sd70754363e0d };
+type S9dd3d0c424f2 = { format?: S6b47cabf9ccc; key: string; label: string; priority?: ((1) & (number) | (2) & (number) | (3) & (number)); states?: Sdbd6429195b8; type?: (("text" | "number" | "date" | "status" | "bar" | "amount" | "flow" | "delta")) & (string) };
+type S43048794f260 = { [key: string]: (string | number | boolean | null) };
+type Sfd63ba3e49b7 = { columns: Array<S9dd3d0c424f2>; empty?: string; kind: ("Table") & (string); rows: Array<S43048794f260>; search?: boolean; subtitle?: string; title: string; width?: (("third" | "half" | "twoThirds" | "full")) & (string) };
+type S8daba272d9e5 = { label: string; value: string };
+type Scb09fdce4bd3 = { error?: string; label: string; name: string; options?: Array<S8daba272d9e5>; required?: boolean; type: (("text" | "email" | "number" | "textarea" | "select" | "checkbox" | "scan")) & (string); value?: (string | number | boolean) };
+type S34c2f1d4e95e = { action: string; fields: Array<Scb09fdce4bd3>; kind: ("Form") & (string); submit: string; title: string; width?: (("third" | "half" | "twoThirds" | "full")) & (string) };
+type Sf7b8d4eb1c3f = { compact?: boolean; currency?: string; decimals?: number; style?: (("number" | "percent" | "currency")) & (string); unit?: string };
+type S3ea33e90e700 = { format?: Sf7b8d4eb1c3f; label: string; value: (string | number | boolean | null) };
+type S98f112b66964 = { height?: (("sm" | "md" | "lg")) & (string); items: Array<S3ea33e90e700>; kind: ("Detail") & (string); title: string; width?: (("third" | "half" | "twoThirds" | "full")) & (string) };
+type Sce952a42efa9 = { label: string };
+type S802d0c3f7382 = { label: string; value: number };
+type Saab559c4e37d = { format?: Sf7b8d4eb1c3f; label?: string };
+type Sc731f500124b = { end: Sce952a42efa9; format?: Sf7b8d4eb1c3f; kind: ("waterfall") & (string); start: S802d0c3f7382; steps: Array<S802d0c3f7382>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type S759e2ab051ed = { data: Array<(number | null)>; label: string };
+type S9c03cb5a3302 = { format?: Sf7b8d4eb1c3f; kind: ("area") & (string); layout: ("stacked") & (string); legend?: boolean; normalize?: boolean; series: Array<S759e2ab051ed>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; x: Array<(number | string)> };
+type S67d3c319c186 = { axis?: (("x" | "y")) & (string); label?: string; style?: (("solid" | "dashed" | "dotted")) & (string); tone?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); value: (number | string) };
+type Sc8933b569e90 = { label?: string; ordered?: boolean };
+type Sebe50cb363ee = { date: (("day" | "minute" | "second")) & (string) };
+type Sf09f97304097 = { /** Exact [min, max]; must contain every… */ domain?: Array<number>; format?: (Sf7b8d4eb1c3f | Sebe50cb363ee); label?: string; /** log needs values above zero. */ scale?: (("linear" | "log")) & (string); ticks?: number };
+type Sdda147b6785c = { colorByBar?: boolean; compare?: S759e2ab051ed; data?: Array<S802d0c3f7382>; dots?: number; format?: Sf7b8d4eb1c3f; kind: ("bar") & (string); layout?: (("columns" | "rows" | "grouped" | "stacked" | "nested")) & (string); legend?: boolean; limit?: number; marks?: (("bars" | "dots")) & (string); normalize?: boolean; references?: Array<S67d3c319c186>; series?: Array<S759e2ab051ed>; share?: boolean; showValues?: boolean; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; tone?: (("in" | "out")) & (string); /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; total?: number; x?: Array<string>; xAxis?: Sc8933b569e90; yAxis?: Sf09f97304097 };
+type S74f437e10562 = { label: string; value: (number | null) };
+type S1b69bf224ffe = { data: Array<S74f437e10562>; format?: Sf7b8d4eb1c3f; kind: ("funnel") & (string); /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type S84a782c9a94a = { group?: string; label: string; values: Array<(number | null)> };
+type Se91e56a2986c = { format?: Sf7b8d4eb1c3f; kind: ("hbar") & (string); legend?: boolean; rows: Array<S84a782c9a94a>; series: Array<string>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type S76e2e8199307 = [number, number];
+type S6cb6e4b986f8 = { band?: Array<S76e2e8199307>; from: (number | string) };
+type Sc4b7f405596d = { at: (number | string); label: string };
+type S78ecc86f3da6 = { /** line, scatter: number or… */ x: (number | string); /** line: value; null is a gap only with… */ y: (number | null) };
+type Sa11482d77656 = { data: Array<S78ecc86f3da6>; label?: string; role?: ("reference") & (string); style?: (("solid" | "dashed" | "dotted")) & (string) };
+type Sfcc114f6af45 = { area?: boolean; forecast?: S6cb6e4b986f8; kind: ("line") & (string); legend?: boolean; legendValues?: boolean; marker?: Sc4b7f405596d; references?: Array<S67d3c319c186>; series: Array<Sa11482d77656>; smooth?: boolean; step?: (("after" | "before" | "middle")) & (string); /** All kinds and groups: unit, period… */ subtitle?: string; threshold?: S802d0c3f7382; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; xAxis?: Sf09f97304097; yAxis?: Sf09f97304097; zero?: boolean };
+type Sddf9f6f81f82 = { /** line, scatter: number or… */ x: (number | string); /** line, scatter: value. */ y: number };
+type S052c086bdecd = { data: Array<Sddf9f6f81f82>; label?: string; role?: ("reference") & (string) };
+type S2aa515990a9c = { kind: ("scatter") & (string); legend?: boolean; references?: Array<S67d3c319c186>; series: Array<S052c086bdecd>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; xAxis?: Sf09f97304097; yAxis?: Sf09f97304097 };
+type S8d14adeeaf74 = { data: Array<S802d0c3f7382>; format?: Sf7b8d4eb1c3f; kind: (("pie" | "donut")) & (string); legend?: boolean; showLabels?: boolean; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type S9b9c7678925c = { /** histogram: a bin count or ascending… */ bins?: (number | Array<number>); data: Array<number>; kind: ("histogram") & (string); references?: Array<S67d3c319c186>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type Sfcdb272a6c0c = { label?: string; value: number };
+type Sc05000fd895c = { format?: Sf7b8d4eb1c3f; kind: ("gauge") & (string); label?: string; max?: number; min?: number; /** All kinds and groups: unit, period… */ subtitle?: string; thresholds?: Array<Sfcdb272a6c0c>; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; unit?: string; value: number };
+type Sdf289439ae47 = { area?: boolean; data: Array<number>; kind: ("sparkline") & (string); /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type S367701601634 = { label: string; values: Array<number> };
+type Sdb5c57fbbc5a = { data: Array<S367701601634>; kind: ("boxplot") & (string); references?: Array<S67d3c319c186>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; yAxis?: Sf09f97304097 };
+type Sa18edf9d49a0 = [string, (number | null)];
+type Sde04f7de3f13 = { data: Array<Sa18edf9d49a0>; format?: Sf7b8d4eb1c3f; kind: ("heatmap") & (string); label?: string; layout: ("calendar") & (string); locale?: string; scale: (("sequential" | "diverging")) & (string); /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type Sae26257c257f = { value: number; x: string; y: string };
+type Sb1dc445a76e2 = { data: Array<Sae26257c257f>; format?: Sf7b8d4eb1c3f; kind: ("heatmap") & (string); layout?: never; max?: number; min?: number; showValues?: boolean; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type S08c05d150d02 = { label: string; max?: number; min?: number; value: number };
+type S2b209d7c7a8a = { data: Array<S08c05d150d02>; format?: Sf7b8d4eb1c3f; kind: ("barGauge") & (string); max?: number; min?: number; /** All kinds and groups: unit, period… */ subtitle?: string; thresholds?: Array<Sfcdb272a6c0c>; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; unit?: string };
+type S597064cf2f55 = { better?: (("up" | "down")) & (string); delta?: number; format?: Sf7b8d4eb1c3f; kind: ("stat") & (string); sparkline?: Array<number>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; unit?: string; value: number };
+type Se023cb3d986a = { group: string; label: string; value: number };
+type Se434e8daea47 = { data: Array<Se023cb3d986a>; format?: Sf7b8d4eb1c3f; groups: Array<string>; kind: ("treemap") & (string); legend?: boolean; locale?: string; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type Sc5d849aca4eb = { label: string; prev: number; rest?: boolean; value: number };
+type Sf26df78e6a9f = [string, string];
+type Scb1d604e2024 = { data: Array<Sc5d849aca4eb>; format?: Sf7b8d4eb1c3f; kind: ("pareto") & (string); labels: Sf26df78e6a9f; locale?: string; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type S468241102321 = { closing: number; inflows: Array<S802d0c3f7382>; label: string; opening: number; outflows: Array<S802d0c3f7382> };
+type S2e4574ad6b22 = { currency: string; kind: ("balanceFlow") & (string); locale?: string; periods: Array<S468241102321>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type S52a6425199b4 = { label: string; tone: (("in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax")) & (string) };
+type Se03694375b26 = { source: string; target: string; value: number };
+type S7f3c4992bbed = { id: string; label: string; tone?: (("in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax")) & (string) };
+type S7405123d54ef = { format?: Sf7b8d4eb1c3f; kind: ("sankey") & (string); legend?: Array<S52a6425199b4>; links: Array<Se03694375b26>; locale?: string; nodes: Array<S7f3c4992bbed>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d };
+type Sc303bec79d2c = { group: string; label: string; size?: number; x: number; y: number };
+type Sfbe43f3b3ef2 = { averages?: boolean; data: Array<Sc303bec79d2c>; format?: Sf7b8d4eb1c3f; groups: Array<string>; kind: ("bubble") & (string); legend?: boolean; locale?: string; sizeLabel?: string; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; xFormat?: Sf7b8d4eb1c3f; xLabel: string; yFormat?: Sf7b8d4eb1c3f; yLabel: string };
+type S157e289ca076 = { data: Array<number>; label: string };
+type Sbd866db8dbab = { axes: Array<string>; format?: Sf7b8d4eb1c3f; kind: ("radar") & (string); legend?: boolean; locale?: string; max: number; series: Array<S157e289ca076>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; unit?: string };
+type S7f379fbbf736 = { description?: (Sc731f500124b | S9c03cb5a3302 | Sdda147b6785c | S1b69bf224ffe | Se91e56a2986c | Sfcc114f6af45 | S2aa515990a9c | S8d14adeeaf74 | S9b9c7678925c | Sc05000fd895c | Sdf289439ae47 | Sdb5c57fbbc5a | (Sde04f7de3f13 | Sb1dc445a76e2) | S2b209d7c7a8a | S597064cf2f55 | Se434e8daea47 | Scb1d604e2024 | S2e4574ad6b22 | S7405123d54ef | Sfbe43f3b3ef2 | Sbd866db8dbab); empty?: string; height?: (("sm" | "md" | "lg")) & (string); kind: ("Chart") & (string); title?: string; width?: (("third" | "half" | "twoThirds" | "full")) & (string) };
+type S79ac9957d107 = { better?: (("up" | "down")) & (string); unit?: ("points") & (string); value: number };
+type Sd6268941be95 = { compare?: S802d0c3f7382; delta?: S79ac9957d107; format?: Sf7b8d4eb1c3f; icon?: string; label: string; tone?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); trend?: Array<number>; value: (number | string | null) };
+type Sf5fe7857efc4 = { items: Array<Sd6268941be95>; kind: ("Stats") & (string) };
+type S51ee6e3b75b5 = { href: string; kind: ("Link") & (string); label: string };
+type Sd3722946df20 = { [key: string]: string };
+type See970d23b441 = { action: string; kind: ("Button") & (string); label: string; values?: Sd3722946df20 };
+type S0538ad0c0f7b = { kind: ("Notice") & (string); text?: string; title: string; tone: (("info" | "success" | "warning" | "danger")) & (string) };
+type Sa0d669cd1ca9 = { children: Array<CodePageRef0>; color?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); description?: string; icon?: string; kind: ("Section") & (string); title: string };
+type CodePageRef0 = ((Sfec6469122ed | S3d52bedc5066 | Sfd63ba3e49b7 | S34c2f1d4e95e | S98f112b66964 | S7f379fbbf736 | Sf5fe7857efc4 | S51ee6e3b75b5 | See970d23b441 | S0538ad0c0f7b) | Sa0d669cd1ca9);
+export type CodePageTree = { asOf?: string; children: Array<CodePageRef0>; color?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); eyebrow?: string; follow?: Array<string>; icon?: string; kind: ("Page") & (string); subtitle?: string; title: string; version: (1) & (number) };
+export type CodeChartDescription = (Sc731f500124b | S9c03cb5a3302 | Sdda147b6785c | S1b69bf224ffe | Se91e56a2986c | Sfcc114f6af45 | S2aa515990a9c | S8d14adeeaf74 | S9b9c7678925c | Sc05000fd895c | Sdf289439ae47 | Sdb5c57fbbc5a | (Sde04f7de3f13 | Sb1dc445a76e2) | S2b209d7c7a8a | S597064cf2f55 | Se434e8daea47 | Scb1d604e2024 | S2e4574ad6b22 | S7405123d54ef | Sfbe43f3b3ef2 | Sbd866db8dbab);
+/**
+ * Page building blocks for TSX. Blocks return descriptions, never DOM nodes or callback handlers; Core checks the
+ * page and draws it. A part such as a field or a column belongs inside its block (\`cld code check\` names a misplaced
+ * one); JSX cannot type which element a child is, so the checker and Core enforce it.
+ */
+export type CodePageNode = CodePageTree["children"][number];
+declare const __codePageBlock: unique symbol;
+/** A block made by an SDK component. Only blocks make pages; what a block holds is Cloud's business. */
+export type CodePageBlock = { readonly [__codePageBlock]: true };
+export type CodePageChild = CodePageBlock | readonly CodePageChild[] | false | null | undefined;
+export type CodePageComponent<P> = (props: P) => CodePageBlock;
+type CodeNodeProps<K extends CodePageNode["kind"]> = Omit<Extract<CodePageNode, { kind: K }>, "kind">;
+type Parts = { children?: CodePageChild };
+type NoChildren = { children?: never };
+type CodeSectionNode = Extract<CodePageNode, { kind: "Section" }>;
+export declare const Page: CodePageComponent<Omit<CodePageTree, "kind" | "version" | "children"> & Parts>;
+export declare const Section: CodePageComponent<Omit<CodeSectionNode, "kind" | "children"> & Parts>;
+type TextChildren = string | number | readonly (string | number)[];
+export declare const Text: CodePageComponent<{ text?: string; children?: TextChildren }>;
+export declare const Heading: CodePageComponent<{ text?: string; children?: TextChildren; level?: 2 | 3 | 4 }>;
+
+/** One key figure inside \`Stats\`: value first, then how it changed against what. */
+export declare const Stat: CodePageComponent<CodeNodeProps<"Stats">["items"][number] & NoChildren>;
+/** A row of up to six key figures; its children are \`Stat\` blocks. */
+export declare const Stats: CodePageComponent<Parts>;
+/** One column inside \`Table\`; \`key\` names the row field it shows. */
+export declare const Column: CodePageComponent<CodeNodeProps<"Table">["columns"][number] & NoChildren>;
+/** Rows are data, such as the result of an SDK call; columns are \`Column\` children. */
+export declare const Table: CodePageComponent<Omit<CodeNodeProps<"Table">, "columns"> & Parts>;
+/** One label and value inside \`Detail\`. */
+export declare const Item: CodePageComponent<CodeNodeProps<"Detail">["items"][number] & NoChildren>;
+export declare const Detail: CodePageComponent<Omit<CodeNodeProps<"Detail">, "items"> & Parts>;
+
+type CodePageField = CodeNodeProps<"Form">["fields"][number];
+type FieldProps<V> = Omit<CodePageField, "type" | "value" | "options"> & { value?: V } & NoChildren;
+/** One choice inside \`Field.Select\`. */
+export declare const Option: CodePageComponent<NonNullable<CodePageField["options"]>[number] & NoChildren>;
+/** Form fields, each a block of its own inside \`Form\`. The submitted value arrives under \`name\`. */
+export declare const Field: {
+  Text: CodePageComponent<FieldProps<string>>;
+  Email: CodePageComponent<FieldProps<string>>;
+  Number: CodePageComponent<FieldProps<number>>;
+  Textarea: CodePageComponent<FieldProps<string>>;
+  Checkbox: CodePageComponent<FieldProps<boolean>>;
+  /** A text field with a camera button; the read code goes into the field. */
+  Scan: CodePageComponent<FieldProps<string>>;
+  /** Its choices are \`Option\` children. */
+  Select: CodePageComponent<Omit<FieldProps<string>, "children"> & Parts>;
+};
+/** Sends its fields to an own route with POST; its children are \`Field\` blocks. */
+export declare const Form: CodePageComponent<Omit<CodeNodeProps<"Form">, "fields"> & Parts>;
+export declare const Link: CodePageComponent<CodeNodeProps<"Link"> & NoChildren>;
+export declare const Button: CodePageComponent<Omit<Extract<CodePageNode, { kind: "Button" }>, "kind"> & NoChildren>;
+export declare const Notice: CodePageComponent<CodeNodeProps<"Notice"> & NoChildren>;
+
+type CodeChartProps<K> = CodeChartDescription extends infer D
+  ? D extends { kind: infer Kind }
+    ? K extends Kind
+      ? Omit<D, "kind"> & Pick<CodeNodeProps<"Chart">, "width" | "height"> & NoChildren
+      : never
+    : never
+  : never;
+/** Charts with their data as props, like \`@k2b/ui/charts\`; \`Chart.Empty\` keeps a chart's place while there is no data. */
+export declare const Chart: {
+  [K in CodeChartDescription["kind"] as Capitalize<K>]: CodePageComponent<CodeChartProps<K>>;
+} & {
+  Empty: CodePageComponent<{ title: string; empty: string } & Pick<CodeNodeProps<"Chart">, "width" | "height"> & NoChildren>;
+};
+export declare function jsx<P>(component: CodePageComponent<P>, props: P | null, ...children: CodePageChild[]): CodePageBlock;
+export declare namespace jsx {
+  namespace JSX {
+    type Element = CodePageBlock;
+    interface ElementChildrenAttribute {
+      children: {};
+    }
+    interface IntrinsicElements {}
+  }
+}
+
+export declare const secrets: Readonly<Record<string, CodeSecret>>;
+export declare const http: CodeHttp;
+export declare const db: CodeDatabase;
+"
+`;
+
+exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: runtime 1`] = `
+"// Generated from Cloud capability manifests. Do not edit.
+const __codeSdk = (() => {
+const manifest = {"appMethods":{"all":1,"delete":1,"get":1,"on":1,"post":1,"put":1,"schedule":1},"apps":[{"exportName":"work_shop"}],"databaseMessages":{"code_db_busy":"A Code database is being initialized or deleted. Try again shortly.","code_db_full":"This Code has reached its database storage limit. Remove data or ask an administrator to raise the limit.","code_db_invalid":"Use a database statement with bound scalar parameters, or a nonempty atomic batch.","code_db_limit":"The database result exceeds the bridge size limit. Select fewer rows or columns.","code_db_owner_full":"This owner has reached the total reserved database capacity. Delete unused Code or ask an administrator to raise the owner limit.","code_db_sql":"The database statement failed. Check the SQL and its bound parameters.","code_db_timeout":"The database call exceeded its time limit. A write may already have committed; check its outcome before retrying.","code_db_unavailable":"The Code database service is unavailable. Ask an administrator to configure RSQL in Core settings.","code_db_undeclared":"This version has no checked database evidence. Import db from @sdk and check and submit the Code again."},"events":[{"place":null,"type":"work-shop.changed","version":1}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":[],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.export","idempotency":"none","kind":"query","methodPath":["stock","export"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}},"pageLimits":{"bytes":65536,"columns":20,"depth":12,"details":100,"fields":40,"follow":8,"nodes":256,"rows":200,"stats":6,"trend":60}};
+const RESOURCE_ID_MAX = 512;
+
+class CodeError extends Error {
+  constructor(code, status = 400, message = code, details = null) {
+    super(message);
+    this.name = "CodeError";
+    this.code = code.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    this.status = status;
+    this.details = details;
+  }
+}
+async function invoke(operation, input) {
+  try { return await bridge.call(operation, input); }
+  catch (error) {
+    if (error instanceof CodeError) throw error;
+    const code = typeof error?.code === "string" ? error.code : "code_bridge_unavailable";
+    throw new CodeError(code, error?.status ?? 503, manifest.databaseMessages[code] ?? error?.message ?? "The Code call failed.", error?.details ?? (error?.origin ? { origin: error.origin } : null));
+  }
+}
+const db = Object.freeze({
+  query: (sql, params = []) => invoke("db.query", { sql, params }),
+  exec: (sql, params = []) => invoke("db.exec", { sql, params }),
+  batch: statements => invoke("db.batch", { statements: statements.map(({ sql, params = [] }) => ({ sql, params })) }),
+});
+const handles = new WeakMap();
+const aiTools = new WeakMap();
+let bridge;
+const schedules = [];
+const routes = [];
+const middleware = [];
+const routeResponses = new WeakMap();
+const diagnostics = [];
+const node = () => Object.create(null);
+function setPath(root, path, value) {
+  for (const key of path.slice(0, -1)) {
+    let child = Object.hasOwn(root, key) ? root[key] : undefined;
+    if (!child || (typeof child !== "object" && typeof child !== "function")) {
+      child = node();
+      Object.defineProperty(root, key, { value: child, enumerable: true, writable: true, configurable: true });
+    }
+    root = child;
+  }
+  const key = path[path.length - 1];
+  const previous = root[key];
+  if (previous && (typeof previous === "object" || typeof previous === "function")) Object.defineProperties(value, Object.getOwnPropertyDescriptors(previous));
+  Object.defineProperty(root, key, { value, enumerable: true, writable: true, configurable: true });
+}
+function coordinate(handle, type) {
+  const ref = handles.get(handle);
+  if (!ref || ref.type !== type) throw new CodeError("code_sdk_invalid_handle");
+  return { type: ref.type, id: ref.id };
+}
+function handle(appId, type, id) {
+  if (typeof id !== "string" || id.length === 0 || id.length > RESOURCE_ID_MAX) throw new CodeError("code_sdk_invalid_id");
+  const result = node();
+  const ref = Object.freeze({ type: type ?? "cloud.app", id });
+  handles.set(result, ref);
+  Object.defineProperties(result, { type: { value: ref.type, enumerable: true }, id: { value: ref.id, enumerable: true } });
+  for (const op of manifest.operations.filter(op => op.appId === appId && op.target === type)) {
+    const method = async (args = {}) => {
+      if (!bridge) throw new CodeError("code_sdk_bridge_unbound");
+      if (!args || typeof args !== "object" || Array.isArray(args)) throw new CodeError("code_sdk_invalid_input");
+      const input = { ...args };
+      if (op.capability === "core.ai.decide") {
+        if (!Object.hasOwn(input, "state") && Object.hasOwn(input, "input")) input.state = input.input;
+        delete input.input;
+        if (input.questions && typeof input.questions === "object" && !Array.isArray(input.questions))
+          input.questions = Object.fromEntries(Object.entries(input.questions).map(([key, value]) =>
+            [key, value?.type === "boolean" ? { ...value, type: "noul" } : value]));
+      }
+      if (op.capability === "core.ai.generate" || op.capability === "core.ai.decide") {
+        if (input.tools !== undefined) {
+          if (!Array.isArray(input.tools)) throw new CodeError("code_ai_tool_invalid");
+          input.tools = input.tools.map(tool => {
+            const binding = aiTools.get(tool);
+            if (!binding) throw new CodeError("code_ai_tool_invalid");
+            return binding;
+          });
+        }
+      }
+      const refs = {};
+      for (const [field, refType] of Object.entries(op.refs)) {
+        refs[field] = coordinate(input[field], refType);
+        delete input[field];
+      }
+      const metadata = {};
+      if (op.kind === "action") {
+        const key = input.idempotencyKey;
+        if (op.idempotency === "required" && (typeof key !== "string" || key.trim().length === 0)) throw new CodeError("code_sdk_idempotency_required");
+        if (op.idempotency === "none" && key !== undefined) throw new CodeError("code_sdk_idempotency_not_allowed");
+        if (key !== undefined && (typeof key !== "string" || key.trim().length > 200 || !/^[\\x21-\\x7e]+$/.test(key.trim()))) throw new CodeError("code_sdk_invalid_idempotency_key");
+        if (key !== undefined) metadata.idempotencyKey = key.trim();
+        delete input.idempotencyKey;
+      }
+      const call = { capability: op.capability, target: type === null ? null : coordinate(result, type), refs, input };
+      const response = await invoke(op.capability, { call, metadata });
+      if (op.capability === "core.ai.decide" && response?.data?.answers)
+        return { ...response, data: { ...response.data, answers: Object.fromEntries(Object.entries(response.data.answers).map(([key, answer]) =>
+          [key, answer.type === "noul" ? { ...answer, confidence: answer.probability } : answer])) } };
+      return response;
+    };
+    if (Object.keys(op.refs).length === 0) aiTools.set(method, Object.freeze({ capability: op.capability,
+      target: type === null ? null : Object.freeze(coordinate(result, type)) }));
+    setPath(result, op.methodPath, method);
+  }
+  return result;
+}
+const namespaces = node();
+for (const spec of manifest.handles.filter(value => value.type === null))
+  namespaces[spec.exportName] = handle(spec.appId, null, spec.appId);
+for (const spec of manifest.handles.filter(value => value.type !== null)) {
+  setPath(namespaces[spec.exportName], spec.factoryPath, (...args) => {
+    if (args.length !== 1) throw new CodeError("code_sdk_invalid_id");
+    return Object.freeze(handle(spec.appId, spec.type, args[0]));
+  });
+}
+for (const app of manifest.apps) Object.freeze(namespaces[app.exportName]);
+let owner;
+if (manifest.owner) {
+  const value = manifest.owner;
+  owner = Object.freeze(value.kind === "app" ? handle(value.appId, null, value.appId)
+    : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id));
+}
+const app = node();
+app.use = (...args) => {
+  const [path, handler] = args.length === 1 ? ["/", args[0]] : args;
+  if (args.length < 1 || args.length > 2 || typeof path !== "string" ||
+      !/^\\/(?:[A-Za-z0-9_-]+(?:\\/[A-Za-z0-9_-]+)*\\/?)?$/.test(path) || path.length > 200 || typeof handler !== "function")
+    throw new CodeError("code_sdk_invalid_middleware");
+  middleware.push({ path: path === "/" ? "/" : path.replace(/\\/$/, ""), handler });
+  return app;
+};
+app.schedule = (...args) => {
+  const [when, fn] = args;
+  const object = when && typeof when === "object" && !Array.isArray(when);
+  const once = object && "at" in when;
+  const recurring = object && !once;
+  if (args.length !== 2 || !object || typeof fn !== "function") throw new CodeError("code_sdk_invalid_schedule");
+  if (once) {
+    if (Object.keys(when).some(key => !["at", "timeZone", "name", "title"].includes(key)) || typeof when.at !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(when.at) || !Number.isFinite(Date.parse(when.at))) throw new CodeError("code_sdk_invalid_schedule");
+    const date = when.at.slice(0, 10);
+    if (new Date(date + "T00:00:00Z").toISOString().slice(0, 10) !== date || Number(when.at.slice(11, 13)) > 23) throw new CodeError("code_sdk_invalid_schedule");
+    if (when.timeZone !== undefined) {
+      if (typeof when.timeZone !== "string" || !when.timeZone) throw new CodeError("code_sdk_invalid_schedule");
+      try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new CodeError("code_sdk_invalid_schedule"); }
+    }
+  }
+  if (recurring) {
+    if (Object.keys(when).some(key => !["cron", "timeZone", "name", "title"].includes(key)) || typeof when.cron !== "string" || !when.cron.trim()) throw new CodeError("code_sdk_invalid_schedule");
+    if (when.timeZone !== undefined) {
+      if (typeof when.timeZone !== "string" || !when.timeZone) throw new CodeError("code_sdk_invalid_schedule");
+      try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new CodeError("code_sdk_invalid_schedule"); }
+    }
+  }
+  const timing = { ...(once ? { cron: null, at: when.at } : { cron: when.cron }), ...(when.timeZone === undefined ? {} : { timeZone: when.timeZone }) };
+  const name = when.name;
+  if (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) throw new CodeError("code_sdk_invalid_schedule_name");
+  const entrypoint = name;
+  if (schedules.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_sdk_duplicate_schedule_name");
+  const title = typeof when.title === "string" ? when.title.trim() : when.title;
+  if (when.title !== undefined && (typeof title !== "string" || !title || title.length > 200 || /[<>\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]/u.test(title))) throw new CodeError("code_sdk_invalid_schedule_title");
+  schedules.push({ kind: "schedule", entrypoint, ...timing, ...(title === undefined ? {} : { title }), handler: fn });
+  return app;
+};
+app.on = (...args) => {
+  const explicit = args.length === 3;
+  const eventType = args[explicit ? 1 : 0];
+  const fn = args[explicit ? 2 : 1];
+  const place = explicit ? handles.get(args[0]) : manifest.owner?.kind === "resource" ? manifest.owner.ref : undefined;
+  const spec = manifest.events.find(event => event.type === eventType);
+  if (![2, 3].includes(args.length) || typeof fn !== "function" || !spec || !place || spec.place !== place.type)
+    throw new CodeError("code_event_owner");
+  const own = manifest.owner?.kind === "resource" && place.type === manifest.owner.ref.type && place.id === manifest.owner.ref.id;
+  const entrypoint = "event:" + eventType + "@" + spec.version + (own ? "" : ":place:" + schedules.filter(value => value.kind === "event").length);
+  if (schedules.some(value => value.kind === "event" && value.event.type === eventType &&
+      value.event.version === spec.version && value.event.place.type === place.type && value.event.place.id === place.id))
+    throw new CodeError("code_duplicate_on");
+  schedules.push({ kind: "event", entrypoint, cron: null, event: { type: eventType, version: spec.version, place: { type: place.type, id: place.id } }, handler: fn });
+  return app;
+};
+for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (path, second, third) => {
+  const [handler, options] = typeof second === "function" ? [second, third] : [third, second];
+  if (typeof path !== "string" || typeof handler !== "function") throw new CodeError("code_sdk_invalid_route");
+  const route = { method: method.toUpperCase(), path, public: options?.public === true, ...(options?.layout === "plain" ? { layout: "plain" } : {}) };
+  const entrypoint = "route:" + route.method + ":" + path;
+  if (routes.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_sdk_duplicate_route");
+  routes.push({ entrypoint, route, handler, middleware: [...middleware] });
+  return app;
+};
+Object.freeze(app);
+const secrets = new Proxy(node(), {
+  get(_target, name) {
+    if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) throw new CodeError("code_sdk_invalid_secret_name");
+    return "[secret:" + name + "]";
+  },
+  set() { throw new CodeError("code_sdk_readonly_secrets"); },
+});
+const http = Object.freeze({
+  allow(_origins) {},
+  async fetch(url, options = {}) {
+    if (!bridge) throw new CodeError("code_sdk_bridge_unbound");
+    if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new CodeError("code_sdk_invalid_input");
+    const result = await invoke("http.fetch", { method: "GET", headers: {}, ...options, url });
+    const text = async () => new TextDecoder().decode(Uint8Array.from(atob(result.body), char => char.charCodeAt(0)));
+    return Object.freeze({ status: result.status, headers: result.headers, bodyBase64: result.body,
+      text, json: async () => JSON.parse(await text()) });
+  },
+});
+// Pages that the SDK's blocks built; c.page draws only these, never a hand-written description.
+const builtPages = new WeakSet();
+const __codeSdk = Object.freeze({
+  markPage: page => { builtPages.add(page); return page; },
+  namespaces, owner, app, secrets, http, db, CodeError,
+  bind(cloud) {
+    if (bridge || !cloud || typeof cloud.call !== "function") throw new CodeError("code_sdk_invalid_bridge");
+    bridge = cloud;
+  },
+  entries: () => [...schedules.map(({ kind, entrypoint, cron, at, timeZone, title, event }) => ({ kind, entrypoint, cron, ...(at === undefined ? {} : { at }), ...(timeZone === undefined ? {} : { timeZone }), ...(event === undefined ? {} : { event }), ...(title === undefined ? {} : { title }) })),
+    ...routes.map(({ entrypoint, route }) => ({ kind: "route", entrypoint, route, cron: null }))],
+  diagnostics: () => diagnostics.map(value => ({ ...value })),
+  async run(entrypoint, input) {
+    const registered = routes.find(value => value.entrypoint === entrypoint);
+    if (registered) {
+      const raw = new Request("https://code.invalid" + input.path + input.query, {
+        method: input.method, headers: { "Content-Type": input.contentType },
+        ...(input.method === "GET" || input.method === "HEAD" ? {} : { body: input.body }),
+      });
+      const output = (value) => { const response = new Response(null); routeResponses.set(response, value); return response; };
+      const status = (value) => { if (!Number.isInteger(value) || value < 200 || value > 599) throw new CodeError("code_invalid_response"); return value; };
+      const variables = new Map();
+      const c = {
+        set: (key, value) => { variables.set(key, value); },
+        get: key => variables.get(key),
+        user: registered.route.public || !input.user ? null : {
+          id: input.user.id, username: input.user.username, groupIds: [...input.user.groupIds], groupNames: [...input.user.groupNames], kind: input.user.kind,
+          name: input.user.name,
+        },
+        req: { raw, path: new URL(raw.url).pathname, method: raw.method, param: name => input.params[name] ?? "", query: name => new URL(raw.url).searchParams.get(name) ?? undefined,
+          json: () => raw.json(), text: () => raw.text(), formData: () => raw.formData() },
+        json: (value, code = 200) => output({ kind: "json", status: status(code), body: JSON.stringify(value) }),
+        text: (value, code = 200) => output({ kind: "text", status: status(code), body: String(value) }),
+        page: tree => {
+          const ancestors = new Set(); let count = 0; let bytes = 0;
+          const visit = (value, depth) => {
+            if (++count > manifest.pageLimits.bytes || depth > manifest.pageLimits.depth * 3) throw new CodeError("code_page_limit");
+            if (typeof value === "string") { bytes += new TextEncoder().encode(value).byteLength; if (bytes > manifest.pageLimits.bytes) throw new CodeError("code_page_limit"); return; }
+            if (value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) return;
+            if (typeof value !== "object" || ancestors.has(value)) throw new CodeError("code_page_data_only");
+            if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null && !Array.isArray(value)) throw new CodeError("code_page_data_only");
+            ancestors.add(value);
+            for (const key of Reflect.ownKeys(value)) {
+              if (Array.isArray(value) && key === "length") continue;
+              const descriptor = Object.getOwnPropertyDescriptor(value, key);
+              if (typeof key !== "string" || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new CodeError("code_page_data_only");
+              // An optional prop set to undefined is absent, as in JSON; a hole in a list stays an error.
+              if (descriptor.value === undefined && !Array.isArray(value)) continue;
+              bytes += new TextEncoder().encode(key).byteLength;
+              if (bytes > manifest.pageLimits.bytes) throw new CodeError("code_page_limit");
+              visit(descriptor.value, depth + 1);
+            }
+            ancestors.delete(value);
+          };
+          if (!builtPages.has(tree)) throw new CodeError("code_page_blocks");
+          visit(tree, 0);
+          if (tree.kind !== "Page" || tree.version !== 1) throw new CodeError("code_page_root");
+          if (new TextEncoder().encode(JSON.stringify(tree)).byteLength > manifest.pageLimits.bytes) throw new CodeError("code_page_limit");
+          return output({ kind: "page", status: 200, tree });
+        },
+        redirect: (location, code = 303) => output({ kind: "redirect", status: code, location }),
+      };
+      const path = input.path.split("/").map(segment => decodeURIComponent(segment)).join("/");
+      const chain = registered.middleware.filter(value => value.path === "/" || path === value.path || path.startsWith(value.path + "/"));
+      let last = -1;
+      const dispatch = async index => {
+        if (index <= last) throw new CodeError("code_middleware_next_called_twice");
+        last = index;
+        if (index === chain.length) return registered.handler(c);
+        let following;
+        let settled;
+        let finished = false;
+        const next = () => {
+          if (finished || following) return Promise.reject(new CodeError("code_middleware_next_called_twice"));
+          following = dispatch(index + 1);
+          // Observe rejection immediately; the middleware may catch it or finish other work first.
+          settled = following.catch(() => {});
+          return following;
+        };
+        try {
+          const response = await chain[index].handler(c, next);
+          return response === undefined && following ? await following : response;
+        } finally {
+          finished = true;
+          // Drain work already started by next(), preserving a middleware's own response or error.
+          if (settled) await settled;
+        }
+      };
+      const response = await dispatch(0);
+      const result = routeResponses.get(response);
+      if (!result) throw new CodeError("code_invalid_response");
+      return result;
+    }
+    const schedule = schedules.find(value => value.entrypoint === entrypoint);
+    if (!schedule) throw new CodeError("code_sdk_missing_entrypoint");
+    if (schedule.kind === "event") {
+      if (!input || input.type !== schedule.event.type || input.version !== schedule.event.version ||
+          input.place?.type !== schedule.event.place.type || input.place.id !== schedule.event.place.id || typeof input.id !== "string")
+        throw new CodeError("code_event_input");
+      return schedule.handler(input);
+    }
+    return schedule.handler(input);
+  },
+});
+
+return __codeSdk;
+})();
+export const secrets = __codeSdk.secrets;
+export const http = __codeSdk.http;
+export { __codeSdk };
+export const CodeError = __codeSdk.CodeError;
+export const work_shop = __codeSdk.namespaces["work_shop"];
+export const owner = __codeSdk.owner;
+export const app = __codeSdk.app;
+export const db = __codeSdk.db;
+
+const __codePage = (() => {
+  const components = new Set();
+  const built = new WeakSet();
+  const done = node => {
+    built.add(node);
+    return Object.freeze(node);
+  };
+  const flat = children => [children].flat(Infinity).filter(value => value !== null && value !== undefined && value !== false);
+  // A block's children are blocks made here, never hand-written objects, and never a part outside its block.
+  const blocks = children => Object.freeze(flat(children).map(child => {
+    if (!built.has(child)) throw new __codeSdk.CodeError("code_page_blocks");
+    if (child.kind.startsWith("#")) throw new __codeSdk.CodeError("code_page_child");
+    return child;
+  }));
+  const text = children => {
+    const values = children === undefined ? [] : [children].flat(Infinity);
+    if (values.some(value => typeof value !== "string" && typeof value !== "number")) throw new __codeSdk.CodeError("code_page_text");
+    return values.join("");
+  };
+  const block = (kind, build) => {
+    const component = props => done(build ? build(props ?? {}) : { kind, ...noChildren(props ?? {}) });
+    components.add(component);
+    return component;
+  };
+  // A part belongs to exactly one block, such as a field to its form; elsewhere it is an error.
+  const part = (kind, build) => block(kind, props => ({ ...(build ? build(props) : noChildren(props)), kind: "#" + kind }));
+  const parts = (children, kind) => Object.freeze(flat(children).map(child => {
+    if (!built.has(child) || child.kind !== "#" + kind) throw new __codeSdk.CodeError("code_page_child");
+    const { kind: _kind, ...rest } = child;
+    return Object.freeze(rest);
+  }));
+  const noChildren = ({ children, ...props }) => {
+    if (flat(children).length) throw new __codeSdk.CodeError("code_page_child");
+    return props;
+  };
+  const Page = block("Page", ({ children, ...props }) => ({ kind: "Page", version: 1, ...props, children: blocks(children) }));
+  const page = props => __codeSdk.markPage(Page(props));
+  components.add(page);
+  const Section = block("Section", ({ children, ...props }) => ({ kind: "Section", ...props, children: blocks(children) }));
+  const Text = block("Text", ({ children, text: value, ...props }) => ({ kind: "Text", ...props, text: value ?? text(children) }));
+  const Heading = block("Heading", ({ children, text: value, ...props }) => ({ kind: "Heading", ...props, text: value ?? text(children) }));
+  const Field = {};
+  for (const type of ["text", "email", "number", "textarea", "checkbox", "scan"])
+    Field[type[0].toUpperCase() + type.slice(1)] = part("Field", props => ({ type, ...noChildren(props) }));
+  Field.Select = part("Field", ({ children, ...props }) => ({ type: "select", ...props, options: parts(children, "Option") }));
+  const Chart = {};
+  for (const kind of ["waterfall","area","bar","hbar","funnel","line","scatter","pie","donut","histogram","gauge","sparkline","boxplot","heatmap","barGauge","stat","treemap","pareto","bubble","radar","sankey","balanceFlow"])
+    Chart[kind[0].toUpperCase() + kind.slice(1)] = block("Chart", ({ width, height, ...props }) => ({
+      kind: "Chart", ...(width === undefined ? {} : { width }), ...(height === undefined ? {} : { height }),
+      description: { kind, ...noChildren(props) },
+    }));
+  Chart.Empty = block("Chart", props => ({ kind: "Chart", ...noChildren(props) }));
+  function jsx(component, props, ...children) {
+    if (!components.has(component)) throw new __codeSdk.CodeError("code_page_component");
+    return component(children.length ? { ...props, children: children.length === 1 ? children[0] : children } : props ?? {});
+  }
+  return {
+    Page: page, Section, Text, Heading, Field, Chart, jsx,
+    Stat: part("Stat"),
+    Stats: block("Stats", ({ children, ...props }) => ({ kind: "Stats", ...noChildren(props), items: parts(children, "Stat") })),
+    Column: part("Column"),
+    Table: block("Table", ({ children, ...props }) => ({ kind: "Table", ...props, columns: parts(children, "Column") })),
+    Item: part("Item"),
+    Detail: block("Detail", ({ children, ...props }) => ({ kind: "Detail", ...props, items: parts(children, "Item") })),
+    Option: part("Option"),
+    Form: block("Form", ({ children, ...props }) => ({ kind: "Form", ...props, fields: parts(children, "Field") })),
+    Link: block("Link"),
+    Button: block("Button"),
+    Notice: block("Notice"),
+  };
+})();
+export const { Page, Section, Text, Heading, Field, Chart, jsx, Stat, Stats, Column, Table, Item, Detail, Option, Form, Link, Button, Notice } = __codePage;
+
+"
+`;
+
+exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: manifest 1`] = `
+{
+  "appMethods": {
+    "all": 1,
+    "delete": 1,
+    "get": 1,
+    "on": 1,
+    "post": 1,
+    "put": 1,
+    "schedule": 1,
+  },
+  "apps": [
+    {
+      "appId": "work-shop",
+      "exportName": "work_shop",
+      "manifestHash": "97cf292ad856c6e86625040fb6cfd242bcf032c004242fca1482e7dd3c9c2402",
+    },
+  ],
+  "events": [
+    {
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "maxLength": 120,
+            "type": "string",
+          },
+        },
+        "required": [
+          "title",
+        ],
+        "type": "object",
+      },
+      "place": null,
+      "schemaHash": "83c1488a2b0a157c721838ecf990e9dc44cd2fc0af6405be47b22e3abb6fc364",
+      "subject": "work-shop.workshop",
+      "type": "work-shop.changed",
+      "version": 1,
+    },
+  ],
+  "handles": [
+    {
+      "appId": "work-shop",
+      "exportName": "work_shop",
+      "factoryPath": [],
+      "type": null,
+    },
+    {
+      "appId": "work-shop",
+      "exportName": "work_shop",
+      "factoryPath": [
+        "item",
+      ],
+      "type": "work-shop.item",
+    },
+    {
+      "appId": "work-shop",
+      "exportName": "work_shop",
+      "factoryPath": [
+        "workshop",
+      ],
+      "type": "work-shop.workshop",
+    },
+  ],
+  "mode": "resource",
+  "omitted": [
+    {
+      "capability": "work-shop.workshop.readable",
+      "methodPath": [
+        "workshop",
+        "readable",
+      ],
+      "reason": "app_only",
+      "target": null,
+    },
+    {
+      "capability": "work-shop.outside.change",
+      "methodPath": [
+        "outside",
+        "change",
+      ],
+      "reason": "code_false",
+      "target": "work-shop.workshop",
+    },
+  ],
+  "operations": [
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.catalog.list",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "kind": "query",
+      "localId": "catalog.list",
+      "methodPath": [
+        "catalog",
+        "list",
+      ],
+      "refs": {},
+      "schemaHash": "32448e642d95211e868491ec08428ac989c6ef1afee9a29a8f99a9807d86610b",
+      "target": null,
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.stock.export",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "kind": "query",
+      "localId": "stock.export",
+      "methodPath": [
+        "stock",
+        "export",
+      ],
+      "refs": {},
+      "schemaHash": "d250a4e317a301e9b384fca6b8394e4adb995e57a7327d5bb85914a22a1f31df",
+      "stream": {
+        "direction": "read",
+        "maxBytes": 100,
+      },
+      "target": "work-shop.workshop",
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.stock.list",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "next": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                },
+                "state": {
+                  "enum": [
+                    "ready",
+                    "empty",
+                  ],
+                  "type": "string",
+                },
+              },
+              "required": [
+                "id",
+                "state",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+        },
+        "required": [
+          "rows",
+          "next",
+        ],
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Page cursor.",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "kind": "query",
+      "localId": "stock.list",
+      "methodPath": [
+        "stock",
+        "list",
+      ],
+      "refs": {},
+      "schemaHash": "d6f4776e22ecfbe694ea5f31e59bed02c1548085ce97dd34c7ae711faa7b7c56",
+      "target": "work-shop.workshop",
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.workshop.read",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "view": {
+            "additionalProperties": false,
+            "properties": {
+              "container": {
+                "additionalProperties": false,
+                "properties": {
+                  "ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "description": "Stable app-owned resource identifier.",
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string",
+                      },
+                      "type": {
+                        "description": "Namespaced resource type declared by the owning app.",
+                        "maxLength": 180,
+                        "minLength": 3,
+                        "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "type",
+                      "id",
+                    ],
+                    "type": "object",
+                  },
+                  "title": {
+                    "maxLength": 500,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "ref",
+                  "title",
+                ],
+                "type": "object",
+              },
+              "context": {
+                "description": "One line in the caller's locale that says what and where the resource is and its most useful fact, for example 'Task in IT planning · due 30 Oct'.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string",
+              },
+              "done": {
+                "type": "boolean",
+              },
+              "permission": {
+                "enum": [
+                  "read",
+                  "write",
+                  "admin",
+                ],
+                "type": "string",
+              },
+              "status": {
+                "description": "The resource's current state as a short label in the caller's locale, for example 'Open' or 'Done'.",
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string",
+              },
+              "title": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string",
+              },
+            },
+            "required": [
+              "title",
+              "permission",
+            ],
+            "type": "object",
+          },
+        },
+        "required": [
+          "view",
+        ],
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Workshop ID.",
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+        ],
+        "type": "object",
+      },
+      "kind": "query",
+      "localId": "workshop.read",
+      "methodPath": [
+        "workshop",
+        "read",
+      ],
+      "refs": {},
+      "schemaHash": "1d03d78ea64e14fc900bef9e296a9d36917625d1fb428db438acd6c3c8bff729",
+      "target": null,
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.item.create",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+        ],
+        "type": "object",
+      },
+      "idempotency": "required",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "details": {
+            "description": "Item details.",
+            "oneOf": [
+              {
+                "properties": {
+                  "kind": {
+                    "const": "note",
+                    "description": "Detail kind.",
+                    "type": "string",
+                  },
+                  "text": {
+                    "description": "Note text.",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "kind",
+                  "text",
+                ],
+                "type": "object",
+              },
+              {
+                "properties": {
+                  "count": {
+                    "description": "Item count.",
+                    "type": "number",
+                  },
+                  "kind": {
+                    "const": "count",
+                    "description": "Detail kind.",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "kind",
+                  "count",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "title": {
+            "description": "Item title.",
+            "type": "string",
+          },
+        },
+        "required": [
+          "title",
+        ],
+        "type": "object",
+      },
+      "kind": "action",
+      "localId": "item.create",
+      "methodPath": [
+        "item",
+        "create",
+      ],
+      "refs": {},
+      "schemaHash": "4ab0094480d44f0dfdc4842068ba234746775760be5a673f731db347d107883c",
+      "target": "work-shop.workshop",
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.item.inspect",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "ok",
+        ],
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "kind": "action",
+      "localId": "item.inspect",
+      "methodPath": [
+        "inspect",
+      ],
+      "refs": {},
+      "schemaHash": "c44026bdbeec072c4f444fb920da134aaa08ec70d8026eb907db2ae815833066",
+      "target": "work-shop.item",
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.item.move",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "moved": {
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "moved",
+        ],
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "description": "Item to move.",
+            "type": "string",
+          },
+        },
+        "required": [
+          "itemId",
+        ],
+        "type": "object",
+      },
+      "kind": "action",
+      "localId": "item.move",
+      "methodPath": [
+        "item",
+        "move",
+      ],
+      "refs": {
+        "destination": "work-shop.workshop",
+      },
+      "schemaHash": "b70a03ea02981a09b8b8f93d4cec6ac606a28956db5515de01652992aa66940b",
+      "target": "work-shop.workshop",
+    },
+  ],
+  "owner": {
+    "kind": "resource",
+    "ref": {
+      "id": "owner-shop",
+      "type": "work-shop.workshop",
+    },
+  },
+  "version": 1,
+}
+`;

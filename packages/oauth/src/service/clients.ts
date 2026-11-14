@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { audit, isStandaloneServiceAccountKind, serviceAccounts, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { audit, serviceAccounts, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import type {
   CreateOAuthClient,
   MutationResult,
@@ -738,7 +738,7 @@ const validateServiceAccountBinding = async (params: {
 
   const serviceAccount = await serviceAccounts.get({ id: serviceAccountId });
   if (!serviceAccount) return { ok: false, error: "Service account not found", status: 404 };
-  if (serviceAccount.kind !== "resource_bound" && !isStandaloneServiceAccountKind(serviceAccount.kind)) {
+  if (serviceAccount.kind !== "resource_bound" && !(serviceAccount.kind === "standalone" || serviceAccount.kind === "agent")) {
     return { ok: false, error: "OAuth client credentials can only bind resource-bound or standalone service accounts", status: 400 };
   }
   if (serviceAccount.status !== "active") {

@@ -2,7 +2,6 @@ import { AI_INFERENCE_SCOPE } from "../../contracts/shared";
 import type { AccessSubject } from "../../server/services/access";
 import { isAccountExpired } from "../account-model";
 import { serviceAccountCredentials } from "../service-account-credentials";
-import { isStandaloneServiceAccountKind } from "../service-accounts";
 
 export const authenticateModelsOnlyCredential = async (
   token: string | null | undefined,
@@ -20,7 +19,7 @@ export const authenticateModelsOnlyCredential = async (
     credential.scopes[0] !== AI_INFERENCE_SCOPE
   )
     return null;
-  if (isStandaloneServiceAccountKind(serviceAccount.kind)) {
+  if (serviceAccount.kind === "standalone" || serviceAccount.kind === "agent") {
     return { subject: { type: "service_account", serviceAccountId: serviceAccount.id }, credentialId: credential.id };
   }
   if (

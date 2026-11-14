@@ -303,3 +303,69 @@ test("an aborted existence check releases the caller and starts no further scope
     stop();
   }
 });
+
+test("code accounts cannot enter through any normal app-access rule or compatibility path", async () => {
+  const authority = service();
+  if (authority.actor.kind !== "service_account") throw new Error("fixture");
+  authority.actor.serviceAccount.kind = "code";
+  for (const credentialKind of ["api_key", "oauth", "invocation"] as const) {
+    authority.credentialKind = credentialKind;
+    authority.scopes = ["read", "write", "admin"];
+    const apps = [
+      { id: "legacy" },
+      { id: "signed-in", access: appAccess.signedIn() },
+      { id: "no-guests", access: appAccess.noGuests() },
+      { id: "roles", access: appAccess.roles(["admin"]) },
+      { id: "resources", access: compileAppAccess(appAccess.resources({ adapters: { fixture: { hasAnyRight: async () => true } } })) },
+      { id: "grants", access: appAccess.grants({ until: appAccess.signedIn() }) },
+    ];
+    for (const app of apps) {
+      expect(evaluateAppAccess(authority, app, { app_id: app.id, configured: true, permission: "admin" })).toBe(false);
+      expect(await canUseApp(authority, app)).toBe(false);
+    }
+    expect(await usableAppIds(authority, apps)).toEqual(new Set());
+  }
+});
+
+test("only a confirmed Code version invocation passes human entry rules", async () => {
+  const authority = service();
+  if (authority.actor.kind !== "service_account") throw new Error("fixture");
+  authority.actor.serviceAccount.kind = "code";
+  authority.actor.scopes = ["read", "write"];
+  authority.scopes = [];
+  authority.credentialKind = "invocation";
+  const apps = [
+    { id: "legacy" },
+    { id: "roles", access: appAccess.roles(["admin"]) },
+    { id: "grants", access: appAccess.grants() },
+    { id: "resources", access: compileAppAccess(appAccess.resources({ adapters: { fixture: { hasAnyRight: async () => true } } })) },
+  ];
+  expect(await usableAppIds(authority, apps)).toEqual(new Set());
+  authority.actor.delegation = {
+    kind: "invocation",
+    callingAppId: "core",
+    credentialKind: "mandate",
+    invocationId: "33333333-3333-4333-8333-333333333333",
+    requestId: null,
+    mandateId: "44444444-4444-4444-8444-444444444444",
+    mandateRevision: 1,
+    workloadType: "code.version",
+    workloadId: "version-a",
+  };
+  expect(await usableAppIds(authority, apps)).toEqual(new Set(apps.map((app) => app.id)));
+  for (const app of apps) {
+    expect(evaluateAppAccess(authority, app)).toBe(true);
+    expect(await canUseApp(authority, app)).toBe(true);
+  }
+  const resourceApp = {
+    id: "resource-app",
+    access: compileAppAccess(appAccess.resources({ adapters: { collection: { hasAnyRight: async () => false } } })),
+  };
+  authority.actor.delegation.workloadEvent = "55555555-5555-4555-8555-555555555555";
+  expect(await canUseApp(authority, resourceApp)).toBe(true);
+  authority.actor.delegation.workloadType = "ai.chat-task";
+  expect(await usableAppIds(authority, apps)).toEqual(new Set());
+  authority.actor.delegation.workloadType = "code.version";
+  authority.actor.serviceAccount.status = "disabled";
+  expect(await usableAppIds(authority, apps)).toEqual(new Set());
+});

@@ -1,9 +1,20 @@
+import { approvalMessages } from "../approvals/messages";
 import { normalizeRedirectTo } from "../shared";
 import { platformMessages } from "./platform-messages";
 import type { RuntimeContext } from "./runtime";
 
-/** `match` lists further paths the link stands for, such as the pages of an area. */
-export type AdminLink = { href: string; icon: string; label: string; match?: string[] };
+/**
+ * `match` lists further paths the link stands for, such as the pages of an area. `brand` draws a brand sign instead
+ * of `icon` where the bar can render one; `icon` stays the fallback for icon-only menus.
+ */
+export type AdminLink = {
+  href: string;
+  icon: string;
+  brand?: "feat-code";
+  label: string;
+  match?: string[];
+  waiting?: { count: number; label: string };
+};
 /** A group without `label` stands at the top without a heading, such as the overview. */
 export type AdminGroup = { label?: string; links: AdminLink[] };
 
@@ -16,8 +27,13 @@ const normalizeAdminHref = (href: string | undefined): string | undefined => {
  * The admin bar: the overview, then what an operator sets up once, then what they run every day, then one entry per
  * app with settings of its own. Only the links are grouped here; no page and no address moves.
  */
-export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][], locale = "en"): AdminGroup[] => {
+export const buildAdminGroups = (
+  apps: readonly RuntimeContext["apps"][number][],
+  locale = "en",
+  status: { codeApprovals?: number } = {},
+): AdminGroup[] => {
   const t = platformMessages.resolve([locale]).t;
+  const codeApprovals = status.codeApprovals;
   // Areas show as one entry each. The AI area belongs to Core; Observability exists when an app contributes it.
   const contributedApps = apps
     .map((app) => ({
@@ -68,6 +84,15 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
       links: [
         { href: "/admin/apps", icon: "ti-apps", label: t.apps },
         { href: "/admin/rail", icon: "ti-layout-sidebar", label: t.rail },
+        {
+          href: "/admin/code",
+          icon: "ti-code",
+          brand: "feat-code",
+          label: t.code,
+          ...(codeApprovals
+            ? { waiting: { count: codeApprovals, label: approvalMessages.resolve([locale]).t.waiting({ count: codeApprovals }) } }
+            : {}),
+        },
         ...(observabilityPaths.length > 0
           ? [
               {

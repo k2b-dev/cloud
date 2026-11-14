@@ -5,8 +5,9 @@ Numbers computed in `code_run` stay in the run. Call `await cloud.view.chart(spe
 `await cloud.view.stats(spec)`, `await cloud.view.details(spec)` or
 `await cloud.view.explorer(spec)` there, then call
 the **tool** `present({path})` for each returned view the person should see. Never retype run values into
-`chart` arguments, app data or Markdown; an app's data module is the file the
-run wrote, copied with `code_file_copy` or `code_import` ([File transfers](files.md)). Return only the key figures mentioned
+`chart` arguments or Markdown. Export the file the run wrote and copy its
+exact reference with the chat/Project tools ([File transfers](files.md)).
+For lasting Code or pages load `code-authoring`. Return only the key figures mentioned
 in the answer. If a view is missing, rerun the script with `cloud.view.*`.
 A few values that did not come from a run use the `chart` tool.
 
@@ -326,7 +327,7 @@ number columns. No extra keys, markup options or functions belong in the spec.
 Filtering, steps, comparison, row selection and sorting happen locally and reset
 on reload. The table shows the rows of the current state, including the pinned
 step when comparing; **Copy data** copies those rows. The CLI prints the initial
-state's table. Interaction an explorer cannot express belongs in a Studio App.
+state's table. Interaction an explorer cannot express uses lasting Code and code-authoring.
 
 ## Choose and label
 
@@ -443,4 +444,4 @@ Fix the script using that message.
 Files live under `/views/<title-slug>-<hash8>.view.json`, appear in the chat's
 file list and can be downloaded. Model write tools cannot write below `/views`.
 Every reader validates again; a missing or invalid file shows unavailable.
-HTML apps cannot call `cloud.view.*`; draw with `cloud.chart()` inside an app.
+Use `cloud.chart()` for chart markup inside PDFs.

@@ -80,11 +80,14 @@ test("a long step shows its duration in place of its target, in the reader's lan
   expect(liveStepLabel(read, aiChatMessages("en"))).toBe("Reading q1.csv");
   expect(liveStepLabel(read, aiChatMessages("en"), 60_000)).toBe("Reading a file · 1 min");
   // Only a path is cut to its file name; a title with a slash is shown as given.
-  const view: AiTurnBlock = { ...run, id: "tool-view", callId: "view", name: "code_present", args: { title: "Angebot 2026/118" } };
-  expect(liveStepLabel(view, aiChatMessages("de"))).toBe("Bereitet eine Ansicht vor · Angebot 2026/118");
+  const titled: AiTurnBlock = { ...run, id: "tool-titled", callId: "titled", args: { title: "Angebot 2026/118" } };
+  expect(liveStepLabel(titled, aiChatMessages("de"))).toBe("Führt Code aus · Angebot 2026/118");
+  // Retired Studio calls in old turns read as a plain Code step; no Studio wording remains.
+  for (const name of ["code_present", "code_import", "code_sql"])
+    expect(liveStepLabel({ ...run, name }, aiChatMessages("de"))).toBe(aiChatMessages("de").stepCode);
 });
 
-test("an app check has its own calm live label in the reader's language", async () => {
+test("a Code check has its own calm live label in the reader's language", async () => {
   const { liveStepLabel } = await import("./turn-view");
   const { aiChatMessages } = await import("./messages");
   const check: AiTurnBlock = {
@@ -96,8 +99,12 @@ test("an app check has its own calm live label in the reader's language", async 
     status: "running",
   };
   const inspect: AiTurnBlock = { ...check, id: "tool-inspect", callId: "inspect", name: "code_inspect", args: { runId: "run-1" } };
-  expect(liveStepLabel(check, aiChatMessages("en"))).toBe("Checking the app");
-  expect(liveStepLabel(check, aiChatMessages("de"))).toBe("Prüft die App");
+  expect(liveStepLabel(check, aiChatMessages("en"))).toBe("Checking the Code");
+  expect(liveStepLabel(check, aiChatMessages("de"))).toBe("Prüft den Code");
+  const test_: AiTurnBlock = { ...check, id: "tool-test", callId: "test", name: "code_test", args: { codeId: "c_1234" } };
+  expect(liveStepLabel(test_, aiChatMessages("de"))).toBe("Testet mit erfundenen Daten");
+  const write: AiTurnBlock = { ...check, id: "tool-write", callId: "write", name: "code_write", args: { path: "lib/rules.ts" } };
+  expect(liveStepLabel(write, aiChatMessages("en"))).toBe("Editing a Code file · rules.ts");
   expect(liveStepLabel(inspect, aiChatMessages("en"))).toBe("Checking the run");
   expect(liveStepLabel(inspect, aiChatMessages("de"))).toBe("Prüft den Lauf");
 });

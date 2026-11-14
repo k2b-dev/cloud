@@ -12,7 +12,7 @@ import {
   parseAiWebsiteApprovalScope,
   revokeAiToolApprovalPreference,
 } from "./approvals";
-import { buildAiCapabilityCatalog } from "./capabilities";
+import { buildAiCapabilityHistoryCatalog } from "./capabilities";
 import { aiConversations } from "./store";
 
 export type AiApprovalPreferenceView = AiToolApprovalPreference & {
@@ -110,7 +110,7 @@ export const createAiApprovalPreferenceRoutes = (dependencies: AiApprovalRouteDe
           listPreferences(user.id, conversation ? { conversationId: conversation.id } : {}),
           registry().catch(() => [] as CapabilityRegistryEntry[]),
         ]);
-        const catalogByName = new Map(buildAiCapabilityCatalog(capabilities, getLocale(c)).map((entry) => [entry.name, entry]));
+        const catalogByName = new Map(buildAiCapabilityHistoryCatalog(capabilities, getLocale(c)).map((entry) => [entry.name, entry]));
         const approvals: AiApprovalPreferenceView[] = preferences.map((preference) => {
           if (preference.toolName === AI_WEBSITE_APPROVAL_TOOL) {
             const website = parseAiWebsiteApprovalScope(preference.approvalScope);

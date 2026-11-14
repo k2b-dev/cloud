@@ -12,7 +12,7 @@ export const migrateIntegrationDatabase = async (): Promise<void> => {
 
   /** Applications whose schema setup does not live in `src/migrate.ts`. */
   const migrationModules: Record<string, { path: string; export: string }> = {
-    assistant: { path: "src/artifacts/migrate.ts", export: "migrateArtifacts" },
+    assistant: { path: "src/migrate.ts", export: "migrateAssistant" },
   };
 
   for (const appId of appIds()) {

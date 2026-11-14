@@ -1,0 +1,206 @@
+/* ---------------------------------------------------------------------------
+   feat/code mockups in Markdown: ```tree and ```terminal fences
+   (plugins/code-blocks.ts). A file tree is paper like the homepage
+   artifacts; a terminal is dark like code frames, in both themes.
+   --------------------------------------------------------------------------- */
+
+.fibel-prose .code-mock {
+  margin: 1.5rem 0;
+  overflow: hidden;
+  border-radius: 0.6rem;
+  font-family: var(--c-mono);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.fibel-prose .code-mock-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.5rem;
+  padding: 0.35rem 0.5rem 0.35rem 0.95rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
+/* --- file tree ----------------------------------------------------------- */
+
+.fibel-prose .code-tree {
+  border: 1px solid var(--c-line);
+  background: var(--c-sunken);
+  color: var(--c-ink);
+}
+
+.fibel-prose .code-tree .code-mock-head {
+  border-bottom: 1px solid var(--c-line);
+  color: var(--c-faint);
+}
+
+.fibel-prose .code-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fibel-prose .code-tree > ul {
+  padding: 0.75rem 0.95rem 0.85rem;
+  overflow-x: auto;
+}
+
+.fibel-prose .code-tree li {
+  margin: 0;
+  padding: 0;
+}
+
+.fibel-prose .code-tree li::marker {
+  content: "";
+}
+
+.fibel-prose .code-tree li > ul {
+  margin-left: 0.55rem;
+  padding-left: 0.95rem;
+  border-left: 1px solid var(--c-line-2);
+}
+
+.fibel-prose .code-tree-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: max-content;
+  padding: 0.05rem 0;
+}
+
+.fibel-prose .code-tree-icon {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  fill: none;
+  stroke: var(--c-faint);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.fibel-prose .code-tree li[data-kind="folder"] > .code-tree-row .code-tree-icon {
+  stroke: var(--c-accent);
+}
+
+.fibel-prose .code-tree li[data-kind="folder"] > .code-tree-row .code-tree-name {
+  font-weight: 500;
+}
+
+.fibel-prose .code-tree-note {
+  color: var(--c-muted);
+  font-family: var(--c-sans);
+  font-size: 0.78rem;
+}
+
+.fibel-prose .code-tree-note::before {
+  margin-right: 0.45rem;
+  color: var(--c-line-2);
+  content: "—";
+}
+
+/* --- terminal ------------------------------------------------------------ */
+
+.fibel-prose .code-term {
+  border: 1px solid #27272a;
+  background: #0d0e11;
+  color: #e4e4e7;
+}
+
+.fibel-prose .code-term .code-mock-head {
+  border-bottom: 1px solid #1f2024;
+  color: #a1a1aa;
+}
+
+.fibel-prose .code-term-dots {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+
+.fibel-prose .code-term-dots i {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #3f3f46;
+}
+
+.fibel-prose .code-term .code-copy {
+  display: inline-grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-left: auto;
+  place-items: center;
+  border-radius: 0.375rem;
+  background: rgb(255 255 255 / 0.08);
+  color: #a1a1aa;
+}
+
+.fibel-prose .code-term .code-copy:hover {
+  background: rgb(255 255 255 / 0.12);
+  color: #f4f4f5;
+}
+
+.fibel-prose .code-term .code-copy:focus-visible {
+  outline: 2px solid #74abff;
+  outline-offset: 2px;
+}
+
+.fibel-prose .code-term .code-copy svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.fibel-prose .code-term .code-copy[data-copied="true"] {
+  color: #6ee7b7;
+}
+
+.fibel-prose .code-term pre {
+  margin: 0;
+  padding: 0.85rem 0.95rem 1rem;
+  overflow-x: auto;
+  background: transparent;
+}
+
+.fibel-prose .code-term code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
+
+.fibel-prose .code-term-line {
+  display: block;
+  min-width: max-content;
+  white-space: pre;
+}
+
+.fibel-prose .code-term-line[data-kind="command"] {
+  color: #fafafa;
+}
+
+.fibel-prose .code-term-line[data-kind="command"]:not(:first-child) {
+  margin-top: 0.55rem;
+}
+
+.fibel-prose .code-term-prompt {
+  color: #6ee7b7;
+  user-select: none;
+}
+
+.fibel-prose .code-term-line[data-kind="output"] {
+  color: #a1a1aa;
+}
+
+.fibel-prose .code-term-line[data-kind="note"] {
+  color: #71717a;
+  font-style: italic;
+}
+
+@media (max-width: 33.99rem) {
+  .fibel-prose .code-mock {
+    font-size: 0.76rem;
+  }
+}

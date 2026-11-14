@@ -1,0 +1,1603 @@
+import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import * as cloud from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
+import * as catalogProvider from "@k2b/cloud/capabilities/server";
+import { assertCapabilityReview, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { CODE_CHECK_LIMITS, type CodeCheckResult, type CodeTestCase, generateCodeSdk } from "@k2b/cloud/code";
+import { type CodeRunTokenClaims, signCodeRunToken, verifyCodeRunToken } from "@k2b/cloud/code/run-token";
+import type { RunnerBridge, RunnerFetchResponse, RunnerLease } from "@k2b/cloud/code/runner";
+import { RunnerLeaseLostError } from "@k2b/cloud/code/runner";
+import type { CapabilityExecutionContext, CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
+import { coreSettings } from "@k2b/cloud/services";
+import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
+import { createSync, type Queue, type Sync, type Worker } from "@k2b/sync";
+import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
+import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { Runner } from "../../../runner/src/runner";
+import { aiCapabilities } from "../capabilities";
+import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
+import { migrate as migrateAppEvents } from "../migrate/core/app-events";
+import { migrate as migrateAudit } from "../migrate/core/audit";
+import { migrate as migrateAuth } from "../migrate/core/auth";
+import { migrate as migrateCode } from "../migrate/core/code";
+import { migrate as migrateJobs } from "../migrate/core/code-jobs";
+import { migrate as migratePolicy } from "../migrate/core/code-policy";
+import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
+import { migrate as migrateVersions } from "../migrate/core/code-versions";
+import { migrate as migrateEvents } from "../migrate/core/events";
+import { migrate as migrateSettings } from "../migrate/core/settings";
+import { FixtureEngine } from "./acceptance.test-fixture";
+import type { CodeContext } from "./access";
+import { settleCodeAiBudget } from "./ai-budget";
+import { codeAuthoringServices } from "./authoring";
+import { verifyCodeSubmission } from "./authoring-check";
+import { listCodeAutomations } from "./automations";
+import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
+import { claimCodeWork } from "./dispatch";
+import * as ownerTransport from "./owner-transport";
+import { codeRequestVersion, requestCodeRoute } from "./requests";
+import {
+  claimCodeJob,
+  completeCodeJob,
+  createRunnerCodeCheckHost,
+  createRunnerCodeTestingHost,
+  heartbeatCodeJob,
+  readCodeJobInput,
+  reconcileCodeJobs,
+} from "./runner-jobs";
+import {
+  claimCodeRuns,
+  codeRunnerLease,
+  completeCodeRun,
+  heartbeatCodeRun,
+  processCodeScheduleTick,
+  processCurrentCodeScheduleTick,
+  readCodeRunLimits,
+  readCodeRunnerMetrics,
+  reconcileCodeRuns,
+  startCodeRun,
+} from "./scheduling";
+import {
+  type CodeRunWakeup,
+  codeScheduleId,
+  createCodeJobOutbox,
+  createCodeRunOutbox,
+  createCodeScheduleReconciler,
+  fetchCodeRuns,
+} from "./scheduling-runtime";
+import { CODE_SETTINGS, codeSettings } from "./settings";
+import { appendCodeCall, codeBundleHash, codeSourceHash, finishCodeCall, insertCodeRun, listCodeRuns, readCodeRun } from "./store";
+import { simulateCode, testCode } from "./testing";
+
+const owner = "11111111-1111-4111-8111-111111111111";
+const other = "22222222-2222-4222-8222-222222222222";
+let slot = new Date("2026-11-01T12:00:00Z");
+const person = (id: string): User => ({
+  id,
+  uid: id,
+  roles: ["admin"],
+  provider: "local",
+  profile: "user",
+  givenname: "Test",
+  sn: "Runner",
+  displayName: "Runner Test",
+  mail: null,
+  avatarHash: null,
+  ipa: null,
+  accountExpires: null,
+  lastLoginLocal: null,
+  memberofGroup: [],
+  memberofGroupIds: [],
+  manages: [],
+  managesGroupIds: [],
+});
+const context = (id = owner): CodeContext => ({
+  authority: {
+    actor: { kind: "user", user: person(id) },
+    accessSubject: { type: "user", userId: id },
+    credentialKind: "session",
+    scopes: [],
+  },
+});
+
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("C13 stateless Core dispatch through real Postgres and NATS", () => {
+  let database: Awaited<ReturnType<typeof useFreshDatabase>>;
+  let connection: Awaited<ReturnType<typeof connectTestNats>>;
+  let syncs: Sync[] = [];
+  let queue: Queue<CodeRunWakeup>;
+  let signer: { kid: string; key: CryptoKey; signUntil: Date };
+  let key: JWTVerifyGetKey;
+  let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  let ordinal = 0;
+  let distantCron = "";
+  const overrides = new Map<string, number>();
+  const issuer = "https://cloud.example";
+  const sign: typeof signCodeRunToken = (claims, options) =>
+    signCodeRunToken(claims, {
+      ...options,
+      issuer,
+      signer,
+      now: new Date(options.deadlineAt - 300_000),
+    });
+  async function claims(lease: RunnerLease): Promise<CodeRunTokenClaims> {
+    const value = await verifyCodeRunToken(lease.token, { issuer, key, now: new Date(lease.deadlineAt - 300_000) });
+    if (!value) throw new Error("Invalid fixture token");
+    return value;
+  }
+  async function fixture(
+    userId = owner,
+    resource = false,
+    route = false,
+    reply: "json" | "page" | "invalid" = "json",
+    once?: { at: string; timeZone?: string } | { cron: string; timeZone?: string },
+  ) {
+    const codeId = `c_c13${String(++ordinal).padStart(5, "0")}`;
+    const files = { "code.ts": "fixture" },
+      bundle = route
+        ? `async function page(input) { return ${reply === "json" ? '{kind: "json", status: 200, body: JSON.stringify({visitor: input.user?.id ?? null})}' : reply === "page" ? '{kind:"page",status:200,tree:{version:1,kind:"Page",title:"Fixture",children:[{kind:"Text",text:"Hello"}]}}' : '{kind:"page",status:200,tree:{version:1,kind:"Page",title:"Fixture",children:[{kind:"HTML",html:"<script>bad</script>"}]}}'}; } export {page as "route:GET:/"};`
+        : "export async function weekly() {}";
+    const manifest: CodeCheckedVersionManifest = {
+      version: 1,
+      entry: "code.ts",
+      hashes: { source: codeSourceHash(files, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
+      entrypoints: route
+        ? [
+            {
+              kind: "route",
+              entrypoint: "route:GET:/",
+              route: { method: "GET", path: "/", public: false },
+              cron: null,
+              file: "code.ts",
+              line: 1,
+            },
+          ]
+        : [{ kind: "schedule", entrypoint: "weekly", cron: once && "at" in once ? null : distantCron, ...once, file: "code.ts", line: 1 }],
+      permissions: [],
+      ai: false,
+      policyRows: ["read"],
+    };
+    let principal: string | null = null;
+    if (resource) {
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,created_by)
+        VALUES(${`code:example.resource:${codeId}`},'code',${userId}::uuid) RETURNING id`;
+      principal = account!.id;
+    }
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,owner_type,owner_id,service_account_id,title,state,created_by)
+      VALUES(${codeId},${resource ? "resource" : "person"},${resource ? null : userId}::uuid,
+        ${resource ? "example.resource" : null},${resource ? codeId : null},${principal}::uuid,'Fixture','active',${userId}::uuid)`;
+    const [version] = await sql<
+      { id: string }[]
+    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
+      VALUES(${codeId},1,${JSON.stringify(files)}::text::jsonb,${bundle},${manifest.hashes.source},${manifest.hashes.bundle},${JSON.stringify(manifest)}::text::jsonb,7,32,${userId}::uuid) RETURNING id`;
+    if (!version) throw new Error("Missing fixture version");
+    await sql`UPDATE code.codes SET active_version_id=${version.id}::uuid WHERE id=${codeId}`;
+    const binding = {
+      codeId,
+      versionId: version.id,
+      sourceHash: manifest.hashes.source,
+      bundleHash: manifest.hashes.bundle,
+      manifestHash: approvalArgsDigest(manifest),
+      comparisonVersionId: null,
+      comparisonSourceHash: null,
+      comparisonBundleHash: null,
+    };
+    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding) VALUES(${version.id}::uuid,${codeId},${JSON.stringify(binding)}::text::jsonb)`;
+    await sql`INSERT INTO auth.mandates(subject_kind,subject_user_id,subject_service_account_id,owner_app_id,workload_type,workload_id,policy)
+      VALUES(${resource ? "service_account" : "user"},${resource ? null : userId}::uuid,${principal}::uuid,'core','code.version',${version.id},'{"version":1}'::jsonb)`;
+    return { codeId, versionId: version.id, entrypoint: route ? "route:GET:/" : "weekly" };
+  }
+  async function enqueueMany(code: Awaited<ReturnType<typeof fixture>>, count: number, trigger: "manual" | "schedule" = "manual") {
+    const ids: string[] = [];
+    for (let index = 0; index < count; index++) {
+      const id = await insertCodeRun({ ...code, trigger, input: null });
+      ids.push(id);
+      await queue.send({ data: { runId: id } });
+    }
+    return ids;
+  }
+  async function take() {
+    const runs = await claimCodeRuns(1, await readCodeRunLimits());
+    expect(runs).toHaveLength(1);
+    const lease = await codeRunnerLease(runs[0]!, sign);
+    if (!lease) throw new Error("Fixture owner refused");
+    return lease;
+  }
+  async function state(id: string) {
+    const [row] = await sql<
+      { state: string; outcome: string | null; generation: number; deadline_at: Date }[]
+    >`SELECT * FROM code.runs WHERE id=${id}::uuid`;
+    if (!row) throw new Error("Missing fixture run");
+    return row;
+  }
+  beforeAll(async () => {
+    database = await useFreshDatabase("code_c13");
+    await migrateAuth();
+    await migrateEvents();
+    await migrateAppEvents();
+    await migrateAudit();
+    await migrateSettings();
+    await migrateAppApproval();
+    await migrateCode();
+    await migratePolicy();
+    await migrateVersions();
+    await migrateScheduling();
+    await migrateJobs();
+    await migrateScheduling();
+    await migrateJobs();
+    for (const id of [owner, other])
+      await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',true)`;
+    const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
+    setSystemTime(clock!.now);
+    slot = clock!.now;
+    const distant = new Date(clock!.now.getTime() + 7 * 86_400_000);
+    distantCron = `0 0 ${distant.getUTCDate()} ${distant.getUTCMonth() + 1} *`;
+    const pair = await generateKeyPair("RS256", { extractable: true });
+    const kid = "33333333-3333-4333-8333-333333333333";
+    signer = { kid, key: pair.privateKey, signUntil: new Date(clock!.now.getTime() + 3_600_000) };
+    key = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), alg: "RS256", kid, use: "sig" }] });
+    settings = spyOn(codeSettings, "get").mockImplementation(async (name) => overrides.get(name) ?? CODE_SETTINGS[name].default);
+    await coreSettings.set("app.timezone", "UTC");
+    await coreSettings.set("security.rate_limit_per_second", 60);
+    connection = await connectTestNats();
+  });
+  beforeEach(async () => {
+    await sql`DELETE FROM code.codes`;
+    await sql`DELETE FROM code.runner_instances`;
+    await sql`DELETE FROM code.jobs`;
+    await sql`UPDATE code.dispatch_turn SET job_last=FALSE`;
+    overrides.clear();
+    const sync = createSync({ connection, namespace: testSyncNamespace("c13"), application: "core", defaults: { replicas: 1 } });
+    syncs.push(sync);
+    queue = sync.queue<CodeRunWakeup>({ id: "runs", dedupeWindowMs: 60_000, retention: { maxAgeMs: 60_000, maxBytes: 1_048_576 } });
+    await sync.ready();
+  });
+  afterAll(async () => {
+    settings?.mockRestore();
+    for (const sync of syncs) await sync.drain({ timeoutMs: 1000 });
+    await connection?.drain();
+    await database?.drop();
+    setSystemTime();
+  });
+
+  test("SQL budget of runner heartbeat and Code run snapshots", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    const meter = await meterSql();
+    try {
+      let lease: RunnerLease | undefined;
+      const setup = await meter.during(async () => {
+        lease = await take();
+      });
+      const proof = await claims(lease!);
+      console.log("SQL BUDGET runner admission", setup.length, setup);
+      expect(setup).toHaveLength(21);
+      for (let event = 0; event < 3; event++) {
+        const heartbeat = await meter.during(() => heartbeatCodeRun(proof));
+        console.log("SQL BUDGET runner heartbeat", heartbeat.length, heartbeat);
+        expect(heartbeat).toHaveLength(5);
+      }
+      const listed = await meter.during(() => listCodeRuns({ codeId: code.codeId, limit: 20 }, context()));
+      const read = await meter.during(() =>
+        readCodeRun({ codeId: code.codeId, runId: lease!.runId, cursor: 0, offset: 0, length: 1000 }, context()),
+      );
+      console.log("SQL BUDGET run list snapshot", listed.length, listed);
+      console.log("SQL BUDGET run detail snapshot", read.length, read);
+      expect(listed).toHaveLength(3);
+      expect(read).toHaveLength(5);
+    } finally {
+      await meter.close();
+    }
+  });
+
+  test("SQL budget of runner job setup and heartbeat", async () => {
+    await sql`INSERT INTO code.jobs(kind,owner_id,input,input_bytes,output_bytes,deadline_at)
+      VALUES('check',${owner}::uuid,'{}',2,1024,clock_timestamp()+interval '1 minute')`;
+    const proof = await sql.begin((db) => claimCodeJob("55555555-5555-4555-8555-555555555555", db));
+    if (!proof) throw new Error("Missing job lease");
+    const meter = await meterSql();
+    try {
+      const setup = await meter.during(() => readCodeJobInput(proof));
+      expect(setup).toHaveLength(3);
+      for (let event = 0; event < 3; event++) {
+        const heartbeat = await meter.during(() => heartbeatCodeJob(proof));
+        console.log("SQL BUDGET job heartbeat", heartbeat.length, heartbeat);
+        expect(heartbeat).toHaveLength(6);
+      }
+    } finally {
+      await meter.close();
+    }
+  });
+
+  // Personal Code serves routes with its owner's mandate, exactly as resource Code does with its Code account.
+  for (const [reply, resource] of [
+    ["json", true],
+    ["page", true],
+    ["invalid", true],
+    ["page", false],
+  ] as const)
+    test(`HTTP ${reply} response of ${resource ? "resource" : "personal"} Code reaches the runner and Core validates it before returning`, async () => {
+      const code = await fixture(owner, resource, true, reply);
+      expect(await codeRequestVersion(code.codeId)).toMatchObject({
+        versionId: code.versionId,
+        manifest: { entrypoints: [{ kind: "route", entrypoint: "route:GET:/", route: { method: "GET", path: "/", public: false } }] },
+      });
+      const registry = spyOn(cloud, "getApp").mockResolvedValue({
+        id: "example",
+        name: "Example",
+        icon: "ti ti-code",
+        description: "Fixture",
+        routes: ["/example"],
+        baseUrl: "http://example.test",
+        access: { kind: "grants" },
+      });
+      const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockResolvedValue("Fixture");
+      const bridge: RunnerBridge = {
+        configure: async () => ({
+          slots: 1,
+          pollMs: 1000,
+          retryMs: 1,
+          transportMs: 1000,
+          bundleBytes: 1024 * 1024,
+          cacheBytes: 1024 * 1024,
+          bridgeBytes: 1024 * 1024,
+          bridgeConcurrency: 1,
+          processMemoryBytes: 128 * 1024 * 1024,
+        }),
+        fetch: (request, signal) => fetchCodeRuns(request, signal, { queue, sign }),
+        bundle: async (proof) => {
+          const token = (await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!;
+          const [row] = await sql<{ bundle: string }[]>`SELECT bundle FROM code.versions WHERE id=${token.versionId}::uuid`;
+          return row!.bundle;
+        },
+        heartbeat: async (proof) => heartbeatCodeRun((await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!),
+        complete: async (proof) =>
+          completeCodeRun((await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!, proof.outcome, proof.response),
+        call: async () => ({ ok: false, error: { code: "fixture_no_data_calls" } }),
+      };
+      const publisher = createCodeRunOutbox(() => queue);
+      const runner = new Runner(bridge, new FixtureEngine(async () => {}));
+      publisher.start();
+      const running = runner.start();
+      try {
+        const response = requestCodeRoute({
+          ...code,
+          signal: AbortSignal.timeout(10_000),
+          request: {
+            codeId: code.codeId,
+            method: "GET",
+            path: "/",
+            query: "",
+            contentType: "text/plain",
+            body: "",
+            params: {},
+            user: { id: other, username: "visitor", groupIds: [], groupNames: [], kind: "user", name: "Visitor" },
+          },
+        });
+        if (reply === "invalid") await expect(response).rejects.toMatchObject({ code: "code_request_failed" });
+        else
+          expect(await response).toEqual(
+            reply === "json"
+              ? { kind: "json", status: 200, body: JSON.stringify({ visitor: other }) }
+              : {
+                  kind: "page",
+                  status: 200,
+                  tree: { version: 1, kind: "Page", title: "Fixture", children: [{ kind: "Text", text: "Hello" }] },
+                },
+          );
+        const [run] = await sql<
+          { trigger: string; state: string; input: unknown; output: unknown; generation: number }[]
+        >`SELECT * FROM code.runs WHERE code_id=${code.codeId}`;
+        expect(run).toMatchObject({
+          trigger: "path",
+          state: reply === "invalid" ? "failed" : "succeeded",
+          input: null,
+          output: null,
+          generation: 1,
+        });
+        const [grant] = await sql<
+          { id: string }[]
+        >`INSERT INTO auth.access(user_id,permission) VALUES(${owner}::uuid,'write') RETURNING id`;
+        await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.codeId},${grant!.id}::uuid)`;
+        await expect(
+          startCodeRun({ codeId: code.codeId, entrypoint: code.entrypoint, idempotencyKey: "not-a-manual-start" }, context()),
+        ).rejects.toThrow("Unknown Code entrypoint");
+      } finally {
+        runner.stop();
+        await running;
+        await publisher.stop();
+        registry.mockRestore();
+        title.mockRestore();
+      }
+    }, 15_000);
+  test("HTTP failure never requeues even before the first effect", async () => {
+    const code = await fixture(owner, true, true);
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockResolvedValue("Fixture");
+    const runId = await insertCodeRun({ ...code, trigger: "path", input: null });
+    await sql`UPDATE code.runs SET deadline_at=clock_timestamp()+interval '8 seconds' WHERE id=${runId}::uuid`;
+    const lease = await take();
+    expect(lease.kind).toBe("request");
+    await completeCodeRun(await claims(lease), "failed");
+    expect(await state(runId)).toMatchObject({ state: "failed", generation: 1, outcome: "failed" });
+    registry.mockRestore();
+    title.mockRestore();
+  });
+  test("checks resource owner after claim commit, pauses missing owners and never signs", async () => {
+    const code = await fixture(owner, true);
+    const [runId] = await enqueueMany(code, 1);
+    const [claimed] = await claimCodeRuns(1, await readCodeRunLimits());
+    expect(claimed).toBeDefined();
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockImplementation(async () => {
+      await sql.begin(async (tx) => {
+        const [lock] = await tx<{ free: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtextextended('core.code.dispatch',0)) AS free`;
+        expect(lock?.free).toBe(true);
+        const [run] = await tx<{ state: string }[]>`SELECT state FROM code.runs WHERE id=${runId!}::uuid FOR UPDATE NOWAIT`;
+        expect(run?.state).toBe("running");
+      });
+      return null;
+    });
+    let signed = false;
+    try {
+      expect(
+        await codeRunnerLease(claimed!, async (...args) => {
+          signed = true;
+          return sign(...args);
+        }),
+      ).toBeNull();
+      expect(title).toHaveBeenCalledTimes(1);
+      expect(signed).toBe(false);
+      expect(await state(runId!)).toMatchObject({ state: "skipped", outcome: "owner_not_found" });
+      const [paused] = await sql`SELECT state,pause_reason FROM code.codes WHERE id=${code.codeId}`;
+      expect(paused).toMatchObject({ state: "paused", pause_reason: "owner_not_found" });
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+
+  test("an owner-reader outage preserves healthy batch leases and advertises their remaining slots", async () => {
+    const healthy = await fixture();
+    const unavailable = await fixture(owner, true);
+    const [healthyId] = await enqueueMany(healthy, 1);
+    const [unavailableId] = await enqueueMany(unavailable, 1);
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockRejectedValue(new Error("offline"));
+    const instanceId = "66666666-6666-4666-8666-666666666666";
+    try {
+      const response = await fetchCodeRuns({ instanceId, freeSlots: 2 }, new AbortController().signal, { queue, sign });
+      expect(response.runs.map((run) => run.runId)).toEqual([healthyId!]);
+      expect(await state(unavailableId!)).toMatchObject({ state: "running", generation: 1 });
+      expect(await state(healthyId!)).toMatchObject({ state: "running", generation: 1 });
+      const [instance] = await sql`SELECT free_slots FROM code.runner_instances WHERE instance_id=${instanceId}::uuid`;
+      expect(instance?.free_slots).toBe(1);
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+
+  test("a queued wakeup survives poll expiry before its delivery resumes", async () => {
+    const code = await fixture();
+    const [runId] = await enqueueMany(code, 1);
+    overrides.set("core.code.runner_poll_ms", 1000);
+    const signal = new AbortController().signal;
+    const openReader = queue.reader.bind(queue);
+    const readers = spyOn(queue, "reader").mockImplementation(async (options) => {
+      expect(options?.signal).toBe(signal);
+      const reader = await openReader(options);
+      const receive = reader.receive.bind(reader);
+      reader.receive = async (options) => {
+        expect(options?.signal).toBe(signal);
+        // fixed wait: resume a broker delivery after the existing 1000 ms poll budget, as under event-loop contention.
+        await Bun.sleep(1100);
+        return receive(options);
+      };
+      return reader;
+    });
+    try {
+      const response = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, signal, { queue, sign });
+      expect(response.runs.map((run) => run.runId)).toEqual([runId!]);
+      expect(await state(runId!)).toMatchObject({ state: "running", generation: 1 });
+    } finally {
+      readers.mockRestore();
+    }
+  });
+
+  test("an admitted run keeps its owner-read budget after the queue poll expires", async () => {
+    const code = await fixture(owner, true);
+    const [runId] = await enqueueMany(code, 1);
+    overrides.set("core.code.runner_poll_ms", 1000);
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockImplementation(async (_ref, _principal, signal) => {
+      // fixed wait: exceed only the 1000 ms queue poll, well within the existing owner-read and lease budgets.
+      await Bun.sleep(1100);
+      signal?.throwIfAborted();
+      return "Current owner";
+    });
+    try {
+      const response = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, new AbortController().signal, {
+        queue,
+        sign,
+      });
+      expect(response.runs.map((run) => run.runId)).toEqual([runId!]);
+      expect(response.runs[0]?.generation).toBe(1);
+      expect(await state(runId!)).toMatchObject({ state: "running", generation: 1 });
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+
+  test("the delivered lease renews after its owner read; expired generations stay refused", async () => {
+    const code = await fixture(owner, true);
+    await enqueueMany(code, 1);
+    const [claimed] = await claimCodeRuns(1, await readCodeRunLimits());
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    let shortExpiry = 0;
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockImplementation(async (_ref, _principal, signal) => {
+      expect(signal).toBeInstanceOf(AbortSignal);
+      const [short] = await sql<{ lease_expires_at: Date }[]>`UPDATE code.runs SET lease_expires_at=clock_timestamp()+interval '5 seconds'
+        WHERE id=${claimed!.id}::uuid RETURNING lease_expires_at`;
+      shortExpiry = short!.lease_expires_at.getTime();
+      return "Current owner";
+    });
+    try {
+      const lease = await codeRunnerLease(claimed!, sign);
+      expect(lease?.leaseExpiresAt).toBeGreaterThan(shortExpiry);
+      expect(lease?.generation).toBe(claimed!.generation);
+      title.mockResolvedValue("Current owner");
+      await sql`UPDATE code.runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${claimed!.id}::uuid`;
+      expect(await codeRunnerLease(claimed!, sign)).toBeNull();
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+
+  test("fetch returns an empty batch when every claimed owner is missing", async () => {
+    const code = await fixture(owner, true);
+    const [runId] = await enqueueMany(code, 1);
+    overrides.set("core.code.runner_poll_ms", 1000);
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockResolvedValue(null);
+    try {
+      const response = await fetchCodeRuns(
+        { instanceId: "88888888-8888-4888-8888-888888888888", freeSlots: 1 },
+        new AbortController().signal,
+        {
+          queue,
+          sign: async () => {
+            throw new Error("Missing owner must not sign");
+          },
+        },
+      );
+      expect(response).toEqual({ runs: [] });
+      expect(await state(runId!)).toMatchObject({ state: "skipped", outcome: "owner_not_found" });
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+
+  test("a person deleted after claim never receives a signed lease", async () => {
+    const transient = "77777777-7777-4777-8777-777777777777";
+    await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${transient}::uuid,${transient},'local','user',true)`;
+    const code = await fixture(transient);
+    await enqueueMany(code, 1);
+    const [claimed] = await claimCodeRuns(1, await readCodeRunLimits());
+    await sql`DELETE FROM auth.users WHERE id=${transient}::uuid`;
+    let signed = false;
+    expect(
+      await codeRunnerLease(claimed!, async (...args) => {
+        signed = true;
+        return sign(...args);
+      }),
+    ).toBeNull();
+    expect(signed).toBe(false);
+    expect(await sql`SELECT id FROM code.codes WHERE id=${code.codeId}`).toHaveLength(0);
+  });
+
+  test("schedule leases carry the original slot and manual input in one handler context", async () => {
+    const code = await fixture();
+    const tick = await processCurrentCodeScheduleTick({ ...code, slot, cron: distantCron });
+    expect(tick).not.toBeNull();
+    const scheduled = await take();
+    expect(scheduled.input).toEqual({ runId: tick!.runId, scheduledAt: slot.toISOString(), input: null });
+    await sql`UPDATE code.runs SET state='queued',lease_expires_at=NULL WHERE id=${scheduled.runId}::uuid`;
+    expect((await take()).input).toEqual(scheduled.input);
+    await sql`UPDATE code.runs SET state='failed',ended_at=clock_timestamp() WHERE id=${scheduled.runId}::uuid`;
+    await sql`DELETE FROM code.run_requests WHERE run_id=${scheduled.runId}::uuid`;
+    const request = { codeId: code.codeId, entrypoint: code.entrypoint };
+    const rerun = await startCodeRun({ ...request, idempotencyKey: "context:rerun", rerunOf: scheduled.runId }, context());
+    expect((await take()).input).toEqual({ runId: rerun.runId, scheduledAt: slot.toISOString(), input: null });
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${rerun.runId}::uuid`;
+    const manual = await startCodeRun({ ...request, idempotencyKey: "context", input: { invoice: "one" } }, context());
+    expect((await take()).input).toEqual({ runId: manual.runId, scheduledAt: null, input: { invoice: "one" } });
+  });
+
+  test("same permanent key starts one run across Core replicas, while a new key explicitly reruns", async () => {
+    const code = await fixture();
+    const request = { codeId: code.codeId, entrypoint: code.entrypoint, idempotencyKey: "invoice:001" };
+    const results = await Promise.all([
+      startCodeRun(request, context()),
+      startCodeRun(request, context()),
+      startCodeRun(request, context()),
+    ]);
+    expect(new Set(results.map((r) => r.runId)).size).toBe(1);
+    expect(results.filter((r) => !r.duplicate)).toHaveLength(1);
+    const events = await sql<{ actor_user_id: string }[]>`SELECT actor_user_id FROM audit.events
+      WHERE action='core.code.run.started' AND target_id=${code.codeId}`;
+    expect(events).toEqual([{ actor_user_id: owner }]);
+    await expect(startCodeRun({ ...request, input: { changed: true } }, context())).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(startCodeRun({ ...request, entrypoint: "other" }, context())).rejects.toMatchObject({ code: "CONFLICT" });
+    const rerun = await startCodeRun({ ...request, idempotencyKey: "invoice:001:rerun" }, context());
+    expect(rerun.runId).not.toBe(results[0]!.runId);
+    await expect(startCodeRun(request, context(other))).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+  test("a run started again remembers the failed run and who started it, and only a failed run of the same entrypoint qualifies", async () => {
+    const code = await fixture();
+    const request = { codeId: code.codeId, entrypoint: code.entrypoint };
+    const first = await startCodeRun({ ...request, idempotencyKey: "origin:first" }, context());
+    await expect(startCodeRun({ ...request, idempotencyKey: "origin:early", rerunOf: first.runId }, context())).rejects.toMatchObject({
+      code: "BAD_INPUT",
+    });
+    await sql`UPDATE code.runs SET state='failed',outcome='failed',ended_at=clock_timestamp() WHERE id=${first.runId}::uuid`;
+    await expect(
+      startCodeRun({ ...request, idempotencyKey: "origin:unknown", rerunOf: crypto.randomUUID() }, context()),
+    ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    await expect(
+      startCodeRun({ ...request, entrypoint: "other", idempotencyKey: "origin:other", rerunOf: first.runId }, context()),
+    ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    const again = await startCodeRun({ ...request, idempotencyKey: "origin:again", rerunOf: first.runId }, context());
+    const { items } = await listCodeRuns({ codeId: code.codeId, limit: 10 }, context());
+    const listed = items.find((run) => run.id === again.runId)!;
+    expect(listed.rerunOf).toBe(first.runId);
+    expect(listed.rerunByName).toEqual(expect.any(String));
+    expect(items.find((run) => run.id === first.runId)).toMatchObject({ rerunOf: null, rerunByName: null });
+    // Without directory access only the person's own name shows; that it ran again stays visible.
+    await sql`UPDATE code.runs SET rerun_by=${other}::uuid WHERE id=${again.runId}::uuid`;
+    const hidden = await readCodeRun({ codeId: code.codeId, runId: again.runId, cursor: 0, offset: 0, length: 16384 }, context());
+    expect(hidden.run).toMatchObject({ rerunOf: first.runId, rerunByName: null });
+  });
+  const checkRequest = () => ({
+    files: { "code.ts": "source" },
+    entry: "code.ts",
+    sdk: generateCodeSdk([], { mode: "personal" }),
+    aiOperations: [],
+  });
+  async function pendingJob() {
+    const deadline = performance.now() + 3000;
+    while (performance.now() < deadline) {
+      const rows = await sql`SELECT id FROM code.jobs WHERE state='queued'`;
+      if (rows.length) return;
+      await Bun.sleep(5);
+    }
+    throw new Error("No committed authoring job");
+  }
+  test("C13b fetch retains authoring jobs when the claimed run owner is missing", async () => {
+    const code = await fixture(owner, true);
+    const [runId] = await enqueueMany(code, 1);
+    const input = JSON.stringify({ kind: "check", request: checkRequest() });
+    const [job] = await sql<{ id: string }[]>`INSERT INTO code.jobs(kind,owner_id,input,input_bytes,output_bytes,deadline_at)
+      VALUES('check',${owner}::uuid,${input},${Buffer.byteLength(input)},1000,clock_timestamp()+interval '1 minute') RETURNING id`;
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockResolvedValue(null);
+    const instanceId = "99999999-9999-4999-8999-999999999999";
+    try {
+      const response = await fetchCodeRuns({ instanceId, freeSlots: 2 }, new AbortController().signal, {
+        queue,
+        sign: async () => {
+          throw new Error("Missing owner must not sign");
+        },
+      });
+      expect(response.runs).toEqual([]);
+      expect(response.jobs?.map((lease) => lease.jobId)).toEqual([job!.id]);
+      expect(await state(runId!)).toMatchObject({ state: "skipped", outcome: "owner_not_found" });
+      const [instance] = await sql`SELECT free_slots FROM code.runner_instances WHERE instance_id=${instanceId}::uuid`;
+      expect(instance?.free_slots).toBe(1);
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+  test.each(["check", "test", "simulate"] as const)(
+    "the init template keeps the checker memory budget through the real %s job path",
+    async (mode) => {
+      const initial = await codeAuthoringServices.init({ title: "Fresh installation" }, context());
+      const cancel = new AbortController();
+      const scoped = { ...context(), signal: cancel.signal };
+      const request = { ...checkRequest(), files: initial.files, entry: initial.config.entry };
+      const fixture: CodeTestCase = {
+        version: 1,
+        name: "init",
+        now: Date.UTC(2030, 0, 2),
+        seed: 42,
+        mocks: [],
+        runs: [{ entrypoint: "monday", input: null }],
+      };
+      const pending =
+        mode === "check"
+          ? createRunnerCodeCheckHost(scoped).check(request)
+          : mode === "test"
+            ? testCode(
+                { code: request, tests: { "test/init.json": JSON.stringify(fixture) } },
+                await createRunnerCodeTestingHost(scoped),
+                cancel.signal,
+              )
+            : simulateCode({ code: request, fixture }, await createRunnerCodeTestingHost(scoped), cancel.signal);
+      const settled = pending.catch((error: unknown) => error);
+      try {
+        await pendingJob();
+        const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+        const input = JSON.parse(await readCodeJobInput(job));
+        expect(input.kind).toBe("check");
+        expect(input.request.files).toEqual(initial.files);
+        expect(input.request.limits.memoryBytes).toBe(CODE_CHECK_LIMITS.memoryBytes);
+        expect(CODE_SETTINGS["core.code.runner_process_memory_bytes"].default).toBe(134217728);
+        await completeCodeJob(job, { kind: "check", result: { ok: false, diagnostics: [] } });
+        if (mode === "check") expect(await pending).toEqual({ ok: false, diagnostics: [] });
+        else expect(await pending).toMatchObject({ mode, error: "code_test_check_failed" });
+      } finally {
+        cancel.abort();
+        await settled;
+      }
+    },
+  );
+  test("C13b check round-trip preserves permissions and source lines without a bridge token", async () => {
+    const expected: CodeCheckResult = {
+      ok: true,
+      diagnostics: [],
+      bundle: "export {}",
+      manifest: {
+        version: 1,
+        entrypoints: [],
+        permissions: [{ operation: "example.read", target: null, file: "code.ts", line: 7 }],
+        ai: false,
+        hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+      },
+      permissions: [{ operation: "example.read", target: null, file: "code.ts", line: 7, status: "new" }],
+    };
+    const cancel = new AbortController();
+    const response = createRunnerCodeCheckHost({ ...context(), signal: cancel.signal }).check(checkRequest());
+    const settled = response.catch((error) => error);
+    try {
+      await pendingJob();
+      const outbox = createCodeJobOutbox(() => queue);
+      expect(await outbox.reconcile()).toBe(1);
+      const fetched = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, new AbortController().signal, { queue, sign });
+      expect(fetched.runs).toHaveLength(0);
+      const job = fetched.jobs![0]!;
+      expect("token" in job).toBe(false);
+      expect(
+        JSON.parse(await readCodeJobInput({ jobId: job.jobId, generation: job.generation, leaseKey: job.leaseKey })).request.files,
+      ).toEqual(checkRequest().files);
+      await completeCodeJob(job, { kind: "check", result: expected });
+      const [stored] = await sql`SELECT jsonb_typeof(result) AS type FROM code.jobs WHERE id=${job.jobId}::uuid`;
+      expect(stored?.type).toBe("object");
+      expect(await response).toEqual(expected);
+    } finally {
+      cancel.abort();
+      await settled;
+    }
+  });
+  test.each(["test", "simulate"] as const)("C13b production testing host transports %s results through the shared queue", async (mode) => {
+    const cancel = new AbortController();
+    const host = await createRunnerCodeTestingHost({ ...context(), signal: cancel.signal });
+    const pending = host.execute({
+      mode,
+      bundle: "export {}",
+      sdk: checkRequest().sdk,
+      manifest: {
+        version: 1,
+        entrypoints: [],
+        permissions: [],
+        ai: false,
+        hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+      },
+      cases: [],
+    });
+    const settled = pending.catch((error) => error);
+    try {
+      await pendingJob();
+      await createCodeJobOutbox(() => queue).reconcile();
+      const fetched = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, cancel.signal, { queue, sign });
+      const job = fetched.jobs![0]!;
+      expect(job.kind).toBe(mode);
+      const input = JSON.parse(await readCodeJobInput(job));
+      expect(input.execution.mode).toBe(mode);
+      expect(input.limits).toEqual(host.limits);
+      const result = { version: 1 as const, mode, ok: true, error: null, diagnostics: [], cases: [] };
+      await completeCodeJob(job, { kind: mode, result });
+      expect(await pending).toEqual(result);
+    } finally {
+      cancel.abort();
+      await settled;
+    }
+  });
+  test.each(["matching", "bundle", "evidence", "internet"] as const)(
+    "C13b binding server check refuses forged %s submissions",
+    async (variant) => {
+      const code = await fixture();
+      const [stored] = await sql<
+        { source_files: Record<string, string>; bundle: string; manifest: CodeCheckedVersionManifest }[]
+      >`SELECT source_files,bundle,manifest FROM code.versions WHERE id=${code.versionId}::uuid`;
+      const cancel = new AbortController();
+      const catalog = spyOn(catalogProvider, "listCapabilityCatalog").mockResolvedValue({
+        ok: true,
+        data: { protocolVersion: 2, apps: [], page: { hasMore: false } },
+      });
+      const manifest: CodeCheckedVersionManifest = {
+        ...stored!.manifest,
+        internet: ["https://api.example"],
+        policyRows: [...stored!.manifest.policyRows, "internet"],
+        secrets: [
+          {
+            name: "BANK",
+            origin: "https://api.example",
+            pathPrefix: "/v1",
+            headers: ["authorization"],
+            binding_revision: "a0000000-0000-4000-8000-000000000001",
+          },
+        ],
+      };
+      const pending = verifyCodeSubmission(
+        { codeId: code.codeId, sourceFiles: stored!.source_files, bundle: stored!.bundle, manifest },
+        { ...context(), signal: cancel.signal },
+      );
+      const settled = pending.then(
+        () => null,
+        (error: unknown) => error,
+      );
+      try {
+        await pendingJob();
+        const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+        const { entry: _entry, policyRows: _rows, secrets: _secrets, ...evidence } = manifest;
+        await completeCodeJob(job, {
+          kind: "check",
+          result: {
+            ok: true,
+            diagnostics: [],
+            bundle: variant === "bundle" ? "forged bundle" : stored!.bundle,
+            manifest: {
+              ...evidence,
+              ai: variant === "evidence" ? !evidence.ai : evidence.ai,
+              internet: variant === "internet" ? [] : evidence.internet,
+            },
+            permissions: [],
+          },
+        });
+        if (variant === "matching") expect(await settled).toBeNull();
+        else expect(await settled).toMatchObject({ code: "CONFLICT" });
+      } finally {
+        cancel.abort();
+        await settled;
+        catalog.mockRestore();
+      }
+    },
+  );
+  test.each(["oversized", "wrong-kind"] as const)("C13b rejected %s result is terminal and wakes pending jobs", async (variant) => {
+    const cancel = new AbortController();
+    const pending = createRunnerCodeCheckHost({ ...context(), signal: cancel.signal }).check(checkRequest());
+    const settled = pending.catch((error) => error);
+    try {
+      await pendingJob();
+      const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+      if (variant === "oversized") {
+        await sql`UPDATE code.jobs SET output_bytes=100 WHERE id=${job.jobId}::uuid`;
+        await completeCodeJob(job, {
+          kind: "check",
+          result: { ok: false, diagnostics: [{ code: "test", message: "x".repeat(100), file: "code.ts", line: 1, column: 1 }] },
+        });
+      } else
+        await completeCodeJob(job, {
+          kind: "simulate",
+          result: { version: 1, mode: "simulate", ok: true, error: null, diagnostics: [], cases: [] },
+        });
+      expect(await settled).toMatchObject({ code: variant === "oversized" ? "code_job_output_limit" : "code_job_failed" });
+      await expect(readCodeJobInput(job)).rejects.toBeInstanceOf(RunnerLeaseLostError);
+    } finally {
+      cancel.abort();
+      await settled;
+    }
+  });
+  test("C13b authoring role cap is enforced across polls for one runner", async () => {
+    const input = JSON.stringify({ kind: "check", request: checkRequest() });
+    for (let n = 0; n < 3; n++)
+      await sql`INSERT INTO code.jobs(kind,owner_id,input,input_bytes,output_bytes,deadline_at) VALUES('check',${owner}::uuid,${input},${Buffer.byteLength(input)},1000,clock_timestamp()+interval '1 minute')`;
+    const instance = crypto.randomUUID();
+    const first = await claimCodeWork(3, instance, await readCodeRunLimits());
+    expect(first.jobs).toHaveLength(1);
+    expect((await claimCodeWork(3, instance, await readCodeRunLimits())).jobs).toHaveLength(0);
+    await completeCodeJob(first.jobs[0]!, { kind: "check", result: { ok: false, diagnostics: [] } });
+    expect((await claimCodeWork(3, instance, await readCodeRunLimits())).jobs).toHaveLength(1);
+  });
+  test("C13b killed checker requeues; the old generation cannot read or complete", async () => {
+    const controller = new AbortController();
+    const pending = createRunnerCodeCheckHost({ ...context(), signal: controller.signal }).check(checkRequest());
+    const settled = pending.catch((error) => error);
+    try {
+      await pendingJob();
+      const first = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+      await sql`UPDATE code.jobs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${first.jobId}::uuid`;
+      await reconcileCodeJobs();
+      const second = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+      expect(second.generation).toBe(first.generation + 1);
+      expect(second.leaseKey).not.toBe(first.leaseKey);
+      await expect(readCodeJobInput(first)).rejects.toBeInstanceOf(RunnerLeaseLostError);
+      await expect(completeCodeJob(first, { kind: "check", result: { ok: false, diagnostics: [] } })).rejects.toBeInstanceOf(
+        RunnerLeaseLostError,
+      );
+      await completeCodeJob(second, { kind: "check", result: { ok: false, diagnostics: [] } });
+      expect(await settled).toEqual({ ok: false, diagnostics: [] });
+    } finally {
+      controller.abort();
+      await settled;
+    }
+  });
+  test("C13b refuses oversized input and overload, and cancellation fences a lease", async () => {
+    await expect(
+      createRunnerCodeCheckHost(context()).check({ ...checkRequest(), files: { "code.ts": "x".repeat(CODE_CHECK_LIMITS.requestBytes) } }),
+    ).rejects.toMatchObject({ code: "code_job_request_limit" });
+    expect(await sql`SELECT id FROM code.jobs`).toHaveLength(0);
+    overrides.set("core.code.job_pending", 1);
+    const cancel = new AbortController();
+    const waiting = createRunnerCodeCheckHost({ ...context(), signal: cancel.signal })
+      .check(checkRequest())
+      .catch((error) => error);
+    try {
+      await pendingJob();
+      await expect(createRunnerCodeCheckHost(context()).check(checkRequest())).rejects.toMatchObject({ code: "code_job_busy" });
+      const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+      cancel.abort();
+      expect(await waiting).toMatchObject({ code: "code_job_cancelled" });
+      await expect(readCodeJobInput(job)).rejects.toBeInstanceOf(RunnerLeaseLostError);
+    } finally {
+      cancel.abort();
+      await waiting;
+    }
+  });
+  test("C13b a burst of checks cannot starve scheduled work with a single free slot", async () => {
+    const code = await fixture();
+    const ids = await enqueueMany(code, 3, "schedule");
+    const input = JSON.stringify({ kind: "check", request: checkRequest() });
+    for (let index = 0; index < 20; index++)
+      await sql`INSERT INTO code.jobs(kind,owner_id,input,input_bytes,output_bytes,deadline_at) VALUES('check',${owner}::uuid,${input},${Buffer.byteLength(input)},1000,clock_timestamp()+interval '1 minute')`;
+    const kinds: string[] = [];
+    for (let index = 0; index < 6; index++) {
+      const work = await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits());
+      if (work.jobs.length) {
+        kinds.push("job");
+        await completeCodeJob(work.jobs[0]!, { kind: "check", result: { ok: false, diagnostics: [] } });
+      } else {
+        kinds.push("run");
+        const run = await codeRunnerLease(work.runs[0]!, sign);
+        if (!run) throw new Error("Fixture owner refused");
+        await completeCodeRun(await claims(run), "succeeded");
+      }
+    }
+    expect(kinds).toEqual(["job", "run", "job", "run", "job", "run"]);
+    expect(await sql`SELECT id FROM code.runs WHERE id IN ${sql(ids)} AND state='succeeded'`).toHaveLength(3);
+  });
+  test("the public manual-run Action shares durable admission across callers", async () => {
+    const code = await fixture();
+    const request: CapabilityExecutionContext = {
+      authority: context().authority,
+      actor: context().authority.actor,
+      accessSubject: context().authority.accessSubject,
+      user: person(owner),
+      locale: "en",
+      origin: "http",
+      signal: new AbortController().signal,
+      idempotencyKey: "public-run",
+      requestId: "c13-manual",
+      target: { type: "core.code", id: code.codeId },
+    };
+    const input = { entrypoint: "weekly", input: null };
+    const manifest = compileCapabilityManifest("core", {
+      protocolVersion: 2,
+      types: { code: aiCapabilities.types.code },
+      actions: { "code.run": aiCapabilities.actions["code.run"] },
+    });
+    expect(manifest.actions[0]?.localId).toBe("code.run");
+    const review = await aiCapabilities.actions["code.run"].review(input, request);
+    expect(review.ok).toBe(true);
+    if (review.ok) assertCapabilityReview(review.data);
+    const results = await Promise.all([0, 1, 2].map(() => aiCapabilities.actions["code.run"].run(input, request)));
+    for (const result of results) expect(result.ok).toBe(true);
+    const receipts = results.flatMap((result) => (result.ok ? [result.data.data] : []));
+    expect(new Set(receipts.map((r) => r.runId)).size).toBe(1);
+    expect(receipts.filter((r) => !r.duplicate)).toHaveLength(1);
+    expect(await sql`SELECT id FROM audit.events WHERE action='core.code.run.started' AND target_id=${code.codeId}`).toHaveLength(1);
+    const runs = await sql`SELECT id FROM code.runs WHERE code_id=${code.codeId}`;
+    expect(runs).toHaveLength(1);
+    expect(await aiCapabilities.actions["code.run"].run({ ...input, input: { changed: true } }, request)).toMatchObject({
+      ok: false,
+      error: { code: "CONFLICT" },
+    });
+    const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${other}::uuid,'write') RETURNING id`;
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.codeId},${grant!.id}::uuid)`;
+    const secondEditor: CapabilityExecutionContext = {
+      ...request,
+      authority: context(other).authority,
+      actor: context(other).authority.actor,
+      accessSubject: context(other).authority.accessSubject,
+      user: person(other),
+      requestId: "c13-manual-other",
+    };
+    const separate = await aiCapabilities.actions["code.run"].run(input, secondEditor);
+    expect(separate.ok).toBe(true);
+    if (separate.ok) {
+      expect(separate.data.data.duplicate).toBe(false);
+      expect(separate.data.data.runId).not.toBe(receipts[0]!.runId);
+    }
+    expect(await sql`SELECT id FROM code.runs WHERE code_id=${code.codeId}`).toHaveLength(2);
+    expect(await sql`SELECT id FROM audit.events WHERE action='core.code.run.started' AND target_id=${code.codeId}`).toHaveLength(2);
+  });
+  test("committed starts and retries reach the real queue through the durable outbox", async () => {
+    const code = await fixture();
+    const started = await startCodeRun({ codeId: code.codeId, entrypoint: "weekly", idempotencyKey: "outbox" }, context());
+    const publisher = createCodeRunOutbox(() => queue);
+    expect(await publisher.reconcile()).toBe(1);
+    const instanceId = "77777777-7777-4777-8777-777777777777";
+    const first = (await fetchCodeRuns({ instanceId, freeSlots: 1 }, new AbortController().signal, { queue, sign })).runs[0]!;
+    expect(first.runId).toBe(started.runId);
+    await completeCodeRun(await claims(first), "failed");
+    expect(await publisher.reconcile()).toBe(1);
+    const second = (await fetchCodeRuns({ instanceId, freeSlots: 1 }, new AbortController().signal, { queue, sign })).runs[0]!;
+    expect(second.runId).toBe(started.runId);
+    expect(second.generation).toBe(2);
+    await completeCodeRun(await claims(second), "succeeded");
+    await publisher.stop();
+  });
+  for (const ownerLimit of [false, true])
+    test(`real outbox drains default-limit backlog without recovery (owner limit: ${ownerLimit})`, async () => {
+      overrides.set("core.code.runner_poll_ms", 1000);
+      if (ownerLimit) overrides.set("core.code.concurrency_per_owner", 1);
+      const code = await fixture();
+      const neighbor = ownerLimit ? await fixture() : code;
+      const ids = [];
+      for (let index = 0; index < 6; index++)
+        ids.push(
+          (
+            await startCodeRun(
+              {
+                codeId: index % 2 ? neighbor.codeId : code.codeId,
+                entrypoint: "weekly",
+                idempotencyKey: `backlog:${index}`,
+              },
+              context(),
+            )
+          ).runId,
+        );
+      const publisher = createCodeRunOutbox(() => queue);
+      const instanceId = "88888888-8888-4888-8888-888888888888";
+      const fetch = () => fetchCodeRuns({ instanceId, freeSlots: 1 }, new AbortController().signal, { queue, sign });
+      try {
+        await publisher.reconcile();
+        const takeResponse = async () => {
+          const deadline = AbortSignal.timeout(5000);
+          while (!deadline.aborted) {
+            const response = await fetchCodeRuns({ instanceId, freeSlots: 1 }, deadline, { queue, sign });
+            if (response.runs.length) return response;
+          }
+          throw new Error("No runnable backlog lease within the test budget");
+        };
+        let response = await takeResponse();
+        // Exhaust the real published tickets while capacity is occupied, just as concurrent idle runners do.
+        expect((await fetch()).runs).toHaveLength(0);
+        const seen = new Set<string>();
+        for (let index = 0; index < ids.length; index++) {
+          expect(response.runs).toHaveLength(1);
+          const lease = response.runs[0]!;
+          expect(seen.has(lease.runId)).toBe(false);
+          seen.add(lease.runId);
+          await completeCodeRun(await claims(lease), "succeeded");
+          if (index < ids.length - 1) {
+            expect(await publisher.reconcile()).toBeGreaterThan(0);
+            response = await takeResponse();
+          }
+        }
+        expect(seen).toEqual(new Set(ids));
+      } finally {
+        await publisher.stop();
+      }
+    }, 10_000);
+  test("expired wall budget has its own outcome for queued and running runs", async () => {
+    const code = await fixture();
+    const ids = await enqueueMany(code, 2);
+    await take();
+    await sql`UPDATE code.runs SET deadline_at=clock_timestamp()-interval '1 second' WHERE code_id=${code.codeId}`;
+    await reconcileCodeRuns();
+    for (const id of ids) expect(await state(id)).toMatchObject({ state: "failed", outcome: "wall_clock_limit" });
+  });
+  test("a refused scheduled tick is visible and permanently deduplicated", async () => {
+    const code = await fixture();
+    await sql`DELETE FROM code.version_submissions WHERE version_id=${code.versionId}::uuid`;
+    const tick = { ...code, slot };
+    const result = await processCodeScheduleTick(tick);
+    expect(await state(result!.runId)).toMatchObject({ state: "failed", outcome: "code_admission_refused" });
+    expect(await processCodeScheduleTick(tick)).toEqual({ runId: result!.runId, duplicate: true });
+    const expired = new Date(slot.getTime() - 8 * 86_400_000);
+    await sql`UPDATE code.run_requests SET tick_at=${expired} WHERE run_id=${result!.runId}::uuid`;
+    await reconcileCodeRuns();
+    expect(await sql`SELECT run_id FROM code.run_requests WHERE run_id=${result!.runId}::uuid`).toHaveLength(0);
+    expect(await processCodeScheduleTick({ ...tick, slot: expired })).toBeNull();
+    expect(await claimCodeRuns(1, await readCodeRunLimits())).toHaveLength(0);
+  });
+  test("three runners complete 200 runs exactly once, never exceeding their free slots", async () => {
+    overrides.set("core.code.concurrency_per_code", 100);
+    overrides.set("core.code.concurrency_per_owner", 1000);
+    const code = await fixture();
+    const ids = await enqueueMany(code, 200);
+    // Repeated queue delivery cannot manufacture a second lease.
+    await queue.send({ data: { runId: ids[0]! } });
+    const seen = new Set<string>();
+    const stop = new AbortController();
+    const timeout = setTimeout(() => stop.abort(new Error("Bounded runner test expired")), 15_000);
+    const runners = [
+      "44444444-4444-4444-8444-444444444441",
+      "44444444-4444-4444-8444-444444444442",
+      "44444444-4444-4444-8444-444444444443",
+    ];
+    try {
+      await Promise.all(
+        runners.map(async (instanceId) => {
+          while (!stop.signal.aborted) {
+            let response: RunnerFetchResponse;
+            try {
+              response = await fetchCodeRuns({ instanceId, freeSlots: 4 }, stop.signal, { queue, sign });
+            } catch (error) {
+              if (seen.size === 200 && stop.signal.aborted) return;
+              throw error;
+            }
+            expect(response.runs.length).toBeLessThanOrEqual(4);
+            for (const lease of response.runs) {
+              expect(seen.has(lease.runId)).toBe(false);
+              expect(lease.generation).toBe(1);
+              await completeCodeRun(await claims(lease), "succeeded");
+              seen.add(lease.runId);
+            }
+            if (seen.size === 200) stop.abort();
+          }
+        }),
+      );
+      expect(seen.size).toBe(200);
+      const [summary] = await sql<
+        { count: number; generations: number }[]
+      >`SELECT count(*)::int AS count,max(generation)::int AS generations
+        FROM code.runs WHERE code_id=${code.codeId} AND state='succeeded'`;
+      expect(summary).toEqual({ count: 200, generations: 1 });
+    } finally {
+      clearTimeout(timeout);
+      stop.abort();
+    }
+  }, 20_000);
+  test("failure before the first Action retries with a fresh AI budget and original deadline", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    const first = await take(),
+      old = await claims(first);
+    await sql`UPDATE code.runs SET ai_reference_cost=0.75,ai_reserved_cost=0.25,ai_budget_call=1 WHERE id=${first.runId}::uuid`;
+    await completeCodeRun(old, "failed");
+    expect((await state(first.runId)).state).toBe("queued");
+    const next = await take();
+    expect(next.runId).toBe(first.runId);
+    expect(next.generation).toBe(2);
+    expect(next.deadlineAt).toBe(first.deadlineAt);
+    await sql.begin((db) => settleCodeAiBudget(old, 1, "0.5", db));
+    const [budget] = await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call
+      FROM code.runs WHERE id=${first.runId}::uuid`;
+    expect(budget).toEqual({ cost: "0", reserved: "0", ai_budget_call: null });
+    await expect(heartbeatCodeRun(old)).rejects.toMatchObject({ code: "runner_lease_lost", status: 409 });
+    await expect(sql.begin((db) => requireCodeRunFence(old, db))).rejects.toMatchObject({ status: 409 });
+    await completeCodeRun(await claims(next), "succeeded");
+  });
+  test("Action observation before an uncertain effect prevents automatic retry and preserves the ordered call list", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    const lease = await take();
+    await sql.begin((db) =>
+      appendCodeCall({ runId: lease.runId, kind: "action", call: { capability: "example.write", target: null, refs: {}, input: {} } }, db),
+    );
+    await completeCodeRun(await claims(lease), "failed");
+    expect((await state(lease.runId)).state).toBe("failed");
+    const result = await readCodeRun({ codeId: code.codeId, runId: lease.runId, cursor: 0, offset: 0, length: 1000 }, context());
+    expect(result.contents?.calls[0]?.ordinal).toBe(1);
+    expect(result.contents?.calls[0]?.state).toBe("uncertain");
+    expect(result.contents?.calls[0]?.result).toEqual({ ok: false, error: { code: "code_result_unknown" } });
+    await sql.begin((db) =>
+      finishCodeCall(
+        { runId: lease.runId, ordinal: 1, state: "succeeded", result: { ok: true, data: { stored: true } }, endedAt: new Date() },
+        db,
+      ),
+    );
+    const late = await readCodeRun({ codeId: code.codeId, runId: lease.runId, cursor: 0, offset: 0, length: 1000 }, context());
+    expect(late.contents?.calls[0]).toMatchObject({ state: "succeeded", result: { ok: true, data: { stored: true } } });
+    expect(await claimCodeRuns(1, await readCodeRunLimits())).toHaveLength(0);
+  });
+  test("late call completion waits for the run before locking the call", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    const lease = await take();
+    await sql.begin((db) =>
+      appendCodeCall({ runId: lease.runId, kind: "action", call: { capability: "example.write", target: null, refs: {}, input: {} } }, db),
+    );
+    const locked = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const backend = Promise.withResolvers<number>();
+    const blocker = sql.begin(async (db) => {
+      await db`SELECT id FROM code.runs WHERE id=${lease.runId}::uuid FOR UPDATE`;
+      locked.resolve();
+      await release.promise;
+    });
+    await locked.promise;
+    const completion = sql.begin(async (db) => {
+      await db`SET LOCAL lock_timeout='3s'`;
+      const [row] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      backend.resolve(row!.pid);
+      await finishCodeCall(
+        { runId: lease.runId, ordinal: 1, state: "succeeded", result: { ok: true, data: null }, endedAt: new Date() },
+        db,
+      );
+    });
+    // Observe the database wait, rather than assuming the completion has started after a delay.
+    try {
+      const pid = await backend.promise;
+      let waiting = false;
+      for (let probe = 0; probe < 100; probe++) {
+        const [activity] = await sql<
+          { waiting: boolean }[]
+        >`SELECT wait_event_type='Lock' AS waiting FROM pg_stat_activity WHERE pid=${pid}`;
+        if (activity?.waiting) {
+          waiting = true;
+          break;
+        }
+        await Bun.sleep(10);
+      }
+      expect(waiting).toBe(true);
+      await sql.begin(async (db) => {
+        const calls = await db`SELECT ordinal FROM code.calls WHERE run_id=${lease.runId}::uuid FOR UPDATE NOWAIT`;
+        expect(calls).toHaveLength(1);
+      });
+    } finally {
+      release.resolve();
+      await Promise.all([blocker, completion]);
+    }
+  });
+  test("killed runner before an Action requeues; after an Action fails; expired generation cannot heartbeat or call", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    const first = await take(),
+      old = await claims(first);
+    await sql`UPDATE code.runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${first.runId}::uuid`;
+    await expect(heartbeatCodeRun(old)).rejects.toMatchObject({ status: 409 });
+    await reconcileCodeRuns();
+    const second = await take();
+    expect(second.generation).toBe(2);
+    await expect(
+      createCodeBridgeHost().withCall(
+        { claims: old, kind: "query", call: { capability: "example.read", target: null, refs: {}, input: {} } },
+        async () => Response.json({ ok: true, data: null }),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    await sql.begin((db) =>
+      appendCodeCall({ runId: second.runId, kind: "action", call: { capability: "example.write", target: null, refs: {}, input: {} } }, db),
+    );
+    await sql`UPDATE code.runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${first.runId}::uuid`;
+    await reconcileCodeRuns();
+    expect((await state(first.runId)).state).toBe("failed");
+  });
+  test("a Code with 100 queued runs cannot block a different Code or owner", async () => {
+    const busy = await fixture(),
+      neighbor = await fixture(other);
+    await enqueueMany(busy, 100);
+    await enqueueMany(neighbor, 1);
+    const leases = await claimCodeRuns(4, await readCodeRunLimits());
+    expect(leases).toHaveLength(2);
+    expect(new Set(leases.map((r) => r.code_id))).toEqual(new Set([busy.codeId, neighbor.codeId]));
+  });
+  test("owner concurrency is shared across Codes and independent Core fetches", async () => {
+    overrides.set("core.code.concurrency_per_owner", 1);
+    for (let index = 0; index < 3; index++) await enqueueMany(await fixture(), 1);
+    const batches = await Promise.all([
+      claimCodeRuns(4, await readCodeRunLimits()),
+      claimCodeRuns(4, await readCodeRunLimits()),
+      claimCodeRuns(4, await readCodeRunLimits()),
+    ]);
+    expect(batches.flat()).toHaveLength(1);
+  });
+  test("heartbeats never extend the original wall deadline and automatic retry stops at its attempt budget", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    let lease = await take();
+    const renewed = await heartbeatCodeRun(await claims(lease));
+    expect(renewed.leaseExpiresAt).toBeLessThanOrEqual(lease.deadlineAt);
+    for (let generation = 1; generation <= 3; generation++) {
+      expect(lease.generation).toBe(generation);
+      await completeCodeRun(await claims(lease), "failed");
+      if (generation < 3) lease = await take();
+    }
+    expect(await state(lease.runId)).toMatchObject({ state: "failed", outcome: "retry_exhausted" });
+  });
+  test("one permanent schedule tick with three Core deliveries; running predecessor records the skipped tick", async () => {
+    const code = await fixture();
+    const ticks = await Promise.all([0, 1, 2].map(() => processCodeScheduleTick({ ...code, slot })));
+    expect(new Set(ticks.map((t) => t?.runId)).size).toBe(1);
+    const lease = await take();
+    const skipped = await processCodeScheduleTick({ ...code, slot: new Date(slot.getTime() + 60_000) });
+    expect(await state(skipped!.runId)).toMatchObject({ state: "skipped", outcome: "previous_schedule_running" });
+    await completeCodeRun(await claims(lease), "succeeded");
+    const next = await processCodeScheduleTick({ ...code, slot: new Date(slot.getTime() + 120_000) });
+    expect((await state(next!.runId)).state).toBe("queued");
+  });
+  test("a manual execution of a schedule also causes an overlapping tick to be skipped", async () => {
+    const code = await fixture();
+    await startCodeRun({ codeId: code.codeId, entrypoint: "weekly", idempotencyKey: "manual-schedule" }, context());
+    await take();
+    const skipped = await processCodeScheduleTick({ ...code, slot });
+    expect(await state(skipped!.runId)).toMatchObject({ state: "skipped", outcome: "previous_schedule_running" });
+  });
+  test("one-time reconciliation admits one run across replicas and keeps the consumed next run empty", async () => {
+    const timing = { at: slot.toISOString(), timeZone: "Europe/Berlin" };
+    const code = await fixture(owner, false, false, "json", timing);
+    const sync = createSync({ connection, namespace: testSyncNamespace("c13-once"), application: "core", defaults: { replicas: 1 } });
+    syncs.push(sync);
+    const scheduler = sync.scheduler({ id: "code" });
+    await scheduler.create({
+      id: codeScheduleId(code.codeId, code.entrypoint),
+      cron: distantCron,
+      timezone: "UTC",
+      meta: { family: "code", codeId: code.codeId },
+      async process() {},
+    });
+    const reconcile = createCodeScheduleReconciler(scheduler);
+    await Promise.all([reconcile(), reconcile(), reconcile()]);
+    expect(await scheduler.list()).toEqual([]);
+    const runs = await sql<{ id: string; state: string }[]>`SELECT id,state FROM code.runs WHERE code_id=${code.codeId}`;
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.state).toBe("queued");
+    const replay = await processCurrentCodeScheduleTick({ ...code, ...timing, slot });
+    expect(replay).toEqual({ runId: runs[0]!.id, duplicate: true });
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${runs[0]!.id}::uuid`;
+    await reconcile();
+    const listing = await listCodeAutomations({ codeId: code.codeId }, context());
+    expect(listing.items[0]).toMatchObject({ ...timing, nextRunAt: null });
+    const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs WHERE code_id=${code.codeId}`;
+    expect(count?.count).toBe(1);
+  });
+  test("one-time schedules without a zone use the Cloud default in admission and listing", async () => {
+    await coreSettings.set("app.timezone", "America/New_York");
+    try {
+      const timing = { at: slot.toISOString() };
+      const code = await fixture(owner, false, false, "json", timing);
+      expect((await listCodeAutomations({ codeId: code.codeId }, context())).items[0]).toMatchObject({
+        ...timing,
+        timeZone: "America/New_York",
+      });
+      expect(await processCurrentCodeScheduleTick({ ...code, ...timing, timeZone: "UTC", slot })).toBeNull();
+      const admitted = await processCurrentCodeScheduleTick({ ...code, ...timing, timeZone: "America/New_York", slot });
+      expect(admitted).not.toBeNull();
+      expect((await take()).input).toEqual({ runId: admitted!.runId, scheduledAt: slot.toISOString(), input: null });
+    } finally {
+      await coreSettings.set("app.timezone", "UTC");
+    }
+  });
+  test("recurring zones reach Sync and next runs skip spring gaps and repeat autumn slots only once", async () => {
+    const code = await fixture(owner, false, false, "json", { cron: "30 2 * * *", timeZone: "Europe/Berlin" });
+    const legacy = await fixture();
+    await coreSettings.set("app.timezone", "America/New_York");
+    try {
+      const sync = createSync({ connection, namespace: testSyncNamespace("c13-dst"), application: "core", defaults: { replicas: 1 } });
+      syncs.push(sync);
+      const scheduler = sync.scheduler({ id: "code" });
+      await createCodeScheduleReconciler(scheduler)();
+      const id = codeScheduleId(code.codeId, code.entrypoint);
+      expect((await scheduler.get({ id: codeScheduleId(legacy.codeId, legacy.entrypoint) }))?.timezone).toBe("America/New_York");
+      setSystemTime(new Date("2026-03-28T01:30:00Z"));
+      expect(await scheduler.get({ id })).toMatchObject({ timezone: "Europe/Berlin", nextRunAt: new Date("2026-03-30T00:30:00Z") });
+      setSystemTime(new Date("2026-10-25T00:30:00Z"));
+      expect((await scheduler.get({ id }))?.nextRunAt).toEqual(new Date("2026-10-26T01:30:00Z"));
+      setSystemTime(slot);
+      // A retained callback from before a zone change must not admit a tick under the newer timing.
+      expect(await processCurrentCodeScheduleTick({ ...code, cron: "30 2 * * *", timeZone: "UTC", slot })).toBeNull();
+      expect(await processCurrentCodeScheduleTick({ ...code, cron: "30 2 * * *", timeZone: "Europe/Berlin", slot })).not.toBeNull();
+    } finally {
+      setSystemTime(slot);
+      await coreSettings.set("app.timezone", "UTC");
+    }
+  });
+
+  test("a due one-time occurrence waits for a manual predecessor without consuming its date", async () => {
+    const timing = { at: slot.toISOString(), timeZone: "UTC" };
+    const code = await fixture(owner, false, false, "json", timing);
+    const manual = await startCodeRun({ codeId: code.codeId, entrypoint: code.entrypoint, idempotencyKey: "manual-once" }, context());
+    const tick = { ...code, ...timing, slot };
+    expect(await processCurrentCodeScheduleTick(tick)).toBeNull();
+    const [receipts] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.run_requests
+      WHERE code_id=${code.codeId} AND tick_at IS NOT NULL`;
+    expect(receipts?.count).toBe(0);
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${manual.runId}::uuid`;
+    const admitted = await processCurrentCodeScheduleTick(tick);
+    if (!admitted) throw new Error("Expected a due one-time run after its predecessor ended");
+    expect(admitted.duplicate).toBeFalse();
+    expect((await state(admitted.runId)).state).toBe("queued");
+    expect(await processCurrentCodeScheduleTick(tick)).toEqual({ ...admitted, duplicate: true });
+  });
+  test("one-time admission rejects future, expired and stale definitions without consuming a receipt", async () => {
+    const future = new Date(slot.getTime() + 86_400_000);
+    const timing = { at: future.toISOString(), timeZone: "UTC" };
+    const code = await fixture(owner, false, false, "json", timing);
+    expect(await processCodeScheduleTick({ ...code, slot: future })).toBeNull();
+    const listing = await listCodeAutomations({ codeId: code.codeId }, context());
+    expect(listing.items[0]?.nextRunAt).toBe(future.toISOString());
+    expect(await processCurrentCodeScheduleTick({ ...code, at: slot.toISOString(), timeZone: "UTC", slot })).toBeNull();
+    const old = new Date(slot.getTime() - 8 * 86_400_000);
+    const expired = await fixture(owner, false, false, "json", { at: old.toISOString(), timeZone: "UTC" });
+    expect(await processCurrentCodeScheduleTick({ ...expired, at: old.toISOString(), timeZone: "UTC", slot: old })).toBeNull();
+    const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.run_requests`;
+    expect(count?.count).toBe(0);
+  });
+  test("real Sync scheduler fires once with three Core workers, independently of runner count", async () => {
+    const code = await fixture();
+    const namespace = testSyncNamespace("c13-scheduler");
+    const workers: Worker[] = [];
+    const schedulers = [];
+    try {
+      for (let index = 0; index < 3; index++) {
+        const sync = createSync({ connection, namespace, application: "core", defaults: { replicas: 1 } });
+        syncs.push(sync);
+        const scheduler = sync.scheduler({ id: "code" });
+        schedulers.push(scheduler);
+        await createCodeScheduleReconciler(scheduler)();
+        workers.push(await scheduler.process());
+      }
+      const schedule = (await schedulers[0]!.list())[0]!;
+      const run = await schedulers[0]!.runNow({ id: schedule.id, requestId: "one-tick" });
+      const completed = await schedulers[0]!.awaitRun({ id: schedule.id, runId: run.runId, timeoutMs: 5000 });
+      expect(completed.completed).toBe(true);
+      const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs WHERE code_id=${code.codeId}`;
+      expect(count?.count).toBe(1);
+    } finally {
+      for (const worker of workers) worker.stop();
+      await Promise.all(workers.map((w) => w.drain({ timeoutMs: 1000 })));
+    }
+  }, 10_000);
+  test("a rejected schedule definition does not prevent another Code from registering", async () => {
+    const broken = await fixture(),
+      healthy = await fixture();
+    const sync = createSync({
+      connection,
+      namespace: testSyncNamespace("c13-sync-isolation"),
+      application: "core",
+      defaults: { replicas: 1 },
+    });
+    syncs.push(sync);
+    const scheduler = sync.scheduler({ id: "code" });
+    const create = scheduler.create.bind(scheduler);
+    const fail = spyOn(scheduler, "create").mockImplementation((definition) => {
+      if (definition.meta?.codeId === broken.codeId) return Promise.reject(new Error("Fixture definition rejected"));
+      return create(definition);
+    });
+    try {
+      await createCodeScheduleReconciler(scheduler)();
+      expect((await scheduler.list()).map((s) => s.meta?.codeId)).toEqual([healthy.codeId]);
+    } finally {
+      fail.mockRestore();
+    }
+  });
+  test("retained schedule callbacks bind a newly active version without waiting for reconciliation", async () => {
+    const code = await fixture();
+    const sync = createSync({ connection, namespace: testSyncNamespace("c13-activation"), application: "core", defaults: { replicas: 1 } });
+    syncs.push(sync);
+    const scheduler = sync.scheduler({ id: "code" });
+    const reconcile = createCodeScheduleReconciler(scheduler);
+    await reconcile();
+    const original = (await scheduler.list())[0]!;
+    const [next] = await sql<
+      { id: string }[]
+    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
+      SELECT code_id,2,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by
+      FROM code.versions WHERE id=${code.versionId}::uuid RETURNING id`;
+    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding)
+      SELECT ${next!.id}::uuid,code_id,jsonb_set(binding,'{versionId}',to_jsonb(${next!.id}::text))
+      FROM code.version_submissions WHERE version_id=${code.versionId}::uuid`;
+    await sql`UPDATE code.codes SET active_version_id=${next!.id}::uuid WHERE id=${code.codeId}`;
+    const worker = await scheduler.process();
+    try {
+      const tick = await scheduler.runNow({ id: original.id, requestId: "after-activation" });
+      expect((await scheduler.awaitRun({ id: original.id, runId: tick.runId, timeoutMs: 5000 })).completed).toBe(true);
+      const runs = await sql<{ version_id: string }[]>`SELECT version_id FROM code.runs WHERE code_id=${code.codeId}`;
+      expect(runs).toEqual([{ version_id: next!.id }]);
+      await reconcile();
+      expect((await scheduler.list()).map((s) => s.id)).toEqual([original.id]);
+    } finally {
+      worker.stop();
+      await worker.drain({ timeoutMs: 1000 });
+    }
+  }, 10_000);
+  test("fully occupied runners remain visible through lease heartbeats", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    const instanceId = "66666666-6666-4666-8666-666666666666";
+    const response = await fetchCodeRuns({ instanceId, freeSlots: 1 }, new AbortController().signal, { queue, sign });
+    const lease = response.runs[0]!;
+    expect((await readCodeRunnerMetrics(context())).freeSlots).toBe(0);
+    await sql`UPDATE code.runner_instances SET last_seen_at=clock_timestamp()-interval '1 minute' WHERE instance_id=${instanceId}::uuid`;
+    expect((await readCodeRunnerMetrics(context())).instances).toBe(0);
+    await heartbeatCodeRun(await claims(lease));
+    expect((await readCodeRunnerMetrics(context())).instances).toBe(1);
+  });
+  test("fleet metrics expose queue age, fresh instances and free slots without run payloads", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 2);
+    await sql`INSERT INTO code.runner_instances(instance_id,free_slots) VALUES('55555555-5555-4555-8555-555555555555',3)`;
+    const metrics = await readCodeRunnerMetrics(context());
+    expect(metrics.queued).toBe(2);
+    expect(metrics.instances).toBe(1);
+    expect(metrics.freeSlots).toBe(3);
+    expect(metrics.oldestWaitingMs).toBeGreaterThanOrEqual(0);
+    expect(Object.keys(metrics.runners[0]!).sort()).toEqual(["freeSlots", "instanceId", "lastSeenAt"]);
+  });
+});

@@ -44,7 +44,8 @@ describe("Grids integrity capability contract", () => {
     expect(AtomicRecordsInputSchema.safeParse({ ...input, origin: "workflow" }).success).toBeFalse();
     expect(
       gridsCapabilities.actions["record.correction-draft"].input.safeParse({
-        ...target,
+        recordId: target.recordId,
+        ifVersion: target.ifVersion,
         typeFieldId: "Field1",
         originalFieldId: "Field2",
         typeValue: "correction",

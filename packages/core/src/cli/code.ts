@@ -1,0 +1,401 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import {
+  arg,
+  type CloudCliContext,
+  command,
+  confirmFlag,
+  defineCliCommands,
+  flag,
+  localizeCloudCliText,
+  printStructured,
+} from "@k2b/cloud/cli";
+import { CodeTestCaseSchema } from "@k2b/cloud/code";
+import { z } from "zod";
+import {
+  CodeAuthoringConflictSchema,
+  type CodeAuthoringData,
+  type CodeAuthoringError,
+  codeAuthoringContracts,
+} from "../code/authoring-contracts";
+import { CodeIdSchema } from "../code/contracts";
+import type { CodeVersionDiffFile } from "../code/version-contracts";
+import { printCodeSubmission, runCodeActivation } from "./code-activate";
+import {
+  assertCodeDestination,
+  assertCodePath,
+  loadCodeProject,
+  readCodeFiles,
+  saveCodeProject,
+  writeCodeProject,
+  writeCodeSdk,
+} from "./code-files";
+import { codeOperationCommands } from "./code-operations";
+import { pullAllCode } from "./code-pull";
+import { RemoteCodeError, request } from "./code-request";
+
+function printDiff(ctx: CloudCliContext, files: CodeVersionDiffFile[]) {
+  for (const file of files) {
+    ctx.print(`--- ${file.path}`);
+    for (const line of file.lines) ctx.print(`${line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}${line.text}`);
+  }
+}
+/** Operation review: authorized target title/ID, source location and difference from the running version. */
+export function printCodeCheck(ctx: CloudCliContext, data: CodeAuthoringData<"check">) {
+  const t = (en: string, de: string) => localizeCloudCliText(ctx.options.locale, { en, de });
+  if (!data.result.ok) {
+    for (const diagnostic of data.result.diagnostics)
+      ctx.print(`${diagnostic.file}:${diagnostic.line}:${diagnostic.column} ${diagnostic.code}: ${diagnostic.message}`);
+    return;
+  }
+  for (const warning of data.result.warnings ?? [])
+    ctx.print(`${warning.file}:${warning.line}:${warning.column} ${t("warning", "Warnung")} ${warning.code}: ${warning.message}`);
+  if (data.result.manifest.entrypoints.length) {
+    ctx.print(t("Automations", "Automationen"));
+    for (const entry of data.result.manifest.entrypoints)
+      ctx.print(
+        `  ${entry.title ? `${entry.title} (${entry.entrypoint})` : entry.entrypoint} · ${entry.event ? `${entry.event.type}@${entry.event.version} · ${entry.event.place.type}:${entry.event.place.id}` : entry.at ? `${entry.at} (${entry.timeZone})` : (entry.cron ?? t("manual start", "Handstart"))}`,
+      );
+  }
+  ctx.print(t("Permissions", "Erlaubnisse"));
+  for (const permission of data.permissions) {
+    const type = permission.typeTitle ?? permission.target?.type ?? t("application", "App");
+    const target = permission.target
+      ? `${type} ${permission.title ? `${permission.title} ` : ""}${permission.target.id === null ? t("(dynamic target)", "(dynamisches Ziel)") : `(${permission.target.id})`}`.trim()
+      : t("application", "App");
+    const place = permission.own ? t(`at own ${target}`, `am eigenen ${target}`) : t(`at ${target}`, `an ${target}`);
+    ctx.print(`  ${permission.operation.padEnd(27)} ${place}   ${permission.file}:${permission.line}`);
+  }
+  ctx.print(`${t("AI", "KI").padEnd(13)}${data.result.manifest.ai ? t("yes", "ja") : t("no", "nein")}`);
+  ctx.print(`${t("Pages", "Seiten").padEnd(13)}—`);
+  ctx.print("Webhook      —");
+  ctx.print(`${t("Database", "Datenbank").padEnd(13)}${data.result.manifest.database ? t("uses database", "nutzt Datenbank") : "—"}`);
+}
+export function buildCodeCli(locale?: string) {
+  const t = (en: string, de: string) => localizeCloudCliText(locale, { en, de });
+  const projectArg = {
+    project: arg.optional({
+      description: t("Local project directory or a file inside it", "Lokales Projektverzeichnis oder eine Datei darin"),
+    }),
+  };
+  const outFlag = { out: flag.string({ default: "code", description: t("New checkout root", "Neues Zielverzeichnis") }) };
+  return defineCliCommands({
+    name: "code",
+    summary: t("feat/code: develop, check and submit Code", "feat/code: Code entwickeln, prüfen und einreichen"),
+    requiresCloud: true,
+    groupSummaries: { sdk: t("Download the generated SDK", "Erzeugtes SDK herunterladen") },
+    commands: [
+      ...codeOperationCommands(locale),
+      command("init", {
+        summary: t("Create Code and a local project", "Code und lokales Projekt anlegen"),
+        flags: {
+          ...outFlag,
+          title: flag.string({ required: true, description: t("Code title", "Code-Titel") }),
+          ownerType: flag.string({ description: t("Owning resource Type", "Typ der Besitzer-Ressource") }),
+          ownerId: flag.string({ description: t("Short resource ID", "Kurze Ressourcen-ID") }),
+          app: flag.string({ description: t("Owning application ID", "ID der Besitzer-App") }),
+        },
+        async run({ ctx, flags }) {
+          if (Boolean(flags.ownerType) !== Boolean(flags.ownerId) || (flags.app && flags.ownerType))
+            throw new Error(
+              t("Supply --owner-type and --owner-id together, or --app.", "Gib --owner-type und --owner-id zusammen oder --app an."),
+            );
+          const owner = flags.app
+            ? { kind: "app", appId: flags.app }
+            : flags.ownerType
+              ? { kind: "resource", ref: { type: flags.ownerType, id: flags.ownerId } }
+              : undefined;
+          const input = codeAuthoringContracts.init.input.parse({ title: flags.title, ...(owner ? { owner } : {}) });
+          await assertCodeDestination(flags.out!, input.owner);
+          const data = await request(ctx, "init", input);
+          try {
+            await writeCodeProject(flags.out!, data.config, data.files);
+          } catch {
+            throw new RemoteCodeError({
+              version: 1,
+              error: {
+                code: "code_cli_checkout_failed",
+                message: t(
+                  `Created ${data.config.codeId}, but the local project could not be written. Pull this Code ID into a new directory.`,
+                  `${data.config.codeId} angelegt, aber lokal konnte das Projekt nicht geschrieben werden. Hole diese Code-ID mit pull in ein neues Verzeichnis.`,
+                ),
+                details: z.json().parse({ config: data.config }),
+              },
+            });
+          }
+          if (!printStructured(ctx, data))
+            ctx.print(
+              t(
+                `Created ${data.config.codeId}. Run sdk pull in its directory.`,
+                `${data.config.codeId} angelegt. Führe dort sdk pull aus.`,
+              ),
+            );
+        },
+      }),
+      command("pull", {
+        summary: t("Download the latest version into a new folder", "Neueste Version in einen neuen Ordner holen"),
+        args: { code: arg.optional({ description: "Code ID; omit with --all" }) },
+        flags: {
+          ...outFlag,
+          all: flag.boolean({ description: t("Pull all resource Code (Cloud admin)", "Alle Ressourcen-Codes holen (Cloud-Admin)") }),
+        },
+        async run({ ctx, args, flags }) {
+          if (flags.all) {
+            if (args.code) throw new Error(t("Use a Code ID or --all.", "Nutze eine Code-ID oder --all."));
+            await assertCodePath(resolve(flags.out!));
+            await pullAllCode(ctx, flags.out!);
+            return;
+          }
+          if (!args.code) throw new Error(t("Supply a Code ID or --all.", "Gib eine Code-ID oder --all an."));
+          const codeId = CodeIdSchema.parse(args.code);
+          await assertCodePath(resolve(flags.out!));
+          const data = await request(ctx, "pull", { codeId });
+          await writeCodeProject(flags.out!, data.config, data.files);
+          if (!printStructured(ctx, data))
+            ctx.print(
+              t(
+                `Pulled ${codeId} at ${data.config.baseVersionId ?? "empty"}.`,
+                `${codeId} auf Stand ${data.config.baseVersionId ?? "leer"} geholt.`,
+              ),
+            );
+        },
+      }),
+      command("sdk pull", {
+        summary: t("Refresh project SDK types and runtime", "SDK-Typen und Laufzeit aktualisieren"),
+        args: projectArg,
+        async run({ ctx, args }) {
+          const project = await loadCodeProject(args.project);
+          const data = await request(ctx, "sdk", { codeId: project.config.codeId });
+          await writeCodeSdk(project.directory, data.files);
+          if (!printStructured(ctx, data)) ctx.print(t("SDK refreshed.", "SDK aktualisiert."));
+        },
+      }),
+      command("check", {
+        summary: t("Check types and show every permission", "Typen prüfen und alle Erlaubnisse anzeigen"),
+        args: projectArg,
+        async run({ ctx, args }) {
+          const project = await loadCodeProject(args.project);
+          const data = await request(ctx, "check", {
+            codeId: project.config.codeId,
+            entry: project.config.entry,
+            files: await readCodeFiles(project.directory),
+          });
+          if (!printStructured(ctx, data)) printCodeCheck(ctx, data);
+          return data.result.ok ? 0 : 1;
+        },
+      }),
+      command("test", {
+        summary: t("Run declarative test/*.json against fakes", "Deklarative test/*.json mit Testdaten ausführen"),
+        args: projectArg,
+        flags: { trace: flag.boolean({ description: t("Include run boundaries", "Laufgrenzen ausgeben") }) },
+        async run({ ctx, args, flags }) {
+          const project = await loadCodeProject(args.project);
+          const data = await request(ctx, "test", {
+            codeId: project.config.codeId,
+            entry: project.config.entry,
+            files: await readCodeFiles(project.directory),
+            tests: await readCodeFiles(project.directory, true),
+            trace: flags.trace,
+          });
+          if (!printStructured(ctx, data)) {
+            for (const item of data.cases) ctx.print(`${item.ok ? "✓" : "✗"} ${item.file ?? item.name}`);
+            if (data.error) ctx.print(data.error);
+            for (const diagnostic of data.diagnostics) ctx.print(`${diagnostic.file}:${diagnostic.line} ${diagnostic.message}`);
+          }
+          return data.ok ? 0 : 1;
+        },
+      }),
+      command("simulate", {
+        summary: t("Simulate one schedule with a JSON fixture", "Einen Zeitplan mit einer JSON-Fixture simulieren"),
+        args: projectArg,
+        flags: {
+          fixture: flag.string({ required: true, description: t("Fixture file relative to project", "Fixture-Datei relativ zum Projekt") }),
+          trace: flag.boolean({ description: t("Include run boundaries", "Laufgrenzen ausgeben") }),
+        },
+        async run({ ctx, args, flags }) {
+          const project = await loadCodeProject(args.project);
+          const fixturePath = resolve(project.directory, flags.fixture!);
+          await assertCodePath(fixturePath);
+          const fixture = CodeTestCaseSchema.parse(JSON.parse(await readFile(fixturePath, "utf8")));
+          const data = await request(ctx, "simulate", {
+            codeId: project.config.codeId,
+            entry: project.config.entry,
+            files: await readCodeFiles(project.directory),
+            fixture,
+            trace: flags.trace,
+          });
+          if (!printStructured(ctx, data)) {
+            ctx.print(
+              data.ok
+                ? t("Simulation passed.", "Simulation erfolgreich.")
+                : (data.error ?? t("Simulation failed.", "Simulation fehlgeschlagen.")),
+            );
+            for (const item of data.cases)
+              for (const run of item.runs)
+                ctx.print(
+                  JSON.stringify({ entrypoint: run.entrypoint, ok: run.ok, value: run.value, calls: run.calls, failures: run.failures }),
+                );
+          }
+          return data.ok ? 0 : 1;
+        },
+      }),
+      command("submit", {
+        summary: t("Check and submit a version for required approval", "Version prüfen und zur nötigen Freigabe einreichen"),
+        args: projectArg,
+        flags: {
+          baseVersionId: flag.string({
+            description: t("Explicit base UUID, or null for first submission", "Basis-UUID oder null für die erste Einreichung"),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const project = await loadCodeProject(args.project);
+          const baseVersionId =
+            flags.baseVersionId === undefined
+              ? project.config.baseVersionId
+              : flags.baseVersionId === "null"
+                ? null
+                : z.uuid().parse(flags.baseVersionId);
+          const data = await request(ctx, "submit", {
+            codeId: project.config.codeId,
+            entry: project.config.entry,
+            files: await readCodeFiles(project.directory),
+            tests: await readCodeFiles(project.directory, true),
+            baseVersionId,
+          });
+          try {
+            await saveCodeProject(project.directory, { ...project.config, baseVersionId: data.submission.version.id });
+          } catch {
+            throw new RemoteCodeError({
+              version: 1,
+              error: {
+                code: "code_cli_local_update_failed",
+                message: t(
+                  "Version saved, but local code.json could not be updated. Pull into a fresh directory before retrying.",
+                  "Version gespeichert, aber code.json konnte lokal nicht aktualisiert werden. Hole den Stand vor einem neuen Versuch in ein neues Verzeichnis.",
+                ),
+                details: z.json().parse({ submission: data.submission }),
+              },
+            });
+          }
+          if (!printStructured(ctx, data)) printCodeSubmission(ctx, data);
+        },
+      }),
+      command("diff", {
+        summary: t("Show a saved version's complete comparison", "Vollständigen Unterschied einer gespeicherten Version zeigen"),
+        args: projectArg,
+        flags: {
+          version: flag.string({
+            description: t("Version UUID; defaults to code.json base", "Versions-UUID; Standard ist der Basisstand aus code.json"),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const project = await loadCodeProject(args.project);
+          const versionId = flags.version ?? project.config.baseVersionId;
+          if (!versionId) throw new Error(t("No saved version. Submit first.", "Keine gespeicherte Version. Führe zuerst submit aus."));
+          const data = await request(ctx, "diff", { codeId: project.config.codeId, versionId });
+          if (!printStructured(ctx, data)) printDiff(ctx, data.diff.files);
+        },
+      }),
+      command("activate", {
+        summary: t(
+          "List what a saved version gets, ask, and switch it on",
+          "Auflisten, was eine gespeicherte Version bekommt, nachfragen und einschalten",
+        ),
+        args: projectArg,
+        flags: {
+          yes: confirmFlag(),
+          version: flag.string({
+            description: t("Version UUID; defaults to code.json base", "Versions-UUID; Standard ist der Basisstand aus code.json"),
+          }),
+          activationId: flag.string({
+            description: t(
+              "Activation UUID; reuse after a lost response. Required without a terminal",
+              "Aktivierungs-UUID; nach verlorener Antwort erneut nutzen. Ohne Terminal nötig",
+            ),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const project = await loadCodeProject(args.project);
+          const versionId = flags.version ?? project.config.baseVersionId;
+          if (!versionId) throw new Error(t("No saved version. Submit first.", "Keine gespeicherte Version. Führe zuerst submit aus."));
+          return runCodeActivation(ctx, {
+            codeId: project.config.codeId,
+            versionId,
+            activationId: flags.activationId,
+            yes: Boolean(flags.yes),
+          });
+        },
+      }),
+      command("run", {
+        summary: t("Start a named schedule now", "Benannten Zeitplan jetzt starten"),
+        args: { schedule: arg.required({ description: t("Named schedule export", "Benannter Zeitplan-Export") }), ...projectArg },
+        flags: {
+          key: flag.string({
+            required: true,
+            description: t("Idempotency key; reuse only to retry this start", "Idempotenzschlüssel; nur für denselben Start erneut nutzen"),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const project = await loadCodeProject(args.project);
+          const data = await request(ctx, "run", {
+            codeId: project.config.codeId,
+            entrypoint: args.schedule,
+            input: null,
+            idempotencyKey: flags.key,
+          });
+          if (!printStructured(ctx, data))
+            ctx.print(`${data.run.runId}${data.run.duplicate ? t(" (already started)", " (bereits gestartet)") : ""}`);
+        },
+      }),
+    ],
+  });
+}
+const base = buildCodeCli();
+export default {
+  ...base,
+  help: (locale?: string) => buildCodeCli(locale).help?.(locale) ?? "",
+  async run(ctx: CloudCliContext) {
+    try {
+      return (await buildCodeCli(ctx.options.locale).run(ctx)) ?? 0;
+    } catch (error) {
+      const body: CodeAuthoringError =
+        ctx.args[0] === "secret" && ctx.args[1] === "set" && !(error instanceof RemoteCodeError)
+          ? {
+              version: 1,
+              error: {
+                code: "code_cli_secret_input",
+                message: "Code secret write failed. Use --from <file|-> and check the binding metadata.",
+                details: null,
+              },
+            }
+          : error instanceof RemoteCodeError
+            ? error.body
+            : {
+                version: 1,
+                error: {
+                  code: "code_cli_input",
+                  message:
+                    error instanceof Error && "code" in error && typeof error.code === "string"
+                      ? `Local Code files could not be read or written (${error.code}). Existing project folders are not overwritten.`
+                      : error instanceof Error
+                        ? error.message
+                        : "Code command failed.",
+                  details: null,
+                },
+              };
+      if (!printStructured(ctx, body)) {
+        ctx.error(
+          body.error.code === "code_version_conflict"
+            ? localizeCloudCliText(ctx.options.locale, {
+                en: "A newer version exists. Review the diff and pull into a new directory before submitting again.",
+                de: "Neuere Version vorhanden. Prüfe den Unterschied und hole den Stand in ein neues Verzeichnis, bevor du erneut einreichst.",
+              })
+            : body.error.message,
+        );
+        const conflict = CodeAuthoringConflictSchema.safeParse(body.error.details);
+        if (conflict.success) printDiff(ctx, conflict.data.files);
+      }
+      return 1;
+    }
+  },
+};

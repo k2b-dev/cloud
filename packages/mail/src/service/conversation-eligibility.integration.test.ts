@@ -7,7 +7,6 @@ import type { ConnectorEnvelope } from "./connectors";
 import { hydrateMessageFromSource } from "./message-hydration";
 import { extractMessageProtocolFacts } from "./message-protocol";
 import { ingestEnvelope } from "./sync-runtime";
-import { getWorkflowSnapshot } from "./workflow-data";
 
 // The Mail preload owns and drops the isolated database.
 suiteFor(
@@ -91,11 +90,9 @@ suiteFor(
       expect(await conversationOf(crossMailbox)).not.toBe(conversationId);
       const noOverlap = await ingest(envelope("fifth@unrelated.test", "No overlap", "inReplyTo", "alias@different.test"));
       expect(await conversationOf(noOverlap)).not.toBe(conversationId);
-      const [ref] = await sql<{ id: string }[]>`SELECT id::text FROM mail.remote_message_refs WHERE message_id = ${foreignId}::uuid`;
-      const snapshot = await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: ref!.id });
-      expect(snapshot!.source.message.fromAddress).toBe("stranger@unrelated.test");
-      expect(snapshot!.preconditions.conversation!.id).toBe(await conversationOf(foreignId));
-      expect(snapshot!.source.conversation!.workStatus).toBe("needs_action");
+      const [separate] = await sql<{ work_status: string }[]>`SELECT work_status FROM mail.conversations
+        WHERE id = ${await conversationOf(foreignId)}::uuid`;
+      expect(separate!.work_status).toBe("needs_action");
       const raw = [
         `Message-ID: ${foreign.messageId}`,
         `In-Reply-To: ${rootId}`,

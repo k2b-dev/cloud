@@ -1,6 +1,21 @@
 import { z } from "zod";
 import type { CapabilityExecutionContext, CapabilityResult } from "./capabilities";
 
+/** Metadata for a write capability's `file` input. The body travels through its stream handler. */
+export const CapabilityFileMetadataSchema = z
+  .object({
+    name: z.string().min(1).max(255).optional().describe("File name, without a path."),
+    mediaType: z
+      .string()
+      .min(1)
+      .max(255)
+      .regex(/^[\x20-\x7e]+$/)
+      .describe("Content media type."),
+    size: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).describe("Exact body length in bytes."),
+  })
+  .strict()
+  .describe("File metadata; send its bytes through the capability's write stream.");
+
 /** One binary payload. Provider IDs are limited to 2 KiB UTF-8; Core seals them into opaque references, never URLs. */
 export const CapabilityStreamSchema = z
   .object({

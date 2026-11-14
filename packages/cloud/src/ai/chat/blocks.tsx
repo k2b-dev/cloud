@@ -5,6 +5,7 @@ import { createSignal, createUniqueId, For, type JSX, Match, Show, Switch, untra
 import { CloudChartBlock } from "#chat-charts";
 import { capabilityApprovalReason, capabilityApprovalReasonLabel } from "../../_internal/capability-sentences";
 import { capabilityReviewView } from "../../capabilities/reviews";
+import { FeatCodeMark } from "../../code/FeatCodeMark";
 import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
@@ -12,6 +13,7 @@ import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences"
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityTable } from "./capability-result";
 import { CapabilityTablePreview } from "./capability-table";
+import { CodeStepBody, hasCodeStepView } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -23,6 +25,7 @@ import {
   formatToolDetailText,
   isCardToolName,
   isChartToolName,
+  isFeatCodeTool,
   isRecord,
   isSurveyToolName,
   isTextEditorToolName,
@@ -36,8 +39,13 @@ import { ToolActionView } from "./tool-action";
 import { AiToolActivity } from "./tool-disclosure";
 import { isFailedTool } from "./tool-groups";
 import type { AiTurnActionState } from "./turn-layout";
+import { submittedCodeVersion } from "./turn-layout";
 import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEditorBlock, CloudTextEditorResultBlock } from "./visual-tools";
 import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock, WebsiteReceipts, websiteReceipts } from "./web-tools";
+
+/** feat/code tools draw the feat/code sign in the row's colour; an app's own icon still wins. */
+const featCodeLeading = (name: string, appIcon?: string | null): JSX.Element | undefined =>
+  !appIcon && isFeatCodeTool(name) ? <FeatCodeMark variant="glyph" tone="current" decorative /> : undefined;
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
@@ -162,6 +170,7 @@ function ToolResultDisclosure(props: {
   result: unknown;
   isError: boolean;
   icon?: string;
+  leading?: JSX.Element;
   accent?: string;
   labelOnError?: string;
   errorLabel?: string;
@@ -173,6 +182,7 @@ function ToolResultDisclosure(props: {
     <AiToolActivity
       blockId={props.blockId}
       icon={props.icon ?? (props.isError ? "ti ti-alert-circle" : aiToolIcon(props.toolName))}
+      leading={props.leading}
       label={props.isError ? (props.errorLabel ?? t().toolFailed({ title: props.labelOnError ?? props.name })) : props.name}
       description={props.isError ? props.errorDescription : undefined}
       tone={props.isError ? "danger" : "neutral"}
@@ -272,7 +282,14 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
   return (
     <section class="ai-approval" aria-label={t().approvalRequired({ title: title() })}>
       <div class="ai-approval__head">
-        <i class={`ai-approval__icon ${aiToolIcon(props.block.name, props.block.presentation?.appIcon)}`} aria-hidden="true" />
+        <Show
+          when={!props.block.presentation?.appIcon && isFeatCodeTool(props.block.name)}
+          fallback={<i class={`ai-approval__icon ${aiToolIcon(props.block.name, props.block.presentation?.appIcon)}`} aria-hidden="true" />}
+        >
+          <span class="ai-approval__icon" aria-hidden="true">
+            <FeatCodeMark variant="glyph" decorative />
+          </span>
+        </Show>
         <div class="min-w-0">
           <h3 class="ai-approval__title">{title()}</h3>
           <p class="ai-approval__sub">
@@ -475,6 +492,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
         fallback={
           <Chat.Activity
             icon={aiToolIcon(props.block.name, presentation().appIcon)}
+            leading={featCodeLeading(props.block.name, presentation().appIcon)}
             label={label()}
             tone="ai"
             accent={presentation().appAccent}
@@ -487,6 +505,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
           fallback={
             <Chat.Activity
               icon={aiToolIcon(props.block.name, presentation().appIcon)}
+              leading={featCodeLeading(props.block.name, presentation().appIcon)}
               label={t().toolFailed({ title: label() })}
               description={capabilityErrorDescription(props.block.result) || t().actionNotCompleted}
               tone="danger"
@@ -502,6 +521,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
                 name={label()}
                 labelOnError={label()}
                 icon={aiToolIcon(props.block.name, presentation().appIcon)}
+                leading={featCodeLeading(props.block.name, presentation().appIcon)}
                 accent={presentation().appAccent}
                 toolName={props.block.name}
                 args={props.block.args}
@@ -512,6 +532,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
           >
             <Chat.Activity
               icon={aiToolIcon(props.block.name, presentation().appIcon)}
+              leading={featCodeLeading(props.block.name, presentation().appIcon)}
               label={summary()}
               accent={presentation().appAccent}
               trailing={
@@ -680,7 +701,8 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
             toolName={props.block.name}
             args={props.block.args}
             result={props.block.result}
-            isError={Boolean(props.block.isError)}
+            isError={isFailedTool(props.block)}
+            leading={isFailedTool(props.block) ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
             errorLabel={fetchError()?.label}
             errorDescription={fetchError()?.description}
           />
@@ -729,7 +751,12 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
           <TextEditorToolView turnId={props.turnId} block={props.block} active={props.active} />
         </Match>
         <Match when={status() === "running" || status() === "awaiting_client"}>
-          <Chat.Activity label={displayToolName(props.block.name, locale())} icon={aiToolIcon(props.block.name)} busy />
+          <Chat.Activity
+            label={displayToolName(props.block.name, locale())}
+            icon={aiToolIcon(props.block.name)}
+            leading={featCodeLeading(props.block.name)}
+            busy
+          />
         </Match>
       </Switch>
       <Show when={websiteReceipts(props.block).length > 0}>
@@ -844,11 +871,14 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     waiting() ? t().stepWaiting : props.block.status === "rejected" ? t().stepRejected : isFailedTool(props.block) ? t().stepFailed : "";
   const finished = () => props.block.status === "completed" && !props.block.isError;
   const check = () => (finished() ? codeCheckOutcome(props.block.name, props.block.result) : null);
+  const submitted = () => {
+    const version = submittedCodeVersion(props.block);
+    return version ? t().codeSubmittedVersion({ number: version.number }) : undefined;
+  };
   const outcome = () => {
     const value = check();
     if (!value) return "";
-    const result = value.passed ? t().checkPassed : value.errors > 0 ? t().checkFindings({ count: value.errors }) : t().checkNotPassed;
-    return value.warnings > 0 ? `${result} · ${t().checkWarnings({ count: value.warnings })}` : result;
+    return value.passed ? t().checkPassed : value.errors > 0 ? t().checkFindings({ count: value.errors }) : t().checkNotPassed;
   };
   const actions = useAiChatActions();
   /** Only a host that resolves chat file URLs shows the image; without one there is no preview, not an empty box. */
@@ -857,8 +887,11 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     const src = viewed ? actions.fileUrl?.(viewed.path) : null;
     return viewed && src ? { ...viewed, src } : null;
   };
+  // Every failed step shows the error sign in danger tone in the same icon slot; the row stays folded and quiet.
+  const failed = () => !waiting() && props.block.status !== "rejected" && isFailedTool(props.block);
   const icon = () => {
     if (waiting()) return "ti ti-clock";
+    if (failed()) return "ti ti-alert-circle";
     const value = check();
     if (value) return value.passed ? "ti ti-circle-check" : "ti ti-alert-triangle";
     return aiToolIcon(props.block.name, props.block.presentation?.appIcon);
@@ -867,7 +900,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     <>
       <AiToolActivity
         blockId={props.block.id}
-        label={sentence() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
+        label={sentence() ?? props.block.presentation?.title ?? submitted() ?? displayToolName(props.block.name, locale())}
         description={[
           props.block.status === "running" ? (props.block.progress ?? "") : "",
           typeof detail() === "string" ? String(detail()) : "",
@@ -877,10 +910,12 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           .filter(Boolean)
           .join(" · ")}
         icon={icon()}
+        leading={waiting() || check() || failed() ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
+        tone={failed() ? "danger" : "neutral"}
         busy={props.busy && props.block.status === "running"}
         bodyInset={false}
-        renderBody={() => (
-          <div class="flex min-w-0 flex-col gap-2">
+        renderBody={() => {
+          const inputOutput = () => (
             <div
               class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
               tabIndex={0}
@@ -890,12 +925,19 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
               <ToolDetail title={t().input} toolName={props.block.name} value={props.block.args} />
               <ToolDetail title={t().output} toolName={props.block.name} value={props.block.result} />
             </div>
-            {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
-            <Show when={image()}>
-              {(viewed) => <StepImage path={viewed().path} src={viewed().src} description={viewed().description} />}
-            </Show>
-          </div>
-        )}
+          );
+          return (
+            <div class="flex min-w-0 flex-col gap-2">
+              <Show when={hasCodeStepView(props.block.name)} fallback={inputOutput()}>
+                <CodeStepBody block={props.block} raw={inputOutput} />
+              </Show>
+              {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
+              <Show when={image()}>
+                {(viewed) => <StepImage path={viewed().path} src={viewed().src} description={viewed().description} />}
+              </Show>
+            </div>
+          );
+        }}
       />
       {/* Each request a website approval let through is a step of its own, with its full URL. */}
       <Show when={websiteReceipts(props.block).length > 0}>

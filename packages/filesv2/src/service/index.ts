@@ -105,6 +105,7 @@ import {
   principalMetadata,
   readTransferTicket,
   revokeStorage,
+  type StorageGrantAccounts,
   storageBaseId,
   storageCandidates,
   storageGrants,
@@ -1733,6 +1734,12 @@ export function createFilesService(
         return activityReader.activity({ ...call, requestAbort: budget.signal }, { ...input, ...filter });
       });
     },
+    async machineStorageById(call: UserFilesCall, baseId: string) {
+      await requireAdmin(call.actor);
+      const owner = await machineOwner(baseId);
+      if (!owner) throw new FilesError("not_found", 404);
+      return { id: baseId, owner };
+    },
     async machineStorage(call: UserFilesCall, after?: string) {
       await requireAdmin(call.actor);
       return listMachineStorage(after);
@@ -1770,9 +1777,9 @@ export function createFilesService(
         state: "active",
       };
     },
-    async storageGrants(call: UserFilesCall, baseId: string, after?: string) {
+    async storageGrants(call: UserFilesCall, baseId: string, after?: string, accounts?: StorageGrantAccounts) {
       await requireAdmin(call.actor);
-      return storageGrants(baseId, after);
+      return storageGrants(baseId, after, undefined, "admin", accounts);
     },
     async grantStorage(
       call: UserFilesCall,
@@ -1780,7 +1787,7 @@ export function createFilesService(
       input: { path: string; principal: Principal; permission: "read" | "write" | "admin" },
     ) {
       await requireAdmin(call.actor);
-      const result = await grantStorage(baseId, userPath(input.path), input.principal, input.permission);
+      const result = await grantStorage(call.actor, baseId, userPath(input.path), input.principal, input.permission);
       await audit.record({
         actor: filesAuditActor(call.actor),
         action: "files.storage.grant",
@@ -1793,7 +1800,7 @@ export function createFilesService(
     },
     async revokeStorage(call: UserFilesCall, baseId: string, accessId: string) {
       await requireAdmin(call.actor);
-      await revokeStorage(baseId, accessId);
+      await revokeStorage(call.actor, baseId, accessId);
       await audit.record({
         actor: filesAuditActor(call.actor),
         action: "files.storage.revoke",
@@ -2031,6 +2038,22 @@ export function createFilesService(
       return (await shares.activeDownloadItems(binding.id)).some((items) =>
         items.some((item) => within(relative, item) || within(item, relative)),
       );
+    },
+    /** Resolve a fixed storage-root target without requiring read access to the root's children.
+     * Operations still authorize their own path, including Unix ancestor traversal and leaf rights.
+     */
+    async rootLocation(call: UserFilesCall, id: string): Promise<{ baseId: string }> {
+      const stable = parseStableEntryRefId(id);
+      if (stable) {
+        await authorizedBase(call.actor, stable.baseId);
+        // Storage roots always use path refs, including on storage with stable entry IDs.
+        throw new FilesError("root_target_required", 400);
+      }
+      const ref = await resolveEntryRefId(id);
+      if (!ref) throw new FilesError("not_found", 404);
+      const current = await authorizedBase(call.actor, ref.baseId);
+      if (ref.path !== "") throw new FilesError("root_target_required", 400);
+      return { baseId: current.inspection.summary.id };
     },
     /** The base and base-relative path of a folder named by its file ID, after the usual access checks. */
     async folderLocation(call: UserFilesCall, id: string): Promise<{ baseId: string; path: string }> {
@@ -2767,12 +2790,13 @@ export function createFilesService(
       const actor = call.actor;
       const current = await located(actor, id);
       if (!current.relative) {
-        // The file provider exposes storage roots as empty-path refs; they are readable places too.
+        // A storage root is an addressable entry too; it has no parent entry or favorite state.
         const base = current.inspection.summary;
+        const resourceId = await entryRef(base.id, { path: "" });
         return {
           base,
-          entry: { ...fileEntry({ id: base.id }, "", current.node), name: base.name },
-          resourceId: id,
+          entry: { ...fileEntry(base, "", current.node), name: base.name, resourceId },
+          resourceId,
         };
       }
       return entryResult(current);

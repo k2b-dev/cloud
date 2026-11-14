@@ -142,14 +142,12 @@ export const FeedbackSummaryDataSchema = z
 
 export const AssignmentSignupInputSchema = z
   .object({
-    venueId: VenueIdSchema,
     templateId: ResourceIdSchema.describe("Shift-template ID returned by shift.list."),
     date: DateKeySchema.describe("Venue-local occurrence date returned by shift.list."),
   })
   .strict();
 export const AssignmentFreeSignupInputSchema = z
   .object({
-    venueId: VenueIdSchema,
     startsAt: TimestampSchema.describe("Exact RFC 3339 start instant with timezone offset."),
     endsAt: TimestampSchema.describe("Exact RFC 3339 end instant with timezone offset."),
     note: z.string().trim().max(500).nullable().optional().describe("Optional private note for this assignment."),
@@ -157,7 +155,6 @@ export const AssignmentFreeSignupInputSchema = z
   .strict();
 export const AssignmentCancelInputSchema = z
   .object({
-    venueId: VenueIdSchema,
     assignmentId: ResourceIdSchema.describe("Own assignment ID returned by List my assignments or a venue.assignment ref."),
   })
   .strict();

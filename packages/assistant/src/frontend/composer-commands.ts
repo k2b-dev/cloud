@@ -1,4 +1,4 @@
-import type { AiChatTaskView, AiProject, AiRecentResource, AiSkillSummary } from "@k2b/cloud/ai";
+import type { AiProject, AiRecentResource, AiSkillSummary } from "@k2b/cloud/ai";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS, type AiComposerAttachment, aiChatAttachments, aiComposerAttachmentRecords } from "@k2b/cloud/ai/ui";
 import { type CloudSearchTag, cloudInsertMenu } from "@k2b/cloud/browser/composer-insert";
 import type { CloudResourcePickerItem } from "@k2b/cloud/browser/resource-picker";
@@ -14,9 +14,9 @@ import {
   matchesChatCommand,
 } from "@k2b/ui";
 import { type Accessor, createSignal } from "solid-js";
-import { AssistantTaskRunError, assistantApi } from "../api/client";
+import { assistantApi } from "../api/client";
 import { assistantMessages } from "./messages";
-import { assistantTaskTitle, formatAssistantTaskScheduleInline } from "./scheduled-task-format";
+import { assistantSkillPresentation, needsAssistantSkillTranslation } from "./skill-presentation";
 import { type AssistantCopy, assistantCopyFor } from "./ui-copy";
 
 export const assistantCommandSections = (copy: AssistantCopy, pending = false): ChatCommandSection[] => [
@@ -26,7 +26,6 @@ export const assistantCommandSections = (copy: AssistantCopy, pending = false): 
   { id: "skills", label: copy.commandSkills, searched: true },
   { id: "files", label: copy.commandFiles, searched: true, searchOnly: true },
   { id: "chat", label: copy.commandChat },
-  { id: "tasks", label: copy.commandTasks, searched: true },
   { id: "apps", label: copy.commandApps, pending },
 ];
 
@@ -47,15 +46,14 @@ export const assistantCommandScopes = (copy: AssistantCopy, locale: string): Cha
     title: copy.commandModels,
     words: locale.startsWith("de") ? ["modell", "modelle", "model", "models"] : ["model", "models", "modell", "modelle"],
   },
-  { id: "task", title: copy.commandTasks, words: ["routine", "routinen"] },
 ];
 
 /**
  * The reference a chosen resource becomes in the text, with the id the saved draft rebuilds it with, so it keeps its
- * identity across saving and reopening. Studio apps are read by the Assistant as `assistant.artifact`.
+ * identity across saving and reopening. References keep their declared Cloud reader.
  */
 export const assistantResourceMention = (item: CloudResourcePickerItem): ChatAttachment => {
-  const ref = item.ref.type === "assistant.app" ? { type: "assistant.artifact", id: item.ref.id } : item.ref;
+  const ref = item.ref;
   return aiChatAttachments([
     {
       kind: "resource",
@@ -76,8 +74,7 @@ export const assistantDraftRefs = (attachments: readonly AiComposerAttachment[],
 
 /** Resources the draft already holds; the picker leaves them out. */
 export const assistantExcludedRefs = (attachments: readonly AiComposerAttachment[], mentions: readonly ChatMention[]): CloudResourceRef[] =>
-  // The picker lists Studio apps by their search type.
-  assistantDraftRefs(attachments, mentions).map((ref) => (ref.type === "assistant.artifact" ? { type: "assistant.app", id: ref.id } : ref));
+  assistantDraftRefs(attachments, mentions);
 
 /**
  * Cloud insert rows share the draft's reference identity and the server's limit on non-text parts. Counts, not the
@@ -95,26 +92,12 @@ export function assistantInsertCommands(input: {
   track?: <T>(picking: Promise<T>) => Promise<T>;
 }) {
   const t = assistantMessages.resolve([input.locale]).t;
-  // Studio apps have no Cloud reader, so the catalog leaves their tag out; the Assistant adds it and reads them itself.
-  const ownTag: CloudSearchTag = {
-    appId: "assistant",
-    appName: t.assistant,
-    appIcon: "ti ti-sparkles",
-    tag: "studio-app",
-    title: input.copy.commandStudioApps,
-    description: "",
-    aliases: ["studio-apps", "studio"],
-  };
-  const tags = [...new Map([ownTag, ...input.tags].map((tag) => [`${tag.appId}:${tag.tag}`, tag])).values()];
   const limit = t.attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS });
   const menu = cloudInsertMenu({
     locale: input.locale,
-    tags,
+    tags: input.tags,
     section: "insert",
     reservedWords: assistantCommandScopes(input.copy, input.locale).flatMap((scope) => scope.words),
-    scopeWords: { "assistant:studio-app": ["app", "apps"] },
-    // Studio apps have no Cloud reader; the Assistant reads them as `assistant.artifact`, as it did before.
-    ownReaders: { "assistant:studio-app": "assistant.app" },
     reason: input.partCount() >= AI_TURN_ATTACHMENT_MAX_ITEMS ? limit : undefined,
     excludeRefs: input.excludeRefs,
     mention: assistantResourceMention,
@@ -336,10 +319,27 @@ export function createAssistantRecentResources(
       let pending = recentLoads.get(locale);
       if (!pending) {
         // The server reads under one Capability query budget; the same bound ends a request that never answers.
-        const started: Promise<readonly AiRecentResource[]> = load(AbortSignal.timeout(RECENT_LOAD_TIMEOUT_MS)).catch((error: unknown) => {
-          if (recentLoads.get(locale) === started) recentLoads.delete(locale);
-          throw error;
-        });
+        const signal = AbortSignal.timeout(RECENT_LOAD_TIMEOUT_MS);
+        const started: Promise<readonly AiRecentResource[]> = load(signal)
+          .then((items) =>
+            Promise.all(
+              items.map(async (item) => {
+                if (item.ref.type !== SKILL_TYPE || !needsAssistantSkillTranslation(item.title, locale)) return item;
+                // The recent endpoint bounds the page to eight refs. Resolve only its built-in Skill
+                // names once per page/locale, preserving app ownership even for same-named user Skills.
+                const skill = (await assistantApi.findSkillsByName(item.title, signal)).find((skill) => skill.shortId === item.ref.id);
+                if (!skill) return item;
+                const presentation = assistantSkillPresentation(skill, locale);
+                return presentation.description === skill.description
+                  ? item
+                  : { ...item, title: presentation.title, preview: presentation.description };
+              }),
+            ),
+          )
+          .catch((error: unknown) => {
+            if (recentLoads.get(locale) === started) recentLoads.delete(locale);
+            throw error;
+          });
         pending = started;
         recentLoads.set(locale, pending);
       }
@@ -430,9 +430,6 @@ const recentLimitReason = (partCount: number, locale: string) =>
     ? assistantMessages.resolve([locale]).t.attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS })
     : undefined;
 
-/** Tags whose references the Assistant reads itself under another type: Studio apps are sent as `assistant.artifact`. */
-const OWN_RECENT_TYPES: Readonly<Record<string, string>> = { "assistant:studio-app": "assistant.artifact" };
-
 /**
  * A tag scope such as "/notiz" lists recent references of its kind: those whose type is the tag's app and whose local
  * type id equals the tag (`notebooks:note` ↔ `notebooks.note`). Other references appear only in unscoped search.
@@ -440,91 +437,8 @@ const OWN_RECENT_TYPES: Readonly<Record<string, string>> = { "assistant:studio-a
 const recentInTagScope = (scope: string, ref: CloudResourceRef) => {
   if (!scope.startsWith("cloud-tag:")) return false;
   const tagKey = scope.slice("cloud-tag:".length);
-  return ref.type === (OWN_RECENT_TYPES[tagKey] ?? tagKey.replace(":", "."));
+  return ref.type === tagKey.replace(":", ".");
 };
-
-/** The menu lists at most three task states of 100 each, so one key per listable task fits. */
-export const MAX_PENDING_RUN_KEYS = 300;
-
-/** Keeps pending task starts across composer remounts and reloads in one tab. */
-export function createAssistantTaskRunKeys(storage?: Pick<Storage, "getItem" | "setItem">) {
-  const storageKey = "k2b.assistant.taskRunKeys";
-  const pendingRunKeys = new Map<string, { key: string; uncertain: boolean }>();
-  let loaded = false;
-  // Oldest first, and keys without an unknown outcome before the ones that guard against a duplicate start.
-  const trim = () => {
-    for (const uncertain of [false, true])
-      for (const [taskId, pending] of pendingRunKeys) {
-        if (pendingRunKeys.size <= MAX_PENDING_RUN_KEYS) return;
-        if (pending.uncertain === uncertain) pendingRunKeys.delete(taskId);
-      }
-  };
-  const load = () => {
-    if (loaded) return;
-    loaded = true;
-    try {
-      storage ??= globalThis.sessionStorage;
-      const entries: unknown = JSON.parse(storage?.getItem(storageKey) ?? "null");
-      if (!Array.isArray(entries)) return;
-      for (const candidate of entries) {
-        const entry: unknown = candidate;
-        if (
-          entry &&
-          typeof entry === "object" &&
-          "taskId" in entry &&
-          typeof entry.taskId === "string" &&
-          "key" in entry &&
-          typeof entry.key === "string" &&
-          /^[a-f0-9]{32}$/.test(entry.key) &&
-          "uncertain" in entry &&
-          typeof entry.uncertain === "boolean"
-        ) {
-          // A key restored after a reload may belong to a request whose answer never arrived.
-          pendingRunKeys.set(entry.taskId, { key: entry.key, uncertain: true });
-          trim();
-        }
-      }
-    } catch {
-      // Storage can be unavailable, or contain invalid JSON; memory still works.
-    }
-  };
-  const save = () => {
-    trim();
-    try {
-      storage?.setItem(storageKey, JSON.stringify([...pendingRunKeys].map(([taskId, pending]) => ({ taskId, ...pending }))));
-    } catch {
-      // Privacy settings and quota failures must not prevent a task start.
-    }
-  };
-  return {
-    runKey(taskId: string) {
-      load();
-      let pending = pendingRunKeys.get(taskId);
-      if (!pending) {
-        pending = { key: crypto.randomUUID().replaceAll("-", ""), uncertain: false };
-        pendingRunKeys.set(taskId, pending);
-        save();
-      }
-      return pending.key;
-    },
-    runUncertain(taskId: string) {
-      load();
-      const pending = pendingRunKeys.get(taskId);
-      if (pending && !pending.uncertain) {
-        pending.uncertain = true;
-        save();
-      }
-    },
-    isUncertain(taskId: string) {
-      load();
-      return pendingRunKeys.get(taskId)?.uncertain === true;
-    },
-    settleRun(taskId: string, { force = false }: { force?: boolean } = {}) {
-      load();
-      if ((force || !pendingRunKeys.get(taskId)?.uncertain) && pendingRunKeys.delete(taskId)) save();
-    },
-  };
-}
 
 /** Owns discovery per opening for one composer. */
 export function createAssistantCommandSession() {
@@ -533,7 +447,7 @@ export function createAssistantCommandSession() {
         session: number;
         abort: AbortController;
         skills: Promise<AiSkillSummary[] | null>;
-        data: Promise<{ skills: AiSkillSummary[] | null; scheduledTaskSkills: AiSkillSummary[] | null; tasks: AiChatTaskView[] | null }>;
+        data: Promise<{ skills: AiSkillSummary[] | null }>;
       }
     | undefined;
   return {
@@ -548,20 +462,7 @@ export function createAssistantCommandSession() {
       const abort = new AbortController();
       // A failed load is `null`: each section offers its own retry row.
       const skills = assistantApi.listSkills(abort.signal).catch(() => null);
-      const scheduledTaskSkills = assistantApi.findSkillsByName("scheduled-tasks", abort.signal).catch(() => null);
-      const tasks = Promise.all(
-        (["active", "paused", "needs_attention"] as const).map((state) =>
-          assistantApi.listChatTasks({ state, limit: 100, signal: abort.signal }),
-        ),
-      ).then(
-        (pages) => pages.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-        () => null,
-      );
-      const data = Promise.all([skills, scheduledTaskSkills, tasks]).then(([skills, scheduledTaskSkills, tasks]) => ({
-        skills,
-        scheduledTaskSkills,
-        tasks,
-      }));
+      const data = skills.then((skills) => ({ skills }));
       latest = { session, abort, skills, data };
       return data;
     },
@@ -571,25 +472,11 @@ export function createAssistantCommandSession() {
   };
 }
 
-const taskKeywords = [
-  "routine",
-  "routinen",
-  "regelmäßig",
-  "zeitplan",
-  "erinnern",
-  "erinnerung",
-  "schedule",
-  "reminder",
-  "geplant",
-  "scheduled",
-];
-
 /** Only explicit selection inserts a reference or performs an action. */
 export async function assistantComposerCommands(input: {
   query: string;
   session: number;
   sessionLoader: ReturnType<typeof createAssistantCommandSession>;
-  runKeys: ReturnType<typeof createAssistantTaskRunKeys>;
   models: readonly ChatModelOption[];
   selectedModelId?: string | null;
   chooseModel: (id: string) => void;
@@ -659,7 +546,7 @@ export async function assistantComposerCommands(input: {
   const recentSkills = new Set(recent.filter((item) => item.ref.type === SKILL_TYPE).map((item) => item.ref.id));
   const recentLimit = { partCount: input.partCount ?? (() => 0), locale: input.locale };
   const [sessionData, searchedSkills, chatFiles, project] = await Promise.all([
-    wants("task") ? input.sessionLoader.load(input.session) : null,
+    wants("skill") ? input.sessionLoader.load(input.session) : null,
     wants("skill") && !overview && !fullSkillScope ? assistantApi.listSkills(input.signal, query.slice(0, 200)) : [],
     (category === "file" || (!category && query.length > 0)) && input.conversationId
       ? assistantApi.listChatFiles(input.conversationId, input.signal)
@@ -700,10 +587,20 @@ export async function assistantComposerCommands(input: {
       icon: "ti ti-alert-circle",
       searchAgain: true,
     });
-  for (const skill of overview ? overviewSkills(allSkills ?? [], shownRecentSkills) : fullSkillScope ? (allSkills ?? []) : searchedSkills) {
+  // Source search keeps its relevance and typo matching. The opening's authorized catalog adds
+  // matches in translated menu copy, without changing what the model searches or loads.
+  const localizedMatches = (allSkills ?? []).filter((skill) => {
+    const presentation = assistantSkillPresentation(skill, input.locale);
+    const text = `${presentation.title} ${presentation.description}`.toLowerCase();
+    const terms = query.match(/[\p{L}\p{N}]+/gu) ?? [];
+    return terms.length > 0 && terms.every((term) => text.includes(term));
+  });
+  const matchingSkills = [...new Map([...searchedSkills, ...localizedMatches].map((skill) => [skill.id, skill])).values()];
+  for (const skill of overview ? overviewSkills(allSkills ?? [], shownRecentSkills) : fullSkillScope ? (allSkills ?? []) : matchingSkills) {
     if (!skill.enabled) continue;
+    const presentation = assistantSkillPresentation(skill, input.locale);
     const row = {
-      ...reference("skills", skill.name, `Skill · ${skill.description}`, {
+      ...reference("skills", presentation.title, `Skill · ${presentation.description}`, {
         kind: "resource",
         id: `skill:${skill.id}`,
         name: skill.name,
@@ -711,6 +608,7 @@ export async function assistantComposerCommands(input: {
         icon: "ti ti-sparkles",
       }),
       id: skillRowId(skill.shortId),
+      keywords: [skill.name],
     };
     results.push(!overview && recentSkills.has(skill.shortId) ? { ...row, recent: true } : row);
   }
@@ -768,108 +666,5 @@ export async function assistantComposerCommands(input: {
       });
     }
 
-  const taskRows: ChatCommand[] = [];
-  if (sessionData && wants("task")) {
-    // Task discovery and its Skill lookup fail independently of the overview’s full Skill list.
-    if (sessionData.tasks === null || sessionData.scheduledTaskSkills === null) {
-      taskRows.push({
-        id: "tasks-retry",
-        name: "tasks-retry",
-        section: "tasks",
-        label: copy.commandTasksFailed,
-        description: copy.commandTryAgain,
-        icon: "ti ti-alert-circle",
-        searchAgain: true,
-      });
-    } else {
-      // Skill names are unique, so the app-provided result of the exact-name lookup is the scheduled-tasks Skill.
-      const skill = sessionData.scheduledTaskSkills.find((skill) => skill.source !== null);
-      taskRows.push({
-        ...(skill?.enabled
-          ? reference("tasks", skill.name, "", {
-              kind: "resource",
-              id: `skill:${skill.id}`,
-              name: skill.name,
-              ref: { type: "core.ai.skill", id: skill.shortId },
-              icon: "ti ti-sparkles",
-            })
-          : {}),
-        id: "task-new",
-        name: "task-new",
-        section: "tasks",
-        label: copy.commandNewTaskLabel,
-        description: copy.commandNewTaskHint,
-        icon: "ti ti-calendar-plus",
-        keywords: [...taskKeywords, "neu", "new"],
-        reason: !skill ? copy.commandNewTaskSkillUnavailable : !skill.enabled ? copy.commandNewTaskSkillDisabled : undefined,
-      });
-      for (const task of overview ? sessionData.tasks.slice(0, 5) : sessionData.tasks) {
-        const title = assistantTaskTitle(task);
-        taskRows.push({
-          id: `task:${task.id}`,
-          name: title,
-          section: "tasks",
-          label: title,
-          description: copy.commandTaskRunHint({ schedule: formatAssistantTaskScheduleInline(task, input.locale) }),
-          icon: "ti ti-repeat",
-          keywords: taskKeywords,
-          busyLabel: copy.commandTaskStarting({ title }),
-          reason:
-            task.state === "paused"
-              ? copy.commandTaskPaused
-              : task.state === "needs_attention"
-                ? copy.commandTaskNeedsAttention
-                : undefined,
-          action:
-            task.state === "active"
-              ? async () => {
-                  try {
-                    const state = await assistantApi.runChatTask(task.id, { idempotencyKey: input.runKeys.runKey(task.id) });
-                    input.runKeys.settleRun(task.id, { force: true });
-                    return {
-                      done:
-                        state === "completed"
-                          ? copy.commandTaskAlreadyRan({ title })
-                          : state === "failed"
-                            ? copy.commandTaskAlreadyFailed({ title })
-                            : state === "stopped"
-                              ? copy.commandTaskAlreadyStopped({ title })
-                              : copy.commandTaskRunning({ title }),
-                    };
-                  } catch (error) {
-                    const status = error instanceof AssistantTaskRunError ? error.status : undefined;
-                    // A lost answer (network, 5xx) may hide an accepted start: keep its key and mark it uncertain.
-                    // 408 and 429 were not processed but cannot disprove an earlier start, so they keep the key as is.
-                    // Other 4xx settle a key that never had an unknown outcome; 404 always settles.
-                    if (status === undefined || status >= 500) input.runKeys.runUncertain(task.id);
-                    else if (status !== 408 && status !== 429) input.runKeys.settleRun(task.id, { force: status === 404 });
-                    const reason =
-                      status === undefined
-                        ? copy.commandTaskOffline
-                        : status >= 500
-                          ? copy.commandTaskNoAnswer
-                          : status === 409
-                            ? copy.commandTaskAlreadyRunning
-                            : status === 404
-                              ? copy.commandTaskGone
-                              : status === 429
-                                ? copy.commandTaskTooMany
-                                : copy.commandTaskNotAccepted;
-                    // While an earlier or this attempt may have started the task, never claim it did not start.
-                    const message = input.runKeys.isUncertain(task.id)
-                      ? copy.commandTaskRunUnconfirmed({ title, reason })
-                      : copy.commandTaskRunFailed({ title, reason });
-                    throw new Error(message + " " + copy.draftUnchanged);
-                  }
-                }
-              : undefined,
-        });
-      }
-    }
-  }
-  // Tasks have their own overview bound and never lose rows to the reference limit.
-  return [
-    ...(fullSkillScope ? results : results.slice(0, 30)),
-    ...taskRows.filter((row) => row.searchAgain || matchesChatCommand(row, query)),
-  ];
+  return fullSkillScope ? results : results.slice(0, 30);
 }

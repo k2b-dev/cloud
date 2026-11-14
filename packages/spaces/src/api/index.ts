@@ -14,9 +14,10 @@ import {
   rateLimit,
   requiresAuth,
   respond,
+  userFromActor,
   v,
 } from "@k2b/cloud/server";
-import { coreSettings, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { coreSettings, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
@@ -122,7 +123,9 @@ import {
   SPACE_RESOURCE_TYPE,
   SPACES_APP_ID,
 } from "../service/access";
-import { InvalidActivityCursorError } from "../service/activity";
+import { InvalidActivityCursorError, type SpaceActivityIdentity } from "../service/activity";
+import { presentActivityOrigins } from "../service/activity-origins";
+import { spaceActivityRow } from "../service/activity-timeline";
 import { resolveByteRange } from "../service/byte-range";
 import { loadCalendarEvents, loadCalendarSources } from "../service/calendar-view";
 import type { BoardOrderEntry } from "../service/columns";
@@ -249,6 +252,16 @@ const SpaceActivitySchema = z.object({
   lastOccurredAt: z.string(),
 });
 
+/** A worded history row. `origin` names the durable work behind the change, with links only for those who may follow them. */
+const SpaceActivityRowSchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  icon: z.string(),
+  sentence: z.string(),
+  count: z.number().int(),
+  origin: z.object({ name: z.string(), href: z.string().nullable(), runHref: z.string().nullable() }).optional(),
+});
+
 const localizeApiResponse = async (c: Context, next: () => Promise<void>) => {
   await next();
   if (c.res.status < 400) return;
@@ -327,7 +340,7 @@ const getCommentAuthor = (c: Context<AuthContext>): Result<CommentAuthor> => {
   const user = getUserBackedActor(c);
   if (user) return ok({ kind: "user", id: user.id });
   const actor = c.get("actor");
-  if (actor.kind === "service_account" && isStandaloneServiceAccountKind(actor.serviceAccount.kind)) {
+  if (actor.kind === "service_account" && serviceAccountUsesOwnGrants(actor.serviceAccount.kind)) {
     return ok({ kind: "service_account", id: actor.serviceAccount.id });
   }
   return fail(err.forbidden("This endpoint requires a user-backed actor"));
@@ -396,7 +409,7 @@ const getScopedSpaceAccess = (c: Context<AuthContext>): Result<ScopedSpaceAccess
   }
 
   // A standalone or agent account acts under its own grants, capped by its credential scopes.
-  if (subject.serviceAccount && isStandaloneServiceAccountKind(subject.serviceAccount.kind)) {
+  if (subject.serviceAccount && serviceAccountUsesOwnGrants(subject.serviceAccount.kind)) {
     if (
       subject.subject.type !== "service_account" ||
       subject.subject.serviceAccountId !== subject.serviceAccount.id ||
@@ -919,6 +932,7 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         loadSpaceSettingsContext({
+          locale: getLocale(c),
           user: userResult.data,
           spaceId,
           settings: parseSpaceSettings(c.req.header("Cookie"), spaceShortId),
@@ -2897,7 +2911,10 @@ const app = new Hono<AuthContext>()
       summary: "Read task activity",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(z.object({ data: z.array(SpaceActivitySchema), nextCursor: z.string().nullable() }), "Activity page"),
+        200: jsonResponse(
+          z.object({ data: z.array(SpaceActivitySchema.extend({ row: SpaceActivityRowSchema })), nextCursor: z.string().nullable() }),
+          "Activity page",
+        ),
       },
     }),
     v("query", OverviewActivityQuerySchema),
@@ -2913,6 +2930,25 @@ const app = new Hono<AuthContext>()
           itemId: item.data.id,
           ...c.req.valid("query"),
         });
+        const locale = getLocale(c);
+        const authority = auth.getAuthority(c);
+        const origins = await presentActivityOrigins(
+          page.items,
+          authority,
+          {
+            cookie: c.req.header("Cookie"),
+            authorization: c.req.header("Authorization"),
+            requestId: c.req.header("X-Request-Id"),
+            traceparent: c.req.header("traceparent"),
+            tracestate: c.req.header("tracestate"),
+            signal: c.req.raw.signal,
+          },
+          locale,
+        );
+        const subject = c.get("accessSubject");
+        const viewer: SpaceActivityIdentity =
+          subject.type === "user" ? { kind: "user", id: subject.userId } : { kind: "service_account", id: subject.serviceAccountId };
+        const assigneeId = subject.type === "user" ? subject.userId : subject.serviceAccountId;
         return respond(
           c,
           ok({
@@ -2920,6 +2956,13 @@ const app = new Hono<AuthContext>()
               ...event,
               space: { id: event.space.shortId, name: event.space.name, color: event.space.color },
               item: event.item ? { id: event.item.shortId, title: event.item.title } : null,
+              row: spaceActivityRow(event, {
+                viewer,
+                assigneeId,
+                locale,
+                timeZone: getTimeZone(c),
+                origin: origins.get(event.id),
+              }),
             })),
             nextCursor: page.nextCursor,
           }),
@@ -3100,7 +3143,12 @@ const app = new Hono<AuthContext>()
       const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
       if (error) return error;
 
-      const entries = await spacesService.access.list({ spaceId: spaceId! });
+      const entries = await spacesService.access.list({
+        spaceId: spaceId!,
+        canManageTarget: true,
+        cloudAdmin: userFromActor(c.get("actor"))?.roles.includes("admin"),
+        locale: getLocale(c),
+      });
       return respond(c, ok(entries.items));
     },
   )
@@ -3291,7 +3339,7 @@ const adminApp = new Hono<AuthContext>()
     async (c) => {
       const { internalId: spaceId, error } = await requireExistingSpace(c, c.req.param("id") ?? "");
       if (error) return error;
-      const entries = await spacesService.access.list({ spaceId: spaceId! });
+      const entries = await spacesService.access.list({ spaceId: spaceId!, cloudAdmin: true, locale: getLocale(c) });
       return respond(c, ok(entries.items));
     },
   )

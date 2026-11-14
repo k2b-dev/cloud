@@ -69,7 +69,7 @@ suite("AI chat results integration", () => {
     await migrateCloudAi();
   });
 
-  test("present, code_open, and code_present become results that point at the message that delivered them", async () => {
+  test("present results point at the delivering message while retired Studio calls stay readable", async () => {
     const chat = await fixture();
     try {
       await aiFileStore.write({
@@ -100,7 +100,7 @@ suite("AI chat results integration", () => {
         await indexConversationToolSource({ conversationId: chat.conversation.id, turnId: turn.turnId, isError: false, ...call });
 
       const page = await aiConversations.listConversationSources({ conversationId: chat.conversation.id, kinds: ["result"] });
-      expect(page.total).toBe(3);
+      expect(page.total).toBe(1);
       const byKey = new Map(page.sources.map((source) => [source.key, source]));
       expect(byKey.get("/report.pdf")).toMatchObject({
         kind: "result",
@@ -111,11 +111,16 @@ suite("AI chat results integration", () => {
         sourceCallId: "present-1",
         sourceMessageSeq: first.delivering,
       });
-      expect(byKey.get("assistant.artifact:App001")).toMatchObject({
-        ref: { type: "assistant.artifact", id: "App001" },
-        sourceMessageSeq: second.delivering,
-      });
-      expect(byKey.get("code_present:chart-1")).toMatchObject({ title: "Revenue chart", sourceMessageSeq: second.delivering });
+      // Retired Studio deliveries remain transcript evidence, without reviving their result links.
+      const history = await aiConversations.listMessages({ conversationId: chat.conversation.id });
+      for (const call of [opened, chart])
+        expect(history.map((entry) => entry.message)).toContainEqual({
+          role: "tool_result",
+          callId: call.callId,
+          name: call.name,
+          result: call.result,
+          isError: false,
+        });
 
       // A new delivery describes the file anew: without a description, the old one goes.
       await indexConversationToolSource({
@@ -153,7 +158,7 @@ suite("AI chat results integration", () => {
         args: { id: "App003" },
         result: { error: "Browser workspace disconnected" },
       });
-      expect((await aiConversations.listConversationSources({ conversationId: chat.conversation.id, kinds: ["result"] })).total).toBe(3);
+      expect((await aiConversations.listConversationSources({ conversationId: chat.conversation.id, kinds: ["result"] })).total).toBe(1);
     } finally {
       await chat.cleanup();
     }

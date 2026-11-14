@@ -4,6 +4,7 @@
  * This is the only module in the CLI that reads `process.env`. Every key is
  * optional; explicit flags always win over the environment.
  *
+ *   CI                    Read only: CI environment; interactive authority changes are refused.
  *   CLD_CONFIG            Path of the profile config file. Default:
  *                         `$XDG_CONFIG_HOME/cloud/cld/config.json`, falling back
  *                         to `~/.config/cloud/cld/config.json`.
@@ -41,6 +42,11 @@ export const userConfigDirectory = (): string => read("XDG_CONFIG_HOME") ?? join
 export const configPath = (): string => read("CLD_CONFIG") ?? join(userConfigDirectory(), "cloud", "cld", "config.json");
 
 export const envServer = (): string | undefined => read("CLD_SERVER");
+export const envIsCi = (): boolean => {
+  const value = read("CI");
+  return value !== undefined && value !== "false" && value !== "0";
+};
+
 export const envToken = (): string | undefined => read("CLD_TOKEN");
 export const envLocale = (): string | undefined => read("CLD_LOCALE");
 

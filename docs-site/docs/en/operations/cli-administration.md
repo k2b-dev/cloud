@@ -57,8 +57,8 @@ Core settings include AI execution limits and network allowlists. For app
 settings, select the owner with `--app`. Gateway Ops, Notebooks, Grids and
 Chat use their owning setting APIs. Environment-backed app settings use the
 authenticated owner process. Settings that require a custom write path use
-the owner’s named command; for example, Assistant’s rsql allowlist uses
-`assistant studio-admin configure` with connection preflight. NATS server changes still discard saved broker
+the owner’s named command and its connection preflight. The former Assistant
+Studio settings and administration commands have been retired. NATS server changes still discard saved broker
 access; configure the matching access again afterward.
 
 Use `admin settings apply --from <file|-> --yes` for a validated Core bulk
@@ -82,13 +82,11 @@ side effects as the UI run:
 | Weather | `admin weather config set\|reset` |
 | Files | `filesv2 admin configuration get\|set\|reset` |
 | Files machine storage and grants | `admin files machines list\|create`, `machines grants list\|grant\|revoke` |
-| Studio machine access and secret metadata | `admin studio machines access list\|set`, `machines secrets list\|set\|delete` |
 | Contacts administration and recovery | `admin contacts list`, `contacts access list\|grant\|set\|revoke` |
 | Spaces administration and recovery | `admin spaces list`, `spaces access list\|grant\|set\|revoke`, `spaces delete` |
 | Chat health | `admin chat status` |
 | Proxy Auth | `admin proxy-auth` |
 | Pulse policy, limits and targets | `pulse admin` |
-| Assistant Studio database/storage | `assistant studio-admin` |
 
 The new named JSON setters use `--from <file|-> --yes`; Assistant uses
 `--input-file` or `--stdin` with `--yes`. Read `--help` for arguments and
@@ -102,8 +100,7 @@ without recording submitted secret values.
 Explicit `admin` scope is still required for app access repair, Sync recovery
 and unredacted dead-letter content,
 app-event mutations, Pulse store credentials/check/setup SQL, Pulse base
-recovery and orphan deletion, Studio machine server/secret operations, and
-Files machine provisioning/grants. These can change authority, recover or
+recovery and orphan deletion, Files machine provisioning/grants. These can change authority, recover or
 delete work, contact privileged backends, or expose sensitive setup material.
 
 For an authorized action, create a short-lived profile using browser or device
@@ -131,8 +128,7 @@ Custom OAuth clients keep their own approved scope ceiling.
 
 Update scripts to pass `--yes` for domain add/set/check, Files configuration
 set, Pulse store set/check/setup-sql, policy set, base limits and target changes,
-and Assistant Studio configure/storage-configure/grant/change-grant. AI provider
-add/update and Studio configure now reject inline `--input`; use a file or stdin.
+and AI provider add/update. Use a file or stdin for provider secrets.
 Secret inputs must never be copied into arguments.
 
 Application authors must expose every administrator setting through a CLI

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { aiAppSkills } from "../ai/app-skill-store";
 import { AiSkillInputError, AiSkillLastAdminError, AiSkillRevisionConflictError, aiSkills } from "../ai/skills";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
-import { type AuthContext, auth, err, fail, ok, respond, v } from "../server";
+import { type AuthContext, auth, err, fail, getLocale, ok, respond, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
 
 const ListSkillsSchema = z
@@ -102,12 +102,12 @@ export const createAdminAiSkillsRoutes = (authenticate: MiddlewareHandler<AuthCo
     })
     .get("/:skillId/access", async (c) => {
       const skill = await aiSkills.admin.getByShortId(c.req.param("skillId")!);
-      return skill ? respond(c, ok({ access: await aiSkills.admin.listAccess(skill.id) })) : notFound(c, "Skill");
+      return skill ? respond(c, ok({ access: await aiSkills.admin.listAccess(skill.id, getLocale(c)) })) : notFound(c, "Skill");
     })
     .post("/:skillId/access", v("json", SkillAccessSchema), async (c) => {
       const skill = await aiSkills.admin.getByShortId(c.req.param("skillId")!);
       if (!skill) return notFound(c, "Skill");
-      const access = await aiSkills.admin.grantAccess(skill.id, c.req.valid("json"));
+      const access = await aiSkills.admin.grantAccess(skill.id, c.req.valid("json"), getLocale(c));
       return access ? respond(c, ok({ access }), 201) : notFound(c, "Skill");
     })
     .patch("/:skillId/access/:accessId", v("json", SkillAccessUpdateSchema), async (c) => {

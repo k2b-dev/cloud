@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { mutationFailureState } from "./command-runtime";
 import { containsDeletedFlag, keepError, keepErrors } from "./conversation-keep-rules";
 import { localizeMailError } from "./error-messages";
-import { mailWorkflowActionFailure } from "./workflow-action-errors";
 
 describe("conversation keep protections", () => {
   test("detects deletion in public and IMAP spelling, case insensitively", () => {
@@ -30,7 +29,6 @@ describe("conversation keep protections", () => {
       const error = keepError(code);
       expect(localizeMailError(error, "en")).toEqual(error);
       expect(localizeMailError(error, "de-CH")).toEqual({ ...error, message: german[code] });
-      expect(mailWorkflowActionFailure(error)).toEqual({ state: "failed", code, message: error.message, retryable: false });
       expect(mutationFailureState(Object.assign(new Error(error.message), error), false)).toBe("failed");
     }
   });

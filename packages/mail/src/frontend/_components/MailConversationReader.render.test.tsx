@@ -153,8 +153,6 @@ const renderReader = (
       onManageTags: () => undefined,
       onMergeConversation: () => undefined,
       onReassignMessage: () => undefined,
-      automationTrace: [],
-      onUndoAutomation: () => undefined,
       onAssignConversation: () => undefined,
       onAssignConversationToMe: () => undefined,
       assignment: options.assignment ?? null,

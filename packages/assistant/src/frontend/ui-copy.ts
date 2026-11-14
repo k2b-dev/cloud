@@ -2,6 +2,7 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
+  Unavailable: "Nicht verfügbar",
   Finished: "Beendet",
   "Routine instructions": "Auftrag",
   "Run queued. The result will appear here and in the chat when it is ready.":
@@ -10,7 +11,7 @@ const germanText: Record<string, string> = {
   "More actions": "Weitere Aktionen",
   Routine: "Routine",
   "Routine deleted": "Routine gelöscht",
-  "Ask in the chat for a reminder or a routine.": "Bitte den Assistenten im Chat um eine Erinnerung oder eine Routine.",
+  "Ask in the chat for a reminder or a routine.": "Bitte Gustav im Chat um eine Erinnerung oder eine Routine.",
   "Set up new routines and make changes in the chat.": "Neue Routinen und Änderungen planst du im Chat.",
   "Routine unavailable": "Routine nicht verfügbar",
   "Review the result before retrying. The routine may have completed some steps.":
@@ -34,8 +35,8 @@ const germanText: Record<string, string> = {
   "Open run": "Lauf öffnen",
   "No background activity yet": "Noch keine Hintergrundaktivitäten",
   "Background activity": "Hintergrundaktivitäten",
-  "What the Assistant wants to do for you. Nothing of it happens until you approve it here or in its chat.":
-    "Was der Assistent für dich tun möchte. Nichts davon passiert, bevor du hier oder im Chat zustimmst.",
+  "What Gustav wants to do for you. Nothing of it happens until you approve it here or in its chat.":
+    "Was Gustav für dich tun möchte. Nichts davon passiert, bevor du hier oder im Chat zustimmst.",
   "Background run": "Hintergrundlauf",
   "Manage routine": "Routine verwalten",
   "Run history": "Laufverlauf",
@@ -73,13 +74,7 @@ const germanText: Record<string, string> = {
   "Access for project members": "Zugriff für Projektmitglieder",
   "Members can use linked, published apps and their shared app data. Editing permissions stay unchanged.":
     "Mitglieder können verknüpfte, veröffentlichte Apps und ihre geteilten App-Daten nutzen. Bearbeitungsrechte bleiben unverändert.",
-  "Show more Studio Apps": "Weitere Studio Apps anzeigen",
-  "Search Studio Apps…": "Studio Apps suchen…",
-  "Loading Studio Apps…": "Studio Apps werden geladen…",
-  "Could not load Studio Apps.": "Studio Apps konnten nicht geladen werden.",
   Back: "Zurück",
-  "Studio Apps": "Studio Apps",
-  "Link a Studio App": "Studio App verknüpfen",
   "Could not update Project apps.": "Projekt-Apps konnten nicht aktualisiert werden.",
   "No matching apps that you manage.": "Keine passenden Apps mit Verwaltungsrechten gefunden.",
   "No linked apps yet.": "Noch keine Apps verknüpft.",
@@ -110,9 +105,9 @@ const germanText: Record<string, string> = {
   "No apps or files yet.": "Noch keine Apps oder Dateien.",
   Ready: "Bereit",
   "Voice inputs": "Spracheingaben",
-  "Assistant routine": "Assistant-Routine",
+  "Gustav routine": "Gustav-Routine",
   "AI conversation": "KI-Chat",
-  "Assistant app": "Assistenten-App",
+  "Gustav app": "Gustav-App",
   "A reference with this name already exists.": "Eine Referenz mit diesem Namen ist bereits vorhanden.",
   "Add a durable fact about you or a preference for future answers. New entries start pinned.":
     "Füge eine dauerhafte Tatsache über dich oder eine Präferenz für künftige Antworten hinzu. Neue Einträge sind zunächst angeheftet.",
@@ -120,30 +115,30 @@ const germanText: Record<string, string> = {
   "Actions listed here can run without asking again. Revoking a decision applies immediately.":
     "Diese Aktionen können ohne erneute Freigabe ausgeführt werden. Ein Widerruf gilt sofort.",
   Add: "Hinzufügen",
-  "Add a fact or preference Assistant can use in future conversations.":
-    "Füge eine Tatsache oder Präferenz hinzu, die der Assistent in künftigen Chats verwenden kann.",
+  "Add a fact or preference Gustav can use in future conversations.":
+    "Füge eine Tatsache oder Präferenz hinzu, die Gustav in künftigen Chats verwenden kann.",
   "Add personalization": "Personalisierung hinzufügen",
   "Add skill": "Skill hinzufügen",
   "Add supporting context.": "Ergänzende Informationen hinzufügen.",
-  "Add supporting information Assistant can read when this Skill needs it.":
-    "Füge Informationen hinzu, die der Assistent bei Bedarf für diesen Skill lesen kann.",
-  "Add the supporting information Assistant may need for this workflow.":
-    "Ergänze Informationen, die der Assistent für diesen Ablauf benötigen kann.",
+  "Add supporting information Gustav can read when this Skill needs it.":
+    "Füge Informationen hinzu, die Gustav bei Bedarf für diesen Skill lesen kann.",
+  "Add the supporting information Gustav may need for this workflow.":
+    "Ergänze Informationen, die Gustav für diesen Ablauf benötigen kann.",
   Added: "Hinzugefügt",
   "All chats": "Alle Chats",
   Approvals: "Freigaben",
-  "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.":
-    "Der Assistent sieht Name und Beschreibung, bevor er einen Skill lädt. Beschreibe die Aufgabe und wann der Skill verwendet werden soll.",
-  "Assistant settings": "Assistenten-Einstellungen",
+  "Gustav sees the name and description before deciding to load a Skill. Say what to do and when to use it.":
+    "Gustav sieht Name und Beschreibung, bevor er einen Skill lädt. Beschreibe die Aufgabe und wann der Skill verwendet werden soll.",
+  "Gustav settings": "Gustav-Einstellungen",
   "Available skills": "Verfügbare Skills",
   Changes: "Änderungen",
   "Chat context": "Chatkontext",
   "Chat history pages": "Seiten des Chatverlaufs",
   "Choose a future date and time.": "Wähle ein Datum und eine Uhrzeit in der Zukunft.",
-  "Choose how Assistant uses and learns durable context about you.":
-    "Lege fest, wie der Assistent dauerhafte Informationen über dich verwendet und lernt.",
+  "Choose how Gustav uses and learns durable context about you.":
+    "Lege fest, wie Gustav dauerhafte Informationen über dich verwendet und lernt.",
   Close: "Schließen",
-  "Close Assistant settings": "Assistenten-Einstellungen schließen",
+  "Close Gustav settings": "Gustav-Einstellungen schließen",
   "Close Project settings": "Projekt-Einstellungen schließen",
   "Close learning run details": "Details des Lernlaufs schließen",
   "Close personalization learning activity": "Lernaktivität der Personalisierung schließen",
@@ -164,29 +159,28 @@ const germanText: Record<string, string> = {
   "Create weekly status reports from recent work. Use when asked for progress updates.":
     "Erstelle wöchentliche Statusberichte aus der letzten Arbeit. Verwende diesen Skill bei Fragen nach dem Fortschritt.",
   "Create skill": "Skill erstellen",
-  "Create, import, and share reusable Assistant workflows.":
-    "Wiederverwendbare Abläufe für den Assistenten erstellen, importieren und teilen.",
-  "Define the expected outcome, important constraints, and workflow. Include only guidance that changes how Assistant should work.":
-    "Beschreibe das erwartete Ergebnis, wichtige Einschränkungen und den Ablauf. Nimm nur Hinweise auf, die die Arbeitsweise des Assistenten verändern.",
+  "Create, import, and share reusable Gustav workflows.": "Wiederverwendbare Abläufe für Gustav erstellen, importieren und teilen.",
+  "Define the expected outcome, important constraints, and workflow. Include only guidance that changes how Gustav should work.":
+    "Beschreibe das erwartete Ergebnis, wichtige Einschränkungen und den Ablauf. Nimm nur Hinweise auf, die die Arbeitsweise von Gustav verändern.",
   "Description controls when this Skill loads": "Die Beschreibung bestimmt, wann dieser Skill geladen wird",
   Details: "Details",
   Disabled: "Deaktiviert",
   Done: "Fertig",
   "Download SKILL.md": "SKILL.md herunterladen",
-  "Each Skill combines reusable instructions with optional extra information. Shared Skills start enabled for you; turn off any you don't want Assistant to use.":
-    "Jeder Skill verbindet wiederverwendbare Anweisungen mit optionalen Zusatzinformationen. Geteilte Skills sind zunächst aktiviert; deaktiviere Skills, die der Assistent nicht verwenden soll.",
+  "Each Skill combines reusable instructions with optional extra information. Shared Skills start enabled for you; turn off any you don't want Gustav to use.":
+    "Jeder Skill verbindet wiederverwendbare Anweisungen mit optionalen Zusatzinformationen. Geteilte Skills sind zunächst aktiviert; deaktiviere Skills, die Gustav nicht verwenden soll.",
   "Edit personalization": "Personalisierung bearbeiten",
   "Edit skill": "Skill bearbeiten",
   "Edit this personalization entry.": "Diesen Personalisierungseintrag bearbeiten.",
   "Effective instructions": "Wirksame Anweisungen",
   "Enter a five-field cron expression.": "Gib einen Cron-Ausdruck mit fünf Feldern ein.",
-  "Enter what Assistant should do.": "Beschreibe, was der Assistent erledigen soll.",
+  "Enter what Gustav should do.": "Beschreibe, was Gustav erledigen soll.",
   "Evidence chat": "Quellchat",
   "Explain the workflow, constraints, and expected output.": "Beschreibe Ablauf, Einschränkungen und erwartetes Ergebnis.",
   "Export ZIP": "ZIP exportieren",
   "Extra info": "Zusatzinformationen",
-  "Facts, preferences, and workflow defaults Assistant may carry into future conversations.":
-    "Tatsachen, Präferenzen und Abläufe, die der Assistent in künftigen Chats berücksichtigen kann.",
+  "Facts, preferences, and workflow defaults Gustav may carry into future conversations.":
+    "Tatsachen, Präferenzen und Abläufe, die Gustav in künftigen Chats berücksichtigen kann.",
   "Failed to add personalization": "Personalisierung konnte nicht hinzugefügt werden",
   "Failed to create Project": "Projekt konnte nicht erstellt werden",
   "Failed to delete personalization": "Personalisierung konnte nicht gelöscht werden",
@@ -206,7 +200,7 @@ const germanText: Record<string, string> = {
   "File is no longer available.": "Die Datei ist nicht mehr verfügbar.",
   General: "Allgemein",
   "Go to source": "Quelle öffnen",
-  "How should Assistant work in this Project?": "Wie soll der Assistent in diesem Projekt arbeiten?",
+  "How should Gustav work in this Project?": "Wie soll Gustav in diesem Projekt arbeiten?",
   "Import skill": "Skill importieren",
   "Inspect the complete instructions and context applied to new chats.": "Vollständige Anweisungen und Kontext für neue Chats prüfen.",
   Instructions: "Anweisungen",
@@ -223,10 +217,9 @@ const germanText: Record<string, string> = {
   "Loading skills": "Skills werden geladen",
   "Loading system prompt": "System-Prompt wird geladen",
   "Manage access": "Zugriff verwalten",
-  "Manage actions Assistant may run without asking each time.":
-    "Aktionen verwalten, die der Assistent ohne erneute Nachfrage ausführen darf.",
-  "Manage supporting information Assistant can read when this Skill needs it.":
-    "Informationen verwalten, die der Assistent bei Bedarf für diesen Skill lesen kann.",
+  "Manage actions Gustav may run without asking each time.": "Aktionen verwalten, die Gustav ohne erneute Nachfrage ausführen darf.",
+  "Manage supporting information Gustav can read when this Skill needs it.":
+    "Informationen verwalten, die Gustav bei Bedarf für diesen Skill lesen kann.",
   "Memories changed by this learning run": "Durch diesen Lernlauf geänderte Personalisierung",
   Merged: "Zusammengeführt",
   "Name is required.": "Ein Name ist erforderlich.",
@@ -241,8 +234,8 @@ const germanText: Record<string, string> = {
   "No chats yet.": "Noch keine Chats.",
   "No extra info yet": "Noch keine Zusatzinformationen",
   "No failed chats.": "Keine fehlgeschlagenen Chats.",
-  "No learning runs yet. Activity appears after Assistant checks a completed private-chat turn.":
-    "Noch keine Lernläufe. Aktivität erscheint, nachdem der Assistent eine abgeschlossene Anfrage in einem privaten Chat geprüft hat.",
+  "No learning runs yet. Activity appears after Gustav checks a completed private-chat turn.":
+    "Noch keine Lernläufe. Aktivität erscheint, nachdem Gustav eine abgeschlossene Anfrage in einem privaten Chat geprüft hat.",
   "No matching knowledge.": "Kein passendes Wissen gefunden.",
   "No matching personalization. Try a different search.": "Keine passende Personalisierung gefunden. Ändere den Suchbegriff.",
   "No new responses.": "Keine neuen Antworten.",
@@ -272,15 +265,15 @@ const germanText: Record<string, string> = {
   "Project file is no longer available.": "Die Projektdatei ist nicht mehr verfügbar.",
   "Project saved": "Projekt gespeichert",
   "Default model": "Standardmodell",
-  "Routines in this Project use it. Without a default, they use the person's choice, otherwise Balanced.":
-    "Routinen in diesem Projekt nutzen es. Ohne Standard gilt die Wahl der Person, sonst „Ausgewogen“.",
+  "Chats in this Project use it. Without a default, they use the person's choice, otherwise Balanced.":
+    "Chats in diesem Projekt nutzen es. Ohne Standard gilt die Wahl der Person, sonst „Ausgewogen“.",
   "No Project default": "Kein Projekt-Standard",
   "Models could not be loaded.": "Modelle konnten nicht geladen werden.",
   "Reference name": "Name der Referenz",
   "Relevant personal facts, preferences, and workflow defaults are added to new turns.":
     "Relevante persönliche Tatsachen, Präferenzen und Abläufe werden neuen Anfragen hinzugefügt.",
   "Remembered approvals": "Gespeicherte Freigaben",
-  "Website for one Studio app": "Website für eine Studio-App",
+  "Website approval": "Website-Freigabe",
   "Remove reference": "Referenz entfernen",
   Retired: "Entfernt",
   "Review background runs and the personalization they changed.": "Hintergrundläufe und ihre Änderungen an der Personalisierung prüfen.",
@@ -300,13 +293,15 @@ const germanText: Record<string, string> = {
   "Search chats…": "Chats durchsuchen…",
   "Search personalization": "Personalisierung durchsuchen",
   "Search skills": "Skills durchsuchen",
-  "See when Assistant learned from completed private-chat turns, consolidated workflows, and exactly what changed.":
-    "Zeigt, wann der Assistent aus abgeschlossenen privaten Chats und zusammengeführten Abläufen gelernt hat und was geändert wurde.",
+  "See when Gustav learned from completed private-chat turns, consolidated workflows, and exactly what changed.":
+    "Zeigt, wann Gustav aus abgeschlossenen privaten Chats und zusammengeführten Abläufen gelernt hat und was geändert wurde.",
+  "Share this skill through Cloud permissions. At least one administrator must remain.":
+    "Teile diesen Skill über Cloud-Berechtigungen. Mindestens eine Person muss Administrator bleiben.",
   Sharing: "Teilen",
   "Skill deleted": "Skill gelöscht",
   "Skill name": "Name des Skills",
   Skills: "Skills",
-  "Skills teach Assistant how to handle specific tasks": "Skills erklären dem Assistenten, wie er bestimmte Aufgaben erledigt",
+  "Skills teach Gustav how to handle specific tasks": "Skills erklären Gustav, wie er bestimmte Aufgaben erledigt",
   Sources: "Quellen",
   "Start with an action and say when to use it. Keep it short, direct, and specific.":
     "Beginne mit einer Handlung und beschreibe, wann der Skill verwendet werden soll. Formuliere kurz, direkt und konkret.",
@@ -325,12 +320,12 @@ const germanText: Record<string, string> = {
     "Verwende einen kurzen, handlungsorientierten Namen aus Kleinbuchstaben, Zahlen und Bindestrichen.",
   "Use a short, recognizable name such as product-rules.": "Verwende einen kurzen, eindeutigen Namen wie product-rules.",
   "Use personalization": "Personalisierung verwenden",
-  "Use personalization in Assistant chats": "Personalisierung in Assistenten-Chats verwenden",
+  "Use personalization in Gustav chats": "Personalisierung in Gustav-Chats verwenden",
   "View activity": "Aktivität anzeigen",
   "View details for": "Details anzeigen für",
   "View learning run details": "Details des Lernlaufs anzeigen",
-  "While this is on, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats that are not archived; review or delete them under Saved personalization.":
-    "Solange dies eingeschaltet ist, kann der Assistent aus deinen nicht archivierten privaten Chats dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
+  "While this is on, Gustav may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats that are not archived; review or delete them under Saved personalization.":
+    "Solange dies eingeschaltet ist, kann Gustav aus deinen nicht archivierten privaten Chats dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
   Type: "Typ",
   "You can view and export it, but you cannot change it.": "Du kannst ihn ansehen und exportieren, aber nicht ändern.",
   "The app keeps this Skill up to date. You can view and export it.":
@@ -409,7 +404,7 @@ const germanText: Record<string, string> = {
   Completed: "Abgeschlossen",
   Queued: "Vorgemerkt",
   Prompt: "Auftrag",
-  "What should Assistant do?": "Was soll der Assistent erledigen?",
+  "What should Gustav do?": "Was soll Gustav erledigen?",
   Schedule: "Zeitplan",
   Once: "Einmalig",
   Recurring: "Wiederkehrend",
@@ -497,8 +492,8 @@ const germanText: Record<string, string> = {
   "Some files are not imported": "Einige Dateien werden nicht übernommen",
   "Only when selected": "Nur bei Auswahl",
   "Start only when selected": "Nur bei Auswahl starten",
-  "Assistant does not choose this Skill on its own. Select it with / in a message.":
-    "Der Assistent wählt diesen Skill nicht selbst aus. Wähle ihn in einer Nachricht mit / aus.",
+  "Gustav does not choose this Skill automatically. Select it with / in a message.":
+    "Gustav wählt diesen Skill nicht selbst aus. Wähle ihn in einer Nachricht mit / aus.",
   "Choose a SKILL.md or a skill ZIP.": "Wähle eine SKILL.md oder ein Skill-ZIP.",
   "Delete personalization": "Personalisierung löschen",
   "Personalization unpinned": "Personalisierung nicht mehr angeheftet",
@@ -533,17 +528,17 @@ const germanText: Record<string, string> = {
   Enable: "Aktivieren",
   "Create reference": "Referenz erstellen",
   "View supporting context for this Skill.": "Zusatzinformationen zu diesem Skill ansehen.",
-  "Add supporting context Assistant can read when needed.": "Zusatzinformationen hinzufügen, die der Assistent bei Bedarf liest.",
+  "Add supporting context Gustav can read when needed.": "Zusatzinformationen hinzufügen, die Gustav bei Bedarf liest.",
   "Skill saved": "Skill gespeichert",
   "Skill created": "Skill erstellt",
   "You can view and export this shared Skill.": "Du kannst diesen geteilten Skill ansehen und exportieren.",
   "Define reusable instructions and optional supporting references.":
-    "Lege fest, wie der Assistent eine wiederkehrende Aufgabe erledigt, und füge bei Bedarf Zusatzinformationen hinzu.",
+    "Lege fest, wie Gustav eine wiederkehrende Aufgabe erledigt, und füge bei Bedarf Zusatzinformationen hinzu.",
   "Save skill": "Skill speichern",
   "For example, IT support": "Zum Beispiel IT-Support",
   "API access": "API-Zugang",
-  "Use your Assistant models in other apps through an OpenAI-compatible API.":
-    "Nutze die Modelle des Assistenten in anderen Apps über eine OpenAI-kompatible API.",
+  "Use your Gustav models in other apps through an OpenAI-compatible API.":
+    "Nutze die Modelle von Gustav in anderen Apps über eine OpenAI-kompatible API.",
   Connection: "Verbindung",
   "Apps with an OpenAI-compatible provider, such as a dictation app, need this address, an API key, and a model ID. They get the models only: no chats, files, or personalization.":
     "Apps mit einem OpenAI-kompatiblen Anbieter, etwa eine Diktier-App, brauchen diese Adresse, einen API Key und eine Modell-ID. Sie bekommen nur die Modelle: keine Chats, keine Dateien und keine Personalisierung.",
@@ -554,8 +549,8 @@ const germanText: Record<string, string> = {
     "Erstelle in deinem Profil einen Schlüssel mit dem Zugriff „Nur KI-Modelle“.",
   "Create API key": "API Key erstellen",
   Models: "Modelle",
-  "Use one of these model IDs. Requests count toward your Assistant usage limits.":
-    "Nutze eine dieser Modell-IDs. Anfragen zählen zu deinen Nutzungslimits im Assistenten.",
+  "Use one of these model IDs. Requests count toward your Gustav usage limits.":
+    "Nutze eine dieser Modell-IDs. Anfragen zählen zu deinen Nutzungslimits bei Gustav.",
   "No AI model is available to you. An administrator can grant model access in the AI settings.":
     "Dir steht kein KI-Modell zur Verfügung. Eine Administratorin oder ein Administrator kann dir in den KI-Einstellungen Zugriff geben.",
   Hosted: "Gehostet",
@@ -577,42 +572,17 @@ const copy = i18n.define({
       commandSearchChatHint: "Search messages and files",
       commandChatEmpty: "The chat is still empty",
       commandAllSkillsHint: "Narrow the list",
-      commandTasks: "Routines",
       commandApps: "Open in apps",
       commandDraftConflict: "The draft was changed elsewhere. Nothing was opened.",
       commandDraftNotSaved: "The draft could not be saved. Nothing was opened.",
       commandSuperseded: "You moved to another chat, so nothing was opened. The draft is saved.",
-      commandNewTaskLabel: "New routine",
-      commandNewTaskHint: "Have something done regularly, even without you",
-      commandNewTaskSkillDisabled: "You turned off the Skill for this",
-      commandNewTaskSkillUnavailable: "The Skill for this is not available to you",
-      commandTaskPaused: "Paused. Resume the routine first.",
-      commandTaskNeedsAttention: "Needs your attention before it can run",
-      commandTaskAlreadyRunning: "it is already running or no longer active",
-      commandTasksFailed: "Routines could not be loaded",
       commandTryAgain: "Try again",
       commandSkillsFailed: "Skills could not be loaded",
-      commandTaskGone: "it no longer exists",
-      commandTaskTooMany: "too many starts right now. Try again in a moment",
-      commandTaskNotAccepted: "the server did not accept the start",
-      commandTaskOffline: "no connection to the server",
-      commandTaskNoAnswer: "the server gave no clear answer",
-      commandTaskRunUnconfirmed: ({ title, reason }: { title: string; reason: string }) =>
-        `Not sure whether “${title}” started: ${reason}. Choose it here again to check; that does not start it twice.`,
-      commandTaskAlreadyRan: ({ title }: { title: string }) => `“${title}” already ran. The result is in the routine's chat.`,
-      commandTaskAlreadyFailed: ({ title }: { title: string }) => `“${title}” already ran but failed. The routine's chat has the details.`,
-      commandTaskAlreadyStopped: ({ title }: { title: string }) =>
-        `“${title}” was stopped while it ran. The routine's chat says what was already done.`,
       commandModelNow: ({ name }: { name: string }) => `Now: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Model for this chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `All ${count} Skills`,
-      commandTaskRunHint: ({ schedule }: { schedule: string }) => `Run now · otherwise ${schedule}`,
-      commandTaskStarting: ({ title }: { title: string }) => `Starting “${title}” …`,
-      commandTaskRunning: ({ title }: { title: string }) => `“${title}” is running. The result arrives in the routine's chat.`,
-      commandTaskRunFailed: ({ title, reason }: { title: string; reason: string }) => `“${title}” did not start: ${reason}.`,
       commandSkills: "Skills",
       commandFiles: "Files in this chat",
-      commandStudioApps: "Studio apps",
       commandInsert: "Insert",
       commandRecent: "Recent",
       commandAttachFile: "Attach file",
@@ -650,14 +620,6 @@ const copy = i18n.define({
       newChatDraftKept: ({ title }: { title: string }) => `Your draft stays in the chat “${title}”.`,
       text: ({ value }: { value: string }) => value,
       archiveChat: ({ title }: { title: string }) => `Archive "${title}"?`,
-      archiveChatRoutines: ({ names }: { names: string[] }) => {
-        const shown = names.slice(0, 3).map((name) => `“${name}”`);
-        const list = names.length > 3 ? `${shown.join(", ")} and ${names.length - 3} more` : shown.join(", ");
-        return names.length === 1
-          ? `1 routine runs in this chat (${list}). Archiving pauses it.`
-          : `${names.length} routines run in this chat (${list}). Archiving pauses them.`;
-      },
-      archiveChatAnyRoutines: "Archiving pauses the routines in this chat.",
       deleteNamed: ({ name }: { name: string }) => `Delete "${name}"?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `Delete “${name}” from this chat? Earlier messages keep their text, but their links to this file stop working.`,
@@ -674,7 +636,6 @@ const copy = i18n.define({
       unsafeArchivePath: ({ path }: { path: string }) => `Skill archive contains an unsafe path: ${path}`,
       skippedSkillFiles: ({ paths }: { paths: string }) =>
         `${paths}. Cloud keeps SKILL.md and Markdown files directly in references/ with lowercase names (a-z, 0-9, ., _, -), and does not run scripts.`,
-      deleteScheduledTask: ({ prompt }: { prompt: string }) => `Delete routine “${prompt}”?`,
       editNamed: ({ name }: { name: string }) => `Edit ${name}`,
       deleteFileNamed: ({ name }: { name: string }) => `Delete ${name}`,
       restoreNamed: ({ name }: { name: string }) => `Restore ${name}`,
@@ -693,43 +654,17 @@ const copy = i18n.define({
       commandSearchChatHint: "Nachrichten und Dateien durchsuchen",
       commandChatEmpty: "Der Chat ist noch leer",
       commandAllSkillsHint: "Liste eingrenzen",
-      commandTasks: "Routinen",
       commandApps: "In Apps öffnen",
       commandDraftConflict: "Der Entwurf wurde inzwischen woanders geändert. Nichts wurde geöffnet.",
       commandDraftNotSaved: "Der Entwurf konnte nicht gespeichert werden. Nichts wurde geöffnet.",
       commandSuperseded: "Du bist in einem anderen Chat, darum wurde nichts geöffnet. Der Entwurf ist gespeichert.",
-      commandNewTaskLabel: "Neue Routine",
-      commandNewTaskHint: "Etwas regelmäßig erledigen lassen, auch ohne dich",
-      commandNewTaskSkillDisabled: "Du hast den Skill dafür ausgeschaltet",
-      commandNewTaskSkillUnavailable: "Der Skill dafür ist für dich nicht verfügbar",
-      commandTaskPaused: "Pausiert. Setze die Routine zuerst fort.",
-      commandTaskNeedsAttention: "Braucht deinen Eingriff, bevor sie laufen kann",
-      commandTaskAlreadyRunning: "sie läuft schon oder ist nicht mehr aktiv",
-      commandTasksFailed: "Routinen konnten nicht geladen werden",
       commandTryAgain: "Erneut versuchen",
       commandSkillsFailed: "Skills konnten nicht geladen werden",
-      commandTaskGone: "es gibt sie nicht mehr",
-      commandTaskTooMany: "gerade zu viele Starts. Versuche es gleich noch einmal",
-      commandTaskNotAccepted: "der Server hat den Start nicht angenommen",
-      commandTaskOffline: "keine Verbindung zum Server",
-      commandTaskNoAnswer: "der Server hat keine klare Antwort gegeben",
-      commandTaskRunUnconfirmed: ({ title, reason }: { title: string; reason: string }) =>
-        `Ob „${title}“ gestartet ist, ist unklar: ${reason}. Wähle sie hier noch einmal, um nachzusehen; das startet sie nicht doppelt.`,
-      commandTaskAlreadyRan: ({ title }: { title: string }) => `„${title}“ ist schon gelaufen. Das Ergebnis steht im Chat der Routine.`,
-      commandTaskAlreadyFailed: ({ title }: { title: string }) =>
-        `„${title}“ ist schon gelaufen, aber fehlgeschlagen. Mehr dazu steht im Chat der Routine.`,
-      commandTaskAlreadyStopped: ({ title }: { title: string }) =>
-        `„${title}“ wurde angehalten, während sie lief. Im Chat der Routine steht, was schon erledigt war.`,
       commandModelNow: ({ name }: { name: string }) => `Jetzt: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Modell für diesen Chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `Alle ${count} Skills`,
-      commandTaskRunHint: ({ schedule }: { schedule: string }) => `Jetzt ausführen · sonst ${schedule}`,
-      commandTaskStarting: ({ title }: { title: string }) => `„${title}“ wird gestartet …`,
-      commandTaskRunning: ({ title }: { title: string }) => `„${title}“ läuft. Das Ergebnis kommt in den Chat der Routine.`,
-      commandTaskRunFailed: ({ title, reason }: { title: string; reason: string }) => `„${title}“ ist nicht gestartet: ${reason}.`,
       commandSkills: "Skills",
       commandFiles: "Dateien in diesem Chat",
-      commandStudioApps: "Studio-Apps",
       commandInsert: "Einfügen",
       commandRecent: "Zuletzt",
       commandAttachFile: "Datei anhängen",
@@ -767,14 +702,6 @@ const copy = i18n.define({
       newChatDraftKept: ({ title }: { title: string }) => `Dein Entwurf bleibt im Chat „${title}“.`,
       text: ({ value }: { value: string }) => germanText[value] ?? value,
       archiveChat: ({ title }: { title: string }) => `„${title}“ archivieren?`,
-      archiveChatRoutines: ({ names }: { names: string[] }) => {
-        const shown = names.slice(0, 3).map((name) => `„${name}“`);
-        const list = names.length > 3 ? `${shown.join(", ")} und ${names.length - 3} weitere` : shown.join(", ");
-        return names.length === 1
-          ? `In diesem Chat läuft 1 Routine (${list}). Archivieren pausiert sie.`
-          : `In diesem Chat laufen ${names.length} Routinen (${list}). Archivieren pausiert sie.`;
-      },
-      archiveChatAnyRoutines: "Archivieren pausiert die Routinen in diesem Chat.",
       deleteNamed: ({ name }: { name: string }) => `„${name}“ löschen?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `„${name}“ aus diesem Chat löschen? Frühere Nachrichten bleiben erhalten, ihre Verweise auf diese Datei funktionieren aber nicht mehr.`,
@@ -792,7 +719,6 @@ const copy = i18n.define({
       unsafeArchivePath: ({ path }: { path: string }) => `Das Skill-Archiv enthält einen unsicheren Pfad: ${path}`,
       skippedSkillFiles: ({ paths }: { paths: string }) =>
         `${paths}. Cloud übernimmt SKILL.md und Markdown-Dateien direkt in references/ mit kleingeschriebenen Namen (a-z, 0-9, ., _, -) und führt keine Skripte aus.`,
-      deleteScheduledTask: ({ prompt }: { prompt: string }) => `Routine „${prompt}“ löschen?`,
       editNamed: ({ name }: { name: string }) => `${name} bearbeiten`,
       deleteFileNamed: ({ name }: { name: string }) => `${name} löschen`,
       restoreNamed: ({ name }: { name: string }) => `${name} wiederherstellen`,

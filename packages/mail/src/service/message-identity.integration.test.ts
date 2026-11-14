@@ -10,22 +10,8 @@ import { createMailbox } from "./mailboxes";
 import { hydrateMessageFromSource } from "./message-hydration";
 import { extractMessageProtocolFacts } from "./message-protocol";
 import { ingestEnvelope } from "./sync-runtime";
-import { activateWorkflow, createWorkflow } from "./workflow-definition-service";
 
 const suite = suiteFor("database", "nats");
-
-const noEffectBudget = {
-  maxTargets: 1,
-  maxMoves: 0,
-  maxCopies: 0,
-  maxSends: 0,
-  maxDrafts: 0,
-  maxFlagChanges: 0,
-  maxNotifications: 0,
-  maxKeywordChanges: 0,
-  maxCollaborationChanges: 0,
-  maxAiCalls: 0,
-};
 
 type Address = { name: string; address: string };
 
@@ -39,7 +25,6 @@ suite("mail message identity and threading on generic IMAP", () => {
   let userId = "";
   let mailboxId = "";
   let remoteResourceId = "";
-  let workflowId = "";
   const folders: Record<"inbox" | "archive" | "sent", string> = { inbox: "", archive: "", sent: "" };
   let context: MailRequestContext;
   let nextUid = 100;
@@ -130,7 +115,8 @@ suite("mail message identity and threading on generic IMAP", () => {
 
   const receivedEvents = async (): Promise<number> => {
     const [row] = await sql<{ count: number }[]>`
-      SELECT COUNT(*)::int AS count FROM workflows.event WHERE target_workflow_id = ${workflowId}::uuid
+      SELECT COUNT(*)::int AS count FROM events.outbox WHERE app_id = 'mail' AND kind = 'event'
+        AND payload->>'type' = 'mail.message.received' AND payload->'place'->>'id' = (SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid)
     `;
     return row?.count ?? 0;
   };
@@ -202,31 +188,6 @@ suite("mail message identity and threading on generic IMAP", () => {
       INSERT INTO mail.sender_identities (short_id, mailbox_id, label, display_name, from_address, is_default, status)
       VALUES (${newShortId()}, ${mailboxId}::uuid, 'Support', 'Support', ${support}, true, 'verified')
     `;
-    const created = await createWorkflow({
-      context,
-      mailboxId,
-      input: {
-        name: `Received ${suffix}`,
-        priority: 100,
-        source: `triggers:
-  messageReceived:
-    with: {}
-steps:
-  - succeed:
-      message: Received
-`,
-        effectBudget: noEffectBudget,
-      },
-    });
-    if (!created.ok) throw new Error(created.error.message);
-    const activated = await activateWorkflow({
-      context,
-      mailboxId,
-      workflowId: created.data.id,
-      input: { expectedVersionId: created.data.currentVersion.id },
-    });
-    if (!activated.ok) throw new Error(activated.error.message);
-    workflowId = created.data.id;
   });
 
   afterAll(async () => {

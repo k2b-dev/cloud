@@ -57,15 +57,6 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `APP_DIR` | string | development | unset | no | Application directory for standalone consumers running `@k2b/cloud/scripts/build.ts` or the SSR dev server outside the monorepo; defaults to the package directory. |
 | `CLOUD_DESKTOP_SQLITE_PATH` | string | development | unset | no | SQLite file used by `desktop.sql` in the Bun desktop process; defaults to `.local/desktop.sqlite` in the working directory. |
 
-## Application: assistant
-
-Declared in `packages/assistant/src/env.ts`.
-
-| Variable | Type | Scope | Default | Required | Description |
-| --- | --- | --- | --- | --- | --- |
-| `ASSISTANT_RSQL_ALLOWED_TARGETS` | list | runtime | `rsql` | no | Deprecated: bootstraps `assistant.rsql_allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for Assistant rsql requests; unset allows public targets and `rsql`, an explicit value replaces this default, and invalid entries including `/0` are ignored with a bootstrap warning. |
-| `CLOUD_CLI_CHROMIUM` | string | runtime | unset | no | Path to a Chromium executable for Assistant code mode when Playwright's bundled browser is unavailable; the assistant image sets `/usr/bin/chromium`. |
-
 ## Application: gateway-ops
 
 Declared in `packages/gateway-ops/src/env.ts`.
@@ -95,7 +86,7 @@ Declared in `packages/mail/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
-| `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | number | runtime | `20000` | no | Deprecated: bootstraps `mail.workflow_ai_body_max_chars` once; remove after `cld admin settings status --env` succeeds. Maximum Mail body characters loaded for an AI workflow step; the pilot budget rejects larger bodies visibly without truncation and preserves the original for manual inspection. |
+| `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | number | runtime | `20000` | no | Deprecated: bootstraps `mail.workflow_ai_body_max_chars` once; remove after `cld admin settings status --env` succeeds. Maximum Mail body characters loaded for an AI summary; larger bodies are rejected visibly without truncation and remain available for manual inspection. |
 
 ## Application: notebooks
 
@@ -104,6 +95,13 @@ Declared in `packages/notebooks/src/env.ts`.
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
 | `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | list | runtime | empty list | no | Deprecated: bootstraps `notebooks.snapshot_allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks that notebook S3 snapshots may upload to, for example `minio,10.20.0.0/16`; unset allows only public storage. Bare entries cover every port; host:port and [ipv6]:port restrict a host or IP to one port; `/0` entries and other invalid entries are ignored with a bootstrap warning. |
+
+## Application: runner
+
+Declared in `packages/runner/src/env.ts`.
+
+| Variable | Type | Scope | Default | Required | Description |
+| --- | --- | --- | --- | --- | --- |
 
 ## Application: notes
 

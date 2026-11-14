@@ -6,6 +6,8 @@ import { z } from "zod";
 import { databaseSuite, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import { userResourceContext } from "./projects.test-fixture";
+import { defineAiTool } from "./tools";
+import type { AiRuntimeTool } from "./types";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
@@ -19,18 +21,15 @@ import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
-import { type CapabilityGrant, mandates } from "../services/mandates";
 import { serviceAccounts } from "../services/service-accounts";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { normalizeLocale } from "../shared/locale";
 import { reconcileAppSkills } from "./app-skill-store";
 import { type AppSkillDefinition, skill as appSkill, appSkillManifestHash, registerAppSkills } from "./app-skills";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
-import { buildAiCapabilityCatalog } from "./capabilities";
 import * as capabilityExecution from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { aiTurnErrorText } from "./chat/turn-error";
-import { aiChatTasks } from "./chat-tasks";
 import { DEFAULT_COMPACTION_PROMPT } from "./compaction";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
@@ -39,6 +38,7 @@ import { aiMemories } from "./memories";
 import { migrateCloudAi } from "./migrate";
 import { aiModelAccess } from "./model-access";
 import { visionPdfFixture } from "./pdf-render.fixture";
+import * as placeRound from "./place-round";
 import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
 import { createAiProvider } from "./provider";
@@ -417,9 +417,11 @@ const createExecutor = (
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   validateTurn: typeof validateAiTurnRequest = fakeValidateTurn,
   onApprovalRequested?: (event: { approvalId: string }) => Promise<void>,
+  tools?: readonly AiRuntimeTool[],
 ) =>
   new AiTurnExecutor({
     leaseOwner,
+    tools,
     heartbeatMs: 5_000,
     enqueueContinuation: async () => {},
     validateTurn,
@@ -607,380 +609,6 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
-  test.each([
-    { mode: "direct", revoke: false },
-    { mode: "resource", revoke: false },
-    { mode: "direct", revoke: "during" },
-    { mode: "resource", revoke: "during" },
-    { mode: "direct", revoke: "before" },
-  ] as const)("background capability authorization: %j", async ({ mode, revoke }) => {
-    const userId = await insertUser();
-    const conversation = await aiConversations.createConversation({
-      ownerUserId: userId,
-      preloadTools: ["spaces.space.read", "spaces.space.list", ...(mode === "resource" ? ["read_cloud_resource"] : [])],
-    });
-    const requestSchema = z.object({
-      messages: z.array(z.object({ role: z.string(), content: z.unknown() })),
-      tools: z.array(z.object({ function: z.object({ name: z.string() }) })).optional(),
-    });
-    const requests: z.infer<typeof requestSchema>[] = [];
-    const ids = ["space.search", "space.list", "task.list", "task.focus"];
-    const compiled = compileCapabilities(
-      "spaces",
-      defineCapabilities({
-        protocolVersion: 2,
-        types: mode === "resource" ? { space: { title: "Space", description: "One space.", reader: "space.list" } } : {},
-        queries: Object.fromEntries(
-          [...ids, "space.read"].map((id) => [
-            id,
-            {
-              title: "List spaces",
-              description: "List spaces.",
-              input:
-                mode === "resource" && id === "space.list"
-                  ? z.object({ id: z.string().describe("Exact space ID.") }).strict()
-                  : z.object({ status: z.enum(["open", "done"]).optional().describe("Space status.") }).strict(),
-              data: z.array(z.object({ id: z.string() })),
-              openWorld: false,
-              run: async () => ok({ data: [] }),
-            },
-          ]),
-        ),
-      }),
-    );
-    const spacesEntry: CapabilityRegistryEntry = {
-      appId: "spaces",
-      appName: "Spaces",
-      appDescription: "Shared spaces",
-      appIcon: "ti ti-box",
-      appAccent: "#0f766e",
-      endpoint: "http://spaces.invalid/api/_internal/capabilities/v1",
-      manifest: compiled.manifest,
-    };
-    // Task grant validation and executor discovery must use the same fixture.
-    const getCapabilitySpy = spyOn(registry, "getCapability").mockImplementation(async (appId) =>
-      appId === spacesEntry.appId ? spacesEntry : null,
-    );
-    const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([spacesEntry]);
-    const executeSpy = spyOn(capabilityExecution, "executeAiCapability").mockResolvedValue({ data: [] });
-    try {
-      const fixedInput: Record<string, string> = {};
-      fixedInput[mode === "direct" ? "status" : "id"] = mode === "direct" ? "open" : "fixed";
-      const task = await aiChatTasks.create({
-        userId,
-        chatId: conversation.shortId,
-        prompt: "Summarize spaces",
-        grants: ids.map<CapabilityGrant>((capabilityId) => ({
-          appId: "spaces",
-          capabilityId,
-          kind: "query",
-          fixedInput: capabilityId === "space.list" ? fixedInput : {},
-        })),
-        schedule: { kind: "cron", cron: "0 9 * * *" },
-        timezone: "UTC",
-      });
-      if (!task?.mandateId) throw new Error("Expected scheduled task mandate");
-      const occurrence = await aiChatTasks.createOccurrence({
-        taskId: task.id,
-        scheduledFor: new Date().toISOString(),
-        trigger: "manual",
-        requestKey: `scope:${task.id}`,
-      });
-      if (!occurrence) throw new Error("Expected occurrence");
-      const delivered = await aiChatTasks.deliverOccurrence({
-        occurrenceId: occurrence.id,
-        modelId: MODEL_ID,
-        runConfig: {
-          kind: "chat",
-          input: task.prompt,
-          actor: { kind: "user", user: actorUser(userId) },
-          toolSource: { kind: "default", appTools: true },
-        },
-        userMessage: userMessage(task.prompt),
-        expectedRevision: task.revision,
-      });
-      if (!delivered.delivered) throw new Error("Expected background run");
-      const mandate = await mandates.get(task.mandateId);
-      expect(mandate?.state).toBe("active");
-      if (revoke === "before") {
-        if (!mandate) throw new Error("Expected mandate");
-        const result = await mandates.revoke({
-          mandateId: mandate.id,
-          expectedRevision: mandate.revision,
-          authority: { kind: "interactive", userId },
-          reason: "Revoked before the run",
-        });
-        expect(result.ok).toBe(true);
-      }
-      completionQueue = [
-        toolCallCompletion("load-denied", "load_tools", { names: ["spaces.space.read"] }),
-        mode === "direct"
-          ? toolCallCompletion("fixed-denied", "spaces__query__space_dot_list", { status: "done" })
-          : toolCallCompletion("fixed-denied", "read_cloud_resource", { type: "spaces.space", id: "other" }),
-        toolCallCompletion("granted", "spaces__query__space_dot_list", mode === "direct" ? { status: "open" } : { id: "fixed" }),
-        textCompletion("Completed using the granted tools"),
-      ];
-      onCompletionRequest = async (body) => {
-        requests.push(requestSchema.parse(body));
-        if (revoke === "during" && requests.length === 2) {
-          if (!mandate) throw new Error("Expected mandate");
-          const result = await mandates.revoke({
-            mandateId: mandate.id,
-            expectedRevision: mandate.revision,
-            authority: { kind: "interactive", userId },
-            reason: "Revoked during the run",
-          });
-          expect(result.ok).toBe(true);
-        }
-      };
-      const claim = await aiConversations.claimTurn({
-        conversationId: conversation.id,
-        turnId: delivered.turnId,
-        leaseOwner: "mandate-scope-exec",
-        leaseMs: 30_000,
-        from: "queue",
-        maxAttempts: 5,
-        runBudgetMs: 60_000,
-      });
-      if (!claim) throw new Error("Expected claim");
-      await createExecutor("mandate-scope-exec", undefined, fakeValidateToolTurn).run({
-        conversationId: conversation.id,
-        turnId: delivered.turnId,
-        claim,
-        signal: new AbortController().signal,
-      });
-      if (revoke === "before") {
-        expect(requests).toHaveLength(0);
-        expect(executeSpy).not.toHaveBeenCalled();
-        const turn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId });
-        expect(turn?.status).toBe("failed");
-        expect(turn?.error).toContain("Scheduled task mandate is unavailable or changed");
-        const [stored] = await sql<{ meta: unknown }[]>`
-          SELECT meta FROM ai.task_messages WHERE loop_id = ${delivered.turnId} ORDER BY seq DESC LIMIT 1
-        `;
-        expect(stored?.meta).toMatchObject({ turnError: { code: "not_allowed" } });
-        await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "failed", error: turn?.error });
-        expect((await aiChatTasks.get({ userId, taskId: task.shortId }))?.state).toBe("needs_attention");
-        return;
-      }
-      expect(requests).toHaveLength(4);
-      expect(requests[0]?.tools?.map((tool) => tool.function.name)).not.toContain("spaces__query__space_dot_read");
-      const loadResult = JSON.parse(String(requests[1]?.messages.find((message) => message.role === "tool")?.content));
-      expect(loadResult).toMatchObject({ loaded: [], unavailable: [{ name: "spaces.space.read", reason: "not_allowed" }] });
-      if (revoke === "during") {
-        expect(JSON.stringify(requests[2]?.messages)).toContain("Mandate is not active");
-        expect(executeSpy).not.toHaveBeenCalled();
-        const turn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId });
-        expect(turn?.status).toBe("failed");
-        expect(turn?.error).toContain("Mandate is not active");
-        const [stored] = await sql<{ meta: unknown }[]>`
-          SELECT meta FROM ai.task_messages WHERE loop_id = ${delivered.turnId} ORDER BY seq DESC LIMIT 1
-        `;
-        expect(stored?.meta).toMatchObject({ turnError: { code: "not_allowed" } });
-        await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "failed", error: "Mandate is not active" });
-        expect((await aiChatTasks.get({ userId, taskId: task.shortId }))?.state).toBe("needs_attention");
-        return;
-      }
-      expect(JSON.stringify(requests[2]?.messages)).toContain("This task's grants do not allow spaces.space.list");
-      expect(JSON.stringify(requests[2]?.messages)).toContain("continue with the granted tools");
-      expect(executeSpy).toHaveBeenCalledTimes(1);
-      expect(executeSpy.mock.calls[0]?.[0]).toMatchObject({
-        entry: { name: "spaces.space.list" },
-        args: mode === "direct" ? { status: "open" } : { id: "fixed" },
-      });
-      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId }))?.status).toBe("completed");
-      await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "completed" });
-      expect((await aiChatTasks.get({ userId, taskId: task.shortId }))?.state).toBe("active");
-      expect((await mandates.get(task.mandateId))?.state).toBe("active");
-      expect(await aiConversations.getLoadedTools({ conversationId: conversation.id })).toEqual([
-        "spaces.space.read",
-        "spaces.space.list",
-        ...(mode === "resource" ? ["read_cloud_resource"] : []),
-      ]);
-    } finally {
-      getCapabilitySpy.mockRestore();
-      registrySpy.mockRestore();
-      executeSpy.mockRestore();
-      completionQueue = [];
-      onCompletionRequest = null;
-      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-    }
-  });
-
-  test.each(["no_scope", "scoped", "review_throws", "mandate_denied"] as const)("background action review gate: %s", async (mode) => {
-    const userId = await insertUser();
-    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
-    const locale = "de";
-    const compiled = compileCapabilities(
-      "demo",
-      defineCapabilities({
-        protocolVersion: 2,
-        presentation: {
-          baseLocale: "en",
-          translations: { de: { actions: { write: { title: "Eintrag schreiben" } } } },
-        },
-        actions: {
-          write: {
-            title: "Write item",
-            description: "Write one item.",
-            input: z.object({ value: z.string().describe("Value to write.") }).strict(),
-            data: z.object({ written: z.boolean() }),
-            approval: "rememberable",
-            idempotency: "required",
-            destructive: false,
-            openWorld: false,
-            review: async () => ok({ message: "Write one item." }),
-            run: async () => ok({ data: { written: true } }),
-          },
-        },
-      }),
-    );
-    const entry: CapabilityRegistryEntry = {
-      appId: "demo",
-      appName: "Demo",
-      appDescription: "Test actions",
-      appIcon: "ti ti-box",
-      appAccent: "#0f766e",
-      endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
-      manifest: compiled.manifest,
-      presentation: compiled.presentation,
-    };
-    const [action] = buildAiCapabilityCatalog([entry], locale);
-    if (!action) throw new Error("Expected action in catalog");
-    const title = action.display.title;
-    const requestSchema = z.object({
-      messages: z.array(z.object({ role: z.string(), tool_call_id: z.string().optional(), content: z.unknown() })),
-      tools: z.array(z.object({ function: z.object({ name: z.string() }) })).optional(),
-    });
-    const requests: z.infer<typeof requestSchema>[] = [];
-    const getCapabilitySpy = spyOn(registry, "getCapability").mockImplementation(async (appId) => (appId === entry.appId ? entry : null));
-    const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([entry]);
-    const reviewSpy = spyOn(capabilityExecution, "reviewAiCapability").mockResolvedValue({
-      message: "Write one item.",
-      ...(mode === "scoped" ? { approvalScope: "value:one" } : {}),
-    });
-    const executeSpy = spyOn(capabilityExecution, "executeAiCapability").mockResolvedValue({ data: { written: true } });
-    try {
-      if (mode === "review_throws") reviewSpy.mockRejectedValue(new Error("Review unavailable"));
-      expect(action.operation).toMatchObject({ approval: "rememberable", review: true });
-      expect(title).not.toBe(action.title);
-      const task = await aiChatTasks.create({
-        userId,
-        chatId: conversation.shortId,
-        prompt: "Write one item",
-        locale,
-        grants: [{ appId: "demo", capabilityId: "write", kind: "action", fixedInput: { value: "one" } }],
-        schedule: { kind: "cron", cron: "0 9 * * *" },
-        timezone: "UTC",
-      });
-      if (!task?.mandateId) throw new Error("Expected scheduled task mandate");
-      const occurrence = await aiChatTasks.createOccurrence({
-        taskId: task.id,
-        scheduledFor: "2026-01-01T09:00:00.000Z",
-        trigger: "manual",
-        requestKey: `review:${task.id}`,
-      });
-      if (!occurrence) throw new Error("Expected occurrence");
-      const delivered = await aiChatTasks.deliverOccurrence({
-        occurrenceId: occurrence.id,
-        modelId: MODEL_ID,
-        runConfig: {
-          kind: "chat",
-          input: task.prompt,
-          actor: { kind: "user", user: actorUser(userId) },
-          toolSource: { kind: "default", appTools: true },
-        },
-        userMessage: userMessage(task.prompt),
-        expectedRevision: task.revision,
-      });
-      if (!delivered.delivered) throw new Error("Expected background run");
-      const args = { value: mode === "mandate_denied" ? "other" : "one" };
-      completionQueue = [
-        toolCallCompletion("load-write", "load_tools", { names: [action.name] }),
-        toolCallCompletion("write-1", action.providerName, args),
-        textCompletion(mode === "scoped" ? "The item was written." : "The routine lacked permission to write the item."),
-      ];
-      onCompletionRequest = (body) => {
-        requests.push(requestSchema.parse(body));
-      };
-      const leaseOwner = "background-review-exec";
-      const claim = await aiConversations.claimTurn({
-        conversationId: conversation.id,
-        turnId: delivered.turnId,
-        leaseOwner,
-        leaseMs: 30_000,
-        from: "queue",
-        maxAttempts: 5,
-        runBudgetMs: 60_000,
-      });
-      if (!claim) throw new Error("Expected claim");
-      await createExecutor(leaseOwner, undefined, fakeValidateToolTurn).run({
-        conversationId: conversation.id,
-        turnId: delivered.turnId,
-        claim,
-        signal: new AbortController().signal,
-      });
-      expect(requests).toHaveLength(3);
-      expect(requests[1]?.tools?.map((tool) => tool.function.name)).toContain(action.providerName);
-      const toolResult = requests[2]?.messages.find((message) => message.role === "tool" && message.tool_call_id === "write-1")?.content;
-      const turn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId });
-      const runConfig = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: delivered.turnId });
-      if (!turn || runConfig?.kind !== "chat") throw new Error("Expected background chat turn");
-      expect(turn.status).toBe("completed");
-      expect(runConfig.locale).toBe(locale);
-      const needsApproval = mode === "no_scope" || mode === "review_throws";
-      if (needsApproval) {
-        expect(toolResult).toBe(
-          `NEEDS_APPROVAL: ${title} needs the user's approval every time, and routines never ask. Stop and say in one sentence what was missing.`,
-        );
-        expect(runConfig.background?.needsApproval).toEqual({ action: title });
-      } else {
-        expect(runConfig.background?.needsApproval).toBeUndefined();
-      }
-      if (mode === "mandate_denied") {
-        expect(reviewSpy).not.toHaveBeenCalled();
-        expect(toolResult).toBe(
-          "This task's grants do not allow demo.write with these inputs; continue with the granted tools or explain what is missing.",
-        );
-      } else {
-        expect(reviewSpy).toHaveBeenCalledTimes(1);
-        expect(reviewSpy.mock.calls[0]?.[0]).toMatchObject({ entry: action, args, locale, mandate: { id: task.mandateId } });
-      }
-      if (mode === "scoped") {
-        const stored = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: delivered.turnId });
-        expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.name === "demo.write")).toMatchObject({
-          review: { legacy: { question: "Write one item.", rows: [] } },
-        });
-        const [message] = await sql<
-          { meta: unknown }[]
-        >`SELECT meta FROM ai.task_messages WHERE loop_id=${delivered.turnId} AND role='assistant' AND meta ? 'toolReviews'`;
-        expect(message?.meta).toMatchObject({ toolReviews: { "write-1": { legacy: { question: "Write one item." } } } });
-        expect(executeSpy).toHaveBeenCalledTimes(1);
-        expect(executeSpy.mock.calls[0]?.[0]).toMatchObject({ entry: action, args, actionApproval: "approved" });
-      } else {
-        expect(executeSpy).not.toHaveBeenCalled();
-      }
-      expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: turn.status })).toEqual({
-        occurrenceId: occurrence.id,
-        failed: needsApproval,
-      });
-      expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject(
-        needsApproval
-          ? { state: "needs_attention", reasonCode: "needs_approval", reasonAction: title }
-          : { state: "active", reasonCode: null, reasonAction: null },
-      );
-    } finally {
-      getCapabilitySpy.mockRestore();
-      registrySpy.mockRestore();
-      reviewSpy.mockRestore();
-      executeSpy.mockRestore();
-      completionQueue = [];
-      onCompletionRequest = null;
-      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-    }
-  });
 
   beforeAll(async () => {
     await migrateCloudAi();
@@ -1037,7 +665,215 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
-  test("offers to keep recurring work as a Skill only in chats a person follows with skill-creator", async () => {
+  test.each([true, false])("host tools replace defaults through discovery and retain fixed scope (allowed=%s)", async (allowed) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, allowedTools: allowed ? ["code_check"] : [] });
+    const requests: unknown[] = [];
+    let calls = 0;
+    const replacement = defineAiTool({
+      name: "code_check",
+      description: "Host replacement for checked Code",
+      inputSchema: z.object({}).strict(),
+      outputSchema: z.object({ ok: z.boolean() }),
+      approval: "never",
+    }).server(async () => {
+      calls++;
+      return { ok: true };
+    });
+    try {
+      completionQueue = [
+        toolCallCompletion("load-host", "load_tools", { names: ["code_check"] }),
+        ...(allowed ? [toolCallCompletion("check-host", "code_check", {})] : []),
+        textCompletion("Done"),
+      ];
+      onCompletionRequest = (body) => {
+        requests.push(body);
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Check Code", actor: { kind: "user", user: actorUser(userId) }, toolSource: { kind: "default" } },
+        userMessage: userMessage("Check Code"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "host-tools-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      await createExecutor("host-tools-exec", undefined, fakeValidateToolTurn, undefined, [replacement]).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      expect(calls).toBe(allowed ? 1 : 0);
+      expect(JSON.stringify(requests).includes("Host replacement for checked Code")).toBe(allowed);
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+  test.each(["user", "guest"] as const)("Code authoring offerings follow the current %s profile", async (profile) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const skillApp = await installAppSkill(
+      appSkill({ markdown: "---\nname: code-authoring\ndescription: Lasting Code authoring fixture.\n---\n\nBuild lasting Code.\n" }),
+    );
+    await sql`UPDATE auth.users SET profile=${profile} WHERE id=${userId}::uuid`;
+    const requests: unknown[] = [];
+    let calls = 0;
+    const authoring = defineAiTool({
+      name: "code_init",
+      description: "Member Code authoring fixture",
+      inputSchema: z.object({}),
+      outputSchema: z.object({ ok: z.boolean() }),
+      approval: "never",
+    }).server(async () => {
+      calls++;
+      return { ok: true };
+    });
+    try {
+      completionQueue = [
+        toolCallCompletion("load-code", "load_tools", { names: ["code_init"] }),
+        ...(profile === "user" ? [toolCallCompletion("init-code", "code_init", {})] : []),
+        textCompletion("Done"),
+      ];
+      onCompletionRequest = (body) => {
+        requests.push(body);
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        // A stale member snapshot must not keep authoring after the profile changes.
+        runConfig: { kind: "chat", input: "Build Code", actor: { kind: "user", user: actorUser(userId) }, toolSource: { kind: "default" } },
+        userMessage: userMessage("Build Code"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "code-eligibility-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      await createExecutor("code-eligibility-exec", undefined, fakeValidateToolTurn, undefined, [authoring]).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      const offered = JSON.stringify(requests);
+      expect(calls).toBe(profile === "user" ? 1 : 0);
+      expect(offered.includes("Member Code authoring fixture")).toBe(profile === "user");
+      expect(offered.includes("Lasting Code authoring fixture")).toBe(profile === "user");
+      expect(offered.includes("explain kindly that guests cannot create Code")).toBe(profile === "guest");
+      const authority = await capabilityExecution.resolveAiCapabilityActor({
+        conversationId: conversation.id,
+        persistedActor: { kind: "user", user: actorUser(userId) },
+        store: aiConversations,
+      });
+      const subject = { actor: authority.actor, accessSubject: authority.accessSubject };
+      const [skill] = await sql<{ short_id: string }[]>`SELECT short_id FROM ai.skills WHERE name='code-authoring'`;
+      expect(skill).toBeDefined();
+      expect(
+        (await aiSkills.search(subject, "Lasting Code authoring fixture", 30, { authority })).skills.some(
+          (entry) => entry.name === "code-authoring",
+        ),
+      ).toBe(profile === "user");
+      for (const selector of ["code-authoring", { id: skill!.short_id }]) {
+        const loaded = await aiSkills.loadForTurn(turn.id, selector, subject, authority);
+        expect(loaded?.name ?? null).toBe(profile === "user" ? "code-authoring" : null);
+      }
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await skillApp.remove();
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+  test("the executor adds place data only for a bound chat using the default Assistant tools", async () => {
+    const userId = await insertUser();
+    const actor: RequestActor = { kind: "user", user: actorUser(userId) };
+    const ref = { type: "place-fixture.conversation", id: "marta" };
+    const ordinary = await aiConversations.createConversation({ ownerUserId: userId });
+    const bound = await aiConversations.createPlaceConversation({
+      ownerUserId: userId,
+      place: { ref, title: "Marta" },
+      draft: [{ type: "text", text: "Help here" }],
+    });
+    const load = spyOn(placeRound, "loadPlaceAssistantRound").mockResolvedValue({
+      ref,
+      place: { title: "Marta", context: "Fresh place data", tools: [], skills: [] },
+      skills: [],
+    });
+    try {
+      for (const scenario of [
+        { label: "ordinary", conversation: ordinary, toolSource: { kind: "default" as const }, expected: false },
+        { label: "place", conversation: bound, toolSource: { kind: "default" as const }, expected: true },
+        { label: "custom", conversation: bound, toolSource: { kind: "none" as const }, expected: false },
+      ]) {
+        load.mockClear();
+        const prompts: string[] = [];
+        const provider = syntheticProvider(async function* (request) {
+          prompts.push(request.systemPrompt ?? "");
+          yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
+          yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "Done" } };
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+        });
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: scenario.conversation.id,
+          modelId: MODEL_ID,
+          runConfig: { kind: "chat", input: "Help here", actor, toolSource: scenario.toolSource },
+          userMessage: userMessage("Help here"),
+        });
+        const leaseOwner = `place-prompt-${scenario.label}`;
+        const claim = await aiConversations.claimTurn({
+          conversationId: scenario.conversation.id,
+          turnId: turn.id,
+          leaseOwner,
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected turn claim");
+        await createExecutor(leaseOwner, undefined, fakeValidateWithProvider(provider)).run({
+          conversationId: scenario.conversation.id,
+          turnId: turn.id,
+          claim,
+          signal: new AbortController().signal,
+        });
+        expect((await aiConversations.getTurn({ conversationId: scenario.conversation.id, turnId: turn.id }))?.status).toBe("completed");
+        expect(prompts).toHaveLength(1);
+        expect(prompts[0]!.includes("<place_data>")).toBe(scenario.expected);
+        expect(load).toHaveBeenCalledTimes(scenario.expected ? 1 : 0);
+        if (scenario.expected) {
+          expect(load.mock.calls[0]![0]).toMatchObject({
+            conversationId: bound.id,
+            persistedActor: actor,
+            skillsEnabled: false,
+          });
+          expect(prompts[0]).toContain("Fresh place data");
+        }
+      }
+    } finally {
+      load.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id IN (${ordinary.id}::uuid, ${bound.id}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  test("offers recurring work as a Skill in interactive chats only while skill-creator is enabled", async () => {
     const userId = await insertUser();
     const owner = { type: "user" as const, userId };
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -1100,41 +936,13 @@ suite("AI executor integration", () => {
       });
       await runTurn("interactive", turn.id);
 
-      const task = (await aiChatTasks.create({
-        userId,
-        chatId: conversation.shortId,
-        prompt: "Weekly report, like last time",
-        schedule: { kind: "cron", cron: "0 9 * * 1" },
-        timezone: "UTC",
-      }))!;
-      const occurrence = (await aiChatTasks.createOccurrence({
-        taskId: task.id,
-        scheduledFor: new Date().toISOString(),
-        trigger: "manual",
-        requestKey: `prompt:${task.id}`,
-      }))!;
-      const delivered = await aiChatTasks.deliverOccurrence({
-        occurrenceId: occurrence.id,
-        modelId: MODEL_ID,
-        runConfig: { ...runConfig, input: task.prompt },
-        userMessage: userMessage(task.prompt),
-        expectedRevision: task.revision,
-      });
-      if (!delivered.delivered) throw new Error("Expected the scheduled run to start");
-      await runTurn("background", delivered.turnId);
-
       const interactive = prompts.get("interactive") ?? "";
-      const background = prompts.get("background") ?? "";
-      for (const prompt of [interactive, background]) {
-        expect(prompt).toContain("# Skills");
-        expect(prompt).toContain(skill.name);
-      }
+      expect(interactive).toContain("# Skills");
+      expect(interactive).toContain(skill.name);
       expect(interactive).toContain("offer to save the approach as a personal Skill");
       expect(interactive).toContain("load skill-creator and draft from this conversation");
-      expect(background).not.toContain("save the approach as a personal Skill");
       // The server notices the reference to earlier work and tells only the followed turn to offer once.
       expect(interactive).toContain("Offer once at the end: The user refers to earlier work");
-      expect(background).not.toContain("Offer once at the end");
 
       // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
       expect(await aiSkills.setEnabled(creator.id, userResourceContext(owner), false, authority)).toBeFalse();
@@ -1158,6 +966,220 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
+  test("interactive remembered approvals still authorize the exact tool without an open request", async () => {
+    const userId = await insertUser();
+    const approvalContext = { actorUserId: userId };
+    await rememberAiToolApproval(approvalContext, { toolName: "danger", approvalScope: "danger" });
+    try {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      try {
+        const runConfig: AiChatTurnRunConfig = {
+          kind: "chat",
+          input: "Run the action",
+        };
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelId: MODEL_ID,
+          runConfig,
+          userMessage: userMessage("Run the action"),
+        });
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner: "approval-test",
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected claimed approval turn");
+        const allowRememberedApprovals = aiTurnAllowsRememberedApprovals(runConfig);
+        const pipeline = new __aiExecutorTest.StreamPipeline({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          attempt: claim.turn.attempt,
+          startSeq: claim.liveSeq,
+          leaseOwner: "approval-test",
+          seedBlocks: [],
+          allowRememberedApprovals,
+        });
+        const prepared: PreparedAiTools = {
+          tools: [],
+          canonicalNames: new Map(),
+          approvalPolicies: new Map([["danger", "always"]]),
+          frontendModes: new Map(),
+          streamArgs: new Map(),
+        };
+        pipeline.setApprovalPolicies(prepared.approvalPolicies);
+        const pushed: InboundEvent[] = [];
+        const event = {
+          type: "tool_action_request",
+          kind: "approval",
+          callId: "approval-1",
+          name: "danger",
+          args: {},
+          message: "Confirm action",
+          agentId: "cloud",
+          loopId: turn.id,
+          turnId: `${turn.id}:turn:0`,
+          turnIndex: 0,
+        } as Extract<OutboundEvent, { type: "tool_action_request" }>;
+        const suspended = await createExecutor("approval-test")["handleActionRequest"]({
+          signal: new AbortController().signal,
+          event,
+          loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
+          pipeline,
+          conversationId: conversation.id,
+          turnId: turn.id,
+          prepared,
+          approvalContext,
+          allowRememberedApprovals,
+          rememberableCapabilityApprovals: new Map(),
+          capabilityActionReviews: new Map(),
+          approvalTargets: new Map(),
+          linkedApprovals: new Map(),
+        });
+        expect(suspended).toBe(false);
+        expect(pushed).toEqual([{ type: "approval_response", callId: "approval-1", approved: true }]);
+        expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
+      } finally {
+        await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      }
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("answers a display-only chart call in chat without an open request", async () => {
+    const userId = await insertUser();
+    try {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      try {
+        const runConfig: AiChatTurnRunConfig = {
+          kind: "chat",
+          input: "Chart the orders",
+        };
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelId: MODEL_ID,
+          runConfig,
+          userMessage: userMessage("Chart the orders"),
+        });
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner: "chart-test",
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected claimed chart turn");
+        const pipeline = new __aiExecutorTest.StreamPipeline({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          attempt: claim.turn.attempt,
+          startSeq: claim.liveSeq,
+          leaseOwner: "chart-test",
+          seedBlocks: [],
+          allowRememberedApprovals: aiTurnAllowsRememberedApprovals(runConfig),
+        });
+        const prepared: PreparedAiTools = {
+          tools: [],
+          canonicalNames: new Map(),
+          approvalPolicies: new Map([["chart", "never"]]),
+          frontendModes: new Map([["chart", "client_view"]]),
+          streamArgs: new Map(),
+        };
+        pipeline.setFrontendModes(prepared.frontendModes);
+        const statuses: string[] = [];
+        const emitOp = pipeline["emitOp"].bind(pipeline);
+        pipeline["emitOp"] = async (op) => {
+          if (op.type === "block_set" && op.block.kind === "tool") statuses.push(op.block.status);
+          await emitOp(op);
+        };
+        const args = { kind: "bar", title: "Orders", data: [{ label: "North", value: 12 }] };
+        const fields = { agentId: "cloud", loopId: turn.id, turnId: `${turn.id}:turn:0`, turnIndex: 0 };
+        await pipeline.apply({ type: "tool_execution_start", ...fields, callId: "chart-1", name: "chart", args } as OutboundEvent);
+        const pushed: InboundEvent[] = [];
+        const suspended = await createExecutor("chart-test")["handleActionRequest"]({
+          signal: new AbortController().signal,
+          event: { type: "tool_action_request", ...fields, kind: "client_tool", callId: "chart-1", name: "chart", args } as Extract<
+            OutboundEvent,
+            { type: "tool_action_request" }
+          >,
+          loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
+          pipeline,
+          conversationId: conversation.id,
+          turnId: turn.id,
+          prepared,
+          allowRememberedApprovals: false,
+          rememberableCapabilityApprovals: new Map(),
+          capabilityActionReviews: new Map(),
+          approvalTargets: new Map(),
+          linkedApprovals: new Map(),
+        });
+        expect(suspended).toBe(false);
+        expect(pushed).toEqual([{ type: "tool_result", callId: "chart-1", result: { displayed: true } }]);
+        // From running straight to completed: an awaiting_client in between would read as an open request.
+        expect(statuses).toEqual(["running", "completed"]);
+        expect(pipeline.blocks.find((block) => block.kind === "tool")).toMatchObject({ status: "completed", args });
+        expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
+        await pipeline.flush();
+      } finally {
+        await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      }
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("tells the model what the user sees in an interactive turn", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const prompts = new Map<string, string>();
+    const runTurn = async (label: string, turnId: string) => {
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId,
+        leaseOwner: `${label}-exec`,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      nextCompletion = textCompletion("Done");
+      onCompletionRequest = (body) => {
+        prompts.set(label, JSON.stringify(body));
+      };
+      await createExecutor(`${label}-exec`, undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+    };
+
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Summarize", actor: { kind: "user", user: actorUser(userId) }, toolSource: { kind: "none" } },
+        userMessage: userMessage("Summarize"),
+      });
+      await runTurn("interactive", turn.id);
+
+      const interactive = prompts.get("interactive") ?? "";
+      for (const section of ["# What the user sees", "# Suggestions", "Most replies need no offer."]) {
+        expect(interactive).toContain(section);
+      }
+    } finally {
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("answers a capability question with a summary of the user's recent chats", async () => {
     const userId = await insertUser();
     const earlier = await aiConversations.createConversation({ ownerUserId: userId, title: "Weekly sales report" });
@@ -1213,217 +1235,8 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
-  test("rejects background approvals without changing interactive remembered approvals", async () => {
-    const userId = await insertUser();
-    const approvalContext = { actorUserId: userId };
-    await rememberAiToolApproval(approvalContext, { toolName: "danger", approvalScope: "danger" });
-    try {
-      for (const mode of ["interactive", "background", "background-implicit-kind"] as const) {
-        const background = mode !== "interactive";
-        const conversation = await aiConversations.createConversation({ ownerUserId: userId });
-        try {
-          const runConfig: AiChatTurnRunConfig = {
-            ...(mode === "background-implicit-kind" ? {} : { kind: "chat" }),
-            input: "Run the action",
-            ...(background ? { mandate: { id: crypto.randomUUID(), revision: 1 } } : {}),
-          };
-          const { turn } = await aiConversations.submitChatTurn({
-            conversationId: conversation.id,
-            modelId: MODEL_ID,
-            runConfig,
-            userMessage: userMessage("Run the action"),
-          });
-          const claim = await aiConversations.claimTurn({
-            conversationId: conversation.id,
-            turnId: turn.id,
-            leaseOwner: "approval-test",
-            leaseMs: 30_000,
-            from: "queue",
-            maxAttempts: 5,
-            runBudgetMs: 60_000,
-          });
-          if (!claim) throw new Error("Expected claimed approval turn");
-          const allowRememberedApprovals = aiTurnAllowsRememberedApprovals(runConfig);
-          const pipeline = new __aiExecutorTest.StreamPipeline({
-            conversationId: conversation.id,
-            turnId: turn.id,
-            attempt: claim.turn.attempt,
-            startSeq: claim.liveSeq,
-            leaseOwner: "approval-test",
-            seedBlocks: [],
-            allowRememberedApprovals,
-          });
-          const prepared: PreparedAiTools = {
-            tools: [],
-            canonicalNames: new Map(),
-            approvalPolicies: new Map([["danger", "always"]]),
-            frontendModes: new Map(),
-          };
-          pipeline.setApprovalPolicies(prepared.approvalPolicies);
-          const pushed: InboundEvent[] = [];
-          const event = {
-            type: "tool_action_request",
-            kind: "approval",
-            callId: "approval-1",
-            name: "danger",
-            args: {},
-            message: "Confirm action",
-            agentId: "cloud",
-            loopId: turn.id,
-            turnId: `${turn.id}:turn:0`,
-            turnIndex: 0,
-          } as Extract<OutboundEvent, { type: "tool_action_request" }>;
-          const suspended = await createExecutor("approval-test")["handleActionRequest"]({
-            signal: new AbortController().signal,
-            event,
-            loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
-            pipeline,
-            conversationId: conversation.id,
-            turnId: turn.id,
-            prepared,
-            approvalContext,
-            allowRememberedApprovals,
-            rememberableCapabilityApprovals: new Map(),
-            capabilityActionReviews: new Map(),
-            approvalTargets: new Map(),
-            linkedApprovals: new Map(),
-          });
-          expect(suspended).toBe(false);
-          if (!background) {
-            expect(pushed).toEqual([{ type: "approval_response", callId: "approval-1", approved: true }]);
-            expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
-          } else {
-            expect(pushed).toEqual([{ type: "approval_response", callId: "approval-1", approved: false }]);
-            expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
-            let blocked = "";
-            const clientSuspended = await createExecutor("approval-test")["handleActionRequest"]({
-              signal: new AbortController().signal,
-              event: { ...event, kind: "client_tool" },
-              loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
-              pipeline,
-              conversationId: conversation.id,
-              turnId: turn.id,
-              prepared,
-              approvalContext,
-              allowRememberedApprovals,
-              rememberableCapabilityApprovals: new Map(),
-              capabilityActionReviews: new Map(),
-              approvalTargets: new Map(),
-              linkedApprovals: new Map(),
-              onBackgroundBlocked: (message) => {
-                blocked = message;
-              },
-            });
-            expect(clientSuspended).toBe(false);
-            expect(blocked).toContain("interactive browser");
-            expect(pushed.at(-1)).toMatchObject({
-              type: "tool_result",
-              result: { error: expect.stringContaining("unavailable in a background run") },
-            });
-            expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
-          }
-        } finally {
-          await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
-        }
-      }
-    } finally {
-      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-    }
-  });
 
-  test("answers a display-only chart call itself, in a chat and in a background run, without an open request", async () => {
-    const userId = await insertUser();
-    try {
-      for (const background of [false, true]) {
-        const conversation = await aiConversations.createConversation({ ownerUserId: userId });
-        try {
-          const runConfig: AiChatTurnRunConfig = {
-            kind: "chat",
-            input: "Chart the orders",
-            ...(background ? { mandate: { id: crypto.randomUUID(), revision: 1 } } : {}),
-          };
-          const { turn } = await aiConversations.submitChatTurn({
-            conversationId: conversation.id,
-            modelId: MODEL_ID,
-            runConfig,
-            userMessage: userMessage("Chart the orders"),
-          });
-          const claim = await aiConversations.claimTurn({
-            conversationId: conversation.id,
-            turnId: turn.id,
-            leaseOwner: "chart-test",
-            leaseMs: 30_000,
-            from: "queue",
-            maxAttempts: 5,
-            runBudgetMs: 60_000,
-          });
-          if (!claim) throw new Error("Expected claimed chart turn");
-          const pipeline = new __aiExecutorTest.StreamPipeline({
-            conversationId: conversation.id,
-            turnId: turn.id,
-            attempt: claim.turn.attempt,
-            startSeq: claim.liveSeq,
-            leaseOwner: "chart-test",
-            seedBlocks: [],
-            allowRememberedApprovals: aiTurnAllowsRememberedApprovals(runConfig),
-          });
-          const prepared: PreparedAiTools = {
-            tools: [],
-            canonicalNames: new Map(),
-            approvalPolicies: new Map([["chart", "never"]]),
-            frontendModes: new Map([["chart", "client_view"]]),
-          };
-          pipeline.setFrontendModes(prepared.frontendModes);
-          const statuses: string[] = [];
-          const emitOp = pipeline["emitOp"].bind(pipeline);
-          pipeline["emitOp"] = async (op) => {
-            if (op.type === "block_set" && op.block.kind === "tool") statuses.push(op.block.status);
-            await emitOp(op);
-          };
-          const args = { kind: "bar", title: "Orders", data: [{ label: "North", value: 12 }] };
-          const fields = { agentId: "cloud", loopId: turn.id, turnId: `${turn.id}:turn:0`, turnIndex: 0 };
-          await pipeline.apply({ type: "tool_execution_start", ...fields, callId: "chart-1", name: "chart", args } as OutboundEvent);
-          const pushed: InboundEvent[] = [];
-          let blocked = "";
-          const suspended = await createExecutor("chart-test")["handleActionRequest"]({
-            signal: new AbortController().signal,
-            event: { type: "tool_action_request", ...fields, kind: "client_tool", callId: "chart-1", name: "chart", args } as Extract<
-              OutboundEvent,
-              { type: "tool_action_request" }
-            >,
-            loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
-            pipeline,
-            conversationId: conversation.id,
-            turnId: turn.id,
-            prepared,
-            allowRememberedApprovals: false,
-            rememberableCapabilityApprovals: new Map(),
-            capabilityActionReviews: new Map(),
-            approvalTargets: new Map(),
-            linkedApprovals: new Map(),
-            onBackgroundBlocked: (message) => {
-              blocked = message;
-            },
-          });
-          expect(suspended).toBe(false);
-          // A background run keeps going: the transcript shows the chart later.
-          expect(blocked).toBe("");
-          expect(pushed).toEqual([{ type: "tool_result", callId: "chart-1", result: { displayed: true } }]);
-          // From running straight to completed: an awaiting_client in between would read as an open request.
-          expect(statuses).toEqual(["running", "completed"]);
-          expect(pipeline.blocks.find((block) => block.kind === "tool")).toMatchObject({ status: "completed", args });
-          expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
-          await pipeline.flush();
-        } finally {
-          await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
-        }
-      }
-    } finally {
-      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-    }
-  });
-
-  test.each([false, true])("a linked Studio approval retains its stored question and content (full=%s)", async (fullContent) => {
+  test.each([false, true])("a linked chat code approval retains its stored question and content (full=%s)", async (fullContent) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
@@ -1457,6 +1270,7 @@ suite("AI executor integration", () => {
         canonicalNames: new Map(),
         approvalPolicies: new Map([["code_run", "never"]]),
         frontendModes: new Map(),
+        streamArgs: new Map(),
       };
       const content = {
         kind: "page" as const,
@@ -1469,11 +1283,15 @@ suite("AI executor integration", () => {
       pipeline.setApprovalReviews(reviews, new Map());
       const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "linked-approval-test" });
       await session.append({ role: "assistant", content: [{ type: "tool_call", id: "run", name: "code_run", args: {} }] });
-      const studio = async (kind: "studio_app" | "assistant_turn", review?: CapabilityActionReviewData) => {
+      const codeApproval = async (scope: "code" | "other", review?: CapabilityActionReviewData) => {
         const record = await approvals.request({
           appId: "demo",
           action: "write",
-          requester: { kind, ref: kind === "studio_app" ? crypto.randomUUID() : `${turn.id}/other`, appId: "assistant" },
+          requester: {
+            kind: "assistant_turn",
+            ref: scope === "code" ? `${chat.id}/code/${crypto.randomUUID()}` : `${turn.id}/other`,
+            appId: "assistant",
+          },
           subjectId: userId,
           approverUserId: userId,
           assurance: "standard",
@@ -1512,7 +1330,7 @@ suite("AI executor integration", () => {
           approvalTargets: new Map(),
           linkedApprovals: new Map([[callId, approvalId]]),
         });
-      const linked = await studio("studio_app", fullContent ? fullReview : undefined);
+      const linked = await codeApproval("code", fullContent ? fullReview : undefined);
       await ask("run-approval-0", linked);
       expect(
         await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "run-approval-0" }),
@@ -1541,18 +1359,18 @@ suite("AI executor integration", () => {
           await approvals.consume(linked, {
             input: { value: "one" },
             review: fullReview,
-            requester: { kind: "studio_app", ref: request!.requesterRef },
+            requester: { kind: "assistant_turn", ref: request!.requesterRef },
           }),
         ).toMatchObject({ ok: true });
         expect(await readReviewContent({ conversationId: chat.id, turnId: turn.id, callId: "run" }, digest, userId)).toEqual(content);
       }
-      const decided = await studio("studio_app");
+      const decided = await codeApproval("code");
       await approvals.decide(decided, { approved: false }, { userId, via: "web_session" });
       for (const [callId, approvalId] of [
         ["run-approval-1", decided],
-        ["run-approval-2", await studio("assistant_turn")],
+        ["run-approval-2", await codeApproval("other")],
       ] as const) {
-        await expect(ask(callId, approvalId)).rejects.toThrow("open Studio request");
+        await expect(ask(callId, approvalId)).rejects.toThrow("open chat code request");
         expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId })).toBeNull();
       }
     } finally {
@@ -1613,6 +1431,7 @@ suite("AI executor integration", () => {
             ["code_run", "never"],
           ]),
           frontendModes: new Map(),
+          streamArgs: new Map(),
         };
         const approvalTargets = new Map([
           ["run-approval-0", { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: "https://api.example.com", always: false }],
@@ -2358,7 +2177,7 @@ suite("AI executor integration", () => {
       expect(loadResult).toMatchObject({
         loaded: [{ name: "code_run", call: "code_run" }],
         unavailable: [
-          { name: "code_open", reason: "not_offered_in_turn" },
+          { name: "code_open", reason: "unknown" },
           { name: "local_bash", reason: "not_offered_in_turn" },
         ],
       });
@@ -2419,7 +2238,7 @@ suite("AI executor integration", () => {
         unavailable: [
           { name: "write_file", reason: "not_allowed" },
           { name: "code_run", reason: "not_allowed" },
-          { name: "code_open", reason: "not_allowed" },
+          { name: "code_open", reason: "unknown" },
           { name: "made_up", reason: "unknown" },
         ],
       });
@@ -2552,86 +2371,6 @@ suite("AI executor integration", () => {
       expect(request).not.toContain("# Cloud capabilities");
       expect(request).not.toContain('"name":"memory"');
       expect(request).not.toContain('"name":"search_help"');
-    } finally {
-      onCompletionRequest = null;
-      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-    }
-  });
-
-  test("tells the model what the user sees only in turns a person follows", async () => {
-    const userId = await insertUser();
-    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
-    const prompts = new Map<string, string>();
-    const runTurn = async (label: string, turnId: string) => {
-      const claim = await aiConversations.claimTurn({
-        conversationId: conversation.id,
-        turnId,
-        leaseOwner: `${label}-exec`,
-        leaseMs: 30_000,
-        from: "queue",
-        maxAttempts: 5,
-        runBudgetMs: 60_000,
-      });
-      nextCompletion = textCompletion("Done");
-      onCompletionRequest = (body) => {
-        prompts.set(label, JSON.stringify(body));
-      };
-      await createExecutor(`${label}-exec`, undefined, fakeValidateToolTurn).run({
-        conversationId: conversation.id,
-        turnId,
-        claim: claim!,
-        signal: new AbortController().signal,
-      });
-    };
-
-    try {
-      const { turn } = await aiConversations.submitChatTurn({
-        conversationId: conversation.id,
-        modelId: MODEL_ID,
-        runConfig: { kind: "chat", input: "Summarize", actor: { kind: "user", user: actorUser(userId) }, toolSource: { kind: "none" } },
-        userMessage: userMessage("Summarize"),
-      });
-      await runTurn("interactive", turn.id);
-
-      const task = (await aiChatTasks.create({
-        userId,
-        chatId: conversation.shortId,
-        prompt: "Summarize",
-        schedule: { kind: "cron", cron: "0 9 * * *" },
-        timezone: "UTC",
-      }))!;
-      const occurrence = (await aiChatTasks.createOccurrence({
-        taskId: task.id,
-        scheduledFor: new Date().toISOString(),
-        trigger: "manual",
-        requestKey: `prompt:${task.id}`,
-      }))!;
-      const delivered = await aiChatTasks.deliverOccurrence({
-        occurrenceId: occurrence.id,
-        modelId: MODEL_ID,
-        runConfig: {
-          kind: "chat",
-          input: task.prompt,
-          actor: { kind: "user", user: actorUser(userId) },
-          toolSource: { kind: "default" },
-        },
-        userMessage: userMessage(task.prompt),
-        expectedRevision: task.revision,
-      });
-      if (!delivered.delivered) throw new Error("Expected the scheduled run to start");
-      await runTurn("background", delivered.turnId);
-
-      const interactive = prompts.get("interactive") ?? "";
-      const background = prompts.get("background") ?? "";
-      expect(background).toContain("# Workflow");
-      // A scheduled run with file tools still keeps its working files apart from what it delivers.
-      expect(background).toContain("# Files");
-      expect(background).toContain("Save deliverables outside /temp/.");
-      for (const section of ["# What the user sees", "# Suggestions", "Most replies need no offer."]) {
-        expect(interactive).toContain(section);
-        expect(background).not.toContain(section);
-      }
     } finally {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;

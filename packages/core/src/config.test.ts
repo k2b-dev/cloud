@@ -50,3 +50,13 @@ test("country requests reach their own app-proof authentication without a Core b
   expect(response.status).toBe(200);
   expect(await response.text()).toBe("route-owned authentication");
 });
+
+test("a browser visitor without a session reaches a public Code page; app access does not send them to sign-in first", async () => {
+  const path = "/code/c_survey/answer";
+  const router = new Hono()
+    .use(requireAppAccess(app.meta, async (c) => c.text("Core access denied", 403)))
+    .get("/code/:codeId/*", (c) => c.text("route-owned authentication"));
+  const response = await router.request(path, { headers: { Accept: "text/html" } });
+  expect(response.status).toBe(200);
+  expect(await response.text()).toBe("route-owned authentication");
+});

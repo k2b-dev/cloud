@@ -2,7 +2,7 @@ export { buildMetadata } from "../_internal/build-metadata";
 export { loadPendingApprovals } from "../api/approvals-loader";
 export { geoClient } from "../capabilities/geo-client";
 export { appCaller } from "../capabilities/server-invoke";
-export { expectUserBackedActor, getUserBackedActor, isAppSessionActor, userFromActor } from "./actor";
+export { actorWorkload, expectUserBackedActor, getUserBackedActor, isAppSessionActor, userFromActor } from "./actor";
 export type { ApiErrorBody, ApiErrorResponse, ApiErrorStatus } from "./api";
 export { api, respond, respondMessage } from "./api";
 export type { CreateApiClientConfig } from "./api-client";
@@ -67,6 +67,7 @@ export type {
   ServiceErrorCode,
 } from "./services";
 export {
+  AccessMutationBusyError,
   accessRevision,
   buildAccessPrincipalCondition,
   buildAccessPrincipalTierConditions,
@@ -87,6 +88,7 @@ export {
   images,
   isServiceError,
   listUsersWithAccess,
+  lockAccessMutationAuthority,
   ok,
   okMany,
   PERMISSION_LEVELS,
@@ -94,11 +96,12 @@ export {
   paginateItems,
   password,
   recursiveServiceAccountGroupIdsSubquery,
-  resolveDisplayNames,
   services,
   tryCatch,
   unwrap,
   updateAccess,
 } from "./services";
+export { resolveDisplayNames } from "./services/access-display";
+export { type CodeAccountDisplayContext, codeAccountOwner, codeAccountPresenter, codeMessages } from "./services/code-account-display";
 export { getDateConfig, getTimeZone, TIMEZONE_COOKIE, time } from "./time";
 export { getWidgetRequest } from "./widget-request";

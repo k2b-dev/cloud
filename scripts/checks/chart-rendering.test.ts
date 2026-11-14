@@ -71,10 +71,10 @@ test.each([
 
 test.each([
   "packages/ui/src/content/Chart.tsx",
-  "packages/assistant/src/artifacts/runtime/lib.ts",
-  "packages/assistant/src/artifacts/runtime/chart-renderers-rare.ts",
-  "packages/assistant/src/artifacts/runtime/chart-kind-barGauge.ts",
-  "packages/assistant/src/artifacts/runtime/chart-kind-sankey.ts",
+  "packages/assistant/src/chat-code/runtime/lib.ts",
+  "packages/assistant/src/chat-code/runtime/chart-renderers-rare.ts",
+  "packages/assistant/src/chat-code/runtime/chart-kind-barGauge.ts",
+  "packages/assistant/src/chat-code/runtime/chart-kind-sankey.ts",
   "packages/editor/src/charts.ts",
   "packages/demo/src/plot.test.ts",
   "packages/demo/src/plot.spec.tsx",
@@ -94,8 +94,8 @@ test.each([
   "packages/ui/src/content/Other.tsx",
   "packages/demo/src/artifacts/runtime/chart-kind-gauge.ts",
   "packages/assistant/src/frontend/chart-kind-gauge.ts",
-  "packages/assistant/src/artifacts/runtime/other.ts",
-  "packages/assistant/src/artifacts/runtime/chart-kind-gauge/other.ts",
+  "packages/assistant/src/chat-code/runtime/other.ts",
+  "packages/assistant/src/chat-code/runtime/chart-kind-gauge/other.ts",
 ])("guards raw renderers in %s", async (path) => {
   expect(await findings({ [path]: "import { bar } from '@k2b/ui/charts/core';" })).toEqual([`${path}:1`]);
 });
@@ -127,12 +127,10 @@ test.each([
   expect((await findings({ "packages/demo/src/plot.ts": source })).length).toBeGreaterThan(0);
 });
 
-test.each([
-  "packages/assistant/src/artifacts/runtime/cloud-lib.test.ts",
-  "packages/assistant/src/artifacts/runtime/lib.ts",
-  "packages/assistant/src/frontend/AssistantWorkspace.island.tsx",
-])("leaves only frozen Studio paths for B3b: %s", async (path) => {
-  expect(await findings({ [path]: "import { charts } from '@k2b/stdlib';" })).toEqual([]);
+test("the Assistant workspace has no Studio exemption", async () => {
+  expect(
+    (await findings({ "packages/assistant/src/frontend/AssistantWorkspace.island.tsx": "import { charts } from '@k2b/stdlib';" })).length,
+  ).toBeGreaterThan(0);
 });
 
 const panel = "import { Chart } from '@k2b/ui';\nexport const Panel = () => <Chart kind='bar' data={[]} />;";

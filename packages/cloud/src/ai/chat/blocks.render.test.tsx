@@ -3,9 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { type Accessor, createComponent, createRoot, createSignal } from "solid-js";
+import { type Accessor, createComponent, createRoot, createSignal, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { CodeCheckResultSchema } from "../../code/checker-contract";
+import { aiAttachmentMarker } from "../attachments";
 import type { AiActiveTurn } from "../client/projection";
+import { CloudAiSurveyInputSchema, CloudAiTextEditorInputSchema } from "../default-tool-contracts";
 import type { AiTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import type { AiTurnPhase } from "./turn-layout";
@@ -713,7 +716,7 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain("assistant-markdown-block");
   });
 
-  test("keeps failed steps folded and quiet, and preserves an explicit disclosure choice", () => {
+  test("keeps failed steps folded with their icon in danger, and preserves an explicit disclosure choice", () => {
     const blocks: AiTurnBlock[] = [
       {
         id: "failed-tool",
@@ -726,21 +729,57 @@ describe("capability tool presentation", () => {
       },
       { id: "final-text", kind: "text", text: "I could not finish that." },
     ];
+    /** The step row of one call: its opening tag and its leading icon. */
+    const row = (html: string, label: string) => {
+      const at = html.lastIndexOf("<details", html.indexOf(`<strong>${label}</strong>`));
+      return html.slice(at, html.indexOf("</summary>", at));
+    };
 
     const folded = renderSegment(blocks, { workedMs: 2_000 });
     expect(hasOpenDetails(folded)).toBe(false);
-    expect(folded).not.toContain('data-tone="danger"');
     expect(folded).not.toContain("Mailbox is required");
     expect(folded).toContain("I could not finish that.");
 
     const disclosureState = createAiToolDisclosureState();
     disclosureState.set("work:ai-turn:turn-1:0", true);
+    const listed = renderSegment(blocks, { disclosureState });
+    // The step stays folded and quiet: only its icon, in the same slot, carries the danger tone.
+    const failed = row(listed, "Unknown tool");
+    expect(failed).toContain('data-tone="danger"');
+    expect(failed).toContain('<span class="k2b-chat-activity__leading" aria-hidden="true"><i class="ti ti-alert-circle"></i></span>');
+    expect(failed).not.toMatch(/\sopen(?:=""|(?=[\s>]))/);
+    expect(listed).not.toContain("Mailbox is required");
+
     disclosureState.set("failed-tool", true);
     const expanded = renderSegment(blocks, { disclosureState });
     expect(hasOpenDetailsContaining(expanded, "Unknown tool")).toBe(true);
     expect(expanded).toContain("failed");
-    expect(expanded).not.toContain('data-tone="danger"');
+    expect(row(expanded, "Unknown tool")).toContain('data-tone="danger"');
     expect(expanded).toContain("Mailbox is required");
+  });
+
+  test("a code run or inspection that reported an error is a failed step like any other, with no special case", () => {
+    const step = (name: string, status: "error" | "completed"): AiTurnBlock => ({
+      id: `tool-${name}-${status}`,
+      kind: "tool",
+      callId: `${name}-${status}`,
+      name,
+      args: { title: "report.ts" },
+      status: "completed",
+      result: { status, output: "" },
+    });
+    const disclosureState = createAiToolDisclosureState();
+    disclosureState.set("work:ai-turn:turn-1:0", true);
+    const html = renderSegment(
+      [step("code_run", "error"), step("code_inspect", "error"), step("code_run", "completed"), { id: "t", kind: "text", text: "Done." }],
+      { disclosureState },
+    );
+    const rows = html
+      .split("<details")
+      .slice(2)
+      .map((part) => part.slice(0, part.indexOf("</summary>")));
+    expect(rows.map((part) => part.includes('data-tone="danger"'))).toEqual([true, true, false]);
+    expect(rows.slice(0, 2).every((part) => part.includes("ti-alert-circle") && !/\sopen(?:=""|(?=[\s>]))/.test(part))).toBe(true);
   });
 
   test("shows categorized fetch_file failures as a clear danger activity", () => {
@@ -1234,6 +1273,57 @@ describe("survey presentation", () => {
     expect(html).toContain("Submit");
   });
 
+  test("speaks the reader's language and labels a text answer with its question", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CloudSurveyBlock, {
+            args: { title: "Ablage", questions: [{ id: "folder", type: "text", label: "In welchen Ordner?" }] },
+            onSubmit: () => {},
+          });
+        },
+      }),
+    );
+    expect(html).toContain(">Umfrage</p>");
+    expect(html).toContain("Absenden");
+    // The input is named by its visible question, not by a copy that can drift from it.
+    const labelledBy = /<input[^>]*aria-labelledby="([^"]+)"/.exec(html)?.[1];
+    expect(labelledBy).toBeTruthy();
+    expect(html).toContain(`id="${labelledBy}" class="text-xs font-medium text-primary">In welchen Ordner?`);
+    expect(html).not.toMatch(/>Survey<|>Submit</);
+  });
+
+  test("names each answer by its own question even when answer keys hold spaces or repeat", () => {
+    const html = renderToString(() =>
+      createComponent(CloudSurveyBlock, {
+        args: CloudAiSurveyInputSchema.parse({
+          title: "Kontakt",
+          questions: [
+            { id: "contact name", type: "text", label: "Name" },
+            {
+              id: "contact name",
+              type: "single",
+              label: "Rolle",
+              options: [
+                { label: "Kunde", value: "customer" },
+                { label: "Lieferant", value: "supplier" },
+              ],
+            },
+          ],
+        }),
+        onSubmit: () => {},
+      }),
+    );
+    const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+    const references = [...html.matchAll(/aria-labelledby="([^"]+)"/g)].map((match) => match[1]!);
+    expect(references).toHaveLength(2);
+    for (const reference of references) expect(ids).toContain(reference);
+    // Without a label from the model, the button speaks the reader's language.
+    expect(html).toContain("Submit");
+  });
+
   test("renders accepted survey answers in the shared user bubble", () => {
     const completed: AiTurnBlock = {
       id: "survey-call",
@@ -1427,6 +1517,48 @@ describe("text editor presentation", () => {
     expect(html).toContain("20,000");
   });
 
+  test("speaks the reader's language in the editor and in its receipt", () => {
+    const inGerman = (render: () => JSX.Element) =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return render();
+          },
+        }),
+      );
+    const editor = inGerman(() =>
+      createComponent(CloudTextEditorBlock, {
+        // Parsed like a real call, so a schema default cannot put English back.
+        args: CloudAiTextEditorInputSchema.parse({ title: "Antwort", content: "Hallo" }),
+        onSubmit: async () => undefined,
+      }),
+    );
+    expect(editor).toContain('aria-label="Antwort"');
+    expect(editor).toContain("Änderungen vorschlagen");
+    expect(editor).toContain("Weiter");
+    expect(editor).not.toMatch(/Suggest changes|Review text|>Continue</);
+    const receipt = inGerman(() =>
+      createComponent(AiTurnBlockView, {
+        block: {
+          id: "text-editor-call",
+          kind: "tool",
+          callId: "call-3",
+          name: "text_editor",
+          args: { content: "Hallo" },
+          status: "completed",
+          frontendMode: "client_interaction",
+          result: { submitted: false, feedback: "Kürzer, bitte." },
+        },
+        turnId: "turn-1",
+      }),
+    );
+    expect(receipt).toContain("Texteditor");
+    expect(receipt).toContain("Text prüfen · Änderungen gewünscht");
+    expect(receipt).toContain("Rückmeldung");
+    expect(receipt).not.toMatch(/text editor|changes requested|Feedback</);
+  });
+
   test("collapses accepted text immediately and keeps the exact source in details", () => {
     const completed: AiTurnBlock = {
       id: "text-editor-call",
@@ -1495,7 +1627,7 @@ describe("scheduled result presentation", () => {
     };
     const html = renderToString(() =>
       createComponent(AiChatActionsProvider, {
-        actions: { onOpenScheduledTaskRun: () => undefined },
+        actions: {},
         get children() {
           const items = createAiChatTimeline({ messages: () => [entry], activeTurn: () => null })();
           return items.map((item) => item.content);
@@ -1504,6 +1636,7 @@ describe("scheduled result presentation", () => {
     );
     expect(html).toContain("The morning overview is ready.");
     expect(html).toContain("Background run");
+    expect(html).not.toContain("<button");
     expect(html).toContain("ti-calendar-time");
     expect(html).not.toContain("Scheduled task task");
   });
@@ -1532,7 +1665,7 @@ describe("scheduled result presentation", () => {
         locale,
         get children() {
           return createComponent(AiChatActionsProvider, {
-            actions: { onOpenScheduledTaskRun: () => undefined },
+            actions: {},
             get children() {
               return createAiChatTimeline({ messages: () => [entry], activeTurn: () => null })().map((item) => item.content);
             },
@@ -1543,23 +1676,23 @@ describe("scheduled result presentation", () => {
   };
   const run = { taskId: "tSk234", occurrenceId: "rUn234", scheduledFor: "2026-10-16T14:30:00Z", trigger: "scheduled" as const };
 
-  test("a stopped run shows one system line in the reader's language with what was already done", () => {
+  test("a retired stopped run preserves its original text without executable controls", () => {
     const html = routineLine(
       "Stopped while the routine was running. Already done: Created note Weekly; Nothing was undone.",
       { ...run, stop: { cause: "paused", done: ["Notiz „Woche“ angelegt"] } },
       "de",
     );
-    expect(html).toContain(
-      "Angehalten, während die Routine lief. Schon erledigt: Notiz „Woche“ angelegt. Nichts wurde rückgängig gemacht.",
-    );
-    expect(html).toContain("ti-player-stop");
-    // The stored English text is not shown a second time.
-    expect(html).not.toContain("Stopped while the routine was running");
+    expect(html).toContain("Stopped while the routine was running. Already done: Created note Weekly; Nothing was undone.");
+    expect(html).not.toContain("<button");
     expect(html).not.toContain("tSk234");
   });
 
   test("a stop before any change says so", () => {
-    const html = routineLine("x", { ...run, stop: { cause: "deleted", done: [] } }, "en");
+    const html = routineLine(
+      "Stopped while the routine was running. Nothing was undone.",
+      { ...run, stop: { cause: "deleted", done: [] } },
+      "en",
+    );
     expect(html).toContain("Stopped while the routine was running. Nothing was undone.");
   });
 
@@ -1569,8 +1702,8 @@ describe("scheduled result presentation", () => {
       { ...run, reason: { code: "rights_changed", at: "2026-10-16T14:30:00Z" }, reasonOnly: true },
       "en",
     );
-    expect(reasonOnly).toContain("What it may do changed. Please confirm again.");
-    expect(reasonOnly).not.toContain("Der letzte Lauf ist fehlgeschlagen.");
+    expect(reasonOnly).toContain("Der letzte Lauf ist fehlgeschlagen.");
+    expect(reasonOnly).not.toContain("<button");
     const withAnswer = routineLine(
       "I updated two of three invoices.",
       { ...run, reason: { code: "failed", at: "2026-10-16T14:30:00Z" } },
@@ -1578,6 +1711,7 @@ describe("scheduled result presentation", () => {
     );
     expect(withAnswer).toContain("I updated two of three invoices.");
     expect(withAnswer).toContain("The last run failed.");
+    expect(withAnswer).not.toContain("<button");
   });
 });
 
@@ -1821,18 +1955,49 @@ describe("turn places in the reader's language", () => {
   });
 });
 
-describe("Studio check steps", () => {
+describe("Code check steps", () => {
   const check = (id: string, result: unknown, isError = false): AiTurnBlock => ({
     id,
     kind: "tool",
     callId: id,
     name: "code_check",
-    args: { id: "app-1" },
+    args: { codeId: "c_1234" },
     status: "completed",
     result,
     isError,
   });
-  const issue = (severity: "error" | "warning") => ({ severity, kind: "layout", message: "Row is misaligned" });
+  /** Core's check result around the checker's own contract, with no manifest while it has diagnostics. */
+  const checked = (diagnostics: number) => ({
+    version: 1,
+    result: CodeCheckResultSchema.parse(
+      diagnostics === 0
+        ? {
+            ok: true,
+            diagnostics: [],
+            bundle: "export {};",
+            manifest: {
+              version: 1,
+              entrypoints: [],
+              permissions: [],
+              ai: false,
+              hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+            },
+            permissions: [],
+          }
+        : {
+            ok: false,
+            diagnostics: Array.from({ length: diagnostics }, (_, index) => ({
+              code: "TS2339",
+              message: "Property does not exist.",
+              file: "code.ts",
+              line: index + 1,
+              column: 1,
+            })),
+          },
+    ),
+    manifest: null,
+    permissions: [],
+  });
   const viewed = (path: string, mediaType = "image/png", status: "completed" | "failed" = "completed"): AiTurnBlock => ({
     id: `view-${path}`,
     kind: "tool",
@@ -1918,35 +2083,65 @@ describe("Studio check steps", () => {
 
   test("names the outcome of a check in words and with its own icon", () => {
     const blocks = [
-      check("check-failed", { passed: false, issues: [issue("error"), issue("error"), issue("error"), issue("warning")] }),
-      check("check-passed", { passed: true, issues: [issue("warning"), issue("warning")] }),
-      check("check-clean", { passed: true, issues: [] }),
+      check("check-failed", checked(3)),
+      check("check-passed", checked(0)),
       { id: "final", kind: "text", text: "Done." } satisfies AiTurnBlock,
     ];
     const english = renderExpanded(blocks, { open: ["group:check-failed"] });
-    expect(english).toContain("App check");
-    expect(english).toContain("3 findings · 1 warning");
-    expect(english).toContain("passed · 2 warnings");
-    expect(english).toContain("<strong>App check</strong><small>passed</small>");
+    expect(english).toContain("3 findings");
+    expect(english).toContain("<strong>Checks the Code</strong><small>passed</small>");
     expect(english).toContain("ti-alert-triangle");
     expect(english).toContain("ti-circle-check");
     expect(english).not.toContain('data-tone="danger"');
 
     const german = renderExpanded(blocks, { locale: "de", open: ["group:check-failed"] });
-    expect(german).toContain("App-Prüfung");
-    expect(german).toContain("3 Befunde · 1 Warnung");
-    expect(german).toContain("bestanden · 2 Warnungen");
-    expect(german).not.toMatch(/App check|findings|passed/);
+    expect(german).toContain("Prüft den Code");
+    expect(german).toContain("3 Befunde");
+    expect(german).toContain("bestanden");
+    expect(german).not.toMatch(/Checks the Code|findings|passed/);
 
-    // A check that did not pass without a counted finding still says so; a check that failed to run is a failed step.
-    expect(renderExpanded([check("check-steps", { passed: false, issues: [] })])).toContain("not passed");
-    const broken = renderExpanded([check("check-broken", { failed: true, error: "Host unavailable" }, true)]);
+    // A check that could not run answers with Core's error and is a failed step, not a passed or failed check.
+    const broken = renderExpanded([
+      check("check-broken", {
+        version: 1,
+        error: { code: "BAD_INPUT", message: "Code request exceeds the checker budget.", details: null },
+      }),
+    ]);
     expect(broken).toContain("failed");
     expect(broken).not.toMatch(/passed|findings/);
   });
 
-  test("names every Studio step in the reader's language", () => {
-    const blocks: AiTurnBlock[] = ["code_write", "code_import", "code_check", "code_present"].map((name) => ({
+  test("a failed step shows the error sign in danger instead of the feat/code sign; a passed step keeps its sign", () => {
+    const step = (id: string, name: string, result: unknown): AiTurnBlock => ({
+      id,
+      kind: "tool",
+      callId: id,
+      name,
+      args: { codeId: "c_1234" },
+      status: "completed",
+      result,
+    });
+    const html = renderExpanded(
+      [
+        step("tested", "code_test", { version: 1, mode: "test", ok: false, error: null, diagnostics: [], cases: [] }),
+        step("written", "code_write", { version: 1 }),
+        { id: "final", kind: "text", text: "Done." } satisfies AiTurnBlock,
+      ],
+      { locale: "de", open: ["group:tested"] },
+    );
+    const rows = html.split("<details").slice(1);
+    const failed = rows.find((row) => row.includes("Testet mit erfundenen Daten"))!;
+    const written = rows.find((row) => row.includes("Bearbeitet eine Code-Datei"))!;
+    expect(failed).toContain("ti-alert-circle");
+    expect(failed).toContain('data-tone="danger"');
+    expect(failed).toContain("fehlgeschlagen");
+    expect(failed).not.toContain("cloud-featcode");
+    expect(written).not.toContain('data-tone="danger"');
+    expect(written).toContain("cloud-featcode");
+  });
+
+  test("names every Code step by what happens in the reader's language", () => {
+    const blocks: AiTurnBlock[] = ["code_init", "code_sdk", "code_write", "code_test", "code_check"].map((name) => ({
       id: `tool-${name}`,
       kind: "tool",
       callId: name,
@@ -1955,10 +2150,30 @@ describe("Studio check steps", () => {
       status: "completed",
       result: {},
     }));
-    const german = renderExpanded([...blocks, viewed("/checks/abc/desktop.png")], { locale: "de", open: ["group:tool-code_write"] });
-    for (const label of ["App-Datei speichern", "App-Dateien importieren", "App-Prüfung", "App im Chat zeigen", "Bild ansehen"])
+    const submit: AiTurnBlock = {
+      id: "tool-submit",
+      kind: "tool",
+      callId: "submit",
+      name: "code_submit",
+      args: { codeId: "c_1234" },
+      status: "completed",
+      result: { version: 1, submission: { version: { id: "v-3", number: 3 } } },
+    };
+    const german = renderExpanded([...blocks, submit, viewed("/checks/abc/desktop.png")], {
+      locale: "de",
+      open: ["group:tool-code_init"],
+    });
+    for (const label of [
+      "Legt neuen Code an",
+      "Schlägt nach, was Apps anbieten",
+      "Bearbeitet eine Code-Datei",
+      "Testet mit erfundenen Daten",
+      "Prüft den Code",
+      "Reicht Version 3 ein",
+      "Bild ansehen",
+    ])
       expect(german).toContain(label);
-    expect(german).not.toMatch(/Code write|Code check|Code present|View image/);
+    expect(german).not.toMatch(/Code init|Code sdk|Code write|Code submit|App-Prüfung|View image/);
   });
 
   test("names built-in tools a tool search found in the reader's language and keeps capability titles", () => {
@@ -1984,7 +2199,7 @@ describe("Studio check steps", () => {
         },
       }),
     );
-    expect(german).toContain("App-Prüfung");
+    expect(german).toContain("Prüft den Code");
     expect(german).toContain("Kontakte suchen");
     expect(german).not.toContain("Code Check");
   });
@@ -2236,4 +2451,62 @@ test("the series filter shows chart colors only when the shown view colors its s
   expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count", series: "region" }])).toBe(2);
   // Without a series column every line is one region mix, so a region color would describe nothing the chart draws.
   expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count" }])).toBe(0);
+});
+
+test("Code-started turns show their localized origin beside the prompt", () => {
+  const entry: AiStoredMessage = {
+    id: "code-input",
+    shortId: "Input2",
+    conversationId: "chat",
+    seq: 1,
+    kind: "message",
+    message: { role: "user", content: [{ type: "text", text: "Review my open work." }] },
+    loopId: "turn",
+    modelId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    createdAt: "2026-11-07T09:00:00Z",
+    meta: null,
+  };
+  for (const label of ["Started by Code Morning review", "Gestartet von Code Morgenübersicht"]) {
+    const attributed = {
+      ...entry,
+      meta: { codeOrigin: { codeId: "c_morning", title: "Morning review", runId: "run", requestId: "request", label } },
+    };
+    const html = renderToString(() =>
+      createComponent(AiChatActionsProvider, {
+        actions: {},
+        get children() {
+          return createAiChatTimeline({ messages: () => [attributed], activeTurn: () => null })().map((item) => item.content);
+        },
+      }),
+    );
+    expect(html).toContain(label);
+    expect(html).toContain("Review my open work.");
+  }
+  renderToString(() =>
+    createComponent(AiChatActionsProvider, {
+      actions: {},
+      get children() {
+        const imageOnly: AiStoredMessage = {
+          ...entry,
+          message: {
+            role: "user",
+            content: [{ type: "text", text: aiAttachmentMarker({ path: "/image.png", mediaType: "image/png", size: 32 }) }],
+          },
+        };
+        const item = createAiChatTimeline({ messages: () => [imageOnly], activeTurn: () => null })()[0];
+        expect(item?.kind).toBe("message");
+        if (item?.kind === "message") {
+          expect(item.content).toBeUndefined();
+          expect(item.attachments).toMatchObject([{ name: "image.png", kind: "image" }]);
+        }
+        return undefined;
+      },
+    }),
+  );
 });

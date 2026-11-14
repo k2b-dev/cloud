@@ -62,14 +62,29 @@ export const waitsForUser = (block: AiTurnBlock): boolean =>
 /** A streamed status replaces the previous one only after its first sentence, so a reader never loses a sentence. */
 export const hasCompleteSentence = (text: string): boolean => /[.!?…:;](?:\s|$)|\n/.test(text);
 
+/** A version `code_submit` saved; a failed submit answers with an error instead. */
+export type AiSubmittedCodeVersion = { codeId: string; versionId: string; number: number };
+export const submittedCodeVersion = (block: ToolBlock): AiSubmittedCodeVersion | null => {
+  if (block.name !== "code_submit" || block.status !== "completed" || !isRecord(block.args) || !isRecord(block.result)) return null;
+  const submission = block.result.submission;
+  const version = isRecord(submission) ? submission.version : null;
+  if (!isRecord(version) || typeof block.args.codeId !== "string") return null;
+  return typeof version.id === "string" && typeof version.number === "number"
+    ? { codeId: block.args.codeId, versionId: version.id, number: version.number }
+    : null;
+};
+
 const resultTarget = (block: ToolBlock): string | null => {
   const args = isRecord(block.args) ? block.args : {};
+  // A turn that submits twice shows its newest version once.
+  if (block.name === "code_submit" && typeof args.codeId === "string") return `code_submit:${args.codeId}`;
   if (block.name === "present" && typeof args.path === "string") return `present:${args.path.trim()}`;
   if (block.name === "code_present" && typeof args.title === "string") return `code_present:${args.title.trim().toLowerCase()}`;
   return null;
 };
 
-const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boolean): boolean => {
+const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boolean, codeVersions: boolean): boolean => {
+  if (block.name === "code_submit") return codeVersions && submittedCodeVersion(block) !== null;
   if (block.name === "map" && block.result && typeof block.result === "object" && "map" in block.result) return true;
   if (isFailedTool(block) || block.status === "rejected" || block.status === "awaiting_approval") return false;
   // A running delivery reserves its place once its arguments arrived: a new version of an earlier result must find the
@@ -96,7 +111,10 @@ const actionState = (block: ToolBlock, phase: AiTurnPhase): AiTurnActionState | 
  * Assign the blocks of one turn segment to the four places. Pure: the presentation renders live turns and
  * history through this one function.
  */
-export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: AiTurnPhase; codePresentations?: boolean }): AiTurnLayout {
+export function layoutAiTurn(
+  input: readonly AiTurnBlock[],
+  options: { phase: AiTurnPhase; codePresentations?: boolean; codeVersions?: boolean },
+): AiTurnLayout {
   const blocks = input.filter(isRenderableTurnBlock);
   const tools = blocks.filter((block): block is ToolBlock => block.kind === "tool");
   const steps = tools.length + blocks.filter((block) => block.kind === "compaction").length;
@@ -108,7 +126,7 @@ export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: Ai
     const state = actionState(block, options.phase);
     if (state) actions.push({ id: block.id, block, state });
     // An approved tool or a Cloud action can deliver a result too: it keeps its receipt and shows its result.
-    if (!isResult(block, options.phase, options.codePresentations ?? false)) continue;
+    if (!isResult(block, options.phase, options.codePresentations ?? false, options.codeVersions ?? false)) continue;
     const target = resultTarget(block);
     const index = target ? resultIndex.get(target) : undefined;
     if (index !== undefined) results[index] = { id: results[index]!.id, block };

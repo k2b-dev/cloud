@@ -7,6 +7,7 @@ import {
   describeResponseEnd,
   displayToolName,
   fetchFileErrorPresentation,
+  isFeatCodeTool,
   latestLoopUsage,
   latestUsage,
   latestUsageSnapshot,
@@ -141,6 +142,30 @@ describe("AI tool icons", () => {
     expect(aiToolIcon("contacts__query__list", "ti ti-address-book")).toBe("ti ti-address-book");
     expect(aiToolIcon("contacts__query__list")).toBe("ti ti-ai-gateway");
     expect(aiToolIcon("custom_tool")).toBe("ti ti-tool");
+  });
+});
+
+describe("feat/code tools", () => {
+  test("chat Code runs and Code authoring carry the brand", () => {
+    for (const name of [
+      "code_run",
+      "code_inspect",
+      "code_stop",
+      "code_export",
+      "code_secret",
+      "code_init",
+      "code_pull",
+      "code_sdk",
+      "code_test",
+      "code_simulate",
+      "code_submit",
+      "code_diff",
+      "code_read",
+      "code_write",
+      "code_check",
+    ])
+      expect(isFeatCodeTool(name)).toBe(true);
+    for (const name of ["code_files", "code_file_stat", "code_file_copy", "web_search"]) expect(isFeatCodeTool(name)).toBe(false);
   });
 });
 

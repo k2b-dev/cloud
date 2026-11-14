@@ -16,7 +16,7 @@ for (const tag of ["PermissionEditor", "PrincipalPicker"]) {
 
 test("documented user-backed workflows and test fixtures can exclude machine principals", () => {
   const source = "<PermissionEditor allowServiceAccounts={false} />";
-  expect(checkSource("packages/assistant/src/artifacts/StudioPermissions.tsx", source)).toEqual([]);
+  expect(checkSource("packages/assistant/src/chat-code/SecretsDialog.tsx", source)).toHaveLength(1);
   expect(checkSource("packages/example/src/Access.behavior.test.tsx", source)).toEqual([]);
 });
 

@@ -74,7 +74,6 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
   const [sentFolderId, setSentFolderId] = createSignal("");
   const [draftsFolderId, setDraftsFolderId] = createSignal("");
   const [isDefault, setIsDefault] = createSignal(false);
-  const [allowAutomation, setAllowAutomation] = createSignal(true);
   const [bindingId, setBindingId] = createSignal("");
   const [recipient, setRecipient] = createSignal("");
   const [savesSent, setSavesSent] = createSignal(false);
@@ -128,7 +127,6 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
       sentFolderId: sentFolderId(),
       draftsFolderId: draftsFolderId(),
       isDefault: isDefault(),
-      allowAutomation: allowAutomation(),
       bindingId: bindingId(),
       recipient: recipient(),
       savesSent: savesSent(),
@@ -173,7 +171,6 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
     setSentFolderId(mailRoleFolderId("sent", props.admin.folders) ?? "");
     setDraftsFolderId(mailRoleFolderId("drafts", props.admin.folders) ?? "");
     setIsDefault(identities().length === 0);
-    setAllowAutomation(true);
     setCustomSmtpEnabled(false);
     setCustomSmtpHost("");
     setCustomSmtpPort(587);
@@ -202,7 +199,6 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
     setSentFolderId(identity.sentFolderId ?? "");
     setDraftsFolderId(identity.draftsFolderId ?? "");
     setIsDefault(identity.isDefault);
-    setAllowAutomation(identity.authenticationPolicy.automation === "mailbox");
     setCustomSmtpEnabled(identity.transport.mode === "custom");
     setCustomSmtpHost(identity.transport.host ?? "");
     setCustomSmtpPort(identity.transport.port ?? 587);
@@ -254,7 +250,6 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
             vcard: vcard(),
             envelopeSender: envelopeSender().trim() || null,
             defaultSignatureTemplateId: defaultSignatureTemplateId() || null,
-            authenticationPolicy: { automation: allowAutomation() ? "mailbox" : "disabled" },
             sentFolderId: sentFolderId() || null,
             draftsFolderId: draftsFolderId() || null,
             isDefault: isDefault(),
@@ -297,7 +292,6 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
             vcard: vcard(),
             envelopeSender: envelopeSender().trim() || null,
             defaultSignatureTemplateId: defaultSignatureTemplateId() || null,
-            authenticationPolicy: { automation: allowAutomation() ? "mailbox" : "disabled" },
             sentFolderId: sentFolderId() || null,
             draftsFolderId: draftsFolderId() || null,
             isDefault: isDefault(),
@@ -538,9 +532,6 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                     tone={identityStatusTone(identity)}
                     label={identity.statusReason ? senderIdentityReasonCopy(identity.statusReason, locale()).label : messages().ready}
                   />
-                  <Show when={identity.authenticationPolicy.automation === "mailbox"}>
-                    <StatusBadge tone="neutral" label={messages().automaticReplies} icon={null} />
-                  </Show>
                 </SettingsCollection.Item.Status>
                 <SettingsCollection.Item.Actions>
                   <Show when={identity.statusReason === "sent_folder_missing"}>
@@ -765,13 +756,6 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                 icon="ti ti-star"
                 value={isDefault}
                 onValueChange={setIsDefault}
-              />
-              <CheckboxCard
-                label={messages().allowAutomaticReplies}
-                description={messages().allowAutomaticRepliesDescription}
-                icon="ti ti-message-reply"
-                value={allowAutomation}
-                onValueChange={setAllowAutomation}
               />
             </div>
             <details ref={advancedDelivery} class="group rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)]">

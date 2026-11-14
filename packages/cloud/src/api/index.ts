@@ -20,7 +20,7 @@ import { createCodeCapabilityRoutes } from "../ai/code-capability-routes";
 import { aiProjectsRoutes } from "../ai/projects-routes";
 import { aiRoutes } from "../ai/routes";
 import { aiSkillsRoutes } from "../ai/skills-routes";
-import accountsEntitiesRoutes from "./accounts-entities";
+import { type AccountsEntitiesRouteDependencies, createAccountsEntitiesRoutes } from "./accounts-entities";
 import adminAiRoutes from "./admin-ai";
 import adminAiProjectsRoutes from "./admin-ai-projects";
 import adminAiQuotaRoutes from "./admin-ai-quotas";
@@ -69,6 +69,9 @@ export { createPwaPhoneRoutes } from "./pwa-phone";
  * the typed shape for the client.
  */
 export type CoreApiOptions = {
+  codeChatRunner?: Hono<import("../server").AuthContext>;
+  /** Local Manage adapter for Core-owned targets without a resource reader. Undefined uses the target reader. */
+  principalSearchTarget?: AccountsEntitiesRouteDependencies["managesTarget"];
   terminalLogins?: import("../services/app-approval").AppTerminalLogins;
   notifications: import("../services/auth-flows/notification-sender").AuthNotificationSender;
 };
@@ -90,7 +93,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/auth/pwa/v1", createPwaRoutes())
     .route("/auth", createAuthRoutes(options.notifications))
     .route("/me", meRoutes)
-    .route("/accounts", accountsEntitiesRoutes)
+    .route("/accounts", createAccountsEntitiesRoutes({ managesTarget: options.principalSearchTarget }))
     .route("/geo", geoRoutes)
     .route("/apps", appDiscoveryRoutes)
     .route("/app-events", createAppEventRoutes())
@@ -119,7 +122,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/ai/approval-preferences", approvalPreferenceRoutes)
     .route("/ai/projects", aiProjectsRoutes)
     .route("/ai/skills", aiSkillsRoutes)
-    .route("/_internal/ai/code", createCodeCapabilityRoutes())
+    .route("/_internal/ai/code", createCodeCapabilityRoutes({ runner: options.codeChatRunner }))
     .route("/ai", aiRoutes)
     .route("/", helpRoutes)
     .route("/", capabilityRoutes)
@@ -141,6 +144,16 @@ export const createCoreApiRouter = (options: CoreApiOptions) => {
   return { api };
 };
 
+export {
+  CODE_BRIDGE_REFUSAL_KINDS,
+  type CodeBridgeAuthority,
+  type CodeBridgeCall,
+  type CodeBridgeHost,
+  CodeBridgeRefusal,
+  type CodeBridgeRefusalKind,
+  type CodeFileObservationHost,
+  codeBridgeLocalRefusalKind,
+} from "../code/bridge-contract";
 export { createAdminAppDomainRoutes } from "./admin-app-domains";
 export { createAdminAppKeyRoutes } from "./admin-app-keys";
 export { createAppAccessRoutes } from "./app-access";
@@ -149,6 +162,13 @@ export { createAppBootstrapRoutes } from "./app-bootstrap";
 export { createAppMigrationProbeRoutes } from "./app-migration-probe";
 /** Core-owned app-key request authentication. */
 export { authenticateSignedAppRequest } from "./authenticate-app-request";
+export {
+  type CodeRunnerDispatchDependencies,
+  codeHttpOriginAllowed,
+  createCodeRunnerCallRoutes,
+  dispatchCodeSdkCall,
+} from "./capabilities";
+export { readCodeAiFile } from "./code-file-reader";
 export {
   CLOUD_MCP_PATH,
   CLOUD_MCP_PROTECTED_RESOURCE_PATH,

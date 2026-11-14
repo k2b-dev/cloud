@@ -22,15 +22,17 @@ test("production and dev templates wire only app key and Core origin into every 
         expect(service.environment.CLOUD_APP_KEY_FILE).toBeUndefined();
         continue;
       }
-      expect(service.environment.CLOUD_APP_KEY_FILE).toBe(`/run/secrets/${id}.key`);
+      const target = id === "runner" ? "/run/runner-key/source" : `${id}.key`;
+      const mountedPath = (target: string) => (target.startsWith("/") ? target : `/run/secrets/${target}`);
+      expect(service.environment.CLOUD_APP_KEY_FILE).toBe(mountedPath(target));
       expect(service.environment.CLOUD_CORE_INTERNAL_ORIGIN).toBe("http://app-core:3000");
       for (const key of ["DATABASE_URL", "REDIS_URL", "NATS_SERVERS", "APP_SECRET", "CLOUD_OAUTH_BROKER_SECRET"])
         expect(service.environment[key]).toBeUndefined();
-      expect(service.secrets).toEqual([{ source: `${id}-app-key`, target: `${id}.key` }]);
-      const mountedKey = service.secrets?.find((secret) => `/run/secrets/${secret.target}` === service.environment.CLOUD_APP_KEY_FILE);
+      expect(service.secrets).toEqual([{ source: `${id}-app-key`, target }]);
+      const mountedKey = service.secrets?.find((secret) => mountedPath(secret.target) === service.environment.CLOUD_APP_KEY_FILE);
       expect(mountedKey).toBeDefined();
       expect(parsed.secrets[mountedKey!.source]?.file).toBeDefined();
-      expect(service.depends_on?.["app-core"]).toEqual({ condition: "service_healthy" });
+      expect(service.depends_on?.["app-core"]).toEqual(id === "runner" ? undefined : { condition: "service_healthy" });
       expect(parsed.secrets[`${id}-app-key`]?.file).toBe(`./${development ? ".local/dev-app-keys" : "secrets"}/${id}.key`);
     }
   }
@@ -39,9 +41,11 @@ test("production and dev templates wire only app key and Core origin into every 
 test("app-owned development environment survives generation", async () => {
   const source = await Bun.file(new URL("./templates/compose.dev.yml", import.meta.url)).text();
   const rendered = renderAppDeployment(source, true);
-  expect(rendered).toContain("      CLOUD_CLI_CHROMIUM: /usr/bin/chromium");
+  expect(rendered).not.toContain("CLOUD_CLI_CHROMIUM");
   expect(rendered).toContain("      NATS_ADMIN_NKEY_SEED_FILE: /run/secrets/nats-admin.seed");
-  expect(() => renderAppDeployment(source.replace("      CLOUD_CLI_CHROMIUM:", "      CLOUD_APP_KEY:"), true)).toThrow("generator-owned");
+  expect(() => renderAppDeployment(source.replace("      NATS_ADMIN_NKEY_SEED_FILE:", "      CLOUD_APP_KEY:"), true)).toThrow(
+    "generator-owned",
+  );
 });
 
 test("development key generation preserves explicit grants independently of app names", async () => {
@@ -73,4 +77,18 @@ test("development key generation rejects unknown or duplicate fixture grants", a
         [{ appId: "acme", keyId: "11111111-1111-4111-8111-111111111111", seed: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", grants }],
       ),
     ).rejects.toThrow("Invalid development key grants for acme");
+});
+
+test("production Mail waits for application readiness before the next upgrade stage", async () => {
+  const source = await Bun.file(new URL("./templates/compose.prod.yml", import.meta.url)).text();
+  const parsed = Bun.YAML.parse(renderAppDeployment(source, false)) as {
+    services: Record<string, { healthcheck?: { test: string[]; interval: string; timeout: string; retries: number } }>;
+  };
+  expect(parsed.services["app-mail"]?.healthcheck).toEqual(parsed.services["app-core"]?.healthcheck);
+  expect(parsed.services["app-mail"]?.healthcheck?.test).toEqual([
+    "CMD",
+    "bun",
+    "-e",
+    'const response = await fetch("http://127.0.0.1:3000/_cloud/ready"); if (!response.ok) process.exit(1)',
+  ]);
 });

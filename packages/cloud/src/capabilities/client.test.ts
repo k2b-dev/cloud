@@ -226,3 +226,21 @@ test("full review reader fails closed on oversize and catches cancellation durin
     error: { code: "REQUEST_CANCELLED" },
   });
 });
+
+test("public clients keep target and refs beside input for review and execution", async () => {
+  const coordinates = {
+    target: { type: "demo.book", id: "source" },
+    refs: { destinationId: { type: "demo.book", id: "destination" } },
+    input: { id: "contact" },
+  };
+  const bodies: unknown[] = [];
+  const options = {
+    fetch: async (url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return String(url).endsWith("/review") ? Response.json({ message: "Move contact." }) : Response.json({ data: {} });
+    },
+  };
+  expect((await reviewCapabilityAction({ appId: "demo", capabilityId: "move", ...coordinates }, options)).ok).toBe(true);
+  expect((await invokeCapability({ appId: "demo", capabilityId: "move", kind: "action", ...coordinates }, options)).ok).toBe(true);
+  expect(bodies).toEqual([coordinates, coordinates]);
+});

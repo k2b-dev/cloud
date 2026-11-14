@@ -17,6 +17,21 @@ import { buildAccessPrincipalCondition } from "../server/services/access";
 import { logger } from "./logging";
 import { toPgTextArray } from "./postgres";
 
+const confirmedCodeInvocation = (authority: RequestAuthority | null): boolean => {
+  const actor = authority?.actor;
+  return (
+    authority?.credentialKind === "invocation" &&
+    actor?.kind === "service_account" &&
+    actor.serviceAccount.kind === "code" &&
+    actor.serviceAccount.status === "active" &&
+    actor.delegation?.credentialKind === "mandate" &&
+    !!actor.delegation.mandateId &&
+    !!actor.delegation.mandateRevision &&
+    actor.delegation.workloadType === "code.version" &&
+    !!actor.delegation.workloadId
+  );
+};
+
 type AccessApp = Pick<AppMeta, "id" | "access">;
 type GrantState = { app_id: string; configured: boolean; permission: "read" | "admin" | null };
 
@@ -33,7 +48,7 @@ export const appAccessAuthority = <E extends AuthContext>(c: Context<E>): Reques
 export const credentialAllows = (authority: RequestAuthority, appId: string): boolean => {
   const actor = authority.actor;
   if (actor.kind === "service_account") {
-    if (actor.serviceAccount.status !== "active") return false;
+    if (actor.serviceAccount.status !== "active" || actor.serviceAccount.kind === "code") return false;
     if (actor.serviceAccount.kind === "resource_bound" && actor.serviceAccount.appId !== appId) return false;
     if (actor.credentialExpiresAt && !(new Date(actor.credentialExpiresAt).getTime() > Date.now())) return false;
   }
@@ -70,6 +85,8 @@ const fixedAllows = (authority: RequestAuthority, rule: FixedAppAccessRule): boo
 
 /** Pure decision shared by single-app and batched reads. Missing grant state means unconfigured, not an implicit grant. */
 export const evaluateAppAccess = (authority: RequestAuthority | null, app: AccessApp, state?: GrantState): boolean => {
+  if (authority?.actor.kind === "service_account" && authority.actor.serviceAccount.kind === "code")
+    return confirmedCodeInvocation(authority);
   if (app.access === undefined) return true; // Step 1 compatibility; no inferred entry rule.
   if (!authority || !credentialAllows(authority, app.id)) return false;
   const parsed = AppAccessRuleSchema.safeParse(app.access);
@@ -116,6 +133,9 @@ export const usableAppIds = async (
   options: { db?: SQL; signal?: AbortSignal } = {},
 ): Promise<Set<string>> => {
   const db = options.db ?? sql;
+  // Code enters only through a verified, current version mandate. Human app-entry
+  // rules do not grant it authority; the capability's live resource grant remains required.
+  if (confirmedCodeInvocation(authority)) return new Set(apps.map((app) => app.id));
   const allowed = new Set(apps.filter((app) => app.access?.kind !== "grants" && evaluateAppAccess(authority, app)).map((app) => app.id));
   if (!authority) return allowed;
   const resources = apps.filter((app) => app.access?.kind === "resources" && credentialAllows(authority, app.id));
@@ -186,6 +206,7 @@ export const canUseApp = async (
   app: AccessApp,
   options: { db?: SQL; signal?: AbortSignal } = {},
 ): Promise<boolean> => {
+  if (confirmedCodeInvocation(authority)) return true;
   if (app.access?.kind !== "resources") return (await usableAppIds(authority, [app], options)).has(app.id);
   if (!authority || !credentialAllows(authority, app.id)) return false;
   const signal = resourceAccessSignal(authority, RESOURCE_ACCESS_ENTRY_TIMEOUT_MS, options.signal);

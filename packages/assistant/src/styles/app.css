@@ -6,8 +6,6 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
-.assistant-apps-page { display: flex; flex-direction: column; gap: 1.5rem; width: 100%; min-width: 0; padding: 1.5rem; }
-.assistant-apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
 
 /* The Project choice sits under the composer, its icon in line with the composer's own controls. */
 .assistant-empty-project { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-block-start: .375rem; padding-inline: .5rem; }
@@ -313,44 +311,6 @@
 }
 
 /* Assistant-owned artifact workspace. Tabs remain mounted while inactive. */
-.artifact-workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
-.artifact-workspace__tabs { display: flex; align-items: center; gap: .25rem; padding: .5rem; min-width: 0; }
-.artifact-workspace__tabs > .k2b-tabs { min-width: 0; flex: 1; overflow-x: auto; }
-.artifact-workspace__tab { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: .5rem; }
-.artifact-workspace__tab[hidden] { display: none; }
-/* A file tab is the file itself: the tab names it, and the plain preview fills the tab without a second frame, so an
-   editor takes the whole tab and a long file scrolls inside the preview. Content starts at the tab strip's edge. */
-.k2b-ui .artifact-workspace__tab > .k2b-content-file-view[data-variant] { flex: 1 1 auto; min-height: 0; }
-/* Read-only source code has no scrolling preview around it; it keeps its full height and the tab scrolls it. Its Copy
-   sits at the end of the row above the code, where a host header would hold it. */
-.k2b-ui .artifact-workspace__tab > .k2b-content-file-view[data-variant] > .k2b-content-code-display { flex: none; }
-.k2b-ui .artifact-workspace__tab > .k2b-content-file-view[data-variant] > .k2b-content-code-display > .k2b-content-code-display__header { justify-content: flex-end; padding-inline: 0; }
-.artifact-panel { display: flex; flex: 1; flex-direction: column; gap: .5rem; min-height: 0; min-width: 0; overflow: hidden; }
-.artifact-panel__preview { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 12rem; overflow: hidden; border-radius: var(--ui-radius-frame); background: var(--k2b-surface); }
-.artifact-panel__preview > .k2b-placeholder { flex: 1; }
-/* An HTML app fills its surface and scrolls inside its own frame; it stays invisible until it reports ready. */
-.studio-app { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
-.studio-app__frame { display: flex; flex: 1; min-width: 0; }
-.studio-app-frame { display: block; flex: 1; width: 100%; min-height: 0; border: 0; background: transparent; transition: opacity 120ms, filter 120ms; }
-/* While Cloud asks the person something for this app, the app cannot be clicked and steps back visually. */
-.studio-app-frame[inert] { filter: grayscale(1) opacity(.45); }
-.studio-app__loading { position: absolute; inset: 0; }
-@media (prefers-reduced-motion: reduce) { .studio-app-frame { transition: none; } }
-.artifact-panel__console { display: flex; flex-direction: column; gap: .5rem; flex: 0 1 auto; min-height: 0; max-height: 60%; }
-.artifact-panel__console > .k2b-inline-guidance, .artifact-console__header, .artifact-console__caption { flex-shrink: 0; }
-.artifact-console[hidden] { display: none; }
-.artifact-console { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; overflow: hidden; padding: .75rem; }
-.artifact-console__header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
-.artifact-console__output { font-family: var(--k2b-font-mono); font-size: .8125rem; line-height: 1.6; min-height: 0; max-height: 18rem; overflow: auto; margin-top: .5rem; }
-.artifact-console__output, .artifact-console__output :where(time, span, pre) { font-family: var(--k2b-font-mono, ui-monospace, monospace); }
-.artifact-console__caption { color: var(--k2b-text-muted); font-size: .75rem; }
-.artifact-console__line { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: baseline; gap: .5rem; padding-block: .2rem; }
-.artifact-console__line time { color: var(--k2b-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.artifact-console__level { justify-self: start; }
-.artifact-console__message { white-space: pre-wrap; overflow-wrap: anywhere; }
-.artifact-workspace .artifact-workspace__tabs .artifact-mobile-toggle { display: none; }
-@media (max-width: 767px) { .artifact-workspace .artifact-workspace__tabs .artifact-mobile-toggle { display: inline-flex; } }
-
 /* Recording replaces footer controls with explicit cancel and finish actions. */
 .k2b-ui .assistant-recording-footer { display: flex; align-items: center; gap: .75rem; width: 100%; min-width: 0; }
 .k2b-ui .assistant-recording-action { flex: 0 0 auto; width: 1.875rem; height: 1.875rem; padding: 0; border-radius: 50%; background: var(--k2b-surface-muted); color: var(--k2b-text); }
@@ -362,97 +322,10 @@
   .k2b-ui .assistant-recording-wave > span { transition: none; transform: scaleY(.25); }
 }
 
-.artifact-source-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.artifact-source-editor__actions { display: flex; justify-content: flex-end; padding: .25rem 0; }
-.artifact-code { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.artifact-code .hl-keyword, .artifact-code .hl-function { color: var(--k2b-code-keyword); }
-.artifact-code .hl-string { color: var(--k2b-code-string); }
-.artifact-code .hl-comment { color: var(--k2b-code-comment); }
-.artifact-code .hl-number, .artifact-code .hl-variable { color: var(--k2b-code-number); }
-.artifact-code .hl-operator { color: var(--k2b-code-punctuation); }
-
-.assistant-app-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,15rem),1fr)); gap:.75rem; }
-.artifact-workspace .assistant-app-grid .k2b-detail-panel__action { border:1px solid var(--k2b-border); background:var(--k2b-surface); border-radius:1rem; padding:1rem; min-height:6rem; align-items:flex-start; }
-
-.artifact-workspace .assistant-app-grid .k2b-detail-panel__action-title { font-size:.875rem; font-weight:600; }
-.k2b-ui .assistant-studio-card {
-  --studio-accent: var(--studio-accent-light);
-  display: flex; flex-direction: column; gap: .875rem; padding: .9375rem; min-width: 0;
-  border-color: color-mix(in srgb, var(--studio-accent) 16%, var(--k2b-border));
-  background: radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--studio-secondary) 19%, transparent), transparent 75%),
-    linear-gradient(125deg, color-mix(in srgb, var(--studio-accent) 7%, var(--k2b-surface)), var(--k2b-surface));
-}
-.k2b-ui[data-theme="dark"] .assistant-studio-card,
-.k2b-ui.k2b-dark .assistant-studio-card,
-.dark .k2b-ui .assistant-studio-card { --studio-accent: var(--studio-accent-dark); }
-.assistant-studio-card__top { display: flex; align-items: flex-start; gap: .75rem; }
-.assistant-studio-card__menu { flex: 0 0 auto; margin: -.25rem -.25rem 0 0; }
-.assistant-studio-card__icon { display: grid; place-items: center; flex: 0 0 auto; width: 1.75rem; height: 1.75rem; margin-top: .1875rem; color: var(--studio-accent); font-size: 1.5625rem; }
-.assistant-studio-card__copy { flex: 1; min-width: 0; }
-.assistant-studio-card__title { color: var(--k2b-text); margin: 0; font-size: .8125rem; line-height: 1.5; font-weight: 600; overflow-wrap: anywhere; }
-.assistant-studio-card__description { margin: .25rem 0 0; color: var(--k2b-text-secondary); font-size: .75rem; line-height: 1.55; overflow-wrap: anywhere; }
-.assistant-studio-card__description:empty { display: none; }
-.assistant-studio-card__footer { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: auto; padding-top: .375rem; }
-.k2b-ui .k2b-button.assistant-studio-card__start { color: var(--studio-accent); border-color: color-mix(in srgb, var(--studio-accent) 15%, var(--k2b-border)); background: color-mix(in srgb, var(--k2b-surface) 70%, transparent); }
-.k2b-ui .k2b-button.assistant-studio-card__start:hover:not(:disabled) { background: color-mix(in srgb, var(--studio-accent) 10%, var(--k2b-surface)); }
-.assistant-studio-runner-header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-.assistant-studio-runner-header h1 { margin: 0; font-size: 1rem; font-weight: 600; overflow-wrap: anywhere; }
-
-
-.assistant-studio-card__footer .k2b-status-badge { font-size: .65rem; }
-.assistant-version-list { display:flex; flex-direction:column; gap:1rem; }
-
-
-.assistant-apps-page--runner { flex: 1; min-height: 0; }
-.assistant-apps-page--runner { height: 100%; gap: .75rem; padding: .75rem; }
-.assistant-studio-runner-header { display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; }
-.assistant-studio-runner-header h1 { display:flex; align-items:center; gap:.5rem; min-width:0; overflow-wrap:anywhere; }
-.assistant-advanced-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; flex-shrink:0; }
-.assistant-manual-editor, .assistant-sql-console { display:flex; flex-direction:column; flex:1; min-height:0; gap:.75rem; overflow:auto; }
-.assistant-editor-split { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:.75rem; flex:1; min-height:320px; }
-.assistant-editor-code, .assistant-editor-execution { display:flex; flex-direction:column; min-width:0; min-height:0; overflow:auto; }
-.assistant-editor-file { display:flex; flex:1; min-height:0; }
-.assistant-editor-file[hidden] { display:none; }
-.assistant-editor-file .artifact-code { flex:1; min-height:0; }
-.assistant-editor-execution > .artifact-panel { flex:1; min-height:0; }
-.assistant-editor-mobile-tabs { display:none; }
-.assistant-sql-editor { height:180px; flex-shrink:0; }
-.assistant-sql-editor[hidden] { display:none; }
-.assistant-sql-editor > .artifact-code { height:100%; }
-.assistant-sql-results { flex:1; min-height:200px; overflow:auto; }
-.assistant-data-dialog { display:flex; flex-direction:column; gap:1rem; min-width:0; }
-.assistant-data-entries { max-height:50vh; overflow:auto; }
-.assistant-data-entry { display:flex; justify-content:space-between; align-items:center; gap:.75rem; padding:.5rem 0; border-bottom:1px solid var(--k2b-border, #8883); }
-@media (max-width:1000px) {
-  .assistant-editor-mobile-tabs { display:block; }
-  .assistant-editor-split { display:flex; }
-  .assistant-editor-code, .assistant-editor-execution { flex:1; }
-  .assistant-editor-split[data-mobile="code"] .assistant-editor-execution,
-  .assistant-editor-split[data-mobile="execution"] .assistant-editor-code { display:none; }
-  .assistant-data-entry { align-items:flex-start; flex-direction:column; }
-}
-.assistant-apps-page--runner > .artifact-panel { flex: 1; min-height: 0; }
-.assistant-studio-card__top--title-only { align-items: center; }
-.assistant-studio-card__top--title-only .assistant-studio-card__icon { margin-top: 0; }
-.assistant-studio-card__menu { align-self: flex-start; }
-.assistant-version-rows { border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-surface); overflow: hidden; }
-.assistant-version-entry { display: flex; align-items: center; gap: .75rem; padding: .75rem; }
-.assistant-version-entry + .assistant-version-entry { border-top: 1px solid var(--k2b-border); }
-.assistant-version-entry p { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: .875rem; }
-.assistant-version-entry__actions { display: flex; gap: .25rem; flex-shrink: 0; }
-@media (max-width: 480px) { .assistant-version-entry { flex-wrap: wrap; } .assistant-version-entry__actions { margin-left: auto; } }
-
-.assistant-apps-page--runner .artifact-panel__preview { min-height: 0; }
-
-.assistant-studio-card__start { margin-left: auto; }
-
-.assistant-editor-publish { margin-inline-start: auto; }
-
 .assistant-starters { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; margin-block-start:2rem; }
 .k2b-ui .k2b-button.assistant-starter { height:auto; min-width:0; justify-content:flex-start; align-items:flex-start; gap:.875rem; padding:1.125rem; text-align:start; white-space:normal; font-size:.875rem; line-height:1.5; font-weight:400; border-radius:.625rem; }
 .assistant-starter > i { flex-shrink:0; font-size:1.125rem; line-height:1.5; color:var(--k2b-text-muted); }
 .assistant-starter > span { min-width:0; overflow-wrap:anywhere; }
-.assistant-sql-hint { color:var(--k2b-text-muted); font-size:.75rem; }
 @media(max-width:540px) { .assistant-starters { grid-template-columns:1fr; } }
 
 
@@ -478,9 +351,13 @@
   color: var(--k2b-text);
 }
 
-/* Chat titles stay regular weight; the active row alone carries emphasis. */
+/* Chat titles stay regular weight; the active row and an unread answer alone carry emphasis. Unread is weight and
+   dot, never color alone, as in the shared sidebar status. */
 .k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item[data-variant] .k2b-app-workspace__sidebar-item-label-text {
   font-weight: 400;
+}
+.k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item--unread[data-variant] .k2b-app-workspace__sidebar-item-label-text {
+  font-weight: 600;
 }
 
 /* Reserve the chat list's scroll track in the surrounding inset, so rows and
@@ -503,31 +380,7 @@
   max-width: 100cqi;
 }
 
-/* Keep the standalone app within the first screen, above the MinimalLayout footer, so its preview can scroll. */
-.assistant-standalone-page { display: flex; flex: 1 1 0; min-height: 0; overflow: hidden; }
-.assistant-standalone-runner { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: var(--ui-space-section); }
-/* From lg, the Cloud shell's gutters frame a signed-in runner like an
-   AppWorkspace, so its surface and controls share the header's edges. The
-   public page and the flush mobile shell have no gutters and keep the inset. */
-@media (min-width: 1024px) {
-  .assistant-standalone-runner { padding: 0; }
-  .assistant-standalone-page .assistant-standalone-runner { padding: var(--ui-space-section); }
-}
-
-/* Keep the scroll thumb visible alongside the standard ScrollArea edge fade. */
-.k2b-ui .k2b-scroll-area:has(> .assistant-studio-catalog) {
-  scrollbar-width: auto;
-  scrollbar-color: var(--k2b-text-muted) transparent;
-}
-.k2b-ui .k2b-scroll-area:has(> .assistant-studio-catalog)::-webkit-scrollbar {
-  width: .375rem;
-}
-.k2b-ui .k2b-scroll-area:has(> .assistant-studio-catalog)::-webkit-scrollbar-thumb {
-  background: var(--k2b-text-muted);
-  border-radius: 999px;
-}
-
-.k2b-ui .k2b-scroll-area[data-viewport-size="compact"]:has(> :is(.assistant-studio-catalog, .assistant-project-catalog)) {
+.k2b-ui .k2b-scroll-area[data-viewport-size="compact"]:has(> .assistant-project-catalog) {
   height: min(450px, 60dvh);
 }
 
@@ -543,15 +396,34 @@
   pointer-events: none;
   transition: opacity 150ms ease-out;
 }
-/* One quiet status per chat at the row's end; the label is in the tooltip and for screen readers. */
+/* One status per chat at the row's end; the label is in the tooltip and for screen readers. In the chat list it has
+   the size of the row's icons in a fixed 1rem slot, so a change from running to waiting, failed, or unread moves
+   nothing. */
 .k2b-ui .assistant-chat-marker { display: inline-flex; align-items: center; color: var(--k2b-text-muted); }
 .k2b-ui .assistant-chat-marker[data-tone="progress"] { color: var(--k2b-text-muted); }
 .k2b-ui .assistant-chat-marker[data-tone="attention"] { color: var(--k2b-warning-text); }
 .k2b-ui .assistant-chat-marker[data-tone="danger"] { color: var(--k2b-danger-text); }
 .k2b-ui .assistant-chat-marker[data-tone="accent"] { color: var(--k2b-action); }
+.k2b-ui .k2b-app-workspace__sidebar-item-meta > .assistant-chat-marker {
+  justify-content: center;
+  inline-size: 1rem;
+  block-size: 1rem;
+  font-size: .875rem;
+}
+/* A failed run keeps its danger ink in every list, also in menus that carry no tone. */
+.k2b-ui .assistant-chat-failed { color: var(--k2b-danger-text); }
+/* Work in progress: the AI's plum, also where the surrounding tone is neutral, and a calm turn. */
+.k2b-ui .assistant-chat-progress { color: var(--k2b-ai-accent); }
+.k2b-ui .assistant-chat-progress.animate-spin { animation-duration: 1.6s; }
 /* A chat that waits for the person carries the AI accent dot of "Waiting for you", also in the phone navigation, whose
-   tones have no AI color. It takes the slot of an icon, so the row keeps its size. */
-.k2b-ui .assistant-chat-waiting { display: inline-block; flex: none; inline-size: .5rem; block-size: .5rem; border-radius: 50%; background: var(--k2b-ai-accent); }
+   tones have no AI color. An unread answer carries the action color's dot. Each takes the slot of an icon, so the row
+   keeps its size. */
+.k2b-ui .assistant-chat-waiting,
+.k2b-ui .assistant-chat-unread { display: inline-block; flex: none; inline-size: .5rem; block-size: .5rem; border-radius: 50%; background: var(--k2b-ai-accent); }
+.k2b-ui .assistant-chat-unread { background: var(--k2b-action); }
+@media (forced-colors: active) {
+  .k2b-ui :is(.assistant-chat-waiting, .assistant-chat-unread) { background: CanvasText; forced-color-adjust: none; }
+}
 
 /* "Waiting for you" above the composer: one row of fixed height that scrolls sideways, so a question opening or
    closing elsewhere never moves the composer. Hidden, it keeps its place. Its end fades, so a cut entry reads as more
@@ -606,7 +478,6 @@
 /* Task rows fill the shared Button label; the chevron owns the trailing edge. */
 .k2b-ui .assistant-task-row { width: 100%; justify-content: flex-start; text-align: left; }
 .k2b-ui .assistant-task-row > .k2b-button__label { width: 100%; flex: 1; }
-.artifact-workspace__tab:has(> .assistant-task-detail) { overflow: hidden; }
 .assistant-task-detail { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .assistant-task-detail__body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 1rem; padding: .5rem .5rem 1.25rem; }
 .assistant-task-detail__instructions { margin: 0; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -633,3 +504,432 @@
 .assistant-all-chats-filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: start; }
 .assistant-all-chats-filters > :first-child { flex: 999 1 16rem; min-width: 0; }
 .assistant-all-chats-filters > :last-child { flex: 1 1 13rem; min-width: 0; }
+
+/* The Code destinations load their code when they open; the loading surface holds the pane like the content does. */
+.assistant-deferred-view { display: contents; }
+.assistant-deferred-feedback { display: flex; flex: 1; min-height: 0; align-items: flex-start; padding: var(--ui-space-section); }
+
+/* Gustav: the person's own Code ("My apps & automations"). One flat list; the status and the last run share the row,
+   and on a narrow surface the status moves under the name. */
+.assistant-code {
+  container-type: inline-size;
+}
+.assistant-code__lead {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.assistant-code__lead .ti,
+.assistant-code-block__actions .ti-moustache {
+  color: var(--ui-app-accent-text);
+}
+.assistant-code__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.assistant-code__row {
+  display: grid;
+  grid-template-columns: 1.875rem minmax(0, 1fr) 9.5rem 12rem;
+  align-items: center;
+  gap: 0.875rem;
+  min-height: 2.75rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--k2b-radius-control);
+}
+.assistant-code__head {
+  min-height: 1.875rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--k2b-text-muted);
+}
+/* The feat/code sign of a Code row stands on the surface, never on a chip. */
+.assistant-code__mark {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 1.25rem;
+  color: var(--k2b-text);
+}
+.assistant-code__narrow {
+  display: none;
+}
+@container (max-width: 34rem) {
+  .assistant-code__row {
+    grid-template-columns: 1.875rem minmax(0, 1fr);
+  }
+  .assistant-code__wide,
+  .assistant-code__head {
+    display: none;
+  }
+  .assistant-code__narrow {
+    display: block;
+  }
+}
+
+/* "Code of …" above the panel chat: a quiet block for the place the page shows. */
+.assistant-code-block {
+  margin: 0.25rem 0.875rem 0.625rem;
+  padding: 0.25rem 0.25rem 0.5rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+  font-size: 0.8125rem;
+}
+.assistant-code-block[data-state="error"] {
+  background: var(--k2b-danger-surface);
+}
+.assistant-code-block__head {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: var(--k2b-radius-control);
+  font-size: 0.84375rem;
+  text-align: start;
+}
+.assistant-code-block__head > .ti {
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+}
+.assistant-code-block__head:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(var(--k2b-focus-width) * -1);
+}
+.assistant-code-block__summary {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+}
+.assistant-code-block__rows {
+  display: flex;
+  flex-direction: column;
+}
+.assistant-code-block__row {
+  display: grid;
+  grid-template-columns: 1.125rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.625rem;
+}
+.assistant-code-block__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem 0;
+}
+.assistant-code-block__note {
+  margin: 0;
+  padding: 0.375rem 0.625rem 0;
+}
+
+/* The saved version, its execution subject and approval/credential state. */
+.assistant-code-version {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+  font-size: 0.84375rem;
+}
+.assistant-code-version__title {
+  margin: 0;
+  font-weight: 600;
+}
+.assistant-code-version__mark {
+  margin-right: 0.375em;
+}
+.assistant-code-version__note {
+  display: flex;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+}
+.assistant-code-version__note > .ti {
+  margin-top: 0.125rem;
+}
+/* What Core saw at submission: the check and the test cases, side by side; they wrap onto two lines on a phone. */
+.assistant-code-version__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+}
+.assistant-code-version__checks > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.assistant-code-version__checks > span[data-tone="ok"],
+.assistant-code-version__checks > span:first-child {
+  color: var(--k2b-success-text);
+}
+.assistant-code-version__checks > span[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+.assistant-code-version__note[data-state="rejected"] {
+  color: var(--k2b-danger-text);
+}
+/* What the version calls where, as the Code page lists it; plain rows on the card's own surface. */
+.assistant-code-version__targets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.assistant-code-version__label {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.assistant-code-version__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.assistant-code-version__target {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.5rem;
+}
+.assistant-code-version__target > .ti {
+  margin-top: 0.125rem;
+  color: var(--k2b-text-secondary);
+}
+.assistant-code-version__calls {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.assistant-code-version__ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+}
+.assistant-code-version__ops > span {
+  color: var(--k2b-text);
+  overflow-wrap: anywhere;
+}
+/* An operation the registry does not name shows its ID. */
+.assistant-code-version__ops > span[data-id] {
+  font-family: var(--k2b-font-mono, ui-monospace, monospace);
+  font-size: 0.78125rem;
+}
+.assistant-code-version__where {
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+  overflow-wrap: anywhere;
+}
+.assistant-code-version__new {
+  color: var(--k2b-info-text);
+  font-size: 0.75rem;
+}
+.assistant-code-version__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.375rem;
+}
+/*
+ * Progress and the result of switching on, in one slot after the actions. It is always there, one line high, so its
+ * text never pushes the buttons; where the row is too narrow it takes its own line below them.
+ */
+.assistant-code-version__status {
+  flex: 1 1 12rem;
+  min-width: 0;
+  min-height: 1lh;
+  /* Its first line sits level with a small button; more lines grow downward and never move the buttons. */
+  padding-block-start: calc((1.75rem - 1lh) / 2);
+  padding-inline-start: 0.25rem;
+  font-size: 0.78125rem;
+}
+.assistant-code-version__line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+.assistant-code-version__line[data-tone="ok"] {
+  background: color-mix(in srgb, var(--k2b-success-500) 12%, transparent);
+  color: var(--k2b-success-text);
+}
+
+.assistant-code-version__on {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.assistant-code-version__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  padding-inline: 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+}
+.assistant-code-version__links > * {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Waiting for you: list headings and Code of a place that needs the person. */
+.assistant-code-attention {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.assistant-code-attention__heading {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.assistant-code-attention__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.assistant-code-attention__row {
+  display: grid;
+  grid-template-columns: 1.875rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.875rem;
+  min-height: 2.75rem;
+  padding: 0.375rem 0.75rem;
+}
+.assistant-code-attention__tile {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-secondary);
+}
+@container (max-width: 34rem) {
+  .assistant-code-attention__row {
+    grid-template-columns: 1.875rem minmax(0, 1fr);
+  }
+  .assistant-code-attention__open {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+/* The whole row opens the Code; the name is the link and stretches over the row. */
+.assistant-code__row:has(.assistant-code__name) {
+  position: relative;
+}
+.assistant-code__row:has(.assistant-code__name):hover {
+  background: var(--k2b-app-workspace-hover);
+}
+.assistant-code__name {
+  color: inherit;
+  text-decoration: none;
+}
+.assistant-code__name::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--k2b-radius-control);
+}
+.assistant-code__name:focus-visible {
+  outline: none;
+}
+.assistant-code__name:focus-visible::after {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(var(--k2b-focus-width) * -1);
+}
+.assistant-code__today-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Gustav at a place: the bar at the top of the side panel. Plum marks it as Gustav's; the first row keeps one height
+   in every state (place, switch, loading, failed, gone), so nothing below it moves. */
+.assistant-place-bar {
+  --k2b-choice-color: var(--k2b-ai-accent);
+  --k2b-choice-background: var(--k2b-surface);
+  display: flex;
+  flex-direction: column;
+  gap: .375rem;
+  margin: .5rem .75rem 0;
+  padding: .375rem .5rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-ai-surface);
+  color: var(--k2b-text);
+}
+.assistant-place-bar__row { display: flex; align-items: center; gap: .5rem; min-width: 0; min-height: 1.75rem; }
+.assistant-place-bar__app { min-width: 0; overflow: hidden; color: var(--k2b-text-secondary); font-size: .8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .assistant-place-chip { min-width: 0; max-width: 60%; font-weight: 600; }
+.k2b-ui .assistant-place-chip .k2b-tag__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-place-only-you { display: inline-flex; flex-shrink: 0; align-items: center; gap: .25rem; color: var(--k2b-text-secondary); font-size: .75rem; }
+.assistant-place-bar__chips { display: flex; flex-wrap: wrap; gap: .25rem; }
+.assistant-place-bar__note { display: flex; align-items: flex-start; gap: .375rem; margin: 0; color: var(--k2b-text-secondary); font-size: .8125rem; line-height: 1.4; }
+.assistant-place-bar__note > i { margin-block-start: .125rem; }
+.assistant-place-bar__failed { min-width: 0; font-size: .8125rem; }
+.k2b-ui .assistant-place-bar__switch { min-width: 0; max-width: 70%; flex-shrink: 1; }
+.k2b-ui .assistant-place-bar__switch > .k2b-button__label { min-width: 0; }
+.assistant-place-bar__skeleton { width: 9rem; height: 1.25rem; border-radius: 999px; }
+.assistant-place-bar__skeleton-chip { width: 5.5rem; height: 1.25rem; border-radius: 999px; }
+
+.assistant-place-what { display: flex; flex-direction: column; gap: .75rem; padding: .25rem; font-size: .8125rem; }
+.assistant-place-what__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.assistant-place-what__title { margin: 0; font-size: .875rem; font-weight: 600; }
+.assistant-place-what__heading { margin: 0 0 .25rem; color: var(--k2b-text-secondary); font-size: .75rem; font-weight: 600; }
+.assistant-place-what__list { display: flex; flex-direction: column; gap: .375rem; margin: 0; padding: 0; list-style: none; }
+.assistant-place-what__list > li { display: flex; align-items: flex-start; gap: .5rem; }
+.assistant-place-what__list > li > i { margin-block-start: .125rem; color: var(--k2b-ai-accent); }
+.assistant-place-what__list small { display: block; color: var(--k2b-text-secondary); font-size: .75rem; }
+.assistant-place-what__muted { color: var(--k2b-text-secondary); }
+
+/* The empty chat at a place: what Gustav knows here and up to three suggestions from the place's app. */
+.assistant-place-starters { display: flex; flex-direction: column; gap: .25rem; margin-block-start: 1.25rem; padding-inline: .5rem; }
+.assistant-place-starters__heading { margin: 0 0 .25rem; color: var(--k2b-text-secondary); font-size: .75rem; font-weight: 600; }
+.k2b-ui .assistant-place-starter { justify-content: flex-start; width: 100%; text-align: start; }
+.k2b-ui .assistant-place-starter > .k2b-button__label { justify-content: flex-start; min-width: 0; gap: .5rem; }
+.k2b-ui .assistant-place-starter i { color: var(--k2b-ai-accent); }
+
+/* Chats at places in the Gustav list: the filter pair above the list and rows that name app and place. */
+.assistant-place-filter { display: flex; flex-wrap: nowrap; gap: .25rem; padding: .25rem .5rem .5rem; }
+.k2b-ui .assistant-place-filter .k2b-filter-chip { flex: 0 1 auto; padding-inline: calc(.5rem + 1px); }
+.k2b-ui .assistant-place-filter .k2b-filter-chip__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-place-filter__count { color: var(--k2b-text-secondary); font-variant-numeric: tabular-nums; }
+.k2b-ui .assistant-place-starter > .k2b-button__label { width: 100%; }
+.assistant-place-row-sub { display: block; overflow: hidden; color: var(--k2b-text-secondary); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Gustav stopped authoring: the shared notice with two short lists in the task list's icons. Two text styles (the
+   notice's 14 px title and 14 px entries) and one quiet 13 px level for list labels and the saved line. Icons sit on
+   the text edge of title and reason. The saved line and its recovery text share one grid cell, so a failed send
+   changes no height. */
+.k2b-ui .assistant-authoring-stop__group + .assistant-authoring-stop__group { margin-block-start: .5rem; }
+.k2b-ui .assistant-authoring-stop__label,
+.k2b-ui .assistant-authoring-stop__meta { margin: 0; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.25rem; }
+.k2b-ui .assistant-authoring-stop__list { display: grid; margin: 0; padding: 0; list-style: none; }
+.k2b-ui .assistant-authoring-stop__list > li { display: flex; align-items: flex-start; gap: .5rem; font-size: .875rem; line-height: 1.375rem; }
+.k2b-ui .assistant-authoring-stop__list > li > i { display: flex; flex: none; width: 1rem; height: 1.375rem; align-items: center; justify-content: center; font-size: 1rem; }
+.k2b-ui .assistant-authoring-stop__group[data-status="done"] > ul > li > i { color: var(--k2b-success-text); }
+.k2b-ui .assistant-authoring-stop__group[data-status="open"] > ul > li > i { color: var(--k2b-text-muted); }
+.k2b-ui .assistant-authoring-stop__meta { display: grid; margin-block-start: .75rem; }
+.k2b-ui .assistant-authoring-stop__meta > span { grid-area: 1 / 1; }
+.k2b-ui .assistant-authoring-stop__meta > [data-hidden] { visibility: hidden; }
+.k2b-ui .assistant-authoring-stop__alert { color: var(--k2b-danger-text); }

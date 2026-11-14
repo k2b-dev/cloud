@@ -178,7 +178,7 @@ describe("App access through real browser controls and same-origin transport", (
           );
         expect(await heights()).toEqual([36, 36, 36]);
         const picker = page.locator("input[role=combobox]");
-        expect(await picker.getAttribute("placeholder")).toBe("Person, Gruppe, Agenten oder Dienstkonto hinzufügen");
+        expect(await picker.getAttribute("placeholder")).toBe("Person, Gruppe oder Agenten hinzufügen");
         expect(await picker.evaluate((element) => getComputedStyle(element).textOverflow)).toBe("ellipsis");
         expect(await picker.evaluate((element) => getComputedStyle(element).fontSize)).toBe("15px");
         await picker.fill("Lea");
@@ -693,7 +693,7 @@ test("bootstrap shows the inherited signed-in grant, dismisses its notice and ha
     await picker.fill("Niemandgefunden");
     expect((await response).status()).toBe(200);
     await page.locator(".k2b-combobox .k2b-spin").waitFor({ state: "hidden" });
-    await page.getByRole("listbox").getByText("Keine Ergebnisse gefunden", { exact: true }).waitFor();
+    await page.getByRole("listbox").getByText("Keine Person und keine Gruppe gefunden.", { exact: true }).waitFor();
     expect(await page.getByRole("option").count()).toBe(0);
     expect(await page.getByRole("button", { name: "Hinzufügen", exact: true }).isDisabled()).toBe(true);
     await picker.press("Enter");

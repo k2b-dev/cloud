@@ -27,6 +27,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./[mailboxId]/page");
+const { default: codeHandler } = await import("./[mailboxId]/code/page");
 const { default: landingHandler } = await import("./page");
 
 const user = {
@@ -72,7 +73,7 @@ beforeEach(() => {
   spies.push(spyOn(ai, "getLiveDictationStatus").mockResolvedValue({ available: false, reason: "not_configured" }));
 });
 
-const request = (query = "", landingPage = false, env?: { timeout(request: Request, seconds: number): void }) => {
+const request = (query = "", landingPage = false, env?: { timeout(request: Request, seconds: number): void }, codePage = false) => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -96,7 +97,12 @@ const request = (query = "", landingPage = false, env?: { timeout(request: Reque
   });
   app.get("/app/mail", ...landingHandler);
   app.get("/app/mail/:mailboxId", ...handler);
-  return app.request(`https://cloud.example.test/app/mail${landingPage ? "" : `/${mailboxShortId}`}${query}`, {}, env);
+  app.get("/app/mail/:mailboxId/code", ...codeHandler);
+  return app.request(
+    `https://cloud.example.test/app/mail${landingPage ? "" : `/${mailboxShortId}`}${codePage ? "/code" : ""}${query}`,
+    {},
+    env,
+  );
 };
 
 test("missing or deleted active mailbox renders shared HTML 404 before loading workspace data", async () => {
@@ -153,6 +159,38 @@ test("mailbox SSR keeps the count wait budget and restores the normal timeout on
   const html = await response.text();
   expect(html).toContain("Go to home page");
   expect(html).not.toContain("MailWorkspace");
+  expect(html).not.toContain("Mailbox counts are still refreshing");
+});
+
+test("mailbox Code SSR preserves the count wait budget and renders a no-store 503 on contention", async () => {
+  const timeouts: number[] = [];
+  spies.push(spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId));
+  spies.push(
+    spyOn(workspace, "loadMailboxCodePageData").mockImplementation(async () => {
+      await Bun.sleep(0);
+      expect(timeouts).toEqual([40]);
+      throw new CountRefreshBusy("Mailbox counts are still refreshing; retry the request");
+    }),
+  );
+
+  const response = await request(
+    "",
+    false,
+    {
+      timeout: (_request, seconds) => {
+        timeouts.push(seconds);
+      },
+    },
+    true,
+  );
+
+  expect(response.status).toBe(503);
+  expect(timeouts).toEqual([40, REQUEST_IDLE_TIMEOUT_SECONDS]);
+  expect(response.headers.get("content-type")).toContain("text/html");
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  const html = await response.text();
+  expect(html).toContain("Go to home page");
+  expect(html).not.toContain("MailboxCode");
   expect(html).not.toContain("Mailbox counts are still refreshing");
 });
 
@@ -276,7 +314,6 @@ test("mailbox scope uses the public ID and Mail's page without a mailbox has no 
     detailMessages: [],
     conversationSummary: null,
     conversationDrafts: [],
-    automationTrace: [],
     detailError: null,
     collaborationState: null,
     localTags: [],
