@@ -43,7 +43,24 @@ const trigger = (id) =>
     },
   });
 
-render(() => [trigger("top-left"), trigger("bottom-right")], document.getElementById("app"));
+const tall = () =>
+  createComponent(HoverCard.Trigger, {
+  id: "tall",
+  "aria-label": "Long notes",
+  title: "Notes",
+  get content() {
+    const list = document.createElement("div");
+    list.className = "long";
+    list.textContent = "A long note. ".repeat(400);
+    return list;
+  },
+  hint: "The title and this line stay.",
+  get children() {
+    return glyph("tall");
+  },
+});
+
+render(() => [trigger("top-left"), trigger("bottom-right"), tall()], document.getElementById("app"));
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the hover card fixture for the browser.");
@@ -56,6 +73,7 @@ const html =
     #app { position: fixed; inset: 0; }
     #top-left { position: absolute; top: 24px; left: 24px; }
     #bottom-right { position: absolute; right: 12px; bottom: 16px; }
+    #tall { position: absolute; top: 24px; left: 240px; }
     .glyph { display: block; width: 88px; height: 20px; }
     #below { position: absolute; top: 120px; left: 24px; }
   </style></head><body class="k2b-ui" data-theme="light">` +
@@ -76,17 +94,18 @@ afterAll(async () => {
 const load = async (options: BrowserContextOptions) => {
   const page = await (await browser.newContext(options)).newPage();
   // Fake timers make the delays exact; Playwright's mouse needs no animation frames.
-  await page.clock.install();
+  await page.clock.install({ time: new Date("2026-11-14T09:00:00Z") });
   await page.setContent(html);
   await page.addScriptTag({ content: script });
   // An installed clock still follows real time until it is paused.
-  await page.clock.pauseAt(Date.now() + 60_000);
+  await page.clock.pauseAt(new Date("2026-11-14T09:01:00Z"));
   return page;
 };
 const close = (page: Page) => page.context().close();
 
 type Box = { top: number; left: number; right: number; bottom: number; width: number; height: number };
 const box = (page: Page, selector: string) =>
+  // settled: only opacity fades; the card's geometry never animates, and the paused clock's exact moment is the subject.
   page.evaluate((selector) => {
     const element = document.querySelector(selector);
     if (!element) return null;
@@ -96,8 +115,10 @@ const box = (page: Page, selector: string) =>
 /** The card that belongs to a trigger, by its description. */
 const cardOf = (id: string) => `[id="${id}"] + .k2b-hover-card`;
 const open = (page: Page, id: string) =>
+  // settled: only opacity fades; the card's geometry never animates, and the paused clock's exact moment is the subject.
   page.evaluate((selector) => document.querySelector(selector)!.matches(":popover-open"), cardOf(id));
 const layout = (page: Page) =>
+  // settled: only opacity fades; the card's geometry never animates, and the paused clock's exact moment is the subject.
   page.evaluate(() =>
     [...document.querySelectorAll("#top-left, #bottom-right, #below, .glyph")].map((element) => {
       const { top, left, width, height } = element.getBoundingClientRect();
@@ -164,6 +185,53 @@ describe("HoverCard", () => {
     }
   });
 
+  test("a card taller than the screen stays inside it and scrolls its body, keeping title and hint", async () => {
+    const page = await load({ viewport: { width: 1024, height: 480 } });
+    try {
+      await pointAt(page, "#tall");
+      await page.clock.runFor(400);
+      expect(await open(page, "tall")).toBe(true);
+      const card = (await box(page, cardOf("tall")))!;
+      expect(card.top).toBeGreaterThanOrEqual(8);
+      expect(card.bottom).toBeLessThanOrEqual(480 - 8);
+      // settled: the card's geometry never animates; the paused clock's exact moment is the subject.
+      const body = await page.evaluate((selector) => {
+        const element = document.querySelector<HTMLElement>(`${selector} .k2b-hover-card__body`)!;
+        return { scrolls: element.scrollHeight > element.clientHeight, overflow: getComputedStyle(element).overflowY };
+      }, cardOf("tall"));
+      expect(body).toEqual({ scrolls: true, overflow: "auto" });
+      const hint = (await box(page, `${cardOf("tall")} .k2b-hover-card__hint`))!;
+      expect(hint.bottom).toBeLessThanOrEqual(card.bottom);
+    } finally {
+      await close(page);
+    }
+  });
+
+  test("on a phone a pen tap turns a card its hover opened into a bottom sheet", async () => {
+    const page = await load(phone);
+    try {
+      await page.evaluate(() =>
+        document.getElementById("top-left")!.dispatchEvent(new PointerEvent("pointerenter", { pointerType: "pen" })),
+      );
+      await page.clock.runFor(400);
+      expect(await open(page, "top-left")).toBe(true);
+      // settled: reads an attribute, not geometry, at the paused clock's exact moment.
+      expect(await page.evaluate((selector) => document.querySelector(selector)!.hasAttribute("data-sheet"), cardOf("top-left"))).toBe(
+        false,
+      );
+      await page.evaluate(() => {
+        const trigger = document.getElementById("top-left")!;
+        trigger.dispatchEvent(new PointerEvent("pointerdown", { pointerType: "pen", bubbles: true }));
+        trigger.click();
+      });
+      expect(await open(page, "top-left")).toBe(true);
+      const sheet = (await box(page, cardOf("top-left")))!;
+      expect([sheet.left, sheet.width, sheet.bottom]).toEqual([0, 390, 844]);
+    } finally {
+      await close(page);
+    }
+  });
+
   test("on a phone a tap opens a bottom sheet with the steps one below the other, and a tap outside closes it", async () => {
     const page = await load(phone);
     try {
@@ -173,6 +241,7 @@ describe("HoverCard", () => {
       expect(await open(page, "top-left")).toBe(true);
       const sheet = (await box(page, cardOf("top-left")))!;
       expect([sheet.left, sheet.width, sheet.bottom]).toEqual([0, 390, 844]);
+      // settled: the sheet does not animate its geometry; this reads the layout right after the tap.
       const steps = await page.evaluate(
         (selector) =>
           [...document.querySelectorAll(`${selector} .k2b-progress-path__step`)].map((step) => step.getBoundingClientRect().top),

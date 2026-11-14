@@ -150,6 +150,34 @@ describe("HoverCard", () => {
     expect(isOpen(card)).toBe(true);
   });
 
+  test("Escape with keyboard focus keeps the card closed while the pointer comes and goes, until focus leaves", async () => {
+    const { anchor, link, card } = await mountAnchor();
+    link.focus();
+    expect(isOpen(card)).toBe(true);
+    key(dom, link, "Escape");
+    expect(isOpen(card)).toBe(false);
+
+    pointer(dom, anchor, "pointerenter");
+    pointer(dom, anchor, "pointerleave");
+    pointer(dom, anchor, "pointerenter");
+    jest.advanceTimersByTime(1000);
+    expect(isOpen(card)).toBe(false);
+
+    pointer(dom, anchor, "pointerleave");
+    link.blur();
+    pointer(dom, anchor, "pointerenter");
+    jest.advanceTimersByTime(400);
+    expect(isOpen(card)).toBe(true);
+  });
+
+  test("a click alone, as from assistive technology, closes the card of a wrapped control", async () => {
+    const { link, card } = await mountAnchor();
+    link.focus();
+    expect(isOpen(card)).toBe(true);
+    link.click();
+    expect(isOpen(card)).toBe(false);
+  });
+
   test("using the wrapped control closes the card, and touch keeps the control's own tap", async () => {
     const { anchor, link, card } = await mountAnchor();
     pointer(dom, anchor, "pointerenter");

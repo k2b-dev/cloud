@@ -938,8 +938,12 @@
   inset: auto;
   z-index: 100;
   width: min(var(--k2b-hover-card-width, 20rem), calc(100vw - 1rem));
+  max-height: calc(100dvh - 1rem);
+  flex-direction: column;
+  gap: 0.625rem;
   margin: 0;
   padding: 0.75rem 0.875rem;
+  /* Visible, so the bridge over the gap reaches the control; a body too tall for the screen scrolls itself. */
   overflow: visible;
   border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
   border-radius: var(--k2b-radius-surface);
@@ -960,8 +964,7 @@
 }
 
 .k2b-ui [popover].k2b-hover-card:popover-open {
-  display: grid;
-  gap: 0.625rem;
+  display: flex;
   opacity: 1;
 
   @starting-style {
@@ -991,7 +994,6 @@
   inset: auto 0 0 0;
   width: 100%;
   max-height: calc(100dvh - 3rem);
-  overflow: auto;
   padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
   border-width: 1px 0 0;
   border-radius: var(--k2b-radius-surface) var(--k2b-radius-surface) 0 0;
@@ -1005,6 +1007,7 @@
 .k2b-ui .k2b-hover-card__head {
   display: grid;
   min-width: 0;
+  flex: none;
 }
 
 .k2b-ui .k2b-hover-card__title {
@@ -1021,9 +1024,12 @@
 
 .k2b-ui .k2b-hover-card__body {
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .k2b-ui .k2b-hover-card__hint {
+  flex: none;
   margin: 0;
   font-size: 0.75rem;
   line-height: 1rem;

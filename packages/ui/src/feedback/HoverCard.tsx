@@ -55,8 +55,12 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
   let focusHost: HTMLElement | undefined;
   let openTimer: ReturnType<typeof setTimeout> | undefined;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Why the card is open: the pointer rests on control or card, the control has keyboard focus, or a press pinned it. */
-  let hovered = false;
+  /**
+   * What holds the card open: the pointer on the control or on the card, keyboard focus on the control, or a press
+   * that pinned it. Closing the card leaves the pointer and the focus where they are.
+   */
+  let onControl = false;
+  let onCard = false;
   let focused = false;
   let pinned = false;
   /** Escape or using the control closes the card until the pointer and the focus left the control. */
@@ -94,6 +98,7 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     if (pinned || focused || sheet()) place();
     else hide();
   };
+  const viewportChanged = () => place();
   // A press outside closes a pinned card. The backdrop of a sheet belongs to the card, so a press on it counts by place.
   const pressedOutside = (event: PointerEvent) => {
     const node = event.target instanceof Node ? event.target : null;
@@ -113,12 +118,17 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
       document.addEventListener("pointerdown", pressedOutside, true);
       window.addEventListener("scroll", scrolled, true);
       window.addEventListener("resize", place);
+      // Pinch zoom moves the visible viewport without a window resize.
+      window.visualViewport?.addEventListener("resize", viewportChanged);
+      window.visualViewport?.addEventListener("scroll", viewportChanged);
       return;
     }
     document.removeEventListener("keydown", keyDown);
     document.removeEventListener("pointerdown", pressedOutside, true);
     window.removeEventListener("scroll", scrolled, true);
     window.removeEventListener("resize", place);
+    window.visualViewport?.removeEventListener("resize", viewportChanged);
+    window.visualViewport?.removeEventListener("scroll", viewportChanged);
   };
 
   const show = (asSheet: boolean) => {
@@ -140,8 +150,9 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
 
   const hide = () => {
     clearTimers();
-    hovered = false;
     pinned = false;
+    // A hidden card is under no pointer; the control still is until it reports the pointer leaving.
+    onCard = false;
     if (!open()) return;
     setOpen(false);
     listen(false);
@@ -154,7 +165,6 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
 
   const dismiss = () => {
     dismissed = true;
-    focused = false;
     hide();
   };
 
@@ -163,14 +173,14 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     clearTimeout(closeTimer);
     closeTimer = setTimeout(() => {
       closeTimer = undefined;
-      if (!hovered && !focused && !pinned) hide();
+      if (!onControl && !onCard && !focused && !pinned) hide();
     }, CLOSE_DELAY);
   };
 
   const pointerEnter = (event: PointerEvent) => {
     // Touch has no resting pointer; a tap on a trigger opens the card instead.
     if (event.pointerType === "touch") return;
-    hovered = true;
+    onControl = true;
     clearTimeout(closeTimer);
     if (open() || dismissed || options.disabled) return;
     clearTimeout(openTimer);
@@ -178,17 +188,25 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     if (delay <= 0) show(false);
     else openTimer = setTimeout(() => show(false), delay);
   };
+  const left = () => {
+    if (!onControl && !onCard && !focused) dismissed = false;
+    if (open()) settle();
+  };
   const pointerLeave = (event: PointerEvent) => {
     if (event.pointerType === "touch") return;
-    hovered = false;
+    onControl = false;
     clearTimeout(openTimer);
-    if (!focused) dismissed = false;
-    if (open()) settle();
+    left();
   };
   const surfaceEnter = (event: PointerEvent) => {
     if (event.pointerType === "touch") return;
-    hovered = true;
+    onCard = true;
     clearTimeout(closeTimer);
+  };
+  const surfaceLeave = (event: PointerEvent) => {
+    if (event.pointerType === "touch") return;
+    onCard = false;
+    left();
   };
 
   const focusIn = (event: FocusEvent) => {
@@ -202,11 +220,12 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     const next = event.relatedTarget;
     if (next instanceof Node && (target()?.contains(next) || surface?.contains(next))) return;
     focused = false;
-    if (!hovered) dismissed = false;
-    if (open() && !pinned && !hovered) hide();
+    if (!onControl && !onCard) dismissed = false;
+    if (open() && !pinned && !onControl && !onCard) hide();
   };
 
-  // An anchor wraps a control with its own action: using it closes the card, as for a tooltip.
+  // An anchor wraps a control with its own action: using it closes the card, as for a tooltip. Assistive technology
+  // may activate the control with a click alone.
   const used = () => {
     if (mode !== "anchor") return;
     dismiss();
@@ -220,7 +239,10 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     pressType = event.pointerType;
   };
   const clicked = () => {
-    if (mode !== "trigger") return;
+    if (mode !== "trigger") {
+      used();
+      return;
+    }
     const type = pressType;
     pressType = "";
     if (open() && pinned) {
@@ -229,8 +251,16 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
     }
     dismissed = false;
     pinned = true;
-    const touch = type === "touch" || type === "pen";
-    show(touch && typeof matchMedia === "function" && matchMedia(SHEET_QUERY).matches);
+    const asSheet = (type === "touch" || type === "pen") && typeof matchMedia === "function" && matchMedia(SHEET_QUERY).matches;
+    if (!open()) {
+      show(asSheet);
+      return;
+    }
+    // A pen that hovered opened the card beside the control; its tap on a phone still turns it into a sheet.
+    if (asSheet && !sheet()) {
+      setSheet(true);
+      place();
+    }
   };
 
   createEffect(() => {
@@ -284,7 +314,7 @@ function useHoverCard(options: HoverCardOptions, mode: Mode, target: () => HTMLE
       data-sheet={sheet() ? "" : undefined}
       style={options.width ? { "--k2b-hover-card-width": options.width } : undefined}
       onPointerEnter={surfaceEnter}
-      onPointerLeave={pointerLeave}
+      onPointerLeave={surfaceLeave}
     >
       <Show when={options.title || options.detail}>
         <div class="k2b-hover-card__head">

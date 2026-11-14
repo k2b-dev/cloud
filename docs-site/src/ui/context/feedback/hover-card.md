@@ -37,14 +37,15 @@ import { HoverCard, type HoverCardProps, type HoverCardTriggerProps, ProgressPat
 
 - **`HoverCard`** wraps a control that already has its own action, such as a
   link, a button, or a chip that filters. Hover and keyboard focus open the
-  card. Using the control closes it, as for a tooltip. On touch, a tap keeps
+  card. Using the control closes it, as for a tooltip, whether by pointer, key,
+  or a click from assistive technology. On touch, a tap keeps
   the control's own meaning and opens no card, so the details must also be
   reachable where the control leads.
 - **`HoverCard.Trigger`** renders a button that exists to show the card, around
   content without a control of its own, such as a small graphic. Hover and
   keyboard focus open the card, and a click or tap pins it open until a second
   press, a press outside, or Escape. On a phone a tap opens it as a bottom
-  sheet. Give the button an `aria-label` that names what it shows, such as
+  sheet, also when a hovering pen opened it beside the control first. Give the button an `aria-label` that names what it shows, such as
   "Path of B7A02".
 
 ## Contracts
@@ -76,10 +77,13 @@ the focus ring; on a coarse pointer its hit area grows to 2.75rem.
 - The card stays open while the pointer is on the control or the card. The gap
   between them belongs to the card, and the card closes 200 ms after the
   pointer left both.
-- Escape closes the card. It opens again only after the pointer and the focus
-  left the control.
+- Escape closes the card. It opens again only after the pointer and the
+  keyboard focus left the control.
 - A card that the pointer opened closes when the page scrolls. A pinned or
-  focused card follows its control.
+  focused card follows its control, also when pinch zoom moves the visible
+  area.
+- The card is never taller than the screen minus 1rem; a longer body scrolls
+  inside the card while the title and the hint stay.
 
 ## Placement
 
@@ -110,8 +114,10 @@ off; the card covers it.
 ## Runtime
 
 The card renders on the server as a closed manual popover next to its control,
-so its text is in the first HTML and in the description from the start. It
-never dismisses a menu or another popover. It floats on layer 3 of
+so its text is in the first HTML. `HoverCard.Trigger` names it in
+`aria-describedby` from the first HTML; `HoverCard` links it to the control
+inside when the page becomes interactive. The card never dismisses a menu or
+another popover. It floats on layer 3 of
 [Layers and shadows](/en/ui/surfaces/elevation): the elevated surface, a light
 1px edge, `--k2b-shadow-float` outside, and no lines inside. The bottom sheet
 uses `--k2b-shadow-sheet` and a backdrop. The card fades in and out unless
