@@ -213,7 +213,7 @@ suite("choice admission transaction", () => {
           startedAt: new Date("2026-11-08T12:00:00Z"),
           completedAt: new Date("2026-11-08T12:00:01Z"),
         }),
-      ).toBe("recorded");
+      ).toMatch(/^[0-9a-f-]{36}$/);
       const [row] = await sql<{ origin: string }[]>`SELECT origin FROM capabilities.executions WHERE request_id = ${requestId}`;
       expect(row?.origin).toBe("choice");
     } finally {

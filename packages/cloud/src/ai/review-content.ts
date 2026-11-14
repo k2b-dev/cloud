@@ -59,9 +59,11 @@ const parseReviewLocation = (href: string): ReviewContentLocation | undefined =>
 };
 
 /** Strip large snapshots in SQL, retaining small raw views for binding at the read boundary. */
-export const compactReviewSql = (review: SQL.Query<unknown>) => sql`(${review} - 'content' - 'view' - '_boundViewBytes') || CASE
-  WHEN ${review} ? 'view' AND (octet_length(${review}->>'view') <= ${CAPABILITY_MAX_REVIEW_BYTES} OR (${review}->>'_boundViewBytes')::integer <= ${CAPABILITY_MAX_REVIEW_BYTES})
-  THEN jsonb_build_object('view',${review}->'view') ELSE '{}'::jsonb END`;
+// The review is parenthesized: `-` binds tighter than `->`, so `meta->'toolReviews'->id - 'content'` would subtract
+// from the call id instead of the review.
+export const compactReviewSql = (review: SQL.Query<unknown>) => sql`((${review}) - 'content' - 'view' - '_boundViewBytes') || CASE
+  WHEN (${review}) ? 'view' AND (octet_length((${review})->>'view') <= ${CAPABILITY_MAX_REVIEW_BYTES} OR ((${review})->>'_boundViewBytes')::integer <= ${CAPABILITY_MAX_REVIEW_BYTES})
+  THEN jsonb_build_object('view',(${review})->'view') ELSE '{}'::jsonb END`;
 
 /** Project before transferring JSONB out of Postgres, not after loading every full review into Core. */
 export const compactReviewMapSql = (reviews: SQL.Query<unknown>) => sql`(

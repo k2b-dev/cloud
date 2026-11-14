@@ -802,7 +802,7 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
         conversationId: row.conversation_id,
         callId: row.call_id,
         name: row.tool_name,
-        args: parseJsonValue(row.args),
+        args: row.args,
         mode: row.frontend_mode ?? "client",
       }
     : {
@@ -813,7 +813,7 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
         conversationId: row.conversation_id,
         callId: row.call_id,
         name: row.tool_name,
-        args: parseJsonValue(row.args),
+        args: row.args,
         message: row.message ?? undefined,
         review: (() => {
           const review = parseCapabilityActionReview(row.review);
@@ -839,7 +839,7 @@ const rowToPendingActionRecord = (row: PendingActionRow): AiPendingTurnActionRec
   kind: row.kind,
   status: row.status,
   name: row.tool_name,
-  args: parseJsonValue(row.args),
+  args: row.args,
   message: row.message ?? undefined,
   review: (() => {
     const review = parseCapabilityActionReview(row.review);
