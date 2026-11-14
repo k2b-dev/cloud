@@ -11888,6 +11888,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* A bar column: the value, then a short track filled to its share of the column's largest value. */
+/* A negative amount in an amount column: money going out, in the danger ink. */
+.k2b-ui .k2b-data-table__amount[data-negative] {
+  color: var(--k2b-danger-text);
+}
+
 .k2b-ui .k2b-data-table__bar {
   display: inline-flex;
   align-items: center;

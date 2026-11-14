@@ -448,7 +448,7 @@ const useTableCode = onDemand(() => import("../descriptions/description-blocks")
 const useStatsCode = onDemand(() => import("../descriptions/description-stats"));
 
 /**
- * Key figures: their formatting loads on demand. Until then each tile waits in its own place at its own size, the
+ * Key figures stand flat side by side, without tiles (capability views, Gustav v12). Their formatting loads on demand. Until then each tile waits in its own place at its own size, the
  * tile's loading state, so the figures arrive without moving anything.
  */
 function StatsLeaf(props: { spec: DescriptionObject }) {
@@ -458,7 +458,7 @@ function StatsLeaf(props: { spec: DescriptionObject }) {
     <Show
       when={code()}
       fallback={
-        <StatGrid columns={Math.min(6, Math.max(1, tiles().length)) as 1 | 2 | 3 | 4 | 5 | 6}>
+        <StatGrid columns={Math.min(6, Math.max(1, tiles().length)) as 1 | 2 | 3 | 4 | 5 | 6} surface="flat">
           <For each={tiles()}>
             {(item) => (
               <StatCell
@@ -479,7 +479,7 @@ function StatsLeaf(props: { spec: DescriptionObject }) {
     >
       {(loaded) => {
         const Stats = loaded().StatsBlock;
-        return <Stats spec={props.spec} state="ready" />;
+        return <Stats spec={props.spec} state="ready" surface="flat" />;
       }}
     </Show>
   );

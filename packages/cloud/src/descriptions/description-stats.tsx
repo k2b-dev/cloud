@@ -31,6 +31,8 @@ export function StatsBlock(props: {
   state: DashboardFrameState;
   asOf?: string;
   onRetry?: () => void;
+  /** `flat` for figures in the flow of a capability view; Gustav's own panels keep their tiles. */
+  surface?: "flat";
 }): JSX.Element {
   const locale = useLocale();
   const t = () => statsMessages.resolve([locale()]).t;
@@ -39,7 +41,7 @@ export function StatsBlock(props: {
   const tones = ["blue", "emerald", "amber", "red", "zinc", "in", "out"] as const;
   const tone = (value: JsonValue | undefined) => tones.find((entry) => entry === value);
   return (
-    <StatGrid columns={Math.min(6, Math.max(1, items().length)) as 1 | 2 | 3 | 4 | 5 | 6}>
+    <StatGrid columns={Math.min(6, Math.max(1, items().length)) as 1 | 2 | 3 | 4 | 5 | 6} surface={props.surface}>
       <For each={items()}>
         {(item) => {
           const format = (value: number) => formatDescriptionNumber(value, item.format, locale());
@@ -63,6 +65,7 @@ export function StatsBlock(props: {
               icon={typeof item.icon === "string" ? item.icon : undefined}
               tone={tone(item.tone)}
               value={empty() ? null : typeof item.value === "number" ? format(item.value) : descriptionText(item.value)}
+              valueTone={!empty() && typeof item.value === "number" && item.value < 0 ? "danger" : undefined}
               sub={empty() ? t().nothingCounted : compare() ? undefined : descriptionText(item.note) || undefined}
               delta={empty() ? undefined : delta()}
               compare={empty() ? undefined : compare()}

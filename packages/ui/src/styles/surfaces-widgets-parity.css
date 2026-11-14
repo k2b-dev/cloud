@@ -871,6 +871,17 @@
 }
 /* A muted tile is a fill on its surface, not a lifted island. */
 .k2b-ui .k2b-stat-cell[data-surface="muted"] { background: var(--k2b-surface-muted); box-shadow: 0 0 #0000; }
+/* A flat figure has no tile: no edge, fill, shadow or inset; the icon loses its chip and sits before the label. */
+.k2b-ui .k2b-stat-cell[data-surface="flat"] { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: 0 0 #0000; }
+.k2b-ui .k2b-stat-cell[data-surface="flat"] .k2b-stat-cell__head { gap: 0.375rem; min-height: 0; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"] > .k2b-stat-cell__head { min-height: 0; }
+.k2b-ui .k2b-stat-cell[data-surface="flat"] .k2b-stat-cell__icon { width: auto; height: auto; color: var(--k2b-text-muted); background: transparent; font-size: 0.875rem; }
+.k2b-ui .k2b-stat-cell[data-surface="flat"] .k2b-stat-cell__label { font-size: 0.8125rem; font-weight: 400; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"] > .k2b-stat-cell__support { margin-top: 0; }
+/* Flat figures are given whole, never loaded into place: a support line with nothing to say takes no room. */
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"] > .k2b-stat-cell__support:empty { display: none; }
+.k2b-ui .k2b-stat-cell__value[data-tone="danger"] { color: var(--k2b-danger-text); }
+.k2b-ui .k2b-stat-cell__value[data-tone="success"] { color: var(--k2b-success-text); }
 .k2b-ui .k2b-stat-cell[data-size="sm"] { gap: 0.125rem; padding: 0.625rem 0.75rem; }
 .k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { min-height: 8.5rem; }
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell { container: k2b-stat-cell / inline-size; }
