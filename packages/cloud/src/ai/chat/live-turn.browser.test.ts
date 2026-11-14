@@ -85,6 +85,24 @@ afterAll(async () => {
 });
 
 const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+const testNow = Date.parse("2026-10-07T10:00:00Z");
+/**
+ * Pins only the page's Date to one instant, as Playwright's setFixedTime did, without its fake timers, animation frames,
+ * and performance clock (the pattern of pinPageClock in packages/chat, held still). Pass it to page.addInitScript.
+ */
+const pinPageDate = (at: number) => {
+  const RealDate = Date;
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0) super(at);
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return at;
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
 
 test("silent truncation survives history reload and offers continuation at desktop and phone widths", async () => {
   mkdirSync("/tmp/ai-max-tokens-shots", { recursive: true });
@@ -177,7 +195,7 @@ for (const view of [
       try {
         const page = await context.newPage();
         // The work line shows a ticking clock; a fixed time keeps its text comparable between measurements.
-        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        await page.addInitScript(pinPageDate, testNow);
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${theme === "dark" ? "de" : "en"}&theme=${theme}`);
         const label = theme === "dark" ? "Verbindung wird wiederhergestellt" : "Reconnecting";
         await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
@@ -254,7 +272,7 @@ for (const view of [
       try {
         const page = await context.newPage();
         // The work line shows a ticking clock; a fixed time keeps its text comparable between measurements.
-        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        await page.addInitScript(pinPageDate, testNow);
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${theme === "dark" ? "de" : "en"}&theme=${theme}`);
         const label = theme === "dark" ? "Verbindung wird wiederhergestellt" : "Reconnecting";
         await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
@@ -309,7 +327,7 @@ for (const view of [
       });
       try {
         const page = await context.newPage();
-        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        await page.addInitScript(pinPageDate, testNow);
         const de = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
         const failedStep = failureCode === "tool_failed";
@@ -454,7 +472,7 @@ for (const view of [
       });
       try {
         const page = await context.newPage();
-        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        await page.addInitScript(pinPageDate, testNow);
         const de = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
         const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { id: "budget" } };
@@ -735,7 +753,7 @@ for (const view of [
       });
       try {
         const page = await context.newPage();
-        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        await page.addInitScript(pinPageDate, testNow);
         const de = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
         const presentation = {
@@ -916,7 +934,7 @@ for (const view of [
     });
     try {
       const page = await context.newPage();
-      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.addInitScript(pinPageDate, testNow);
       await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
       const presentation = {
         kind: "capability" as const,
@@ -1006,7 +1024,7 @@ for (const view of [
     });
     try {
       const page = await context.newPage();
-      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.addInitScript(pinPageDate, testNow);
       await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
       const presentation = {
         kind: "capability" as const,
@@ -1196,7 +1214,7 @@ for (const view of [
       });
       try {
         const page = await context.newPage();
-        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        await page.addInitScript(pinPageDate, testNow);
         const german = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${german ? "de" : "en"}&theme=${theme}`);
         await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
@@ -1297,7 +1315,7 @@ for (const view of [
     });
     try {
       const page = await context.newPage();
-      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.addInitScript(pinPageDate, testNow);
       await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
       const url = "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d&interval=5m&includePrePost=false";
       const run = { id: "tool-run", kind: "tool" as const, callId: "run-approval-0", name: "code_run", args: { code: "…" } };
@@ -1375,7 +1393,7 @@ for (const view of [
       });
       try {
         const page = await context.newPage();
-        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        await page.addInitScript(pinPageDate, testNow);
         const de = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
         // A Project file path, long enough that a phone cuts it short.
@@ -1623,7 +1641,7 @@ for (const view of [
       });
       try {
         const page = await context.newPage();
-        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        await page.addInitScript(pinPageDate, testNow);
         await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=${theme}`);
         await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         let seq = await fillConversation(page, 2);
@@ -1681,7 +1699,7 @@ for (const view of [
     });
     try {
       const page = await context.newPage();
-      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.addInitScript(pinPageDate, testNow);
       await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
       await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
       let seq = await fillConversation(page, 2);
@@ -1727,7 +1745,7 @@ test("the final answer shows whole, and a long quiet text that becomes it unfold
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
   try {
     const page = await context.newPage();
-    await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+    await page.addInitScript(pinPageDate, testNow);
     await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
     await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
     const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Import the delivery notes" }] });
@@ -1786,7 +1804,7 @@ test("each text in the expanded work shows three lines with its own chevron, and
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
   try {
     const page = await context.newPage();
-    await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+    await page.addInitScript(pinPageDate, testNow);
     await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
     await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
     const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Import the delivery notes" }] });
@@ -1823,7 +1841,7 @@ test("a link in the visible lines keeps a clamped text closed, and one in the hi
   const context = await browser.newContext({ viewport: { width: 1280, height: 700 }, reducedMotion: "reduce" });
   try {
     const page = await context.newPage();
-    await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+    await page.addInitScript(pinPageDate, testNow);
     await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
     await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
     let seq = await fillConversation(page, 2);
