@@ -369,7 +369,8 @@ export const openAssistantContextBoxSheet = async (props: {
       };
       const dismiss = () => void context.requestDismiss();
       const content = () => (
-        <BottomSheet onDismiss={dismiss}>
+        // Half and full height, but only when the box is taller than half the screen; shorter, it rests at its height.
+        <BottomSheet onDismiss={dismiss} detents>
           <BottomSheet.Body>
             {/* The box brings its own head with "New · n" and "Open as tab"; the handle closes the sheet. */}
             <div class="assistant-context-sheet">

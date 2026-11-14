@@ -610,7 +610,7 @@ while it is open under its button or as a sheet; news raise **New · n** in its
 head. What stopped in the chat and waits for the person (a routine that needs
 attention, a failed app run) shows at the top of the tab **In this chat**, with
 the same target as before. Empty, the box says what will appear; loading
-shows placeholder rows; a failed load offers **Retry** and leaves the chat
+shows rows of the same height; a failed load offers **Retry** and leaves the chat
 untouched.
 
 CSS decides where the box shows, so the server render is final: as the island

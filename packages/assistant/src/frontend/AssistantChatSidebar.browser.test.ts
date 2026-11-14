@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../../ui/test/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { emptySidebarSnapshot, fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
 
@@ -627,7 +627,7 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       const row = page.locator(".assistant-context-boxcol .assistant-context-box__row").first();
       const before = await layout(page);
       const rowBefore = await row.boundingBox();
-      await row.hover();
+      await hoverInPlace(row);
       await frames(page);
       expect(await row.boundingBox()).toEqual(rowBefore);
       expect(await layout(page)).toEqual(before);
