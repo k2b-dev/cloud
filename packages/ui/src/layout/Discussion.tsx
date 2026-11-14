@@ -1,4 +1,4 @@
-import { children, createSignal, type JSX, onCleanup, Show, splitProps } from "solid-js";
+import { children, createEffect, createSignal, createUniqueId, type JSX, on, onCleanup, Show, splitProps } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { useChatMessages } from "../chat/chat-messages";
 import { LoadMore } from "../content/LoadMore";
@@ -63,10 +63,32 @@ export type DiscussionItemProps = Omit<JSX.LiHTMLAttributes<HTMLLIElement>, "chi
   class?: string;
 };
 
+export type DiscussionThreadProps = {
+  /** Accessible name of the thread, such as "Comments on line 3". */
+  label: string;
+  /** The entries, as `Discussion.Item`s. In a thread every entry is flush, with a small avatar, name and time in one line, and the text below. */
+  children?: JSX.Element;
+  /** Without it the thread is read only: no reply field and no writing. */
+  onSubmit?: (message: string) => boolean | void | Promise<boolean | void>;
+  /** The reply field's placeholder and the writing field's name, such as "Reply …" or "Comment on line 5 …". */
+  placeholder?: string;
+  /** A quiet line beside the buttons while writing, such as who will see the comment and when. */
+  hint?: JSX.Element;
+  /** Label of the button that posts, such as "Comment". */
+  submitLabel: string;
+  cancelLabel?: string;
+  /** Whether the writing field is open; omit to let the thread manage it. */
+  writing?: boolean;
+  onWritingChange?: (writing: boolean) => void;
+  /** Opens with the writing field, such as a new thread on a line. */
+  defaultWriting?: boolean;
+};
+
 type DiscussionComponent = ((props: DiscussionProps) => JSX.Element) & {
   Composer: (props: DiscussionComposerProps) => JSX.Element;
   List: (props: DiscussionListProps) => JSX.Element;
   Item: (props: DiscussionItemProps) => JSX.Element;
+  Thread: (props: DiscussionThreadProps) => JSX.Element;
 };
 
 const classNames = (base: string, extra?: string): string => (extra ? `${base} ${extra}` : base);
@@ -339,9 +361,167 @@ const DiscussionItem = (props: DiscussionItemProps): JSX.Element => {
   );
 };
 
+/** Line height of thread text: a short comment and the reply line are as high as the writing field. */
+const THREAD_LINE = 19;
+
+/**
+ * A compact thread, as beside a line of code: no surface, one line at the start that turns into the focus colour while
+ * writing, every entry flush with the others, and a real "Reply …" field as its last line. Focus or the first
+ * character opens the writing field in the same place; it is exactly as high as a short comment with the reply line,
+ * so posting changes no height.
+ */
+const DiscussionThread = (props: DiscussionThreadProps): JSX.Element => {
+  const messages = useUiMessages();
+  const chatMessages = useChatMessages();
+  const fieldId = `k2b-discussion-thread-${createUniqueId()}`;
+  const [internalWriting, setInternalWriting] = createSignal(props.defaultWriting ?? false);
+  const writing = () => props.writing ?? internalWriting();
+  const setWriting = (next: boolean) => {
+    if (props.writing === undefined) setInternalWriting(next);
+    props.onWritingChange?.(next);
+  };
+  const [text, setText] = createSignal("");
+  const [submitting, setSubmitting] = createSignal(false);
+  const [failed, setFailed] = createSignal<string | null>(null);
+  let thread: HTMLDivElement | undefined;
+  let field: HTMLTextAreaElement | undefined;
+
+  // The field grows with its text and keeps one line more than it holds, the header line of the comment it becomes.
+  const fit = () => {
+    if (!field) return;
+    // Measured without the minimum, which would count as a line of text.
+    field.style.minHeight = "0px";
+    field.style.height = "0px";
+    const lines = Math.max(1, Math.round(field.scrollHeight / THREAD_LINE));
+    field.style.minHeight = "";
+    field.style.height = `${(lines + 1) * THREAD_LINE}px`;
+  };
+  createEffect(
+    on(writing, (open) => {
+      if (!open) return;
+      queueMicrotask(() => {
+        if (!field) return;
+        fit();
+        field.focus({ preventScroll: true });
+        field.setSelectionRange(field.value.length, field.value.length);
+      });
+    }),
+  );
+
+  const close = () => {
+    setText("");
+    setFailed(null);
+    setWriting(false);
+    // The field leaves; the focus stays on the thread instead of falling back to the page.
+    queueMicrotask(() => {
+      if (thread && !thread.contains(document.activeElement)) thread.focus({ preventScroll: true });
+    });
+  };
+  const submit = async () => {
+    const message = text().trim();
+    if (!message || submitting() || !props.onSubmit) return;
+    setSubmitting(true);
+    setFailed(null);
+    try {
+      if ((await props.onSubmit(message)) !== false) close();
+    } catch (error) {
+      setFailed(error instanceof Error ? error.message : chatMessages().couldNotPostMessage);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      ref={thread}
+      class="k2b-discussion-thread"
+      role="group"
+      aria-label={props.label}
+      tabIndex={-1}
+      data-writing={writing() ? "" : undefined}
+    >
+      <ol class="k2b-discussion-thread__list">{props.children}</ol>
+      <Show when={props.onSubmit}>
+        <Show
+          when={writing()}
+          fallback={
+            <input
+              type="text"
+              class="k2b-discussion-thread__reply"
+              placeholder={props.placeholder}
+              aria-label={props.placeholder}
+              autocomplete="off"
+              value=""
+              onFocus={() => setWriting(true)}
+              onInput={(event) => {
+                // The first character opens the writing field and moves there.
+                setText(event.currentTarget.value);
+                event.currentTarget.value = "";
+                setWriting(true);
+              }}
+            />
+          }
+        >
+          <form
+            class="k2b-discussion-thread__compose"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit();
+            }}
+          >
+            <textarea
+              ref={field}
+              id={fieldId}
+              class="k2b-discussion-thread__field"
+              placeholder={props.placeholder}
+              aria-label={props.placeholder}
+              aria-invalid={failed() ? "true" : undefined}
+              aria-describedby={`${fieldId}-status`}
+              value={text()}
+              disabled={submitting()}
+              onInput={(event) => {
+                setText(event.currentTarget.value);
+                if (failed()) setFailed(null);
+                fit();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  close();
+                } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+            />
+            <div class="k2b-discussion-thread__actions">
+              {/* The status line is always there: the hint, or why posting failed. */}
+              <p
+                id={`${fieldId}-status`}
+                class="k2b-discussion-thread__status"
+                role={failed() ? "alert" : undefined}
+                data-tone={failed() ? "danger" : undefined}
+              >
+                {failed() ?? props.hint}
+              </p>
+              <Button type="button" variant="ghost" size="sm" disabled={submitting()} onClick={close}>
+                {props.cancelLabel ?? messages().cancel}
+              </Button>
+              <Button type="submit" variant="primary" size="sm" loading={submitting()} disabled={!text().trim()}>
+                {failed() ? messages().retry : props.submitLabel}
+              </Button>
+            </div>
+          </form>
+        </Show>
+      </Show>
+    </div>
+  );
+};
+
 const Discussion = DiscussionRoot as DiscussionComponent;
 Discussion.Composer = DiscussionComposer;
 Discussion.List = DiscussionList;
 Discussion.Item = DiscussionItem;
+Discussion.Thread = DiscussionThread;
 
 export default Discussion;
