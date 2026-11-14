@@ -33,6 +33,8 @@ render(() => createComponent(LocaleProvider, { locale: "en", get children() {
   return createComponent(Panes, {
     get layout() { return layout(); },
     onLayoutChange: setLayout,
+    // An open one-time hint must never cover a drop target or the floating tab while dragging.
+    arrangeHint: { open: true, onDismiss: () => {} },
     items: [pane("draft", "Draft", "ti-pencil"), pane("history", "History", "ti-history"), pane("notes", "Notes", "ti-notes"), pane("preview", "Preview", "ti-eye")],
   });
 } }), document.getElementById("app"));
@@ -136,12 +138,14 @@ describe(`Panes drop previews in ${browserName}`, () => {
   test("dragging a tab shows the same targets, places, colours and floating tab as before the redesign", async () => {
     const { page, context } = await open();
     try {
+      await page.locator(".k2b-moved-hint").waitFor();
       const start = await center(page, '.k2b-panes__tab-button[aria-label="History"]');
       await page.mouse.move(start.x, start.y);
       await page.mouse.down();
       await page.mouse.move(start.x + 6, start.y + 6, { steps: 2 });
       await page.mouse.move(start.x + 40, start.y + 40, { steps: 4 });
       await page.locator(".k2b-panes__drop-target").first().waitFor();
+      expect(await page.locator(".k2b-moved-hint").count()).toBe(0);
 
       // Over the middle of the draft pane: the "+" target there is active.
       const draftBody = (await page.locator(".k2b-panes__group").first().boundingBox())!;

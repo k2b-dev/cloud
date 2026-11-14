@@ -99,6 +99,13 @@ describe(`Panes arrangement in ${browserName}`, () => {
       await menu(page).getByText("Reset arrangement").click();
       expect(await ratioAt(page, [])).toBe(0.54);
       expect(await ratioAt(page, ["second"])).toBe(0.58);
+
+      // A moved boundary is a change too: Reset brings the sizes back.
+      await page.locator('.k2b-panes__separator[data-direction="vertical"]').focus();
+      await page.keyboard.press("ArrowDown");
+      await page.locator(".k2b-panes__arrange").click();
+      await menu(page).getByText("Reset arrangement").click();
+      expect(await ratioAt(page, ["second"])).toBe(0.58);
     } finally {
       await context.close();
     }
@@ -116,6 +123,11 @@ describe(`Panes arrangement in ${browserName}`, () => {
 
       await page.keyboard.press("Control+Shift+ArrowLeft");
       expect(await root(page)).toMatchObject({ second: { items: ["preview", "history"] } });
+      expect(await focusedLabel(page)).toBe("Preview");
+
+      // At the first place the reorder keys do nothing, and never select another tab.
+      await page.keyboard.press("Control+Shift+ArrowLeft");
+      expect(await root(page)).toMatchObject({ second: { items: ["preview", "history"], active: "preview" } });
       expect(await focusedLabel(page)).toBe("Preview");
 
       await page.keyboard.press("Shift+F10");
