@@ -1458,7 +1458,6 @@ export default function AssistantWorkspace(props: Props) {
 
   const activeConversation = () =>
     conversations().find((conversation) => conversation.id === chat.activeConversationId()) ?? chat.conversation();
-  const [todoOpen, setTodoOpen] = createSignal(false);
   const todoItems = () => {
     const checkpoint = chat.conversation()?.todoPlan;
     let todos = checkpoint?.todos ?? [];
@@ -1480,20 +1479,64 @@ export default function AssistantWorkspace(props: Props) {
     return todos;
   };
   const hasOpenTodos = createMemo(() => todoItems().some((item) => item.status === "pending" || item.status === "in_progress"));
-  const [showCompletedTodos, setShowCompletedTodos] = createSignal(false);
-  createEffect(() => {
-    chat.activeConversationId();
-    hasOpenTodos();
-    setShowCompletedTodos(false);
-    setTodoOpen(false);
-  });
-  const todoProgress = () => {
-    const todos = todoItems(),
-      done = todos.filter((item) => item.status === "completed").length;
-    const cancelled = todos.filter((item) => item.status === "cancelled").length;
-    const de = locale().startsWith("de");
-    return `${done}/${todos.length - cancelled} ${de ? "erledigt" : "complete"}${cancelled ? ` · ${cancelled} ${de ? "verworfen" : "cancelled"}` : ""}`;
+  /**
+   * The plan above the field (Bauplan 3a): open while Gustav works on it; once every task is done its header says so and
+   * the list folds, unless the person opened it. Their own choice per chat stays for the session. A plan that was
+   * already done when the chat opened stays out of the way behind "Show tasks", as before.
+   */
+  const todoChoiceKey = () => `assistant.tasks-open:${chat.activeConversationId() ?? ""}`;
+  const readTodoChoice = (): "open" | "closed" | null => {
+    try {
+      const value = window.sessionStorage.getItem(todoChoiceKey());
+      return value === "open" || value === "closed" ? value : null;
+    } catch {
+      return null;
+    }
   };
+  const [todoChoice, setTodoChoice] = createSignal<"open" | "closed" | null>(null);
+  const [showCompletedTodos, setShowCompletedTodos] = createSignal(false);
+  createEffect(
+    on(
+      () => chat.activeConversationId(),
+      () => {
+        setTodoChoice(readTodoChoice());
+        setShowCompletedTodos(false);
+      },
+    ),
+  );
+  // Work that finishes while the person watches keeps its folded "All tasks done" header in place instead of vanishing.
+  createEffect(
+    on([hasOpenTodos, () => chat.activeConversationId()] as const, ([open, id], before) => {
+      if (before && before[1] === id && before[0] && !open) setShowCompletedTodos(true);
+    }),
+  );
+  const todoOpen = () => {
+    const choice = todoChoice();
+    return hasOpenTodos() ? choice !== "closed" : choice === "open";
+  };
+  const setTodoOpen = (open: boolean) => {
+    const choice = open ? "open" : "closed";
+    setTodoChoice(choice);
+    try {
+      window.sessionStorage.setItem(todoChoiceKey(), choice);
+    } catch {
+      /* Without storage the choice holds until the chat changes. */
+    }
+  };
+  /** "2 of 4": done tasks of those that count; cancelled ones do not. */
+  const todoProgress = () => {
+    const counted = todoItems().filter((item) => item.status !== "cancelled");
+    const done = counted.filter((item) => item.status === "completed").length;
+    return locale().startsWith("de") ? `${done} von ${counted.length}` : `${done} of ${counted.length}`;
+  };
+  const todoLabel = () =>
+    hasOpenTodos()
+      ? locale().startsWith("de")
+        ? "Aufgaben"
+        : "Tasks"
+      : locale().startsWith("de")
+        ? "Alle Aufgaben erledigt"
+        : "All tasks done";
   const activeConversationProject = () => {
     const projectId = activeConversation()?.projectId;
     return projectId ? (projects().find((project) => project.id === projectId) ?? null) : null;
@@ -2240,7 +2283,7 @@ export default function AssistantWorkspace(props: Props) {
                   items={todoItems()}
                   open={todoOpen()}
                   onOpenChange={setTodoOpen}
-                  label={locale().startsWith("de") ? "Aufgaben" : "Tasks"}
+                  label={todoLabel()}
                   progressLabel={todoProgress()}
                   statusLabels={
                     locale().startsWith("de")
@@ -2506,7 +2549,7 @@ export default function AssistantWorkspace(props: Props) {
                     onSelect: () => {
                       const visible = !showCompletedTodos();
                       setShowCompletedTodos(visible);
-                      setTodoOpen(visible);
+                      if (visible) setTodoOpen(true);
                     },
                   },
                 ]
