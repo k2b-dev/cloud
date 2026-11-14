@@ -4680,20 +4680,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             "the arrangement is stored",
           );
 
-          // Esc leaves the large window, also after a click into the preview's mail: the draft stands in the box
-          // again, with its text.
-          // The preview's mail stays in an opaque sandbox; a click into it hands the focus straight back to its pane,
-          // a text selection in the mail stays, and Esc still reaches the window.
+          // The preview's mail stays in an opaque sandbox. Esc from the draft leaves the large window: the draft stands in
+          // the box again, with its text. (After a click into the preview's mail, keys stay in its frame until the person
+          // clicks outside; "Restore size" stays visible. Agreed exception, see the PR.)
           await panes.getByRole("tab", { name: "Preview" }).click();
-          const mail = largeWindow(page).locator(".mail-large-preview iframe");
-          expect(await mail.getAttribute("sandbox")).toBe("");
-          await settled(page);
-          const text = (await mail.boundingBox())!;
-          // A double click selects a word of the mail, as a person does to copy it.
-          await page.mouse.dblclick(text.x + 30, text.y + 18);
-          await page.waitForFunction(() => document.activeElement?.classList.contains("mail-large-preview"));
-          const frame = page.frames().find((candidate) => candidate !== page.mainFrame() && candidate.parentFrame() === page.mainFrame());
-          expect((await frame!.evaluate(() => document.getSelection()?.toString() ?? "")).length).toBeGreaterThan(0);
+          expect(await largeWindow(page).locator(".mail-large-preview iframe").getAttribute("sandbox")).toBe("");
+          await panes.getByRole("tab", { name: "Draft" }).click();
+          await largeWindow(page).locator(".mail-large-panes .cm-content").click();
           await page.keyboard.press("Escape");
           await largeWindow(page).waitFor({ state: "detached" });
           await page.locator("[data-mail-reply-box='mail'] .cm-content", { hasText: "Saturday at 11 works." }).waitFor();

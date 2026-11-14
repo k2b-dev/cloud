@@ -1,5 +1,5 @@
 import { Button, Panes, type PanesItem, type PanesLayout, Placeholder, useLocale } from "@k2b/ui";
-import { type Accessor, createMemo, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createMemo, type JSX, Show } from "solid-js";
 import type { ComposePreview } from "../../contracts";
 import MailFormattingWarnings from "./MailFormattingWarnings";
 import { mailComposerMessages } from "./mail-composer-messages";
@@ -21,25 +21,8 @@ function MailLargePreview(props: {
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
-  let section!: HTMLElement;
-  let frame: HTMLIFrameElement | undefined;
-  // A click into the mail moves the keyboard into the sandboxed frame, where no key, also not Esc, reaches the window.
-  // The frame stays opaque (`sandbox=""`, see mail-preview-sandbox.test.ts), so instead the focus comes straight back to
-  // this pane in the page; a text selection in the mail stays, and Esc keeps making the window smaller.
-  const takeBackFocus = () =>
-    setTimeout(() => {
-      if (frame && document.activeElement === frame) {
-        // The page takes the keyboard back from the frame first; then the pane holds the focus.
-        window.focus();
-        section.focus({ preventScroll: true });
-      }
-    }, 0);
-  onMount(() => {
-    window.addEventListener("blur", takeBackFocus);
-    onCleanup(() => window.removeEventListener("blur", takeBackFocus));
-  });
   return (
-    <section ref={section} class="mail-large-preview" aria-label={t().preview} tabIndex={-1}>
+    <section class="mail-large-preview" aria-label={t().preview}>
       <p class="mail-large-preview-status" data-stale={props.error() ? "" : undefined} role="status">
         <i class={`ti ${props.error() ? "ti-alert-triangle" : "ti-mail"}`} aria-hidden="true" />
         <span class="min-w-0 flex-1 truncate">{props.error() ? t().previewStale : t().previewLive}</span>
@@ -72,11 +55,12 @@ function MailLargePreview(props: {
       >
         {(value) => (
           <div class="mail-large-preview-frame">
-            {/* Not a tab stop: the frame shows the mail, nothing in it takes input. */}
+            {/* Not a tab stop, and fully sandboxed (`sandbox=""`, see mail-preview-sandbox.test.ts): the mail keeps an opaque
+                origin. After a click into it, keys stay in the frame until the person clicks outside; "Restore size"
+                stays visible in the window head. */}
             <iframe
               tabIndex={-1}
               class="mail-large-preview-mail"
-              ref={frame}
               sandbox=""
               srcdoc={`${PREVIEW_POLICY}<style>body{margin:0}</style>${value().html}`}
               title={t().emailPreview}
