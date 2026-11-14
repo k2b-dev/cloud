@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // Which rule wins and how large a hit area is are cascade and layout questions, so a real engine renders them.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-section-"));
@@ -17,6 +17,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Section } = await import("./Section");
 const { Button } = await import("../actions/Button");
 const { LocaleProvider } = await import("../intl/locale");
+const { default: DetailPanel } = await import("../layout/DetailPanel");
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 
 let browser: Browser;
@@ -111,6 +112,177 @@ describe("Section in a real engine", () => {
       await page.close();
     }
   });
+
+  test("a collapsible card heading never draws a fill; hover colours only title and chevron, and the gaps are a fixed card's", async () => {
+    const card = (id: string, props: Record<string, unknown> = {}) =>
+      createComponent(Section, { id, icon: "ti ti-user", title: "Details", children: "Name and address", ...props });
+    const cards = renderToString(() => [
+      card("fixed-sm"),
+      card("open-sm", { collapsible: true, defaultOpen: true }),
+      card("closed-sm", { collapsible: true }),
+      card("fixed-md", { size: "md" }),
+      card("open-md", { size: "md", collapsible: true, defaultOpen: true }),
+      card("closed-md", { size: "md", collapsible: true }),
+      createComponent(Section, {
+        id: "outer",
+        title: "Outer",
+        get children() {
+          return card("nested", { frame: "line", collapsible: true, defaultOpen: true });
+        },
+      }),
+    ]);
+    const page = await browser.newPage({ viewport: { width: 640, height: 1200 } });
+    try {
+      await page.setContent(
+        `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:1rem;display:grid;gap:1rem">${cards}</body></html>`,
+      );
+      await settled(page);
+      const read = (id: string) =>
+        page.evaluate((id) => {
+          const section = document.getElementById(id)!;
+          const header = section.querySelector<HTMLElement>(":scope > .k2b-section__header")!;
+          const toggle = header.querySelector<HTMLElement>(".k2b-section__toggle");
+          const body = section.querySelector<HTMLElement>(":scope > .k2b-section__body:not([hidden])");
+          const box = section.getBoundingClientRect();
+          const row = header.getBoundingClientRect();
+          const probe = document.body.appendChild(document.createElement("span"));
+          probe.style.color = "var(--k2b-action)";
+          const accent = getComputedStyle(probe).color;
+          probe.style.color = "var(--k2b-text)";
+          const text = getComputedStyle(probe).color;
+          probe.remove();
+          const corner = document.elementFromPoint(box.left + 8, box.top + 3);
+          return {
+            top: row.top - box.top,
+            gap: body ? body.getBoundingClientRect().top - row.bottom : box.bottom - row.bottom,
+            height: row.height,
+            fill: toggle ? getComputedStyle(toggle).backgroundColor : null,
+            hitFill: toggle ? getComputedStyle(toggle, "::before").backgroundColor : null,
+            hitArea: toggle ? getComputedStyle(toggle, "::before").content : null,
+            rowIsToggle: toggle ? JSON.stringify(toggle.getBoundingClientRect()) === JSON.stringify(row) : null,
+            cardTopOpens: toggle ? corner === toggle : null,
+            title: getComputedStyle(header.querySelector(".k2b-section__title")!).color,
+            chevron: toggle ? getComputedStyle(toggle.querySelector(".k2b-section__chevron")!).color : null,
+            outlineOffset: toggle ? Number.parseFloat(getComputedStyle(toggle).outlineOffset) : null,
+            accent,
+            text,
+          };
+        }, id);
+      const transparent = "rgba(0, 0, 0, 0)";
+      for (const size of ["sm", "md"]) {
+        const fixed = await read(`fixed-${size}`);
+        for (const id of [`open-${size}`, `closed-${size}`]) {
+          const rest = await read(id);
+          // The disclosure button is the heading row itself, where a fixed card's heading stands.
+          expect(rest.rowIsToggle).toBe(true);
+          expect(rest.top).toBe(fixed.top);
+          expect(rest.height).toBe(fixed.height);
+          expect(rest.fill).toBe(transparent);
+          expect(rest.hitFill).toBe(transparent);
+          // The whole top of the card still opens it.
+          expect(rest.cardTopOpens).toBe(true);
+          // The invisible hit area lies over the heading, so the pointer meets the button itself.
+          await hoverInPlace(page.locator(`#${id} .k2b-section__toggle`));
+          await settled(page);
+          const hovered = await read(id);
+          expect(hovered.fill).toBe(transparent);
+          expect(hovered.hitFill).toBe(transparent);
+          expect(hovered.title).toBe(hovered.accent);
+          expect(hovered.chevron).toBe(hovered.accent);
+          expect(hovered.title).not.toBe(hovered.text);
+          expect({ top: hovered.top, gap: hovered.gap, height: hovered.height }).toEqual({
+            top: rest.top,
+            gap: rest.gap,
+            height: rest.height,
+          });
+          await page.mouse.move(630, 1190);
+          await settled(page);
+        }
+        // Open, the heading sits as far from the content as on a fixed card; closed, the card is as deep below as above.
+        expect((await read(`open-${size}`)).gap).toBe(fixed.gap);
+        expect((await read(`closed-${size}`)).gap).toBe(fixed.top);
+      }
+      // Keyboard focus draws the ring around the row, never as a band across the card.
+      await page.focus("#fixed-sm");
+      await page.keyboard.press("Tab");
+      await settled(page);
+      expect(await page.evaluate(() => document.activeElement?.closest(".k2b-section")?.id)).toBe("open-sm");
+      const focused = await read("open-sm");
+      expect(focused.fill).toBe(transparent);
+      expect(focused.outlineOffset).toBeGreaterThanOrEqual(0);
+      // A card inside another frame stands flat and has no padding to reach over.
+      expect((await read("nested")).hitArea).toBe("none");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("blue text actions in headings darken on hover to the action hover blue, never the body ink and never underlined", async () => {
+    const edit = (id: string) => createComponent(Button, { id, variant: "text", size: "sm", children: "Edit" });
+    const markup = renderToString(() => [
+      createComponent(Section, {
+        title: "Details",
+        get actions() {
+          return edit("section-text");
+        },
+        children: "…",
+      }),
+      createComponent(DetailPanel.Summary, {
+        title: "Customer",
+        get actions() {
+          return edit("summary-text");
+        },
+        children: "…",
+      }),
+      createComponent(Section, {
+        title: "Deliveries",
+        get children() {
+          return createComponent(Button, { id: "link", variant: "link", size: "sm", children: "Show all" });
+        },
+      }),
+    ]);
+    const page = await browser.newPage({ viewport: { width: 640, height: 700 } });
+    try {
+      for (const theme of ["light", "dark"] as const) {
+        // A host that maps the panel accent to its own ink maps the hover ink beside it.
+        for (const host of [false, true]) {
+          const style = host ? "--k2b-detail-panel-accent: rgb(0, 120, 90); --k2b-detail-panel-accent-hover: rgb(0, 80, 60)" : "";
+          await page.setContent(
+            `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:0;padding:1rem;${style}">${markup}</body></html>`,
+          );
+          await settled(page);
+          const [hoverBlue, text] = await page.evaluate((theme) => {
+            const probe = document.body.appendChild(document.createElement("span"));
+            probe.style.color = theme === "light" ? "var(--k2b-accent-900)" : "var(--k2b-accent-100)";
+            const blue = getComputedStyle(probe).color;
+            probe.style.color = "var(--k2b-text)";
+            const ink = getComputedStyle(probe).color;
+            probe.remove();
+            return [blue, ink];
+          }, theme);
+          for (const id of ["section-text", "summary-text", "link"]) {
+            await hoverInPlace(page.locator(`#${id}`));
+            await settled(page);
+            const hovered = await page.evaluate((id) => {
+              const style = getComputedStyle(document.getElementById(id)!);
+              return { color: style.color, decoration: style.textDecorationLine, background: style.backgroundColor };
+            }, id);
+            const expected = host && id !== "link" ? "rgb(0, 80, 60)" : hoverBlue;
+            expect(hovered, `${theme} ${host ? "host" : "standalone"} ${id}`).toEqual({
+              color: expected,
+              decoration: "none",
+              background: "rgba(0, 0, 0, 0)",
+            });
+            expect(hovered.color).not.toBe(text);
+            await page.mouse.move(630, 690);
+            await settled(page);
+          }
+        }
+      }
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 
   test("on a phone a heading action moves under the title before the title truncates; an overlong title still truncates", async () => {
     const action = (label: string) =>
