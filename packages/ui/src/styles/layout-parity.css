@@ -428,7 +428,6 @@
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0.5rem 0.75rem;
-  scrollbar-width: thin;
   /* The fade has to reach past the row's end padding into the last label, or
      that label ends at a hard edge. A category scrolled into view stops
      outside the fade. */
@@ -1489,13 +1488,6 @@ html {
   padding: 0;
 }
 
-/* The body's scrollbar sits on the panel's edge, and its content keeps the
-   panel's inset inside the scrollport, so overlay scrollbars never leave the
-   text against the rounded edge. */
-.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__header {
-  scrollbar-width: thin;
-}
-
 /* One subtle hairline separates the panel's topics: every section,
    discussion, or group after the body's first element starts below it. A
    group's own sections stay together without lines. Apps draw no line. */
@@ -1507,10 +1499,12 @@ html {
   border-top: 1px solid var(--k2b-border);
 }
 
+/* The body's scrollbar sits on the panel's edge, and its content keeps the
+   panel's inset inside the scrollport, so overlay scrollbars never leave the
+   text against the rounded edge. */
 .k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__body {
   gap: 1.25rem;
   padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
-  scrollbar-width: thin;
 }
 
 @media (max-width: 47.999rem) {
@@ -3767,16 +3761,15 @@ html {
    otherwise touch the edge until the content grows and then jump. A MobileShell
    pads its levels itself. CSS cannot query the scrollbar style, so the primary
    pointer stands in for it: a touch screen draws overlay scrollbars that take
-   no room and keeps both paddings, as does Firefox, which has no fixed track. */
-@media (pointer: fine) {
+   no room and keeps both paddings, as does Firefox, which has no fixed track
+   and reserves its own gutter. The track is the shared scrollbar in index.css. */
+@media (pointer: fine) and (forced-colors: none) {
   @supports selector(::-webkit-scrollbar) {
     .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"], .k2b-mobile-shell__main *),
     .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"]:not([data-scroll="false"], [data-workspace-level]),
     .k2b-ui .k2b-scroll-area[data-inset="true"][data-orientation="vertical"] {
       overflow-y: scroll;
       padding-inline-end: 0;
-      scrollbar-width: auto;
-      scrollbar-color: auto;
     }
 
     /* A page level keeps its 1rem end edge: 0.5rem padding and the 0.5rem track. */
@@ -3784,10 +3777,32 @@ html {
       padding-inline-end: 0.5rem;
     }
 
-    .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"], .k2b-mobile-shell__main *)::-webkit-scrollbar,
-    .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"]:not([data-scroll="false"], [data-workspace-level])::-webkit-scrollbar,
-    .k2b-ui .k2b-scroll-area[data-inset="true"][data-orientation="vertical"]::-webkit-scrollbar {
-      width: 0.5rem;
+    /* Every other shared scroller that reserves a stable gutter keeps the
+       same always-present track, for the same reason: WebKit's
+       scrollbar-gutter reserves nothing until content overflows. Chromium
+       draws the same empty track either way. */
+    .k2b-ui .k2b-scroll-area[data-orientation="vertical"],
+    .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body,
+    .k2b-ui .k2b-app-workspace__main:not([data-scroll="false"], [data-workspace-levels], .k2b-mobile-shell__main *),
+    .k2b-ui .k2b-app-workspace__main-pane:not([data-scroll="false"], [data-workspace-level], .k2b-mobile-shell__main *),
+    .k2b-ui .k2b-detail-panel__body,
+    .k2b-ui .k2b-chat-timeline__viewport,
+    .k2b-ui .k2b-virtual-feed__viewport,
+    .k2b-ui .k2b-pdf-viewer__pages {
+      overflow-y: scroll;
+    }
+
+    /* The detail header keeps the body's track without scrolling, so its
+       trailing controls end on the body's trailing edge. */
+    .k2b-ui .k2b-detail-panel__header {
+      overflow-x: hidden;
+      overflow-y: scroll;
+    }
+
+    /* Attachments arrive one by one; the strip keeps its track from the
+       first one, so the composer does not grow when the row overflows. */
+    .k2b-ui .k2b-chat-composer__attachments {
+      overflow-x: scroll;
     }
   }
 }

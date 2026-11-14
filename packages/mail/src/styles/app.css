@@ -1527,6 +1527,22 @@
   scrollbar-gutter: stable;
 }
 
+/* With a mouse, the shared 0.5rem track is always there and lies in the
+   reader's end padding (px-3, sm:px-5), so the text keeps its edge. */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .mail-reader-scroll {
+      padding-inline-end: 0.25rem;
+    }
+
+    @media (min-width: 640px) {
+      .k2b-ui .mail-reader-scroll {
+        padding-inline-end: 0.75rem;
+      }
+    }
+  }
+}
+
 /* The landing Main draws no shadow inside the workspace. Keep this outside
    layers, like the standalone workspace styles it overrides. */
 .k2b-ui .mail-landing-main {

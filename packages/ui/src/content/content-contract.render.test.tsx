@@ -527,14 +527,14 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(uiCss).toMatch(/\.k2b-data-table__row\[data-selected="true"\] > td\[data-highlighted="true"\] \{[^}]*background: transparent/s);
   });
 
-  test("keeps the DataTable overlay scrollbar as quiet as shared panel scrollbars", () => {
+  test("draws the DataTable overlay scrollbar like the shared scrollbar", () => {
     expect(uiCss).toMatch(/\.k2b-data-table__scrollbar\[data-axis="y"\] \{[^}]*width: 0\.5rem/s);
     expect(uiCss).toMatch(/\.k2b-data-table__scrollbar\[data-axis="x"\] \{[^}]*height: 0\.5rem/s);
     expect(uiCss).toMatch(
-      /\.k2b-data-table__scrollbar > span \{[^}]*border: 1px solid transparent[^}]*var\(--k2b-scrollbar-thumb\) 45%, transparent/s,
+      /\.k2b-data-table__scrollbar > span \{[^}]*border: 0\.125rem solid transparent[^}]*background: var\(--k2b-scrollbar-thumb\);/s,
     );
     expect(uiCss).toMatch(
-      /\.k2b-data-table__scrollbar:hover > span \{[^}]*background: var\(--k2b-scrollbar-thumb\)[^}]*background-clip: padding-box/s,
+      /\.k2b-data-table__scrollbar:hover > span \{[^}]*border-width: 0\.0625rem;[^}]*background: var\(--k2b-scrollbar-thumb-hover\)[^}]*background-clip: padding-box/s,
     );
   });
 
