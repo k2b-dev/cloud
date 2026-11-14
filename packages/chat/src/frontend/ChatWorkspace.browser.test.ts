@@ -480,6 +480,10 @@ const scrollFeed = async (page: Page, direction: number) => {
 const openMessageMenu = async (page: Page, name: string, item: Locator) => {
   // History commits before the view transition creates its animations; wait for the navigation to finish first.
   await viewTransitionEnded(page);
+  // The pointer rests where the test last clicked, such as a notice's "Undo" that has left since; a control that now
+  // lies there, like the phone header's "Add people", fades in its tooltip while the page settles. Rest it on the
+  // message's text, which has no tooltip, first.
+  await hoverInPlace(item.locator(".k2b-message-row__text"));
   await settled(page);
   if (name === "phone") {
     await item.locator(".k2b-message-row__text").scrollIntoViewIfNeeded();
