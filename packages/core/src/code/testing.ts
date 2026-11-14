@@ -5,11 +5,13 @@ import {
   CodeTestCaseSchema,
   type CodeTestExecutionCase,
   type CodeTestExecutor,
+  type CodeTestFixtureDetail,
   type CodeTestLimits,
   CodeTestLimitsSchema,
   type CodeTestResult,
   CodeTestResultSchema,
   codeTestFailure,
+  codeTestFixtureDetail,
 } from "@k2b/cloud/code";
 import { CodeJobError } from "./job-errors";
 
@@ -25,6 +27,11 @@ export type CodeTestingHost = {
 export type CodeTestRequest = { code: CodeCheckRequest; tests: Record<string, string>; trace?: boolean };
 /** One entrypoint and fixture; always checked and executed against fake data, with no durable version or run. */
 export type CodeSimulateRequest = { code: CodeCheckRequest; fixture: CodeTestCase; trace?: boolean };
+
+function invalidFixture(mode: "test" | "simulate", detail: CodeTestFixtureDetail, limits: CodeTestLimits): CodeTestResult {
+  const result = codeTestFailure(mode, "code_test_invalid_fixture", [], detail);
+  return Buffer.byteLength(JSON.stringify(result)) > limits.outputBytes ? codeTestFailure(mode, "code_test_invalid_fixture") : result;
+}
 
 async function execute(
   mode: "test" | "simulate",
@@ -67,13 +74,17 @@ export async function testCode(request: CodeTestRequest, host: CodeTestingHost, 
   const names = Object.keys(request.tests).sort();
   if (!names.length || names.length > limits.cases) return codeTestFailure("test", "code_test_case_limit");
   const cases: CodeTestExecutionCase[] = [];
-  try {
-    for (const name of names) {
-      if (!/^test\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.json$/.test(name)) return codeTestFailure("test", "code_test_fixture_path");
-      cases.push({ file: name, fixture: CodeTestCaseSchema.parse(JSON.parse(request.tests[name]!)) });
+  for (const name of names) {
+    if (!/^test\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.json$/.test(name)) return codeTestFailure("test", "code_test_fixture_path");
+    let raw: unknown;
+    try {
+      raw = JSON.parse(request.tests[name]!);
+    } catch {
+      return invalidFixture("test", codeTestFixtureDetail(null, { path: [], message: "Expected valid JSON." }, name), limits);
     }
-  } catch {
-    return codeTestFailure("test", "code_test_invalid_fixture");
+    const fixture = CodeTestCaseSchema.safeParse(raw);
+    if (!fixture.success) return invalidFixture("test", codeTestFixtureDetail(raw, fixture.error.issues[0]!, name), limits);
+    cases.push({ file: name, fixture: fixture.data });
   }
   if (cases.reduce((n, fixture) => n + fixture.fixture.runs.length, 0) > limits.runs)
     return codeTestFailure("test", "code_test_case_limit");
@@ -84,6 +95,12 @@ export async function simulateCode(request: CodeSimulateRequest, host: CodeTesti
   const limits = CodeTestLimitsSchema.parse(host.limits);
   if (Buffer.byteLength(JSON.stringify(request)) > limits.requestBytes) return codeTestFailure("simulate", "code_test_request_limit");
   const fixture = CodeTestCaseSchema.safeParse(request.fixture);
-  if (!fixture.success || fixture.data.runs.length !== 1) return codeTestFailure("simulate", "code_test_invalid_fixture");
+  if (!fixture.success) return invalidFixture("simulate", codeTestFixtureDetail(request.fixture, fixture.error.issues[0]!, null), limits);
+  if (fixture.data.runs.length !== 1)
+    return invalidFixture(
+      "simulate",
+      codeTestFixtureDetail(request.fixture, { path: ["runs"], message: "Simulation requires exactly one run." }, null),
+      limits,
+    );
   return execute("simulate", request.code, [{ file: null, fixture: fixture.data }], host, request.trace, signal);
 }

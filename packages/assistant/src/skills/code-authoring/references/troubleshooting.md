@@ -83,6 +83,18 @@ that never started a run.
 
 ## Test errors
 
+For `code_test_invalid_fixture`, read `detail` on the failed call's `result`;
+if parsing stopped before execution, read top-level `detail`. It names the
+operation, zero-based mock and reply indexes, failing `path` and `reason`,
+plus the file for a parsing failure. Correct that field with `code_write`
+and run `code_test` again before submitting. Use `code_sdk` to check the
+operation's required reply fields and ID formats; a string in the TypeScript
+type can still have a JSON Schema pattern. Spaces IDs require six
+alphanumeric characters (`Itm001`, `Col001`). Do not weaken the operation's
+contract or submit a failed test. See [repair a refused fixture](testing.md#repair-a-refused-fixture).
+Explain the tested behavior and outcome to the person without showing codes
+or paths.
+
 | Code | Cause |
 | --- | --- |
 | `code_test_missing_mock` | A call has no matching mock |

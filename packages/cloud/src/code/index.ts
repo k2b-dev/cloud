@@ -70,6 +70,7 @@ export type {
   CodeTestExecution,
   CodeTestExecutionCase,
   CodeTestExecutor,
+  CodeTestFixtureDetail,
   CodeTestLimits,
   CodeTestMock,
   CodeTestResult,
@@ -80,11 +81,13 @@ export {
   CodeTestCallSchema,
   CodeTestCaseSchema,
   CodeTestExecutionCaseSchema,
+  CodeTestFixtureDetailSchema,
   CodeTestLimitsSchema,
   CodeTestMockSchema,
   CodeTestResultSchema,
   CodeTestRunSchema,
   codeTestFailure,
+  codeTestFixtureDetail,
 } from "./test-contract";
 export type {
   CodeSdkApp,
