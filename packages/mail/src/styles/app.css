@@ -2359,3 +2359,200 @@
     padding-inline: 0.75rem;
   }
 }
+
+/* "Write large" in the reply box: an icon at the head's end; its hint names what it opens in two quiet lines. */
+.k2b-ui .mail-reply-box-large {
+  flex: none;
+}
+.k2b-ui .mail-reply-box-large-tip {
+  display: grid;
+  gap: 0.0625rem;
+}
+.k2b-ui .mail-reply-box-large-tip > :last-child {
+  opacity: 0.8;
+}
+
+/* The large composer (Write large): the maximized window holds one Panes surface with the draft, the conversation,
+   and the preview. The window's own inset goes to the panes; the draft block keeps the window's look in its pane. */
+.k2b-ui .mail-compose-window .mail-compose-window-body > .mail-inline-draft[data-large] {
+  padding: 0;
+  overflow: hidden;
+}
+.k2b-ui .mail-inline-draft:not([data-large]) > .mail-draft-block {
+  display: contents;
+}
+.k2b-ui .mail-large-panes .mail-draft-block {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  padding: 0.25rem 0.875rem 0.5rem;
+  overflow-y: auto;
+}
+
+/* The preview pane: a quiet line at a fixed place, then the mail as it arrives. The line keeps its height in every
+   state, so nothing moves when the preview falls behind or catches up. */
+.k2b-ui .mail-large-preview {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  padding: 0 0.875rem 0.75rem;
+}
+.k2b-ui .mail-large-preview-status {
+  display: flex;
+  min-height: 1.75rem;
+  flex: none;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+.k2b-ui .mail-large-preview-status[data-stale] {
+  color: var(--k2b-warning-text);
+}
+.k2b-ui .mail-large-preview-frame {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.k2b-ui .mail-large-preview-mail {
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  background: white;
+}
+.k2b-ui .mail-large-preview-state {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* The conversation beside a draft, in the reader's look: one surface, an avatar per message, the newest open, older
+   ones as one line each, internal notes as yellow tiles. Long content scrolls and fades out at the bottom edge. */
+.k2b-ui .mail-composer-history {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+.k2b-ui .mail-composer-history-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  mask-image: linear-gradient(to bottom, #000, #000 calc(100% - 1.5rem), transparent);
+}
+.k2b-ui .mail-composer-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0 0.875rem 1.5rem;
+}
+.k2b-ui .mail-composer-history-head {
+  display: flex;
+  width: calc(100% + 1rem);
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem;
+  margin-inline: -0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.k2b-ui .mail-composer-history-head:hover {
+  background: var(--k2b-hover);
+}
+.k2b-ui .mail-composer-history-head:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+.k2b-ui .mail-composer-history-message[data-expanded] > .mail-composer-history-head {
+  align-items: flex-start;
+}
+.k2b-ui .mail-composer-history-who {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.k2b-ui .mail-composer-history-message[data-expanded] .mail-composer-history-who {
+  flex-direction: column;
+  gap: 0.0625rem;
+}
+.k2b-ui .mail-composer-history-name {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2b-ui .mail-composer-history-snippet,
+.k2b-ui .mail-composer-history-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2b-ui .mail-composer-history-time {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+.k2b-ui .mail-composer-history-body {
+  padding: 0.25rem 0 0.75rem 2.625rem;
+}
+.k2b-ui .mail-composer-history-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.k2b-ui .mail-composer-history-file {
+  display: inline-flex;
+  min-height: 2rem;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.25rem 0 0.625rem;
+  border-radius: var(--k2b-radius-control);
+  box-shadow: inset 0 0 0 1px var(--k2b-border);
+  font-size: 0.8125rem;
+}
+.k2b-ui .mail-composer-history-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2b-ui .mail-composer-history-more {
+  display: flex;
+  padding: 0.25rem 0.875rem;
+}
+.k2b-ui .mail-composer-history-skeleton {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem 0.875rem;
+}
+.k2b-ui .mail-composer-history-skeleton > span {
+  height: 2.75rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+}

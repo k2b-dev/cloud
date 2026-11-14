@@ -257,4 +257,51 @@ describe("@k2b/ui FloatingWindow states", () => {
       await phone.close();
     }
   });
+
+  test("a named size control says what it does and keeps its width and place at the window's end", async () => {
+    const page = await open(1280, 800);
+    try {
+      await page.evaluate(() => window.openWindow("Reply", { sizeControl: "text" }));
+      const control = frame(page, "Reply").locator(".k2b-floating-window__size");
+      await control.waitFor();
+      const measure = () =>
+        control.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const head = element.closest(".k2b-floating-window")!.getBoundingClientRect();
+          return { width: Math.round(rect.width), fromEnd: Math.round(head.right - rect.right), text: element.textContent };
+        });
+      expect(await control.getAttribute("aria-label")).toBe("Maximize");
+      expect(await control.evaluate((element) => (element as HTMLElement).innerText.trim())).toBe("Maximize");
+      const normal = await measure();
+      await control.click();
+      await page.locator('.k2b-floating-window[data-state="maximized"]').waitFor();
+      // The control moves away under the resting pointer; WebKit ends its hover at once, so the pointer leaves first.
+      await pointerAway(page);
+      // The test's own condition: the current name shows and the control has its width and place at the end.
+      await page.waitForFunction(
+        ({ width, fromEnd }) => {
+          const element = document.querySelector<HTMLElement>(".k2b-floating-window__size");
+          const head = element?.closest(".k2b-floating-window");
+          if (!element || !head || head.getAttribute("data-state") !== "maximized") return false;
+          const rect = element.getBoundingClientRect();
+          return (
+            element.innerText.trim() === "Restore size" &&
+            Math.round(rect.width) === width &&
+            Math.round(head.getBoundingClientRect().right - rect.right) === fromEnd
+          );
+        },
+        { width: normal.width, fromEnd: normal.fromEnd },
+      );
+      const large = await measure();
+      // Only the current label is named; both lie in one cell, so the width stays.
+      expect(await control.evaluate((element) => (element as HTMLElement).innerText.trim())).toBe("Restore size");
+      expect(await control.getAttribute("aria-label")).toBe("Restore size");
+      expect(large.width).toBe(normal.width);
+      expect(large.fromEnd).toBe(normal.fromEnd);
+      await control.click();
+      await page.locator('.k2b-floating-window[data-state="normal"]').waitFor();
+    } finally {
+      await page.close();
+    }
+  });
 });

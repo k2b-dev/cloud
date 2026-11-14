@@ -123,6 +123,7 @@ describe("MailReplyBox", () => {
         send: spyOn({ fn: () => undefined }, "fn"),
         sendAt: spyOn({ fn: (_at: string) => undefined }, "fn"),
         focusText: () => undefined,
+        selection: () => undefined,
         ready: () => true,
         text: () => typed,
         changed: () => typed !== "",
@@ -604,5 +605,86 @@ describe("MailReplyBox", () => {
     dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-box='detached'] button")!.click();
     await waitFor(() => mounts.length === 2);
     expect(mounts[1]!.initialDraft?.id).toBe("Draft1");
+  });
+
+  test("Write large hands the draft to a large window and takes it back with the caret where it stood", async () => {
+    const windows = await import("./mail-compose-windows");
+    const opened: Array<{ draftId: string; options: Record<string, unknown> }> = [];
+    const [open, setOpen] = createSignal<string | null>(null);
+    const recalls: string[] = [];
+    await mount({ drafts: () => [summary()] });
+    const unregister = windows.registerDraftWindowHost({
+      mailboxId: `Box${mailbox}`,
+      open: (draftId, options) => {
+        opened.push({ draftId, options: { ...options } });
+        setOpen(draftId);
+      },
+      isOpen: (draftId) => open() === draftId,
+      recall: async (draftId) => {
+        recalls.push(draftId);
+        setOpen(null);
+        return true;
+      },
+    });
+    try {
+      host().box!.detach("Draft1", { large: true, selection: { anchor: 2, head: 5 } });
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-reply-box='detached']")));
+      expect(opened).toEqual([
+        { draftId: "Draft1", options: { mailboxId: `Box${mailbox}`, large: true, origin: "reply-box", selection: { anchor: 2, head: 5 } } },
+      ]);
+      // Making the large window smaller: the box takes the draft back, with the caret the window reports.
+      expect(windows.returnDraftToReplyBox("Draft1", { anchor: 4, head: 4 })).toBe(true);
+      await waitFor(() => mounts.length === 2);
+      expect(recalls).toEqual(["Draft1"]);
+      expect(mounts[1]!.initialDraft?.id).toBe("Draft1");
+      expect(mounts[1]!.host.initialSelection).toEqual({ anchor: 4, head: 4 });
+      // Back in the box, the window has nobody to return to: a later "smaller" keeps it a window.
+      expect(windows.returnDraftToReplyBox("Draft1", undefined)).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
+
+  test("a large window that keeps its draft (failed save, running upload) keeps it; the box opens no second editor", async () => {
+    const windows = await import("./mail-compose-windows");
+    const [open, setOpen] = createSignal<string | null>(null);
+    await mount({ drafts: () => [summary()] });
+    const unregister = windows.registerDraftWindowHost({
+      mailboxId: `Box${mailbox}`,
+      open: (draftId) => setOpen(draftId),
+      isOpen: (draftId) => open() === draftId,
+      recall: async () => false,
+    });
+    try {
+      host().box!.detach("Draft1", { large: true });
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-reply-box='detached']")));
+      expect(windows.returnDraftToReplyBox("Draft1", undefined)).toBe(true);
+      await Bun.sleep(30);
+      expect(mounts).toHaveLength(1);
+      expect(dom.root.querySelector("[data-mail-reply-box='detached']")).not.toBeNull();
+      // It can still be asked again later.
+      expect(windows.returnDraftToReplyBox("Draft1", undefined)).toBe(true);
+    } finally {
+      unregister();
+    }
+  });
+
+  test("after a reload the untouched box steps aside once its draft's window comes back", async () => {
+    const windows = await import("./mail-compose-windows");
+    await mount({ drafts: () => [summary()] });
+    expect(mounts.at(-1)!.initialDraft?.id).toBe("Draft1");
+    // The windows of this tab restore after the box loaded.
+    const unregister = windows.registerDraftWindowHost({
+      mailboxId: `Box${mailbox}`,
+      open: () => undefined,
+      isOpen: (draftId) => draftId === "Draft1",
+      recall: async () => true,
+    });
+    try {
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-reply-box='detached']")));
+      expect(mounts).toHaveLength(1);
+    } finally {
+      unregister();
+    }
   });
 });

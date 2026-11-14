@@ -151,6 +151,12 @@ only, so icons and check marks are left out. Keep it to labels that fit the
 menu's width; longer choices belong in an ordinary section. Up and Down move
 through the row like through any items, and Left and Right cycle within it.
 
+A section with `layout: "tiles"` sets a few choices that a picture tells apart,
+such as the arrangements in the `Panes` Arrange menu, side by side as tiles:
+the icon above a short label, with the 2 px edge of every choice and the
+selection fill on the checked one. Give it a `sectionLabel` like a row. Keep
+it to four or five tiles; the keys work as in a row.
+
 A choice can carry a `secondary` action, `{ label, ariaLabel?, action }`, such
 as **Only** beside a calendar's checkbox. It sits at the end of the row, shows
 while the row is hovered or focused and always on a touch screen, and keeps
@@ -271,7 +277,7 @@ type DropdownChoice = DropdownActionBase & {
 type DropdownSecondaryAction = { label: string; ariaLabel?: string; action: () => void };
 
 type DropdownSection = {
-  sectionLabel?: string; layout?: "row"; labelAction?: DropdownSecondaryAction;
+  sectionLabel?: string; layout?: "row" | "tiles"; labelAction?: DropdownSecondaryAction;
   items: readonly (DropdownAction | DropdownChoice)[];
 };
 

@@ -72,11 +72,13 @@ export async function openPdf(data: ArrayBuffer, signal: AbortSignal, workerUrl:
       const page = await pdf.getPage(index + 1);
       if (abort.aborted) return;
       const viewport = page.getViewport({ scale: 1 });
-      const layer = new TextLayer({ textContentSource: page.streamTextContent(), container, viewport });
-      // pdf.js sizes the layer through its own rounded variables; zoom works through `--total-scale-factor` instead.
-      const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = viewport.viewBox;
-      container.style.width = `calc(var(--total-scale-factor) * ${x2 - x1}px)`;
-      container.style.height = `calc(var(--total-scale-factor) * ${y2 - y1}px)`;
+      // pdf.js measures each text item on a canvas in the document right after adding the previous one. In the page,
+      // every measurement then recalculates the styles and layout of the whole page, which blocks a large app for
+      // seconds. Outside the document the same work costs milliseconds, so the layer is built on a detached copy and
+      // moves into the container in one step.
+      const detached = container.cloneNode(false);
+      if (!(detached instanceof HTMLElement)) return;
+      const layer = new TextLayer({ textContentSource: page.streamTextContent(), container: detached, viewport });
       const cancel = () => layer.cancel();
       abort.addEventListener("abort", cancel, { once: true });
       try {
@@ -84,6 +86,14 @@ export async function openPdf(data: ArrayBuffer, signal: AbortSignal, workerUrl:
       } finally {
         abort.removeEventListener("abort", cancel);
       }
+      if (abort.aborted) return;
+      // The variables and rotation pdf.js set on its container, then the spans.
+      for (const name of detached.getAttributeNames()) container.setAttribute(name, detached.getAttribute(name) ?? "");
+      // pdf.js sizes the layer through its own rounded variables; zoom works through `--total-scale-factor` instead.
+      const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = viewport.viewBox;
+      container.style.width = `calc(var(--total-scale-factor) * ${x2 - x1}px)`;
+      container.style.height = `calc(var(--total-scale-factor) * ${y2 - y1}px)`;
+      container.replaceChildren(...detached.childNodes);
     };
 
     return { pages, draw, textLayer, close };

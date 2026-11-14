@@ -1,0 +1,6 @@
+### A library builds DOM inside the page and forces a recalculation per element
+
+- **What happened:** `PdfViewer` blocked the main thread for many seconds on a text-heavy PDF in a large app: with a six-page text PDF in Chromium, long tasks of up to 1.8 s and 25 s blocked in total.
+- **Root cause:** `pdf-engine.ts` let pdf.js build each text layer in a container that was already in the document. pdf.js adds a span and then measures the next text item on a canvas in the document, so every span forced a style recalculation and layout of the whole page: 285 recalculations and 427 layouts while the last pages of a dense six-page fixture got their text, against 5 and 7 when built detached.
+- **Error class:** a third-party builder interleaves DOM writes with reads (measurements) on a node in the live document, so its cost grows with the size of the host page.
+- **Guard:** Test: `packages/ui/src/content/pdf-viewer.browser.test.ts` ("builds each text layer outside the page and adds its spans in one step") observes the page from its first render and requires exactly one insertion of spans per text layer of a dense six-page fixture. Convention: let a library that builds many nodes and measures them do so on a detached element, and move the result into the page in one step.

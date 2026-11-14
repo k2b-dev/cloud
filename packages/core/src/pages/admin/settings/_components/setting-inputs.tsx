@@ -295,10 +295,11 @@ function TemplateSettingInput(props: FieldInputProps) {
 
             <p class="text-xs text-dimmed">{isActionNotice() ? t().actionNoticeDescription : t().templateHelp}</p>
 
-            <div class="h-[min(62vh,46rem)] min-h-[34rem] min-w-0 overflow-hidden rounded-lg bg-zinc-100 p-2 dark:bg-zinc-900">
+            <div class="h-[min(62vh,46rem)] min-h-[34rem] min-w-0 overflow-hidden rounded-lg border-2 border-[var(--k2b-edge)]">
               <Panes
                 layout={layout()}
                 onLayoutChange={setLayout}
+                defaultLayout={createTemplateEditorPanesLayout()}
                 class="h-full w-full"
                 resizable={false}
                 items={[

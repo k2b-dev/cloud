@@ -1,8 +1,9 @@
 /**
- * A small, valid PDF built in memory: `pages` A4 pages, each with "Page N" and a few lines of Helvetica text. Every
- * `landscapeEvery`-th page is landscape, so tests can mix page widths.
+ * A small, valid PDF built in memory: `pages` A4 pages, each with "Page N" and `lines` lines of Helvetica text. Every
+ * `landscapeEvery`-th page is landscape, so tests can mix page widths. Many lines in small type make a text-heavy
+ * document, such as a contract, whose text layer has hundreds of spans per page.
  */
-export const pdfFixture = (pages: number, landscapeEvery = 0): Uint8Array => {
+export const pdfFixture = (pages: number, landscapeEvery = 0, lines = 6): Uint8Array => {
   const objects: string[] = [];
   const pageIds = Array.from({ length: pages }, (_, index) => 4 + index * 2);
   objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
@@ -11,10 +12,16 @@ export const pdfFixture = (pages: number, landscapeEvery = 0): Uint8Array => {
   for (let index = 0; index < pages; index++) {
     const landscape = landscapeEvery > 0 && (index + 1) % landscapeEvery === 0;
     const [width, height] = landscape ? [842, 595] : [595, 842];
-    const lines = [`BT /F1 32 Tf 72 ${height - 100} Td (Page ${index + 1}) Tj ET`];
-    for (let line = 0; line < 6; line++)
-      lines.push(`BT /F1 12 Tf 72 ${height - 160 - line * 18} Td (Line ${line + 1} of page ${index + 1}) Tj ET`);
-    const stream = lines.join("\n");
+    const text = [`BT /F1 32 Tf 72 ${height - 100} Td (Page ${index + 1}) Tj ET`];
+    // Six lines fit in 12 pt; more lines get smaller type and two runs each, the way a dense contract has them.
+    const size = lines <= 6 ? 12 : 7;
+    const step = lines <= 6 ? 18 : 9;
+    for (let line = 0; line < lines; line++) {
+      const y = height - 160 - line * step;
+      text.push(`BT /F1 ${size} Tf 72 ${y} Td (Line ${line + 1} of page ${index + 1}) Tj ET`);
+      if (lines > 6) text.push(`BT /F1 ${size} Tf 200 ${y} Td (the parties agree on clause ${line + 1}.) Tj ET`);
+    }
+    const stream = text.join("\n");
     objects[4 + index * 2] =
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + index * 2} 0 R >>`;
     objects[5 + index * 2] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;

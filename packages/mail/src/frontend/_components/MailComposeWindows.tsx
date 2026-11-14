@@ -9,12 +9,15 @@ import type { MailComposerHost, MailInlineDraftControls } from "./MailComposer";
 import MailInlineDraft from "./MailInlineDraft";
 import { mailComposeWindowMessages } from "./mail-compose-window-messages";
 import {
+  type DraftTextSelection,
   type DraftWindowOpenOptions,
   readComposeWindows,
   registerDraftWindowHost,
+  returnDraftToReplyBox,
   type StoredComposeWindow,
   writeComposeWindows,
 } from "./mail-compose-windows";
+import type { MailReplyPosition } from "./mail-workspace-preferences";
 
 /** Below this width a window is a full-screen sheet (the `FloatingWindow` phone rule); Send then moves into its head. */
 const SHEET_QUERY = "(max-width: 639.98px)";
@@ -28,6 +31,10 @@ type ComposeWindow = {
   /** Reopened from this tab's memory: a draft that is gone by now closes without a word. */
   restored: boolean;
   returnFocus: HTMLElement | null;
+  /** The reply box this draft came from to be written large; smaller hands it back there. */
+  origin?: "reply-box";
+  /** The caret the text had where the draft came from. */
+  selection?: DraftTextSelection;
   state: Accessor<FloatingWindowState>;
   setState: Setter<FloatingWindowState>;
   rect: Accessor<FloatingWindowRect | undefined>;
@@ -47,6 +54,10 @@ export type MailComposeWindowsProps = {
   calendarIntegrationAvailable: boolean;
   liveDictation: boolean;
   returnHref: string;
+  /** Where the reply box stands in the reader; the large composer's conversation reads in the same order (F4). */
+  replyPosition: () => MailReplyPosition;
+  /** The one-time hint that the large composer's panes can be arranged; the mailbox stores that it was seen. */
+  arrangeHint?: { open: () => boolean; dismiss: () => void };
   /** A draft was sent, discarded, or saved: Drafts, the list, and the outbox show it. */
   onDraftsChanged: () => void;
   /** Whether a minimized bar lies over the bottom of the area, so the list keeps its last row reachable. */
@@ -70,7 +81,7 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
   let ready = false;
 
   const create = (draftId: string, options: DraftWindowOpenOptions & { restored?: StoredComposeWindow }): ComposeWindow => {
-    const [state, setState] = createSignal<FloatingWindowState>(options.restored?.state ?? "normal");
+    const [state, setState] = createSignal<FloatingWindowState>(options.large ? "maximized" : (options.restored?.state ?? "normal"));
     const [rect, setRect] = createSignal<FloatingWindowRect | undefined>(options.restored?.rect);
     const active = typeof document === "undefined" ? null : document.activeElement;
     return {
@@ -80,6 +91,8 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
       fresh: options.fresh ?? false,
       restored: Boolean(options.restored),
       returnFocus: options.returnFocus ?? (active instanceof HTMLElement && active !== document.body ? active : null),
+      origin: options.origin ?? options.restored?.origin,
+      selection: options.selection,
       state,
       setState,
       rect,
@@ -90,7 +103,8 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
   const open = (draftId: string, options: DraftWindowOpenOptions) => {
     const existing = windows().find((entry) => entry.draftId === draftId);
     if (existing) {
-      if (existing.state() === "minimized") existing.setState("normal");
+      if (options.large) existing.setState("maximized");
+      else if (existing.state() === "minimized") existing.setState("normal");
       controls.get(existing.key)?.focusText();
       return;
     }
@@ -156,10 +170,24 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
     toast.success(t().sending, { iconClass: "ti ti-send" });
   };
 
+  /**
+   * Making a large window smaller: a draft the reply box handed over goes back into that box, with its caret; any
+   * other window, or one whose box is gone, becomes a normal window.
+   */
+  const shrink = (entry: ComposeWindow): boolean =>
+    entry.origin === "reply-box" && returnDraftToReplyBox(entry.draftId, controls.get(entry.key)?.selection());
+  const changeState = (entry: ComposeWindow, next: FloatingWindowState) => {
+    if (entry.state() === "maximized" && next === "normal" && shrink(entry)) return;
+    entry.setState(next);
+  };
+
   const hostFor = (entry: ComposeWindow, title: Setter<string>, slots: MailComposerHost["window"]): MailComposerHost => ({
     fresh: entry.fresh,
     fullscreen: () => entry.state() === "maximized",
-    toggleFullscreen: () => entry.setState((state) => (state === "maximized" ? "normal" : "maximized")),
+    toggleFullscreen: () => changeState(entry, entry.state() === "maximized" ? "normal" : "maximized"),
+    initialSelection: entry.selection,
+    replyPosition: props.replyPosition,
+    arrangeHint: props.arrangeHint,
     register: (next) => controls.set(entry.key, next),
     messageLabel: () => null,
     summary: (value) => title(value.subject),
@@ -184,7 +212,7 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
     },
     // Another draft takes this window's place, such as a saved copy of unsaved input or the rest of a shared draft.
     openDraft: (draftId) => {
-      const next = create(draftId, { restored: { draftId, state: entry.state(), rect: entry.rect() } });
+      const next = create(draftId, { restored: { draftId, state: entry.state(), rect: entry.rect(), origin: entry.origin } });
       controls.delete(entry.key);
       setWindows((list) => list.map((candidate) => (candidate === entry ? next : candidate)));
     },
@@ -231,7 +259,10 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
   createEffect(() => {
     const list = windows().map((entry) => {
       const rect = entry.rect();
-      return rect ? { draftId: entry.draftId, state: entry.state(), rect } : { draftId: entry.draftId, state: entry.state() };
+      const stored: StoredComposeWindow = { draftId: entry.draftId, state: entry.state() };
+      if (rect) stored.rect = rect;
+      if (entry.origin) stored.origin = entry.origin;
+      return stored;
     });
     if (ready) writeComposeWindows(window.sessionStorage, props.mailboxId, list);
   });
@@ -252,10 +283,12 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
           <FloatingWindow
             title={title() || t().newMessage}
             class="mail-compose-window"
+            // "Verkleinern" as words: written large, the window holds the draft, its conversation, and the preview.
+            sizeControl="text"
             placement="dock"
             area={props.area}
             state={entry.state()}
-            onStateChange={entry.setState}
+            onStateChange={(next) => changeState(entry, next)}
             rect={entry.rect()}
             onRectChange={entry.setRect}
             initialWidth={WINDOW_SIZE.width}

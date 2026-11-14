@@ -109,10 +109,11 @@ export type DropdownChoice = DropdownActionBase & {
 export type DropdownSection = {
   sectionLabel?: string;
   /**
-   * `row` sets a few short radio choices, such as a sort direction, side by side as one segmented row. Give it a
-   * `sectionLabel`: the label names the choice above the row and for screen readers.
+   * `row` sets a few short radio choices, such as a sort direction, side by side as one segmented row. `tiles` sets
+   * a few choices that a picture tells apart, such as arrangements, side by side as tiles with the icon above the
+   * label. Give either a `sectionLabel`: the label names the choice above the row and for screen readers.
    */
-  layout?: "row";
+  layout?: "row" | "tiles";
   /** A quiet action at the end of the section label, such as "All"; it needs a `sectionLabel` and keeps the menu open. */
   labelAction?: DropdownSecondaryAction;
   items: readonly (DropdownAction | DropdownChoice)[];
@@ -514,8 +515,7 @@ export function DropdownItems(props: {
                 role="group"
                 // A row of choices is no set of actions: without a label it stays unnamed rather than misnamed.
                 aria-label={
-                  (current() as DropdownSection).sectionLabel ??
-                  ((current() as DropdownSection).layout === "row" ? undefined : messages().actions)
+                  (current() as DropdownSection).sectionLabel ?? ((current() as DropdownSection).layout ? undefined : messages().actions)
                 }
               >
                 <Show when={(current() as DropdownSection).sectionLabel}>
@@ -534,14 +534,14 @@ export function DropdownItems(props: {
                   )}
                 </Show>
                 <Show
-                  when={(current() as DropdownSection).layout === "row"}
+                  when={(current() as DropdownSection).layout}
                   fallback={
                     <KeyedFor each={(current() as DropdownSection).items} by={(row) => row.label}>
                       {renderItem}
                     </KeyedFor>
                   }
                 >
-                  <div class="k2b-dropdown__row">
+                  <div class={(current() as DropdownSection).layout === "tiles" ? "k2b-dropdown__tiles" : "k2b-dropdown__row"}>
                     <KeyedFor each={(current() as DropdownSection).items} by={(row) => row.label}>
                       {renderItem}
                     </KeyedFor>

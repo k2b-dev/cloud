@@ -1,6 +1,6 @@
 {
   "name": "@k2b/editor",
-  "version": "0.11.4",
+  "version": "0.11.5",
   "description": "Configurable Markdown editor for SolidJS: editor, toolbar, bubble menu, and slash menu on one shared state.",
   "type": "module",
   "sideEffects": [
@@ -71,7 +71,7 @@
     "@codemirror/state": "6.7.6",
     "@codemirror/view": "6.43.15",
     "@k2b/stdlib": "0.32.0",
-    "@k2b/ui": "0.57.1",
+    "@k2b/ui": "0.58.0",
     "@lezer/common": "1.5.5",
     "@lezer/highlight": "1.2.5",
     "@lezer/markdown": "1.8.1",

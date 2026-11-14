@@ -8,7 +8,7 @@ import type { MailDraftDocumentClient, MailSharedDraftState } from "../../lib/dr
 import MailFormattingWarnings from "./MailFormattingWarnings";
 import type { MailTextEditorActions } from "./MailTextEditor";
 import { mailComposerMessages } from "./mail-composer-messages";
-import { reconcileMailComposerPanes } from "./mail-composer-panes";
+import { createDefaultMailComposerPanesLayout, reconcileMailComposerPanes } from "./mail-composer-panes";
 
 /** The preview loads nothing from the network: the mailbox logo and every other image arrive as `data:` URLs. */
 const PREVIEW_POLICY =
@@ -212,7 +212,7 @@ export default function MailComposerEditor(props: {
           class="h-full w-full"
           movable
           resizable
-          split="horizontal"
+          defaultLayout={reconcileMailComposerPanes(createDefaultMailComposerPanesLayout(), props.format(), hasHistory())}
           ariaLabel={t().editorPanes}
         />
       </Show>

@@ -18,18 +18,43 @@ const result = await Bun.build({
     [entry]: `
     import { createComponent, render } from "solid-js/web";
     import { PdfViewer } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
-    const data = await (await fetch("/doc.pdf")).arrayBuffer();
-    import { createSignal } from "solid-js";
+    // "?doc=text" shows a six-page document dense with text instead of the 40-page one.
+    const data = await (await fetch(new URLSearchParams(location.search).get("doc") === "text" ? "/text.pdf" : "/doc.pdf")).arrayBuffer();
+    const short = await (await fetch("/short.pdf")).arrayBuffer();
+    import { createSignal, mergeProps } from "solid-js";
     window.pdfErrors = [];
     const [shown, setShown] = createSignal(data);
     // A document of the same shape again, as regenerating a report does; the caller's buffer stays usable.
     window.pdfReplace = () => setShown(data.slice(0));
+    // Another document: "short" has 3 pages instead of 40.
+    window.pdfShow = (name) => setShown((name === "short" ? short : data).slice(0));
     window.pdfBufferIntact = () => data.byteLength > 0;
+    // "?request" loads through \`request\`: each call waits until the test answers it with a document or a failure.
+    window.pdfPending = [];
+    const ask = () => () => new Promise((resolve) => window.pdfPending.push(resolve));
+    const [request, setRequest] = createSignal(ask());
+    window.pdfNewRequest = () => setRequest(() => ask());
+    window.pdfAnswer = (index, kind) =>
+      window.pdfPending[index](kind === "fail"
+        ? Response.json({ message: "The report could not be generated" }, { status: 500 })
+        : new Blob([(kind === "short" ? short : data).slice(0)], { type: "application/pdf" }));
     // "?fit=page&height=416" shows the viewer as a short preview beside other content.
     const query = new URLSearchParams(location.search);
     const app = document.getElementById("app");
+    // How often spans arrive in each text layer that is already in the page, from the first render on.
+    window.pdfTextInsertions = new Map();
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const layer = record.target instanceof Element ? record.target.closest(".k2b-pdf-viewer__text") : null;
+        if (layer && [...record.addedNodes].some((node) => node.nodeName === "SPAN"))
+          window.pdfTextInsertions.set(layer, (window.pdfTextInsertions.get(layer) ?? 0) + 1);
+      }
+    }).observe(app, { childList: true, subtree: true });
     if (query.get("height")) app.style.height = query.get("height") + "px";
-    render(() => createComponent(PdfViewer, { get data() { return shown(); }, title: "Fixture", fit: query.get("fit") ?? undefined, open: query.has("open") || undefined, zoom: query.get("zoom") === "0" ? false : undefined, onError: (error) => window.pdfErrors.push(String(error)) }), app);
+    const source = query.has("request")
+      ? { get request() { return request(); }, autoLoad: true }
+      : { get data() { return shown(); } };
+    render(() => createComponent(PdfViewer, mergeProps(source, { title: "Fixture", fit: query.get("fit") ?? undefined, open: query.has("open") || undefined, zoom: query.get("zoom") === "0" ? false : undefined, onError: (error) => window.pdfErrors.push(String(error)) })), app);
   `,
   },
   target: "browser",
@@ -45,6 +70,8 @@ const assets = new Map(
   await Promise.all(result.outputs.map(async (output) => [basename(output.path), await output.arrayBuffer()] as const)),
 );
 const pdf = pdfFixture(40, 7);
+const shortPdf = pdfFixture(3);
+const textPdf = pdfFixture(6, 0, 70);
 
 let browser: Browser;
 beforeAll(async () => {
@@ -55,11 +82,13 @@ afterAll(async () => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-const load = async (search = "", viewport = { width: 1000, height: 800 }): Promise<Page> => {
+const load = async (search = "", viewport = { width: 1000, height: 800 }, drawn = true): Promise<Page> => {
   const page = await browser.newPage({ viewport });
   await page.route(`${origin}**`, (route) => {
     const path = new URL(route.request().url()).pathname.slice(1);
     if (path === "doc.pdf") return route.fulfill({ body: Buffer.from(pdf), contentType: "application/pdf" });
+    if (path === "short.pdf") return route.fulfill({ body: Buffer.from(shortPdf), contentType: "application/pdf" });
+    if (path === "text.pdf") return route.fulfill({ body: Buffer.from(textPdf), contentType: "application/pdf" });
     const asset = assets.get(path);
     if (asset) return route.fulfill({ body: Buffer.from(asset), contentType: path.endsWith(".js") ? "text/javascript" : undefined });
     return route.fulfill({
@@ -68,9 +97,33 @@ const load = async (search = "", viewport = { width: 1000, height: 800 }): Promi
     });
   });
   await page.goto(`${origin}${search}`);
-  await page.locator('[data-pdf-page="0"] img').waitFor();
+  await page.waitForFunction(() => "pdfAnswer" in window);
+  if (drawn) await page.locator('[data-pdf-page="0"] img').waitFor();
   return page;
 };
+
+type Frames = { blank: number; placeholder: number; busy: number; boxes: number[] };
+
+/**
+ * Samples every frame from now on: frames where page `index` (default: every drawn page) shows no image, where a
+ * placeholder covers the pages, where the viewer is busy, and each distinct number of page boxes.
+ */
+const watchFrames = (page: Page, index?: string) =>
+  page.evaluate((watched) => {
+    const frames = { blank: 0, placeholder: 0, busy: 0, boxes: [] as number[] };
+    Object.assign(window, { pdfFrames: frames });
+    const sample = () => {
+      const boxes = document.querySelectorAll("[data-pdf-page]");
+      const images = document.querySelectorAll(watched === null ? "[data-pdf-page] img" : `[data-pdf-page="${watched}"] img`);
+      if (images.length === 0) frames.blank++;
+      if (document.querySelector(".k2b-pdf-viewer__placeholder")) frames.placeholder++;
+      if (document.querySelector(".k2b-pdf-viewer[aria-busy]")) frames.busy++;
+      if (frames.boxes.at(-1) !== boxes.length) frames.boxes.push(boxes.length);
+      requestAnimationFrame(sample);
+    };
+    sample();
+  }, index ?? null);
+const framesSeen = (page: Page): Promise<Frames> => page.evaluate(() => (window as unknown as { pdfFrames: Frames }).pdfFrames);
 
 describe("@k2b/ui PdfViewer", () => {
   test("pdf.js never enters a host's bundle: the engine and its worker arrive as files", () => {
@@ -127,6 +180,158 @@ describe("@k2b/ui PdfViewer", () => {
     }
   });
 
+  test("a regenerated document keeps the drawn pages, zoom, and scroll position until its own pages are drawn", async () => {
+    const page = await load();
+    try {
+      await settled(page);
+      await page.getByRole("button", { name: "Zoom in" }).click();
+      await settled(page);
+      const pages = page.locator(".k2b-pdf-viewer__pages");
+      await pages.evaluate((area) => area.scrollTo({ top: area.scrollHeight / 4 }));
+      await settled(page);
+      const before = await pages.evaluate((area) => ({ top: area.scrollTop, zoom: area.dataset.zoom }));
+      const current = await page.locator(".k2b-pdf-viewer__page-number [aria-hidden]").textContent();
+      const visible = await page.evaluate(() => {
+        const area = document.querySelector(".k2b-pdf-viewer__pages")!.getBoundingClientRect();
+        const middle = area.top + area.height / 2;
+        return [...document.querySelectorAll<HTMLElement>("[data-pdf-page]")].find((box) => box.getBoundingClientRect().bottom >= middle)!
+          .dataset.pdfPage;
+      });
+      const old = await page.locator(`[data-pdf-page="${visible}"] img`).getAttribute("src");
+      await watchFrames(page, visible!);
+      await page.evaluate(() => (window as unknown as { pdfReplace: () => void }).pdfReplace());
+      await page.waitForFunction(
+        ([index, previous]) => {
+          const src = document.querySelector(`[data-pdf-page="${index}"] img`)?.getAttribute("src");
+          return Boolean(src && src !== previous);
+        },
+        [visible, old] as const,
+      );
+      const frames = await framesSeen(page);
+      expect(frames.blank).toBe(0);
+      expect(frames.placeholder).toBe(0);
+      expect(frames.busy).toBeGreaterThan(0);
+      expect(await pages.evaluate((area) => ({ top: area.scrollTop, zoom: area.dataset.zoom }))).toEqual(before);
+      expect(await page.locator(".k2b-pdf-viewer__page-number [aria-hidden]").textContent()).toBe(current);
+      expect(await page.locator(".k2b-pdf-viewer").getAttribute("aria-busy")).toBeNull();
+      expect(await page.evaluate(() => (window as unknown as { pdfErrors: string[] }).pdfErrors)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("another document replaces the pages in one step and starts at its top", async () => {
+    const page = await load();
+    try {
+      await settled(page);
+      const pages = page.locator(".k2b-pdf-viewer__pages");
+      await pages.evaluate((area) => area.scrollTo({ top: area.scrollHeight / 2 }));
+      await settled(page);
+      await watchFrames(page);
+      await page.evaluate(() => (window as unknown as { pdfShow: (name: string) => void }).pdfShow("short"));
+      await page.waitForFunction(() => document.querySelectorAll("[data-pdf-page]").length === 3);
+      await page.locator('[data-pdf-page="0"] img').waitFor();
+      const frames = await framesSeen(page);
+      expect(frames.blank).toBe(0);
+      expect(frames.placeholder).toBe(0);
+      expect(await pages.evaluate((area) => area.scrollTop)).toBe(0);
+      await page.waitForFunction(() => document.querySelector(".k2b-pdf-viewer__page-number")?.textContent?.includes("1 / 3"));
+      expect(await page.evaluate(() => (window as unknown as { pdfErrors: string[] }).pdfErrors)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("of two documents in a row only the last one shows", async () => {
+    const page = await load();
+    try {
+      await settled(page);
+      await watchFrames(page);
+      await page.evaluate(() => {
+        const show = (window as unknown as { pdfShow: (name: string) => void }).pdfShow;
+        show("short");
+        show("long");
+      });
+      await page.waitForFunction(() => !document.querySelector(".k2b-pdf-viewer")?.hasAttribute("aria-busy"));
+      await settled(page);
+      const frames = await framesSeen(page);
+      expect(frames.boxes).toEqual([40]);
+      expect(frames.blank).toBe(0);
+      expect(await page.evaluate(() => (window as unknown as { pdfErrors: string[] }).pdfErrors)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a slow new request shows a quiet line after a short wait, busy and without moving the pages", async () => {
+    const page = await load("?request", undefined, false);
+    try {
+      await page.evaluate(() => (window as unknown as { pdfAnswer: (index: number, kind: string) => void }).pdfAnswer(0, "long"));
+      await page.locator('[data-pdf-page="0"] img').waitFor();
+      await settled(page);
+      const viewer = page.locator(".k2b-pdf-viewer");
+      const box = await page.locator('[data-pdf-page="0"]').boundingBox();
+      await page.evaluate(() => (window as unknown as { pdfNewRequest: () => void }).pdfNewRequest());
+      expect(await viewer.getAttribute("aria-busy")).toBe("true");
+      expect(await page.locator(".k2b-pdf-viewer__progress").count()).toBe(0);
+      await page.locator(".k2b-pdf-viewer__progress").waitFor();
+      expect(await viewer.getAttribute("data-state")).toBe("shown");
+      expect(await page.locator('[data-pdf-page="0"]').boundingBox()).toEqual(box);
+      await page.evaluate(() => (window as unknown as { pdfAnswer: (index: number, kind: string) => void }).pdfAnswer(1, "long"));
+      await page.waitForFunction(() => !document.querySelector(".k2b-pdf-viewer")?.hasAttribute("aria-busy"));
+      expect(await page.locator(".k2b-pdf-viewer__progress").count()).toBe(0);
+      expect(await page.locator('[data-pdf-page="0"]').boundingBox()).toEqual(box);
+      expect(await page.evaluate(() => (window as unknown as { pdfErrors: string[] }).pdfErrors)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a failed reload replaces the pages with its error, and a retry shows the new document", async () => {
+    const page = await load("?request", undefined, false);
+    try {
+      const answer = (index: number, kind: string) =>
+        page.evaluate(([i, k]) => (window as unknown as { pdfAnswer: (index: number, kind: string) => void }).pdfAnswer(i, k), [
+          index,
+          kind,
+        ] as const);
+      await answer(0, "long");
+      await page.locator('[data-pdf-page="0"] img').waitFor();
+      await page.evaluate(() => (window as unknown as { pdfNewRequest: () => void }).pdfNewRequest());
+      await answer(1, "fail");
+      const viewer = page.locator(".k2b-pdf-viewer");
+      await page.waitForFunction(() => document.querySelector(".k2b-pdf-viewer")?.getAttribute("data-state") === "error");
+      expect(await viewer.textContent()).toContain("The report could not be generated");
+      expect(await page.locator(".k2b-pdf-viewer__document").evaluate((element) => getComputedStyle(element).visibility)).toBe("hidden");
+      expect(await viewer.getAttribute("aria-busy")).toBeNull();
+      await page.getByRole("button", { name: "Retry" }).click();
+      await answer(2, "short");
+      await page.waitForFunction(() => document.querySelectorAll("[data-pdf-page]").length === 3);
+      await page.locator('[data-pdf-page="0"] img').waitFor();
+      expect(await viewer.getAttribute("data-state")).toBe("shown");
+      expect(await page.locator(".k2b-pdf-viewer__document").evaluate((element) => getComputedStyle(element).visibility)).toBe("visible");
+    } finally {
+      await page.close();
+    }
+  });
+
+  // pdf.js measures every text item right after adding the previous one; inside the page each measurement recalculated
+  // the whole page, and a large app blocked for seconds (#3307). Built outside the page, a layer's spans arrive at once.
+  test("builds each text layer outside the page and adds its spans in one step", async () => {
+    const page = await load("?doc=text");
+    try {
+      await page.waitForFunction(() => document.querySelectorAll(".k2b-pdf-viewer__text-end").length === 6, undefined, { timeout: 30_000 });
+      const counts = await page.evaluate(() => [
+        ...(window as unknown as { pdfTextInsertions: Map<Element, number> }).pdfTextInsertions.values(),
+      ]);
+      expect(counts).toEqual([1, 1, 1, 1, 1, 1]);
+      // The dense page carries all its text: a heading and two runs on each of its 70 lines.
+      expect(await page.locator('[data-pdf-page="5"] .k2b-pdf-viewer__text span').count()).toBeGreaterThan(140);
+    } finally {
+      await page.close();
+    }
+  });
+
   // The end marker fills the layer while a drag selects; it must lie below the spans, or the drag selects nothing (#3302).
   test("dragging the mouse across several lines selects their text", async () => {
     const page = await load();
@@ -148,13 +353,32 @@ describe("@k2b/ui PdfViewer", () => {
     }
   });
 
+  test("every page gets its text without scrolling, so the browser's find reaches the whole document", async () => {
+    const page = await load();
+    try {
+      await page.waitForFunction(
+        () => document.querySelector('[data-pdf-page="39"] .k2b-pdf-viewer__text')?.textContent?.includes("Line 6 of page 40"),
+        undefined,
+        {
+          timeout: 30_000,
+        },
+      );
+      // Only the pages near the view are drawn.
+      expect(await page.locator("[data-pdf-page] img").count()).toBeLessThan(15);
+      expect(await page.locator(".k2b-pdf-viewer__text-end").count()).toBe(40);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("scrolling to the end draws the last page and shows it as the current one", async () => {
     const page = await load();
     try {
       await page.locator(".k2b-pdf-viewer__pages").evaluate((area) => area.scrollTo({ top: area.scrollHeight }));
       await page.locator('[data-pdf-page="39"] img').waitFor();
       await page.waitForFunction(() => document.querySelector(".k2b-pdf-viewer__page-number")?.textContent?.includes("40 / 40"));
-      expect(await page.locator('[data-pdf-page="0"] .k2b-pdf-viewer__text').count()).toBe(0);
+      // Far from the view, the first page keeps its text, so the browser's find still reaches it.
+      expect(await page.locator('[data-pdf-page="0"] .k2b-pdf-viewer__text').textContent()).toContain("Page 1");
     } finally {
       await page.close();
     }

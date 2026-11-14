@@ -3,6 +3,26 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.78.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.77.0...cloud-v0.78.0) (2026-11-14)
+
+
+### Features
+
+* **mail:** warn before sending a message without a subject ([#3296](https://github.com/k2b-dev/cloud/issues/3296)) ([9d04e85](https://github.com/k2b-dev/cloud/commit/9d04e8536652f4984de538a46f6482d5751d9987))
+* **mail:** write a reply large with draft, conversation and preview side by side ([#3312](https://github.com/k2b-dev/cloud/issues/3312)) ([1866d63](https://github.com/k2b-dev/cloud/commit/1866d632a080a5c593d7b68199ac2bc4ebcb3796))
+* **ui:** panes show their arrangement and separate with the shadow edge ([#3311](https://github.com/k2b-dev/cloud/issues/3311)) ([ab181a8](https://github.com/k2b-dev/cloud/commit/ab181a874e9776280df05909044a9a5d41bb8e15))
+* **ui:** the PDF viewer keeps the current pages while a new document loads ([#3308](https://github.com/k2b-dev/cloud/issues/3308)) ([68a8b28](https://github.com/k2b-dev/cloud/commit/68a8b28576f428dc850a9a9094b9782b1a589154))
+
+
+### Bug Fixes
+
+* **cloud:** late shared-text publishes no longer change another document's room state ([#3298](https://github.com/k2b-dev/cloud/issues/3298)) ([a68d610](https://github.com/k2b-dev/cloud/commit/a68d6103cac3deae64e094cda97fee9f0cc2190c))
+* **mail:** expand shared draft lifecycle capacity and warn before exhaustion ([#3295](https://github.com/k2b-dev/cloud/issues/3295)) ([e36d304](https://github.com/k2b-dev/cloud/commit/e36d3042f0848a3f1a1dec5e356dac94d5132e65))
+* **mail:** the large composer's preview follows typing in plain-text messages ([#3313](https://github.com/k2b-dev/cloud/issues/3313)) ([56b9625](https://github.com/k2b-dev/cloud/commit/56b962534b032e8d4c58ba04d2b73f0d56ca8b21))
+* **mail:** the reply box on top keeps one height while it loads, so the messages below never move ([#3299](https://github.com/k2b-dev/cloud/issues/3299)) ([78ea5f7](https://github.com/k2b-dev/cloud/commit/78ea5f705f1d570f90340b8152626a5f951ad46c))
+* **ui:** text selection in the PDF viewer selects text again ([#3305](https://github.com/k2b-dev/cloud/issues/3305)) ([2827b68](https://github.com/k2b-dev/cloud/commit/2827b68a535e0f375c56c8746be9fb3fb4f8f9cc)), closes [#3302](https://github.com/k2b-dev/cloud/issues/3302)
+* **ui:** the PDF viewer builds its text layer without blocking the page ([#3309](https://github.com/k2b-dev/cloud/issues/3309)) ([5082e37](https://github.com/k2b-dev/cloud/commit/5082e3780001a16f4420724144daae574b76fdea)), closes [#3307](https://github.com/k2b-dev/cloud/issues/3307)
+
 ## [0.77.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.76.0...cloud-v0.77.0) (2026-11-13)
 
 
