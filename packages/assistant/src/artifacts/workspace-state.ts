@@ -76,3 +76,19 @@ export function workspaceSelectionFromHref(href: string): WorkspaceTab | null {
   }
   return null;
 }
+
+/** A Panes item id for a tab: a letter, then letters, digits, `_` or `-`; stable for the tab's key. */
+export function workspaceTabId(key: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < key.length; index++) {
+    hash ^= key.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `t${(hash >>> 0).toString(36)}-${key.length.toString(36)}`;
+}
+
+/** A tab from its stored key, or null for a key this version cannot open again. */
+export function workspaceTabFromKey(key: string, title: string): WorkspaceTab | null {
+  const tab = workspaceSelectionFromHref(`/?workspace=${encodeURIComponent(key)}`);
+  return tab ? { ...tab, title: tab.kind === "context" ? tab.title : title || tab.title } : null;
+}
