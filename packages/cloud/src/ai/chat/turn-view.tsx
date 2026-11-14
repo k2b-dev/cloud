@@ -417,14 +417,35 @@ function AiClampedText(props: { html: string; clamp: boolean; reset?: unknown })
   );
 }
 
+/**
+ * What Gustav wrote between two steps, kept at the step it followed as a note: one quiet line "Note on this step" that
+ * opens the text in place, again at most three lines with its chevron for the rest (Bauplan 3o). Nothing is lost, and
+ * the opened work stays a list of steps.
+ */
 function WorkText(props: { text: string }) {
   const locale = useLocale();
+  const id = createUniqueId();
+  const [open, setOpen] = createSignal(false);
   // Render Markdown only when the text itself changes, not on every update of the turn around it.
   const text = createMemo(() => props.text);
   const html = createMemo(() => markdown.renderSync(text(), { locale: locale() }));
   return (
-    <div class="ai-turn-steps__text">
-      <AiClampedText html={html()} clamp />
+    <div class="ai-turn-steps__text ai-turn-note" data-open={open() ? "" : undefined}>
+      <button
+        type="button"
+        class="ai-turn-note__toggle"
+        aria-expanded={open() ? "true" : "false"}
+        aria-controls={id}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <i class="ti ti-chevron-right" aria-hidden="true" />
+        {aiChatMessages(locale()).stepNote}
+      </button>
+      <div id={id} class="ai-turn-note__body" hidden={!open()}>
+        <Show when={open()}>
+          <AiClampedText html={html()} clamp />
+        </Show>
+      </div>
     </div>
   );
 }

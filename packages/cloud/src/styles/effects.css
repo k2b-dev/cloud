@@ -1825,3 +1825,46 @@ dialog:has(.launchpad-panel)::backdrop {
   object-fit: cover;
   object-position: top;
 }
+
+/* A note at a step: a quiet line under the step's words, at its text edge, that opens the text in place. */
+.k2b-ui .ai-turn-steps__text.ai-turn-note {
+  padding-block: 0.125rem;
+  padding-inline-start: 1.875rem;
+}
+
+.k2b-ui .ai-turn-note__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  color: var(--k2b-text-muted);
+  background: none;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+}
+
+.k2b-ui .ai-turn-note__toggle:hover {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .ai-turn-note__toggle:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+
+.k2b-ui .ai-turn-note__toggle > i {
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .ai-turn-note[data-open] .ai-turn-note__toggle > i {
+  transform: rotate(90deg);
+}
+
+.k2b-ui .ai-turn-note__body {
+  padding-block-start: 0.25rem;
+}
+
