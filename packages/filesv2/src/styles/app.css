@@ -127,8 +127,9 @@
 .filesv2-browser__scroll > * {
   flex-shrink: 0;
 }
-/* Without a selection the pill keeps its place but is not seen, read, or reached. */
-.k2b-ui .filesv2-selection-pill--idle {
+/* Without a selection the pill keeps its place but is not seen, read, or reached, also without scripting, where the
+   toolbar's own pending state turns visible. */
+.k2b-ui .k2b-toolbar.filesv2-selection-pill.filesv2-selection-pill--idle {
   visibility: hidden;
 }
 .filesv2-browser__collection .k2b-file-grid {
