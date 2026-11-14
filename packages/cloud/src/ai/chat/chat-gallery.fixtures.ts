@@ -168,7 +168,7 @@ const attachmentChat = (): AiStoredMessage[] => {
 };
 
 export const galleryScenes = {
-  anhaenge: () => ({ messages: attachmentChat() }),
+  anhaenge: attachmentChat,
   antwort: answerChat,
   routine: routineChat,
 } satisfies Record<string, () => AiStoredMessage[]>;
