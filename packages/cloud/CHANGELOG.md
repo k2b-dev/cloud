@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.71.1](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.71.0...npm-cloud-v0.71.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **cloud:** keep live reconnects open while access checks catch up ([#3354](https://github.com/k2b-dev/cloud/issues/3354)) ([1adbe28](https://github.com/k2b-dev/cloud/commit/1adbe2807e1445dc8873bdde7c133a1fc6841f47)), closes [#3300](https://github.com/k2b-dev/cloud/issues/3300) [#3353](https://github.com/k2b-dev/cloud/issues/3353)
+* **ui:** a toast's single message reads calmly instead of bold ([#3347](https://github.com/k2b-dev/cloud/issues/3347)) ([fc48720](https://github.com/k2b-dev/cloud/commit/fc48720f8ef026d0555894ce2eebf1102d3ddfaa))
+* **ui:** collapsible section headings and text actions hover in a darker blue without a fill ([#3334](https://github.com/k2b-dev/cloud/issues/3334)) ([85d65c9](https://github.com/k2b-dev/cloud/commit/85d65c93f1f1ab6141a2c3018e413470bea880ff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.21.2 to 0.21.3
+    * @k2b/ui bumped from 0.58.0 to 0.59.0
+    * @k2b/editor bumped from 0.11.5 to 0.11.6
+
 ## [0.71.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.70.0...npm-cloud-v0.71.0) (2026-11-14)
 
 

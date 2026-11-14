@@ -3,6 +3,26 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.79.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.78.0...cloud-v0.79.0) (2026-11-14)
+
+
+### Features
+
+* **ui:** a hover card shows rich details beside its control ([#3317](https://github.com/k2b-dev/cloud/issues/3317)) ([241866e](https://github.com/k2b-dev/cloud/commit/241866e07599ac98068840c72c05b2a0d2677fdd))
+
+
+### Bug Fixes
+
+* **chat:** preserve thread links across live updates ([#3330](https://github.com/k2b-dev/cloud/issues/3330)) ([b155bc7](https://github.com/k2b-dev/cloud/commit/b155bc7424a89f4c4d3efa72b931316398bbcb07)), closes [#2411](https://github.com/k2b-dev/cloud/issues/2411)
+* **cloud:** keep live reconnects open while access checks catch up ([#3354](https://github.com/k2b-dev/cloud/issues/3354)) ([1adbe28](https://github.com/k2b-dev/cloud/commit/1adbe2807e1445dc8873bdde7c133a1fc6841f47)), closes [#3300](https://github.com/k2b-dev/cloud/issues/3300) [#3353](https://github.com/k2b-dev/cloud/issues/3353)
+* **core:** enumerate identity recipients without per-user membership scans ([#3356](https://github.com/k2b-dev/cloud/issues/3356)) ([23b994e](https://github.com/k2b-dev/cloud/commit/23b994ea8e455d418b17e3c4d12406406f9af64c))
+* **files:** the selection pill always sits at the bottom of the column ([#3345](https://github.com/k2b-dev/cloud/issues/3345)) ([007d594](https://github.com/k2b-dev/cloud/commit/007d59433cc6e5d6f98e38e28b2e03f572c76495))
+* **mail:** wait for the rule sheet without background hover ([#3352](https://github.com/k2b-dev/cloud/issues/3352)) ([bde2be7](https://github.com/k2b-dev/cloud/commit/bde2be7cfce12d996faa1f38073749768b63b440)), closes [#3351](https://github.com/k2b-dev/cloud/issues/3351)
+* **ssr:** dispose dev reload listeners between browser tests ([#3350](https://github.com/k2b-dev/cloud/issues/3350)) ([de0b57c](https://github.com/k2b-dev/cloud/commit/de0b57cc105c7e6861fd57eabf5f4ec7beeed7f0)), closes [#3287](https://github.com/k2b-dev/cloud/issues/3287)
+* **ui:** a toast's single message reads calmly instead of bold ([#3347](https://github.com/k2b-dev/cloud/issues/3347)) ([fc48720](https://github.com/k2b-dev/cloud/commit/fc48720f8ef026d0555894ce2eebf1102d3ddfaa))
+* **ui:** collapsible section headings and text actions hover in a darker blue without a fill ([#3334](https://github.com/k2b-dev/cloud/issues/3334)) ([85d65c9](https://github.com/k2b-dev/cloud/commit/85d65c93f1f1ab6141a2c3018e413470bea880ff))
+* **ui:** floating tool pills share one compact size with even inner spacing ([#3337](https://github.com/k2b-dev/cloud/issues/3337)) ([7ed54d6](https://github.com/k2b-dev/cloud/commit/7ed54d6c8c4ce3b26b05970dc5b1baf02ed096a5))
+
 ## [0.78.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.77.0...cloud-v0.78.0) (2026-11-14)
 
 

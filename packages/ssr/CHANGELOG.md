@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.3](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.21.2...npm-ssr-v0.21.3) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ssr:** dispose dev reload listeners between browser tests ([#3350](https://github.com/k2b-dev/cloud/issues/3350)) ([de0b57c](https://github.com/k2b-dev/cloud/commit/de0b57cc105c7e6861fd57eabf5f4ec7beeed7f0)), closes [#3287](https://github.com/k2b-dev/cloud/issues/3287)
+
 ## [0.21.2](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.21.1...npm-ssr-v0.21.2) (2026-11-12)
 
 
