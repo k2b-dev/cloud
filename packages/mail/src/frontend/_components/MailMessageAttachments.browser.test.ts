@@ -170,18 +170,27 @@ describe("Mail attachment preview in the Lightbox", () => {
     test(`a long name stays on one line and nothing scrolls sideways on ${name}`, async () => {
       const page = await openPreview(context, 1);
       try {
-        // The document's title leads; the long file name follows in the facts and never pushes into the actions.
+        // The document's title leads; the long file name follows in the facts and never pushes into the actions. The
+        // name pill keeps the height of a pill of small controls (@k2b/ui `k2b-pill`: `--k2b-pill-control` plus
+        // `--k2b-pill-inset` on both sides inside a 1 px edge), the height of the action pill beside it.
         const layout = await page.evaluate(() => {
-          const pill = document.querySelector<HTMLElement>("dialog.k2b-lightbox .k2b-lightbox__name")!.getBoundingClientRect();
-          const actions = document.querySelector<HTMLElement>("dialog.k2b-lightbox .k2b-lightbox__actions")!.getBoundingClientRect();
+          const dialog = document.querySelector<HTMLElement>("dialog.k2b-lightbox")!;
+          const pill = dialog.querySelector<HTMLElement>(".k2b-lightbox__name")!.getBoundingClientRect();
+          const actions = dialog.querySelector<HTMLElement>(".k2b-lightbox__actions")!.getBoundingClientRect();
+          const probe = document.createElement("div");
+          probe.style.cssText = "position: absolute; block-size: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px)";
+          dialog.append(probe);
+          const contract = probe.getBoundingClientRect().height;
+          probe.remove();
           return {
-            pillHeight: pill.height,
+            pillHeight: pill.height === contract && contract > 0,
+            actionsHeight: actions.height === contract,
             clear: pill.right <= actions.left,
             overflow: document.documentElement.scrollWidth > window.innerWidth,
           };
         });
         expect(await page.locator("dialog.k2b-lightbox[open]").getAttribute("aria-label")).toBe("Planning");
-        expect(layout).toEqual({ pillHeight: 40, clear: true, overflow: false });
+        expect(layout).toEqual({ pillHeight: true, actionsHeight: true, clear: true, overflow: false });
       } finally {
         await page.context().close();
       }
