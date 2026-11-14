@@ -33,6 +33,7 @@ import {
   resizePanesSplit,
   samePanesArrangement,
   samePanesIntent,
+  samePanesSizes,
 } from "./panes-layout";
 import { type PanesMessages, usePanesMessages } from "./panes-messages";
 import { assertUniqueStableUiIds } from "./stable-id";
@@ -338,6 +339,8 @@ export default function Panes(props: PanesProps): JSX.Element {
       setProjectedActive(itemId);
       return;
     }
+    // A choice in the wide layout is newer than one in the narrow row.
+    setProjectedActive(null);
     const current = layout();
     const next = activatePanesItem(current, itemId);
     if (next !== current) props.onLayoutChange(next);
@@ -369,14 +372,23 @@ export default function Panes(props: PanesProps): JSX.Element {
   };
   const arrange = (preset: PanesPreset, itemId: string | null) => {
     const next = applyPanesPreset(preset, itemOrder(), { active: itemId ?? undefined, fallback: props.defaultLayout });
-    if (!next || samePanesArrangement(next, layout())) return;
+    // Choosing the current preset again restores its sizes.
+    if (!next || samePanesSizes(next, layout())) return;
     props.onLayoutChange(next);
     if (itemId) focusTab(itemId);
     announce(panesMessages().arranged({ preset: panesMessages().preset({ preset }) }));
   };
+  // A default that names other items than the open ones, such as a pane the application closed, cannot be restored.
+  const resettable = () => {
+    const fallback = props.defaultLayout;
+    if (!fallback) return false;
+    const open = panesItemOrder(layout()).toSorted();
+    const stored = panesItemOrder(fallback).toSorted();
+    return open.length === stored.length && open.every((id, index) => id === stored[index]);
+  };
   const reset = (itemId: string | null) => {
     const fallback = props.defaultLayout;
-    if (!fallback || samePanesArrangement(fallback, layout())) return;
+    if (!fallback || !resettable() || samePanesSizes(fallback, layout())) return;
     props.onLayoutChange(fallback);
     const focus = itemId && collectLayoutItemIds(fallback.root).includes(itemId) ? itemId : null;
     if (focus) focusTab(focus);
@@ -430,8 +442,8 @@ export default function Panes(props: PanesProps): JSX.Element {
         });
       }
     }
-    if (props.defaultLayout) {
-      const atDefault = samePanesArrangement(props.defaultLayout, current);
+    if (resettable()) {
+      const atDefault = samePanesSizes(props.defaultLayout!, current);
       sections.push({
         items: [
           atDefault
@@ -542,7 +554,8 @@ export default function Panes(props: PanesProps): JSX.Element {
       />
       <Show when={props.arrangeHint && canArrange()}>
         <MovedHint
-          open={props.arrangeHint?.open ?? false}
+          // Hidden while a tab is dragged, so it never covers a drop target; it comes back afterwards.
+          open={(props.arrangeHint?.open ?? false) && draggedItemId() === null}
           onDismiss={() => props.arrangeHint?.onDismiss()}
           target={() => firstGrip}
           action={{
@@ -850,17 +863,18 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
     stopTabPress?.();
     if (clearSuppressedPointerClick !== undefined) window.clearTimeout(clearSuppressedPointerClick);
   });
-  const [scrollbar, setScrollbar] = createSignal({ overflow: false, left: 0, width: 0 });
+  const [scrollbar, setScrollbar] = createSignal({ overflow: false, left: 0, width: 0, track: 0 });
   const syncScrollbar = () => {
     if (!tabsElement) return;
     const { clientWidth, scrollLeft, scrollWidth } = tabsElement;
     if (scrollWidth <= clientWidth || clientWidth <= 0) {
-      setScrollbar({ overflow: false, left: 0, width: 0 });
+      setScrollbar({ overflow: false, left: 0, width: 0, track: 0 });
       return;
     }
     const width = Math.min(clientWidth, Math.max(24, (clientWidth * clientWidth) / scrollWidth));
     const left = (scrollLeft / (scrollWidth - clientWidth)) * (clientWidth - width);
-    setScrollbar({ overflow: true, left, width });
+    // The track spans the tab row only, not the Arrange button beside it, so thumb and drag share one range.
+    setScrollbar({ overflow: true, left, width, track: clientWidth });
   };
   const scrollFromPointer = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
     if (!tabsElement) return;
@@ -923,14 +937,15 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
       props.onMenu(itemId, tab, () => document.getElementById(tabId(itemId)) ?? undefined);
       return;
     }
+    // The reorder keys never fall through to tab navigation, also at either end where the tab cannot move.
     if (
       props.canMove() &&
       (event.ctrlKey || event.metaKey) &&
       event.shiftKey &&
-      (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
-      props.onMoveWithinGroup(itemId, event.key === "ArrowLeft" ? "previous" : "next")
+      (event.key === "ArrowLeft" || event.key === "ArrowRight")
     ) {
       event.preventDefault();
+      props.onMoveWithinGroup(itemId, event.key === "ArrowLeft" ? "previous" : "next");
       return;
     }
     const count = itemIds().length;
@@ -1081,6 +1096,7 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
       <Show when={scrollbar().overflow}>
         <div
           class="k2b-panes__tabs-scrollbar"
+          style={{ width: `${scrollbar().track}px`, right: "auto" }}
           aria-hidden="true"
           onPointerDown={startScrollbarDrag}
           onPointerMove={(event) => {

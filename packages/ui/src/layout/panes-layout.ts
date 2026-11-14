@@ -503,6 +503,22 @@ const sameShape = (left: PanesNode, right: PanesNode): boolean => {
 export const samePanesArrangement = (left: PanesLayout, right: PanesLayout): boolean =>
   left.root === null || right.root === null ? left.root === right.root : sameShape(left.root, right.root);
 
+const sameSizes = (left: PanesNode, right: PanesNode): boolean => {
+  if (left.type === "group" || right.type === "group") {
+    return left.type === "group" && right.type === "group" && sameItems(left.items, right.items);
+  }
+  return (
+    left.direction === right.direction &&
+    left.ratio === right.ratio &&
+    sameSizes(left.first, right.first) &&
+    sameSizes(left.second, right.second)
+  );
+};
+
+/** Whether two layouts place the same items the same way with the same split ratios, regardless of active tabs. */
+export const samePanesSizes = (left: PanesLayout, right: PanesLayout): boolean =>
+  left.root === null || right.root === null ? left.root === right.root : sameSizes(left.root, right.root);
+
 /** The named arrangements offered by the Arrange menu. */
 export const PANES_PRESETS = ["two", "three", "stacked", "tabs"] as const;
 export type PanesPreset = (typeof PANES_PRESETS)[number];

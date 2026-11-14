@@ -20,6 +20,7 @@ import {
   resizePanesSplit,
   samePanesArrangement,
   samePanesIntent,
+  samePanesSizes,
 } from "./panes-layout";
 
 const splitLayout = (): PanesLayout => ({
@@ -229,9 +230,11 @@ describe("Panes layout", () => {
     expect(canApplyPanesPreset("three", 2, "both")).toBe(false);
   });
 
-  test("compares arrangements without ratios or active tabs", () => {
+  test("compares arrangements without ratios or active tabs, and sizes with ratios", () => {
     const resized = resizePanesSplit(splitLayout(), [], 0.3);
     expect(samePanesArrangement(resized, splitLayout())).toBe(true);
+    expect(samePanesSizes(resized, splitLayout())).toBe(false);
+    expect(samePanesSizes(activatePanesItem(splitLayout(), "two"), splitLayout())).toBe(true);
     expect(samePanesArrangement(activatePanesItem(splitLayout(), "two"), splitLayout())).toBe(true);
     expect(samePanesArrangement(createPanesLayout(["one", "two", "three"]), splitLayout())).toBe(false);
     expect(samePanesArrangement({ version: 2, root: null }, { version: 2, root: null })).toBe(true);

@@ -110,19 +110,22 @@ button, at the end of the top group on the trailing side. Its menu offers:
   with an item, and one step left or right within its own group. Every drop
   target has an entry, so keyboard and screen reader users reach every
   arrangement without dragging;
-- **Reset arrangement** when `defaultLayout` is set; it is disabled while the
-  layout already has that arrangement.
+- **Reset arrangement** when `defaultLayout` is set and names the same open
+  items; it is disabled while the layout already has that arrangement and
+  those sizes.
 
 The same menu opens with a right click on a tab, Shift+F10, or the context
 menu key. Presets arrange the open items in the order of `items`. Choosing
-the preset that matches `defaultLayout` restores its ratios, and a double
+the preset that matches `defaultLayout` restores its ratios, also when it is
+the current arrangement, and a double
 click or Enter on a boundary restores that boundary's ratio from
 `defaultLayout`, or 0.5 when the arrangement differs. Focus returns to the
 moved tab, and a screen reader hears where it went.
 
 Pass `arrangeHint` to show a one-time hint at the first tab grip, "Panes can
 be arranged", with an Arrange action. The application decides whether it was
-seen and stores `onDismiss`, as with every `MovedHint`.
+seen and stores `onDismiss`, as with every `MovedHint`. The hint steps aside
+while a tab is dragged, so it never covers a drop target.
 
 ## Narrow containers
 
