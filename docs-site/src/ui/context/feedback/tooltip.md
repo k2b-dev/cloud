@@ -12,7 +12,10 @@ one automatically: `IconButton`, `IconButtonLink`, and an `iconOnly`
 `tooltip` or `tooltip={false}`. A `title` passed to one of them becomes the
 tooltip text instead of a native browser title.
 
-Keep essential instructions and validation messages visible in the page. Use a popover or dialog when the content contains links, buttons, or other interaction.
+Keep essential instructions and validation messages visible in the page. Use a
+[`HoverCard`](/en/ui/feedback/hover-card) for richer details, such as stages
+or rows of facts, and a popover or dialog when the content contains links,
+buttons, or other interaction.
 
 ## Import
 
