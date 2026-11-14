@@ -1182,7 +1182,7 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in nine shards, WebKit tests in seventeen, and integration tests in
+Unit tests run in nine shards, WebKit tests in nineteen, and integration tests in
 five. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
@@ -1256,18 +1256,19 @@ fifteen shards at 10.97 minutes, leaving too little room for new browser files:
 adding one file in [#2810](https://github.com/k2b-dev/cloud/pull/2810) tipped
 the runner guard to 660.45 seconds against its 660-second target.
 
-The current browser weights use maxima from 52 finished WebKit job logs in runs
-[42377096341](https://github.com/k2b-dev/cloud/actions/runs/42377096341),
-[42386499318](https://github.com/k2b-dev/cloud/actions/runs/42386499318),
-[42399321076](https://github.com/k2b-dev/cloud/actions/runs/42399321076), and
-[42399831722](https://github.com/k2b-dev/cloud/actions/runs/42399831722).
-This window includes slow successful jobs, a failed WebKit job, the earlier
-budget-aborted job, and the failed merge-group run for #2810. The table covers
-all 382 current files. Fifteen shards predict 704.4 seconds; sixteen predict
-660.4 seconds, still above the target. Seventeen is the smallest fitting count
-at 621.5 seconds (10.36 minutes), leaving 38.5 seconds (5.8%) below the target.
-Replaying the plan with ten additional unmeasured files at the table's
-12.6-second median gives 628.9 seconds, still 31.1 seconds below the target.
+The current browser weights use maxima from the WebKit jobs of runs
+[43605465168](https://github.com/k2b-dev/cloud/actions/runs/43605465168),
+[43604064299](https://github.com/k2b-dev/cloud/actions/runs/43604064299),
+[43600763560](https://github.com/k2b-dev/cloud/actions/runs/43600763560),
+[43593953102](https://github.com/k2b-dev/cloud/actions/runs/43593953102),
+[43588358082](https://github.com/k2b-dev/cloud/actions/runs/43588358082), and
+[43563379904](https://github.com/k2b-dev/cloud/actions/runs/43563379904),
+two of them failed runs. The table covers all 443 current files. Seventeen
+shards predict 681.5 seconds, above the target, and eighteen predict 643.6
+seconds, only 16.4 seconds below it. Nineteen predict 609.5 seconds
+(10.16 minutes), leaving 50.5 seconds (7.7%) below the target. Replaying the
+plan with ten additional unmeasured files at the table's 11.9-second median
+gives 616.2 seconds, still 43.8 seconds below the target.
 These are historical planning estimates, not new CI wall times or a guarantee
 for files of any size. Keep contexts isolated between tests, as required above.
 Refresh the weights and reconsider the matrix when the measured workload grows;
@@ -1539,7 +1540,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in seventeen shards with `bun run test --browser`, against
+them again in WebKit in nineteen shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the

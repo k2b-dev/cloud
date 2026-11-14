@@ -1189,10 +1189,8 @@
 }
 /* The row stays in the flow but pulls itself up over the note by its own height, so it takes no room, and the
    keyboard lift (a bottom margin from @k2b/editor) still shrinks the scroller and keeps the caret line visible. Its
-   pills and the red pill that replaces them are @k2b/ui floating pills of small controls (`--k2b-pill-control`). */
+   pills and the red pill that replaces them are @k2b/ui pills of small controls (`k2b-pill`). */
 .k2b-ui .notebooks-editor-toolbar {
-  --k2b-toolbar-control: var(--k2b-pill-control);
-  --k2b-toolbar-inset: var(--k2b-pill-inset);
   --notebook-pill-height: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px);
   position: relative;
   z-index: 5;
@@ -1220,16 +1218,7 @@
   padding: 0;
 }
 .k2b-ui .notebooks-editor-pill {
-  display: flex;
   min-width: 0;
-  height: var(--notebook-pill-height);
-  align-items: center;
-  gap: 0.125rem;
-  padding: var(--k2b-pill-inset);
-  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
-  border-radius: 999px;
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-toolbar);
   pointer-events: auto;
 }
 /* Formatting takes the room it needs and scrolls sideways when the row is narrow. */
@@ -1238,9 +1227,6 @@
 }
 .k2b-ui .notebooks-editor-pill--page {
   flex: none;
-}
-.k2b-ui .notebooks-editor-pill .k2b-button {
-  border-radius: 999px;
 }
 /* On a phone the formatting pill fades at its end into the surface, so it reads as "scrolls on". */
 @media not all and (min-width: 48rem) {

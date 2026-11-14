@@ -335,6 +335,12 @@ const portableSections = [
       page("moved-hint", "MovedHint", "ti ti-arrow-move-right", "A one-time anchored hint to a familiar path’s new place."),
       page("tooltip", "Tooltip", "ti ti-message", "Concise accessible hints with viewport-aware positioning."),
       page(
+        "hover-card",
+        "HoverCard",
+        "ti ti-message-2",
+        "A larger hint with a path, facts, or a small graphic beside its control; a sheet on a phone.",
+      ),
+      page(
         "hover-preview",
         "HoverPreview",
         "ti ti-id-badge-2",
@@ -360,6 +366,7 @@ const portableSections = [
       page("label-chip", "LabelChip", "ti ti-tag", "Control names inside running text."),
       page("match-text", "MatchText", "ti ti-highlight", "Search matches marked in a result's name or path."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
+      page("progress-path", "ProgressPath", "ti ti-route", "The stages of one thing in order, each with a word and a day."),
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
       page("money", "Money", "ti ti-coin", "Amounts that show their direction, turquoise in and violet out, and balance rows."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),

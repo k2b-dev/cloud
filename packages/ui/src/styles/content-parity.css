@@ -1263,7 +1263,7 @@
   width: 0.375rem;
   height: 0.375rem;
   border-radius: 999px;
-  background: var(--k2b-calendar-accent, #3b82f6);
+  background: var(--k2b-calendar-accent, var(--k2b-info-mark));
 }
 
 .k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator, .k2b-calendar-detail)[data-color="blue"] {
@@ -4933,18 +4933,19 @@
 .k2b-ui .k2b-lightbox__head > * {
   pointer-events: auto;
 }
+/* The name pill has the height of the pills of small controls beside it and below (`k2b-pill`). */
 .k2b-ui .k2b-lightbox__name {
   display: flex;
   flex: 0 1 auto;
   min-width: 0;
-  height: 2.5rem;
+  height: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px);
   align-items: baseline;
   gap: 0.5rem;
   margin: 0;
   padding: 0 0.875rem;
   border-radius: 999px;
   font-size: 0.8125rem;
-  line-height: 2.375rem;
+  line-height: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px);
   white-space: nowrap;
 }
 .k2b-ui .k2b-lightbox__name b {
@@ -4957,18 +4958,9 @@
   flex: none;
   color: var(--k2b-text-muted);
 }
+/* A pill of small controls (`k2b-pill`): the blue Open keeps the same space to the edge as the round icons. */
 .k2b-ui .k2b-lightbox__actions {
-  display: flex;
   flex: none;
-  height: 2.5rem;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  box-sizing: border-box;
-  border-radius: 999px;
-}
-.k2b-ui .k2b-lightbox__actions :is(.k2b-button, .k2b-icon-button) {
-  border-radius: 999px;
 }
 /* Open and the app's commands keep their width; the name pill gives way first. */
 .k2b-ui :is(.k2b-lightbox__open, .k2b-lightbox__action) {
@@ -5031,7 +5023,6 @@
   margin: 0 7px 7px;
 }
 .k2b-ui .k2b-lightbox__tools {
-  border-radius: 999px;
   font-variant-numeric: tabular-nums;
 }
 .k2b-ui .k2b-lightbox__percent {
@@ -5938,25 +5929,10 @@
   pointer-events: none;
 }
 
-/* Icons only, round like the pill; a pressed fit shows its blue icon without a fill. The pill has the size of every
-   floating pill of small controls: the same space around its icons above, below, and at the sides. */
+/* A pill of small controls (`k2b-pill`), icons only; a pressed fit shows its blue icon without a fill. */
 .k2b-ui .k2b-pdf-viewer__bar > .k2b-toolbar {
-  --k2b-radius-control: 9999px;
   --k2b-selected: transparent;
-  padding: var(--k2b-pill-inset);
-  border: 1px solid var(--k2b-border);
-  border-radius: 9999px;
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-toolbar);
   pointer-events: auto;
-}
-
-/* Touch screens keep the 44 px hit area through the buttons' own touch rule. */
-.k2b-ui .k2b-pdf-viewer__bar .k2b-toolbar__action {
-  min-inline-size: var(--k2b-pill-control);
-  inline-size: var(--k2b-pill-control);
-  min-block-size: var(--k2b-pill-control);
-  block-size: var(--k2b-pill-control);
 }
 
 .k2b-ui :is(.k2b-pdf-viewer__percent, .k2b-pdf-viewer__page-number) {
@@ -6533,9 +6509,13 @@
 }
 
 .k2b-ui :is(.k2b-timeline__slot, .k2b-timeline__echo) {
-  --k2b-timeline-accent: #3b82f6;
+  --k2b-timeline-accent: var(--k2b-info-mark);
   position: absolute;
   z-index: 1;
+}
+
+.k2b-ui :is(.k2b-timeline__slot, .k2b-timeline__echo)[data-color="blue"] {
+  --k2b-timeline-accent: #3b82f6;
 }
 
 .k2b-ui :is(.k2b-timeline__slot, .k2b-timeline__echo)[data-color="emerald"] {
@@ -7177,6 +7157,123 @@
 .k2b-ui .k2b-steps > li { position: relative; min-height: 2rem; margin: 0; padding: 0.1875rem 0 0 2.875rem; counter-increment: k2b-step; }
 .k2b-ui .k2b-steps > li::before { content: counter(k2b-step); position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 999px; background: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 14%, transparent); color: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 70%, var(--k2b-text)); font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 
+/* ProgressPath: the stages of one thing in order. Side by side in a wide
+   container, one below the other in a narrow one, such as a phone sheet. A done
+   step carries a check and a green line to the next step; its word says the same. */
+.k2b-ui .k2b-progress-path {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-progress-path__list {
+  display: grid;
+  grid-template-columns: repeat(var(--k2b-progress-path-count, 1), minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-progress-path__step {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  margin: 0;
+  padding-inline-end: 0.5rem;
+}
+
+.k2b-ui .k2b-progress-path__step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: calc(0.8125rem - 1px);
+  inset-inline: 2rem 0.25rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--k2b-border);
+}
+
+.k2b-ui .k2b-progress-path__step[data-done]:not(:last-child)::before {
+  background: color-mix(in srgb, var(--k2b-success-500) 55%, transparent);
+}
+
+.k2b-ui .k2b-progress-path__marker {
+  display: grid;
+  width: 1.625rem;
+  height: 1.625rem;
+  flex: none;
+  place-items: center;
+  margin-bottom: 0.375rem;
+  border: 2px solid var(--k2b-border-strong);
+  border-radius: 999px;
+  color: var(--k2b-text-muted);
+  background: var(--k2b-surface-elevated);
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-progress-path__step[data-done] .k2b-progress-path__marker {
+  border-color: var(--k2b-success-500);
+  color: var(--k2b-success-text);
+  background: var(--k2b-success-surface);
+}
+
+.k2b-ui .k2b-progress-path__label {
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .k2b-progress-path__step:not([data-done]) .k2b-progress-path__label {
+  color: var(--k2b-text-muted);
+  font-weight: 500;
+}
+
+.k2b-ui .k2b-progress-path__detail {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+@container (max-width: 25.999rem) {
+  .k2b-ui .k2b-progress-path__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .k2b-ui .k2b-progress-path__step {
+    display: grid;
+    grid-template-columns: 1.625rem minmax(0, 1fr);
+    column-gap: 0.625rem;
+    padding: 0 0 0.75rem;
+  }
+
+  .k2b-ui .k2b-progress-path__step:last-child {
+    padding-bottom: 0;
+  }
+
+  .k2b-ui .k2b-progress-path__marker {
+    grid-row: span 2;
+    margin: 0;
+  }
+
+  .k2b-ui .k2b-progress-path__label {
+    padding-top: 0.25rem;
+  }
+
+  .k2b-ui .k2b-progress-path__label,
+  .k2b-ui .k2b-progress-path__detail {
+    grid-column: 2;
+  }
+
+  .k2b-ui .k2b-progress-path__step:not(:last-child)::before {
+    top: 2rem;
+    bottom: 0.25rem;
+    inset-inline: calc(0.8125rem - 1px) auto;
+    width: 2px;
+    height: auto;
+  }
+}
+
 /* MapView: shared static geometry and the progressively loaded map image. */
 .k2b-ui .k2b-map-view {
   /* The map image palette; mapPalette in map-palette.ts carries the same values, and a test keeps them equal. */
@@ -7402,7 +7499,8 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  /* clip, not hidden: the list slides below the edge by transform, and a hidden box would still scroll it back. */
+  overflow: clip;
   background: var(--k2b-surface);
   color: var(--k2b-text);
 }

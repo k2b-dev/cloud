@@ -143,12 +143,12 @@ type Session = {
   answers: PdfAnswer[];
 };
 
-const open = async (options: BrowserContextOptions, query = "", lang = "en"): Promise<Session> => {
+const open = async (options: BrowserContextOptions, query = "", lang = "en", items = initialItems()): Promise<Session> => {
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const tab = await context.newPage();
   // A step that waits fails well inside the test's own timeout, so its report names the step.
   tab.setDefaultTimeout(12_000);
-  const session: Session = { tab, errors: pageErrors(tab), items: initialItems(), posts: [], deleted: [], answers: [] };
+  const session: Session = { tab, errors: pageErrors(tab), items, posts: [], deleted: [], answers: [] };
   const named = (path: string) => session.items.find((item) => `${folder}/${item.name}` === path);
   await tab.route("http://files-selection.test/**", async (route: Route) => {
     const url = new URL(route.request().url());
@@ -216,7 +216,8 @@ const open = async (options: BrowserContextOptions, query = "", lang = "en"): Pr
   return session;
 };
 const row = (tab: Page, name: string) => tab.locator(".filesv2-list__row", { hasText: name }).first();
-const pill = (tab: Page) => tab.locator(".filesv2-selection-pill");
+// The pill keeps its place in the column while nothing is selected; only a selection shows it.
+const pill = (tab: Page) => tab.locator(".filesv2-selection-pill:not(.filesv2-selection-pill--idle)");
 const pillText = async (tab: Page) => ((await pill(tab).locator(".k2b-toolbar__label").first().textContent()) ?? "").trim();
 const actionNames = (tab: Page) =>
   pill(tab)
@@ -478,6 +479,113 @@ describe("Files selection pill in a browser", () => {
       await pill(tab).waitFor();
       await settled(tab);
       if (shots) await tab.screenshot({ path: `${shots}/pill-light-1440.png` });
+    } finally {
+      await tab.context().close();
+    }
+  });
+});
+
+/** Where the pill, the end of the column, and every row or tile stand, in window coordinates. */
+const layout = (tab: Page) =>
+  tab.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>(".filesv2-browser__collection .k2b-scroll-area")!;
+    const shown = document.querySelector<HTMLElement>(".filesv2-selection-pill:not(.filesv2-selection-pill--idle)");
+    const strip = shown?.closest<HTMLElement>(".k2b-toolbar-float");
+    const box = scroller.getBoundingClientRect();
+    const rows = [...scroller.querySelectorAll<HTMLElement>(".filesv2-list__row, .k2b-file-grid > *")].map((item) => {
+      const rect = item.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom };
+    });
+    return {
+      /** The bottom of the column's visible part. */
+      end: box.top + scroller.clientTop + scroller.clientHeight,
+      pill: shown ? { top: shown.getBoundingClientRect().top, bottom: shown.getBoundingClientRect().bottom } : null,
+      /** The strip's own space below the pill: the fixed distance to the column's end. */
+      gap: strip ? Number.parseFloat(getComputedStyle(strip).paddingBlockEnd) : null,
+      rows,
+    };
+  });
+const scrollToEnd = async (tab: Page) => {
+  await tab.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>(".filesv2-browser__collection .k2b-scroll-area")!;
+    scroller.scrollTop = scroller.scrollHeight;
+  });
+  await settled(tab);
+};
+/** The pill stands on the column's end, its strip's gap below it, and no row reaches under it. */
+const expectAtBottom = (shot: Awaited<ReturnType<typeof layout>>) => {
+  expect(shot.pill).not.toBeNull();
+  expect(shot.end - shot.pill!.bottom).toBeCloseTo(shot.gap!, 0);
+  expect(shot.rows.at(-1)!.bottom).toBeLessThanOrEqual(shot.pill!.top);
+};
+const few = () => initialItems().slice(0, 3);
+const many = (): Item[] =>
+  Array.from({ length: 60 }, (_, index) => ({
+    name: `Beleg-2026-${String(index + 1).padStart(3, "0")}.docx`,
+    size: 24_000 + index,
+    fill: "#1d4ed8",
+  }));
+
+describe("Files selection pill at the bottom of the column", () => {
+  for (const [device, options, width] of [
+    ["desktop", desktop, 1440],
+    ["phone", phone, 390],
+  ] as const)
+    for (const [amount, items] of [
+      ["few", few],
+      ["many", many],
+    ] as const)
+      test(`${device}, ${amount} files: the pill sits at the column's end and no row moves`, async () => {
+        const { tab, errors } = await open(options, "", "en", items());
+        try {
+          const names = items().map((item) => item.name);
+          // A long list is read to its end first: there, a pill that appears or goes would cover or move rows.
+          if (amount === "many") await scrollToEnd(tab);
+          if (device === "phone") {
+            await tab.getByRole("button", { name: "Select", exact: true }).click();
+            await settled(tab);
+          }
+          const before = await layout(tab);
+          const [first, second] = amount === "many" ? names.slice(-2) : names.slice(0, 2);
+          if (device === "phone") {
+            await row(tab, first!).locator("input[type=checkbox]").check();
+            await row(tab, second!).locator("input[type=checkbox]").check();
+          } else {
+            await row(tab, first!).click();
+            await row(tab, second!).click({ modifiers: ["Shift"] });
+          }
+          await pill(tab).waitFor();
+          await settled(tab);
+          const selected = await layout(tab);
+          expect(selected.rows).toEqual(before.rows);
+          expectAtBottom(selected);
+          if (shots && amount === "few") await tab.screenshot({ path: `${shots}/pill-bottom-light-${width}.png` });
+          await pill(tab).getByRole("button", { name: "Clear selection" }).click();
+          await settled(tab);
+          const cleared = await layout(tab);
+          expect(cleared.pill).toBeNull();
+          expect(cleared.rows).toEqual(before.rows);
+          expect(errors).toEqual([]);
+        } finally {
+          await tab.context().close();
+        }
+      });
+
+  test("in the grid and the tree the pill sits at the column's end too", async () => {
+    const { tab, errors } = await open(desktop, "", "en", few());
+    try {
+      for (const view of ["Grid", "Tree"]) {
+        await tab.getByRole("radio", { name: view }).click();
+        await settled(tab);
+        const item = view === "Grid" ? tab.locator(".k2b-file-grid > *", { hasText: "Expertise" }).first() : row(tab, "Expertise");
+        await item.click();
+        await pill(tab).waitFor();
+        await settled(tab);
+        expectAtBottom(await layout(tab));
+        await pill(tab).getByRole("button", { name: "Clear selection" }).click();
+        await settled(tab);
+      }
+      expect(errors).toEqual([]);
     } finally {
       await tab.context().close();
     }
