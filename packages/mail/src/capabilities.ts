@@ -20,15 +20,16 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { AppEventEnvelopeSchema } from "@k2b/cloud/events";
-import { logger } from "@k2b/cloud/services";
+import { coreSettings, logger } from "@k2b/cloud/services";
 import { principalLabel } from "@k2b/cloud/shared";
-import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
+import { dates, err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { mailEvents } from "./app-events";
 import * as c from "./capability-contracts";
 import { mailCapabilityMessages } from "./capability-messages";
 import { mailCapabilityPresentation } from "./capability-presentation";
+import { conversationReaderView, messageReaderView } from "./capability-reader-views";
 import { mailReviewCopy, mailReviewLocale } from "./capability-review-messages";
 import {
   assignmentReviewMessage,
@@ -380,6 +381,10 @@ const tagChangeSummary = (subject: string, added: string[], removed: string[], l
   if (removed.length > 0 && added.length === 0) return t.tagsRemoved({ tags: joinedLabels(removed, locale), subject });
   return t.tagsChanged({ added: joinedLabels(added, locale), removed: joinedLabels(removed, locale), subject });
 };
+
+/** The installation's time zone for dates a person reads in a reader view. */
+const readerTimeZone = async (): Promise<string> =>
+  dates.normalizeTimeZone((await coreSettings.get<string>("app.timezone"))?.trim(), "Europe/Berlin");
 
 const boundedText = (value: string | null, maxBytes: number): { text: string | null; truncated: boolean } =>
   value === null ? { text: null, truncated: false } : truncateText(value, maxBytes);
@@ -1711,6 +1716,22 @@ const queryDefinitions = {
           messages: page.data.items.map((item) => mapMessageListItem(mailboxShortId, item, messageIds, context.locale)),
           messagesTruncated: page.data.nextCursor !== null,
         },
+        view: conversationReaderView({
+          locale: context.locale,
+          timeZone: await readerTimeZone(),
+          summary: summary.data.summary,
+          workStatus: state.data.workStatus,
+          assignees: state.data.assignees,
+          tags: tags.data.tags,
+          messages: page.data.items.map((item) => ({
+            from: item.from,
+            subject: item.subject,
+            sentAt: item.sentAt,
+            internalDate: item.internalDate,
+            preview: item.preview ?? undefined,
+          })),
+          more: page.data.nextCursor !== null,
+        }),
         ...(subject ? { summary: capabilitySummary(t.readConversation({ subject })) } : {}),
         ...conversationMetadata(mailboxShortId, input.id, subject, boundedText(summary.data.summary, 1000).text, context.locale),
       });
@@ -1890,6 +1911,18 @@ const queryDefinitions = {
               }
             : null,
         },
+        view: messageReaderView({
+          locale: context.locale,
+          timeZone: await readerTimeZone(),
+          from: item.from,
+          to: item.to,
+          cc: item.cc,
+          sentAt: item.sentAt,
+          internalDate: item.internalDate,
+          attachments: item.attachments,
+          text: item.plainText ?? item.forwardText,
+          textTruncated: false,
+        }),
         summary: capabilitySummary(t.readMessage({ subject: reviewSubject(item.subject, context) })),
         refs: [
           messageRef(input.id, item.subject, context.locale),

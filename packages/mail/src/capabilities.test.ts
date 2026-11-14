@@ -12,6 +12,7 @@ import {
   typeViewIssues,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
+import { coreSettings } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
 import type { z } from "zod";
 import { mailCapabilities } from "./capabilities";
@@ -315,6 +316,8 @@ beforeEach(() => {
   }));
 
   spyOn(conversationKeeps, "getConversationKeep").mockResolvedValue({ ok: true, data: null });
+  // Reader views format dates in the installation's time zone.
+  spyOn(coreSettings, "get").mockResolvedValue("Europe/Berlin" as never);
   spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "write" } });
   spyOn(mailboxAccess, "requireDraftAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "write" } });
   spyOn(focus, "listMailboxCounts").mockResolvedValue({ ok: true, data: [{ mailboxId: internalMailboxId, unread: 7, needsAction: 3 }] });
