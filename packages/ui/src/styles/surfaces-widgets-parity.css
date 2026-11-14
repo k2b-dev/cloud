@@ -788,7 +788,7 @@
 /* Places that are links: the mark is the target; hover darkens it, focus rings it. */
 .k2b-ui .k2b-dot-strip__place { display: block; min-width: 0; border-radius: 999px; color: inherit; }
 .k2b-ui a.k2b-dot-strip__place:hover > .k2b-dot-strip__dot { filter: brightness(0.86); }
-.k2b-ui a.k2b-dot-strip__place:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 1px; }
+.k2b-ui a.k2b-dot-strip__place:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-width); }
 /* Bars: upright, 4 × 14 px, or 5 × 22 px at lg, standing on one line. A failed run is red and broken, a skipped one
    short, an empty place a quiet full bar. */
 .k2b-ui .k2b-dot-strip[data-variant="bar"] {
