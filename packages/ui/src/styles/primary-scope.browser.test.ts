@@ -86,6 +86,13 @@ frameSource.style.colorScheme = "dark";
 frame.contentDocument.body.append(frameSource);
 frame.dataset.sourceTheme = readUiScope(frameSource).theme;
 getK2bPortalRoot(frame.contentDocument.body, frameSource, frame.contentDocument).id = "foreign-portal";
+// Two roots on a plain body, the first in an AI scope: a neutral surface (dialog, toast rail) mounts on the body.
+const neutralFrame = document.createElement("iframe");
+neutralFrame.id = "neutral-document";
+document.body.append(neutralFrame);
+const neutralDoc = neutralFrame.contentDocument;
+neutralDoc.body.innerHTML = '<div class="k2b-ui" data-k2b-primary="ai"></div><div class="k2b-ui"></div>';
+neutralFrame.dataset.neutralParent = getK2bPortalRoot(undefined, neutralDoc.body, neutralDoc).parentElement === neutralDoc.body ? "body" : "other";
 
 `;
 const { parseAsync, transformAsync } = await import("@babel/core");
@@ -203,7 +210,7 @@ for (const theme of ["light", "dark"] as const) {
         });
         await page.setContent(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${catalogCss}</style><style>${fonts}</style><style>${icons}</style>
           <style>*,*::before,*::after{transition:none!important;animation:none!important}body{margin:0}#evidence{padding:24px;max-width:1000px;margin:auto}#outside{margin-bottom:24px}#scope{padding:24px;border:1px solid var(--k2b-border);border-radius:12px}#catalog{padding:24px}#nested{margin-top:16px}</style></head>
-          <body class="k2b-ui" data-theme="${theme}"><main id="evidence"><h1>Primary scope · ${theme}</h1><section id="outside"></section><section id="scope" data-k2b-primary="ai"><h2>AI primary</h2><div id="controls"></div><div class="k2b-ui" id="nested"></div></section></main><section id="catalog" data-k2b-primary="ai"></section></body></html>`);
+          <body class="k2b-ui" data-theme="${theme}"><main id="evidence"><h1>Primary scope · ${theme}</h1><section id="outside"></section><section id="scope" data-k2b-primary="ai"><h2>AI primary</h2><div id="controls"></div><div class="k2b-ui" id="nested" data-theme="${theme}"></div><div class="k2b-ui" id="nested-unthemed"></div></section></main><section id="catalog" data-k2b-primary="ai"></section></body></html>`);
         await settled(page);
         await page.evaluate(() => {
           // Pin Date alone; timers, animation frames and performance keep running.
@@ -252,10 +259,14 @@ for (const theme of ["light", "dark"] as const) {
             };
           }),
         ).toEqual({ ownDocument: true, parent: true, primary: "ai", theme: "dark" });
+        expect(await page.locator("#neutral-document").getAttribute("data-neutral-parent")).toBe("body");
         expect(inside["action-solid"]).toBe(theme === "light" ? "#8e1b6f" : "#b7408f");
         expect(inside["focus-ring"]).toBe(theme === "light" ? "#c4519f" : "#f0abdc");
         const nested = await palette(page, "#nested");
         for (const name of tokens.filter((name) => name !== "focus-fill")) expect(nested[name]).toBe(inside[name]);
+        // A nested root without a theme of its own is light; its plum matches its own light surfaces.
+        const unthemed = await palette(page, "#nested-unthemed");
+        expect([unthemed.action, unthemed["action-solid"], unthemed["focus-ring"]]).toEqual(["#8e1b6f", "#8e1b6f", "#c4519f"]);
         const boxes = () =>
           page.locator("#controls :is(button, input, [role='tab'], [role='slider'])").evaluateAll((nodes) =>
             nodes.map((node) => {
@@ -487,6 +498,20 @@ for (const theme of ["light", "dark"] as const) {
           await page.keyboard.press("Tab");
           await settled(page);
           expect(await page.evaluate(auditPrimaryColors, { selector: `${area}, ${area} *`, focus: true })).toEqual([]);
+          if (section === "ai" && slug === "chat") {
+            // The person's own message stays neutral grey; the scope colours actions, not their words.
+            const bubble = page.locator(`${area} .k2b-chat-message[data-role="user"] .k2b-chat-message__bubble`).first();
+            expect(
+              await bubble.evaluate((node) => {
+                const probe = document.createElement("span");
+                probe.style.background = "var(--k2b-surface-muted)";
+                node.append(probe);
+                const neutral = getComputedStyle(probe).backgroundColor;
+                probe.remove();
+                return getComputedStyle(node).backgroundColor === neutral;
+              }),
+            ).toBe(true);
+          }
         }, 30_000);
       }
     });

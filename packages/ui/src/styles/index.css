@@ -14186,7 +14186,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__bubble {
   padding: 0.625rem 0.75rem;
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-selected);
+  /* The person's own words stay neutral grey in every primary scope. */
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-chat-message[data-role="system"],

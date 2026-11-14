@@ -8,8 +8,10 @@ export const getK2bPortalRoot = (
   doc = trigger?.ownerDocument ?? scope?.ownerDocument ?? document,
 ): HTMLElement => {
   const source = trigger ?? currentUiSource();
-  const owner = scope ?? source?.closest<HTMLElement>(".k2b-ui") ?? doc.querySelector<HTMLElement>(".k2b-ui") ?? doc.body;
   const primary = readUiScope(trigger).primary;
+  let owner = scope ?? source?.closest<HTMLElement>(".k2b-ui") ?? doc.querySelector<HTMLElement>(".k2b-ui") ?? doc.body;
+  // A neutral surface never borrows a root from someone else's primary scope: custom properties would inherit.
+  if (!scope && primary === null && owner !== doc.body && owner.closest(`[${PRIMARY_ATTRIBUTE}]`)) owner = doc.body;
   for (const child of owner.querySelectorAll<HTMLElement>(`:scope > [${PORTAL_ATTRIBUTE}]`)) {
     if (child.getAttribute(PRIMARY_ATTRIBUTE) === primary) return child;
   }

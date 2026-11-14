@@ -26,20 +26,11 @@
   --k2b-app-workspace-selected: var(--k2b-selected);
 }
 
-/* A nested root without its own theme keeps the enclosing AI palette. */
-:is(.k2b-ui[data-k2b-primary="ai"], .k2b-ui [data-k2b-primary="ai"], [data-k2b-primary="ai"] .k2b-ui) .k2b-ui:not([data-theme]):not(.k2b-dark) {
-  --k2b-ai-accent: inherit;
-  --k2b-ai-accent-hover: inherit;
-  --k2b-ai-border: inherit;
-  --k2b-ai-surface: inherit;
-  --k2b-ai-solid: inherit;
-  --k2b-ai-solid-hover: inherit;
-  --k2b-ai-on-solid: inherit;
-}
-
+/* A nested root without its own theme is light (its own .k2b-ui tokens), so only a dark root or a document-wide
+   .dark takes the dark solid; the root keeps its own AI ink instead of inheriting the enclosing one. */
 :is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark .k2b-ui):is([data-k2b-primary="ai"], [data-k2b-primary="ai"] .k2b-ui),
-:is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark) [data-k2b-primary="ai"],
-:is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark) [data-k2b-primary="ai"] .k2b-ui {
+:is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark) [data-k2b-primary="ai"]:not(.k2b-ui),
+.dark [data-k2b-primary="ai"] .k2b-ui {
   /* White labels need a darker fill than the dark-theme AI text ink. */
   --k2b-action-solid: #b7408f;
   --k2b-action-solid-hover: #8e1b6f;

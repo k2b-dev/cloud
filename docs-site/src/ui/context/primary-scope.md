@@ -28,7 +28,8 @@ subtler plum surface than selection; dark hover keeps the neutral UI surface.
 
 ## Nested surfaces
 
-Nested `.k2b-ui` roots keep the primary scope. Menus, dialogs, and floating
+Nested `.k2b-ui` roots keep the primary scope in their own theme: a nested root
+without `data-theme` is light, and its plum matches its light surfaces. Menus, dialogs, and floating
 windows opened from the scoped area inherit it too. Each dialog level follows
 its own opener; closing a nested level restores the previous level’s scope.
 Keep the trigger inside the scope; programmatic opens use the currently focused
@@ -39,7 +40,8 @@ The scope remaps the action, hover, selected, focus, link, row selection,
 and workspace selection roles. It also updates text selection and inset focus
 fills. Informational notices, default tags and choice pills, running status
 badges, uncoloured timeline entries, and calendar dots also follow the scope.
-Warning, error, and success colours retain their meaning.
+Warning, error, and success colours retain their meaning. The person's own chat
+message stays neutral grey in every scope.
 
 Explicit object colours stay unchanged: file-type and avatar colours, colour
 choices and presence colours, `tint-blue`,
