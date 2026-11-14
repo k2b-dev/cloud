@@ -605,3 +605,64 @@
     transition: none;
   }
 }
+
+/* Global search (capability views, search preview): the query spans the dialog, the hits keep a narrow column, and
+   the reader's view of the active hit takes the rest. A column shadow, not a line, sets the two apart. */
+.cloud-global-search .cloud-resource-search .cloud-resource-search__maximize {
+  display: none;
+}
+.cloud-global-search .cloud-resource-search__preview {
+  border-inline-start: 0;
+}
+@media (min-width: 48rem) {
+  .cloud-search-dialog:has(.cloud-global-search) {
+    width: min(60rem, var(--ui-dialog-available-width));
+  }
+  .cloud-global-search .cloud-resource-search {
+    grid-template-columns: 22.5rem minmax(0, 1fr);
+    gap: 0;
+  }
+  .cloud-global-search .cloud-resource-search__input {
+    grid-column: 1 / -1;
+    padding-right: 6rem;
+  }
+  .cloud-global-search .cloud-resource-search__footer {
+    grid-column: 1 / -1;
+  }
+  .cloud-global-search .cloud-resource-search__preview {
+    grid-column: 2;
+    grid-row: 3;
+    max-height: var(--search-body-height);
+    padding: 0.75rem 1.375rem 1.125rem;
+    border-inline-start: 0;
+    background: linear-gradient(to left, transparent, var(--k2b-shadow-column-mid) 45%, var(--k2b-shadow-column-edge)) left / 1.5rem
+      100% no-repeat;
+  }
+  .cloud-global-search .cloud-resource-search .cloud-resource-search__maximize {
+    display: inline-flex;
+    position: absolute;
+    right: 3.25rem;
+    top: 1.125rem;
+    z-index: 1;
+  }
+  /* Maximized, the search nearly fills the window; hits and preview grow with it. */
+  .cloud-search-dialog:has(.cloud-global-search[data-maximized="true"]) {
+    --search-top: 1.5rem;
+    --search-max-height: calc(100dvh - 3rem);
+    width: calc(100vw - 3rem);
+    height: var(--search-max-height);
+  }
+  .cloud-global-search[data-maximized="true"] .cloud-resource-search {
+    --search-body-height: max(0px, calc(var(--search-max-height) - 9rem));
+    grid-template-columns: 27.5rem minmax(0, 1fr);
+    height: var(--search-max-height);
+  }
+  .cloud-global-search[data-maximized="true"] .cloud-resource-search__body,
+  .cloud-global-search[data-maximized="true"] .cloud-resource-search__preview {
+    height: var(--search-body-height);
+  }
+}
+/* A reader's text in the preview reads at the body step of the dialog. */
+.cloud-resource-search__preview .cloud-blocks[data-host="preview"] {
+  font-size: 0.875rem;
+}

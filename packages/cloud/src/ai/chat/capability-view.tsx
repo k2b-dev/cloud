@@ -37,6 +37,19 @@ export function CapabilityViewBlock(props: {
   const [data, setData] = createSignal(false);
   const app = () => props.block.presentation;
   const title = () => app()?.title ?? displayToolName(props.block.name, locale());
+  // When the app answered, as day and minute in the reader's time zone: the same on the server and in the browser.
+  const asOf = () => {
+    const at = props.block.at ? new Date(props.block.at) : undefined;
+    if (!at || Number.isNaN(at.getTime())) return undefined;
+    const time = new Intl.DateTimeFormat(locale(), {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone,
+    }).format(at);
+    return words().asOf({ time });
+  };
   // Cloud keeps the state of the view's choice: answered and superseded stay read-only after a reload too.
   const choice = createMemo((): BlockChoiceState | undefined => {
     const stored = props.block.choice;
@@ -82,7 +95,10 @@ export function CapabilityViewBlock(props: {
             </span>
             <strong>{app()?.appName ?? title()}</strong>
             <Show when={app()?.appName}>
-              <span class="cloud-capability-view__title">· {title()}</span>
+              <span class="cloud-capability-view__title">
+                · {title()}
+                <Show when={asOf()}>{(stand) => <> · {stand()}</>}</Show>
+              </span>
             </Show>
             <span class="cloud-capability-view__tools">
               <IconButton label={words().openLarge} size="sm" variant="ghost" onClick={() => openLarge(view())}>

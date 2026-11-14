@@ -158,13 +158,24 @@ function DetailBlock(props: { block: Leaf<"Detail">; host: Host; locale: string 
       }))}
     />
   );
-  // In an approval the details already lie on their own surface; elsewhere a detail block is a framed island.
+  // In an approval the details already lie on their own surface, and the search dialog is flat inside: there a
+  // detail block is its title and its rows. Elsewhere it is a framed island.
   return (
-    <Show when={props.host !== "review"} fallback={list()}>
-      <DashboardFrame title={props.block.title} headingLevel={4}>
-        {list()}
-      </DashboardFrame>
-    </Show>
+    <Switch
+      fallback={
+        <DashboardFrame title={props.block.title} headingLevel={4}>
+          {list()}
+        </DashboardFrame>
+      }
+    >
+      <Match when={props.host === "review"}>{list()}</Match>
+      <Match when={props.host === "preview"}>
+        <section class="cloud-blocks__flat">
+          <h4 class="cloud-blocks__flat-title">{props.block.title}</h4>
+          {list()}
+        </section>
+      </Match>
+    </Switch>
   );
 }
 

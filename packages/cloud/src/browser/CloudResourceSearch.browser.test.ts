@@ -268,6 +268,8 @@ describe("streamed search in a browser", () => {
         expect(await rows.nth(0).locator("time").textContent()).toBe("14:31");
         expect(await rows.nth(1).locator("time").textContent()).toBe("gestern");
         if (!view.touch) {
+          // The preview asks the hit's reader first; without a reader view it shows the search facts.
+          await page.locator(".cloud-resource-search__preview dd").first().waitFor();
           const details = await page.locator(".cloud-resource-search__preview dd").allTextContents();
           expect(details).toEqual(["Anna Berger", "Team Verwaltung", "4. Nov. 2026, 14:31", "Posteingang", "Verwaltung", "2"]);
           // The dialog is flat inside: the preview is a column behind a hairline, not a grey box.
@@ -551,3 +553,54 @@ test("launcher and chosen resources keep their positions and selection while pro
     await view.close();
   }
 });
+
+test("global search keeps hits in a narrow column, grows the preview, and maximizes beside close until the person restores it", async () => {
+  answer = async (_url, write) => {
+    write({ type: "start", query: "plan", apps, providers: ["files"] });
+    write(line("files", [result("files", "Plan 2027.pdf", "Planning"), result("files", "Project plan.docx", "Drafts")]));
+  };
+  const desktop = await open(views[0]!);
+  try {
+    const page = desktop.page;
+    await page.keyboard.type("plan");
+    await waitForRows(page, 2);
+    const sizes = () =>
+      page.evaluate(() => {
+        const width = (selector: string) => Math.round(document.querySelector(selector)!.getBoundingClientRect().width);
+        return { dialog: width("dialog"), hit: width(".cloud-resource-search__result"), preview: width(".cloud-resource-search__preview") };
+      });
+    const normal = await sizes();
+    // The concept's 360 px list (less its padding) and a preview that takes the rest of a 960 px dialog.
+    expect(normal.dialog).toBe(960);
+    expect(normal.hit).toBeLessThan(360);
+    expect(normal.preview).toBeGreaterThan(560);
+    const maximize = page.getByRole("button", { name: "Maximize search" });
+    expect(await maximize.getAttribute("aria-pressed")).toBe("false");
+    const close = await page.getByRole("button", { name: "Close search" }).boundingBox();
+    const button = await maximize.boundingBox();
+    expect(button!.x + button!.width).toBeLessThan(close!.x);
+    expect(Math.round(button!.y)).toBe(Math.round(close!.y));
+    await maximize.click();
+    const restore = page.getByRole("button", { name: "Restore search size" });
+    expect(await restore.getAttribute("aria-pressed")).toBe("true");
+    const large = await sizes();
+    expect(large.dialog).toBe(1440 - 48);
+    expect(large.preview).toBeGreaterThan(normal.preview + 300);
+    expect(await page.evaluate(() => localStorage.getItem("cloud.search.maximized.v1"))).toBe("true");
+    // The choice stays for the next search in this browser.
+    await page.reload();
+    await page.locator('input[role="combobox"]').waitFor();
+    expect(await page.getByRole("button", { name: "Restore search size" }).count()).toBe(1);
+    await page.getByRole("button", { name: "Restore search size" }).click();
+    expect(await page.evaluate(() => localStorage.getItem("cloud.search.maximized.v1"))).toBeNull();
+  } finally {
+    await desktop.close();
+  }
+  // A phone search already fills the screen: there is nothing to maximize.
+  const phone = await open(views[1]!);
+  try {
+    expect(await phone.page.getByRole("button", { name: "Maximize search" }).isVisible()).toBe(false);
+  } finally {
+    await phone.close();
+  }
+}, 60_000);

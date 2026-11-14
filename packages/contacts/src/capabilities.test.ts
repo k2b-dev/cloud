@@ -1096,24 +1096,14 @@ for (const [locale, reachable, address, email, phone] of [
     validateBlocks(view.blocks, "preview", { appId: "contacts", appPrefixes: ["/app/contacts"], envelope: result.data });
     expect(view.blocks).toEqual([
       {
-        kind: "Section",
+        kind: "Detail",
         title: reachable,
-        children: [
-          {
-            kind: "Detail",
-            title: reachable,
-            items: [
-              { label: email, value: "ada@example.test" },
-              { label: phone, value: "+49 123 456" },
-            ],
-          },
+        items: [
+          { label: email, value: "ada@example.test" },
+          { label: phone, value: "+49 123 456" },
         ],
       },
-      {
-        kind: "Section",
-        title: address,
-        children: [{ kind: "Detail", title: address, items: [{ label: address, value: "Hauptstraße 1\n12345 Berlin\nDE" }] }],
-      },
+      { kind: "Detail", title: address, items: [{ label: address, value: "Hauptstraße 1\n12345 Berlin\nDE" }] },
     ]);
   });
 }

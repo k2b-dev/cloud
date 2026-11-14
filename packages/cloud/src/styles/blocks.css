@@ -426,18 +426,22 @@
   gap: 0.75rem;
 }
 
+/* Gustav v12: the label is quiet in its own column, the value carries the weight. */
 .k2b-ui .cloud-blocks__context {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.375rem 0.625rem;
-  color: var(--k2b-text-secondary);
+  color: var(--k2b-text);
   font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .k2b-ui .cloud-blocks__context-label {
+  min-width: 4.5rem;
+  color: var(--k2b-text-muted);
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .k2b-ui .cloud-blocks__draft .k2b-input-shell {
@@ -524,4 +528,29 @@
 
 .k2b-ui .cloud-action-details__links a:hover {
   color: var(--k2b-text);
+}
+
+/* In the search dialog, which is flat inside, a detail block is a quiet title over its rows. */
+.k2b-ui .cloud-blocks__flat {
+  display: grid;
+  min-width: 0;
+  gap: 0.375rem;
+}
+
+.k2b-ui .cloud-blocks__flat-title {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.k2b-ui .cloud-blocks__flat + .cloud-blocks__flat,
+.k2b-ui .cloud-blocks__cell:has(> .cloud-blocks__flat) + .cloud-blocks__cell:has(> .cloud-blocks__flat) {
+  padding-top: 0.25rem;
+}
+
+/* A value an app writes on several lines, such as an address or a list of files, keeps its lines. */
+.k2b-ui .cloud-blocks__value > strong {
+  white-space: pre-line;
 }

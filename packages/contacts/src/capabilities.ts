@@ -697,40 +697,27 @@ const runContactRead = async (input: z.infer<typeof ContactReadInputSchema>, con
   const view: BlockView = {
     version: 1,
     blocks: [
-      ...(reachable.length
-        ? [
-            {
-              kind: "Section" as const,
-              title: t.previewReachable,
-              children: [{ kind: "Detail" as const, title: t.previewReachable, items: reachable }],
-            },
-          ]
-        : []),
+      // One titled detail block per topic: a section around it would repeat its title.
+      ...(reachable.length ? [{ kind: "Detail" as const, title: t.previewReachable, items: reachable }] : []),
       ...(data.addresses.length
         ? [
             {
-              kind: "Section" as const,
+              kind: "Detail" as const,
               title: t.previewAddress,
-              children: [
-                {
-                  kind: "Detail" as const,
-                  title: t.previewAddress,
-                  items: data.addresses.map((entry) => ({
-                    label: t.previewAddress,
-                    value: [
-                      entry.recipientName,
-                      entry.companyName,
-                      entry.line1,
-                      entry.line2,
-                      [entry.postalCode, entry.city].filter(Boolean).join(" "),
-                      entry.stateRegion,
-                      entry.countryCode,
-                    ]
-                      .filter(Boolean)
-                      .join("\n"),
-                  })),
-                },
-              ],
+              items: data.addresses.map((entry) => ({
+                label: t.previewAddress,
+                value: [
+                  entry.recipientName,
+                  entry.companyName,
+                  entry.line1,
+                  entry.line2,
+                  [entry.postalCode, entry.city].filter(Boolean).join(" "),
+                  entry.stateRegion,
+                  entry.countryCode,
+                ]
+                  .filter(Boolean)
+                  .join("\n"),
+              })),
             },
           ]
         : []),

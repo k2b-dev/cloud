@@ -45,6 +45,8 @@ export type CloudResourceSearchProps = {
   navigationItems?: readonly NavigationSearchItem[];
   searchResources?: boolean;
   excludeRefs?: readonly CloudResourceRef[];
+  /** Global search only: the window-filling size beside the close button; the host keeps and remembers it. */
+  maximize?: { on: boolean; toggle: () => void };
 };
 
 /** What `/api/search` accepts as `q`; a prefilled query is cut to it as typing is. */
@@ -521,6 +523,18 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     >
       <Show when={props.selectionMode}>
         <div class="cloud-resource-search__title">{props.title ?? t().chooseResource}</div>
+      </Show>
+      <Show when={props.maximize}>
+        {(maximize) => (
+          <IconButton
+            class="cloud-resource-search__maximize"
+            label={maximize().on ? t().restore : t().maximize}
+            aria-pressed={maximize().on}
+            onClick={() => maximize().toggle()}
+          >
+            <i class={maximize().on ? "ti ti-arrows-diagonal-minimize-2" : "ti ti-arrows-diagonal"} aria-hidden="true" />
+          </IconButton>
+        )}
       </Show>
       <IconButton class="cloud-resource-search__close" label={t().close} onClick={props.onClose}>
         <i class="ti ti-x" aria-hidden="true" />
