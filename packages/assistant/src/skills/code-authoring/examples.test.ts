@@ -227,6 +227,34 @@ test("the webhook example declares the bound service and acts only on confirmed 
   }
 });
 
+test("the form POST example preserves plus signs, spaces, ampersands and Unicode", async () => {
+  const example = passing().find((example) => example.source.includes('name: "form-post"'));
+  if (!example?.result?.ok) throw new Error("Missing checked form POST example");
+  const requests: unknown[] = [];
+  const module = await load(example.result.bundle);
+  await module["form-post"]!(null, {
+    async call(operation: string, input: unknown) {
+      expect(operation).toBe("http.fetch");
+      const request = CodeHttpRequestSchema.parse(input);
+      requests.push(request);
+      expect(request).toMatchObject({
+        url: "https://api.example.com/items",
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "title=A%2BB+%26+Gr%C3%BC%C3%9Fe",
+      });
+      const form = await new Request(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+      }).formData();
+      expect(form.get("title")).toBe("A+B & Grüße");
+      return { status: 200, headers: {}, body: "" };
+    },
+  });
+  expect(requests).toHaveLength(1);
+});
+
 test("every fixture runs against the example above it with the fake bridge and meets its expectations", async () => {
   expect(fixtures.length).toBeGreaterThan(2);
   const failures: string[] = [];

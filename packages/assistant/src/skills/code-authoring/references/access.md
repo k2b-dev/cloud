@@ -239,6 +239,30 @@ origins needs a Cloud administrator's approval by default, and an internet
 request counts as a possible effect: after it, a failed run is not retried
 automatically. Cloud's own addresses and private networks are refused.
 
+For `application/x-www-form-urlencoded`, serialize values with
+`new URLSearchParams(values).toString()` and set the content type. `body`
+accepts a string, so call `.toString()` before passing it. This preserves
+literal `+`, `&`, spaces and Unicode; hand-built `title=A+B` decodes as `A B`.
+Read incoming form values with `await c.req.formData()`. Page responses use
+`c.json()`, `c.text()` or `c.page()`; there is no `form()` response helper.
+For a JSON test fixture, store the resulting encoded string in `body`
+([Form request bodies](testing.md#form-request-bodies)).
+
+<!-- check: personal -->
+```ts
+import { app, http } from "@sdk";
+
+app.schedule({ cron: "0 8 * * *", name: "form-post" }, async () => {
+  const response = await http.fetch("https://api.example.com/items", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ title: "A+B & Grüße" }).toString(),
+  });
+  if (response.status !== 200) throw new Error(`Form service answered ${response.status}`);
+});
+export default app;
+```
+
 `secrets.NAME` is a placeholder string such as `[secret:API]`, never the
 value. Core puts the value into an allowed header at the approved origin and
 path only. An editor sets the value on the Code page's **Secrets** tab or with
