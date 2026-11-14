@@ -268,7 +268,8 @@ export default function Panes(props: PanesProps): JSX.Element {
     if (rootElement) observer?.observe(rootElement);
     onCleanup(() => observer?.disconnect());
   });
-  // The tab the person chose last, by click or focus: the Arrange menu moves it, and a narrow container opens on it.
+  // The tab the person chose last, by click, focus, or working in its pane: the Arrange menu moves it, and a narrow
+  // container opens on it.
   const [chosen, setChosen] = createSignal<string | null>(null);
   const [projectedActive, setProjectedActive] = createSignal<string | null>(null);
   const inLayout = (itemId: string | null) => (itemId !== null && collectLayoutItemIds(layout().root).includes(itemId) ? itemId : null);
@@ -1115,7 +1116,8 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
           />
         </div>
       </Show>
-      <div class="k2b-panes__body">
+      {/* Working in a pane chooses it, so Arrange acts on the pane the person is in. */}
+      <div class="k2b-panes__body" onFocusIn={() => props.onChoose(props.node().active)}>
         <div id={panelId(props.node().active)} class="k2b-panes__panel" role="tabpanel" aria-labelledby={tabId(props.node().active)}>
           <Show when={props.node().active} keyed>
             {(itemId) => <ActivePane itemId={itemId} itemById={props.itemById} />}

@@ -76,6 +76,17 @@ describe(`Panes arrangement in ${browserName}`, () => {
   test("the Arrange menu offers the presets, names each place by its neighbour, and resets to the default", async () => {
     const { page, context } = await open();
     try {
+      // Working in the draft chooses it; the Arrange menu then acts on the draft.
+      await page.locator(".pane-body", { hasText: "Draft" }).evaluate((element) => {
+        element.tabIndex = 0;
+        element.focus();
+      });
+      await page.locator(".k2b-panes__arrange").click();
+      await menu(page).waitFor();
+      expect(await menu(page).getByText("Move “Draft”").count()).toBe(1);
+      await page.keyboard.press("Escape");
+      await tab(page, "History").click();
+
       await page.locator(".k2b-panes__arrange").click();
       await menu(page).waitFor();
       const tiles = menu(page).locator(".k2b-dropdown__tiles [role='menuitemradio']");
