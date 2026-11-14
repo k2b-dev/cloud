@@ -199,6 +199,60 @@ describe("Firecrawl AI tools", () => {
     expect(result.truncated).toBe(true);
   });
 
+  test("a fresh extract disables the cache while preserving the tool's bounded scrape", async () => {
+    let payload: unknown;
+    const fetcher = async (_url: string | URL | Request, init?: RequestInit) => {
+      payload = JSON.parse(String(init?.body));
+      return Response.json({ success: true, data: { markdown: "Fresh article", metadata: { sourceURL: "https://example.com/page" } } });
+    };
+    await runCloudAiWebExtract({ url: "https://example.com/page" }, { apiKey: "test", fetch: fetcher as typeof fetch, maxAge: 0 });
+    expect(payload).toMatchObject({ maxAge: 0, timeout: 30_000, formats: ["markdown"], onlyMainContent: true });
+  });
+
+  test("extract metadata uses the final URL in preference to the requested source URL", async () => {
+    const fetcher = async (_url: string | URL | Request, _init?: RequestInit) =>
+      Response.json({
+        success: true,
+        data: {
+          markdown: "Redirected article",
+          metadata: { sourceURL: "https://example.com/start", url: "https://other.example/final" },
+        },
+      });
+    const output = await runCloudAiWebExtract({ url: "https://example.com/start" }, { apiKey: "test", fetch: fetcher as typeof fetch });
+    expect(output.url).toBe("https://other.example/final");
+  });
+
+  test("cancellation after headers still stops the Firecrawl response body", async () => {
+    const controller = new AbortController();
+    const reason = new Error("Person cancelled");
+    let transportSignal: AbortSignal | null | undefined;
+    const fetcher = async (_url: string | URL | Request, init?: RequestInit) => {
+      transportSignal = init?.signal;
+      return new Response(
+        new ReadableStream(
+          {
+            pull(stream) {
+              controller.abort(reason);
+              stream.error(reason);
+            },
+          },
+          { highWaterMark: 0 },
+        ),
+      );
+    };
+    await expect(
+      runCloudAiWebExtract(
+        { url: "https://example.com/page" },
+        {
+          apiKey: "test",
+          fetch: fetcher as typeof fetch,
+          signal: controller.signal,
+        },
+      ),
+    ).rejects.toBe(reason);
+    expect(transportSignal?.aborted).toBe(true);
+  });
+
   test("keeps all sources in historical search results while bounding snippets", async () => {
     const tool = createCloudAiWebSearchTool({ apiKey: "fc-secret" });
     const output = Array.from({ length: 5 }, (_, index) => ({
