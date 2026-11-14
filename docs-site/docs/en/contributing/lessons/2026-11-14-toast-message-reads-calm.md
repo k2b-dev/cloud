@@ -1,0 +1,6 @@
+### A toast's single message read like a bold headline
+
+- **What happened:** Marking a browser as a shared workstation showed a toast whose only text, a 120-character sentence, was set in a medium weight that read as bold. The maintainer found it noisy: "not everything bold".
+- **Root cause:** `feedback-parity.css` set `.k2b-toast__description` to `font-weight: 500` whenever no title was present, so every untitled message, however long, got a headline-like weight. The caller also put the state and its explanation into one long message instead of a short title and a message.
+- **Error class:** Emphasis tied to the presence of an element instead of to its role: body text inherits a heading's weight when the heading is missing.
+- **Guard:** The browser test `a message alone reads calmly in the regular weight, only a title is semibold, and neither moves the stack` in `packages/ui/src/feedback/toast.browser.test.ts` pins the weights, sizes and colours of both forms and that hover keeps the front toast's size. The [Toast](/en/ui/feedback/toast#use-toast) context now asks for titles of about five words, with the explanation in the message. Titles come from per-application message catalogs, so a static length check would see none of them; the documented rule is the guard for callers.

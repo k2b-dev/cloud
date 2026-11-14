@@ -6,8 +6,8 @@ export const sharedWorkstationMessages = i18n.define({
     en: {
       label: "Shared workstation",
       description: "Signs out after a while without input",
-      marked: ({ minutes }: { minutes: number }) =>
-        `This browser is now a shared workstation. It signs out after ${minutes} minutes without input and when it closes.`,
+      markedTitle: "Shared workstation on",
+      marked: ({ minutes }: { minutes: number }) => `Signs out after ${minutes} minutes without input and when the browser closes.`,
       unmarked: "This browser is no longer a shared workstation.",
       failed: "The shared workstation could not be changed. Try again.",
       warningTitle: "You will be signed out soon",
@@ -19,8 +19,8 @@ export const sharedWorkstationMessages = i18n.define({
     de: {
       label: "Gemeinsam genutzter Arbeitsplatz",
       description: "Meldet ab, wenn hier eine Weile niemand arbeitet",
-      marked: ({ minutes }) =>
-        `Dieser Browser ist jetzt ein gemeinsam genutzter Arbeitsplatz. Er meldet nach ${minutes} Minuten ohne Eingabe ab und beim Schließen.`,
+      markedTitle: "Gemeinsamer Arbeitsplatz an",
+      marked: ({ minutes }) => `Meldet nach ${minutes} Minuten ohne Eingabe und beim Schließen ab.`,
       unmarked: "Dieser Browser ist kein gemeinsam genutzter Arbeitsplatz mehr.",
       failed: "Der gemeinsam genutzte Arbeitsplatz konnte nicht geändert werden. Bitte versuche es erneut.",
       warningTitle: "Du wirst gleich abgemeldet",

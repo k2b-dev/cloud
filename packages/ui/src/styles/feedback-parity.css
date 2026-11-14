@@ -1222,8 +1222,10 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   animation: k2b-parity-spin 900ms linear infinite;
 }
 
-/* Title, bar and message in one column. A message without a title is the one
-   line of the toast and reads in the body size. */
+/* Title, bar and message in one column. A message without a title reads as
+   calm body text in the regular weight, however long it is; only a title is
+   semibold, and the message under it turns smaller and muted. Every text row
+   keeps its line height, so a toast never changes size with its weight. */
 .k2b-ui .k2b-toast__content {
   display: flex;
   min-width: 0;
@@ -1260,7 +1262,7 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   overscroll-behavior: contain;
   overflow-wrap: anywhere;
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.25rem;
 }
 
@@ -1268,7 +1270,6 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   margin-top: calc(0.0625rem - 2px);
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
-  font-weight: 400;
   line-height: 1.125rem;
 }
 

@@ -2,7 +2,7 @@
 
 `toast` shows transient feedback in a responsive stack. The application supplies the message and decides whether the result is informational, successful, or failed. `announce` tells screen readers about an outcome without showing anything, through the same live regions.
 
-A toast is a small card: the tone's glyph in an icon tile, the message (with an optional title above it), and an optional action beside it. Each tone has its own glyph shape (`ti-info-circle`, `ti-check`, `ti-alert-triangle`, `ti-alert-circle`), so tones differ by more than colour. A [celebrated](#celebrate-a-finished-result) success draws a circled check instead. A message without a title reads as one line in the body size; with a title, the title is semibold and the message is the smaller, muted line under it. Like dialogs and the Files upload panel, a toast is a floating layer (layer 3): it has a hairline border and the soft `--k2b-shadow-toast`. Only the front toast of a folded stack casts it.
+A toast is a small card: the tone's glyph in an icon tile, the message (with an optional title above it), and an optional action beside it. Each tone has its own glyph shape (`ti-info-circle`, `ti-check`, `ti-alert-triangle`, `ti-alert-circle`), so tones differ by more than colour. A [celebrated](#celebrate-a-finished-result) success draws a circled check instead. A message without a title reads as calm body text: body size, regular weight, the normal text colour, however long it is. Only a title is semibold; with one, the message is the smaller, muted line under it. A toast uses at most these two text styles, and every row keeps its line height, so a toast never changes size with the weight of its text. Like dialogs and the Files upload panel, a toast is a floating layer (layer 3): it has a hairline border and the soft `--k2b-shadow-toast`. Only the front toast of a folded stack casts it.
 
 ## Use toast
 
@@ -81,6 +81,15 @@ toast.error("Upload failed");
 
 The first argument is the message. It is the only line most toasts need, so name the outcome in it ("Contact created", "Could not save the draft"). There is no default title: a title appears only when you pass one, as a short line of context the message does not carry ("New version available"). With a title, the message moves under it in the secondary text colour.
 
+Keep a title short, about five words, so it stays one line beside the icon tile on a phone. It names the outcome or the new state, never a whole sentence; everything that explains belongs in the message under it:
+
+```ts
+// Not: two sentences in one message, past the two lines a toast aims for.
+toast.success("This browser is now a shared workstation. It signs out after 10 minutes without input and when it closes.");
+// Better: a short title for the state, the explanation as the message.
+toast.success("Signs out after 10 minutes without input and when the browser closes.", { title: "Shared workstation on" });
+```
+
 Text is never cut off, so it stays readable and can be selected and copied. Aim for about 80 characters, two lines at most.
 
 ## Properties
@@ -88,7 +97,7 @@ Text is never cut off, so it stays readable and can be selected and copied. Aim 
 | Property | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `variant` | `"default" \| "success" \| "warning" \| "error"` | `"default"` | Selects the semantic treatment. A warning is announced politely, like info and success. |
-| `title` | `string` | none | Adds a line of context above the message. |
+| `title` | `string` | none | Adds a short line of context above the message, about five words. |
 | `duration` | `number` | by variant, length, and action | Sets auto-dismiss time in milliseconds. `0` keeps the toast until it is closed. |
 | `iconClass` | `string` | variant icon | Overrides the Tabler icon class. |
 | `celebrate` | `boolean` | `false` | With the success variant, draws the check once for a finished result; see [Celebrate a finished result](#celebrate-a-finished-result). Other variants and running progress ignore it. |
