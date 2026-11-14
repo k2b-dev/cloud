@@ -12,6 +12,7 @@ describe("@k2b/ui shipped stylesheet ownership", () => {
 
     expect(files).toEqual([
       "index.css",
+      "primary-scope.css",
       "feedback-parity.css",
       "layout-parity.css",
       "surfaces-widgets-parity.css",

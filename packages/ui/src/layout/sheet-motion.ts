@@ -48,6 +48,8 @@ const CLOSE_SHARE = 0.25;
 const PROJECTION_MS = 150;
 /** A pointer that rested this long before it lifted carries no speed. */
 const REST_MS = 80;
+/** Pulled past full height, the sheet gives like a rubber band: `RUBBER_PX × ln(1 + overshoot / RUBBER_PX)`. */
+const RUBBER_PX = 28;
 /** A finger that scrolled a list this recently keeps scrolling instead of dragging the sheet. */
 const SCROLL_LOCK_MS = 100;
 /** From this width an adaptive sheet is a centred dialog and does not move. */
@@ -120,8 +122,8 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
   };
   const rest = (at: SheetDetent) => (at === "half" ? half : layoutHeight);
   const lowest = () => (detents ? half : layoutHeight);
-  /** Between half and full height the footer stays on the screen's edge; below half it rides along. */
-  const footerAt = (seen: number) => Math.max(0, half - seen) - (layoutHeight - seen);
+  /** Between half and full height the footer stays on the screen's edge; below half and past full it rides along. */
+  const footerAt = (seen: number) => Math.min(0, Math.max(0, half - seen) - (layoutHeight - seen));
   const dimAt = (seen: number) => (lowest() > 0 ? Math.max(0, Math.min(1, seen / lowest())) : 1);
   const frameTransform = (seen: number) => `translate3d(-50%, ${layoutHeight - seen}px, 0)`;
   const footerTransform = (seen: number) => `translate3d(0, ${footerAt(seen)}px, 0)`;
@@ -259,7 +261,8 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
     drag.y = y;
     drag.time = time;
     const floor = options.canDismiss() ? -OFFSCREEN_PX : lowest();
-    put(Math.min(layoutHeight, Math.max(floor, drag.from + distance)));
+    const wanted = drag.from + distance;
+    put(Math.max(floor, wanted > layoutHeight ? layoutHeight + RUBBER_PX * Math.log1p((wanted - layoutHeight) / RUBBER_PX) : wanted));
   };
   /** Returns whether the gesture was a drag, so its click is not a press. */
   const release = (time: number, cancelled: boolean): boolean => {
