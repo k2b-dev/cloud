@@ -6,6 +6,24 @@ import { sidebarSnapshot } from "../frontend/AssistantChatSidebar.fixture";
 // The tabs beside the chat are the real Panes of @k2b/ui: arranging, dragging, boundaries, and the hint carry over
 // unchanged, and the chat keeps its place and width while tabs change. A real engine lays them out.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
+/** The reading view's server: an address from the chat reads at once, the other one asks first. */
+const reads: Array<{ url: string; confirmed?: boolean }> = [];
+const webReader = async (request: Request) => {
+  const body = (await request.json()) as { url: string; confirmed?: boolean };
+  reads.push(body);
+  if (body.url.includes("versicherung") && !body.confirmed) return Response.json({ status: "confirm", url: body.url });
+  return Response.json({
+    status: "ready",
+    url: body.url,
+    finalUrl: body.url,
+    title: body.url.includes("preise") ? "Preise" : "Versand nach Frankreich",
+    description: null,
+    markdown:
+      "Pakete bis 31,5 kg erreichen Frankreich in zwei bis vier Werktagen. Die Laufzeit gilt ab Übergabe an den Paketdienst.\n\n## Preise\n\nEin Paket bis 5 kg kostet 17,99 €, bis 10 kg 23,99 €. [Alle Preise](https://paketdienst-beispiel.de/preise)\n\n## Zerbrechliche Ware\n\nFür Glas und Keramik empfiehlt der Paketdienst einen doppelwandigen Karton.",
+    truncated: false,
+    contentAt: new Date().toISOString(),
+  });
+};
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 const shots = process.env.ASSISTANT_SCREENSHOT_DIR;
@@ -35,6 +53,7 @@ beforeAll(async () => {
           headers: { "content-type": "text/plain; charset=utf-8" },
         });
       if (url.pathname.endsWith("/context")) return Response.json(snapshot);
+      if (url.pathname.endsWith("/web-reader")) return webReader(request);
       if (url.pathname.endsWith("/sources")) return Response.json({ sources: snapshot.sources, total: snapshot.sources.length });
       return new Response(
         '<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root" style="height:100vh"></div><script type="module" src="/bundle.js"></script>',
@@ -62,7 +81,7 @@ const openPage = async (width = 1440, path = "/") => {
   await page.locator("#root > *").first().waitFor();
   return { page, errors };
 };
-const open = (page: Page, name: "report" | "table" | "sources") =>
+const open = (page: Page, name: "report" | "table" | "sources" | "web" | "ask") =>
   page.evaluate((key) => (window as unknown as { open: Record<string, () => void> }).open[key]!(), name);
 const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 const chatBox = (page: Page) =>
@@ -205,6 +224,38 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
     }
   }, 30_000);
 
+  test("a web page from the chat opens as a reading view: content time, no pictures, links stay in the tab; another address asks first", async () => {
+    const { page } = await openPage();
+    try {
+      await open(page, "web");
+      const reader = page.locator(".web-reader");
+      await reader.getByRole("heading", { name: "Versand nach Frankreich" }).waitFor();
+      expect(await reader.locator(".web-reader__mark").textContent()).toContain("Leseansicht");
+      expect(await reader.locator(".web-reader__stand").textContent()).toMatch(
+        /Stand von heute, \d\d:\d\d · ohne Anmeldung, ohne Skripte, ohne Bilder/,
+      );
+      expect(await reader.locator("img").count()).toBe(0);
+      // The address is shown, not typed.
+      expect(await reader.locator("input").count()).toBe(0);
+      await reader.getByRole("link", { name: "Alle Preise" }).click();
+      await reader.getByRole("heading", { name: "Preise", exact: true }).first().waitFor();
+      await reader.getByRole("button", { name: "Zurück" }).click();
+      await reader.getByRole("heading", { name: "Versand nach Frankreich" }).waitFor();
+
+      await open(page, "ask");
+      const ask = page.locator(".web-reader__ask");
+      await ask.getByText("Diese Seite holen?").waitFor();
+      expect(await ask.locator("code").textContent()).toBe("https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon");
+      expect(await ask.textContent()).toContain("Darin: wert = 2000 · ziel = lyon");
+      expect(reads.at(-1)).toEqual({ url: "https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon" });
+      await ask.getByRole("button", { name: "Seite holen" }).click();
+      await page.locator(".web-reader__stand").last().waitFor();
+      expect(reads.at(-1)).toEqual({ url: "https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon", confirmed: true });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test.skipIf(!shots)(
     "screenshots of the tabs, light, 1440 and 390",
     async () => {
@@ -235,6 +286,24 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
             await open(page, "sources");
             await page.locator(".k2b-panes__arrange").click();
             await page.getByRole("menuitemradio", { name: /Gestapelt|Stacked/ }).click();
+          },
+        ],
+        [
+          "webseite-leseansicht",
+          1440,
+          async (page: Page) => {
+            await open(page, "sources");
+            await open(page, "web");
+            await page.locator(".web-reader__stand").waitFor();
+          },
+        ],
+        [
+          "webseite-adresse-fragt",
+          1440,
+          async (page: Page) => {
+            await open(page, "sources");
+            await open(page, "ask");
+            await page.locator(".web-reader__ask").waitFor();
           },
         ],
         [
