@@ -80,6 +80,7 @@ const click = (href: string, attributes = "", options: MouseEventInit = {}) => {
 };
 let assign: ReturnType<typeof spyOn<Location, "assign">>;
 let replace: ReturnType<typeof spyOn<Location, "replace">>;
+let report: ReturnType<typeof spyOn<Console, "error">>;
 beforeAll(async () => {
   root = makeTempRoot(".ssr-nav-swap-");
   prefix = join(root, "_ssr");
@@ -160,7 +161,7 @@ beforeEach(async () => {
   assign = spyOn(window.location, "assign").mockImplementation(() => {});
   replace = spyOn(window.location, "replace").mockImplementation(() => {});
   spyOn(window, "scrollTo").mockImplementation(() => {});
-  spyOn(console, "error").mockImplementation(() => {});
+  report = spyOn(console, "error").mockImplementation(() => {});
   window.addEventListener("nav-lifetime", lifetime);
   await import(`${prefix}/${id}.js?initial`);
   // A cached entry still uses the shared registry for the next fixture.
@@ -336,16 +337,26 @@ test.each(failures)("%s falls back once with the mounted old column and history 
 test.each(["evaluation throw", "404"])("module %s keeps old islands alive until one document load", async (kind) => {
   install();
   const old = document.querySelector("main");
+  const atDocumentLoad: { column: Element | null; text: string | null | undefined; events: string[] }[] = [];
   assign.mockImplementation(() => {
-    expect(document.querySelector("main")).toBe(old);
-    expect(old!.querySelector("b")!.textContent).toBe("old");
-    expect(events).toEqual([]);
+    // Navigation catches assign() errors. Capture here and assert outside its
+    // catch, so an assertion cannot become a second navigation diagnostic.
+    atDocumentLoad.push({ column: document.querySelector("main"), text: old?.querySelector("b")?.textContent, events: [...events] });
   });
   spyOn(globalThis, "fetch").mockResolvedValue(response(html("new", wrapper("new", kind === "404" ? "missing" : brokenId))));
   await swapPage("/app/requested");
   expect(assign).toHaveBeenCalledTimes(1);
   expect(assign).toHaveBeenCalledWith("https://example.test/app/requested");
-  expect(console.error).toHaveBeenCalledTimes(1);
+  expect(atDocumentLoad).toEqual([{ column: old, text: "old", events: [] }]);
+  expect(document.querySelector("main")).toBe(old);
+  const message = "[@k2b/ssr/nav] Page swap failed; falling back to document navigation.";
+  // Check the full call list so a second error retains its message and cause.
+  expect(report.mock.calls).toEqual([
+    [
+      message,
+      expect.objectContaining({ message: expect.stringContaining(kind === "404" ? "Cannot find module" : "entry evaluation failed") }),
+    ],
+  ]);
 });
 
 test.each([
