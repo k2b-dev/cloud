@@ -4682,9 +4682,18 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
 
           // Esc leaves the large window, also after a click into the preview's mail: the draft stands in the box
           // again, with its text.
+          // The preview's mail stays in an opaque sandbox; a click into it hands the focus straight back to its pane,
+          // a text selection in the mail stays, and Esc still reaches the window.
           await panes.getByRole("tab", { name: "Preview" }).click();
-          await largeWindow(page).frameLocator(".mail-large-preview iframe").locator("body").click();
-          expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("IFRAME");
+          const mail = largeWindow(page).locator(".mail-large-preview iframe");
+          expect(await mail.getAttribute("sandbox")).toBe("");
+          await settled(page);
+          const text = (await mail.boundingBox())!;
+          // A double click selects a word of the mail, as a person does to copy it.
+          await page.mouse.dblclick(text.x + 30, text.y + 18);
+          await page.waitForFunction(() => document.activeElement?.classList.contains("mail-large-preview"));
+          const frame = page.frames().find((candidate) => candidate !== page.mainFrame() && candidate.parentFrame() === page.mainFrame());
+          expect((await frame!.evaluate(() => document.getSelection()?.toString() ?? "")).length).toBeGreaterThan(0);
           await page.keyboard.press("Escape");
           await largeWindow(page).waitFor({ state: "detached" });
           await page.locator("[data-mail-reply-box='mail'] .cm-content", { hasText: "Saturday at 11 works." }).waitFor();

@@ -1,5 +1,5 @@
 import { Button, Panes, type PanesItem, type PanesLayout, Placeholder, useLocale } from "@k2b/ui";
-import { type Accessor, createMemo, type JSX, Show } from "solid-js";
+import { type Accessor, createMemo, type JSX, onCleanup, onMount, Show } from "solid-js";
 import type { ComposePreview } from "../../contracts";
 import MailFormattingWarnings from "./MailFormattingWarnings";
 import { mailComposerMessages } from "./mail-composer-messages";
@@ -22,17 +22,22 @@ function MailLargePreview(props: {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
   let section!: HTMLElement;
-  // A click into the mail moves the keyboard into the frame, where Esc would no longer reach the window. The frame
-  // runs no script (no `allow-scripts`); same origin only lets the composer hear Esc there and pass it on, so Esc
-  // still makes the window smaller. A text selection in the preview stays.
-  const forwardEscape = (frame: HTMLIFrameElement) => {
-    frame.contentDocument?.addEventListener("keydown", (event) => {
-      if (event.key !== "Escape" || event.isComposing) return;
-      event.preventDefault();
-      section.focus({ preventScroll: true });
-      section.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
-    });
-  };
+  let frame: HTMLIFrameElement | undefined;
+  // A click into the mail moves the keyboard into the sandboxed frame, where no key, also not Esc, reaches the window.
+  // The frame stays opaque (`sandbox=""`, see mail-preview-sandbox.test.ts), so instead the focus comes straight back to
+  // this pane in the page; a text selection in the mail stays, and Esc keeps making the window smaller.
+  const takeBackFocus = () =>
+    setTimeout(() => {
+      if (frame && document.activeElement === frame) {
+        // The page takes the keyboard back from the frame first; then the pane holds the focus.
+        window.focus();
+        section.focus({ preventScroll: true });
+      }
+    }, 0);
+  onMount(() => {
+    window.addEventListener("blur", takeBackFocus);
+    onCleanup(() => window.removeEventListener("blur", takeBackFocus));
+  });
   return (
     <section ref={section} class="mail-large-preview" aria-label={t().preview} tabIndex={-1}>
       <p class="mail-large-preview-status" data-stale={props.error() ? "" : undefined} role="status">
@@ -71,8 +76,8 @@ function MailLargePreview(props: {
             <iframe
               tabIndex={-1}
               class="mail-large-preview-mail"
-              sandbox="allow-same-origin"
-              onLoad={(event) => forwardEscape(event.currentTarget)}
+              ref={frame}
+              sandbox=""
               srcdoc={`${PREVIEW_POLICY}<style>body{margin:0}</style>${value().html}`}
               title={t().emailPreview}
             />
