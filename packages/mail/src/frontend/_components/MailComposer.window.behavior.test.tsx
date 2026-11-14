@@ -466,4 +466,34 @@ describe("MailComposer in a floating window", () => {
     expect(panes.querySelectorAll(".k2b-panes__group")).toHaveLength(1);
     expect(dom.document.cookie).not.toContain("settings-app-mail-composer-panes");
   });
+
+  // Lesson 2026-11-14: the large preview of a plain-text message stood still while the person typed.
+  test("written large, the preview of a plain-text message follows the typing", async () => {
+    const { EditorView } = await import("@codemirror/view");
+    const previews: string[] = [];
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        if (new URL(request.url).pathname.endsWith("/compose-preview")) {
+          const body = (await request.clone().json()) as { draft: { body: string } };
+          previews.push(body.draft.body);
+          return Response.json({ html: `<pre>${body.draft.body}</pre>`, text: body.draft.body, formattingWarnings: [] });
+        }
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { createDefaultMailComposerPanesLayout } = await import("./mail-composer-panes");
+    await mount({ fullscreen: () => true, panes: createDefaultMailComposerPanesLayout(), draft: { ...initialDraft, format: "plain" } });
+    // The stored arrangement stands as it is: the preview beside the draft, not a tab behind it.
+    expect(dom.root.querySelectorAll(".mail-large-panes .k2b-panes__group")).toHaveLength(2);
+    await waitFor(() => previews.length > 0);
+    expect(previews.at(-1)).toBe("Good morning");
+
+    const view = EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
+    view.dispatch({ changes: { from: view.state.doc.length, insert: ", Mara" }, userEvent: "input.type" });
+    await waitFor(() => previews.at(-1) === "Good morning, Mara");
+    expect(dom.root.querySelector(".mail-large-preview-status")?.textContent).toContain("follows your typing");
+  });
 });
