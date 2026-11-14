@@ -997,7 +997,7 @@ for (const view of [
   { name: "desktop", width: 1280, height: 800, touch: false },
   { name: "phone", width: 390, height: 844, touch: true },
 ] as const)
-  test(`a status that first shows quietly after a reload keeps its height as the answer, so the turn's end moves nothing (${view.name})`, async () => {
+  test(`a short status that first shows quietly after a reload keeps its height as the answer, so the turn's end moves nothing (${view.name})`, async () => {
     const context = await browser.newContext({
       viewport: { width: view.width, height: view.height },
       isMobile: view.touch,
@@ -1018,12 +1018,8 @@ for (const view of [
       };
       const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/chart.json" } };
       const send = { id: "tool-send", kind: "tool" as const, callId: "send", name: "mail__action__send", args: {}, presentation };
-      const text = [
-        "## Monthly totals",
-        "The chart API returns the totals per month, so the dashboard needs no second request for the summary row.",
-        "- January and February are complete.\n- March still misses the last week.",
-        "I send the summary to Jana Berger now, so she has it before the planning meeting.",
-      ].join("\n\n");
+      // Within three lines as the answer; a longer one unfolds when it becomes the answer (tested below).
+      const text = "The chart API returns the totals per month. I send the summary to Jana Berger now.";
       const sent = "Email to Jana Berger sent";
       const place = ".ai-turn__text";
       const receipt = ".ai-turn__action .k2b-chat-outcome";
@@ -1557,3 +1553,303 @@ for (const view of [
         await context.close();
       }
     }, 60_000);
+
+/** What a model writes between two steps: paragraphs, a list and a code block, far longer than three lines. */
+const longStatus = [
+  "The check passed. Before I write the test, I compare the delivery notes with the orders, because the import marks a note as done only when every line matched an order.",
+  "- Notes without an order stay open.\n- Notes with a different amount get a remark.\n- Duplicates are skipped.",
+  "```\nnotes.filter((note) => note.lines.every(matches))\n```",
+  "Then I run the examples again and submit the new version.",
+].join("\n\n");
+const tool = (index: number, status: "running" | "completed") => ({
+  id: `tool-${index}`,
+  kind: "tool" as const,
+  callId: `call-${index}`,
+  name: "read_file",
+  args: { path: `/notes-${index}.json` },
+  status,
+  ...(status === "completed" ? { result: "{}" } : {}),
+});
+/** The clamped text's markdown block, its chevron, and the line height it clamps by, in viewport pixels. */
+const clampState = (page: Page, scope: string) =>
+  page.$$eval(scope, (nodes) => {
+    // Earlier answers have their own text place; the newest turn's is last.
+    const node = nodes.at(-1)!;
+    const block = node.querySelector<HTMLElement>(".ai-turn-clamp > .assistant-markdown-block")!;
+    const toggle = node.querySelector<HTMLElement>(".ai-turn-clamp__toggle");
+    const box = (element: Element | null) => {
+      const rect = element?.getBoundingClientRect();
+      return rect ? [rect.left, rect.top, rect.width, rect.height].map(Math.round) : null;
+    };
+    return {
+      height: Math.round(block.getBoundingClientRect().height),
+      full: block.scrollHeight,
+      lineHeight: Number.parseFloat(getComputedStyle(block).lineHeight),
+      toggle: box(toggle),
+      text: box(node),
+      expanded: toggle?.getAttribute("aria-expanded") ?? null,
+      controls: toggle?.getAttribute("aria-controls") === block.id && block.id !== "",
+      label: toggle?.getAttribute("aria-label") ?? null,
+    };
+  });
+const fillConversation = async (page: Page, from: number) => {
+  let seq = from;
+  for (let index = 0; index < 4; index++) {
+    const user = storedMessage(100 + index * 2, `old-${index}`, { role: "user", content: [{ type: "text", text: `Question ${index}` }] });
+    const answer = storedMessage(101 + index * 2, `old-${index}`, {
+      role: "assistant",
+      content: [{ type: "text", text: "A longer earlier answer that takes a few lines in the conversation. ".repeat(6) }],
+    });
+    await emit(page, { ...base, seq: seq++, type: "message_saved", message: user });
+    await emit(page, { ...base, seq: seq++, type: "message_saved", message: answer });
+  }
+  const request = storedMessage(200, "turn", { role: "user", content: [{ type: "text", text: "Import the delivery notes" }] });
+  await emit(page, { ...base, seq: seq++, type: "message_saved", message: request });
+  return seq;
+};
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  for (const theme of ["light", "dark"] as const)
+    test(`a long text between steps shows three lines, and its chevron opens and closes it in place (${view.name}, ${theme})`, async () => {
+      mkdirSync("/tmp/chat-steps-shots", { recursive: true });
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=${theme}`);
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+        let seq = await fillConversation(page, 2);
+        await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(1, "completed") });
+        await emit(page, { ...base, seq: seq++, type: "block_delta", blockId: "text-1", blockKind: "text", delta: longStatus });
+        // Trailing, it may still be the answer: whole, without a chevron.
+        const place = ".ai-turn__text";
+        let state = await clampState(page, place);
+        expect(state.toggle).toBeNull();
+        expect(state.height).toBe(state.full);
+        expect(state.height).toBeGreaterThan(5 * state.lineHeight);
+
+        // The next step starts: the text turns quiet, shows three lines, and the chevron says what it does.
+        await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(2, "running") });
+        await settled(page, ".k2b-chat-timeline__content");
+        state = await clampState(page, place);
+        expect(state.height).toBeCloseTo(3 * state.lineHeight, 0);
+        expect(state.full).toBeGreaterThan(state.height);
+        expect([state.expanded, state.controls, state.label]).toEqual(["false", true, "Ganzen Text zeigen"]);
+        if (theme === "light") await page.screenshot({ path: `/tmp/chat-steps-shots/after-status-clamped-${view.width}.png` });
+        const closed = { state, work: await viewportBox(page, ".ai-turn-work") };
+
+        // Opening shows the whole text below its first lines; nothing above it and the chevron move.
+        await page.locator(`${place} .ai-turn-clamp__toggle`).last().click();
+        await settled(page, ".k2b-chat-timeline__content");
+        state = await clampState(page, place);
+        expect([state.expanded, state.label]).toEqual(["true", "Weniger zeigen"]);
+        expect(state.height).toBe(state.full);
+        expect(state.toggle).toEqual(closed.state.toggle);
+        expect(state.text?.slice(0, 3)).toEqual(closed.state.text?.slice(0, 3));
+        expect(await viewportBox(page, ".ai-turn-work")).toEqual(closed.work);
+        if (theme === "light") await page.screenshot({ path: `/tmp/chat-steps-shots/after-status-open-${view.width}.png` });
+
+        // The keyboard closes it again from the same place.
+        await page.locator(`${place} .ai-turn-clamp__toggle`).last().focus();
+        await page.keyboard.press("Enter");
+        await settled(page, ".k2b-chat-timeline__content");
+        expect(await clampState(page, place)).toEqual(closed.state);
+        expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+      } finally {
+        await context.close();
+      }
+    }, 30_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  test(`a short status that replaces a long one leaves no empty space, and the conversation stays at its end (${view.name})`, async () => {
+    const context = await browser.newContext({
+      viewport: { width: view.width, height: view.height },
+      isMobile: view.touch,
+      hasTouch: view.touch,
+      reducedMotion: "reduce",
+    });
+    try {
+      const page = await context.newPage();
+      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      let seq = await fillConversation(page, 2);
+      await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(1, "completed") });
+      await emit(page, { ...base, seq: seq++, type: "block_delta", blockId: "text-1", blockKind: "text", delta: longStatus });
+      await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(2, "completed") });
+      await emit(page, {
+        ...base,
+        seq: seq++,
+        type: "block_delta",
+        blockId: "text-2",
+        blockKind: "text",
+        delta: "Der Check ist erfolgreich. Jetzt der Test.",
+      });
+      await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(3, "running") });
+      await settled(page, ".k2b-chat-timeline__content");
+      await settled(page, ".k2b-chat-timeline__content");
+      if (view.width === 1280) await page.screenshot({ path: "/tmp/chat-steps-shots/after-replaced-1280.png" });
+      const space = await page.evaluate(() => {
+        const place = Array.from(document.querySelectorAll<HTMLElement>(".ai-turn__text")).at(-1)!;
+        const block = place.querySelector<HTMLElement>(".assistant-markdown-block")!;
+        const viewport = document.querySelector<HTMLElement>(".k2b-chat-timeline__viewport")!;
+        return {
+          below: place.getBoundingClientRect().bottom - block.getBoundingClientRect().bottom,
+          lineHeight: Number.parseFloat(getComputedStyle(block).lineHeight),
+          fromEnd: viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight,
+          textBottom: block.getBoundingClientRect().bottom,
+          viewportBottom: viewport.getBoundingClientRect().bottom,
+        };
+      });
+      // At most the two lines a three-line status would take stay reserved, not the long text's height.
+      expect(space.below).toBeLessThanOrEqual(2 * space.lineHeight + 1);
+      // The reader stays at the end and sees the new status near the bottom, not an empty view.
+      expect(space.fromEnd).toBeLessThanOrEqual(1);
+      expect(space.viewportBottom - space.textBottom).toBeLessThan(8 * space.lineHeight);
+      expect(await page.locator(".ai-turn__text").last().innerText()).toBe("Der Check ist erfolgreich. Jetzt der Test.");
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+test("the final answer shows whole, and a long quiet text that becomes it unfolds below its first lines", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+    await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+    const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Import the delivery notes" }] });
+    await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
+    await emit(page, { ...base, seq: 3, type: "block_set", block: tool(1, "completed") });
+    await emit(page, { ...base, seq: 4, type: "block_delta", blockId: "text-1", blockKind: "text", delta: longStatus });
+    await emit(page, { ...base, seq: 5, type: "block_set", block: tool(2, "running") });
+    await settled(page, ".k2b-chat-timeline__content");
+    const before = await clampState(page, ".ai-turn__text");
+    expect(before.toggle).not.toBeNull();
+    const work = await viewportBox(page, ".ai-turn-work");
+
+    // The turn ends without another text: it is the final message, whole and without a chevron, below the same top.
+    await emit(page, {
+      ...base,
+      seq: 6,
+      type: "turn_finished",
+      status: "completed",
+      error: null,
+      messages: [
+        request,
+        storedMessage(11, "turn", {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "call-1", name: "read_file", args: tool(1, "completed").args }],
+        }),
+        storedMessage(12, "turn", { role: "tool_result", callId: "call-1", name: "read_file", result: "{}", isError: false }),
+        storedMessage(13, "turn", {
+          role: "assistant",
+          content: [
+            { type: "text", text: longStatus },
+            { type: "tool_call", id: "call-2", name: "read_file", args: tool(2, "completed").args },
+          ],
+        }),
+        storedMessage(
+          14,
+          "turn",
+          { role: "tool_result", callId: "call-2", name: "read_file", result: "{}", isError: false },
+          { loopDoneReason: "stop", createdAt: "2026-10-07T10:00:00.000Z" },
+        ),
+      ],
+    });
+    await settled(page, ".k2b-chat-timeline__content");
+    const after = await clampState(page, ".ai-turn__text");
+    expect(after.toggle).toBeNull();
+    expect(after.height).toBe(after.full);
+    expect(after.height).toBeGreaterThan(5 * after.lineHeight);
+    expect(after.text?.[1]).toBe(before.text?.[1]);
+    expect(await viewportBox(page, ".ai-turn-work")).toEqual(work);
+    expect(await page.locator(".ai-turn__text").evaluate((node: HTMLElement) => node.style.minHeight)).toBe("");
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+test("each text in the expanded work shows three lines with its own chevron, and the work line stays put", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+    await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+    const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Import the delivery notes" }] });
+    await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
+    await emit(page, { ...base, seq: 3, type: "block_set", block: tool(1, "completed") });
+    await emit(page, { ...base, seq: 4, type: "block_delta", blockId: "text-1", blockKind: "text", delta: longStatus });
+    await emit(page, { ...base, seq: 5, type: "block_set", block: tool(2, "completed") });
+    await emit(page, { ...base, seq: 6, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Both files are read." });
+    await emit(page, { ...base, seq: 7, type: "block_set", block: tool(3, "running") });
+    await page.locator(".ai-turn-work > summary").click();
+    const text = page.locator(".ai-turn-steps__text").first();
+    await text.waitFor();
+    await settled(page, ".ai-turn-steps");
+    const closed = await clampState(page, ".ai-turn-steps__text");
+    expect(closed.height).toBeCloseTo(3 * closed.lineHeight, 0);
+    expect([closed.expanded, closed.controls]).toEqual(["false", true]);
+    const summary = await viewportBox(page, ".ai-turn-work > summary");
+    await page.screenshot({ path: "/tmp/chat-steps-shots/after-work-open-1280.png" });
+
+    await text.locator(".ai-turn-clamp__toggle").click();
+    await settled(page, ".k2b-chat-timeline__content");
+    const open = await clampState(page, ".ai-turn-steps__text");
+    expect(open.height).toBe(open.full);
+    expect(open.toggle).toEqual(closed.toggle);
+    expect(await viewportBox(page, ".ai-turn-work > summary")).toEqual(summary);
+    // The quiet status that fits in three lines has no chevron.
+    expect(await page.locator(".ai-turn__text .ai-turn-clamp__toggle").count()).toBe(0);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+test("a link in the visible lines keeps a clamped text closed, and one in the hidden part opens it and stays in view", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 700 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+    await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+    let seq = await fillConversation(page, 2);
+    const text = `See [the import guide](https://example.com/guide) first.\n\n${longStatus}\n\nDetails are in [the order list](https://example.com/orders).`;
+    await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(1, "completed") });
+    await emit(page, { ...base, seq: seq++, type: "block_delta", blockId: "text-1", blockKind: "text", delta: text });
+    await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(2, "running") });
+    await settled(page, ".k2b-chat-timeline__content");
+    const place = page.locator(".ai-turn__text").last();
+    const toggle = place.locator(".ai-turn-clamp__toggle");
+
+    await place.getByRole("link", { name: "the import guide" }).focus();
+    await settled(page, ".k2b-chat-timeline__content");
+    expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+
+    const hidden = place.getByRole("link", { name: "the order list" });
+    await hidden.focus();
+    await page.waitForFunction(() => {
+      const link = Array.from(document.querySelectorAll("a")).find((node) => node.textContent === "the order list")!;
+      const viewport = document.querySelector(".k2b-chat-timeline__viewport")!.getBoundingClientRect();
+      const box = link.getBoundingClientRect();
+      return box.top >= viewport.top && box.bottom <= viewport.bottom;
+    });
+    expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("the order list");
+  } finally {
+    await context.close();
+  }
+}, 30_000);

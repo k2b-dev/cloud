@@ -2,7 +2,7 @@ import { createEffect, onCleanup, onMount } from "solid-js";
 import { rootResourceLinks } from "./answer-links";
 import { useAiChatActions } from "./message-actions";
 
-export function AssistantMarkdownBlock(props: { html: string }) {
+export function AssistantMarkdownBlock(props: { html: string; id?: string; ref?: (element: HTMLDivElement) => void }) {
   const actions = useAiChatActions();
   let element!: HTMLDivElement;
   const originals = new WeakMap<HTMLAnchorElement, { href: string; target: string | null }>();
@@ -42,5 +42,15 @@ export function AssistantMarkdownBlock(props: { html: string }) {
     element.addEventListener("click", handleClick);
     onCleanup(() => element.removeEventListener("click", handleClick));
   });
-  return <div ref={element} class="assistant-markdown-block" innerHTML={rootResourceLinks(props.html)} />;
+  return (
+    <div
+      ref={(node) => {
+        element = node;
+        props.ref?.(node);
+      }}
+      id={props.id}
+      class="assistant-markdown-block"
+      innerHTML={rootResourceLinks(props.html)}
+    />
+  );
 }
