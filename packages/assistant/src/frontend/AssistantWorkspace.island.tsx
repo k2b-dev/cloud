@@ -156,7 +156,7 @@ import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
-import { waitingQuestionsView } from "./waiting-questions";
+import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
 
 type Status = AiPeopleModels & {
   ok: boolean;
@@ -1110,6 +1110,8 @@ export default function AssistantWorkspace(props: Props) {
   };
   // "Waiting for you" above the composer: the server's read of every open question, corrected by what this chat shows.
   const waitingConversationId = () => (projectView() || approvalsOpen() ? null : chat.activeConversationId());
+  // What stopped in the open chat and waits for the person (routines, failed app runs); set once the chat's details exist.
+  const [waitingAttention, setWaitingAttention] = createSignal<() => WaitingAttention[]>(() => []);
   const waiting = createMemo(() => {
     const conversationId = waitingConversationId();
     const loaded = conversationId !== null && chat.conversation()?.id === conversationId && !chat.loadingConversation();
@@ -1117,6 +1119,7 @@ export default function AssistantWorkspace(props: Props) {
       questions: openQuestions(),
       conversationId,
       local: loaded ? (chat.activeTurn()?.blocks ?? []) : null,
+      attention: loaded ? waitingAttention()() : [],
     });
   });
   const waitingFocus = createWaitingQuestionFocus({
@@ -1528,6 +1531,34 @@ export default function AssistantWorkspace(props: Props) {
       onOpenSecrets: openChatSecrets,
       onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
     });
+  // "Needs attention" in this chat becomes entries of "Waiting for you", with the same targets as its details had.
+  setWaitingAttention(() => () => {
+    const snapshot = contextState.snapshot();
+    if (!snapshot || snapshot.chatId !== chat.activeConversationId()) return [];
+    const actions = sidebarActions();
+    return [
+      ...snapshot.tasks
+        .filter((task) => task.state === "needs_attention")
+        .map((task) => ({
+          key: `task:${task.id}`,
+          kind: "routine" as const,
+          short: sidebarCopy().taskNeedsAttention({ title: assistantTaskTitle(task) }),
+          open: () => actions.onOpenTask?.(task),
+        })),
+      ...snapshot.results.flatMap((result) =>
+        result.app?.lastRun === "error"
+          ? [
+              {
+                key: `app:${result.key}`,
+                kind: "app_run" as const,
+                short: sidebarCopy().appRunFailed({ title: result.title }),
+                open: () => actions.onOpenApp(result.app!.id, result.title),
+              },
+            ]
+          : [],
+      ),
+    ];
+  });
   const contextHost = createChatSidebarHost({
     initialClosed: props.initialContextClosed === true,
     onSheet: () =>
@@ -1919,6 +1950,18 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
 
+  /** "Waiting for you": over the chat's free end above the field, in flow on the start screen and in a project. */
+  const WaitingRow = () => (
+    <Show when={waiting().total > 0}>
+      <AssistantWaitingStrip
+        view={waiting()}
+        conversationId={waitingConversationId()}
+        quiet={waitingFocus.quiet()}
+        onJump={(question) => void jumpToQuestion(question)}
+        onShowMore={openApprovals}
+      />
+    </Show>
+  );
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
     const projectComposer = () => Boolean(composerProps.projectId);
@@ -2214,16 +2257,6 @@ export default function AssistantWorkspace(props: Props) {
                           cancelled: "Cancelled",
                         }
                   }
-                />
-              </Show>
-              {/* Right above the field, under the thumb on phones. */}
-              <Show when={waiting().total > 0}>
-                <AssistantWaitingStrip
-                  view={waiting()}
-                  conversationId={waitingConversationId()}
-                  quiet={waitingFocus.quiet()}
-                  onJump={(question) => void jumpToQuestion(question)}
-                  onShowMore={openApprovals}
                 />
               </Show>
             </>
@@ -2840,7 +2873,12 @@ export default function AssistantWorkspace(props: Props) {
                               }
                             >
                               <AssistantEmptyChat
-                                composer={<AssistantComposer />}
+                                composer={
+                                  <div class="flex flex-col gap-2">
+                                    <WaitingRow />
+                                    <AssistantComposer />
+                                  </div>
+                                }
                                 notices={<ComposerNotices />}
                                 modelNote={modelNote()}
                                 projects={projects()}
@@ -2858,7 +2896,10 @@ export default function AssistantWorkspace(props: Props) {
 
                           <Show when={!emptyChat()}>
                             <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
-                              <div class="mx-auto flex max-w-3xl flex-col gap-2">
+                              <div class="assistant-chat-composer__column mx-auto flex max-w-3xl flex-col gap-2">
+                                {/* Right above everything over the field, under the thumb on phones. It lies over the
+                                    timeline's free end, so it comes and goes without moving the field or the chat. */}
+                                <WaitingRow />
                                 <ComposerNotices />
                                 {modelNote()}
                                 <AssistantComposer />
@@ -2902,6 +2943,7 @@ export default function AssistantWorkspace(props: Props) {
                           initialContext={view.context}
                           composer={
                             <div class="flex flex-col gap-2">
+                              <WaitingRow />
                               {modelNote()}
                               <AssistantComposer projectId={project().id} projectName={project().name} />
                               <Show when={props.embedded}>

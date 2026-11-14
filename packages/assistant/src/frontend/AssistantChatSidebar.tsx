@@ -763,45 +763,13 @@ export function AssistantChatSidebarContent(props: {
           );
         };
 
-        // Needs attention: things that stopped and wait for the person, at the very top.
-        const attention = () => [
-          ...snapshot()
-            .tasks.filter((task) => task.state === "needs_attention")
-            .map((task) => ({
-              key: `task:${task.id}`,
-              label: copy().taskNeedsAttention({ title: assistantTaskTitle(task) }),
-              action: props.actions.onOpenTask ? () => props.actions.onOpenTask!(task) : undefined,
-            })),
-          ...snapshot()
-            .results.filter((result) => result.app?.lastRun === "error")
-            .map((result) => ({
-              key: `app:${result.key}`,
-              label: copy().appRunFailed({ title: result.title }),
-              action: () => props.actions.onOpenApp(result.app!.id, result.title),
-            })),
-        ];
-
         return (
           <Show
             when={!props.search.active()}
             fallback={<SidebarSearchResults snapshot={snapshot()} search={props.search} actions={props.actions} files={files()} />}
           >
-            <Show when={attention().length}>
-              <Section title={copy().attention}>
-                <For each={attention()}>
-                  {(item) => (
-                    <DetailPanel.Action
-                      class="assistant-sidebar-row"
-                      leading={<i class="ti ti-alert-circle" aria-hidden="true" />}
-                      title={item.label}
-                      disabled={!item.action}
-                      onClick={() => item.action?.()}
-                    />
-                  )}
-                </For>
-              </Section>
-            </Show>
-
+            {/* What stopped and waits for the person (routines, failed app runs) is an entry of "Waiting for you"
+                above the field, with the same targets. */}
             <Section
               title={copy().results}
               class="assistant-sidebar-results"

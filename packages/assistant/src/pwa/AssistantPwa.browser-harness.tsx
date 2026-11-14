@@ -80,6 +80,7 @@ const retroUser = "Die Retro am Freitag fällt aus, nimm sie raus.";
 const retroAssistant = "Die Retro steht einmal im Kalender, nicht als Serie.";
 const question: AiOpenQuestion = {
   id: "req-del",
+  kind: "approval",
   conversationId: "retro",
   conversationTitle: "Retro am Freitag absagen",
   anchor: retroQuestion.id,
