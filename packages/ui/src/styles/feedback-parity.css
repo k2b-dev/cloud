@@ -891,6 +891,150 @@
   }
 }
 
+/* ------------------------------------------------------------ hover card */
+
+/* HoverCard: a larger hint with rich content beside its control, on layer 3
+   like HoverPreview: the elevated surface, a light edge, the float shadow
+   outside, and no lines inside. It opens without moving anything in the page.
+   On a phone a tap opens it as a bottom sheet on layer 2. */
+.k2b-ui .k2b-hover-card-anchor {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* The trigger looks like its content; only the focus ring shows it is a control. */
+.k2b-ui .k2b-hover-card-trigger {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: inherit;
+  background: none;
+  font: inherit;
+  text-align: inherit;
+  cursor: default;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-hover-card-trigger {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-hover-card-trigger::after {
+    content: "";
+    position: absolute;
+    inset-block: min(0px, calc((100% - 2.75rem) / 2));
+    inset-inline: min(0px, calc((100% - 2.75rem) / 2));
+  }
+}
+
+.k2b-ui [popover].k2b-hover-card {
+  position: fixed;
+  inset: auto;
+  z-index: 100;
+  width: min(var(--k2b-hover-card-width, 20rem), calc(100vw - 1rem));
+  margin: 0;
+  padding: 0.75rem 0.875rem;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.25rem;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  opacity: 0;
+  transition:
+    opacity 120ms,
+    overlay 120ms allow-discrete,
+    display 120ms allow-discrete;
+}
+
+.k2b-ui [popover].k2b-hover-card:popover-open {
+  display: grid;
+  gap: 0.625rem;
+  opacity: 1;
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+/* The gap to the control belongs to the card, so the pointer crosses it without leaving both. */
+.k2b-ui [popover].k2b-hover-card:not([data-sheet])::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 100%;
+  height: 0.5rem;
+}
+
+.k2b-ui [popover].k2b-hover-card[data-side="above"]:not([data-sheet])::before {
+  top: 100%;
+  bottom: auto;
+}
+
+.k2b-ui [popover].k2b-hover-card::backdrop {
+  background: transparent;
+}
+
+.k2b-ui [popover].k2b-hover-card[data-sheet] {
+  inset: auto 0 0 0;
+  width: 100%;
+  max-height: calc(100dvh - 3rem);
+  overflow: auto;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+  border-width: 1px 0 0;
+  border-radius: var(--k2b-radius-surface) var(--k2b-radius-surface) 0 0;
+  box-shadow: var(--k2b-shadow-sheet);
+}
+
+.k2b-ui [popover].k2b-hover-card[data-sheet]::backdrop {
+  background: var(--k2b-feedback-backdrop);
+}
+
+.k2b-ui .k2b-hover-card__head {
+  display: grid;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-hover-card__title {
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-hover-card__detail,
+.k2b-ui .k2b-hover-card__hint {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-hover-card__body {
+  min-width: 0;
+}
+
+.k2b-ui .k2b-hover-card__hint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui [popover].k2b-hover-card {
+    transition: none;
+  }
+}
+
 /* ----------------------------------------------------------------- toast */
 
 /* The rail sits above modal dialogs. On narrow or short viewports, such as a
