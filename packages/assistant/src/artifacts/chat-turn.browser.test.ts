@@ -170,7 +170,8 @@ for (const viewport of [
 
       // The turn ends: the same elements stay in place; only the work line text and the message actions change.
       await step(page, "finish");
-      await page.getByRole("button", { name: "Kopieren", exact: true }).waitFor();
+      // The answer's own actions appear; the person's message has a Copy of its own.
+      await page.locator(".k2b-chat-message[data-role=assistant]").getByRole("button", { name: "Kopieren", exact: true }).waitFor();
       await announced(page, "Antwort fertig");
       const after = await measure(page);
       expect(after).toEqual(before);

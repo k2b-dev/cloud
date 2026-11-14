@@ -10,7 +10,10 @@ import { AiChatActionsProvider, createAiChatTimeline } from "./presentation";
  * `window.retried` the retried messages, `window.feedback` the ratings.
  */
 const params = new URLSearchParams(location.search);
-const scene = (params.get("scene") ?? "antwort") as GalleryScene;
+const isScene = (name: string): name is GalleryScene => Object.hasOwn(galleryScenes, name);
+const requested = params.get("scene") ?? "antwort";
+// Only a known scene; anything else shows the answer.
+const scene: GalleryScene = isScene(requested) ? requested : "antwort";
 const locale = params.get("lang") ?? "de";
 const opened: unknown[] = [];
 const retried: unknown[] = [];
