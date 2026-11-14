@@ -3787,8 +3787,7 @@ html {
     .k2b-ui .k2b-app-workspace__main-pane:not([data-scroll="false"], [data-workspace-level], .k2b-mobile-shell__main *),
     .k2b-ui .k2b-detail-panel__body,
     .k2b-ui .k2b-chat-timeline__viewport,
-    .k2b-ui .k2b-virtual-feed__viewport,
-    .k2b-ui .k2b-pdf-viewer__pages {
+    .k2b-ui .k2b-virtual-feed__viewport {
       overflow-y: scroll;
     }
 
@@ -4938,6 +4937,23 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   padding: 0.5rem max(1rem, env(safe-area-inset-right)) calc(1rem + env(safe-area-inset-bottom) + var(--k2b-mobile-shell-toast-inset, 0px))
     max(1rem, env(safe-area-inset-left));
   scrollbar-gutter: auto;
+}
+
+/* With a mouse, the shared 0.5rem track is always there and takes half of the
+   level's end padding, so the text keeps its edge when the level grows. */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-body:not([data-scroll="false"]) {
+      overflow-y: scroll;
+      padding-inline-end: calc(max(1rem, env(safe-area-inset-right)) - 0.5rem);
+    }
+
+    @media (min-width: 48rem) {
+      .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-body:not([data-scroll="false"]) {
+        padding-inline-end: calc(max(1.25rem, env(safe-area-inset-right)) - 0.5rem);
+      }
+    }
+  }
 }
 
 /* A footer pads the bottom safe area itself; beside a sidebar the footer is gone. */

@@ -12634,8 +12634,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    ::-webkit-scrollbar (Firefox) receive those two properties. Touch screens
    keep their native overlay scrollbars and forced colors the system ones.
    The rules match every element directly, because a direct match beats an
-   inherited value, and sit in the base layer with no specificity, so a hidden
-   scrollbar (`scrollbar-width: none`, a utility) always wins. Scrollers that
+   inherited value, and sit in the components layer with no specificity, so a
+   hidden scrollbar (`scrollbar-width: none`, a utility) always wins. Scrollers that
    can start or stop overflowing reserve this space with `scrollbar-gutter`, or
    take it from an end inset they already have; see layout-parity.css.
    scripts/checks/scrollbars.ts keeps other stylesheets from setting their own. */
@@ -12654,7 +12654,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-scrollbar-thumb-hover: color-mix(in srgb, var(--k2b-neutral-400, #a1a1aa) 70%, transparent);
 }
 
-@layer base {
+@layer components {
   @media (pointer: fine) and (forced-colors: none) {
     :where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)::-webkit-scrollbar {
       width: 0.5rem;

@@ -42,8 +42,18 @@ const centralRanges = (original: string): [number, number][] => {
   return ranges;
 };
 
-const hides = (property: string, value: string, selector: string): boolean => {
-  if (selector.includes("::-webkit-scrollbar"))
+/** The selectors of the block that opens at `open` and of every block around it, innermost first. */
+const selectorChain = (source: string, open: number): string[] => {
+  const chain: string[] = [];
+  for (let brace = open; brace !== -1; brace = enclosingBrace(source, brace)) {
+    const start = Math.max(source.lastIndexOf("}", brace), source.lastIndexOf(";", brace), source.lastIndexOf("{", brace - 1)) + 1;
+    chain.push(source.slice(start, brace).trim());
+  }
+  return chain;
+};
+
+const hides = (property: string, value: string, scrollbarRule: boolean): boolean => {
+  if (scrollbarRule)
     return (property === "display" && value === "none") || (/^(?:width|height)$/.test(property) && /^0(?:px|rem)?$/.test(value));
   return property === "scrollbar-width" && value === "none";
 };
@@ -73,10 +83,11 @@ export const checkCss = (original: string, isCentralFile: boolean, report: (inde
     const open = enclosingBrace(source, at);
     const selectorStart = Math.max(source.lastIndexOf("}", open), source.lastIndexOf(";", open), source.lastIndexOf("{", open - 1)) + 1;
     const selector = source.slice(selectorStart, open).trim().replace(/\s+/g, " ");
-    const scrollbarRule = selector.includes("::-webkit-scrollbar");
+    // A nested rule (`&:hover`, `@media`) styles the scrollbar part of any rule around it.
+    const scrollbarRule = selectorChain(source, open).some((part) => !part.startsWith("@") && part.includes("::-webkit-scrollbar"));
     if (!scrollbarRule && property !== "scrollbar-width" && property !== "scrollbar-color") continue;
     if (scrollbarRule && property.startsWith("--")) continue;
-    if (hides(property, value, selector)) continue;
+    if (hides(property, value, scrollbarRule)) continue;
     if (central.some(([start, end]) => at > start && at < end)) continue;
     const firstSelectorChar = selectorStart + (source.slice(selectorStart).length - source.slice(selectorStart).trimStart().length);
     if (allowedNear(original, at, firstSelectorChar)) continue;

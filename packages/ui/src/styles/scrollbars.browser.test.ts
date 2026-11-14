@@ -86,7 +86,7 @@ const script = await build.outputs[0]!.text();
 const pdf = (pages: number) =>
   `<div class="k2b-pdf-viewer" style="height: 100%"><div class="k2b-pdf-viewer__pages" id="pdf"><div class="k2b-pdf-viewer__stack">${Array.from(
     { length: pages },
-    (_, index) => `<div class="k2b-pdf-viewer__page probe" style="width: 14rem; height: 18rem">Page ${index}</div>`,
+    (_, index) => `<div class="k2b-pdf-viewer__page probe" style="width: 14rem; height: 8rem">Page ${index}</div>`,
   ).join("")}</div></div></div>`;
 
 const html = `<!doctype html><html lang="en"><head><style>${css}</style><style>
@@ -186,7 +186,6 @@ afterAll(async () => {
 
 const open = async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
-  page.on("pageerror", (error) => console.error("PAGEERROR", error.message));
   page.on("console", (m) => m.type() === "error" && console.error("CONSOLE", m.text()));
   await page.setContent(html);
   await page.addScriptTag({ content: script });
@@ -217,6 +216,7 @@ describe(`one shared scrollbar (${browserName})`, () => {
       await settled(page);
       const after = await readAll(page);
       for (const { name } of surfaces) {
+        expect([name, before[name]!.overflows]).toEqual([name, false]);
         expect([name, after[name]!.overflows]).toEqual([name, true]);
         expect([name, after[name]!.probe]).toEqual([name, before[name]!.probe]);
         expect([name, after[name]!.scroller]).toEqual([name, before[name]!.scroller]);

@@ -25,6 +25,10 @@ test("allows only hidden scrollbars and the shared rule; every own width, colour
         ".other::-webkit-scrollbar-thumb {\n  background: transparent;\n}",
         ".mirror {\n  /* scrollbars: allow the mirror layer keeps the gutter without a thumb */\n  scrollbar-color: transparent transparent;\n}",
         ".fixed { scrollbar-width: auto; }",
+        ".nested::-webkit-scrollbar { @media (hover: hover) { width: 12px; } }",
+        ".nested::-webkit-scrollbar-thumb { &:hover { background: red; } }",
+        ".nested::-webkit-scrollbar { @media (hover: hover) { display: none; } }",
+        "@supports selector(::-webkit-scrollbar) { .track { overflow-y: scroll; } }",
       ].join("\n"),
       "packages/demo/src/page.tsx": [
         '<div class="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" />',
@@ -50,6 +54,8 @@ test("allows only hidden scrollbars and the shared rule; every own width, colour
     const findings = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
     expect(findings.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line}`).sort()).toEqual([
       "packages/demo/src/app.css:26",
+      "packages/demo/src/app.css:27",
+      "packages/demo/src/app.css:28",
       "packages/demo/src/app.css:6",
       "packages/demo/src/app.css:7",
       "packages/demo/src/app.css:8",

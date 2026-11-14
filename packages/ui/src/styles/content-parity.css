@@ -5726,6 +5726,15 @@
   touch-action: pan-x pan-y;
 }
 
+/* WebKit reserves no gutter before content overflows, so with a mouse the shared track is always there (layout-parity.css). */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-pdf-viewer__pages {
+      overflow-y: scroll;
+    }
+  }
+}
+
 .k2b-ui .k2b-pdf-viewer__pages[data-fit] {
   overflow-x: hidden;
 }

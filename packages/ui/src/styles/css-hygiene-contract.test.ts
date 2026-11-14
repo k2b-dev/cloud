@@ -151,7 +151,7 @@ describe("@k2b/ui stylesheet hygiene", () => {
     };
     // Every element inside `.k2b-ui` and the document hosting it, matched directly: a direct match beats an inherited value.
     const every = ":where(:root:has(> .k2b-ui), .k2b-ui, .k2b-ui *)";
-    const webkit = "@layer base > @media (pointer: fine) and (forced-colors: none)";
+    const webkit = "@layer components > @media (pointer: fine) and (forced-colors: none)";
     const scrollbar = declarations(`${every}::-webkit-scrollbar`, webkit);
     expect([scrollbar.get("width"), scrollbar.get("height")]).toEqual([["0.5rem"], ["0.5rem"]]);
     expect(declarations(`${every}::-webkit-scrollbar-track`, webkit).get("background")).toEqual(["transparent"]);
@@ -166,7 +166,7 @@ describe("@k2b/ui stylesheet hygiene", () => {
       expect(widened.get("background")).toEqual(["var(--k2b-scrollbar-thumb-hover)"]);
     }
     // Chromium ignores ::-webkit-scrollbar beside either property, so only engines without it receive them.
-    const firefox = declarations(every, "@layer base > @supports not selector(::-webkit-scrollbar) > @media (forced-colors: none)");
+    const firefox = declarations(every, "@layer components > @supports not selector(::-webkit-scrollbar) > @media (forced-colors: none)");
     expect(firefox.get("scrollbar-width")).toEqual(["thin"]);
     expect(firefox.get("scrollbar-color")).toEqual(["var(--k2b-scrollbar-thumb) transparent"]);
     const tokens = (selector: string) =>
@@ -186,7 +186,7 @@ describe("@k2b/ui stylesheet hygiene", () => {
     const rules = readShippedCssRules(stylesDir);
     // `k2b-quiet-scrollbar` is the public class for an application's own scrollers.
     const scrollers = [".k2b-ui .k2b-app-workspace__sidebar-body", ".k2b-ui .k2b-chat-timeline__viewport", ".k2b-ui .k2b-quiet-scrollbar"];
-    const quiet = "@layer base > @media (hover: hover) and (pointer: fine) and (forced-colors: none)";
+    const quiet = "@layer components > @media (hover: hover) and (pointer: fine) and (forced-colors: none)";
     const firefox = `${quiet} > @supports not selector(::-webkit-scrollbar)`;
     const declarations = (selector: string, context: string) => {
       const rule = rules.find((candidate) => candidate.selector === selector && candidate.context === context);
@@ -317,11 +317,7 @@ describe("@k2b/ui stylesheet hygiene", () => {
     const index = readFileSync(resolve(stylesDir, "index.css"), "utf8");
 
     expect(index).toContain("@layer properties, theme, base, components, utilities;");
-    // The base layer holds only the shared scrollbar, so a hidden scrollbar from a utility wins over it. Every rule
-    // there stays scoped to `.k2b-ui` and the document that hosts it.
-    const base = readShippedCssRules(stylesDir).filter((rule) => rule.context.startsWith("@layer base"));
-    expect(base.length).toBeGreaterThan(0);
-    expect(base.filter((rule) => !rule.selector.includes(".k2b-ui") || !/scrollbar/.test(rule.selector + rule.body))).toEqual([]);
+    expect(index).not.toContain("@layer base {");
     expect(index).toMatch(
       /\.k2b-ui,\s*\.k2b-ui \*,\s*\.k2b-ui \*::before,\s*\.k2b-ui \*::after \{\s*box-sizing: border-box;[\s\S]*?\.k2b-ui :where\(button, input, select, textarea\) \{\s*font: inherit;/,
     );
