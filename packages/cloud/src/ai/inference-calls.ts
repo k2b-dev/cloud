@@ -224,3 +224,12 @@ export async function releaseBackgroundCostStop(actorId: string) {
     return backgroundCostState(db);
   });
 }
+
+/** Read once per executor attempt, including failed calls. Never query per stream event. */
+export async function readAiTurnCallUsage(turnId: string): Promise<{ calls: number; inputTokens: number; unknownCalls: number }> {
+  const [usage] = await sql<{ calls: number; inputTokens: number; unknownCalls: number }[]>`
+    SELECT count(*)::int AS calls, COALESCE(sum(input),0)::float8 AS "inputTokens",
+      count(*) FILTER (WHERE input IS NULL)::int AS "unknownCalls"
+    FROM ai.inference_calls WHERE turn_id=${turnId}::uuid AND (kind='chat' OR task='chat-compaction')`;
+  return usage!;
+}
