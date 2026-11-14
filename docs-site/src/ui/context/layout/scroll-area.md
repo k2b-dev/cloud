@@ -119,31 +119,35 @@ names its reason in a comment on the line above the declaration or its selector
 
 A scrollbar never moves content when it appears. Chromium and Firefox reserve
 its room from the start with `scrollbar-gutter: stable`. Safari reserves no
-gutter before content overflows, so with a mouse the scrollers that exist to
-scroll always show the empty 0.5 rem track: level bodies, the workspace
-sidebar, an inset `ScrollArea`, the settings page, `DetailPanel.Body`,
-`ChatTimeline`, `VirtualFeed`, `PdfViewer`, the calendar's hours, and code
-blocks. Where such a scroller already has an end inset or padding, the track
-takes it instead of adding room, so the content keeps its width: an inset
-`ScrollArea`, a level body, and the sidebar keep 0.5 rem on both sides.
+gutter before content overflows, so with a mouse every scroller that exists
+to scroll always shows the empty 0.5 rem track: `ScrollArea`, level bodies,
+the workspace sidebar, the settings page, `DetailPanel.Body`, `ChatTimeline`,
+`VirtualFeed`, `PdfViewer`, the calendar's hours, and code blocks. A plain
+`ScrollArea` is therefore as wide in Safari as in Chrome and never narrows
+when it starts to scroll. Where a scroller already has an end inset or
+padding, the track takes it instead of adding room, so the content keeps its
+width: an inset `ScrollArea`, a level body, and the sidebar keep 0.5 rem on
+both sides. `Main` and `MainPane` are layout regions that often do not
+scroll; they reserve the gutter in Chromium and Firefox but draw no empty
+track in Safari.
 
-Regions that often do not scroll, such as `Main`, `MainPane`, and a plain
-`ScrollArea`, draw no empty track. In Safari their content narrows by the
-track once, at the end edge, when it first overflows. For a list or reader
-that grows, use `ScrollArea inset`, or give your own scroller the track in
-its end padding:
+A `ScrollArea` with its own end padding takes the track from that padding
+with one rule, so its content keeps the width it had without a scrollbar:
 
 ```css
 /* The reader pads 1.25rem; the shared track takes 0.5rem of it. */
 @media (pointer: fine) and (forced-colors: none) {
   @supports selector(::-webkit-scrollbar) {
     .k2b-ui .reader-scroll {
-      overflow-y: scroll;
       padding-inline-end: 0.75rem;
     }
   }
 }
 ```
+
+A `ScrollArea` that only wraps content and never scrolls, because the page
+around it scrolls, sets `overflow-y: auto` on its own class, so it draws no
+empty track beside the page's.
 
 `DataTable` and the tabs of `Panes` draw the same thumb as an overlay that
 takes no room.

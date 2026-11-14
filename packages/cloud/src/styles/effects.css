@@ -449,6 +449,29 @@
   scrollbar-gutter: stable;
 }
 
+/* With a mouse the help's shared 0.5rem track is always there and lies in its
+   end padding (p-4, sm:p-5), so the text keeps its width when an article grows
+   past the panel; the head then needs no gutter of its own to stay aligned. */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .help-scroll {
+      padding-inline-end: 0.5rem;
+    }
+
+    .help-shell[data-surface="modal"] .help-head,
+    .help-shell[data-surface="panel"] .help-head,
+    .help-shell[data-surface="embedded"] .help-head {
+      scrollbar-gutter: auto;
+    }
+
+    @media (min-width: 640px) {
+      .k2b-ui .help-scroll {
+        padding-inline-end: 0.75rem;
+      }
+    }
+  }
+}
+
 @media (min-width: 40rem) {
   .help-head {
     padding-inline: 1.25rem;
