@@ -71,6 +71,31 @@ const step = (name: string, result: unknown, locale = "en") =>
 const label = (html: string) => /<strong>([^<]*)<\/strong>/.exec(html)?.[1] ?? "";
 const failed = (html: string) => html.includes('data-tone="danger"');
 
+test("SDK diagnostics stay out of the human step label", () => {
+  const html = step("code_check", {
+    version: 1,
+    result: {
+      ok: false,
+      diagnostics: [
+        {
+          code: "code_unresolved_call",
+          message: "Unknown SDK method space.task.list; use spaces.task.list",
+          file: "code.ts",
+          line: 3,
+          column: 72,
+        },
+      ],
+    },
+    manifest: null,
+    permissions: [],
+  });
+  expect(failed(html)).toBe(false);
+  const summary = /<summary\b[^>]*>([\s\S]*?)<\/summary>/.exec(html)?.[1] ?? "";
+  expect(summary).toContain("Checks the Code");
+  for (const internal of ["space.task.list", "spaces.task.list", "code_unresolved_call", "code.ts"])
+    expect(summary).not.toContain(internal);
+});
+
 test("a lasting Code command that answered with Core's error shows as a failed step", async () => {
   const write = tools.find((item) => item.def.name === "code_write");
   if (!write || !("location" in write) || write.location !== "server") throw new Error("Expected the server tool code_write");

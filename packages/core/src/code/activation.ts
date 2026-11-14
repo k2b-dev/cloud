@@ -22,7 +22,7 @@ import { requireCodeEventAccess } from "./event-access";
 import { syncCodeEventSubscriptions } from "./event-subscriptions";
 import { findCode } from "./store";
 import { CodeVersionEvidenceSchema } from "./version-evidence";
-import { CodeVersionError, recordCodeVersionBaseline, requireCodeVersionApproval } from "./versions";
+import { CodeVersionError, codeVersionReadiness, recordCodeVersionBaseline, requireCodeVersionApproval } from "./versions";
 
 const savedAuthoritySchema = z
   .object({
@@ -225,16 +225,7 @@ export async function previewCodeActivation(
   }
   // An older card in a chat asks no target again: nothing can be switched on from there.
   if (version.number < base.latest) return { ...base, activated: null, readiness: { state: "ready" }, place, page };
-  let readiness: CodeActivationPreview["readiness"] = { state: "ready" };
-  try {
-    await requireCodeVersionApproval(code, input.versionId, sql);
-  } catch (error) {
-    if (!(error instanceof CodeVersionError)) throw error;
-    readiness =
-      error.code === "code_approval_required"
-        ? { state: "approval_pending" }
-        : { state: "refused", code: error.code, message: error.message };
-  }
+  const readiness = await codeVersionReadiness(code, input.versionId, sql);
   const targets = manifest.success ? await previewTargets(code, manifest.data, catalog) : undefined;
   const operationLabels = targets
     ? await describeOperations(

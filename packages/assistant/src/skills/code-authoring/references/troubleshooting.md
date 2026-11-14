@@ -25,7 +25,7 @@ edits and fixtures with `code_write({codeId, path, content})`.
 | `code_page_child` | A part outside its block, another block among parts, or text inside a block with parts | Put `Field.*` in `Form`, `Option` in `Field.Select`, `Stat` in `Stats`, `Column` in `Table`, `Item` in `Detail` ([Pages](pages.md)) |
 | `code_import_forbidden` | Import of a package, `bun`, `@k2b/cloud`, an absolute path or a dynamic import | Import only `@sdk` and relative project files |
 | `code_reserved_sdk` | `import * as sdk`, re-exporting the SDK or using `__codeSdk` | Import named exports from `@sdk` |
-| `code_unresolved_call` | The checker cannot see which operation a call reaches | Call SDK methods directly on a typed handle |
+| `code_unresolved_call` | The checker cannot see which operation a call reaches; an unknown method is named with a real path when available | Read the suggested method's declarations through `code_sdk`, including its input. For `space.task.list`, use `spaces.task.list({ spaceId, limit: 50, cursor })`, not the Space handle |
 | `code_detached_sdk_method` | A method taken off its handle, or `.call`/`.apply`/`.bind` | Call it on the handle |
 | `code_unresolved_ref` | An extra target (`refs`) is not a handle of the declared type | Pass a handle such as `spaces.space(id)` |
 | `code_stream`, `code_app_only`, `code_code_false` | The operation is not available to Code | Choose another operation ([Capabilities](capabilities.md)) |

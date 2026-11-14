@@ -23,6 +23,20 @@ const size = (value: unknown) => JSON.stringify(value).length;
  * about half the context at nessi's four characters per token (resolveAiToolResultMaxChars in @k2b/cloud).
  */
 const budget = 128_000 * 2;
+test("Spaces task and event list references name the app-level paginated Queries", () => {
+  const index = codeChatSdkView(manifests, { mode: "personal" });
+  if (index.kind !== "index") throw new Error("expected index");
+  const paths = index.apps.find((app) => app.appId === "spaces")!.methods.map((method) => method.path);
+  for (const kind of ["task", "event"]) {
+    expect(paths).toContain(`spaces.${kind}.list`);
+    expect(paths).not.toContain(`spaces.space(id).${kind}.list`);
+  }
+  const view = codeChatSdkView(manifests, { mode: "personal" }, ["spaces"]);
+  if (view.kind !== "declarations") throw new Error("expected declarations");
+  expect(view.declarations).toContain("Spaces_Task_ListInput");
+  expect(view.declarations).toContain("spaceId");
+  expect(view.declarations).toContain("nextCursor");
+});
 
 test("the complete SDK does not fit one chat tool result, which is why the chat reads it in two steps", () => {
   const sdk = generateCodeSdk(manifests, { mode: "personal" });
