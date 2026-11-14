@@ -77,6 +77,12 @@ export type CodeVersionErrorCode =
   | "code_manifest_invalid";
 /** A version refusal returned unchanged by capabilities and as 409 by shared decision routes. */
 export class CodeVersionError extends ApprovalDecisionConflictError<CodeVersionErrorCode> {}
+/** Preserve the platform refusal so each client can explain the required next step. */
+export class CodeVersionDecisionError extends Error {
+  constructor(readonly code: "SELF_APPROVAL" | "REAUTHENTICATE" | "REJECT_ONLY" | "NOT_FOUND" | "BUSY" | "UNAVAILABLE") {
+    super(`Version decision refused: ${code}.`);
+  }
+}
 type Snapshot = {
   id: string;
   source_files: CodeSourceFiles;
@@ -598,8 +604,15 @@ export async function decideCodeVersion(raw: CodeVersionBinding, approved: boole
     },
   );
   if (!result.ok) {
-    if (["SELF_APPROVAL", "REAUTHENTICATE", "REJECT_ONLY", "NOT_FOUND"].includes(result.code))
-      throw new CodeDataError("FORBIDDEN", `Version decision refused: ${result.code}.`);
+    switch (result.code) {
+      case "SELF_APPROVAL":
+      case "REAUTHENTICATE":
+      case "REJECT_ONLY":
+      case "NOT_FOUND":
+      case "BUSY":
+      case "UNAVAILABLE":
+        throw new CodeVersionDecisionError(result.code);
+    }
     throw new CodeDataError("CONFLICT", `Version decision refused: ${result.code}.`);
   }
   return submissionFor(input.codeId, input.versionId, context);

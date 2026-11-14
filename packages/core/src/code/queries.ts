@@ -3,7 +3,7 @@ import { err, fail, ok } from "@k2b/stdlib";
 import { ZodError } from "zod";
 import { type CodeContext, CodeDataError, CodeOwnerUnavailableError } from "./access";
 import { CodeJobError } from "./job-errors";
-import { CodeVersionError } from "./versions";
+import { CodeVersionDecisionError, CodeVersionError } from "./versions";
 
 const contextFor = (context: CapabilityExecutionContext): CodeContext => {
   if (!context.authority) throw new CodeDataError("FORBIDDEN", "Code requires request authority.");
@@ -28,6 +28,17 @@ export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: 
         message: error.code === "code_job_busy" ? "Code runners are busy. Retry later." : error.message,
       });
     if (error instanceof ZodError) return fail(err.badInput("Invalid Code input."));
+    if (error instanceof CodeVersionDecisionError)
+      return fail({
+        code: error.code,
+        message: error.message,
+        status:
+          error.code === "NOT_FOUND"
+            ? (404 as const)
+            : error.code === "BUSY" || error.code === "UNAVAILABLE"
+              ? (409 as const)
+              : (403 as const),
+      });
     if (error instanceof CodeVersionError) {
       let details = error.details;
       if (details && Buffer.byteLength(JSON.stringify(details)) > CAPABILITY_MAX_RESULT_BYTES / 2) {

@@ -168,7 +168,8 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
   /** Requests the islands sent, for assertions. */
   const requests: { path: string; body: unknown }[] = [];
   const api = async (request: Request, url: URL): Promise<Response> => {
-    const state = new URL(request.headers.get("referer") ?? "http://x/").searchParams.get("state") ?? "normal";
+    const query = new URL(request.headers.get("referer") ?? "http://x/").searchParams;
+    const state = query.get("state") ?? "normal";
     const path = url.pathname.replace("/api/code/admin/", "");
     const body: unknown = await request.json().catch(() => null);
     requests.push({ path, body });
@@ -188,6 +189,12 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
       return Response.json({ data: { state: paused ? "paused" : "active" } });
     }
     if (path === "decide") {
+      const refusal = query.get("decisionRefusal");
+      if (refusal && ["SELF_APPROVAL", "REAUTHENTICATE", "REJECT_ONLY", "NOT_FOUND", "BUSY", "UNAVAILABLE"].includes(refusal))
+        return Response.json(
+          { code: refusal, message: "Private transport diagnostic" },
+          { status: refusal === "NOT_FOUND" ? 404 : refusal === "BUSY" || refusal === "UNAVAILABLE" ? 409 : 403 },
+        );
       const decision = body && typeof body === "object" && "approved" in body ? body.approved : null;
       decisions.set(fixtureApprovalDetail().version.id, Boolean(decision));
       const detail = fixtureApprovalDetail();

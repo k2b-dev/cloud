@@ -9,10 +9,12 @@ import {
   CapabilityFileMetadataSchema,
   CloudResourceReaderViewSchema,
 } from "@k2b/cloud/contracts";
+import { auth } from "@k2b/cloud/server";
 import { approvalArgsDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { createCodeAdminRoutes } from "../api/code-admin";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
@@ -462,10 +464,92 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     expect(await approvals.get(submission.approvalId!)).toMatchObject({ status: "pending" });
     expect(await sql`SELECT * FROM code.version_decisions WHERE version_id=${submission.version.id}::uuid`).toHaveLength(0);
   });
+  test("the admin decision route preserves each platform refusal reason", async () => {
+    const code = await newCode();
+    const submission = await submitCodeVersion(input(code, "route refusal"), author);
+    const role = spyOn(auth, "requireRole").mockReturnValue(async (_c, next) => next());
+    const scope = spyOn(auth, "requireOAuthScope").mockReturnValue(async (_c, next) => next());
+    const authority = spyOn(auth, "getAuthority").mockReturnValue(reviewer.authority);
+    const decision = spyOn(approvals, "decide");
+    try {
+      const routes = createCodeAdminRoutes();
+      for (const reason of ["SELF_APPROVAL", "REAUTHENTICATE", "REJECT_ONLY", "NOT_FOUND", "BUSY", "UNAVAILABLE"] as const) {
+        decision.mockResolvedValueOnce({ ok: false, code: reason });
+        const response = await routes.request("/decide", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ binding: submission.binding, approved: true }),
+        });
+        expect({ status: response.status, code: (await response.json()).code }).toEqual({
+          status: reason === "NOT_FOUND" ? 404 : reason === "BUSY" || reason === "UNAVAILABLE" ? 409 : 403,
+          code: reason,
+        });
+        decision.mockResolvedValueOnce({ ok: false, code: reason });
+        const { codeId, ...binding } = submission.binding;
+        const result = await aiCapabilities.actions["code.version.approve"].run(binding, {
+          authority: reviewer.authority,
+          actor: reviewer.authority.actor,
+          accessSubject: reviewer.authority.accessSubject,
+          user: person(reviewerId),
+          locale: "en",
+          origin: "http",
+          requestId: "code-decision-refusal",
+          signal: new AbortController().signal,
+          target: { type: "core.code", id: codeId },
+        });
+        expect(result).toMatchObject({
+          ok: false,
+          error: { code: reason, status: reason === "NOT_FOUND" ? 404 : reason === "BUSY" || reason === "UNAVAILABLE" ? 409 : 403 },
+        });
+      }
+      expect((await approvals.get(submission.approvalId!))?.status).toBe("pending");
+    } finally {
+      decision.mockRestore();
+      authority.mockRestore();
+      scope.mockRestore();
+      role.mockRestore();
+    }
+  });
+  test("an older sole-admin browser sign-in asks for confirmation and a fresh sign-in succeeds through the route", async () => {
+    await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;
+    const code = await newCode();
+    const submission = await submitCodeVersion(input(code, "older browser"), author);
+    const signIn = await createTestBrowserSignIn(authorId);
+    await sql`UPDATE auth.session_families SET issued_at=now()-interval '11 minutes' WHERE sid=${signIn.sid}::uuid`;
+    const signed = {
+      ...author.authority,
+      credentialProof: { kind: "session" as const, userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+    };
+    const role = spyOn(auth, "requireRole").mockReturnValue(async (_c, next) => next());
+    const scope = spyOn(auth, "requireOAuthScope").mockReturnValue(async (_c, next) => next());
+    const authority = spyOn(auth, "getAuthority").mockReturnValue(signed);
+    try {
+      const routes = createCodeAdminRoutes();
+      const request = () =>
+        routes.request("/decide", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ binding: submission.binding, approved: true }),
+        });
+      const refused = await request();
+      expect({ status: refused.status, code: (await refused.json()).code }).toEqual({ status: 403, code: "REAUTHENTICATE" });
+      expect((await approvals.get(submission.approvalId!))?.status).toBe("pending");
+      expect(await sql`SELECT * FROM code.version_decisions WHERE version_id=${submission.version.id}::uuid`).toHaveLength(0);
+      const fresh = await createTestBrowserSignIn(authorId);
+      authority.mockReturnValue({ ...signed, credentialProof: { ...signed.credentialProof, sid: fresh.sid } });
+      const accepted = await request();
+      expect(accepted.status).toBe(200);
+      expect((await accepted.json()).data.decision).toMatchObject({ approved: true, soleAdmin: true });
+    } finally {
+      authority.mockRestore();
+      scope.mockRestore();
+      role.mockRestore();
+    }
+  });
   test("C5 forbids author self-approval when two human admins exist", async () => {
     const code = await newCode(),
       submission = await submitCodeVersion(input(code, "valid"), author);
-    await expect(decideCodeVersion(submission.binding, true, author)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(decideCodeVersion(submission.binding, true, author)).rejects.toMatchObject({ code: "SELF_APPROVAL" });
     expect(await approvals.get(submission.approvalId!)).toMatchObject({ status: "pending", soleAdmin: false });
   });
   test("sole admin approves through C5 with recent sign-in, flag, audit and version-list label; machines and disabled admins do not count", async () => {
@@ -497,7 +581,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await sql`UPDATE auth.users SET account_expires=NULL WHERE id=${reviewerId}::uuid`;
     await expect(sql.begin((tx) => requireCodeVersionApproval(code, submission.version.id, tx))).resolves.toEqual({ policyRevision: 1 });
     const next = await submitCodeVersion(input(code, "next", submission.version.id), author);
-    await expect(decideCodeVersion(next.binding, true, signed)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(decideCodeVersion(next.binding, true, signed)).rejects.toMatchObject({ code: "SELF_APPROVAL" });
     expect((await approvals.get(submission.approvalId!))?.soleAdmin).toBe(true);
   });
   test("sole-admin self-approval still requires C5's browser confirmation", async () => {
@@ -505,7 +589,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     const code = await newCode(),
       submission = await submitCodeVersion(input(code, "valid"), author);
     await expect(decideCodeVersion(submission.binding, true, author)).rejects.toMatchObject({
-      code: "FORBIDDEN",
+      code: "REAUTHENTICATE",
       message: "Version decision refused: REAUTHENTICATE.",
     });
   });
