@@ -1158,6 +1158,32 @@ describe("MailComposer robustness", () => {
     }
   });
 
+  // Lesson 2026-11-14: a popout's close check outlived the composer and read `window` after the test had torn it down.
+  test("a popout that unmounts right after sending runs no close check afterwards", async () => {
+    const close = spyOn(dom.window, "close").mockImplementation(() => undefined);
+    let closedReads = 0;
+    try {
+      await mount({ popout: true });
+      sendButton().click();
+      await waitFor(() => close.mock.calls.length > 0);
+      dispose();
+      dispose = () => {};
+      Object.defineProperty(dom.window, "closed", {
+        configurable: true,
+        get: () => {
+          closedReads += 1;
+          return false;
+        },
+      });
+      // fixed wait: longer than the 100 ms after which a popout checks whether it closed.
+      await Bun.sleep(200);
+      expect(closedReads).toBe(0);
+    } finally {
+      close.mockRestore();
+      Reflect.deleteProperty(dom.window, "closed");
+    }
+  });
+
   test.each(sendSurfaces)("$name sends a message with a subject without a warning dialog", async ({ host, popout, window }) => {
     const close = spyOn(dom.window, "close").mockImplementation(() => undefined);
     try {

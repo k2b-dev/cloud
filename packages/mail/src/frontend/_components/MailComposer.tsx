@@ -428,12 +428,16 @@ export default function MailComposer(props: {
   };
   /** A popout that sent, discarded, or saved its draft closes; a browser that keeps it open shows why it stays. */
   const [popoutDone, setPopoutDone] = createSignal<Exclude<Parameters<MailComposerHost["leave"]>[0], "moved"> | null>(null);
+  let popoutCloseCheck: ReturnType<typeof setTimeout> | undefined;
   const closePopout = (outcome: Exclude<Parameters<MailComposerHost["leave"]>[0], "moved">) => {
     draftSession.allowNavigation();
     window.close();
-    // Only a window that a script opened may close itself; any other one stays and says so.
-    setTimeout(() => {
-      if (!window.closed && !disposed) setPopoutDone(outcome);
+    // Only a window that a script opened may close itself; any other one stays and says so. The check ends with the
+    // composer (see onCleanup), so it never runs after its page went away.
+    if (popoutCloseCheck !== undefined) clearTimeout(popoutCloseCheck);
+    popoutCloseCheck = setTimeout(() => {
+      popoutCloseCheck = undefined;
+      if (!disposed && !window.closed) setPopoutDone(outcome);
     }, 100);
   };
   /** Back where the person came from: the conversation that holds the draft, or the compose page's return place. */
@@ -977,6 +981,7 @@ export default function MailComposer(props: {
 
   onCleanup(() => {
     disposed = true;
+    if (popoutCloseCheck !== undefined) clearTimeout(popoutCloseCheck);
     recoveryController?.abort();
     recoveryController = null;
     stopPreview();
