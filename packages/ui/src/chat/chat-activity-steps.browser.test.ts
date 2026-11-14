@@ -15,9 +15,10 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Chat } = await import("../index");
 const { ActivityToggleFixture } = await import("../../test/chat-activity-steps.browser-harness");
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
-// Embed the shipped icon font: geometry must not depend on an external font request.
+// Embed the shipped icon font: geometry must not depend on an external font request. Only the font file is a
+// relative URL; the preset's drawn glyphs are already data URLs.
 const icons = readFileSync(resolve(import.meta.dir, "../../dist/tabler.css"), "utf8").replace(
-  /url\(([^)]+)\)/g,
+  /url\((\.\/[^)]+\.woff2[^)]*)\)/g,
   (_, path: string) =>
     `url(data:font/woff2;base64,${readFileSync(resolve(import.meta.dir, "../../dist", path.split("?")[0]!)).toString("base64")})`,
 );

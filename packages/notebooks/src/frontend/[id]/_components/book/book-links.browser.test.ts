@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
 import { renderNotebookBook } from "../../../../lib/book-renderer";
 
 // Book links the app's stylesheet before Cloud's global one, so the shipped
@@ -71,7 +71,7 @@ test(`Book links keep every line box on hover and keyboard focus in ${browserNam
   expect(count).toBeGreaterThanOrEqual(8);
   for (let index = 0; index < count; index++) {
     const link = page.locator("#book a").nth(index);
-    await link.hover();
+    await hoverInPlace(link);
     expect(await geometry()).toEqual(before);
     await page.focus("#start");
     await page.keyboard.press("Shift");

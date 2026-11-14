@@ -1,23 +1,18 @@
 import type { WorkflowBoundPlan, WorkflowJsonValue, WorkflowStepOutcome } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext, WorkflowExecuteActionHandler } from "@k2b/cloud/workflows/runtime";
+import type { MailMessageStateTransition } from "./command-message-state";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
-
-export type MailWorkflowMessageStateTransition = {
-  field: "flags" | "keywords";
-  add: boolean;
-  value: string;
-};
 
 // Run-local history also records writes that later return to the frozen state.
 // Symbol metadata is not a workflow input or a persisted provider field.
 const messageStateTransitions = Symbol("mail.messageStateTransitions");
 export type MailWorkflowProjectedObject = Record<string, WorkflowJsonValue> & {
-  [messageStateTransitions]?: MailWorkflowMessageStateTransition[];
+  [messageStateTransitions]?: MailMessageStateTransition[];
 };
-export const mailWorkflowMessageStateTransitions = (message: MailWorkflowProjectedObject): readonly MailWorkflowMessageStateTransition[] =>
+export const mailWorkflowMessageStateTransitions = (message: MailWorkflowProjectedObject): readonly MailMessageStateTransition[] =>
   message[messageStateTransitions] ?? [];
 
-const recordMessageStateTransition = (message: MailWorkflowProjectedObject, transition: MailWorkflowMessageStateTransition): void => {
+const recordMessageStateTransition = (message: MailWorkflowProjectedObject, transition: MailMessageStateTransition): void => {
   message[messageStateTransitions] ??= [];
   message[messageStateTransitions].push(transition);
 };

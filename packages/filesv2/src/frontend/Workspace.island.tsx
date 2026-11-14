@@ -1,9 +1,10 @@
 import { openCommand } from "@k2b/cloud/browser/commands";
+import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
-import { AppWorkspace, ButtonLink, createNavigation, InlineGuidance, Placeholder, StatusBadge, toast, useLocale } from "@k2b/ui";
+import { AppWorkspace, ButtonLink, createNavigation, Dropdown, InlineGuidance, MovedHint, Placeholder, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
@@ -14,16 +15,20 @@ import Browser from "./Browser";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { browseOptions, browseQuery, parsePreferences, type ViewPreference, viewFor } from "./browser-preferences";
+import { directoryContext, directoryPageCount, directoryPages } from "./directory-pages";
 import Editor from "./Editor";
 import { historyExecutionHref } from "./execution-url";
+import FavoritesPage from "./FavoritesPage";
 import { IssueMessage } from "./feedback";
 import { createFilesUploads } from "./files-uploads";
+import { RECENT_MOVED_HINT } from "./hints";
 import { type HistoryActions, type HistoryEnvironment, type HistoryTarget, isCurrent } from "./history-actions";
 import {
   entryHref,
   loadActivity,
   loadBatchContext,
   loadChain,
+  loadRecent,
   loadRecovery,
   moveActivityBack,
   recheckActivity,
@@ -33,7 +38,6 @@ import {
 import { useHistoryMessages } from "./history-messages";
 import { type ActivityFilters, movedEntry, placeDescriber } from "./history-requests";
 import MarkdownDocument from "./MarkdownDocument";
-import { MarksMenu, MarksSidebarItem, openMarksDialog } from "./MarksMenu";
 import { MovedNotice } from "./MissingItemView";
 import { useFilesMessages } from "./messages";
 import { openShareDialog } from "./ShareDialog";
@@ -78,9 +82,14 @@ export default function Workspace(props: {
     new URL(props.initial.source, "https://files.invalid").searchParams.get("refreshed") === "true",
   );
   const preference = (baseId: string) => viewFor(parsePreferences(typeof document === "undefined" ? undefined : document.cookie), baseId);
+  let previousSnapshot: WorkspaceSnapshot = props.initial;
+  // A successful poll hands its authorized directory to the canonical loader once.
+  let polledDirectory: { source: string; value: NonNullable<WorkspaceSnapshot["directory"]> } | null = null;
   const workspace = createWorkspaceState<WorkspaceSnapshot>({
     initial: props.initial,
     load: async (source, signal) => {
+      const polled = polledDirectory;
+      polledDirectory = null;
       const url = new URL(source, window.location.origin);
       const basesResponse = await apiClient.bases.$get({}, { init: { signal } });
       if (!basesResponse.ok) throw await apiError(basesResponse);
@@ -123,44 +132,69 @@ export default function Workspace(props: {
         if (!response.ok) throw await apiError(response);
         editor = await response.json();
       } else if (!filters && selected?.status === "existing" && view !== "trash") {
+        // Bound cumulative replay by the existing visible-refresh budget, including its API requests.
+        signal = AbortSignal.any([signal, AbortSignal.timeout(LIVE_REFRESH_MS)]);
         // Activity loads and pages its own entries, so its filters can change without leaving the view.
         const page = { path: url.searchParams.get("path") ?? "", after: url.searchParams.get("after") ?? undefined };
         const search = searchState(url.searchParams);
-        const response = search
-          ? await apiClient.bases[":baseId"].search.$get(
-              { param: { baseId: selected.id }, query: { ...page, ...searchRequest(search) } },
-              { init: { signal } },
-            )
-          : await apiClient.bases[":baseId"].entries.$get(
-              {
-                param: { baseId: selected.id },
-                query: { ...page, ...browseQuery(browseOptions(url.searchParams, preference(selected.id))) },
-              },
-              { init: { signal } },
-            );
-        if (!response.ok) {
-          const error = ErrorSchema.safeParse(await response.json().catch(() => null));
-          const code = error.success ? error.data.code : "unavailable";
-          if (page.after && !signal.aborted && code === "cursor_invalid") invalidCursors.add(source);
-          // A failed search stays a search, so its field and filters can narrow it.
-          if (search && code !== "cursor_invalid" && !signal.aborted)
-            directory = {
-              base: selected,
-              path: page.path,
-              items: [],
-              next: null,
-              query: search.q,
-              scope: search.scope,
-              total: null,
-              failure: code,
-            };
-          else {
-            // An old folder address: the same lookup as SSR; without visible history it stays an error.
-            if (Number(response.status) === 404 && !search && page.path && !page.after)
-              moved = await movedLookup(selected.id, page.path, signal).catch(() => null);
-            if (!moved) throw new Error(error.success ? error.data.message : t().unavailable);
-          }
-        } else directory = await response.json();
+        const count = directoryPageCount(url.searchParams);
+        const previous = previousSnapshot;
+        const reuse =
+          directoryContext(previous.source) === directoryContext(source) &&
+          previous.directory?.base.locationKey === selected.locationKey &&
+          (previous.directory?.loadedPages ?? 1) < count
+            ? (previous.directory ?? undefined)
+            : undefined;
+        directory =
+          polled?.source === source && polled.value.base.locationKey === selected.locationKey
+            ? polled.value
+            : await directoryPages(
+                count,
+                page.after,
+                async (after) => {
+                  const response = search
+                    ? await apiClient.bases[":baseId"].search.$get(
+                        { param: { baseId: selected.id }, query: { ...page, after, ...searchRequest(search) } },
+                        { init: { signal } },
+                      )
+                    : await apiClient.bases[":baseId"].entries.$get(
+                        {
+                          param: { baseId: selected.id },
+                          query: { ...page, after, ...browseQuery(browseOptions(url.searchParams, preference(selected.id))) },
+                        },
+                        { init: { signal } },
+                      );
+                  if (!response.ok) {
+                    const error = ErrorSchema.safeParse(await response.json().catch(() => null));
+                    const code = error.success ? error.data.code : "unavailable";
+                    if ((after || count > 1) && !signal.aborted && code === "cursor_invalid") invalidCursors.add(source);
+                    // A failed search stays a search, so its field and filters can narrow it.
+                    if (search && code !== "cursor_invalid" && !signal.aborted)
+                      directory = {
+                        base: selected,
+                        path: page.path,
+                        items: [],
+                        next: null,
+                        query: search.q,
+                        scope: search.scope,
+                        total: null,
+                        failure: code,
+                      };
+                    else {
+                      // An old folder address: the same lookup as SSR; without visible history it stays an error.
+                      if (Number(response.status) === 404 && !search && page.path && !page.after)
+                        moved = await movedLookup(selected.id, page.path, signal).catch(() => null);
+                      if (!moved) throw new Error(error.success ? error.data.message : t().unavailable);
+                    }
+                  } else return await response.json();
+                  if (!directory && moved) return { base: selected, path: page.path, items: [], next: null };
+                  if (!directory) throw new Error(t().unavailable);
+                  return directory;
+                },
+                signal,
+                reuse ? { ...reuse, loadedPages: reuse.loadedPages ?? 1 } : undefined,
+              );
+        if (moved) directory = null;
       }
       return {
         source,
@@ -183,6 +217,9 @@ export default function Workspace(props: {
     return { baseId, path, entry, chain: await loadChain(entry, signal, t().unavailable, path) };
   }
   const snapshot = workspace.snapshot;
+  createEffect(() => {
+    previousSnapshot = snapshot();
+  });
   const overview = () => showsOverview(new URL(snapshot().source, "https://files.invalid").searchParams, snapshot().bases.items.length);
   const hasOverview = () => snapshot().bases.items.length > 1;
   // Uploads belong to the workspace, not to a folder view: navigating or opening the editor keeps them running.
@@ -238,13 +275,15 @@ export default function Workspace(props: {
   const peopleOptions = () => {
     const known = Object.entries(people()).map(([id, label]) => ({ id, label }));
     const chosen = activityFilters().actor;
-    return chosen && !people()[chosen] ? [...known, { id: chosen, label: h().selectedPerson }] : known;
+    // "me" is the row choice "Me", not a person of the list.
+    return chosen && chosen !== "me" && !people()[chosen] ? [...known, { id: chosen, label: h().selectedPerson }] : known;
   };
   const historyEnv = createMemo<HistoryEnvironment>(() => ({
     now: snapshot().now ?? props.initial.now ?? new Date().toISOString(),
     timeZone: props.timeZone ?? "UTC",
     executionHref: historyExecutionHref,
     describePlace: placeDescriber(snapshot().bases.items, b(), locale()),
+    onNavigate: (event) => onNavigate(event),
   }));
   /** Opens where a history entry's item is now, after the server checked identity and rights again. */
   let historyTargetRequest: AbortController | undefined;
@@ -295,6 +334,7 @@ export default function Workspace(props: {
     if (!invalidCursors.delete(target)) return;
     const url = new URL(target, window.location.origin);
     url.searchParams.delete("after");
+    url.searchParams.delete("pages");
     const first = `${url.pathname}${url.search}`;
     setCursorNotice(true);
     await workspace.navigate(first, () => commitHistory(first, { replace: true, scroll: "manual" }));
@@ -330,16 +370,19 @@ export default function Workspace(props: {
   /** A search is on its way: the results area waits for it instead of showing the previous page. */
   const pendingSearch = () => {
     const target = workspace.pendingSource();
-    return !!target && !!searchState(new URL(target, "https://files.invalid").searchParams);
+    return (
+      !!target &&
+      directoryContext(target) !== directoryContext(snapshot().source) &&
+      !!searchState(new URL(target, "https://files.invalid").searchParams)
+    );
   };
-  const [marksRevision, setMarksRevision] = createSignal(0);
+  // Once, at the sidebar's Activity: Recent now lives there. The server decides; dismissing or using it ends it.
+  const [recentMovedHint, setRecentMovedHint] = createSignal(!!props.initial.hints?.recentMoved);
   const dialogLifetime = new AbortController();
   onCleanup(() => dialogLifetime.abort());
-  // From a storage, Activity opens filtered to it, as approved; inside Activity the entry keeps the current filters.
-  const activityHref = () =>
-    currentView() === "activity"
-      ? activityUrl(activityFilters())
-      : activityUrl(snapshot().selectedId && !currentView() ? { baseId: snapshot().selectedId! } : {});
+  // The sidebar's Activity replaces Recent: it always opens "Me" across all storage (approved 08.11.); inside Activity
+  // the entry keeps the current filters. A storage's own history is "Activity of this storage" in its menu.
+  const activityHref = () => (currentView() === "activity" ? activityUrl(activityFilters()) : activityUrl({ actor: "me" }));
   const navigation = createNavigation({
     items: () => [
       ...(hasOverview()
@@ -355,15 +398,6 @@ export default function Workspace(props: {
             },
           ]
         : []),
-      { id: "recent", label: b().recent, icon: "ti ti-clock", action: "recent" },
-      { id: "favorites", label: b().favorites, icon: "ti ti-star", action: "favorites" },
-      {
-        id: "shares",
-        label: b().shares,
-        icon: "ti ti-world-share",
-        href: viewUrl(snapshot().selectedId, "shares"),
-        navigation: "enhanced" as const,
-      },
       {
         id: "activity",
         label: b().activity,
@@ -372,6 +406,22 @@ export default function Workspace(props: {
         active: currentView() === "activity",
         navigation: "enhanced" as const,
         scroll: "manual" as const,
+      },
+      {
+        id: "favorites",
+        label: b().favorites,
+        icon: "ti ti-star",
+        href: viewUrl(null, "favorites"),
+        active: currentView() === "favorites",
+        navigation: "enhanced" as const,
+      },
+      {
+        id: "shares",
+        label: b().shares,
+        icon: "ti ti-world-share",
+        href: viewUrl(snapshot().selectedId, "shares"),
+        active: currentView() === "shares",
+        navigation: "enhanced" as const,
       },
       ...snapshot().bases.items.map((base) => ({
         id: base.id,
@@ -383,15 +433,6 @@ export default function Workspace(props: {
         scroll: "manual" as const,
       })),
     ],
-    onAction: (kind) => {
-      if (kind === "recent" || kind === "favorites")
-        void openMarksDialog({
-          kind,
-          title: kind === "recent" ? b().recent : b().favorites,
-          onOpen: openMarked,
-          signal: dialogLifetime.signal,
-        });
-    },
     onNavigate,
   });
   onMount(() =>
@@ -557,22 +598,29 @@ export default function Workspace(props: {
       const timeout = setTimeout(() => request.abort(), LIVE_REFRESH_MS);
       try {
         const after = new URL(workspace.committedSource(), window.location.origin).searchParams.get("after") ?? undefined;
-        const response = await apiClient.bases[":baseId"].entries
-          .$get(
-            { param: { baseId: directory.base.id }, query: { path: directory.path, after, ...browseQuery(currentBrowse()) } },
-            { init: { signal: request.signal } },
-          )
-          .catch(() => null);
-        if (!response?.ok) {
-          const error = response ? ErrorSchema.safeParse(await response.json()) : null;
-          if (after && error?.success && error.data.code === "cursor_invalid") {
-            invalidCursors.add(workspace.committedSource());
-            await resetCursor(workspace.committedSource());
-          }
-          return;
-        }
+        const page = await directoryPages(
+          directory.loadedPages ?? 1,
+          after,
+          async (cursor) => {
+            const response = await apiClient.bases[":baseId"].entries
+              .$get(
+                { param: { baseId: directory.base.id }, query: { path: directory.path, after: cursor, ...browseQuery(currentBrowse()) } },
+                { init: { signal: request.signal } },
+              )
+              .catch(() => null);
+            if (!response?.ok) {
+              const error = response ? ErrorSchema.safeParse(await response.json()) : null;
+              if ((cursor || (directory.loadedPages ?? 1) > 1) && error?.success && error.data.code === "cursor_invalid") {
+                invalidCursors.add(workspace.committedSource());
+                await resetCursor(workspace.committedSource());
+              }
+              throw new Error(t().unavailable);
+            }
+            return await response.json();
+          },
+          request.signal,
+        );
         if (snapshot().directory !== directory) return;
-        const page = await response.json();
         if (request.signal.aborted || workspace.pending() || snapshot().directory !== directory) return;
         const unchanged =
           fingerprint(page.items) === fingerprint(directory.items) &&
@@ -606,9 +654,11 @@ export default function Workspace(props: {
         await refreshBrowserBranches?.(request.signal);
         if (unchanged || request.signal.aborted || workspace.pending() || snapshot().directory !== directory) return;
         setPreserveSelection(true);
+        polledDirectory = { source: workspace.committedSource(), value: page };
         try {
           await go(workspace.committedSource(), true);
         } finally {
+          polledDirectory = null;
           setPreserveSelection(false);
         }
       } catch {
@@ -773,9 +823,8 @@ export default function Workspace(props: {
       <UploadSurface queue={uploads} />
       <Show when={currentView() !== "edit"} fallback={editorView()}>
         <AppWorkspace
-          class={currentView() === "activity" ? "filesv2-workspace--activity" : snapshot().moved ? "filesv2-workspace--moved" : undefined}
+          class={`filesv2-workspace ${currentView() === "activity" ? "filesv2-workspace--activity" : snapshot().moved ? "filesv2-workspace--moved" : ""}`}
           mobileSurface="flush"
-          layoutState={() => ({ version: 2, sidebarWidth: 248, detailWidths: { "filesv2-inspector": 400 } })}
         >
           <WorkspaceNavigationProvider label={t().files} navigation={navigation} />
           <AppWorkspace.Sidebar label={t().storage} collapsible defaultSize={248}>
@@ -789,8 +838,39 @@ export default function Workspace(props: {
                       <AppWorkspace.SidebarItemLabel>{b().allStorage}</AppWorkspace.SidebarItemLabel>
                     </AppWorkspace.SidebarItem>
                   </Show>
-                  <MarksSidebarItem kind="recent" onOpen={openMarked} revision={marksRevision()} />
-                  <MarksSidebarItem kind="favorites" onOpen={openMarked} revision={marksRevision()} />
+                  {/* Activity takes Recent's place: "Me" is what Recent listed, and the files you changed. */}
+                  <AppWorkspace.SidebarItem
+                    class="filesv2-sidebar-activity"
+                    href={activityHref()}
+                    navigation="enhanced"
+                    scroll="manual"
+                    onNavigate={onNavigate}
+                    active={currentView() === "activity"}
+                  >
+                    <AppWorkspace.SidebarItemIcon icon="ti ti-history" />
+                    <AppWorkspace.SidebarItemLabel>{b().activity}</AppWorkspace.SidebarItemLabel>
+                  </AppWorkspace.SidebarItem>
+                  <MovedHint
+                    open={recentMovedHint()}
+                    target={() => document.querySelector<HTMLElement>(".filesv2-sidebar-activity") ?? undefined}
+                    placement="right"
+                    onDismiss={() => {
+                      setRecentMovedHint(false);
+                      markHintSeen(RECENT_MOVED_HINT);
+                    }}
+                    action={{ label: b().openActivity, href: activityUrl({ actor: "me" }) }}
+                  >
+                    <strong>{b().recentMovedTitle}</strong> {b().recentMovedText}
+                  </MovedHint>
+                  <AppWorkspace.SidebarItem
+                    href={viewUrl(null, "favorites")}
+                    navigation="enhanced"
+                    onNavigate={onNavigate}
+                    active={currentView() === "favorites"}
+                  >
+                    <AppWorkspace.SidebarItemIcon icon="ti ti-star" />
+                    <AppWorkspace.SidebarItemLabel>{b().favorites}</AppWorkspace.SidebarItemLabel>
+                  </AppWorkspace.SidebarItem>
                   <AppWorkspace.SidebarItem
                     href={viewUrl(snapshot().selectedId, "shares")}
                     navigation="enhanced"
@@ -806,21 +886,6 @@ export default function Workspace(props: {
                           {page.next ? "+" : ""}
                         </AppWorkspace.SidebarItemMeta>
                       )}
-                    </Show>
-                  </AppWorkspace.SidebarItem>
-                  <AppWorkspace.SidebarItem
-                    href={activityHref()}
-                    navigation="enhanced"
-                    scroll="manual"
-                    onNavigate={onNavigate}
-                    active={currentView() === "activity"}
-                  >
-                    <AppWorkspace.SidebarItemIcon icon="ti ti-history" />
-                    <AppWorkspace.SidebarItemLabel>{b().activity}</AppWorkspace.SidebarItemLabel>
-                    <Show when={currentView() !== "activity"}>
-                      <AppWorkspace.SidebarItemMeta>
-                        <StatusBadge tone="info" label={h().newFeature} />
-                      </AppWorkspace.SidebarItemMeta>
                     </Show>
                   </AppWorkspace.SidebarItem>
                 </AppWorkspace.SidebarSection>
@@ -850,6 +915,30 @@ export default function Workspace(props: {
                           meta={base.kind === "users" ? <span class="text-xs text-dimmed">{base.name}</span> : undefined}
                           title={`${base.kind === "users" ? `${baseLabel(base, b(), locale())} · ${base.name}` : baseLabel(base, b(), locale())} (${t()[base.area]})`}
                           onNavigate={(event) => withSpinner(treeId(base.id, ""), () => onNavigate(event))}
+                          actions={
+                            // A storage's own history: everyone's changes there. Activity in the sidebar is "Me".
+                            <Show when={base.area === "cloud"}>
+                              <Dropdown.Root
+                                items={[
+                                  {
+                                    label: b().activityOfStorage,
+                                    icon: "ti ti-history",
+                                    action: () => void go(activityUrl({ baseId: base.id })),
+                                  },
+                                ]}
+                                align="end"
+                              >
+                                <Dropdown.Trigger
+                                  iconOnly
+                                  size="xs"
+                                  variant="ghost"
+                                  label={`${b().moreActions}: ${baseLabel(base, b(), locale())}`}
+                                >
+                                  <i class="ti ti-dots" aria-hidden="true" />
+                                </Dropdown.Trigger>
+                              </Dropdown.Root>
+                            </Show>
+                          }
                         >
                           <Show when={base.status === "existing"}>
                             <For each={folders()[treeId(base.id, "")] ?? []}>{(entry) => <Folder baseId={base.id} entry={entry} />}</For>
@@ -895,22 +984,21 @@ export default function Workspace(props: {
                     loadChain={(entry, signal) => loadChain(entry, signal, h().chainFailed)}
                     loadBatch={(entry, signal) => loadBatchContext(entry, signal, h().batchFailed)}
                     retentionDays={props.retentionDays ?? 365}
+                    opened={{ initial: snapshot().marks ?? null, load: (signal) => loadRecent(signal, b().loadFailed) }}
                   />
                 </AppWorkspace.Main>
               }
             >
               <Show
-                when={currentView() !== "recent" && currentView() !== "favorites"}
+                when={currentView() !== "favorites"}
                 fallback={
-                  <AppWorkspace.Main class="p-3">
-                    <MarksMenu
-                      kind={currentView() === "recent" ? "recent" : "favorites"}
-                      open
-                      close={() => {}}
-                      onOpen={openMarked}
-                      revision={marksRevision()}
-                    />
-                  </AppWorkspace.Main>
+                  <FavoritesPage
+                    initial={snapshot().marks ?? null}
+                    bases={snapshot().bases.items.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) }))}
+                    timeZone={props.timeZone ?? "UTC"}
+                    now={snapshot().now ?? new Date().toISOString()}
+                    onOpen={openMarked}
+                  />
                 }
               >
                 <Show
@@ -939,7 +1027,8 @@ export default function Workspace(props: {
                         <StorageOverview
                           bases={snapshot().bases.items}
                           issues={snapshot().bases.issues}
-                          onOpenRecent={openMarked}
+                          favorites={snapshot().favoritesPreview}
+                          env={historyEnv()}
                           onNavigate={onNavigate}
                         />
                       }
@@ -1032,11 +1121,21 @@ export default function Workspace(props: {
                             bases={snapshot().bases.items}
                             after={after()}
                             source={snapshot().source}
+                            onLoadMore={async () => {
+                              const url = new URL(workspace.committedSource(), window.location.origin);
+                              url.searchParams.set("pages", String((snapshot().directory?.loadedPages ?? 1) + 1));
+                              setPreserveSelection(true);
+                              try {
+                                await go(`${url.pathname}${url.search}`, true);
+                              } finally {
+                                setPreserveSelection(false);
+                              }
+                              if (workspace.failure()) throw new Error(workspace.failure()!.message);
+                            }}
                             detail={snapshot().detail}
                             preferences={props.preferences}
                             issues={snapshot().bases.issues}
                             onSelectionSource={workspace.rememberSource}
-                            onMarksChanged={() => setMarksRevision((value) => value + 1)}
                             onBranchRefreshReady={(refresh) => {
                               refreshBrowserBranches = refresh;
                             }}
@@ -1069,7 +1168,6 @@ export default function Workspace(props: {
                               void go(filesUrl(directory().base.id, directory().path, null, null, null, options))
                             }
                             onChanged={(selectPath) => {
-                              setMarksRevision((value) => value + 1);
                               // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
                               ensureLoaded(Object.keys(folders()), true);
                               return go(
@@ -1077,6 +1175,7 @@ export default function Workspace(props: {
                                 true,
                               );
                             }}
+                            selectionPillHint={!!props.initial.hints?.selectionPill}
                             onShare={(paths) =>
                               void openShareDialog({
                                 baseId: directory().base.id,

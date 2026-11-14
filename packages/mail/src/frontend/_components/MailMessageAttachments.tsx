@@ -1,44 +1,40 @@
-import { type SaveFileSource, SaveFilesButton } from "@k2b/cloud/browser/files";
-import { fileIcons } from "@k2b/stdlib";
+import { SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
-  CopyButton,
+  Button,
   canPreviewFile,
-  dialogCore,
-  FileGrid,
+  Dropdown,
+  type DropdownItem,
   FileTypeIcon,
-  FileView,
   type FileViewContent,
   type FileViewPreviewKind,
-  Format,
   fileKindLabel,
   formatFileViewSize,
   getFileViewPreviewKind,
-  IconButton,
-  IconButtonLink,
-  PanelDialog,
-  panelDialogWorkspaceOptions,
+  Lightbox,
+  type LightboxAction,
+  type LightboxItem,
   prompts,
-  Tooltip,
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { CreateAttachmentLinkInput, CreatedAttachmentLink } from "../../contracts";
 import { readApiError } from "./api-response";
 import { promptAttachmentLinkOptions } from "./attachment-link-ui";
-import { isThumbnailImage } from "./mail-detail-attachments";
-import { mailDetailsMessages } from "./mail-details-messages";
 import { mailMessageMessages } from "./mail-message-messages";
 import { attachmentPreviewKind } from "./mail-message-presentation";
+import { mailReaderMessages } from "./mail-reader-messages";
 
-type Attachment = {
+export type MailAttachment = {
   id: string;
   filename: string | null;
   contentType: string;
   sizeBytes: number;
 };
+type Attachment = MailAttachment;
 
 /** What "Save to Files" reads: the attachment's own download route, with its known size. */
 export const saveSource = (attachment: Attachment, downloadHref: string): SaveFileSource => ({
@@ -65,129 +61,57 @@ export const canPreviewAttachment = (attachment: Attachment): boolean => {
     : fileViewKind === mailKind;
 };
 
-/** Documents and text read in a column; tables and media get the wide workspace frame. */
-const READING = new Set<FileViewPreviewKind>(["markdown", "text", "json", "audio"]);
-/** These take the body's height: media fits the frame, and a table scrolls inside it with its header row in view. */
-const STRETCH = new Set<FileViewPreviewKind>(["image", "pdf", "video", "delimited-text"]);
+/** Plain text, a table and JSON can show no code box with its own Copy, so Copy text sits in the action pill. */
+const COPY = new Set<FileViewPreviewKind>(["text", "delimited-text", "json"]);
 
 /**
- * The attachment preview follows the Files preview: the document's own title (or the file name), a quiet line with
- * the file facts, the actions in the header, and the content on the dialog surface without a second frame.
+ * An attachment in the Lightbox, with the actions of the former preview dialog: Copy text for text, Save to Files and
+ * Download. A previewable attachment reads from its inline address; any other one shows its facts and Download.
  */
-function MailAttachmentPreviewDialog(props: {
-  attachment: Attachment;
-  kind: FileViewPreviewKind | null;
-  downloadHref: string;
-  previewHref: string;
-  close: () => void;
-}) {
-  const locale = useLocale();
-  const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
-  const filename = () => props.attachment.filename ?? messages().attachment;
-  // Undefined until a Markdown attachment shows whether it starts with a heading; every other file is titled by its name.
-  const [documentTitle, setDocumentTitle] = createSignal<string | null | undefined>(props.kind === "markdown" ? undefined : null);
-  // Plain text, a table's raw view and JSON that does not parse show no code box, so copying moves into the header.
-  const [text, setText] = createSignal<string | null>(null);
+export const attachmentLightboxItem = (attachment: Attachment, downloadHref: string, locale: string): LightboxItem => {
+  const messages = mailMessageMessages.resolve([locale]).t;
+  const name = attachment.filename ?? messages.attachment;
+  const file = attachmentFile(attachment);
+  const kind = canPreviewAttachment(attachment) ? getFileViewPreviewKind(file) : null;
+  const previewHref = `${downloadHref}?inline=true`;
+  let text: string | undefined;
   const load = async (): Promise<FileViewContent> => {
-    const response = await fetch(props.previewHref, { credentials: "same-origin" });
-    if (!response.ok) throw new Error(await readApiError(response, messages().previewAttachmentFailed));
-    const content = await response.text();
-    setText(content);
-    return {
-      encoding: "utf8",
-      content,
-      mediaType: response.headers.get("content-type")?.split(";", 1)[0] || props.attachment.contentType,
-    };
+    const response = await fetch(previewHref, { credentials: "same-origin" });
+    if (!response.ok) throw new Error(await readApiError(response, messages.previewAttachmentFailed));
+    text = await response.text();
+    return { encoding: "utf8", content: text, mediaType: response.headers.get("content-type")?.split(";", 1)[0] || attachment.contentType };
   };
-
-  return (
-    <PanelDialog>
-      <PanelDialog.Header
-        title={
-          <Show
-            when={documentTitle() !== undefined}
-            fallback={
-              <>
-                <span class="k2b-sr-only">{filename()}</span>
-                <span class="mail-attachment-dialog__title-pending" aria-hidden="true" />
-              </>
-            }
-          >
-            {documentTitle() ?? filename()}
-          </Show>
-        }
-        subtitle={
-          // Held invisibly until the title is known, then shown with it, so nothing visible moves when it arrives.
-          <span class="mail-attachment-dialog__facts" data-pending={documentTitle() === undefined ? "" : undefined}>
-            <i
-              class={`ti ${fileIcons.getFileIcon({ name: filename(), type: "file", mimeType: props.attachment.contentType })}`}
-              aria-hidden="true"
-            />
-            <Show when={documentTitle()}>
-              <span class="mail-attachment-dialog__facts-name" title={filename()}>
-                {filename()}
-              </span>
-              <span class="mail-attachment-dialog__facts-separator" aria-hidden="true">
-                ·
-              </span>
-            </Show>
-            <Format.Bytes value={props.attachment.sizeBytes} />
-          </span>
-        }
-        actions={
-          <>
-            <Show when={props.kind === "text" || props.kind === "delimited-text" || props.kind === "json"}>
-              <CopyButton size="sm" variant="ghost" text={text() ?? ""} disabled={text() === null} />
-            </Show>
-            <SaveFilesButton files={() => [saveSource(props.attachment, props.downloadHref)]} />
-            <Tooltip.Anchor content={messages().downloadAttachment}>
-              <IconButtonLink href={props.downloadHref} download={filename()} label={messages().downloadNamed({ name: filename() })}>
-                <i class="ti ti-download" aria-hidden="true" />
-                <span class="sr-only">{messages().downloadNamed({ name: filename() })}</span>
-              </IconButtonLink>
-            </Tooltip.Anchor>
-          </>
-        }
-        close={props.close}
-      />
-      <PanelDialog.Body>
-        <div class="mail-attachment-dialog__content" tabindex="-1">
-          <FileView
-            variant="plain"
-            headingScale="normal"
-            file={attachmentFile(props.attachment)}
-            load={load}
-            previewHref={props.previewHref}
-            onDocumentTitle={setDocumentTitle}
-          />
-        </div>
-      </PanelDialog.Body>
-    </PanelDialog>
-  );
-}
-
-export const openAttachmentPreview = (attachment: Attachment, downloadHref: string, previewHref: string) => {
-  const kind = getFileViewPreviewKind(attachmentFile(attachment));
-  const classes = [panelDialogWorkspaceOptions.panelClassName, "mail-attachment-dialog"];
-  if (kind && READING.has(kind)) classes.push("mail-attachment-dialog--reading");
-  if (kind && STRETCH.has(kind)) classes.push("mail-attachment-dialog--stretch");
-  return dialogCore.open<void>(
-    (close) => (
-      <MailAttachmentPreviewDialog
-        attachment={attachment}
-        kind={kind}
-        downloadHref={downloadHref}
-        previewHref={previewHref}
-        close={() => close()}
-      />
-    ),
-    {
-      ...panelDialogWorkspaceOptions,
-      panelClassName: classes.join(" "),
-      // Reading comes first: focus starts on the content, so arrow keys and Page Down scroll it at once.
-      initialFocus: (dialog) => dialog.querySelector<HTMLElement>(".mail-attachment-dialog__content"),
+  const copy: LightboxAction = {
+    label: messages.copyText,
+    icon: "ti ti-copy",
+    onClick: () => {
+      if (text === undefined) return;
+      void navigator.clipboard.writeText(text).then(
+        () => toast.success(messages.textCopied),
+        () => toast.error(messages.textNotCopied),
+      );
     },
-  );
+  };
+  const read = kind === "image" || kind === "pdf" || kind === "video" || kind === "audio";
+  return {
+    name,
+    meta: [fileKindLabel({ name, mediaType: attachment.contentType }, locale), formatFileViewSize(attachment.sizeBytes, locale)].join(
+      " · ",
+    ),
+    file,
+    src: read ? previewHref : undefined,
+    load: kind && !read ? load : undefined,
+    thumbnail: kind === "image" ? previewHref : undefined,
+    downloadUrl: downloadHref,
+    actions: [
+      ...(kind && COPY.has(kind) ? [copy] : []),
+      {
+        label: saveFilesLabel(locale),
+        icon: SAVE_FILES_ICON,
+        onClick: () => void saveFiles([saveSource(attachment, downloadHref)]),
+      },
+    ],
+  };
 };
 
 /** Starts a download of a file the browser cannot preview. */
@@ -202,27 +126,43 @@ export const downloadUrl = (href: string, name: string) => {
 };
 
 /**
- * A message's attachments where it is read: the count, the first few with an image preview or their type icon, and
- * "Show all N", which opens files as rows and images as tiles in place. A click opens the preview; a format without
- * one downloads. Each row carries its own actions.
+ * A message's attachments as tiles inside the open message (Mail v5): an icon by type, the name, and the kind with
+ * its size. A click opens the attachment, in the conversation's Lightbox when the reader passes `onOpen`; a format
+ * without a preview downloads. Each tile's "…" downloads, saves to Files, or shares a link; from two attachments on,
+ * "Download all n" packs them into one ZIP.
  */
 export default function MailMessageAttachments(props: {
   mailboxId: string;
   messageId: string;
   attachments: Attachment[];
   canShare?: boolean;
+  /** The name of the ZIP with all attachments, such as the conversation's subject. */
+  archiveName?: string;
+  /** Opens a previewable attachment in the conversation's Lightbox; without it, the message's own Lightbox opens. */
+  onOpen?: (attachment: Attachment) => void;
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
-  const details = createMemo(() => mailDetailsMessages.resolve([locale()]).t);
+  const reader = createMemo(() => mailReaderMessages.resolve([locale()]).t);
   let disposed = false;
   const baseUrl = (attachment: Attachment) =>
     `/api/mail/mailboxes/${props.mailboxId}/messages/${props.messageId}/attachments/${attachment.id}`;
   const fileName = (attachment: Attachment) => attachment.filename ?? messages().attachment;
+  const meta = (attachment: Attachment) =>
+    [
+      fileKindLabel({ name: fileName(attachment), mediaType: attachment.contentType }, locale()),
+      formatFileViewSize(attachment.sizeBytes, locale()),
+    ].join(" · ");
+  // Without a conversation Lightbox, the message's attachments open in their own, so the arrow keys step through them.
+  const [shown, setShown] = createSignal<number | null>(null);
+  const lightboxItems = createMemo(() =>
+    props.attachments.map((attachment) => attachmentLightboxItem(attachment, baseUrl(attachment), locale())),
+  );
+  /** A previewable attachment opens in the Lightbox; any other one downloads at once, as before. */
   const openAttachment = (attachment: Attachment) => {
-    const href = baseUrl(attachment);
-    if (canPreviewAttachment(attachment)) void openAttachmentPreview(attachment, href, `${href}?inline=true`);
-    else downloadUrl(href, fileName(attachment));
+    if (!canPreviewAttachment(attachment)) return downloadUrl(baseUrl(attachment), fileName(attachment));
+    if (props.onOpen) return props.onOpen(attachment);
+    setShown(Math.max(0, props.attachments.indexOf(attachment)));
   };
 
   const createLink = mutations.create<CreatedAttachmentLink, { attachment: Attachment; input: CreateAttachmentLinkInput }>({
@@ -247,88 +187,128 @@ export default function MailMessageAttachments(props: {
     },
     onError: (error) => toast.error(error.message),
   });
+  // Packing belongs to this message: closing it stops the fetches.
+  const [packing, setPacking] = createSignal(false);
+  let packingAbort: AbortController | undefined;
   onCleanup(() => {
     disposed = true;
     createLink.abort();
+    packingAbort?.abort();
   });
 
   const shareAttachment = async (attachment: Attachment) => {
     const input = await promptAttachmentLinkOptions(locale());
     if (!disposed && input) createLink.mutate({ attachment, input });
   };
+  const downloadAll = async () => {
+    if (packing()) return;
+    const controller = new AbortController();
+    packingAbort = controller;
+    setPacking(true);
+    const files = props.attachments.map((attachment) => ({
+      name: fileName(attachment),
+      href: baseUrl(attachment),
+      size: attachment.sizeBytes,
+    }));
+    try {
+      const zip = await importOnDemand(() => import("./mail-attachments-zip"));
+      if (!zip || controller.signal.aborted) return;
+      await zip.downloadMailAttachments(files, `${props.archiveName?.trim() || messages().attachments}.zip`, controller.signal);
+    } catch {
+      if (!controller.signal.aborted) toast.error(reader().downloadAllFailed);
+    } finally {
+      if (packingAbort === controller) {
+        packingAbort = undefined;
+        setPacking(false);
+      }
+    }
+  };
+  const tileMenu = (attachment: Attachment): DropdownItem[] => [
+    { label: reader().download, icon: "ti ti-download", href: baseUrl(attachment) },
+    {
+      label: saveFilesLabel(locale()),
+      icon: SAVE_FILES_ICON,
+      action: () => void saveFiles([saveSource(attachment, baseUrl(attachment))]),
+    },
+    ...(props.canShare
+      ? [
+          {
+            label: messages().shareNamed({ name: fileName(attachment) }),
+            icon: "ti ti-link",
+            disabled: createLink.loading(),
+            action: () => void shareAttachment(attachment),
+          },
+        ]
+      : []),
+  ];
 
   return (
-    <section class="mail-message-attachments" aria-label={messages().attachments} data-mail-message-attachments>
-      <div class="mail-message-attachments__head">
-        <p class="mail-message-attachments__count">
-          <i class="ti ti-paperclip" aria-hidden="true" />
-          {messages().attachmentCount({ count: props.attachments.length })}
-        </p>
-        <Show when={props.attachments.length > 1}>
-          <SaveFilesButton
-            all
-            size="xs"
-            variant="ghost"
-            files={() => props.attachments.map((attachment) => saveSource(attachment, baseUrl(attachment)))}
-          />
-        </Show>
-      </div>
-      <FileGrid
-        rows={props.attachments}
-        getRowId={(attachment) => attachment.id}
-        label={messages().attachments}
-        layout="list"
-        limit={3}
-        actionVisibility="progressive"
-        groups={(rows) => [
-          { id: "files", label: details().files, rows: rows.filter((attachment) => !isThumbnailImage(attachment)) },
-          { id: "images", label: details().images, rows: rows.filter(isThumbnailImage), layout: "tiles" },
-        ]}
-        renderPreview={(attachment) =>
-          isThumbnailImage(attachment) ? (
-            <img src={`${baseUrl(attachment)}?inline=true`} alt="" loading="lazy" decoding="async" />
-          ) : (
-            <FileTypeIcon name={fileName(attachment)} mediaType={attachment.contentType} />
-          )
-        }
-        renderLabel={fileName}
-        renderMeta={(attachment) =>
-          [
-            fileKindLabel({ name: fileName(attachment), mediaType: attachment.contentType }, locale()),
-            formatFileViewSize(attachment.sizeBytes, locale()),
-          ].join(" · ")
-        }
-        renderActions={(attachment) => (
-          <>
-            <Show when={props.canShare}>
-              <Tooltip.Anchor content={messages().shareNamed({ name: fileName(attachment) })}>
-                <IconButton
-                  size="sm"
-                  variant="ghost"
-                  label={messages().shareNamed({ name: fileName(attachment) })}
-                  disabled={createLink.loading()}
-                  onClick={() => void shareAttachment(attachment)}
-                >
-                  <i class={`ti ${createLink.loading() ? "ti-loader-2 animate-spin" : "ti-link"}`} aria-hidden="true" />
-                </IconButton>
-              </Tooltip.Anchor>
-            </Show>
-            <Tooltip.Anchor content={messages().downloadNamed({ name: fileName(attachment) })}>
-              <IconButtonLink
-                size="sm"
-                variant="ghost"
-                href={baseUrl(attachment)}
-                download={fileName(attachment)}
-                label={messages().downloadNamed({ name: fileName(attachment) })}
+    <section
+      class="mail-attachment-tiles"
+      aria-label={reader().attachmentCount({ count: props.attachments.length })}
+      data-mail-message-attachments
+    >
+      <ul class="mail-attachment-tiles__list">
+        <For each={props.attachments}>
+          {(attachment) => (
+            <li class="mail-attachment-tile" data-mail-attachment={attachment.id}>
+              <button
+                type="button"
+                class="mail-attachment-tile__open"
+                aria-label={`${reader().openAttachment({ name: fileName(attachment) })}, ${meta(attachment)}`}
+                onClick={() => openAttachment(attachment)}
               >
-                <i class="ti ti-download" aria-hidden="true" />
-              </IconButtonLink>
-            </Tooltip.Anchor>
-            <SaveFilesButton size="sm" variant="ghost" files={() => [saveSource(attachment, baseUrl(attachment))]} />
-          </>
-        )}
-        onOpen={openAttachment}
-      />
+                <span class="mail-attachment-tile__icon" aria-hidden="true">
+                  <FileTypeIcon name={fileName(attachment)} mediaType={attachment.contentType} />
+                </span>
+                <span class="mail-attachment-tile__text">
+                  <span class="mail-attachment-tile__name" title={fileName(attachment)}>
+                    {fileName(attachment)}
+                  </span>
+                  <span class="mail-attachment-tile__meta">{meta(attachment)}</span>
+                </span>
+              </button>
+              <Dropdown.Root position="bottom-left" width="15rem" items={tileMenu(attachment)}>
+                <Dropdown.Trigger
+                  iconOnly
+                  size="xs"
+                  type="button"
+                  variant="ghost"
+                  class="mail-attachment-tile__menu"
+                  label={reader().attachmentActions({ name: fileName(attachment) })}
+                >
+                  <i class="ti ti-dots" aria-hidden="true" />
+                </Dropdown.Trigger>
+              </Dropdown.Root>
+            </li>
+          )}
+        </For>
+        <Show when={props.attachments.length > 1}>
+          <li class="mail-attachment-tiles__all">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              loading={packing()}
+              loadingLabel={reader().downloadingAll}
+              data-mail-download-all
+              onClick={() => void downloadAll()}
+            >
+              <i class="ti ti-download" aria-hidden="true" />
+              {reader().downloadAll({ count: props.attachments.length })}
+            </Button>
+            <SaveFilesButton
+              all
+              size="sm"
+              variant="ghost"
+              files={() => props.attachments.map((attachment) => saveSource(attachment, baseUrl(attachment)))}
+            />
+          </li>
+        </Show>
+      </ul>
+      <Show when={shown() !== null && lightboxItems().length > 0}>
+        <Lightbox items={lightboxItems()} index={shown() ?? 0} onIndexChange={setShown} onClose={() => setShown(null)} />
+      </Show>
     </section>
   );
 }

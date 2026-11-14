@@ -244,6 +244,7 @@ function EmailTemplateEditor(props: {
             <Panes
               layout={layout()}
               onLayoutChange={setLayout}
+              defaultLayout={createTemplateEditorPanesLayout()}
               class="h-full w-full"
               resizable={false}
               items={[

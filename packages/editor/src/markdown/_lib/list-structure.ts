@@ -6,6 +6,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { type ChangeSet, type ChangeSpec, type EditorState, Facet } from "@codemirror/state";
 import type { Tree } from "@lezer/common";
+import { mergeMarkdownSpans } from "./changed-blocks";
 
 export type ListItemKind = "bullet" | "ordered" | "task";
 export type ListItem = {
@@ -59,6 +60,8 @@ export const listStructure = (
   const items: ListItem[] = [];
   const parents: Array<{ from: number; index: number }> = [];
   const lists: Array<{ ordered: boolean; start: number | null; index: number }> = [];
+  let spans: readonly ExcludedSpan[] | undefined;
+  let exclusion = 0;
   tree.iterate({
     from: range?.from,
     to: range?.to,
@@ -78,7 +81,9 @@ export const listStructure = (
       const ordinal = list.start === null ? null : list.start + list.index;
       list.index++;
       const line = state.doc.lineAt(mark.from);
-      if (items.at(-1)?.line === line.number || excludedSpans().some((span) => mark.from >= span.from && mark.from < span.to)) return false;
+      spans ??= mergeMarkdownSpans([...excludedSpans()]);
+      while (spans[exclusion] && spans[exclusion]!.to <= mark.from) exclusion++;
+      if (items.at(-1)?.line === line.number || (spans[exclusion] && mark.from >= spans[exclusion]!.from)) return false;
       const task = node.getChild("Task")?.getChild("TaskMarker");
       let contentFrom = task?.to ?? mark.to;
       while (contentFrom < line.to && /[ \t]/.test(state.sliceDoc(contentFrom, contentFrom + 1))) contentFrom++;

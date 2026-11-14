@@ -1,9 +1,10 @@
-import { afterEach, expect, setSystemTime, test } from "bun:test";
+import { afterEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import { SQL } from "bun";
 import { z } from "zod";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
-import { publishAppAccessChanged, subscribeAppAccessChanged } from "./app-access";
+import * as identityConfig from "../services/identity/runtime-config";
+import { publishAppAccessChanged, subscribeAppAccessChanged, subscribeIdentityAccessChanged } from "./app-access";
 import { defineLive } from "./live";
 import { createMemoryLiveTopic } from "./testing";
 
@@ -83,5 +84,85 @@ test("app access changes and application live events enqueue through the same tr
     expect(statements).toHaveLength(4);
   } finally {
     await client.close();
+  }
+});
+
+test("identity source events notify application and room listeners on the existing Core follower", async () => {
+  setSystemTime(new Date("2026-11-12T12:00:00Z"));
+  const topic = createMemoryLiveTopic();
+  bindProcessSync({ topic: () => topic } as unknown as Sync);
+  let app = 0,
+    room = 0;
+  const reset = spyOn(identityConfig, "invalidateIdentityRuntimeConfig");
+  const stopApp = subscribeAppAccessChanged("notebooks", () => {
+    app++;
+  });
+  const stopRoom = subscribeIdentityAccessChanged(() => {
+    room++;
+  });
+  try {
+    await Bun.sleep(0);
+    const initial = { app, room, resets: reset.mock.calls.length };
+    topic.publish({ v: 1, k: "identity.access", d: { type: "identity.access.changed" } });
+    await Bun.sleep(0);
+    expect(app - initial.app).toBe(1);
+    expect(room - initial.room).toBe(1);
+    expect(reset.mock.calls.length - initial.resets).toBe(1);
+  } finally {
+    stopRoom();
+    stopApp();
+    reset.mockRestore();
+  }
+});
+
+test("application accessChanges filters data hints and releases its shared follower on abort", async () => {
+  setSystemTime(new Date("2026-11-12T12:00:00Z"));
+  const topic = createMemoryLiveTopic();
+  bindProcessSync({ topic: () => ({ ...topic, hub: () => ({ subscribe: topic.follow }) }) } as unknown as Sync);
+  const live = defineLive({ appId: "roomhints", event: z.object({ text: z.string() }) });
+  const signal = new AbortController();
+  const seen: string[] = [];
+  const reading = (async () => {
+    for await (const event of live.accessChanges({ after: await live.cursor(), signal: signal.signal })) {
+      seen.push(event.key);
+      signal.abort();
+    }
+  })();
+  await Bun.sleep(0);
+  topic.publish({ v: 1, k: "data-only", d: { text: "Preview changed" } });
+  topic.publish({ v: 1, k: "mailbox", a: true });
+  await reading;
+  expect(seen).toEqual(["mailbox"]);
+});
+
+test("a scoped session/account event never revalidates another user's sockets", async () => {
+  const topic = createMemoryLiveTopic();
+  bindProcessSync({ topic: () => topic } as unknown as Sync);
+  let a = 0,
+    b = 0;
+  const delivered = Promise.withResolvers<void>();
+  const stopA = subscribeIdentityAccessChanged(
+    () => {
+      a++;
+      if (a > 1) delivered.resolve();
+    },
+    { userId: "a", sid: "session-a" },
+  );
+  const stopB = subscribeIdentityAccessChanged(
+    () => {
+      b++;
+    },
+    { userId: "b", sid: "session-b" },
+  );
+  try {
+    await Bun.sleep(0);
+    const beforeB = b;
+    topic.publish({ v: 1, k: "identity.access:a", d: { type: "identity.access.changed", userId: "a", sid: "session-a" } });
+    await delivered.promise;
+    expect(b).toBe(beforeB);
+    expect(a).toBe(2);
+  } finally {
+    stopA();
+    stopB();
   }
 });

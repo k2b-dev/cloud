@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // Choice cards follow the edge contract: a 2 px edge inside the card in every
 // state, so the card and its text never move. Rest is grey, hover darkens the
@@ -156,7 +156,7 @@ for (const theme of ["light", "dark"] as const)
             expect(rest.edgeColors).toEqual([p.edge!]);
             expect(rest.fill).toBe(p.surface!);
 
-            await page.locator(card.selector).nth(card.rest).hover();
+            await hoverInPlace(page.locator(card.selector).nth(card.rest));
             await settled(page);
             const hover = await read(page, card.selector, card.rest);
             expect(hover.edgeColors).toEqual([p.edge!]);
@@ -166,7 +166,7 @@ for (const theme of ["light", "dark"] as const)
             expect(chosen.edgeWidth).toBe(2);
             expect(chosen.edgeColors).toEqual([p.selected!]);
             expect(chosen.fill).toBe(p.selectedFill!);
-            await page.locator(card.selector).nth(card.chosen).hover();
+            await hoverInPlace(page.locator(card.selector).nth(card.chosen));
             await settled(page);
             expect((await read(page, card.selector, card.chosen)).fill).toBe(p.selectedHover!);
 

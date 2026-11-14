@@ -1,5 +1,6 @@
 import { type JSX, Match, Show, Switch } from "solid-js";
-import Chart from "../content/Chart";
+import type { ChartNumberFormat } from "../charts/description";
+import { ChartSparkline } from "../content/ChartSparkline";
 import type { ChartTooltipFormatter } from "../content/chart-inspection-core";
 import { useLocale } from "../intl/locale";
 import type { AccentColor } from "../semantics";
@@ -22,7 +23,9 @@ export type StatCellAccent = {
  */
 export type StatCellDelta = {
   value: number;
-  unit?: "ratio" | "points";
+  unit?: "ratio" | "points" | "absolute";
+  /** Existing measures can express a change in their own unit instead of a ratio. */
+  format?: ChartNumberFormat;
   better?: "up" | "down";
 };
 
@@ -46,6 +49,8 @@ export type StatCellProps = {
   tone?: StatCellTone | "in" | "out";
   accent?: StatCellAccent;
   delta?: StatCellDelta;
+  /** Keep the figure and change on separate rows, including while loading. Defaults to beside the figure. */
+  deltaPlacement?: "below";
   compare?: StatCellCompare;
   href?: string;
   title?: string;
@@ -112,7 +117,17 @@ function Body(props: StatCellProps): JSX.Element {
                 data-empty={empty() || undefined}
                 title={props.title}
               >
-                {empty() ? "–" : props.value}
+                {/* A missing figure is the shared empty dash, named for screen readers instead of read as a dash. */}
+                <Show
+                  when={!empty()}
+                  fallback={
+                    <span role="img" aria-label={t().noValue}>
+                      —
+                    </span>
+                  }
+                >
+                  {props.value}
+                </Show>
               </span>
               <Show when={!empty() && props.delta}>{(delta) => <DeltaBadge delta={delta()} compare={props.compare} />}</Show>
             </>
@@ -162,8 +177,7 @@ function Body(props: StatCellProps): JSX.Element {
                   </Show>
                   {/* No figure, no trend: an empty tile says why in `sub` and keeps the size of its other states. */}
                   <Show when={!empty() && props.trend && props.trend.length > 1}>
-                    <Chart
-                      kind="sparkline"
+                    <ChartSparkline
                       labels={{ interactiveChart: props.label }}
                       tooltip={props.trendTooltip ?? defaultTrendTooltip}
                       class="k2b-stat-cell__trend"
@@ -228,6 +242,7 @@ export function StatCell(props: StatCellProps): JSX.Element {
           data-size={size()}
           data-surface={surface}
           data-wrap={props.wrap || undefined}
+          data-delta-placement={props.deltaPlacement}
           data-status={props.status}
           aria-busy={props.status === "loading" || undefined}
         >
@@ -241,6 +256,7 @@ export function StatCell(props: StatCellProps): JSX.Element {
         data-size={size()}
         data-surface={surface}
         data-wrap={props.wrap || undefined}
+        data-delta-placement={props.deltaPlacement}
       >
         <i class="ti ti-external-link k2b-stat-cell__link-icon" aria-hidden="true" />
         <Body {...props} />

@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-11-04
+updated: 2026-11-12
 ---
 
 # Layout and navigation
@@ -38,6 +38,7 @@ when people navigate.
 | Below 768 px (phones) | App gradient with a title row, search, help, and the app menu; a soft content card down to the screen's bottom edge | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
 | 768 to 1023 px (tablets) | No header. A 60 px app bar in a rounded gradient container sits beside the app card. Both have 20 px corners, 8 px spacing to the window edges, and 8 px between them | The same header controls; header, content, and footer as cards on the app background |
 | From 1024 px | No header. The 56 px app bar sits on the app background. The app area is a card whose spacing grows from 4 px at 1024 px to 8 px at 1440 px and whose radius grows from 10 px to 14 px. Wider windows keep those dimensions | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
+| From 1680 px | As from 1024 px, but the app bar shows each entry's name beside its icon and is 208 px wide, unless the person turned names off | As from 1024 px |
 
 Where the app area is a card, the outermost workspace is that card. It has
 rounded corners and the card's frame, also when it is `flat`. Render that
@@ -51,12 +52,30 @@ workspace paints past the card's corners.
 
 From 768 px the app bar holds Home, the apps, the app grid, the panel button
 when more than one panel is offered, search, help, and the profile avatar. Its
-controls are 44 px targets. The panel button, search, and help are blue; the
-panel button's arrow and name say whether a click opens or closes the panel,
-and an open panel keeps its fill. From 768 to 1023 px the app bar's container carries the app
+controls are 44 px targets. Each app's icon carries its app's color, held at
+3:1 on the app background (see
+[Set the application appearance](/en/docs/build/define-app#set-the-application-appearance));
+names, counts, and the bar's own controls stay neutral. From 1024 px the open
+app has the tinted fill of a selected sidebar row, without an edge, with its
+icon in the app ink. The panel button's arrow and name say whether a click
+opens or closes the panel, and an open panel keeps a blue fill. From 768 to 1023 px the app bar's container carries the app
 gradient on a neutral canvas. The selected app has a surface background, and
 there is no separator between shortcuts and apps. Announcements and account
 notices above the app are cards with the same 8 px spacing.
+
+From 1680 px the app bar shows names: the installation's name beside the logo,
+each app, shortcut, and the app grid with its name, search with its shortcut,
+help, and the person's name beside the avatar. Rows take the measures of a
+sidebar row: 32 px high, 15 px icons, and 13 px names in the regular weight,
+the open app's name semibold. They stay on the app background without a
+surface, edge, or shadow; icons keep their column, so turning names on moves
+no icon. A name too long for the row ends in an ellipsis, and the entry's hint
+shows it in full. Entries show their hint only while their name is hidden or
+cut off. A count stands at the end of its row as the sidebar's quiet number
+on a light ground. The width follows the window alone; the person's setting only allows it
+(see [Personalize the app bar](#personalize-the-app-bar)). The server renders
+the setting, so the first frame already has the final width. Hiding the
+sidebar hides the wide app bar as it hides the narrow one.
 
 The installed app on a tablet reports safe areas, such as the status bar and
 the home indicator. From 768 to 1023 px these insets add to the 8 px spacing:
@@ -68,8 +87,8 @@ above the home indicator.
 Below 768 px, including narrow tablet split views, the signed-in canvas
 shows the app gradient. Its title row has no line or surface fill and holds
 the app's name, search, help, and the app menu in that order. There is no
-bottom bar and no panel button: the app menu leads with **Home** (**Start** in
-German) before the shortcuts and apps of the person's app bar and every other
+bottom bar and no panel button: the app menu's first tile is **Home** (**Start**
+in German), followed by the person's app bar shortcuts and then every other
 app, and help opens the panel, whose tabs lead to the other panels.
 
 The phone's content is a soft card with 28 px top corners that reaches the
@@ -117,6 +136,64 @@ direct backslash key, such as German, use the profile menu.
 
 Applications need no code. Keep actions people need available outside the
 sidebar too, through the application's own links.
+
+### Hide the content with the privacy screen
+
+On computers with a mouse or touchpad, the signed-in `Layout` covers the
+content when someone looks over the person's shoulder. It hides, it does not
+lock. People start it with **Privacy screen** in the profile menu, the
+command menu's **Cloud** group, or `Ctrl+.` (`Cmd+.` on macOS), also over an
+open dialog. Without input for the person's timer (default two minutes;
+30 s, 1, 2 or 5 min, or Off under Profile settings › At your screen, `/me#screen`)
+it starts on its own. Ten seconds before, a countdown shows
+above the profile in the app bar, or as a pill above the avatar while the app
+bar is hidden; any input cancels it. Phones and touch-only tablets have no
+privacy screen.
+
+While it is on:
+
+- The whole screen blurs and becomes `inert`: the app bar with its icons,
+  counts, search, help and avatar, the navigation, the content, dialogs and
+  toasts. Only the hint and the islands below stay sharp. Nothing moves: positions, scroll, focus, caret and unsaved input stay, because the
+  page is never rebuilt. The tab shows only the installation's name.
+- A primary click anywhere or a key shows the content again. That click or key
+  never reaches the page: the pointer sequence and the key until its release
+  are used up. Mouse movement, scrolling, right and middle clicks only light up
+  the hint. Modifier keys, Tab and IME composition do not lift it.
+- All Cloud tabs of the browser cover and show together and share the idle time.
+- Opening or loading a Cloud page counts as input, like a click: that page
+  never covers on arrival, every other tab shows its content again, and the
+  idle time starts over. A tab opened in the background or a prerendered page
+  counts once the person sees it; until then it covers with the other tabs.
+  A return with Back from the back-forward cache counts too. A covered page
+  that reloads stays covered, because the reload may be automatic, such as
+  after an update.
+- The shared workstation's sign-out warning always comes first: while it is
+  open the privacy screen neither starts nor lifts, and its **Continue
+  working** also lifts the privacy screen.
+
+Applications need no code for this. Mark only the exceptions with
+`data-cloud-privacy`:
+
+| Value | Use it for | Effect |
+| --- | --- | --- |
+| `live` | A running dictation or call | Stays sharp and usable, and pauses the timer while it exists |
+| `keep` | Progress people watch, such as an upload | Stays sharp and usable |
+| `blur` | A part inside a `live` or `keep` element that names content, such as file names | Blurs and becomes inert |
+
+```tsx
+<section class="upload" data-cloud-privacy="keep">
+  <p>42 % · 3 files · about 1 min left</p>
+  <ol data-cloud-privacy="blur">{rows}</ol>
+</section>
+```
+
+Render `live` only while the work runs; when it ends, the idle time starts
+again. Keep islands small: everything inside one stays readable. A `blur` part
+also leaves the accessibility tree, so put a live region that names content
+inside it. An element with text of its own beside an island covers whole,
+the island included, because loose text cannot blur alone. Open dialogs and
+popovers cover too, also in pop-out pages without the app bar.
 
 ## Render the application layout
 
@@ -349,9 +426,17 @@ page with a level above.
 ## Render anonymous application pages
 
 `Layout` uses the same application shell for authenticated and anonymous
-requests. Anonymous pages keep the header visible at every viewport width,
-show a direct sign-in action, and expose the shared language and theme menu.
-They do not render the authenticated application rail, app launcher, global
+requests. Anonymous pages keep the header at every viewport width as the same
+floating card, with the same controls at every width: Home, help, the app grid
+on a page that belongs to an application, a language menu, an appearance
+button, and **Sign in**. Only the labels shorten: the language reads "English"
+from `md` and "EN" below. The language menu reloads the page in the chosen
+language. Each click on the appearance button switches to the next mode (light,
+dark, automatic); its tooltip and accessible name state the current and the
+next mode. **Sign in** returns the person to the page afterwards through
+`redirectTo`. The header shows the application name from `md` and the
+breadcrumbs from `lg`; on a phone the page's own heading names the page.
+Anonymous pages do not render the authenticated application rail, global
 search, notifications, or profile actions.
 
 Use this default for public pages that should still look and navigate like a
@@ -453,8 +538,12 @@ Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
 the Cloud app (the `pwa` application), the menu also shows **App**, which
 leads to `/me/app`, where people pair and remove devices. From 768 px the
-menu starts with **Hide sidebar** or **Show sidebar** and its shortcut. It
-ends with **Sign out** in the danger tone, in a section of its own. Applications do not add their own link to any of these.
+menu starts with **Hide sidebar** or **Show sidebar** and its shortcut. A
+section without a heading follows with **Privacy screen** and its shortcut
+(computers with a mouse or touchpad only) and the **Shared workstation**
+switch for this browser. Every entry is one line; a label too long for the
+18 rem menu ends in an ellipsis. The privacy timer and the details live under
+`/me#screen`. The menu ends with **Sign out** in the danger tone, in a section of its own. Applications do not add their own link to any of these.
 Anonymous `Layout` pages expose the same preferences in the header without
 profile actions, and `MinimalLayout` pages show them in their footer.
 Applications must not add a second theme or language control to their own
@@ -541,8 +630,9 @@ router.get("/api/inventory/badge", async (c) => {
   tab, and each count appears as soon as its own answer arrives, so a slow
   application delays only its own badge.
 - **Layout:** the count sits over the corner of the icon, so appearing,
-  growing, or clearing moves nothing. Screen readers hear it with the app's
-  name, for example "Chat, 3 new".
+  growing, or clearing moves nothing. In the app bar with names it stands at
+  the end of the row and can only shorten the name beside it. Screen readers
+  hear it with the app's name, for example "Chat, 3 new".
 - **Fresh after a change:** after the person changed what the badge counts,
   for example by reading a conversation, call `refreshAppBadges()` from
   `@k2b/cloud/browser/app-badges` so the app bar agrees with the page at once.
@@ -565,26 +655,49 @@ at the top right of the launcher opens the editor. Newly installed apps follow
 their declared defaults.
 
 App bar shortcuts form a separate, ordered list above the ordinary apps, with
-a divider between the two groups. Users can pin an app or add a link with a
-title and icon, edit it, move it up or down, or remove it. Pinning an app removes
-its duplicate from the ordinary list. Links to individual pages can coexist
-with their application. Dashboard shortcuts remain independent.
+a divider between the two groups. Pinning an app removes its duplicate from
+the ordinary list. Links to individual pages can coexist with their
+application. Dashboard shortcuts remain independent.
 
-The editor groups apps and shortcuts into separate sections. Its fixed footer
-places **Reset app bar** on the left and **Save** on the right.
+The editor is one list in the app bar's order, a sheet on phones and a dialog
+from 48 rem. It starts with **Show names in the app bar**, on by default,
+which allows the app bar with names on windows from 1680 px; phones have no
+app bar, so the switch shows from 768 px. Then come:
 
-**Save** applies the changes across Cloud. Closing with unsaved edits asks before discarding them;
-**Reset app bar** prepares the default app selection and an empty shortcut list
-for saving. If another editor has saved in the meantime, the save is rejected
-so that those changes are not overwritten. Close and reopen to load them.
+1. the administration's entries, with a lock and "From the administration,
+   always there", which a person cannot change;
+2. the person's pinned entries, each with a grip that reorders them by
+   dragging or with the arrow keys (see `SortableList`). A pinned app has an
+   active pin that unpins it; a link has **Edit** and **Remove**, and its form
+   opens in the list;
+3. **Add link**, directly below the pinned entries;
+4. after a gap, every other app by name, with a pin and a switch. A hidden
+   app stays in its place, paler, so nothing moves under the pointer;
+5. **Reset app bar**.
+
+Every change saves at once, one after another, and the app bar beside the
+editor shows each saved change: it is the preview. There is no save button,
+and closing never asks; changes still waiting keep saving. The header says
+**Saves instantly**, **Saving…**, **Saved**, or **Not saved**. When a change
+meets settings that another tab saved, the editor loads them and applies the
+change again, so that tab's changes stay. Any other failure takes back only
+that change: a notice above the list names it, or counts several, with
+**Try again**, which saves each of them once more, and every affected row
+carries a red dot. The next change starts from a fresh read, because a failed
+write may still have reached Core; a failed change that the stored settings
+already contain needs no retry and loses its mark. A failure after the editor
+closed shows a toast whose **Open** reopens the editor with that notice. Each
+person in a document has their own changes; another person never sees them. **Reset app bar** saves the
+default app selection and an empty shortcut list at once and offers
+**Undo** in a toast; the names setting stays as it is.
 
 App and shortcut hints open immediately to the right on hover or keyboard
 focus. The app list scrolls when space is limited, keeping the launcher and
-global controls reachable. On mobile, app bar shortcuts remain available in
-the app launcher. Shortcuts occupy a compact first row of smaller icon tiles,
-with labels below the icons and spacing before the app catalog. The row has
-no visible heading or divider. All shortcuts use a persistent neutral icon
-background without button borders.
+global controls reachable. The app launcher (**Apps** on the desktop, the
+app menu on phones) shows app bar shortcuts as ordinary app tiles: they come
+first, in their app bar order, and the other apps follow. A pinned app appears
+once, in its pinned place. A link shortcut takes the same tile, with its own
+icon and a tone derived from its ID, as an app without an accent does.
 
 Core stores these preferences per user; the platform loads them before SSR
 through a shared Valkey cache. Applications do not need to fetch or
@@ -594,7 +707,8 @@ removing their saved preferences. Showing or pinning an app does not grant
 access to its routes or resources.
 
 The self-service API is `GET /api/me/rail` and `PUT /api/me/rail`. The snapshot
-contains `revision`, `visibility` (app IDs mapped to booleans), and `shortcuts`.
+contains `revision`, `visibility` (app IDs mapped to booleans), `shortcuts`,
+and `showNames` (a boolean; a write without it saves `true`).
 Writes must supply the revision read previously; a stale revision returns
 `409`. Core derives the user from authentication. Settings have a 16 KiB
 serialized page budget; links accept absolute paths and HTTP(S) URLs without
@@ -619,7 +733,7 @@ confirmation. Concurrent changes return a conflict instead of overwriting
 another administrator's configuration; reload the page before trying again.
 
 Global shortcuts appear before personal shortcuts in the desktop app bar and
-the mobile launcher. Users see them under **Provided by the administration**
+the app launcher. Users see them under **Provided by the administration**
 in their personal editor and cannot change or remove them. Resetting personal
 settings preserves global shortcuts. An app pinned globally and personally is
 shown once, while the personal pin stays saved and reappears if the global pin

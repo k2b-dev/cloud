@@ -11,6 +11,7 @@ export const ImageBox = z.object({ width: z.number().int().min(1).max(16383), he
 export const ImageRequest = z.object({
   boxes: z.array(ImageBox).min(1).max(PDF_IMAGE_MAX_BOXES),
   maxBytes: z.number().int().min(1).max(PDF_IMAGE_MAX_INPUT_BYTES),
+  encoding: z.enum(["auto", "preview"]).default("auto"),
   // 240 s is the request idle-timeout ceiling; 30 s matches the PDF page decoder.
   timeoutMs: z.number().int().min(1).max(240_000).default(30_000),
 });

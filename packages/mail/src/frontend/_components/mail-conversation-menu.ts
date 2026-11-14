@@ -33,6 +33,8 @@ export type MailConversationMenu = {
   /** Adds you to the people responsible; `others` stay responsible. */
   assignToMe?: { assigned: boolean; others: readonly string[]; disabled?: boolean; run: () => void };
   completion?: { done: boolean; disabled?: boolean; run: () => void };
+  /** More ways to take the conversation, such as Assign and Show later, after Done. */
+  followUp?: readonly DropdownAction[];
   /** Read, flag, tags and the folder actions, for a person who may change the conversation. */
   organize?: {
     unread: boolean;
@@ -45,7 +47,11 @@ export type MailConversationMenu = {
     manageTags: () => void;
   };
   conversation?: readonly DropdownAction[];
+  /** Link the conversation with an item of another app, or remove a link. */
+  link?: readonly DropdownAction[];
   other?: readonly DropdownAction[];
+  /** Where this browser shows the reply box; only the open conversation, which has one, offers the choice. */
+  replyPosition?: { value: "top" | "bottom"; run: (position: "top" | "bottom") => void };
   /** A row of the Drafts folder: it continues in the composer or is deleted, and has no conversation parts. */
   draft?: { href: string; discard: { disabled?: boolean; run: () => void } };
 };
@@ -84,14 +90,6 @@ export const mailConversationMenuItems = (menu: MailConversationMenu): DropdownI
           icon: "ti ti-arrow-back-up",
           disabled: respond.disabled,
           action: () => respond.run("reply", { window: false }),
-        },
-        {
-          label: t.replyInNewWindow,
-          icon: "ti ti-app-window",
-          disabled: respond.disabled,
-          // A browser opens a window only during the click itself, also from a phone's menu sheet.
-          immediate: true,
-          action: () => respond.run("reply", { window: true }),
         },
         ...(respond.replyAll
           ? [
@@ -139,6 +137,7 @@ export const mailConversationMenuItems = (menu: MailConversationMenu): DropdownI
       action: completion.run,
     });
   }
+  followUp.push(...(menu.followUp ?? []));
   if (followUp.length > 0) sections.push({ sectionLabel: t.followUp, items: followUp });
   const organize = menu.organize;
   if (organize) {
@@ -169,7 +168,22 @@ export const mailConversationMenuItems = (menu: MailConversationMenu): DropdownI
     });
   }
   if (menu.conversation?.length) sections.push({ sectionLabel: t.conversationSection, items: menu.conversation });
+  if (menu.link?.length) sections.push({ sectionLabel: t.link, items: menu.link });
   if (menu.other?.length) sections.push({ sectionLabel: t.other, items: menu.other });
+  const replyPosition = menu.replyPosition;
+  if (replyPosition) {
+    sections.push({
+      sectionLabel: t.replyBoxPlace,
+      layout: "row",
+      items: (["top", "bottom"] as const).map((position) => ({
+        label: position === "top" ? t.replyBoxTop : t.replyBoxBottom,
+        icon: position === "top" ? "ti ti-layout-navbar" : "ti ti-layout-bottombar",
+        choice: "radio" as const,
+        checked: replyPosition.value === position,
+        action: () => replyPosition.run(position),
+      })),
+    });
+  }
   return sections;
 };
 

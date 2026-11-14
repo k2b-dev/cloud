@@ -15,6 +15,7 @@ import { publicClient } from "./public-client";
 import { UploadSurface } from "./UploadPanel";
 import { browserUploadKey } from "./upload-key";
 import { uploadFailureReason, useUploadMessages } from "./upload-messages";
+import { createPacedUploadRequest } from "./upload-pacing";
 import { createUploadQueue } from "./upload-queue";
 
 /** Anonymous uploads: Cloud opens a session per file, the browser streams to Filegate, Cloud commits. */
@@ -74,6 +75,7 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
         session = await opened.json();
         if (session.state === "aborted" || session.state === "expired") start.finish();
         await transferUpload(file, session, {
+          request: createPacedUploadRequest(),
           signal,
           failure: u().failed,
           onProgress,

@@ -95,6 +95,7 @@ export const AiModelInputSchema = z
     capabilities: z.array(z.enum(["tools", "vision", "transcription", "live-transcription"])).default([]),
     contextWindow: z.number().int().positive().nullable().default(null),
     maxOutputTokens: z.number().int().positive().nullable().default(null),
+    outputTokenLimit: z.number().int().positive().nullable().optional(),
     temperature: z.number().min(0).max(2).nullable().default(null),
     extraBody: AiExtraBodySchema.nullable().default(null),
     maxLoadedTools: z.number().int().nullable().default(null),
@@ -160,7 +161,8 @@ const revisionFields = {
   updatedAt: z.string(),
   updatedBy: z.string().nullable(),
 };
-export const AiProviderSchema = AiProviderInputSchema.extend({
+// Stored rows may include columns introduced by a newer Core. Admin inputs remain strict.
+export const AiProviderSchema = AiProviderInputSchema.strip().extend({
   ...revisionFields,
   status: AiProviderStatusSchema,
   statusCode: z.string().nullable(),
@@ -169,8 +171,8 @@ export const AiProviderSchema = AiProviderInputSchema.extend({
   credentialSet: z.boolean(),
   requestHeaderNames: z.array(z.string()),
 });
-export const AiModelSchema = AiModelInputSchema.extend({ ...revisionFields, providerId: z.string() });
-export const AiVariantSchema = AiVariantInputSchema.extend({ ...revisionFields, id: z.string(), modelId: z.string() });
+export const AiModelSchema = AiModelInputSchema.strip().extend({ ...revisionFields, providerId: z.string() });
+export const AiVariantSchema = AiVariantInputSchema.strip().extend({ ...revisionFields, id: z.string(), modelId: z.string() });
 export const AiAssignmentSchema = z.object({
   slot: z.enum(AI_MODEL_SLOTS),
   variantId: z.string().nullable(),

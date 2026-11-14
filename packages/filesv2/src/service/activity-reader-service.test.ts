@@ -76,8 +76,9 @@ function fixture() {
     if (!admin) throw new FilesError("forbidden", 403);
     return { items: [], nextCursor: null };
   });
+  // Own history only looks for a navigation target and keeps its snapshot when storage fails; share counts never connect.
   const connect = mock((): never => {
-    throw new Error("History snapshots and share counts must not connect");
+    throw new Error("Storage is unavailable in this fixture");
   });
   const service = createFilesService({
     identities: {
@@ -125,11 +126,14 @@ test("canonical guest demotion denies own activity/list, activity.get and share.
   expect((await f.service.activityEntry(call, { activityId: row.id })).id).toBe(row.id);
   f.candidates.mockResolvedValue([]);
   expect(await f.service.activityBatchContext(call, { activityId: row.id })).toEqual({ visibleCount: 1, complete: true });
+  const connects = f.connect.mock.calls.length;
   expect((await f.service.shareAccess(call, input)).pages).toBe(1);
+  expect(f.connect.mock.calls.length).toBe(connects);
   f.candidates.mockClear();
   f.byId.mockClear();
   f.counts.mockClear();
   f.inventory.mockClear();
+  f.connect.mockClear();
   // The actor still carries the old user profile; only the canonical current profile decides.
   f.demote();
   await expect(f.service.activity(call)).rejects.toMatchObject({ code: "forbidden", status: 403 });

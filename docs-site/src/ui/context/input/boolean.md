@@ -41,6 +41,7 @@ and a light blue edge and fill when checked; see
 default is `"card"`.
 
 All three inherit [ValueFieldProps<boolean>](/en/ui/getting-started#shared-field-props).
+`Switch` also takes a [suggestion](/en/ui/input/field-suggestion).
 `Checkbox` and `Switch` also accept `name?: string`; Checkbox adds
 `indeterminate?: boolean` (false). CheckboxCard adds `icon?: string`,
 `color?: string` and `variant?: "input" | "card"` (card).

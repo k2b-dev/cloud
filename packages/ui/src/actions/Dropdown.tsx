@@ -109,10 +109,11 @@ export type DropdownChoice = DropdownActionBase & {
 export type DropdownSection = {
   sectionLabel?: string;
   /**
-   * `row` sets a few short radio choices, such as a sort direction, side by side as one segmented row. Give it a
-   * `sectionLabel`: the label names the choice above the row and for screen readers.
+   * `row` sets a few short radio choices, such as a sort direction, side by side as one segmented row. `tiles` sets
+   * a few choices that a picture tells apart, such as arrangements, side by side as tiles with the icon above the
+   * label. Give either a `sectionLabel`: the label names the choice above the row and for screen readers.
    */
-  layout?: "row";
+  layout?: "row" | "tiles";
   /** A quiet action at the end of the section label, such as "All"; it needs a `sectionLabel` and keeps the menu open. */
   labelAction?: DropdownSecondaryAction;
   items: readonly (DropdownAction | DropdownChoice)[];
@@ -514,8 +515,7 @@ export function DropdownItems(props: {
                 role="group"
                 // A row of choices is no set of actions: without a label it stays unnamed rather than misnamed.
                 aria-label={
-                  (current() as DropdownSection).sectionLabel ??
-                  ((current() as DropdownSection).layout === "row" ? undefined : messages().actions)
+                  (current() as DropdownSection).sectionLabel ?? ((current() as DropdownSection).layout ? undefined : messages().actions)
                 }
               >
                 <Show when={(current() as DropdownSection).sectionLabel}>
@@ -534,14 +534,14 @@ export function DropdownItems(props: {
                   )}
                 </Show>
                 <Show
-                  when={(current() as DropdownSection).layout === "row"}
+                  when={(current() as DropdownSection).layout}
                   fallback={
                     <KeyedFor each={(current() as DropdownSection).items} by={(row) => row.label}>
                       {renderItem}
                     </KeyedFor>
                   }
                 >
-                  <div class="k2b-dropdown__row">
+                  <div class={(current() as DropdownSection).layout === "tiles" ? "k2b-dropdown__tiles" : "k2b-dropdown__row"}>
                     <KeyedFor each={(current() as DropdownSection).items} by={(row) => row.label}>
                       {renderItem}
                     </KeyedFor>
@@ -652,8 +652,18 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
   );
 }
 
+/**
+ * Internal: content in place of the entries, as `CommandMenu` renders its command list. It reports where the focus
+ * goes as the menu opens, like the search field, and `open` tells it when the menu closed.
+ */
+export type DropdownBody = (props: {
+  close: (restoreFocus?: boolean) => void;
+  open: () => boolean;
+  api: (api: MenuSearchApi) => void;
+}) => JSX.Element;
+
 /** Accessible top-layer menu with explicit trigger ownership. */
-function DropdownRoot(props: DropdownProps): JSX.Element {
+function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: (menu: HTMLElement) => void }): JSX.Element {
   const messages = useUiMessages();
   const locale = useLocale();
   /** The open phone sheet's cancel switch: it closes when the menu goes or is disabled, as the popover does. */
@@ -687,6 +697,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     typeof props.position === "function" ? props.position() : (props.position ?? (props.align === "end" ? "bottom-left" : "bottom-right"));
 
   const place = () => {
+    // Internal: `CommandMenu` docks its menu to a composer instead of its trigger.
+    if (props.placeMenu && menuRef) return props.placeMenu(menuRef);
     const at = anchor ?? triggerRef;
     if (!at || !menuRef) return;
     const rect = dropdownPosition(at.getBoundingClientRect(), menuRef.getBoundingClientRect(), position(), {
@@ -750,7 +762,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
       props.onOpenChange?.(next);
       return;
     }
-    if (next && props.phone === "sheet" && prefersMenuSheet()) {
+    if (next && props.phone === "sheet" && !props.body && prefersMenuSheet()) {
       if (sheet) return;
       const current = new AbortController();
       sheet = current;
@@ -790,7 +802,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   const handleMenuKeyDown = (event: KeyboardEvent) => {
     const items = actionableItems(menuRef);
     // A searchable menu's field keeps the focus and moves the marked entry itself.
-    if (!props.search && (focusMenuRow(items, event.key) || focusRowSegment(items, event.key))) {
+    if (!props.search && !props.body && (focusMenuRow(items, event.key) || focusRowSegment(items, event.key))) {
       event.preventDefault();
     } else if (event.key === "Escape") {
       event.preventDefault();
@@ -830,7 +842,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
       triggerRef = element;
     },
     toggle,
-    popup: () => (props.search ? "dialog" : "menu"),
+    popup: () => (props.search || props.body ? "dialog" : "menu"),
     triggerKeyDown: (event) => triggerKey(event),
   };
 
@@ -889,7 +901,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
           ref={menuRef}
           id={menuId}
           popover="auto"
-          role={props.search ? "dialog" : "menu"}
+          role={props.search || props.body ? "dialog" : "menu"}
           aria-label={props.label ?? messages().dropdownMenu}
           aria-describedby={props.note ? `${menuId}-note` : undefined}
           class={`k2b-dropdown__menu ${props.menuClass ?? ""}`}
@@ -897,7 +909,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
           data-width={props.width ? "fixed" : undefined}
           data-variant={props.variant ?? "default"}
           data-icons={props.icons === "tile" ? "tile" : undefined}
-          data-search={props.search ? "" : undefined}
+          data-search={props.search || props.body ? "" : undefined}
           data-position={position()}
           onKeyDown={handleMenuKeyDown}
           onToggle={(event) => {
@@ -920,7 +932,31 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
           }}
         >
           <Show when={entriesShown()}>
-            <Show when={props.search} fallback={<DropdownItems items={props.items} close={close} />}>
+            <Show when={props.body}>
+              {(body) => {
+                const Body = body();
+                return (
+                  <Body
+                    close={close}
+                    open={isOpen}
+                    api={(api) => {
+                      searchApi = api;
+                      onCleanup(() => {
+                        if (searchApi === api) searchApi = undefined;
+                      });
+                    }}
+                  />
+                );
+              }}
+            </Show>
+            <Show
+              when={!props.body && props.search}
+              fallback={
+                <Show when={!props.body}>
+                  <DropdownItems items={props.items} close={close} />
+                </Show>
+              }
+            >
               {(search) => (
                 <MenuSearch
                   Items={DropdownItems}
@@ -957,6 +993,9 @@ type DropdownComponent = ((props: DropdownProps) => JSX.Element) & {
   Trigger: (props: DropdownTriggerProps) => JSX.Element;
   Item: (props: DropdownItemProps) => JSX.Element;
 };
+
+/** Internal: the menu with a `body`, for `CommandMenu`. */
+export const DropdownShell = DropdownRoot;
 
 export const Dropdown = DropdownRoot as DropdownComponent;
 Dropdown.Root = DropdownRoot;

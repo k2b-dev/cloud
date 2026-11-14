@@ -7,6 +7,7 @@ import {
   type DetailPresenceState,
   DetailProperties,
   DetailTags,
+  Section,
   SegmentedControl,
 } from "@k2b/ui";
 import { createSignal } from "solid-js";
@@ -71,7 +72,7 @@ export const DetailSectionsDemo = () => {
                 note={state() === "offline" ? "Offline · as of 19:24, may have changed" : "Your changes are still being saved."}
                 onRetry={() => setState("live")}
               />
-              <DetailPanel.Section title="Contents" icon="ti ti-list-tree" count={2}>
+              <Section title="Contents" icon="ti ti-list-tree" count={2}>
                 <DetailPanel.Action
                   href="#detail-panel-shared-sections"
                   title="Cold goods"
@@ -82,7 +83,7 @@ export const DetailSectionsDemo = () => {
                   title="Counting"
                   trailing={<DetailPresenceSlot people={[people[2]!]} />}
                 />
-              </DetailPanel.Section>
+              </Section>
               <DetailTags
                 tags={["inbound", "cold-chain", "ramp"].map((tag) => ({ id: tag, label: tag, href: "#detail-panel-shared-sections" }))}
               />

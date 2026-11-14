@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -163,7 +163,7 @@ for (const theme of ["light", "dark"])
         const restBoxes = await boxes(page);
 
         // Column hover: the head cell gets darker than the grey head, body cells a light grey, not the blue hover.
-        await page.locator("tbody tr").nth(1).locator("td").nth(1).hover();
+        await hoverInPlace(page.locator("tbody tr").nth(1).locator("td").nth(1));
         await page.waitForSelector('th[data-highlighted="true"]');
         await settled(page);
         const hovered = await paints(page);
@@ -197,7 +197,7 @@ for (const theme of ["light", "dark"])
           }
 
         // Column hover over the selected row keeps the row's own fill.
-        await page.locator("tbody tr").nth(1).locator("td").nth(1).hover();
+        await hoverInPlace(page.locator("tbody tr").nth(1).locator("td").nth(1));
         await page.waitForSelector('th[data-highlighted="true"]');
         await settled(page);
         const both = await paints(page);

@@ -1,5 +1,6 @@
 import {
   Chart,
+  DashboardFrame,
   DashboardGrid,
   DashboardPanel,
   DashboardSection,
@@ -161,11 +162,58 @@ const DashboardGridDemo = () => (
   </DemoCard>
 );
 
+const frameRows = [
+  { channel: "Search", signups: "1,840" },
+  { channel: "Mail", signups: "1,260" },
+  { channel: "Social", signups: "920" },
+];
+
+const DashboardFrameDemo = () => (
+  <DemoCard
+    id="dashboard-frame"
+    chip={{ kind: "component", name: "DashboardFrame", from: "@k2b/ui" }}
+    description="The frame of a data panel: the host passes the content, the frame keeps title, subtitle, tools and the states in place. A failed refresh names its time in the subtitle line; an empty read says why at the same height."
+    code={`<DashboardFrame width="third" title="Signups" subtitle="October" state="stale" asOf="09:12" onRetry={reload} height="96px">
+  …content…
+</DashboardFrame>
+<DashboardFrame width="third" title="Signups" subtitle="October" state="empty" empty="No signups in October." height="96px">
+  …content…
+</DashboardFrame>`}
+  >
+    <DashboardGrid>
+      <DashboardSection ariaLabel="Dashboard frame states">
+        <DashboardFrame width="third" title="Signups" subtitle="October" height="96px">
+          <For each={frameRows}>
+            {(row) => (
+              <p class="ui-dashboard-demo__meta">
+                {row.channel} · {row.signups}
+              </p>
+            )}
+          </For>
+        </DashboardFrame>
+        <DashboardFrame width="third" title="Signups" subtitle="October" state="stale" asOf="09:12" onRetry={() => {}} height="96px">
+          <For each={frameRows}>
+            {(row) => (
+              <p class="ui-dashboard-demo__meta">
+                {row.channel} · {row.signups}
+              </p>
+            )}
+          </For>
+        </DashboardFrame>
+        <DashboardFrame width="third" title="Signups" subtitle="October" state="empty" empty="No signups in October." height="96px">
+          {null}
+        </DashboardFrame>
+      </DashboardSection>
+    </DashboardGrid>
+  </DemoCard>
+);
+
 const demos: DemoSection = {
   composition: () => (
     <DemoGrid columns="one">
       <WidgetCompositionDemo />
       <DashboardGridDemo />
+      <DashboardFrameDemo />
     </DemoGrid>
   ),
 };

@@ -1,9 +1,9 @@
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { z } from "zod";
-import { type RemoteMessagePrecondition, remoteMessagePreconditionSchema, standardMessageFlagSchema } from "../contracts";
+import { type RemoteMessagePrecondition, remoteMessagePreconditionSchema } from "../contracts";
+import { type MailMessageStateTransition, mailMessageStatePayloadTransitions, messageStatePayloadSchema } from "./command-message-state";
 import type { SqlClient } from "./workflow-data";
-import type { MailWorkflowMessageStateTransition } from "./workflow-projected-state";
 
 const object = (value: WorkflowJsonValue | undefined): Record<string, WorkflowJsonValue> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
@@ -52,47 +52,6 @@ export const mailWorkflowMessagePrecondition = (
   }
   return parsed.data;
 };
-
-/** Apply confirmed transitions; retain receipt-time checks until the first write. */
-export const projectMailWorkflowMessagePrecondition = (
-  frozen: RemoteMessagePrecondition,
-  transitions: readonly MailWorkflowMessageStateTransition[],
-): RemoteMessagePrecondition => {
-  if (transitions.length === 0) return frozen;
-  const expected = { ...frozen, modseq: undefined };
-  const apply = <T extends string>(current: T[] | undefined, value: T, add: boolean): T[] | undefined => {
-    if (current === undefined) return undefined;
-    const matches = (item: string): boolean => item.toLocaleLowerCase("und") === value.toLocaleLowerCase("und");
-    return add ? (current.some(matches) ? current : [...current, value]) : current.filter((item) => !matches(item));
-  };
-  for (const transition of transitions) {
-    if (transition.field === "flags") {
-      // Frozen remote flags use standard names; provider spellings may contain a backslash.
-      const flag = standardMessageFlagSchema.parse(transition.value.replace(/^\\/u, "").toLowerCase());
-      expected.flags = apply(expected.flags, flag, transition.add);
-    } else {
-      expected.keywords = apply(expected.keywords, transition.value, transition.add);
-    }
-  }
-  return expected;
-};
-
-export const messageStatePayloadSchema = z.object({
-  addFlags: z.array(z.enum(["seen", "answered", "flagged", "draft"])).max(4),
-  removeFlags: z.array(z.enum(["seen", "answered", "flagged", "draft"])).max(4),
-  addKeywords: z.array(z.string().min(1).max(100)).max(100),
-  removeKeywords: z.array(z.string().min(1).max(100)).max(100),
-});
-
-/** Preserve provider operation order when projecting a confirmed state command. */
-export const mailMessageStatePayloadTransitions = (
-  payload: z.infer<typeof messageStatePayloadSchema>,
-): MailWorkflowMessageStateTransition[] => [
-  ...payload.addFlags.map((value): MailWorkflowMessageStateTransition => ({ field: "flags", add: true, value })),
-  ...payload.removeFlags.map((value): MailWorkflowMessageStateTransition => ({ field: "flags", add: false, value })),
-  ...payload.addKeywords.map((value): MailWorkflowMessageStateTransition => ({ field: "keywords", add: true, value })),
-  ...payload.removeKeywords.map((value): MailWorkflowMessageStateTransition => ({ field: "keywords", add: false, value })),
-];
 
 const siblingCommandTargetSchema = z.object({
   remoteMessageRefId: z.uuid(),
@@ -162,8 +121,8 @@ export const loadIncomingAutomationSiblingTransitions = async (
     correlation_id: string | null;
     target: Record<string, unknown> | string;
   }[],
-): Promise<Map<string, MailWorkflowMessageStateTransition[]>> => {
-  const transitions = new Map<string, MailWorkflowMessageStateTransition[]>();
+): Promise<Map<string, MailMessageStateTransition[]>> => {
+  const transitions = new Map<string, MailMessageStateTransition[]>();
   const qualifying = commands.filter(
     (command) =>
       command.actor_kind === "workflow" &&

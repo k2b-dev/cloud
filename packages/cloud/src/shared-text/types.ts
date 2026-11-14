@@ -4,6 +4,8 @@ export type SharedTextActor = { kind: "user" | "service_account"; id: string };
 /** Actor is optional so events retained from older deployments remain readable. */
 export type SharedTextEvent = {
   kind: "sync" | "awareness" | "freeze";
+  /** Broker-ordered room admission fence; legacy send markers remain inert. */
+  room?: { state: "frozen"; expiresAt: number } | { state: "open" | "closed" };
   payload: string;
   originNodeId: string;
   originPeerId: string | null;

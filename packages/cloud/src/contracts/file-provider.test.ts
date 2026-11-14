@@ -266,6 +266,59 @@ describe("file providers in Core", () => {
   });
 });
 
+describe("file-provider source name and icon", () => {
+  const scanner = (presentation?: CapabilityDefinitions["presentation"]) =>
+    provider({
+      fileProvider: { list: "folder.list", read: "file.read", title: " Scanner ", icon: "ti ti-scan" },
+      ...(presentation ? { presentation } : {}),
+    });
+
+  test("a provider may name its source and icon; without them the manifest keeps its earlier shape", () => {
+    const manifest = compileCapabilityManifest("warehouse", scanner());
+    expect(manifest.fileProvider).toEqual({ list: "folder.list", read: "file.read", title: "Scanner", icon: "ti ti-scan" });
+    expect(fileProviderIssues(manifest)).toEqual([]);
+    expect(Object.keys(compileCapabilityManifest("drive", provider()).fileProvider ?? {})).toEqual(["list", "read", "save"]);
+    expect(() =>
+      compileCapabilityManifest("warehouse", provider({ fileProvider: { list: "folder.list", read: "file.read", title: "x".repeat(81) } })),
+    ).toThrow();
+  });
+
+  test("the title is translated like other presentation and needs a base title", () => {
+    const compiled = compileCapabilities(
+      "warehouse",
+      scanner({ baseLocale: "en", translations: { de: { fileProvider: { title: "Scan-Eingang" } } } }),
+    );
+    const german = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de-AT");
+    expect(german.fileProvider).toEqual({ list: "folder.list", read: "file.read", title: "Scan-Eingang", icon: "ti ti-scan" });
+    expect(resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "fr").fileProvider?.title).toBe("Scanner");
+    expect(() =>
+      compileCapabilities(
+        "drive",
+        provider({ presentation: { baseLocale: "en", translations: { de: { fileProvider: { title: "Ablage" } } } } }),
+      ),
+    ).toThrow("fileProvider translation needs a fileProvider title");
+  });
+
+  test("Core reads a named provider and drops only the provider when its declaration is unreadable", () => {
+    const manifest = compileCapabilityManifest("warehouse", scanner());
+    const live = {
+      id: "warehouse",
+      name: "Warehouse",
+      icon: "ti ti-building-warehouse",
+      description: "Warehouse",
+      baseUrl: "http://warehouse:3000",
+      routes: ["/app/warehouse"],
+      capabilities: { protocolVersion: 2, manifestHash: manifest.manifestHash },
+    };
+    const entry = resolveLiveCapabilityRegistryEntry(
+      "capabilities/warehouse",
+      { appId: "warehouse", manifest: structuredClone(manifest) },
+      live,
+    );
+    expect(entry?.manifest.fileProvider).toEqual(manifest.fileProvider);
+  });
+});
+
 describe("file-provider caller context", () => {
   test("keeps the base input strict and bounds resource hints", () => {
     const ref = { type: "customers.customer", id: "c1" };

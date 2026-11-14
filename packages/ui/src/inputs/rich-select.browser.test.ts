@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type axeCore from "axe-core";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 declare global {
   interface Window {
@@ -235,7 +235,7 @@ describe("RichSelect shipped browser contract", () => {
         await unchanged(labels[index % labels.length]!);
       }
       for (let index = labels.length - 1; index >= 0; index--) {
-        await page.getByRole("option").nth(index).hover();
+        await hoverInPlace(page.getByRole("option").nth(index));
         await settled(page);
         await unchanged(labels[index]!);
       }

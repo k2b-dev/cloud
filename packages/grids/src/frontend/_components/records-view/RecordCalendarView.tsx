@@ -84,7 +84,7 @@ export function RecordCalendarView(props: {
             variant="secondary"
             size="sm"
             type="button"
-            class="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 shadow-sm"
+            class="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 shadow-[var(--k2b-shadow-toolbar)]"
             onClick={props.onLoadMore}
             disabled={props.loadingMore}
           >

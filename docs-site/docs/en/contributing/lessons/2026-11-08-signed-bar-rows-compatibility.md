@@ -1,0 +1,6 @@
+### Preserve saved data when extending a chart layout
+
+- **What happened:** Cloud 0.70 rejected saved bar charts with `layout: "rows"` and negative values that rendered in 0.69. Its ranked renderer also reordered ordered categories and dropped reference lines, per-bar colors, value visibility and axis settings.
+- **Root cause:** Adding ranked lists reused the existing rows layout without preserving its validation and drawing contract. Both the portable schema and renderer rejected previously valid signed data; nonnegative data took the ranked path even when it could not honor the saved options.
+- **Error class:** Tightened validation of an existing layout breaks stored data.
+- **Guard:** New constraints on existing layouts must be opt-in or accompanied by a migration. Keep frozen raw JSON fixtures from the previously accepted shape, independent of current types. The 0.69 fixtures cover signed geometry, category order, reference lines, colors, value visibility and axes through the core, editor and model schemas. Signed rows also pass Solid SSR/client rendering, Chat parsing and Assistant app-frame rendering. Ranked-only options reject signed data explicitly; plain unordered nonnegative output keeps its full SVG digests.

@@ -3,15 +3,15 @@ title: Object store operations
 navTitle: Object store
 section: Operations
 order: 1143
-description: Configure the installation-wide S3 bucket and public image delivery.
+description: Configure the default S3 bucket, further buckets and public image delivery.
 tags: [operations, storage, s3, configuration]
-updated: 2026-10-28
+updated: 2026-11-10
 ---
 
 # Object store operations
 
 Applications can use the platform object store after an administrator saves a
-Garage connection in **Administration > Settings > Storage**. Storage is an
+Garage connection in **Administration > Storage**. Storage is an
 optional runtime dependency: applications that do not use it need no S3
 configuration. Existing Grids, Notebooks, and Spaces storage does not move.
 
@@ -65,6 +65,69 @@ including credential rotation and limits, apply to the next operation without a
 restart. A missing, invalid or unreadable connection produces a configuration
 error. Existing streams finish against the connection with which they started.
 Changing the bucket does not migrate objects.
+
+## Connect further buckets
+
+**Administration > Storage** lists the default bucket first, then further
+buckets. The old address `/admin/settings?tab=storage` leads there. Use
+**Add bucket** for an archive on cheaper storage, large media, or a customer's
+own bucket. Apps choose a bucket through their own settings; every app may use
+every bucket and sees only its own area in it.
+
+Cloud speaks only the S3 subset listed above, so any S3-compatible service may
+work. Only Garage is tested and supported. Create the bucket and its key in
+the S3 service first; Cloud never creates or deletes buckets.
+
+For each bucket, choose the access:
+
+- **Like Default** uses the default bucket's endpoint, region and keys with a
+  bucket of its own. A rotated default key applies to it at once.
+- **Own server or keys** stores its own endpoint, region and key pair.
+
+Keys are encrypted in the database with the installation `APP_SECRET`, like AI
+provider keys, and are never shown again. There is no environment variable.
+Saving always saves; Cloud then tests the connection at once and shows the
+result, also on the bucket's list row. A test result counts only for the
+configuration it tested: after any change of endpoint, region, bucket or keys,
+including the default's for **Like Default**, the bucket shows **Not tested**
+until the next test. Cloud does not poll.
+
+Each bucket has a stable ID that apps store in their settings. You can rename a
+bucket and change its endpoint, bucket or keys at any time without breaking
+those settings. A change applies to the next operation in every process.
+Objects never move: after a change of target, apps and public links read the
+new target. To move data, copy the objects in the S3 service first.
+
+**Usage** reads the package names with objects under `private/` and `public/`
+directly from the bucket, so it also shows stopped apps. It reads one listing
+page of each prefix and says when there are more.
+
+**Remove** only disconnects the bucket: Cloud deletes its stored keys and keeps
+its last target and ID. Objects stay in the S3 service. Apps then get
+`storage_bucket_disconnected`, and public URLs answer 404. Removing is not an
+instant block: running downloads finish, signed links stay valid for up to 15
+minutes, and public answers stay in caches for up to 5 minutes. **Restore**
+connects the same target again; enter the keys again for **Own server or
+keys**. The default bucket cannot be removed.
+
+Back up every bucket separately. A database backup holds the bucket
+configuration, not objects. The gateway serves public files of every bucket
+itself, so it must reach every bucket's endpoint.
+
+### Database grants for further buckets
+
+Core creates `platform.storage_buckets` and `platform.storage_bucket_checks`
+and is their only writer. With separate database roles, grant every
+application role and the gateway role read access after Core has started
+(replace `application_role`):
+
+```sql
+GRANT USAGE ON SCHEMA platform TO application_role;
+GRANT SELECT ON platform.storage_buckets TO application_role;
+```
+
+Without the grant, the default bucket keeps working; further buckets fail with
+`storage_not_configured`, and `storage.buckets()` lists only the default.
 
 The stable object layout is:
 
@@ -135,7 +198,10 @@ Postgres records. A database backup alone cannot restore documents.
 ## Public delivery and caching
 
 Cloud's stateless gateway handles anonymous **GET/HEAD** at
-`/public/storage/<package>/<key>`. It always reads `public/<package>/<key>`;
+`/public/storage/<package>/<key>` for the default bucket and
+`/public/storage/~<bucket-id>/<package>/<key>` for further buckets. A package
+name can never start with `~`, so the two forms cannot collide. An unknown or
+removed bucket answers 404. It always reads `public/<package>/<key>`;
 private objects, listings and mutations are unavailable at this route. No
 Garage website mode or separate public base URL is needed. Public URLs use the
 installation's existing **Public URL** (`app.url`) setting.

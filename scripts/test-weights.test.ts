@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { shardTargetMinutes } from "./run-tests";
 import { collectJobTimes, jobMode, parseSuiteTimes, recommendShardCount, refreshSuiteWeights } from "./test-weights";
 
 test("parses bare and timestamped suite times, ignoring headers and keeping the maximum", () => {
@@ -92,4 +93,14 @@ test("recommends matrices beyond eight shards and refuses an indivisible oversiz
   expect(recommendShardCount(suites, weights)).toBe(9);
   expect(recommendShardCount(suites, { ...weights, "file-0": 901 })).toBeUndefined();
   expect(recommendShardCount([], {})).toBeUndefined();
+});
+
+test("WebKit recommendations reserve slowdown headroom instead of planning to the unit target", () => {
+  const suites = Array.from({ length: 15 }, (_, index) => ({ name: `file-${index}`, cwd: "", command: [] }));
+  const weights = Object.fromEntries(suites.map((suite) => [suite.name, 400]));
+  expect(recommendShardCount(suites, weights)).toBe(8);
+  const target = shardTargetMinutes(true);
+  expect(target).toBe(11);
+  expect(recommendShardCount(suites, weights, target)).toBe(15);
+  expect(recommendShardCount(suites, { ...weights, "file-0": 661 }, target)).toBeUndefined();
 });

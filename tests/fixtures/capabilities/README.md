@@ -24,6 +24,14 @@ The Mail send migration intentionally requires `expectedContentHash` on
 entries and their hashes are updated for the approved breaking contract; other
 Mail evolution checks remain active. See the [Mail migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#mail-send-requires-a-content-fingerprint).
 
+The Mail missing-subject migration is an approved coordinated pre-1.0 contract
+change under the existing operation IDs. `missing_subject` widens the closed
+warning output enum and the send approval enum; the approval array limit grows
+from 6 to 7. Only `draft.send.review`'s data schema, `draft.send`'s input schema,
+and their hashes are updated. Closed-enum consumers must migrate together with
+Mail; the other baseline entries and evolution checks remain unchanged. See the
+[Mail safety review migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#mail-safety-review-adds-a-missing-subject-warning).
+
 The Weather geo migration removes only `city.search` from its baseline. Call
 Core `address.autocomplete` with `type: "city"` and pass the selected coordinates
 to Weather. The remaining evolution checks stay active. See the

@@ -1,10 +1,11 @@
 import { createContext, createEffect, createSignal, type JSX, onCleanup, onMount, Show, sharedConfig, useContext } from "solid-js";
 import { isServer } from "solid-js/web";
 import { Kbd } from "../content/Kbd";
+import { announce } from "../feedback/announce";
 import { useLocale } from "../intl/locale";
 import { formatShortcut, type KeyboardPlatform, keyboardPlatform } from "../intl/shortcut";
 import { IconButton } from "./Button";
-import { Dropdown, type DropdownAction } from "./Dropdown";
+import { Dropdown, type DropdownAction, type DropdownItem } from "./Dropdown";
 import { useToolbarMessages } from "./toolbar-messages";
 
 export type ToolbarProps = {
@@ -12,8 +13,21 @@ export type ToolbarProps = {
   label: string;
   orientation?: "horizontal" | "vertical";
   wrap?: boolean;
-  /** `floating` floats the toolbar at the bottom of its column. Defaults to `inline`. */
+  /** `floating` floats the toolbar at an edge of its column. Defaults to `inline`. */
   variant?: "inline" | "floating";
+  /** The edge a floating toolbar sticks to while its column scrolls. Defaults to `bottom`. */
+  edge?: "top" | "bottom";
+  /**
+   * `danger` makes a floating toolbar the one red pill of a stopped state, such as an editor that can no longer save.
+   * It spans its row in place of the usual pills, and screen readers announce its labels at once. Inline toolbars
+   * ignore it.
+   */
+  tone?: "danger";
+  /**
+   * Rarer commands of a floating toolbar that always live in More, such as Copy to or Move to trash for a selection.
+   * More then always shows; actions that move there on a narrow row come first, these follow in their own group.
+   */
+  moreItems?: readonly DropdownItem[];
   class?: string;
 };
 
@@ -29,10 +43,25 @@ export type ToolbarActionProps = {
   keys?: string;
   /** 1 is most important. Larger numbers move first; ties move later DOM actions first. Omit to keep fixed. */
   priority?: number;
+  /**
+   * Shows the label beside the icon while a floating toolbar has room. When it gets narrow, these labels go first,
+   * every action keeps its icon, and only then do actions move into More.
+   */
+  text?: boolean;
   disabled?: boolean;
+  /** Makes the action a toggle and exposes its state as `aria-pressed`, such as Bold over bold text. */
+  pressed?: boolean;
   onClick?: () => void;
 };
-export type ToolbarLabelProps = { children: JSX.Element; class?: string };
+export type ToolbarLabelProps = {
+  children: JSX.Element;
+  /**
+   * Follows the label while it fits, such as the reason after "Not saved". A narrow toolbar hides it whole before
+   * actions give up their labels; screen readers always read it.
+   */
+  detail?: JSX.Element;
+  class?: string;
+};
 
 export type ToolbarGroupProps = { children: JSX.Element; label?: string; class?: string };
 export type ToolbarSeparatorProps = { class?: string };
@@ -49,6 +78,8 @@ type ToolbarOrientation = NonNullable<ToolbarProps["orientation"]>;
 
 const defaultToolbarOrientation: () => ToolbarOrientation = () => "horizontal";
 const ToolbarOrientationContext = createContext(defaultToolbarOrientation);
+/** True inside a floating `tone="danger"` toolbar, whose labels announce themselves. */
+const ToolbarDangerContext = createContext(false);
 /** False where actions are icon-sized, such as SelectionToolbar: no room below the icon for a hint. Package-internal. */
 export const ToolbarHintsContext = createContext(true);
 
@@ -56,6 +87,8 @@ export const ToolbarHintsContext = createContext(true);
 type RegisteredAction = { element: HTMLButtonElement; props: ToolbarActionProps; item: DropdownAction };
 const ToolbarActionsContext = createContext<(action: RegisteredAction) => () => void>();
 const overflowAttribute = "data-overflow";
+/** Set on a floating toolbar whose action labels gave way to icons for lack of room. */
+const compactAttribute = "data-compact";
 const hide = (element: Element) => element.setAttribute(overflowAttribute, "hidden");
 const reveal = (element: Element) => element.removeAttribute(overflowAttribute);
 
@@ -128,19 +161,51 @@ const ToolbarAction = (props: ToolbarActionProps): JSX.Element => {
       variant="ghost"
       tooltip={tooltip()}
       aria-keyshortcuts={ariaShortcut(props.keys, platform())}
+      aria-pressed={props.pressed === undefined ? undefined : props.pressed ? "true" : "false"}
       data-priority={props.priority}
+      data-text={props.text ? "" : undefined}
       disabled={props.disabled}
       onClick={() => props.onClick?.()}
     >
       <i class={props.icon} aria-hidden="true" />
+      <Show when={props.text}>
+        <span class="k2b-toolbar__text" aria-hidden="true">
+          {props.label}
+        </span>
+      </Show>
       <Show when={hints && props.keys}>{(keys) => <Kbd keys={keys()} class="k2b-kbd-hint k2b-toolbar__hint" />}</Show>
     </IconButton>
   );
 };
 
-const ToolbarLabel = (props: ToolbarLabelProps): JSX.Element => (
-  <span class={`k2b-toolbar__label ${props.class ?? ""}`}>{props.children}</span>
-);
+const ToolbarLabel = (props: ToolbarLabelProps): JSX.Element => {
+  const danger = useContext(ToolbarDangerContext);
+  let label!: HTMLSpanElement;
+  // The shared assertive live region exists before the text arrives, so the message is read reliably, also when the
+  // pill appears with it or its text changes later.
+  onMount(() => {
+    if (!danger) return;
+    let spoken = "";
+    const speak = () => {
+      const text = label.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      if (text === spoken) return;
+      spoken = text;
+      announce(text, { politeness: "assertive" });
+    };
+    speak();
+    const observer = new MutationObserver(speak);
+    observer.observe(label, { childList: true, subtree: true, characterData: true });
+    onCleanup(() => observer.disconnect());
+  });
+  return (
+    <span ref={label} class={`k2b-toolbar__label ${props.class ?? ""}`} data-detail={props.detail ? "" : undefined}>
+      <Show when={props.detail} fallback={props.children}>
+        <span class="k2b-toolbar__label-main">{props.children}</span>
+        <span class="k2b-toolbar__label-detail">{props.detail}</span>
+      </Show>
+    </span>
+  );
+};
 
 const ToolbarGroup = (props: ToolbarGroupProps): JSX.Element => (
   <div class={`k2b-toolbar__group ${props.class ?? ""}`} role="group" aria-label={props.label}>
@@ -188,7 +253,12 @@ const rovingFocus = (root: HTMLDivElement, orientation: () => ToolbarOrientation
       (item) => !item.matches(":disabled") && !item.closest('[data-overflow="hidden"]') && item.getClientRects().length > 0,
     );
   const sync = () => {
-    const available = items();
+    // A toolbar that is still hidden, such as a SelectionToolbar about to show, keeps one stop: otherwise Tab right
+    // after it shows would pass it before the next measure.
+    const shown = items();
+    const available = shown.length
+      ? shown
+      : controls().filter((item) => !item.matches(":disabled") && !item.closest('[data-overflow="hidden"]'));
     if (!last || !available.includes(last)) setLast(available[0]);
     for (const item of controls()) item.tabIndex = item === last ? 0 : -1;
   };
@@ -254,8 +324,10 @@ const measureOverflow = (
   more: HTMLDivElement,
   actions: RegisteredAction[],
   available: number,
+  pinned = false,
 ): RegisteredAction[] => {
   for (const element of root.querySelectorAll(`[${overflowAttribute}]`)) if (element !== more) reveal(element);
+  root.removeAttribute(compactAttribute);
   const children = Array.from(root.children).filter(
     (element): element is HTMLElement => element instanceof HTMLElement && element !== more,
   );
@@ -293,11 +365,23 @@ const measureOverflow = (
   const width = (child: HTMLElement) => {
     // Separators carry inline margins, which bounding boxes leave out.
     const childStyle = getComputedStyle(child);
+    // A spacer takes whatever room is left, so it needs only its minimum.
+    if (child.classList.contains("k2b-toolbar__spacer")) return Number.parseFloat(childStyle.minWidth) || 0;
     const box =
       child.getBoundingClientRect().width +
       (Number.parseFloat(childStyle.marginLeft) || 0) +
       (Number.parseFloat(childStyle.marginRight) || 0);
     if (!child.classList.contains("k2b-toolbar__label")) return box;
+    // A detail only takes leftover room: the label needs its main text and padding.
+    const main = child.querySelector<HTMLElement>(":scope > .k2b-toolbar__label-main");
+    if (main)
+      return (
+        main.scrollWidth +
+        (Number.parseFloat(childStyle.paddingLeft) || 0) +
+        (Number.parseFloat(childStyle.paddingRight) || 0) +
+        (Number.parseFloat(childStyle.marginLeft) || 0) +
+        (Number.parseFloat(childStyle.marginRight) || 0)
+      );
     const cap = Number.parseFloat(childStyle.maxWidth);
     return Math.max(box, Math.min(child.scrollWidth, Number.isNaN(cap) ? Number.POSITIVE_INFINITY : cap));
   };
@@ -315,8 +399,11 @@ const measureOverflow = (
     )
     .reverse()
     .sort((a, b) => b.props.priority! - a.props.priority!);
-  let movedAny = false;
-  tidy(false);
+  // With rarer commands of its own, More always shows and always takes its room.
+  let movedAny = pinned;
+  tidy(pinned);
+  // Labels go before actions: a toolbar that does not fit with its labels drops them first.
+  if (used(pinned) > available && root.querySelector(".k2b-toolbar__action[data-text]")) root.setAttribute(compactAttribute, "");
   for (const action of candidates) {
     if (used(movedAny) <= available) break;
     hide(action.element);
@@ -333,8 +420,10 @@ export const Toolbar = Object.assign(
   (props: ToolbarProps): JSX.Element => {
     // The variant decides the DOM shape, so it is read once.
     const floating = props.variant === "floating";
+    const danger = () => (floating && props.tone === "danger" ? "danger" : undefined);
     const orientation = () => (floating ? "horizontal" : (props.orientation ?? "horizontal"));
     const messages = useToolbarMessages();
+    const hints = useContext(ToolbarHintsContext);
     const actions = new Set<RegisteredAction>();
     const [revision, setRevision] = createSignal(0);
     const [moved, setMoved] = createSignal<RegisteredAction[]>([]);
@@ -357,7 +446,7 @@ export const Toolbar = Object.assign(
       // Cleared before measuring so the pending `visibility: hidden` does not hide every action from the check
       // below; the whole measurement still runs before the next paint.
       root.removeAttribute("data-overflow-pending");
-      const next = measureOverflow(root, more, ordered, available);
+      const next = measureOverflow(root, more, ordered, available, (props.moreItems?.length ?? 0) > 0);
       setMoved((previous) =>
         previous.length === next.length && previous.every((action, index) => action === next[index]) ? previous : next,
       );
@@ -392,6 +481,7 @@ export const Toolbar = Object.assign(
           void action.props.label;
           void action.props.icon;
           void action.props.keys;
+          void action.props.text;
         }
         measure();
       });
@@ -421,44 +511,56 @@ export const Toolbar = Object.assign(
         mutations.disconnect();
       });
     });
-    const menuItems = (): DropdownAction[] => moved().map((action) => action.item);
+    // Actions that moved come first, in their order and in a group of their own; the host's rarer commands follow.
+    const menuItems = (): DropdownItem[] => {
+      const movedItems = moved().map((action) => action.item);
+      const pinnedItems = props.moreItems ?? [];
+      if (!pinnedItems.length) return movedItems;
+      return movedItems.length ? [{ items: movedItems }, ...pinnedItems] : [...pinnedItems];
+    };
     const content = (
       <ToolbarOrientationContext.Provider value={orientation}>
-        <ToolbarActionsContext.Provider value={floating ? register : undefined}>
-          <div
-            ref={root}
-            onKeyDown={(event) => navigation?.keydown(event)}
-            class={`k2b-toolbar ${props.class ?? ""}`}
-            role="toolbar"
-            aria-label={props.label}
-            aria-orientation={orientation()}
-            data-orientation={orientation()}
-            data-variant={floating ? "floating" : undefined}
-            data-wrap={!floating && props.wrap ? "true" : undefined}
-            data-overflow-pending={floating ? "" : undefined}
-          >
-            {props.children}
-            <Show when={floating}>
-              <div ref={more} class="k2b-toolbar__more" data-overflow="hidden">
-                <Dropdown.Root
-                  items={menuItems()}
-                  position="top-left"
-                  label={messages().moreActions}
-                  // An open menu closes when its last row returns to the toolbar.
-                  disabled={moved().length === 0}
-                >
-                  <Dropdown.Trigger ref={trigger} iconOnly label={messages().moreActions}>
-                    <i class="ti ti-dots" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
+        <ToolbarDangerContext.Provider value={!!danger()}>
+          <ToolbarActionsContext.Provider value={floating ? register : undefined}>
+            {/* A floating pill's 24 px controls leave no room below the icon: shortcuts show in the tooltips. */}
+            <ToolbarHintsContext.Provider value={!floating && hints}>
+              <div
+                ref={root}
+                onKeyDown={(event) => navigation?.keydown(event)}
+                class={`k2b-toolbar${floating ? " k2b-pill" : ""} ${props.class ?? ""}`}
+                role="toolbar"
+                aria-label={props.label}
+                aria-orientation={orientation()}
+                data-orientation={orientation()}
+                data-variant={floating ? "floating" : undefined}
+                data-tone={danger()}
+                data-wrap={!floating && props.wrap ? "true" : undefined}
+                data-overflow-pending={floating ? "" : undefined}
+              >
+                {props.children}
+                <Show when={floating}>
+                  <div ref={more} class="k2b-toolbar__more" data-overflow="hidden">
+                    <Dropdown.Root
+                      items={menuItems()}
+                      position="top-left"
+                      label={messages().moreActions}
+                      // An open menu closes when its last row returns to the toolbar.
+                      disabled={moved().length === 0 && !props.moreItems?.length}
+                    >
+                      <Dropdown.Trigger ref={trigger} iconOnly label={messages().moreActions}>
+                        <i class="ti ti-dots" aria-hidden="true" />
+                      </Dropdown.Trigger>
+                    </Dropdown.Root>
+                  </div>
+                </Show>
               </div>
-            </Show>
-          </div>
-        </ToolbarActionsContext.Provider>
+            </ToolbarHintsContext.Provider>
+          </ToolbarActionsContext.Provider>
+        </ToolbarDangerContext.Provider>
       </ToolbarOrientationContext.Provider>
     );
     return floating ? (
-      <div ref={strip} class="k2b-toolbar-float">
+      <div ref={strip} class="k2b-toolbar-float" data-edge={props.edge === "top" ? "top" : undefined} data-tone={danger()}>
         {content}
       </div>
     ) : (
@@ -467,5 +569,16 @@ export const Toolbar = Object.assign(
   },
   { Action: ToolbarAction, Label: ToolbarLabel, Group: ToolbarGroup, Separator: ToolbarSeparator, Spacer: ToolbarSpacer },
 ) as ToolbarComponent;
+
+export type ToolbarDockProps = { children: JSX.Element; class?: string };
+
+/**
+ * One floating row at the bottom of a column for several floating toolbars: the first sits at the start edge, the last
+ * at the end edge, and each moves its own actions into More when the row gets narrow. Content scrolls beneath the row
+ * and still ends above it.
+ */
+export const ToolbarDock = (props: ToolbarDockProps): JSX.Element => (
+  <div class={props.class ? `k2b-toolbar-dock ${props.class}` : "k2b-toolbar-dock"}>{props.children}</div>
+);
 
 export default Toolbar;

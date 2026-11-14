@@ -10,11 +10,13 @@ import {
   accessKey,
   cachedResource,
   contextPrincipal,
+  invalidateResource,
   READER_CONCURRENCY,
   type ResourceReaderDependencies,
   readContainers,
   readerBatch,
   readResource,
+  resourceReaderDependencies,
 } from "./resource-access";
 
 useUnitClients();
@@ -60,6 +62,7 @@ const envelope = (permission = "write", contained = false) => ({
 });
 const cache = new Map<string, { value: string; until: number }>();
 let catalog: ReturnType<typeof mockDiscussionCatalog>, get: ReturnType<typeof spyOn>, set: ReturnType<typeof spyOn>;
+let del: ReturnType<typeof spyOn<typeof redis, "del">>;
 let publicUrl: ReturnType<typeof spyOn<typeof platform, "get">>;
 beforeEach(() => {
   setSystemTime(new Date(now));
@@ -72,6 +75,9 @@ beforeEach(() => {
     const entry = cache.get(key);
     return entry && entry.until > Date.now() ? entry.value : null;
   });
+  del = spyOn(redis, "del").mockImplementation(async (...keys: string[]) =>
+    keys.reduce((count, key) => count + Number(cache.delete(key)), 0),
+  );
   set = spyOn(redis, "set").mockImplementation(async (...args: unknown[]) => {
     const [key, value, ...options] = args;
     if (typeof key !== "string" || typeof value !== "string") throw new Error("String values expected");
@@ -85,6 +91,7 @@ afterEach(() => {
   publicUrl.mockRestore();
   catalog.mockRestore();
   get.mockRestore();
+  del.mockRestore();
   set.mockRestore();
   setSystemTime();
   if (originalOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
@@ -141,11 +148,16 @@ test("separates localized views and locale-free live authority and expires both"
 test("nested queries bypass HTTP authorization and invoke the declared reader", async () => {
   const c = context();
   await readResource(c, ref, { invoke: async () => envelope() });
+  let queries = 0;
+  const reads = get.mock.calls.length;
   const capabilityQuery: NonNullable<ChatContext["capabilityQuery"]> = async (request) => {
+    queries++;
     expect(request).toMatchObject({ appId: "inventory", capabilityId: "collection.read", input: { id: ref.id } });
     return { ok: false, error: { code: "FORBIDDEN", message: "Denied", status: 403 } };
   };
   expect(await readResource({ ...context(), capabilityQuery }, ref)).toBeNull();
+  expect(queries).toBe(1);
+  expect(get.mock.calls).toHaveLength(reads);
   expect(await cachedResource(contextPrincipal(c), ref)).toMatchObject({ permission: "write" });
 });
 
@@ -371,4 +383,60 @@ test("readers without open links remain readable and manifest icons are constrai
   const resource = await readResource(context(), ref, { invoke: async () => ({ data: envelope().data }) });
   expect(resource).toMatchObject({ title: "Inventory", icon: "ti ti-messages" });
   expect(resource?.href).toBeUndefined();
+});
+
+test("identity invalidation is cache-only; HTTP renewal deduplicates and cannot reuse old locales", async () => {
+  const c = context();
+  const principal = contextPrincipal(c);
+  await readResource({ ...c, locale: "de" }, ref, { invoke: async () => envelope() });
+  expect(await cachedResource(principal, ref)).toMatchObject({ permission: "write" });
+  let calls = 0;
+  const invoke = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async () => {
+    calls++;
+    return envelope("read");
+  });
+  try {
+    await invalidateResource(principal, ref);
+    expect(calls).toBe(0);
+    expect(await cachedResource(principal, ref)).toBeNull();
+    const decisions = await Promise.all(Array.from({ length: 20 }, () => cachedResource(principal, ref)));
+    expect(decisions.every((value) => value === null)).toBe(true);
+    expect(calls).toBe(0);
+    const refresh = context();
+    const renewed = await Promise.all(Array.from({ length: 20 }, () => readResource(refresh, ref)));
+    expect(renewed.every((value) => value?.permission === "read")).toBe(true);
+    expect(calls).toBe(1);
+    expect(await readResource({ ...context(), locale: "de" }, ref)).toMatchObject({ permission: "read" });
+    expect(calls).toBe(2);
+    await invalidateResource(principal, ref);
+    invoke.mockResolvedValue(null);
+    expect(await cachedResource(principal, ref)).toBeNull();
+    // Neither the old localized view nor its missing authority can restore access.
+    expect(await readResource({ ...context(), locale: "de" }, ref)).toBeNull();
+    expect(await cachedResource(principal, ref)).toBeNull();
+  } finally {
+    invoke.mockRestore();
+  }
+});
+
+test("an owner response overtaken by invalidation cannot restore live authority", async () => {
+  const principal = contextPrincipal(context());
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const invoke = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async () => {
+    started.resolve();
+    await release.promise;
+    return envelope();
+  });
+  try {
+    const reading = readResource(context(), ref);
+    await started.promise;
+    await invalidateResource(principal, ref);
+    release.resolve();
+    expect(await reading).toBeNull();
+    expect(await cachedResource(principal, ref)).toBeNull();
+  } finally {
+    release.resolve();
+    invoke.mockRestore();
+  }
 });

@@ -33,7 +33,7 @@ describe("Mail attachment preview", () => {
     globalThis.fetch = originalFetch;
   });
 
-  test("shows the document title, quiet file facts and one download, with the content on the dialog surface", async () => {
+  test("opens every attachment in the Lightbox with the document title, quiet facts, Copy text and one download", async () => {
     const dom = createDomTestHarness();
     globalThis.fetch = Object.assign(
       (input: RequestInfo | URL) => {
@@ -46,66 +46,68 @@ describe("Mail attachment preview", () => {
       { preconnect: originalFetch.preconnect },
     );
     const { default: MailMessageAttachments } = await import("./MailMessageAttachments");
-    const { dialogCore } = await import("@k2b/ui");
     const { render } = await import("solid-js/web");
     const dispose = render(
       () => createComponent(MailMessageAttachments, { mailboxId: "Box001", messageId: "Msg001", attachments }),
       dom.root,
     );
-    const dialog = () => dom.document.querySelector<HTMLElement>(".k2b-dialog[open]")!;
-    // A click on an item opens its preview; the fourth item shows once the full list is open.
-    const preview = (index: number) => dom.root.querySelectorAll<HTMLButtonElement>(".k2b-file-grid__open")[index]!;
-    try {
-      expect(dom.root.querySelector("[data-mail-message-attachments]")?.textContent).toContain("4 attachments");
-      expect(dom.root.querySelectorAll(".k2b-file-grid__open")).toHaveLength(3);
-      dom.root.querySelector<HTMLButtonElement>(".k2b-file-grid-stack__more")!.click();
+    const lightbox = () => dom.document.querySelector<HTMLDialogElement>("dialog.k2b-lightbox")!;
+    const actions = () => [...lightbox().querySelectorAll(".k2b-lightbox__action")].map((button) => button.textContent);
+    const step = async () => {
+      lightbox().querySelector<HTMLButtonElement>('button[aria-label="Next file"]')!.click();
       await settle();
-      expect(dom.root.querySelectorAll(".k2b-file-grid__open")).toHaveLength(4);
+    };
+    // Every attachment is a tile; a click on one opens the Lightbox.
+    const preview = (index: number) => dom.root.querySelectorAll<HTMLButtonElement>(".mail-attachment-tile__open")[index]!;
+    try {
+      expect(dom.root.querySelector("[data-mail-message-attachments]")?.getAttribute("aria-label")).toBe("4 attachments");
+      expect(dom.root.querySelectorAll(".mail-attachment-tile__open")).toHaveLength(4);
+      expect(dom.root.querySelector("[data-mail-download-all]")?.textContent).toContain("Download all 4");
       preview(0).click();
       await settle();
-      expect(dialog().className).toContain("mail-attachment-dialog--reading");
-      // The leading heading becomes the title and leaves the document; the file name moves into the facts line.
-      expect(dialog().querySelector("h2")?.textContent).toBe("Summer party 2026");
-      const facts = dialog().querySelector(".mail-attachment-dialog__facts");
-      expect(facts?.querySelector(".mail-attachment-dialog__facts-name")?.getAttribute("title")).toBe("Summer_party.md");
-      expect(facts?.textContent).toContain("519 B");
-      expect(facts?.textContent).not.toContain("text/plain");
-      expect(facts?.hasAttribute("data-pending")).toBeFalse();
-      expect(dialog().querySelector(".k2b-content-markdown h1")).toBeNull();
-      expect(dialog().querySelector(".k2b-content-file-view")?.getAttribute("data-variant")).toBe("plain");
-      // Download lives in the header only, not again as an overlay on the content.
-      expect(dialog().querySelectorAll("a[download]")).toHaveLength(1);
-      expect(dialog().querySelector(".k2b-content-file-view__overlay a")).toBeNull();
-      dialogCore.close();
-      await settle();
+      // The leading heading becomes the name and leaves the document; the file name moves into the facts.
+      expect(lightbox().getAttribute("aria-label")).toBe("Summer party 2026");
+      const facts = lightbox().querySelector(".k2b-lightbox__name span")?.textContent;
+      expect(facts).toContain("Summer_party.md");
+      expect(facts).toContain("519 B");
+      expect(facts).not.toContain("text/plain");
+      expect(lightbox().querySelector(".k2b-content-markdown h1")).toBeNull();
+      expect(lightbox().querySelector(".k2b-content-file-view")?.getAttribute("data-variant")).toBe("plain");
+      // Download lives in the action pill only, not again as an overlay on the content; Markdown needs no Copy text.
+      const download = lightbox().querySelectorAll<HTMLAnchorElement>("a[download]");
+      expect(download).toHaveLength(1);
+      expect(download[0]?.getAttribute("href")).toBe("/api/mail/mailboxes/Box001/messages/Msg001/attachments/Att001");
+      expect(lightbox().querySelector(".k2b-content-file-view__overlay a")).toBeNull();
+      expect(actions()).toEqual(["Save to…"]);
+      // All four attachments are in the strip; the next one is the plain text.
+      expect(lightbox().querySelectorAll(".k2b-thumbnail-strip__thumb")).toHaveLength(4);
+      await step();
+      expect(lightbox().getAttribute("aria-label")).toBe("Packing_list.txt");
+      expect(lightbox().querySelector(".k2b-lightbox__name span")?.textContent ?? "").not.toContain("Packing_list.txt");
+      // Plain text has no code box with its own copy header; Copy text sits in the action pill and copies the text.
+      expect(lightbox().querySelector(".k2b-content-code-display__header")).toBeNull();
+      expect(actions()).toEqual(["Copy text", "Save to…"]);
+      const copied: string[] = [];
+      Object.defineProperty(dom.window.navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: (text: string) => (copied.push(text), Promise.resolve()) },
+      });
+      lightbox().querySelector<HTMLButtonElement>('.k2b-lightbox__action[aria-label="Copy text"]')!.click();
+      expect(copied).toEqual(["Packing list\n- Pavilion\n"]);
 
-      preview(1).click();
-      await settle();
-      expect(dialog().querySelector("h2")?.textContent).toBe("Packing_list.txt");
-      expect(dialog().querySelector(".mail-attachment-dialog__facts")?.textContent).not.toContain("Packing_list.txt");
-      // Plain text has no code box with its own copy header; copying sits in the dialog header.
-      expect(dialog().querySelector(".k2b-content-code-display__header")).toBeNull();
-      const copy = dialog().querySelector<HTMLButtonElement>(".k2b-panel-dialog__actions .k2b-copy-button");
-      expect(copy?.getAttribute("aria-label")).toBe("Copy");
-      expect(copy?.disabled).toBeFalse();
-      dialogCore.close();
-      await settle();
+      // A table's raw view has no code box either, so Copy text stays in the pill.
+      await step();
+      expect(lightbox().getAttribute("aria-label")).toBe("Stands.csv");
+      expect(actions()).toEqual(["Copy text", "Save to…"]);
 
-      // A table fills the wide frame; its raw view has no code box either, so Copy stays in the header.
-      preview(2).click();
+      // JSON that does not parse falls back to text without a code box; the pill still copies it.
+      await step();
+      expect(lightbox().querySelector(".k2b-content-code-display__header")).toBeNull();
+      expect(actions()).toEqual(["Copy text", "Save to…"]);
+      lightbox().querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click();
       await settle();
-      expect(dialog().className).toContain("mail-attachment-dialog--stretch");
-      expect(dialog().querySelector(".k2b-panel-dialog__actions .k2b-copy-button")).not.toBeNull();
-      dialogCore.close();
-      await settle();
-
-      // JSON that does not parse falls back to text without a code box; the header still copies it.
-      preview(3).click();
-      await settle();
-      expect(dialog().querySelector(".k2b-content-code-display__header")).toBeNull();
-      expect(dialog().querySelector<HTMLButtonElement>(".k2b-panel-dialog__actions .k2b-copy-button")?.disabled).toBeFalse();
+      expect(dom.document.querySelector("dialog.k2b-lightbox")).toBeNull();
     } finally {
-      dialogCore.close();
       dispose();
       dom.cleanup();
     }
@@ -131,7 +133,10 @@ describe("Mail attachment preview", () => {
     try {
       const labels = [...dom.root.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"));
       expect(labels).toContain("Save all to…");
-      expect(labels).toContain("Save Summer_party.md to…");
+      // Each tile's "…" saves that one attachment.
+      expect(labels).toContain("Actions for Summer_party.md");
+      const tileMenu = dom.root.querySelector('[data-mail-attachment="Att001"]')!;
+      expect([...tileMenu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim())).toEqual(["Download", "Save to…"]);
       dom.root.querySelector<HTMLButtonElement>('button[aria-label="Save all to…"]')!.click();
       let dialog = dom.document.querySelector<HTMLElement>(".k2b-dialog[open]");
       for (let attempt = 0; attempt < 100 && !dialog; attempt += 1) {

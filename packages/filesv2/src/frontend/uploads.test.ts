@@ -174,16 +174,16 @@ test.each(["write_conflict", "path_conflict"])(
   },
 );
 
-test("receipt_unknown at commit drops the key without aborting and retry uses a fresh key", async () => {
+test("receipt_unknown at commit retains the exact key without aborting until reconciled", async () => {
   globalThis.fetch = Object.assign(normalTransfer, { preconnect: originalFetch.preconnect });
   commitFailure = true;
   commitCode = "receipt_unknown";
   await expect(uploadFile("base", "file", new Blob(["abc"]), options())).rejects.toHaveProperty("code", "receipt_unknown");
-  expect(storage.size).toBe(0);
+  expect([...storage.keys()].filter((key) => key.startsWith("filesv2:upload:"))).toHaveLength(1);
   expect(aborts).toBe(0);
   commitFailure = false;
   await uploadFile("base", "file", new Blob(["abc"]), options());
-  expect(startKeys[1]).not.toBe(startKeys[0]!);
+  expect(startKeys[1]).toBe(startKeys[0]!);
 });
 
 test("a rejected abort retains the key after a final transfer error", async () => {
@@ -196,15 +196,18 @@ test("a rejected abort retains the key after a final transfer error", async () =
   expect([...storage.keys()].filter((key) => key.startsWith("filesv2:upload:"))).toHaveLength(1);
 });
 
-test.each(["upload_closed", "receipt_unknown", "upload_changed"])("lease %s drops its dead key without an abort", async (code) => {
-  leaseCode = code;
-  globalThis.fetch = Object.assign(async () => Response.json({ error: "expired_capability" }, { status: 401 }), {
-    preconnect: originalFetch.preconnect,
-  });
-  await expect(uploadFile("base", "file", new Blob(["abc"]), options())).rejects.toHaveProperty("code", code);
-  expect(aborts).toBe(0);
-  expect(storage.size).toBe(0);
-});
+test.each(["upload_closed", "receipt_unknown", "upload_changed"])(
+  "lease %s preserves unknown receipts and releases confirmed closed transfers",
+  async (code) => {
+    leaseCode = code;
+    globalThis.fetch = Object.assign(async () => Response.json({ error: "expired_capability" }, { status: 401 }), {
+      preconnect: originalFetch.preconnect,
+    });
+    await expect(uploadFile("base", "file", new Blob(["abc"]), options())).rejects.toHaveProperty("code", code);
+    expect(aborts).toBe(0);
+    expect([...storage.keys()].filter((key) => key.startsWith("filesv2:upload:"))).toHaveLength(code === "upload_closed" ? 0 : 1);
+  },
+);
 
 test("a durable-key write failure happens before any start request", async () => {
   const failure = new DOMException("Storage full", "QuotaExceededError");

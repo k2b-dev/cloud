@@ -1,30 +1,75 @@
 import { describe, expect, test } from "bun:test";
-import { assessIpaDestructionGuard, readCompleteIpaList, selectStaleLocalIpaRows } from "./sync-planning";
+import { assessIpaDestructionGuard, createIpaIdentityMatcher, readCompleteIpaList, selectStaleLocalIpaRows } from "./sync-planning";
+
+describe("createIpaIdentityMatcher", () => {
+  const legacy = { id: "u1", uid: "eva", entryId: null };
+  const bound = { id: "u2", uid: "max", entryId: "ipauniqueid:entry-max" };
+  const match = createIpaIdentityMatcher([legacy, bound]);
+
+  test("matches a stored entry ID under a new username", () => {
+    expect(match({ uid: "max-renamed", entryId: "ipauniqueid:entry-max" })).toEqual({ kind: "matched", row: bound });
+  });
+
+  test("matches an account without a stored entry ID by username", () => {
+    expect(match({ uid: "eva", entryId: "ipauniqueid:entry-eva" })).toEqual({ kind: "matched", row: legacy });
+  });
+
+  test("reports a username whose account stores another entry ID as a conflict", () => {
+    expect(match({ uid: "max", entryId: "ipauniqueid:other" })).toEqual({ kind: "conflict", row: bound });
+  });
+
+  test("neither confirms nor replaces a stored entry ID when the directory returns none", () => {
+    expect(match({ uid: "max", entryId: null })).toEqual({ kind: "unverified", row: bound });
+  });
+
+  test("never matches by anything but username and entry ID", () => {
+    expect(match({ uid: "new-person", entryId: "ipauniqueid:new" })).toEqual({ kind: "none" });
+  });
+});
 
 describe("selectStaleLocalIpaRows", () => {
   test("keeps unchanged active IPA users out of stale transitions", () => {
     const stale = selectStaleLocalIpaRows({
-      localRows: [{ uid: "eva", mail: "eva@example.test" }],
-      activeRemoteUsers: [{ uid: "eva", mail: "eva@example.test" }],
+      localRows: [{ id: "u1", uid: "eva", entryId: "ipauniqueid:entry-eva" }],
+      activeRemoteUsers: [{ uid: "eva", entryId: "ipauniqueid:entry-eva" }],
     });
 
     expect(stale).toEqual([]);
   });
 
-  test("keeps UID-renamed IPA users out of stale transitions when mail still matches", () => {
+  test("keeps renamed IPA users out of stale transitions by entry ID", () => {
     const stale = selectStaleLocalIpaRows({
-      localRows: [{ uid: "old-eva", mail: "eva@example.test" }],
-      activeRemoteUsers: [{ uid: "new-eva", mail: "eva@example.test" }],
+      localRows: [{ id: "u1", uid: "old-eva", entryId: "ipauniqueid:entry-eva" }],
+      activeRemoteUsers: [{ uid: "new-eva", entryId: "ipauniqueid:entry-eva" }],
     });
 
     expect(stale).toEqual([]);
   });
 
-  test("returns IPA users with no active UID or mail match as stale", () => {
-    const local = { uid: "old-eva", mail: "old-eva@example.test" };
+  test("returns an IPA user whose username now belongs to another directory entry as stale", () => {
+    const local = { id: "u1", uid: "eva", entryId: "ipauniqueid:entry-eva" };
     const stale = selectStaleLocalIpaRows({
       localRows: [local],
-      activeRemoteUsers: [{ uid: "new-eva", mail: "eva@example.test" }],
+      activeRemoteUsers: [{ uid: "eva", entryId: "ipauniqueid:entry-other" }],
+    });
+
+    expect(stale).toEqual([local]);
+  });
+
+  test("keeps an account whose directory record has no entry ID out of stale transitions", () => {
+    const stale = selectStaleLocalIpaRows({
+      localRows: [{ id: "u1", uid: "eva", entryId: "ipauniqueid:entry-eva" }],
+      activeRemoteUsers: [{ uid: "eva", entryId: null }],
+    });
+
+    expect(stale).toEqual([]);
+  });
+
+  test("returns IPA users with no active identity match as stale", () => {
+    const local = { id: "u1", uid: "old-eva", entryId: null };
+    const stale = selectStaleLocalIpaRows({
+      localRows: [local],
+      activeRemoteUsers: [{ uid: "new-eva", entryId: "ipauniqueid:entry-new" }],
     });
 
     expect(stale).toEqual([local]);

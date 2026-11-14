@@ -436,6 +436,21 @@ export const ConversationRelatedDataSchema = z
   )
   .max(10);
 
+export const ConversationBySenderInputSchema = z
+  .object({
+    mailboxId: MailboxIdInputSchema,
+    email: z.email().max(320).describe("Exact sender From address."),
+    excludeConversationId: ConversationIdInputSchema.optional().describe("Open conversation to leave out of the preview and total."),
+    limit: z.number().int().min(1).max(5).default(5).describe("Maximum number of sender conversations to return, at most five."),
+  })
+  .strict();
+export const ConversationBySenderDataSchema = z
+  .object({
+    items: z.array(ConversationRelatedDataSchema.element.omit({ reasons: true })).max(5),
+    total: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const AddressDataSchema = z.object({ name: z.string().max(200).nullable(), address: z.email() }).strict();
 export const AttachmentDataSchema = z
   .object({
@@ -635,6 +650,7 @@ export const DraftDataSchema = z
   .object({
     id: ResourceShortIdSchema,
     signatureTemplateId: ResourceShortIdSchema.nullable(),
+    quoteSource: draftEditableContentInputSchema.shape.quoteSource,
     mailboxId: ResourceShortIdSchema,
     conversationId: ResourceShortIdSchema.nullable(),
     intent: z.enum(["new", "reply", "reply_all", "forward"]),
@@ -661,6 +677,8 @@ export const DraftDataSchema = z
     bccTruncated: z.boolean(),
     attachments: z.array(DraftAttachmentDataSchema).max(50),
     attachmentsTruncated: z.boolean(),
+    suggestion: z.boolean(),
+    consolidatedCount: z.number().int().nonnegative(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     createdAt: TimestampSchema,
@@ -675,6 +693,8 @@ export const DraftSummaryDataSchema = compactResourceViewSchema("mail.draft")
     recipients: z.string().max(320),
     recipientsTruncated: z.boolean(),
     attachmentCount: z.number().int().nonnegative(),
+    suggestion: z.boolean(),
+    consolidatedCount: z.number().int().nonnegative(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     updatedAt: TimestampSchema,
@@ -683,8 +703,10 @@ export const DraftSummaryDataSchema = compactResourceViewSchema("mail.draft")
 export const DraftListDataSchema = z.array(DraftSummaryDataSchema).max(100);
 export const DraftMutationDataSchema = z
   .object({
+    creationOutcome: z.enum(["created", "existing", "suggestion_skipped"]).optional(),
     id: ResourceShortIdSchema,
     signatureTemplateId: ResourceShortIdSchema.nullable(),
+    quoteSource: draftEditableContentInputSchema.shape.quoteSource,
     conversationId: ResourceShortIdSchema.nullable(),
     attachments: z
       .array(
@@ -699,6 +721,8 @@ export const DraftMutationDataSchema = z
       )
       .max(50),
     attachmentsTruncated: z.boolean(),
+    suggestion: z.boolean(),
+    consolidatedCount: z.number().int().nonnegative(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     formattingWarnings: composeFormattingWarningsSchema
@@ -728,6 +752,7 @@ export const DraftCreateInputSchema = z
     mailboxId: MailboxIdInputSchema,
     senderIdentityId: ResourceShortIdSchema.describe("Verified sender-identity ID."),
     signatureTemplateId: draftEditableContentInputSchema.shape.signatureTemplateId,
+    quoteSource: draftEditableContentInputSchema.shape.quoteSource,
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
@@ -756,6 +781,15 @@ export const DraftUpdateInputSchema = z
     draft: draftEditableContentInputSchema.describe("Complete editable draft content replacing the current content."),
   })
   .strict();
+export const DraftSwitchIntentInputSchema = z
+  .object({
+    mailboxId: MailboxIdInputSchema,
+    draftId: DraftIdInputSchema,
+    expectedRevision: ExpectedRevisionInputSchema,
+    intent: z.enum(["reply", "reply_all", "forward"]).describe("Reply mode to derive from the source message, preserving body text."),
+  })
+  .strict();
+export const DraftAcknowledgeConsolidationInputSchema = z.object({ mailboxId: MailboxIdInputSchema, draftId: DraftIdInputSchema }).strict();
 export const DraftPatchInputSchema = z
   .object({
     mailboxId: MailboxIdInputSchema,
@@ -765,6 +799,10 @@ export const DraftPatchInputSchema = z
       .object({
         senderIdentityId: ResourceShortIdSchema.optional().describe("Replacement verified sender identity."),
         signatureTemplateId: draftEditableContentInputSchema.shape.signatureTemplateId,
+        quoteSource: draftEditableContentInputSchema.shape.quoteSource
+          .removeDefault()
+          .optional()
+          .describe("Append or remove the source quote; omitted preserves the current choice."),
         to: z.array(mailAddressSchema).max(200).optional().describe("Replace all primary recipients; [] clears them."),
         cc: z.array(mailAddressSchema).max(200).optional().describe("Replace all carbon-copy recipients."),
         bcc: z.array(mailAddressSchema).max(200).optional().describe("Replace all blind-copy recipients."),

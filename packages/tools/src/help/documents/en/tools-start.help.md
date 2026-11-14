@@ -25,7 +25,7 @@ Check where your data goes. Browser-local tools keep the data in the page. Docum
 - **Encoders:** Base64, Hex, Base32, color conversion, text extraction from documents on the server, and Markdown-to-PDF rendering.
 - **Security:** Hash generation, password generation, and encryption.
 - **Media:** Bulk image conversion, and detailed resize, crop, filter, rotate, markup, and export.
-- **Network:** Speed tests against the Cloud server and tests of webhook endpoints.
+- **Network:** Speed tests against the named measurement server and tests of webhook endpoints.
 :::
 
 :::info Webhook tester data

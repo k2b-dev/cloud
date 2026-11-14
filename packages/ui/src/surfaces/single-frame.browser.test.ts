@@ -17,6 +17,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Button, IconButton } = await import("../actions/Button");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
+const { Section } = await import("./Section");
 const { SettingsField, SettingsPage, SettingsSection } = await import("../layout/Settings");
 const { NoticeCard } = await import("./NoticeCard");
 const { Paper } = await import("./Paper");
@@ -93,8 +94,8 @@ const markup = () =>
                 label: "Work",
                 get children() {
                   return [
-                    createComponent(DetailPanel.Section, { title: "Checklist", children: "Three items" }),
-                    createComponent(DetailPanel.Section, { title: "Attachments", children: "None" }),
+                    createComponent(Section, { title: "Checklist", children: "Three items" }),
+                    createComponent(Section, { title: "Attachments", children: "None" }),
                   ];
                 },
               }),
@@ -130,7 +131,7 @@ const measure = () => {
     const value = style(selector);
     return { border: value.borderTopStyle === "none" ? "none" : value.borderTopColor, background: value.backgroundColor };
   };
-  const sections = Array.from(document.querySelectorAll(".k2b-detail-panel__group > .k2b-detail-panel__section"));
+  const sections = Array.from(document.querySelectorAll(".k2b-detail-panel__group > .k2b-section"));
   return {
     overflow: document.documentElement.scrollWidth - window.innerWidth,
     section: { ...frame(".k2b-settings-section"), shadow: style(".k2b-settings-section").boxShadow },

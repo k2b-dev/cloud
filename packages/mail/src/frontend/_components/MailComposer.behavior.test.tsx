@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { contactDirectory, defineCapabilities } from "@k2b/cloud/contracts";
 import { crypto as cryptoUtils, encoding } from "@k2b/stdlib";
+import { createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import * as Y from "yjs";
 import { z } from "zod";
@@ -21,6 +22,12 @@ import {
 import { createDraftDocument, DRAFT_BODY, readDraftDocument, writeLocalDraftHeaders } from "../../lib/draft-document";
 
 const now = "2026-10-11T10:00:00.000Z";
+/** The composer's labelled send or reply action, found by its role and name like a person finds it. */
+const sendActionNames = new Set(["Send", "Reply", "Reply all", "Forward", "Senden", "Antworten", "Allen antworten", "Weiterleiten"]);
+const findSendAction = (root: ParentNode, enabled = false) =>
+  Array.from(root.querySelectorAll<HTMLButtonElement>("footer button")).find(
+    (button) => sendActionNames.has(button.textContent?.trim() ?? "") && (!enabled || !button.disabled),
+  ) ?? null;
 const identity = (id: string, label: string, signature: string): SenderIdentity => ({
   id,
   mailboxId: "Box001",
@@ -68,6 +75,7 @@ const initialDraft: MailDraft = {
   sourceMessageId: null,
   derivedFromMessageId: null,
   derivationKind: null,
+  quoteSource: null,
   senderIdentityId: "Send01",
   signatureTemplateId: "Sign02",
   to: [{ name: null, address: "recipient@example.test" }],
@@ -80,6 +88,8 @@ const initialDraft: MailDraft = {
   requestDeliveryReceipt: false,
   requestReadReceipt: false,
   attachments: [],
+  suggestion: false,
+  suggestedBy: null,
   createdBy: { kind: "user", userId: "Usr001" },
   lastEditedBy: { kind: "user", userId: "Usr001" },
   lastEditedByDisplayName: "Ada",
@@ -104,6 +114,7 @@ const initialSeed: MailDraftSeed = {
   origin: {
     kind: "compose",
     input: {
+      quoteSource: null,
       senderIdentityId: "Send01",
       to: [],
       cc: [],
@@ -164,8 +175,8 @@ const installPopover = () => {
 };
 
 const waitFor = async (condition: () => boolean) => {
-  for (let attempt = 0; attempt < 150 && !condition(); attempt++) await Bun.sleep(10);
-  expect(condition()).toBe(true);
+  // Bounded by the test's own timeout.
+  while (!condition()) await Bun.sleep(5);
 };
 
 describe("MailComposer signature choice", () => {
@@ -194,6 +205,7 @@ describe("MailComposer signature choice", () => {
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
         const path = new URL(request.url).pathname;
+        if (path.endsWith("/lease") && request.method === "GET") return Response.json(null);
         if (path.endsWith("/lease"))
           return Response.json({
             token: crypto.randomUUID(),
@@ -224,8 +236,21 @@ describe("MailComposer signature choice", () => {
       { preconnect: originalFetch.preconnect },
     );
   });
-  afterEach(() => {
+  afterEach(async () => {
+    // A disposed composer still saves the typing it held before it releases its lease. Let that finish against this
+    // test's server, so it never reaches the next test's.
+    const testFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = Object.assign((...args: Parameters<typeof fetch>) => (calls++, testFetch(...args)), {
+      preconnect: originalFetch.preconnect,
+    });
     dispose();
+    const end = performance.now() + 1_000;
+    for (let quiet = 0, seen = calls; quiet < 3 && performance.now() < end; ) {
+      await Bun.sleep(5);
+      quiet = calls === seen ? quiet + 1 : 0;
+      seen = calls;
+    }
     globalThis.fetch = originalFetch;
     for (const [key, descriptor] of [
       ["localStorage", originalStorage],
@@ -235,6 +260,7 @@ describe("MailComposer signature choice", () => {
       else Reflect.deleteProperty(globalThis, key);
     }
     dom.cleanup();
+    setSystemTime();
   });
 
   const mount = async (
@@ -270,7 +296,7 @@ describe("MailComposer signature choice", () => {
     if (settle) {
       await settle();
       for (let attempt = 0; attempt < 100 && !dom.root.querySelector(".cm-content"); attempt++) await settle();
-    } else await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
+    } else await waitFor(() => Boolean(findSendAction(dom.root, true)));
   };
   const trigger = () => dom.root.querySelector<HTMLButtonElement>("footer button.mail-composer-signature")!;
   const choose = (label: string, role: "menuitemradio" | "menuitem" = "menuitemradio") => {
@@ -280,6 +306,47 @@ describe("MailComposer signature choice", () => {
     expect(option).toBeDefined();
     option!.click();
   };
+
+  test("an occupied seed offers the existing draft and keeps local text without saving over it", async () => {
+    setSystemTime(new Date(now));
+    const fixtureFetch = globalThis.fetch;
+    const writes: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        const path = new URL(request.url).pathname;
+        if (request.method === "PUT" || path.endsWith("/materialize")) writes.push(path);
+        if (path.endsWith("/materialize"))
+          return Response.json({ code: "DRAFT_REPLY_BOX_OCCUPIED", message: "Occupied", draftId: "Other1" }, { status: 409 });
+        return fixtureFetch(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await mount("en", initialDraft, undefined, initialSeed, () => Bun.sleep(0));
+    const editor = dom.root.querySelector<HTMLElement>(".cm-content")!;
+    const view = EditorView.findFromDOM(editor)!;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "Local recovery text" } });
+    await waitFor(() => Boolean(dom.root.querySelector('a[href*="Other1"]')));
+    const link = dom.root.querySelector<HTMLAnchorElement>('a[href*="Other1"]')!;
+    expect(link.textContent).toBe("Open existing reply draft");
+    expect(dom.root.textContent).toContain("Your text remains on this device");
+    expect(view.state.doc.toString()).toBe("Local recovery text");
+    expect(writes).toEqual(["/api/mail/mailboxes/Box001/draft-seeds/materialize"]);
+    expect(localStorage.getItem(`cloud:user:Usr001:mail:cloud:mail:draft:Box001:${initialSeed.id}`)).toContain("Local recovery text");
+  });
+
+  test("the page composer distinguishes device storage from confirmed server storage during autosave", async () => {
+    delegateEvents(["click", "input"]);
+    await mount();
+    expect(dom.root.querySelector("[data-mail-save-status]")?.textContent).toContain("Saved");
+    const subject = dom.root.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!;
+    subject.value = "Changed before autosave";
+    subject.dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => dom.root.querySelector("[data-mail-save-status]")?.getAttribute("data-mail-save-status") === "local");
+    expect(dom.root.querySelector("[data-mail-save-status]")?.textContent).toContain("Saving …");
+    await waitFor(() => dom.root.querySelector("[data-mail-save-status]")?.getAttribute("data-mail-save-status") === "saved");
+    expect(saves.at(-1)?.subject).toBe("Changed before autosave");
+  });
 
   test("shared projection preserves an open empty Cc and its unfinished query without republishing remote input", async () => {
     const offline = await import("@k2b/cloud/browser/shared-text");
@@ -321,7 +388,7 @@ describe("MailComposer signature choice", () => {
     try {
       delegateEvents(["click", "input"]);
       await mount("en", { ...initialDraft, editMode: "shared", generation: "1" }, undefined, undefined, settle);
-      await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
+      await waitFor(() => Boolean(findSendAction(dom.root, true)));
       Array.from(dom.root.querySelectorAll("button"))
         .find((button) => button.textContent === "Cc/Bcc")!
         .click();
@@ -527,6 +594,7 @@ describe("MailComposer signature choice", () => {
       await new Promise<void>((resolve) => setImmediate(resolve));
     };
     const fetchWithFixtures = globalThis.fetch;
+    const updated = Promise.withResolvers<void>();
     let finishHeartbeat: ((response: Response) => void) | undefined;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -536,7 +604,9 @@ describe("MailComposer signature choice", () => {
             finishHeartbeat = resolve;
           });
         }
-        return fetchWithFixtures(request);
+        const response = await fetchWithFixtures(request);
+        if (request.method === "PUT" && new URL(request.url).pathname.endsWith("/drafts/Draft1")) updated.resolve();
+        return response;
       },
       { preconnect: originalFetch.preconnect },
     );
@@ -548,6 +618,16 @@ describe("MailComposer signature choice", () => {
       expect(view.state.readOnly).toBe(false);
       editor!.focus();
       expect(dom.document.activeElement).toBe(editor);
+      // Reading does not reserve a draft; the first edit starts this writer's lease.
+      delegateEvents(["input"]);
+      const subject = dom.root.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!;
+      subject.value = "Typing";
+      subject.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+      jest.advanceTimersByTime(700);
+      await updated.promise;
+      await flush();
+      expect(saves).toHaveLength(1);
       const socket = OfflineWebSocket.instances.at(-1)!;
       socket.open();
       socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
@@ -794,6 +874,7 @@ describe("MailComposer signature choice", () => {
       JSON.stringify({
         revision: 1,
         content: {
+          quoteSource: null,
           senderIdentityId: "Send01",
           signatureTemplateId: null,
           to: initialDraft.to,
@@ -820,6 +901,7 @@ describe("MailComposer signature choice", () => {
       JSON.stringify({
         revision: 1,
         content: {
+          quoteSource: null,
           senderIdentityId: "Send01",
           to: initialDraft.to,
           cc: [],
@@ -837,5 +919,789 @@ describe("MailComposer signature choice", () => {
     await waitFor(() => Boolean(trigger().textContent?.includes("None")));
     await waitFor(() => saves.length > 0);
     expect(saves.at(-1)).toMatchObject({ signatureTemplateId: null, body: "Recovered\n\n\u2063Best regards\u2064" });
+  });
+});
+
+describe("MailComposer robustness", () => {
+  if (isServer) {
+    test.skip("runs in the dedicated browser-conditions test process", () => {});
+    return;
+  }
+  const originalFetch = globalThis.fetch;
+  const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const originalWebSocket = Object.getOwnPropertyDescriptor(globalThis, "WebSocket");
+  let dom: DomTestHarness;
+  let dispose = () => {};
+  let saves: DraftEditableContent[];
+  let requests: string[];
+  let lease: Promise<void>;
+  let leaves: string[];
+  let opened: string[];
+  let hostControls: import("./MailComposer").MailInlineDraftControls | undefined;
+  let materialized: string[] = [];
+  let detached: string[] = [];
+  let detachOptions: unknown[] = [];
+  let buffered: string[] = [];
+
+  beforeEach(() => {
+    materialized = [];
+    detached = [];
+    detachOptions = [];
+    buffered = [];
+    dom = createDomTestHarness();
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+    Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: OfflineWebSocket });
+    installPopover();
+    delegateEvents(["click", "keydown", "input"]);
+    saves = [];
+    requests = [];
+    leaves = [];
+    opened = [];
+    lease = Promise.resolve();
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        const path = new URL(request.url).pathname;
+        requests.push(`${request.method} ${path}`);
+        if (path.endsWith("/lease") && request.method === "GET") return Response.json(null);
+        if (path.endsWith("/lease")) {
+          await lease;
+          return Response.json({
+            token: crypto.randomUUID(),
+            holder: { kind: "user", id: "Usr001", displayName: "Ada", avatarHash: null },
+            acquiredAt: now,
+            expiresAt: now,
+          });
+        }
+        if (path.endsWith("/compose-preview")) return Response.json({ html: "<p>Hello</p>", text: "Hello", formattingWarnings: [] });
+        if (path.endsWith("/draft-seeds/materialize")) {
+          const json = materializeDraftSeedInputSchema.parse(await request.json());
+          saves.push(json.draft);
+          return Response.json({ ...initialDraft, ...json.draft });
+        }
+        if (path.endsWith("/drafts/Draft1") && request.method === "GET") return Response.json(initialDraft);
+        if (path.endsWith("/drafts/Draft1") && request.method === "PUT") {
+          const json = z
+            .object({ expectedRevision: z.number().int().positive(), draft: draftEditableContentInputSchema })
+            .parse(await request.json());
+          saves.push(json.draft);
+          return Response.json({ ...initialDraft, ...json.draft, revision: json.expectedRevision + 1 });
+        }
+        if (path.endsWith("/safety-review"))
+          return Response.json({ revision: 2, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) });
+        if (path.endsWith("/commands")) return Response.json({ id: crypto.randomUUID(), result: {} });
+        if (path.endsWith("/discard")) return Response.json({ ...initialDraft, state: "discarded" });
+        throw new Error(`Unexpected request: ${request.method} ${path}`);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+  });
+  afterEach(async () => {
+    dispose();
+    await Bun.sleep(30);
+    globalThis.fetch = originalFetch;
+    for (const [key, descriptor] of [
+      ["localStorage", originalStorage],
+      ["WebSocket", originalWebSocket],
+    ] as const) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+    dom.cleanup();
+    setSystemTime();
+  });
+
+  const mount = async (
+    options: {
+      host?: boolean;
+      fresh?: boolean;
+      popout?: boolean;
+      window?: boolean;
+      draft?: MailDraft;
+      seed?: MailDraftSeed;
+      templates?: { id: string; name: string }[];
+      canShareAttachments?: boolean;
+      ready?: boolean;
+      /** Mounts the draft as the reply box (Mail v5) with these signals. */
+      box?: { suspended?: () => boolean; hold?: () => boolean };
+      uploads?: { id: string; filename: string; byteLength: number; receivedBytes: number }[];
+    } = {},
+  ) => {
+    const [{ default: MailComposer }, { LocaleProvider }] = await Promise.all([import("./MailComposer"), import("@k2b/ui")]);
+    const draft = options.seed ? undefined : (options.draft ?? initialDraft);
+    const windowStatus = dom.document.createElement("span");
+    const windowActions = dom.document.createElement("span");
+    dispose = render(
+      () => (
+        <LocaleProvider locale="en">
+          <MailComposer
+            mailboxId="Box001"
+            currentActor={{ kind: "user", id: "Usr001" }}
+            identities={[identity("Send01", "Support", "Sign01")]}
+            signatures={{ templates: options.templates ?? [], personalDefaults: [] }}
+            initialDraft={draft}
+            initialSeed={options.seed}
+            unfinishedUploads={options.uploads}
+            initialPanes={{ version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } }}
+            returnHref="/app/mail/Box001"
+            popout={options.popout}
+            canShareAttachments={options.canShareAttachments}
+            dateConfig={{ locale: "en", timeZone: "UTC" }}
+            host={
+              options.host
+                ? {
+                    fresh: options.fresh ?? false,
+                    fullscreen: () => false,
+                    toggleFullscreen: () => undefined,
+                    register: (controls) => {
+                      hostControls = controls;
+                    },
+                    ...(options.window ? { window: { status: () => windowStatus, actions: () => windowActions, sheet: () => false } } : {}),
+                    messageLabel: () => null,
+                    leave: (outcome) => leaves.push(outcome),
+                    openDraft: (draftId) => opened.push(draftId),
+                    ...(options.box
+                      ? {
+                          box: {
+                            modeMenu: () => <button type="button" data-test-mode-menu />,
+                            suspended: options.box.suspended ?? (() => false),
+                            holdCreate: options.box.hold ?? (() => false),
+                            autofocus: false,
+                            materialized: (draft: MailDraft) => materialized.push(draft.id),
+                            detach: (draftId: string, options?: { large?: boolean; selection?: { anchor: number; head: number } }) => {
+                              detached.push(draftId);
+                              detachOptions.push(options);
+                            },
+                            buffer: (text: string) => buffered.push(text),
+                          },
+                        }
+                      : {}),
+                  }
+                : undefined
+            }
+          />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    await waitFor(() => Boolean(dom.root.querySelector(".cm-content")));
+    if (options.ready !== false) await waitFor(() => Boolean(sendButton() && !sendButton().disabled));
+  };
+  const sendButton = () => findSendAction(dom.root)!;
+  const recipientInput = () => dom.root.querySelector<HTMLInputElement>(".mail-recipient-input input")!;
+  const view = () => EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
+  const type = (input: HTMLInputElement, value: string) => {
+    input.focus();
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const sendShortcut = (target: Element) =>
+    target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+  const sent = () => requests.some((request) => request.endsWith("/commands"));
+
+  const sendSurfaces = [
+    { name: "composer", host: false, popout: false, window: false },
+    { name: "inline reply", host: true, popout: false, window: false },
+    { name: "floating window", host: true, popout: false, window: true },
+    { name: "popout", host: false, popout: true, window: false },
+  ];
+
+  test.each(sendSurfaces)("$name asks before sending without a subject and carries the approval", async ({ host, popout, window }) => {
+    const serve = globalThis.fetch;
+    let command: unknown;
+    let reviewedRevision = 0;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        const path = new URL(request.url).pathname;
+        if (path.endsWith("/safety-review")) {
+          requests.push(`${request.method} ${path}`);
+          reviewedRevision = z.object({ expectedRevision: z.number().int().positive() }).parse(await request.json()).expectedRevision;
+          return Response.json({
+            draftId: initialDraft.id,
+            revision: reviewedRevision,
+            fingerprint: "f".repeat(64),
+            contentHash: "a".repeat(64),
+            warnings: [{ id: "missing_subject", title: "No subject", description: "The message has no subject. Send anyway?" }],
+          });
+        }
+        if (path.endsWith("/commands")) command = await request.clone().json();
+        return serve(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const close = spyOn(dom.window, "close").mockImplementation(() => undefined);
+    try {
+      await mount({
+        host,
+        popout,
+        window,
+        draft: { ...initialDraft, subject: "", ...(host ? { intent: "reply", conversationId: "Conv01" } : {}) },
+      });
+      sendButton().click();
+      await waitFor(() => Boolean(dom.document.body.textContent?.includes("The message has no subject.")));
+      expect(sent()).toBe(false);
+      const approve = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) => button.textContent?.trim() === "Send anyway",
+      );
+      expect(approve).toBeDefined();
+      approve!.click();
+      await waitFor(sent);
+      expect(command).toMatchObject({
+        kind: "send",
+        expectedDraftRevision: reviewedRevision,
+        expectedContentHash: "a".repeat(64),
+        safetyApproval: { revision: reviewedRevision, fingerprint: "f".repeat(64), warningIds: ["missing_subject"] },
+      });
+    } finally {
+      close.mockRestore();
+    }
+  });
+
+  // Lesson 2026-11-14: a popout's close check outlived the composer and read `window` after the test had torn it down.
+  test("a popout that unmounts right after sending runs no close check afterwards", async () => {
+    const close = spyOn(dom.window, "close").mockImplementation(() => undefined);
+    let closedReads = 0;
+    try {
+      await mount({ popout: true });
+      sendButton().click();
+      await waitFor(() => close.mock.calls.length > 0);
+      dispose();
+      dispose = () => {};
+      Object.defineProperty(dom.window, "closed", {
+        configurable: true,
+        get: () => {
+          closedReads += 1;
+          return false;
+        },
+      });
+      // fixed wait: longer than the 100 ms after which a popout checks whether it closed.
+      await Bun.sleep(200);
+      expect(closedReads).toBe(0);
+    } finally {
+      close.mockRestore();
+      Reflect.deleteProperty(dom.window, "closed");
+    }
+  });
+
+  test.each(sendSurfaces)("$name sends a message with a subject without a warning dialog", async ({ host, popout, window }) => {
+    const close = spyOn(dom.window, "close").mockImplementation(() => undefined);
+    try {
+      await mount({ host, popout, window });
+      sendButton().click();
+      await waitFor(sent);
+      expect(requests.some((request) => request.endsWith("/safety-review"))).toBe(true);
+      expect(dom.document.body.textContent).not.toContain("Send anyway");
+    } finally {
+      close.mockRestore();
+    }
+  });
+
+  test("saving an unchanged fresh draft before a mode switch preserves it", async () => {
+    await mount({ host: true, fresh: true });
+    expect(hostControls).toBeDefined();
+    await hostControls!.collapse({ preserveDraft: true });
+    expect(leaves).toEqual(["closed"]);
+    expect(requests.some((request) => request.endsWith("/discard"))).toBe(false);
+  });
+
+  const replyDraft: MailDraft = { ...initialDraft, conversationId: "Conv01", intent: "reply", sourceMessageId: "Msg001" };
+  const replySeed: MailDraftSeed = {
+    ...initialSeed,
+    conversationId: "Conv01",
+    intent: "reply",
+    sourceMessageId: "Msg001",
+    content: { ...initialSeed.content, body: "" },
+  };
+
+  test("the reply box: a failed send turns the bar light red in place, and Send again retries", async () => {
+    const { prompts } = await import("@k2b/ui");
+    const dialog = spyOn(prompts, "error").mockResolvedValue(undefined);
+    let failures = 1;
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/commands") && failures-- > 0) {
+          requests.push("POST /commands (failed)");
+          return Response.json({ code: "SMTP_UNAVAILABLE", message: "The mail server does not answer." }, { status: 503 });
+        }
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount({ host: true, draft: replyDraft, box: {} });
+      sendButton().click();
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-send-failed]")));
+      const bar = dom.root.querySelector<HTMLElement>("[data-mail-send-failed]")!;
+      expect(bar.textContent).toContain("Not sent.");
+      expect(bar.textContent).toContain("The mail server does not answer.");
+      expect(bar.textContent).toContain("Your text is saved.");
+      expect(dom.root.querySelector("button.mail-compose-action")).toBeNull();
+      expect(dialog).not.toHaveBeenCalled();
+      expect(leaves).toEqual([]);
+      dom.root.querySelector<HTMLButtonElement>("[data-mail-send-again]")!.click();
+      await waitFor(() => leaves.includes("sent"));
+    } finally {
+      dialog.mockRestore();
+    }
+  });
+
+  test("a suspended reply box (internal note mode) is hidden, inert, and never sends", async () => {
+    const [suspended, setSuspended] = createSignal(false);
+    await mount({ host: true, draft: replyDraft, box: { suspended } });
+    setSuspended(true);
+    const section = dom.root.querySelector<HTMLElement>("[data-mail-reply-box='mail']")!;
+    expect(section.hidden).toBe(true);
+    expect(section.hasAttribute("inert")).toBe(true);
+    sendShortcut(view().contentDOM);
+    hostControls!.send();
+    hostControls!.sendAt("2026-10-12T08:00:00.000Z");
+    await Bun.sleep(120);
+    expect(requests.some((request) => request.endsWith("/safety-review") || request.endsWith("/commands"))).toBe(false);
+    setSuspended(false);
+    sendShortcut(view().contentDOM);
+    await waitFor(sent);
+  });
+
+  test("offline, the reply box keeps writing, waits with Send, and says why", async () => {
+    await mount({ host: true, draft: replyDraft, box: {} });
+    dom.window.dispatchEvent(new dom.window.Event("offline"));
+    await waitFor(() => sendButton().disabled);
+    expect(dom.root.querySelector("[data-mail-save-status]")!.textContent).toContain("Offline · kept here");
+    expect(dom.root.textContent).toContain("Sending works again once you are back online.");
+    expect(view().state.readOnly).toBe(false);
+    sendShortcut(view().contentDOM);
+    await Bun.sleep(80);
+    expect(sent()).toBe(false);
+    dom.window.dispatchEvent(new dom.window.Event("online"));
+    await waitFor(() => !sendButton().disabled);
+  });
+
+  test("an upload in the reply box shows its progress, and Send waits with the reason", async () => {
+    const files = await import("@k2b/cloud/browser/files");
+    const choose = spyOn(files, "chooseFiles").mockResolvedValue([new File(["%PDF"], "offer.pdf", { type: "application/pdf" })]);
+    const serve = globalThis.fetch;
+    const never = new Promise<Response>(() => {});
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes("/attachment-uploads")) return never;
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount({ host: true, draft: replyDraft, box: {} });
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Attach files"]')!.click();
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-save-status]")?.textContent?.includes("Uploading · 0 %")));
+      expect(sendButton().disabled).toBe(true);
+      expect(dom.root.querySelector('[role="progressbar"]')).not.toBeNull();
+      expect(dom.root.textContent).toContain("Wait until the upload has finished.");
+      expect(dom.root.querySelector('button[aria-label*="offer.pdf"]')).not.toBeNull();
+    } finally {
+      choose.mockRestore();
+    }
+  });
+
+  test("a suggestion shows plum with its account until the first keystroke adopts it", async () => {
+    await mount({ host: true, draft: { ...replyDraft, suggestion: true, suggestedBy: "Gustav" }, box: {} });
+    const section = () => dom.root.querySelector<HTMLElement>("[data-mail-reply-box='mail']")!;
+    expect(section().hasAttribute("data-suggestion")).toBe(true);
+    expect(dom.root.querySelector("[data-mail-reply-suggestion]")!.textContent).toContain("Suggestion from Gustav");
+    expect(dom.root.textContent).toContain("Type to take it over, or send it as it is.");
+    view().dispatch({ changes: { from: view().state.doc.length, insert: "!" }, userEvent: "input.type" });
+    await waitFor(() => !section().hasAttribute("data-suggestion"));
+    expect(dom.root.querySelector("[data-mail-reply-suggestion]")).toBeNull();
+  });
+
+  test("a held reply place keeps typing on this device and creates the draft once the last send left", async () => {
+    const [hold, setHold] = createSignal(true);
+    await mount({ host: true, seed: replySeed, box: { hold }, ready: false });
+    view().dispatch({ changes: { from: 0, insert: "Written while the last reply waited" }, userEvent: "input.type" });
+    // fixed wait: longer than the 700 ms autosave, to prove that a held place creates no draft.
+    await Bun.sleep(1_000);
+    expect(requests.some((request) => request.endsWith("/draft-seeds/materialize"))).toBe(false);
+    expect(sendButton().disabled).toBe(true);
+    setHold(false);
+    await waitFor(() => requests.some((request) => request.endsWith("/draft-seeds/materialize")));
+    expect(saves.at(-1)?.body).toBe("Written while the last reply waited");
+    await waitFor(() => materialized.length === 1);
+  });
+
+  test("Open in a window saves the reply, gives its lease back, and hands it to the box's window", async () => {
+    await mount({ host: true, draft: replyDraft, box: {} });
+    view().dispatch({ changes: { from: view().state.doc.length, insert: " More." }, userEvent: "input.type" });
+    dom.root.querySelector<HTMLButtonElement>('[data-mail-reply-box="mail"] button[aria-label="More"]')!.click();
+    await waitFor(() => Boolean(dom.document.querySelector('[role="menuitem"]')));
+    Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((item) => item.textContent?.includes("Open in a window"))!
+      .click();
+    await waitFor(() => detached.length === 1);
+    expect(detached).toEqual(["Draft1"]);
+    expect(saves.at(-1)?.body).toBe("Hello More.");
+  });
+
+  test("Write large saves the reply, gives its lease back, and hands it over large with the caret where it stood", async () => {
+    await mount({ host: true, draft: replyDraft, box: {} });
+    view().dispatch({ changes: { from: view().state.doc.length, insert: " More." }, userEvent: "input.type" });
+    view().dispatch({ selection: { anchor: 2, head: 4 } });
+    const large = dom.root.querySelector<HTMLButtonElement>('[data-mail-reply-box="mail"] [data-mail-write-large]')!;
+    expect(large.getAttribute("aria-label")).toBe("Write large");
+    large.click();
+    await waitFor(() => detached.length === 1);
+    expect(detached).toEqual(["Draft1"]);
+    expect(detachOptions).toEqual([{ large: true, selection: { anchor: 2, head: 4 } }]);
+    expect(saves.at(-1)?.body).toBe("Hello More.");
+    expect(requests.some((request) => request.includes("/lease"))).toBe(true);
+  });
+
+  test("Write large waits while an attachment uploads, and says why", async () => {
+    const files = await import("@k2b/cloud/browser/files");
+    const choose = spyOn(files, "chooseFiles").mockResolvedValue([new File(["%PDF"], "offer.pdf", { type: "application/pdf" })]);
+    const serve = globalThis.fetch;
+    const never = new Promise<Response>(() => {});
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes("/attachment-uploads")) return never;
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount({ host: true, draft: replyDraft, box: {} });
+      const large = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-write-large]")!;
+      expect(large().disabled).toBe(false);
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Attach files"]')!.click();
+      await waitFor(() => large().disabled);
+      expect(dom.document.body.textContent).toContain("Waits until the attachment has uploaded");
+      expect(detached).toEqual([]);
+    } finally {
+      choose.mockRestore();
+    }
+  });
+
+  test("a failed Write large keeps the reply in the box with its text and offers to try again", async () => {
+    const serve = globalThis.fetch;
+    let failSave = true;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        const url = input instanceof Request ? input.url : String(input);
+        if (failSave && method === "PUT" && url.endsWith("/drafts/Draft1")) return Response.json({ message: "Down" }, { status: 503 });
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await mount({ host: true, draft: replyDraft, box: {} });
+    view().dispatch({ changes: { from: view().state.doc.length, insert: " More." }, userEvent: "input.type" });
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-write-large]")!.click();
+    await waitFor(() => Boolean(dom.root.querySelector("[data-mail-write-large-failed]")));
+    expect(dom.root.querySelector("[data-mail-write-large-failed]")!.textContent).toContain(
+      "The draft could not open large. Your text stays here.",
+    );
+    expect(detached).toEqual([]);
+    expect(view().state.doc.toString()).toBe("Hello More.");
+    failSave = false;
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-write-large-failed] button")!.click();
+    await waitFor(() => detached.length === 1);
+    expect(dom.root.querySelector("[data-mail-write-large-failed]")).toBeNull();
+  });
+
+  test("Write large without a confirmed lease release keeps the reply in the box", async () => {
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        const url = input instanceof Request ? input.url : String(input);
+        if (method === "DELETE" && url.endsWith("/lease")) return Response.json({ message: "Down" }, { status: 503 });
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await mount({ host: true, draft: replyDraft, box: {} });
+    // Typing takes the edit lease, which the handover then has to give back.
+    view().dispatch({ changes: { from: view().state.doc.length, insert: " More." }, userEvent: "input.type" });
+    await waitFor(() => requests.some((request) => request.endsWith("/lease")));
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-write-large]")!.click();
+    await waitFor(() => Boolean(dom.root.querySelector("[data-mail-write-large-failed]")));
+    expect(detached).toEqual([]);
+  });
+
+  test("discarding an unsaved seed creates no draft, also not when the box unmounts", async () => {
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    try {
+      await mount({ host: true, seed: replySeed, box: {}, ready: false });
+      view().dispatch({ changes: { from: 0, insert: "Never mind" }, userEvent: "input.type" });
+      dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-discard]")!.click();
+      await waitFor(() => leaves.includes("discarded"));
+      dispose();
+      dispose = () => {};
+      // fixed wait: longer than the 700 ms autosave and the save on the way out.
+      await Bun.sleep(1_000);
+      expect(requests.some((request) => request.endsWith("/draft-seeds/materialize"))).toBe(false);
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  test("a seed whose text moved on (mode switch before the first save) creates no draft when it unmounts", async () => {
+    await mount({ host: true, seed: replySeed, box: {}, ready: false });
+    view().dispatch({ changes: { from: 0, insert: "Carried to the new mode" }, userEvent: "input.type" });
+    hostControls!.forgetLocal();
+    dispose();
+    dispose = () => {};
+    // fixed wait: longer than the 700 ms autosave and the save on the way out.
+    await Bun.sleep(1_000);
+    expect(requests.some((request) => request.endsWith("/draft-seeds/materialize"))).toBe(false);
+  });
+
+  test("a send waiting for its safety review stops when the box turns to a note meanwhile", async () => {
+    const [suspended, setSuspended] = createSignal(false);
+    const review = Promise.withResolvers<void>();
+    let reviewing = false;
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/safety-review")) {
+          reviewing = true;
+          await review.promise;
+        }
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await mount({ host: true, draft: replyDraft, box: { suspended } });
+    sendButton().click();
+    await waitFor(() => reviewing);
+    setSuspended(true);
+    review.resolve();
+    // fixed wait: the review answer and anything it would trigger settle well within this.
+    await Bun.sleep(150);
+    expect(sent()).toBe(false);
+    expect(leaves).toEqual([]);
+  });
+
+  test("text typed while another send holds the reply place reaches the box's buffer", async () => {
+    await mount({ host: true, seed: replySeed, box: { hold: () => true }, ready: false });
+    view().dispatch({ changes: { from: 0, insert: "Kept for this conversation" }, userEvent: "input.type" });
+    await waitFor(() => buffered.at(-1) === "Kept for this conversation");
+  });
+
+  test("the reply box's empty seed creates nothing until someone types", async () => {
+    await mount({ host: true, seed: replySeed, box: {}, ready: false });
+    // fixed wait: longer than the 700 ms autosave, to prove that an untouched seed creates no draft.
+    await Bun.sleep(1_000);
+    // Rendering the signature is a read; nothing writes a draft.
+    expect(requests.filter((request) => request.startsWith("POST ") && !request.endsWith("/compose-signature"))).toEqual([]);
+    expect(dom.root.querySelector("[data-mail-save-status]")!.textContent).toBe("");
+    expect(view().contentDOM.getAttribute("aria-placeholder") ?? dom.root.textContent).toContain("Write a reply …");
+  });
+
+  test.each(["bernd", "bernd@firma"])("unfinished recipient text %p blocks Send, stays, and takes the focus", async (typed) => {
+    await mount({ host: true });
+    type(recipientInput(), typed);
+    sendButton().click();
+    await Bun.sleep(80);
+    expect(requests.some((request) => request.endsWith("/safety-review"))).toBe(false);
+    expect(sent()).toBe(false);
+    expect(recipientInput().value).toBe(typed);
+    expect(recipientInput().getAttribute("aria-invalid")).toBe("true");
+    expect(dom.document.activeElement).toBe(recipientInput());
+    expect(dom.root.textContent).toContain("is not sent yet");
+  });
+
+  test("complete recipient text goes with the message although nobody pressed Enter", async () => {
+    await mount({ host: true });
+    type(recipientInput(), "Bernd <bernd@firma.de>");
+    sendButton().click();
+    await waitFor(sent);
+    expect(saves.at(-1)?.to).toEqual([
+      { name: null, address: "recipient@example.test" },
+      { name: "Bernd", address: "bernd@firma.de" },
+    ]);
+    await waitFor(() => leaves.includes("sent"));
+  });
+
+  test.each([false, true])("Ctrl+Enter sends with the button's checks (inline %p), and the button names it", async (host) => {
+    await mount({ host });
+    sendButton().dispatchEvent(new MouseEvent("pointerenter", { bubbles: true }));
+    sendButton().focus();
+    await waitFor(() => Boolean(dom.document.body.textContent?.includes("Send (Ctrl+↵)")));
+    type(recipientInput(), "bernd");
+    sendShortcut(view().contentDOM);
+    await Bun.sleep(80);
+    expect(sent()).toBe(false);
+    expect(dom.document.activeElement).toBe(recipientInput());
+    type(recipientInput(), "bernd@firma.de");
+    sendShortcut(recipientInput());
+    await waitFor(sent);
+    expect(saves.at(-1)?.to.map((recipient) => recipient.address)).toContain("bernd@firma.de");
+  });
+
+  test("a send keeps the text focused, its toolbar in place, and the text unchanged while it waits", async () => {
+    await mount();
+    const review = Promise.withResolvers<void>();
+    let reviewing = false;
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/safety-review")) {
+          reviewing = true;
+          await review.promise;
+        }
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    view().focus();
+    view().dispatch({ selection: { anchor: 3 } });
+    const toolbar = dom.root.querySelector(".k2b-ste-toolbar");
+    expect(toolbar).not.toBeNull();
+    sendButton().click();
+    await waitFor(() => reviewing);
+    expect(dom.root.querySelector(".k2b-ste-toolbar")).toBe(toolbar);
+    expect(view().contentDOM.getAttribute("contenteditable")).toBe("true");
+    expect(view().state.readOnly).toBe(true);
+    expect(dom.document.activeElement).toBe(view().contentDOM);
+    review.resolve();
+    await waitFor(sent);
+  });
+
+  test("an opening reply focuses its writable body without acquiring a lease", async () => {
+    await mount({ host: true, ready: false, draft: { ...initialDraft, conversationId: "Conv01", intent: "reply" } });
+    expect(view().contentDOM.getAttribute("contenteditable")).toBe("true");
+    await waitFor(() => !sendButton().disabled);
+    await waitFor(() => dom.document.activeElement === view().contentDOM);
+    expect(requests.some((request) => request.startsWith("POST ") && request.endsWith("/lease"))).toBe(false);
+  });
+
+  test("a focus chosen after opening stays where the person put it", async () => {
+    await mount({ host: true, ready: false, draft: { ...initialDraft, conversationId: "Conv01", intent: "reply" } });
+    const subject = dom.root.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!;
+    subject.focus();
+    await waitFor(() => !sendButton().disabled);
+    await Bun.sleep(30);
+    expect(dom.document.activeElement).toBe(subject);
+  });
+
+  test("Esc that ends a Safari IME composition keeps the draft open", async () => {
+    await mount({ host: true });
+    let collapsed = false;
+    const section = dom.root.querySelector<HTMLElement>("[data-mail-inline-draft]")!;
+    section.addEventListener("keydown", (event) => {
+      if (event.defaultPrevented) collapsed = true;
+    });
+    view().contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 229, bubbles: true, cancelable: true }));
+    await Bun.sleep(30);
+    expect(collapsed).toBe(false);
+    expect(leaves).toEqual([]);
+  });
+
+  test("discarding a new message that was never saved asks first when it holds input", async () => {
+    const nav = await import("@k2b/ssr/nav");
+    const navigate = spyOn(nav, "navigateTo").mockImplementation(() => undefined as never);
+    try {
+      await mount({ seed: { ...initialSeed, content: { ...initialSeed.content, body: "" } }, ready: false });
+      view().dispatch({ changes: { from: 0, insert: "Important words" }, userEvent: "input.type" });
+      dom.root.querySelector<HTMLButtonElement>('footer button[aria-label="Discard draft"]')!.click();
+      await waitFor(() => Boolean(dom.document.body.textContent?.includes("Discard draft?")));
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      navigate.mockRestore();
+    }
+  });
+
+  test("discarding a new message asks first when only a recipient field holds typed text", async () => {
+    const nav = await import("@k2b/ssr/nav");
+    const navigate = spyOn(nav, "navigateTo").mockImplementation(() => undefined as never);
+    try {
+      await mount({ seed: initialSeed, ready: false });
+      type(recipientInput(), "Bernd");
+      dom.root.querySelector<HTMLButtonElement>('footer button[aria-label="Discard draft"]')!.click();
+      await waitFor(() => Boolean(dom.document.body.textContent?.includes("Discard draft?")));
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      navigate.mockRestore();
+    }
+  });
+
+  test("a popout closes its window after Send instead of loading the mailbox into it", async () => {
+    const nav = await import("@k2b/ssr/nav");
+    const navigate = spyOn(nav, "navigateTo").mockImplementation(() => undefined as never);
+    const close = spyOn(dom.window, "close").mockImplementation(() => undefined);
+    try {
+      await mount({ popout: true });
+      sendButton().click();
+      await waitFor(sent);
+      await waitFor(() => close.mock.calls.length > 0);
+      expect(navigate).not.toHaveBeenCalled();
+      // A browser that keeps the window open shows a short confirmation in place.
+      await waitFor(() => Boolean(dom.root.textContent?.includes("You can close this window")));
+      // The covered composer leaves the keyboard and screen readers; the confirmation takes the focus.
+      expect(dom.root.querySelector<HTMLElement>("footer")!.closest("[inert]")).not.toBeNull();
+      expect(dom.document.activeElement?.textContent).toContain("Close window");
+    } finally {
+      navigate.mockRestore();
+      close.mockRestore();
+    }
+  });
+
+  test("a signature that arrives after opening can be removed again", async () => {
+    localStorage.setItem(
+      "cloud:user:Usr001:mail:cloud:mail:draft:Box001:Draft1",
+      JSON.stringify({
+        revision: 1,
+        content: { ...draftEditableContentInputSchema.strip().parse(initialDraft), signatureTemplateId: "Other1" },
+      }),
+    );
+    await mount({ draft: { ...initialDraft, signatureTemplateId: null } });
+    await waitFor(() => Boolean(dom.root.querySelector("footer button.mail-composer-signature")));
+  });
+
+  test("Undo takes back an inserted attachment link and nothing typed before it", async () => {
+    const linkUi = await import("./attachment-link-ui");
+    const prompt = spyOn(linkUi, "promptAttachmentLinkOptions").mockResolvedValue({ expiresAt: null, password: null });
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes("/links")) return Response.json({ link: { filename: "report.pdf" }, url: "https://cloud.example.test/l/abc" });
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount({
+        canShareAttachments: true,
+        draft: {
+          ...initialDraft,
+          attachments: [
+            {
+              id: "Att001",
+              filename: "report.pdf",
+              contentType: "application/pdf",
+              byteLength: 10,
+              contentHash: "b".repeat(64),
+              position: 0,
+              createdAt: now,
+            },
+          ],
+        },
+      });
+      const { undo } = await import("@codemirror/commands");
+      view().dispatch({ changes: { from: view().state.doc.length, insert: " world" }, userEvent: "input.type" });
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Insert public link for report.pdf"]')!.click();
+      await waitFor(() => view().state.doc.toString().includes("https://cloud.example.test/l/abc"));
+      undo(view());
+      expect(view().state.doc.toString()).toBe("Hello world");
+    } finally {
+      prompt.mockRestore();
+    }
   });
 });

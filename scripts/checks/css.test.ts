@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { rule } from "./css";
 
 const root = resolve(import.meta.dir, "../..");
 
-const check = async (property: string, uiCss = "", appOverrides: Record<string, string> = {}) => {
+const check = async (property: string, uiCss = "", appOverrides: Record<string, string> = {}, entryCss = "") => {
   const fixture = await mkdtemp(join(tmpdir(), "cloud-css-check-"));
   try {
     for (const directory of ["packages/cloud/src", "packages/cloud/scripts", "packages/ui/src", "packages/example/src/styles"])
@@ -24,6 +24,7 @@ const check = async (property: string, uiCss = "", appOverrides: Record<string, 
     for (const name of ["build.ts", "preload.ts"])
       await writeFile(join(fixture, "packages/cloud/scripts", name), "// src/styles/app.css plugins: [tailwind]\n");
     await writeFile(join(fixture, "packages/ui/src/styles/fixture.css"), uiCss);
+    await appendFile(join(fixture, "packages/ui/src/styles/index.css"), `\n${entryCss}\n`);
     await writeFile(
       join(fixture, "packages/example/src/styles/app.css"),
       `@import "tailwindcss/utilities.css" layer(utilities);
@@ -60,6 +61,15 @@ test("applications can each override a token owned by UI", async () => {
     await check("--k2b-text-muted", "", {
       first: ".preview { --k2b-text-muted: #52525b; }",
       second: ".selected { --k2b-text-muted: var(--k2b-text-secondary); }",
+    }),
+  ).toEqual([]);
+});
+
+test("applications can each start their workspace sidebar at their own width", async () => {
+  expect(
+    await check("--k2b-workspace-sidebar-width", "", {
+      first: ".first-workspace { --k2b-workspace-sidebar-width: 16rem; }",
+      second: ".second-workspace { --k2b-workspace-sidebar-width: 248px; }",
     }),
   ).toEqual([]);
 });
@@ -163,4 +173,26 @@ export const paint = (element: HTMLElement) => {
   } finally {
     await rm(fixture, { recursive: true, force: true });
   }
+});
+
+test("embeddable CSS scopes compact, multiline and adjacent rules", async () => {
+  const findings = await check(
+    "--k2b-text-muted",
+    "",
+    {},
+    `
+.unscoped { color: red; } .also-unscoped { color: blue; }
+.k2b-ui .scoped { color: green; }
+@media (width < 400px) { .nested { color: red; } }
+.multiline,
+.other { color: red; }
+@keyframes fixture { from, to { opacity: 0; } 50%, 75% { opacity: .5; } to { opacity: 1; } }
+`,
+  );
+  expect(findings.filter((message) => message.startsWith("selector must stay below"))).toEqual([
+    "selector must stay below .k2b-ui: .unscoped",
+    "selector must stay below .k2b-ui: .also-unscoped",
+    "selector must stay below .k2b-ui: .nested",
+    "selector must stay below .k2b-ui: .multiline,\n.other",
+  ]);
 });

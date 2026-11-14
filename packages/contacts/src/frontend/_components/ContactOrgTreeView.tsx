@@ -1,4 +1,4 @@
-import { Button, DetailPanel, useLocale } from "@k2b/ui";
+import { Button, DetailPanel, Section, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import type { ContactTree, ContactTreeNode } from "../../service";
 import { resolveContactName } from "../../shared";
@@ -67,7 +67,6 @@ export default function ContactOrgTreeView(props: Props) {
   return (
     <DetailPanel>
       <DetailPanel.Header
-        kind={<span>{t().organization}</span>}
         title={t().orgTree}
         subtitle={t().hierarchyOfThisContact}
         actions={
@@ -78,11 +77,11 @@ export default function ContactOrgTreeView(props: Props) {
       />
       <DetailPanel.Body scrollPreserveKey="contacts-org-tree">
         <DetailPanel.Group label={t().organizationContext}>
-          <DetailPanel.Section title={t().hierarchy}>
+          <Section title={t().hierarchy}>
             <ul class="flex flex-col gap-1">
               <ContactOrgTreeNode node={props.tree.root} selectedId={props.tree.selectedId} onSelect={props.onSelect} />
             </ul>
-          </DetailPanel.Section>
+          </Section>
         </DetailPanel.Group>
       </DetailPanel.Body>
     </DetailPanel>

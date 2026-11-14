@@ -85,16 +85,17 @@ export const behaviorTest = /\.behavior\.test\.tsx?$/;
 export const behaviorIgnore = "--path-ignore-patterns=**/*.behavior.test.*";
 
 /** The prediction a CI shard is planned to; the time between this and its budget is the margin for slow runners. */
-const shardTargetMinutes = 15;
+export const shardTargetMinutes = (browser?: boolean): number => (browser ? 11 : 15);
 
 /** A shard over its budget fails; one above the target stays green and asks for fresh weights before it fails. */
-export const shardTimeNotice = (label: string, minutes: number, maxMinutes: number | undefined): string | undefined => {
+export const shardTimeNotice = (label: string, minutes: number, maxMinutes: number | undefined, browser?: boolean): string | undefined => {
   if (maxMinutes === undefined) return undefined;
   const refresh = "refresh scripts/test-weights.json with `bun scripts/test-weights.ts --run <id>` or add a shard";
   if (minutes > maxMinutes)
     return `::error title=Test shard over its time limit::${label} took ${minutes.toFixed(1)} min, over its ${maxMinutes}-min limit; ${refresh}`;
-  if (minutes > shardTargetMinutes)
-    return `::warning title=Test shard above its target::${label} took ${minutes.toFixed(1)} min, above the ${shardTargetMinutes}-min target and close to its ${maxMinutes}-min limit; ${refresh}`;
+  const target = shardTargetMinutes(browser);
+  if (minutes > target)
+    return `::warning title=Test shard above its target::${label} took ${minutes.toFixed(1)} min, above the ${target}-min target and close to its ${maxMinutes}-min limit; ${refresh}`;
   return undefined;
 };
 
@@ -532,7 +533,7 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
     const limit = options.maxMinutes === undefined ? "" : ` (limit ${options.maxMinutes} min)`;
     console.log(`\n${label} took ${minutes.toFixed(1)} min${limit}`);
     const overLimit = options.maxMinutes !== undefined && minutes > options.maxMinutes;
-    const notice = shardTimeNotice(label, minutes, options.maxMinutes);
+    const notice = shardTimeNotice(label, minutes, options.maxMinutes, options.browser);
     if (notice) console.log(notice);
     if (failed.length > 0) {
       console.error(`\nFailed test suites (${failed.length}): ${failed.join(", ")}`);

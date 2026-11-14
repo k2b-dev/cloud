@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { SystemMessage } from "./service/contracts";
-import { messagePreview, renderSystemMessage } from "./system-messages";
+import { messagePlainText, messagePreview, renderSystemMessage } from "./system-messages";
 
 const member = { id: "12345678-1234-4234-8234-123456789012", name: "Lea" };
 const cases: [SystemMessage, string, string][] = [
@@ -61,6 +61,27 @@ test("member lists show up to four names, otherwise three and the count of the r
 test("previews collapse whitespace and cut at 140 code points", () => {
   expect(messagePreview("  a\n\t b  ")).toBe("a b");
   expect(messagePreview("😀".repeat(141))).toBe("😀".repeat(140));
+});
+
+// Lists, the side panel, For you, reply quotes, live updates and push all read this preview.
+test("previews show the text a reader sees, never Markdown marks", () => {
+  const cases: [string, string][] = [
+    ["hi **wie geht** es dir?", "hi wie geht es dir?"],
+    ["*kursiv*, __fett__ und ~~weg~~", "kursiv, fett und weg"],
+    ["a**b**c", "abc"],
+    ["Siehe [Plan](https://example.com/plan) und `npm test`", "Siehe Plan und npm test"],
+    ["![Skizze](https://example.com/a.png)", "Skizze"],
+    ["# Titel\n\n> Zitat\n\n- eins\n- zwei", "Titel Zitat eins zwei"],
+    ["1. erst\n2. dann", "erst dann"],
+    ["- [x] erledigt", "erledigt"],
+    ["```ts\nconst a = 1;\n```", "const a = 1;"],
+    ["| A | B |\n| - | - |\n| 1 | 2 |", "A B 1 2"],
+    ["Zeile\nzwei", "Zeile zwei"],
+    ["Tom &amp; Jerry, 2 < 3, \\*kein Stern\\*", "Tom & Jerry, 2 < 3, *kein Stern*"],
+    ["<b>so geschrieben</b>", "<b>so geschrieben</b>"],
+  ];
+  for (const [body, preview] of cases) expect(messagePreview(body)).toBe(preview);
+  expect(messagePlainText("**fett**\n\nund *mehr*")).toBe("fett und mehr");
 });
 
 for (const [names, en, de] of [

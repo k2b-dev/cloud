@@ -5,7 +5,7 @@ section: Build an app
 order: 125
 description: Use native database and cache clients after Cloud initializes the application.
 tags: [startup, connections, sql, redis]
-updated: 2026-10-30
+updated: 2026-11-11
 ---
 
 # Platform start and connections
@@ -39,6 +39,23 @@ Use `lazySync()` for module-scope Sync declarations and use them after
 `app.start()`. See [Background work](/en/docs/automation/lifecycle-background-work). `storage` uses the operator's
 saved storage settings; see [Object store](/en/docs/platform/object-store).
 
+## Limit the global SQL pool
+
+Set `CLOUD_DATABASE_POOL_MAX` in the process environment before platform start.
+The default is 10 connections per process. The value must be an integer from 1
+to 2147483647, within Bun's signed 32-bit pool range. Size it against the
+installation's actual database connection budget; the accepted upper bound is
+not a recommended pool size. Restart the process after changing it. Standard
+entrypoints and `initializePlatform()` use the same setting, including apps
+that bootstrap their connection URL from Core.
+
+The setting limits only the global `sql` from `@k2b/cloud`.
+Each `createSql()` pool has its own native `max` option, defaulting
+to 10. A Bun-global `sql` imported from `bun` is another independent pool and
+does not use this setting. Migrating those imports to Cloud avoids opening
+both global pools. See [Runtime configuration](/en/docs/operations/runtime-configuration#sql-pool-size)
+for deployment budgeting.
+
 ## Create a separate pool
 
 Use `createSql(options?: SqlPoolOptions): SQL` or
@@ -52,6 +69,21 @@ import { createSql, createRedis } from "@k2b/cloud";
 const queries = createSql({ max: 4 });
 const cache = createRedis({ enableOfflineQueue: false });
 ```
+
+Keep client options out of the connection URL. Cloud rejects URL query keys
+for native client options, case-insensitively, before creating either a global
+or an owned SQL pool. This includes `max`, `idleTimeout`/`idle_timeout`,
+`connectionTimeout`/`connection_timeout`/`connectTimeout`/`connect_timeout`,
+`maxLifetime`/`max_lifetime`, `prepare`, `bigint`, callbacks, and constructor
+fields such as `host`, `database`, or `connection`. Pass these as `createSql`
+options instead; use `CLOUD_DATABASE_POOL_MAX` for the global pool's size.
+Bun 1.4 otherwise sends these query keys as PostgreSQL startup parameters,
+which can fail with `unrecognized configuration parameter "max"`.
+
+TLS query options (`sslmode`, `ssl-mode`, `ssl_mode`, `ssl`, `tls`), socket
+`path`, and server startup parameters such as `application_name`, `options`,
+and `statement_timeout` remain supported. Cloud leaves the supplied URL
+unchanged.
 
 These clients use the initialized installation connections. The application
 owns their lifecycle: close them when the work or its lifecycle ends. SQL

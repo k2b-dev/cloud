@@ -1,6 +1,7 @@
 import type { AppAppearance } from "../contracts/app";
 import type { PanelConsentSnapshot } from "../contracts/panel-context";
 import type { RailSnapshot } from "../contracts/rail-preferences";
+import type { ScreenPreferences } from "../contracts/screen-preferences";
 import type { User } from "../contracts/shared";
 import type { AuthContext } from "../server/middleware/auth";
 import type { LayoutAnnouncementsState } from "../server/middleware/settings";
@@ -20,8 +21,12 @@ export type LayoutContext = {
     /** The current app's accent, which colours the page's body as that app's scope. */
     appAccent?: string;
     appPrimary?: AppAppearance["primary"];
+    /** Signed-in pages: the person's screen preferences, read with the page. */
+    screen?: ScreenPreferences;
   };
   get(key: "runtime"): RuntimeContext;
+  get(key: "sessionIdle"): AuthContext["Variables"]["sessionIdle"];
+  get(key: "credentialProof"): AuthContext["Variables"]["credentialProof"];
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
   /** Every application settings snapshot includes Core's app metadata. */
   get(key: "settings"): Record<string, any>;

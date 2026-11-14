@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
+import { publishGridsRecordEvent } from "../app-events";
 import type { RecordMutationAudit } from "../contracts";
 import { getRecordWritableFieldType, isRecordWritableFieldType } from "../field-types";
 import { logAudit, type SqlClient } from "./audit";
@@ -345,6 +346,7 @@ export const createInTransaction = async (
     recordId: id,
     eventType: "record.created",
   });
+  await publishGridsRecordEvent(client, "record.created", tableId, id);
 
   await logAudit(
     {
@@ -559,6 +561,7 @@ export const updateInTransaction = async (
     recordId,
     eventType: "record.updated",
   });
+  await publishGridsRecordEvent(client, "record.updated", tableId, recordId);
   if (Object.keys(diff).length > 0) {
     await logAudit({ tableId, recordId, userId: actorId, action: "updated", diff, context: auditContext.data }, client);
   }
@@ -665,6 +668,7 @@ export const softDeleteInTransaction = async (
       recordId,
       eventType: "record.deleted",
     });
+    await publishGridsRecordEvent(tx, "record.deleted", tableId, recordId);
     await captureRecordRevision(tx, {
       tableId,
       recordId,

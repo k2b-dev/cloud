@@ -1,0 +1,64 @@
+/* The shared component owns its utility scan; consumers only import this stylesheet. */
+@source "./**/*.{ts,tsx}";
+
+.tools-speedtest { display: flex; flex-direction: column; gap: 1rem; min-width: 0; container-type: inline-size; }
+.tools-speedtest h2, .tools-speedtest p { margin: 0; }
+.tools-speedtest-server { overflow-wrap: anywhere; color: var(--k2b-text-muted); font-size: .875rem; }
+.tools-speedtest-server-name { color: var(--k2b-text); font-weight: 500; }
+.tools-speedtest-note { color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.5; }
+
+/* The hero card and the history share one row and its height; the remaining figures follow as one full row of tiles. */
+.tools-speedtest-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+  grid-template-areas: "measure history" "figures figures" "cli cli";
+  gap: 1rem;
+}
+.tools-speedtest-measure { grid-area: measure; display: flex; flex-direction: column; gap: .875rem; }
+.tools-speedtest-history { grid-area: history; display: flex; flex-direction: column; gap: .5rem; }
+.tools-speedtest-figures { grid-area: figures; }
+.tools-speedtest-cli { grid-area: cli; display: flex; flex-direction: column; gap: .75rem; }
+
+.tools-speedtest-mode { width: 100%; }
+.tools-speedtest-mode .k2b-segmented-control__option, .tools-speedtest-mode button { white-space: nowrap; }
+.tools-speedtest-gauge { flex: 1 0 11rem; min-height: 11rem; width: 100%; overflow: clip; }
+.tools-speedtest-gauge > * { width: 100%; height: 100%; }
+.tools-speedtest-gauge .stdlib-chart { transform: scale(1.25); transform-origin: 50% 70%; }
+.tools-speedtest-gauge .stdlib-chart-gauge-value { font-size: 72px; font-weight: 650; }
+.tools-speedtest-gauge .stdlib-chart-gauge-label { font-size: 18px; }
+.tools-speedtest-gauge .stdlib-chart-gauge-unit { font-size: 17px; }
+/* An unavailable reading has no numeric center; the shared gauge still labels its 0/max scale. */
+.tools-speedtest-gauge[data-empty=true] .stdlib-chart-gauge-value { visibility: hidden; }
+.tools-speedtest-start { width: 100%; justify-content: center; }
+.tools-speedtest-eta { display: flex; flex-direction: column; gap: .5rem; }
+.tools-speedtest-eta[data-finished=true] { visibility: hidden; }
+.tools-speedtest .tools-speedtest-unit { color: var(--k2b-text-muted); font-size: .8125rem; font-weight: 500; }
+/* The dash and a figure with its unit take the same line, so a reading never moves the row of tiles. */
+.tools-speedtest .k2b-stat-cell__main { height: 2rem; }
+/* Room for the longest message (three lines), so feedback never moves the card. */
+.tools-speedtest-status { height: 3.9rem; overflow: auto; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.3rem; }
+.tools-speedtest .speedtest-danger { color: var(--k2b-danger-text); }
+
+.tools-speedtest-panel-head { display: flex; flex-direction: column; gap: .125rem; }
+.tools-speedtest-panel-head h2, .tools-speedtest-cli-head h2 { font-size: .875rem; font-weight: 600; }
+.tools-speedtest-panel-head p { color: var(--k2b-text-muted); font-size: .75rem; }
+.tools-speedtest-chart { flex: 1 0 13rem; min-height: 13rem; }
+.tools-speedtest-chart > * { width: 100%; height: 100%; }
+/* Ramp-up stays a quiet, thin neutral line; only measured windows carry the series colours. */
+/* Cloud loads its global chart palette after app CSS. Scope both SVG and legend
+   more specifically so the documented per-chart palette survives that order. */
+.tools-speedtest .tools-speedtest-chart,
+.tools-speedtest .tools-speedtest-chart .stdlib-chart { --stdlib-chart-c3: var(--k2b-text-muted); }
+.tools-speedtest-chart .stdlib-chart-line.stdlib-chart-series-2 { stroke-width: 1.25; }
+.tools-speedtest-chart .stdlib-chart-reference { opacity: .45; }
+
+.tools-speedtest-cli-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.tools-speedtest-cli-actions { display: flex; align-items: center; gap: .5rem; }
+.tools-speedtest-terminal { height: 14rem; overflow: auto; margin: 0; padding: 1rem; border-radius: var(--k2b-radius-control); background: var(--k2b-surface-muted); color: var(--k2b-text); font: .75rem/1.7 var(--font-mono, monospace); white-space: pre; overflow-wrap: normal; tab-size: 2; }
+.tools-speedtest-runtimes { display: flex; align-items: center; gap: .5rem; }
+.tools-speedtest-runtimes > .k2b-segmented-control { flex: 1; min-width: 0; width: auto; }
+
+@container (max-width: 760px) {
+  .tools-speedtest-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "measure" "figures" "history" "cli"; }
+  .tools-speedtest-gauge { flex-basis: 11rem; }
+}

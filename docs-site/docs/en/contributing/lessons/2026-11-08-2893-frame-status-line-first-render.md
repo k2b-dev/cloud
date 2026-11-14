@@ -1,0 +1,6 @@
+### A dashboard frame's subtitle lost its blank line on the first client render
+
+- **What happened:** On the Code page Newsletter demo, the text after a table frame's subtitle had one line break fewer after the first client render than in the server's page, in WebKit only. Every box stayed in place; Chromium did not show the difference.
+- **Root cause:** `DashboardFrame` wrote its status line as the subtitle followed by a conditional "Try again" link. The client render leaves that condition's empty anchor after the text inside the `<p>`; the server does not. With that trailing node, WebKit's rendered text no longer gives the paragraph its blank line. The line is now one expression, text alone or text with the link, so both sides end with the text.
+- **Error class:** Framework-generated DOM anchors change browser-observable SSR output despite equal visible elements and styles (as in #2814).
+- **Guard:** `packages/ui/src/widgets/dashboard-frame-parity.browser.test.ts` compares the server and first-client rendered text and head of a frame with a subtitle, ready and stale, at 900 and 390 px. It fails in WebKit without the fix. `packages/core/src/code/page.browser.test.ts` keeps its exact full-page parity assertion for the Newsletter demo.

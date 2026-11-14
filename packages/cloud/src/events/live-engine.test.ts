@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { CursorMismatchError, RetentionGapError, type TopicEvent } from "@k2b/sync";
 import { z } from "zod";
 import {
@@ -108,6 +108,13 @@ let engine: LiveEngine;
 let readers: Map<string, Set<string>>;
 let authorizeCalls: { key: string; viewers: string[] }[];
 let authorizeFails = false;
+let accessChanged: (subject?: { userId?: string; sid?: string }) => void = () => {};
+const subscribeAccess = (changed: (subject?: { userId?: string; sid?: string }) => void) => {
+  accessChanged = changed;
+  return () => {
+    accessChanged = () => {};
+  };
+};
 let valid: Set<string>;
 
 const authorize = async (key: string, viewers: readonly LiveViewer[]) => {
@@ -118,11 +125,13 @@ const authorize = async (key: string, viewers: readonly LiveViewer[]) => {
 
 const channels: Record<string, LiveChannel> = {
   item: {
+    eventOnly: true,
     scope: z.object({ key: z.string() }).strict(),
     keys: async ({ key }: { key: string }) => (key === "missing" ? null : [key]),
     authorize,
   },
   list: {
+    eventOnly: true,
     scope: z.object({}).strict(),
     collection: true,
     keys: async (_scope, who) => [...readers].filter(([, ids]) => ids.has(who.id)).map(([key]) => key),
@@ -142,8 +151,6 @@ const connect = (name = "ada") => {
 const event = (key: string, n: number): LiveEnvelope => ({ v: 1, k: key, d: { n } });
 
 beforeEach(() => {
-  // Shorter than the 2-second production cache, so tests can wait it out.
-  LIVE_LIMITS.cacheMs = 100;
   topic = new FakeTopic();
   readers = new Map([
     ["a", new Set(["user:ada", "user:bob"])],
@@ -152,7 +159,7 @@ beforeEach(() => {
   authorizeCalls = [];
   authorizeFails = false;
   valid = new Set(["user:ada", "user:bob"]);
-  engine = createLiveEngine({ appId: "app", topic: () => topic, channels });
+  engine = createLiveEngine({ appId: "app", topic: () => topic, channels, subscribeAccess });
 });
 
 afterEach(() => {
@@ -220,7 +227,7 @@ describe("live engine", () => {
     send({ t: "sub", id: "all", channel: "list", scope: {} });
     await until(() => framesOf("all").length === 1);
     readers.set("b", new Set());
-    await Bun.sleep(LIVE_LIMITS.cacheMs + 50);
+    topic.publish({ v: 1, k: "b", a: true });
     topic.publish(event("b", 1));
     topic.publish(event("a", 2));
     await until(() => framesOf("all").length === 3);
@@ -231,20 +238,22 @@ describe("live engine", () => {
     expect(framesOf("all")).toEqual([
       { t: "ready", id: "all", cursor: "s6t.app.0" },
       { t: "resync", id: "all", cursor: "s6t.app.0" },
-      { t: "event", id: "all", cursor: "s6t.app.2", data: { n: 2 } },
+      { t: "event", id: "all", cursor: "s6t.app.3", data: { n: 2 } },
     ]);
   });
 
-  test("decisions are cached for two seconds and checked once per batch and key", async () => {
+  test("delivery retains subscription decisions and access events batch viewers per key", async () => {
     const ada = connect();
     const bob = connect("bob");
     ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
     bob.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
     await until(() => ada.framesOf("s").length === 1 && bob.framesOf("s").length === 1);
-    await Bun.sleep(LIVE_LIMITS.cacheMs + 50);
     authorizeCalls = [];
     for (let n = 1; n <= 5; n++) topic.publish(event("a", n));
     await until(() => bob.framesOf("s").length === 6);
+    expect(authorizeCalls).toEqual([]);
+    topic.publish({ v: 1, k: "a", a: true });
+    await until(() => authorizeCalls.length === 1);
     expect(authorizeCalls).toEqual([{ key: "a", viewers: ["user:ada", "user:bob"] }]);
   });
 
@@ -261,9 +270,8 @@ describe("live engine", () => {
     const { socket, send, framesOf } = connect();
     send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
     await until(() => framesOf("s").length === 1);
-    await Bun.sleep(LIVE_LIMITS.cacheMs + 50);
     authorizeFails = true;
-    topic.publish(event("a", 1));
+    topic.publish({ v: 1, k: "a", a: true });
     await until(() => socket.closes.length === 1);
     expect(socket.closes).toEqual([{ code: 1011, reason: "unavailable" }]);
     expect(framesOf("s")).toHaveLength(1);
@@ -503,14 +511,14 @@ describe("live engine", () => {
     await until(() => watcher.framesOf("a").length === 2);
     gate = null;
     open();
-    await until(() => ["ready", "resync"].includes(ada.framesOf("b").at(-1)?.t ?? ""));
-    expect(ada.framesOf("b")).toEqual([{ t: "resync", id: "b", cursor: "s6t.app.4" }]);
+    await until(() => ada.framesOf("b").length === 1);
+    expect(ada.framesOf("b")).toEqual([{ t: "revoked", id: "b", code: "not_found" }]);
     topic.publish(event("b", 5));
-    await until(() => ada.framesOf("b").length === 2);
-    expect(ada.framesOf("b")[1]).toEqual({ t: "revoked", id: "b", code: "access_denied" });
+    await Bun.sleep(20);
+    expect(ada.framesOf("b")).toHaveLength(1);
   });
 
-  test("an answer requested before an access update is used once but not cached", async () => {
+  test("admission repeats a decision invalidated while it was pending", async () => {
     let gate: Promise<void> | null = null;
     let open = () => {};
     engine.stop();
@@ -538,16 +546,16 @@ describe("live engine", () => {
     gate = null;
     open();
     await until(() => framesOf("s").length === 1);
-    expect(framesOf("s")[0]?.t).toBe("ready");
+    expect(framesOf("s")).toEqual([{ t: "revoked", id: "s", code: "not_found" }]);
+    expect(authorizeCalls).toHaveLength(2);
     topic.publish(event("a", 2));
-    await until(() => framesOf("s").length === 2);
-    expect(framesOf("s")[1]).toEqual({ t: "revoked", id: "s", code: "access_denied" });
+    await Bun.sleep(20);
+    expect(framesOf("s")).toHaveLength(1);
   });
 
-  test("the sweep ends expired sessions, revokes quiet subscriptions, and refreshes collections", async () => {
-    LIVE_LIMITS.sweepMs = 30;
+  test("identity events end sessions, revoke quiet subscriptions, and refresh collections", async () => {
     engine.stop();
-    engine = createLiveEngine({ appId: "app", topic: () => topic, channels });
+    engine = createLiveEngine({ appId: "app", topic: () => topic, channels, subscribeAccess });
     const ada = connect();
     const bob = connect("bob");
     ada.send({ t: "sub", id: "one", channel: "item", scope: { key: "b" } });
@@ -557,16 +565,51 @@ describe("live engine", () => {
 
     readers.set("b", new Set());
     valid.delete("user:bob");
+    accessChanged();
     await until(() => ada.framesOf("one").length === 2 && bob.socket.closes.length === 1);
     expect(ada.framesOf("one")[1]).toEqual({ t: "revoked", id: "one", code: "access_denied" });
     expect(ada.framesOf("all")[1]).toMatchObject({ t: "resync", id: "all" });
     expect(bob.socket.closes).toEqual([{ code: 1008, reason: "session_expired" }]);
 
     readers.set("d", new Set(["user:ada"]));
-    await until(() => ada.framesOf("all").length === 3, LIVE_LIMITS.sweepMs * LIVE_LIMITS.keysEveryRounds * 4);
+    accessChanged();
+    await until(() => ada.framesOf("all").length === 3);
     topic.publish(event("d", 1));
     await until(() => ada.framesOf("all").length === 4);
     expect(ada.framesOf("all")[3]).toMatchObject({ t: "event", data: { n: 1 } });
+  });
+
+  test("identity invalidation suspends delivery until a pending credential check has settled", async () => {
+    const socket = fakeSocket();
+    const who = viewer("ada");
+    let release: (value: LiveViewer | null) => void = () => {};
+    let checking = false;
+    let initial = true;
+    const connection = engine.open(socket, who, () => {
+      if (initial) {
+        initial = false;
+        return Promise.resolve(who);
+      }
+      checking = true;
+      return new Promise<LiveViewer | null>((resolve) => {
+        release = resolve;
+      });
+    });
+    connection.message(JSON.stringify({ t: "sub", id: "s", channel: "item", scope: { key: "a" } }));
+    await until(() => socket.frames.length === 1);
+    const bob = connect("bob");
+    bob.send({ t: "sub", id: "b", channel: "item", scope: { key: "a" } });
+    await until(() => bob.framesOf("b").length === 1);
+    accessChanged({ userId: "ada" });
+    await until(() => checking);
+    topic.publish(event("a", 1));
+    await until(() => bob.framesOf("b").length === 2);
+    await Bun.sleep(0);
+    expect(socket.frames.map((frame) => frame.t)).toEqual(["ready"]);
+    release(null);
+    await until(() => socket.closes.length === 1);
+    expect(socket.closes).toEqual([{ code: 1008, reason: "session_expired" }]);
+    expect(socket.frames.some((frame) => frame.t === "event")).toBe(false);
   });
 
   test("a reconnect sends every subscription at once: 16 of them all become ready", async () => {
@@ -634,7 +677,7 @@ describe("live engine", () => {
     socket.buffered = LIVE_LIMITS.sendBufferBytes + 1;
     await until(() => framesOf("s").length === 1);
     readers.set("a", new Set(["user:ada"]));
-    await Bun.sleep(LIVE_LIMITS.cacheMs + 20);
+    topic.publish({ v: 1, k: "a", a: true });
     topic.publish(event("a", 6));
     await Bun.sleep(30);
     socket.buffered = 0;
@@ -654,11 +697,10 @@ describe("live engine", () => {
     expect(socket.closes).toEqual([{ code: 1013, reason: "backpressure" }]);
   });
 
-  test("a check that never answers fails after the check deadline and does not stop later sweeps", async () => {
-    LIVE_LIMITS.sweepMs = 30;
+  test("a hung identity check fails within the deadline and later invalidations still run", async () => {
     LIVE_LIMITS.checkMs = 50;
     engine.stop();
-    engine = createLiveEngine({ appId: "app", topic: () => topic, channels });
+    engine = createLiveEngine({ appId: "app", topic: () => topic, channels, subscribeAccess });
     const hanging = fakeSocket();
     const ada = viewer("ada");
     engine
@@ -666,9 +708,11 @@ describe("live engine", () => {
       .message(JSON.stringify({ t: "sub", id: "s", channel: "item", scope: { key: "a" } }));
     const bob = connect("bob");
     bob.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    accessChanged();
     await until(() => hanging.closes.length === 1);
     expect(hanging.closes).toEqual([{ code: 1011, reason: "unavailable" }]);
     valid.delete("user:bob");
+    accessChanged();
     await until(() => bob.socket.closes.length === 1);
     expect(bob.socket.closes).toEqual([{ code: 1008, reason: "session_expired" }]);
   });
@@ -692,7 +736,7 @@ describe("live engine", () => {
   test("progress reports the delivered position; at most 16 sockets per viewer; stopping closes with 1012", async () => {
     LIVE_LIMITS.progressMs = 30;
     engine.stop();
-    engine = createLiveEngine({ appId: "app", topic: () => topic, channels });
+    engine = createLiveEngine({ appId: "app", topic: () => topic, channels, subscribeAccess });
     topic.publish(event("b", 1));
     const { socket, send } = connect("bob");
     send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
@@ -723,7 +767,7 @@ describe("live engine", () => {
       send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
       await until(() => socket.frames.length === 1);
       const ticks = intervals.mock.calls.map(([tick]) => tick as () => void);
-      expect(ticks).toHaveLength(2);
+      expect(ticks).toHaveLength(1);
 
       syncGone = true;
       for (const tick of ticks) expect(() => tick()).not.toThrow();
@@ -735,12 +779,550 @@ describe("live engine", () => {
       expect(late.socket.closes).toEqual([{ code: 1012, reason: "restart" }]);
 
       // Stopped before its first socket, as a mount that serves its first socket while the application stops.
-      engine = createLiveEngine({ appId: "app", topic: () => topic, channels });
+      engine = createLiveEngine({ appId: "app", topic: () => topic, channels, subscribeAccess });
       engine.stop();
       expect(connect().socket.closes).toEqual([{ code: 1012, reason: "restart" }]);
-      expect(intervals).toHaveBeenCalledTimes(2);
+      expect(intervals).toHaveBeenCalledTimes(1);
     } finally {
       intervals.mockRestore();
     }
   });
+});
+
+test("channels are periodic by default: two-second delivery cache and ten/sixty-second timers remain", async () => {
+  engine.stop();
+  const intervals = spyOn(globalThis, "setInterval");
+  const fixed = Date.parse("2026-11-13T12:00:00Z");
+  setSystemTime(fixed);
+  try {
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: {
+        item: { ...channels.item!, eventOnly: undefined },
+        list: { ...channels.list!, eventOnly: undefined },
+      },
+    });
+    const ada = connect();
+    ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => ada.framesOf("s").length === 1);
+    expect(intervals.mock.calls.map(([, ms]) => ms)).toEqual([10_000, 30_000]);
+    expect(LIVE_LIMITS.keysEveryRounds * LIVE_LIMITS.sweepMs).toBe(60_000);
+    authorizeCalls.length = 0;
+    topic.publish(event("a", 1));
+    await until(() => ada.framesOf("s").length === 2);
+    expect(authorizeCalls).toHaveLength(0);
+    readers.delete("a");
+    setSystemTime(fixed + 2_001);
+    topic.publish(event("a", 2));
+    await until(() => ada.framesOf("s").length === 3);
+    expect(authorizeCalls).toHaveLength(1);
+    expect(ada.framesOf("s")[2]).toMatchObject({ t: "revoked" });
+  } finally {
+    setSystemTime();
+    intervals.mockRestore();
+  }
+});
+
+test("one canonical access key invalidates every related assigned-reader key", async () => {
+  engine.stop();
+  readers.set("mailbox:ada", new Set(["user:ada"]));
+  readers.set("mailbox:assigned", new Set(["user:ada"]));
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      mailbox: {
+        eventOnly: true,
+        accessKey: (key) => key.split(":")[0]!,
+        scope: z.object({}),
+        keys: async () => ["mailbox:ada", "mailbox:assigned"],
+        authorize,
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "mailbox", scope: {} });
+  await until(() => ada.framesOf("s").length === 1);
+  readers.delete("mailbox:ada");
+  readers.delete("mailbox:assigned");
+  topic.publish({ v: 1, k: "mailbox", a: true });
+  topic.publish(event("mailbox:ada", 1));
+  topic.publish(event("mailbox:assigned", 2));
+  await until(() => ada.framesOf("s").length === 2);
+  expect(ada.framesOf("s").map((frame) => frame.t)).toEqual(["ready", "revoked"]);
+});
+
+test("an event-only connection rechecks credentials before its first subscription", async () => {
+  const socket = fakeSocket();
+  const connection = engine.open(socket, viewer("ada"), async () => null);
+  connection.message(JSON.stringify({ t: "sub", id: "s", channel: "item", scope: { key: "a" } }));
+  await until(() => socket.closes.length === 1);
+  expect(socket.frames.map((frame) => frame.t)).toEqual(["error"]);
+  expect(socket.closes).toEqual([{ code: 1008, reason: "session_expired" }]);
+});
+
+test("identity invalidation allows only one coalesced catch-up", async () => {
+  let checks = 0;
+  const socket = fakeSocket();
+  engine.open(socket, viewer("ada"), async () => {
+    checks++;
+    accessChanged({ userId: "ada" });
+    return viewer("ada");
+  });
+  await until(() => socket.closes.length === 1);
+  expect(checks).toBe(2);
+  expect(socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
+});
+
+test("subscription admission cannot livelock when its authorizer keeps changing access", async () => {
+  engine.stop();
+  let checks = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      item: {
+        eventOnly: true,
+        scope: z.object({}),
+        keys: async () => ["a"],
+        authorize: async (_key, viewers) => {
+          checks++;
+          topic.publish({ v: 1, k: "a", a: true });
+          await Bun.sleep(0);
+          return new Set(viewers.map((viewer) => viewer.id));
+        },
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "item", scope: {} });
+  await until(() => ada.socket.closes.length === 1);
+  expect(checks).toBe(2);
+  expect(ada.socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
+});
+
+test("collection refresh defers sustained domain bursts without closing sockets", async () => {
+  engine.stop();
+  LIVE_LIMITS.sweepMs = 50;
+  let changing = false;
+  let refreshes = 0,
+    listings = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      list: {
+        eventOnly: true,
+        collection: true,
+        scope: z.object({}),
+        keys: async () => {
+          listings++;
+          if (changing) {
+            refreshes++;
+            topic.publish({ v: 1, k: "a", a: true });
+            await Bun.sleep(0);
+          }
+          return ["a"];
+        },
+        authorize,
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "list", scope: {} });
+  await until(() => ada.framesOf("s").length === 1);
+  changing = true;
+  topic.publish({ v: 1, k: "a", a: true });
+  await until(() => refreshes >= 2 || ada.socket.closes.length > 0);
+  await Bun.sleep(20);
+  expect(ada.socket.closes).toEqual([]);
+  expect(refreshes).toBeLessThanOrEqual(4);
+  changing = false;
+  await until(() => listings > refreshes + 1);
+  topic.publish(event("a", 1));
+  await until(() => ada.framesOf("s").some((frame) => frame.t === "event"));
+});
+
+test("periodic collection refresh discards decisions from before an access event", async () => {
+  engine.stop();
+  let changing = false;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      list: {
+        collection: true,
+        scope: z.object({}),
+        keys: async () => ["a", "b"],
+        authorize: async (key, viewers) => {
+          const allowed = await authorize(key, viewers);
+          if (changing && key === "a") {
+            changing = false;
+            topic.publish({ v: 1, k: "other", a: true });
+            await Bun.sleep(0);
+          }
+          return allowed;
+        },
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "list", scope: {} });
+  await until(() => ada.framesOf("s").length === 1);
+  readers.delete("a");
+  changing = true;
+  topic.publish({ v: 1, k: "a", a: true });
+  topic.publish(event("a", 1));
+  topic.publish(event("b", 2));
+  await until(() => ada.framesOf("s").some((frame) => frame.t === "event"));
+  expect(ada.framesOf("s").filter((frame) => frame.t === "event")).toEqual([expect.objectContaining({ data: { n: 2 } })]);
+});
+
+test("foreign identity events during periodic refresh and admission do not retry or close connections", async () => {
+  engine.stop();
+  const intervals = spyOn(globalThis, "setInterval");
+  let refreshes = 0;
+  let changing = false;
+  try {
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      subscribeAccess,
+      channels: {
+        list: {
+          ...channels.list!,
+          eventOnly: undefined,
+          keys: async (_scope, who) => {
+            refreshes++;
+            if (changing) {
+              // Bob has a connection, but these events must not invalidate Ada's read.
+              accessChanged({ userId: "bob" });
+              accessChanged({ userId: "unconnected" });
+              await Bun.sleep(0);
+            }
+            return who.id === "user:ada" ? ["a"] : [];
+          },
+        },
+      },
+    });
+    const bob = connect("bob");
+    const ada = connect();
+    changing = true;
+    ada.send({ t: "sub", id: "s", channel: "list", scope: {} });
+    await until(() => ada.framesOf("s").length === 1);
+    expect(refreshes).toBe(1);
+    const sweep = intervals.mock.calls.find(([, ms]) => ms === LIVE_LIMITS.sweepMs)![0] as () => void;
+    for (let round = 0; round < LIVE_LIMITS.keysEveryRounds; round++) {
+      sweep();
+      await Bun.sleep(5);
+    }
+    await until(() => refreshes === 2);
+    topic.publish(event("a", 1));
+    await until(() => ada.framesOf("s").length === 2);
+    expect(refreshes).toBe(2);
+    expect(ada.socket.closes).toEqual([]);
+    expect(bob.socket.closes).toEqual([]);
+  } finally {
+    intervals.mockRestore();
+  }
+});
+
+test("an unstable collection reconnects only its own connection", async () => {
+  engine.stop();
+  let changing = false;
+  let checks = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    subscribeAccess,
+    channels: {
+      list: {
+        ...channels.list!,
+        keys: async (_scope, who) => {
+          if (changing && who.id === "user:ada") {
+            checks++;
+            accessChanged({ userId: "ada" });
+            await Bun.sleep(0);
+          }
+          return ["a"];
+        },
+      },
+    },
+  });
+  const ada = connect(),
+    bob = connect("bob");
+  for (const conn of [ada, bob]) conn.send({ t: "sub", id: "s", channel: "list", scope: {} });
+  await until(() => ada.framesOf("s").length === 1 && bob.framesOf("s").length === 1);
+  changing = true;
+  accessChanged({ userId: "ada" });
+  await until(() => ada.socket.closes.length === 1);
+  expect(checks).toBe(2);
+  expect(ada.socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
+  topic.publish(event("a", 1));
+  await until(() => bob.framesOf("s").length === 2);
+  expect(bob.socket.closes).toEqual([]);
+});
+
+test("a negative periodic credential probe closes even when an identity event overtakes it", async () => {
+  engine.stop();
+  const intervals = spyOn(globalThis, "setInterval");
+  let calls = 0;
+  let release: (value: LiveViewer | null) => void = () => {};
+  try {
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      subscribeAccess,
+      channels: { item: { ...channels.item!, eventOnly: undefined } },
+    });
+    const socket = fakeSocket();
+    const conn = engine.open(socket, viewer("ada"), async () => {
+      if (++calls === 2)
+        return new Promise<LiveViewer | null>((resolve) => {
+          release = resolve;
+        });
+      return viewer("ada");
+    });
+    conn.message(JSON.stringify({ t: "sub", id: "s", channel: "item", scope: { key: "a" } }));
+    await until(() => socket.frames.length === 1);
+    const sweep = intervals.mock.calls.find(([, ms]) => ms === LIVE_LIMITS.sweepMs)![0] as () => void;
+    sweep();
+    await until(() => calls === 2);
+    accessChanged({ userId: "ada" });
+    await until(() => calls === 3);
+    release(null);
+    await until(() => socket.closes.length === 1);
+    expect(socket.closes).toEqual([{ code: 1008, reason: "session_expired" }]);
+  } finally {
+    release(null);
+    intervals.mockRestore();
+  }
+});
+
+test("periodic delivery prefetches eight decisions in parallel and sends the batch in topic order", async () => {
+  engine.stop();
+  const fixed = Date.parse("2026-11-13T12:00:00Z");
+  setSystemTime(fixed);
+  let prefetch = false,
+    active = 0,
+    peak = 0;
+  let releaseFirst: () => void = () => {},
+    releaseBatch: () => void = () => {};
+  const first = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const batch = new Promise<void>((resolve) => {
+    releaseBatch = resolve;
+  });
+  const keys = Array.from({ length: 17 }, (_, i) => `k${i}`);
+  try {
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: {
+        list: {
+          collection: true,
+          scope: z.object({}),
+          keys: async () => keys,
+          authorize: async (key, viewers) => {
+            if (prefetch) {
+              active++;
+              peak = Math.max(peak, active);
+              await (key === "k0" ? first : batch);
+              active--;
+            }
+            return new Set(viewers.map((who) => who.id));
+          },
+        },
+      },
+    });
+    const ada = connect();
+    ada.send({ t: "sub", id: "s", channel: "list", scope: {} });
+    await until(() => ada.framesOf("s").length === 1);
+    setSystemTime(fixed + 2_001);
+    prefetch = true;
+    topic.publish(event("k0", 0));
+    await until(() => active === 1);
+    for (let i = 1; i < keys.length; i++) topic.publish(event(keys[i]!, i));
+    // Wait for the follower to enqueue the burst behind the blocked first entry.
+    await Bun.sleep(5);
+    releaseFirst();
+    await until(() => peak === LIVE_LIMITS.callsInFlight);
+    releaseBatch();
+    await until(() => ada.framesOf("s").length === 18);
+    expect(peak).toBe(8);
+    expect(
+      ada
+        .framesOf("s")
+        .slice(1)
+        .map((frame) => (frame.data as { n: number }).n),
+    ).toEqual(keys.map((_, i) => i));
+    expect(ada.socket.closes).toEqual([]);
+  } finally {
+    releaseFirst();
+    releaseBatch();
+    setSystemTime();
+  }
+});
+
+test("late viewers joining during periodic prefetch receive a fresh decision", async () => {
+  engine.stop();
+  const blocked = Promise.withResolvers<void>();
+  let prefetch = false;
+  let started = false;
+  let lateChecks = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      item: {
+        ...channels.item!,
+        eventOnly: undefined,
+        authorize: async (_key, viewers) => {
+          if (prefetch && viewers.some((who) => who.id === "user:ada")) {
+            started = true;
+            await blocked.promise;
+          }
+          if (prefetch && viewers.some((who) => who.id === "user:bob")) lateChecks++;
+          return new Set(viewers.map((who) => who.id));
+        },
+      },
+    },
+  });
+  const fixed = Date.parse("2026-11-13T12:00:00Z");
+  setSystemTime(fixed);
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+  await until(() => ada.framesOf("s").length === 1);
+  const bob = connect("bob");
+  try {
+    setSystemTime(fixed + LIVE_LIMITS.cacheMs + 1);
+    prefetch = true;
+    topic.publish(event("a", 1));
+    await until(() => started);
+    bob.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => bob.framesOf("s").length === 1);
+    blocked.resolve();
+    await until(() => bob.framesOf("s").length === 2);
+    expect(bob.framesOf("s")[1]).toMatchObject({ t: "event", data: { n: 1 } });
+    expect(lateChecks).toBeGreaterThan(0);
+    expect(bob.socket.closes).toEqual([]);
+  } finally {
+    blocked.resolve();
+    setSystemTime();
+  }
+});
+
+test("unrelated domain events do not restart admission, including canonical access keys", async () => {
+  engine.stop();
+  let checks = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      item: {
+        ...channels.item!,
+        accessKey: (key) => key.split(":")[0]!,
+        keys: async () => ["mailbox:assigned"],
+        authorize: async (_key, viewers) => {
+          checks++;
+          topic.publish({ v: 1, k: "foreign-draft", a: true });
+          topic.publish({ v: 1, k: "foreign-message", a: true });
+          await Bun.sleep(0);
+          return new Set(viewers.map((who) => who.id));
+        },
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "mailbox:assigned" } });
+  await until(() => ada.framesOf("s").length > 0 || ada.socket.closes.length > 0);
+  expect(ada.socket.closes).toEqual([]);
+  expect(ada.framesOf("s")[0]?.t).toBe("ready");
+  expect(checks).toBe(1);
+});
+
+test("an identity hint invalidates a prefetched periodic decision before the next frame", async () => {
+  engine.stop();
+  const blocked = Promise.withResolvers<void>();
+  let prefetch = false,
+    started = false,
+    readable = true,
+    invalidations = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    subscribeAccess,
+    channels: {
+      item: {
+        ...channels.item!,
+        eventOnly: undefined,
+        authorize: async (_key, viewers, context) => {
+          if (context?.identityChanged) {
+            invalidations++;
+            return new Set(viewers.map((who) => who.id));
+          }
+          const allowed = readable;
+          if (prefetch && !started) {
+            started = true;
+            await blocked.promise;
+          }
+          return new Set(allowed ? viewers.map((who) => who.id) : []);
+        },
+      },
+    },
+  });
+  const fixed = Date.parse("2026-11-13T12:00:00Z");
+  setSystemTime(fixed);
+  try {
+    const ada = connect();
+    ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => ada.framesOf("s").length === 1);
+    setSystemTime(fixed + LIVE_LIMITS.cacheMs + 1);
+    prefetch = true;
+    topic.publish(event("a", 1));
+    await until(() => started);
+    readable = false;
+    accessChanged({ userId: "ada" });
+    await until(() => invalidations === 1);
+    blocked.resolve();
+    await until(() => ada.framesOf("s").length === 2);
+    expect(ada.framesOf("s")[1]).toMatchObject({ t: "revoked", code: "access_denied" });
+    expect(ada.framesOf("s").some((frame) => frame.t === "event")).toBe(false);
+    expect(ada.socket.closes).toEqual([]);
+  } finally {
+    blocked.resolve();
+    setSystemTime();
+  }
+});
+
+test("admission retries a canonical root change during authorization", async () => {
+  engine.stop();
+  let checks = 0;
+  engine = createLiveEngine({
+    appId: "app",
+    topic: () => topic,
+    channels: {
+      item: {
+        ...channels.item!,
+        accessKey: (key) => key.split(":")[0]!,
+        keys: async () => ["mailbox:assigned"],
+        authorize: async (_key, viewers) => {
+          if (++checks === 1) {
+            topic.publish({ v: 1, k: "mailbox", a: true });
+            await Bun.sleep(0);
+            return new Set(viewers.map((who) => who.id));
+          }
+          return new Set();
+        },
+      },
+    },
+  });
+  const ada = connect();
+  ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "mailbox:assigned" } });
+  await until(() => ada.framesOf("s").length > 0);
+  expect(checks).toBe(2);
+  expect(ada.framesOf("s")).toEqual([{ t: "revoked", id: "s", code: "not_found" }]);
+  expect(ada.socket.closes).toEqual([]);
 });

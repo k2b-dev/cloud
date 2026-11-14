@@ -180,6 +180,8 @@ export const aiAreaMessages = i18n.define({
       capsHelp: "Taken from the provider’s list. Without “Reads images directly”, the image tool helps; people do not see this.",
       ctx: "Context window",
       maxOut: "Max output",
+      maxOutHelp:
+        "Reasoning and answer share this budget. When empty, thinking-capable models use the reported output maximum, bounded by the estimated free context. If unknown, the provider's default applies.",
       tokens: "tokens",
       providerDefault: "Provider default",
       prices: "Prices",
@@ -761,6 +763,8 @@ export const aiAreaMessages = i18n.define({
       capsHelp: "Aus der Liste des Anbieters übernommen. Ohne „Bilder direkt lesen“ hilft das Bildwerkzeug; Personen sehen davon nichts.",
       ctx: "Kontextfenster",
       maxOut: "Max. Ausgabe",
+      maxOutHelp:
+        "Nachdenken und Antwort teilen sich dieses Budget. Ohne Angabe nutzen denkfähige Modelle das gemeldete Ausgabelimit, höchstens den geschätzten freien Kontext. Ist es unbekannt, gilt der Anbieterstandard.",
       tokens: "Tokens",
       providerDefault: "Anbieterstandard",
       prices: "Preise",

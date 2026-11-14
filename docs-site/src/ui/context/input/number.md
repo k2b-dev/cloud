@@ -77,7 +77,7 @@ not zoom. At rest the value keeps the row's size.
 
 ## API reference
 
-See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`. A [suggestion](/en/ui/input/field-suggestion) is a number; Accept snaps it to `step`, `min`, and `max` like any commit.
 
 ```ts
 type NumberInputProps = Omit<

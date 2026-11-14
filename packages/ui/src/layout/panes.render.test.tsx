@@ -142,4 +142,42 @@ describe("@k2b/ui Panes", () => {
       'missing item "one"',
     );
   });
+
+  test("shows tab grips and one Arrange button only where tabs can move", () => {
+    const items = [
+      { id: "source", title: "Source", render: () => "Source editor" },
+      { id: "preview", title: "Preview", render: () => "Preview content" },
+      { id: "sample", title: "Sample", render: () => "Sample content" },
+    ];
+    const movable = renderToString(() => createComponent(Panes, { layout, onLayoutChange: () => undefined, items }));
+    expect(movable.match(/k2b-panes__grip/g)?.length).toBe(3);
+    expect(movable.match(/k2b-panes__arrange/g)?.length).toBe(1);
+    expect(movable).toContain('aria-haspopup="menu"');
+    // The Arrange button sits in the trailing group, after its tab row.
+    expect(movable.indexOf("k2b-panes__arrange")).toBeGreaterThan(movable.indexOf("Sample"));
+
+    const fixed = renderToString(() =>
+      createComponent(Panes, { layout, onLayoutChange: () => undefined, items, movable: false, resizable: false }),
+    );
+    expect(fixed).not.toContain("k2b-panes__grip");
+    expect(fixed).not.toContain("k2b-panes__arrange");
+    expect(fixed).toContain('aria-disabled="true"');
+
+    const single = renderToString(() =>
+      createComponent(Panes, {
+        layout: { version: 2, root: { type: "group", items: ["one"], active: "one" } },
+        onLayoutChange: () => undefined,
+        items: [{ id: "one", title: "One", render: () => "First" }],
+      }),
+    );
+    expect(single).not.toContain("k2b-panes__arrange");
+  });
+
+  test("names an empty workspace without a box", () => {
+    const html = renderToString(() =>
+      createComponent(Panes, { layout: { version: 2, root: null }, onLayoutChange: () => undefined, items: [] }),
+    );
+    expect(html).toContain("No pane is open.");
+    expect(html).not.toContain("Add pane");
+  });
 });

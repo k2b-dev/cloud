@@ -15,6 +15,8 @@ import type { PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import type { z } from "zod";
+import { contactsEvents } from "./app-events";
+import { contactAutomationReview } from "./capability-action-reviews";
 import {
   CONTACT_COLLECTION_LIMIT,
   CONTACT_TAG_LIMIT,
@@ -1107,6 +1109,7 @@ const runNoteCreate = async (input: z.infer<typeof ContactNoteCreateInputSchema>
 };
 
 export const contactsCapabilities = defineCapabilities({
+  events: contactsEvents,
   protocolVersion: 2,
   commands: {
     "contact.compose": {
@@ -1445,7 +1448,7 @@ export const contactsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
-      approval: "rememberable",
+      policy: { silent: "shared" },
       review: async (input, context) => {
         const { t } = contactCapabilityMessages.resolve([context.locale]);
         const resolved = await resolveContactAtLevel(input.contactId, context, "write");
@@ -1465,16 +1468,19 @@ export const contactsCapabilities = defineCapabilities({
         const contact = contacts[0];
         if (!contact) return fail(err.notFound("Contact"));
         const names = new Map(tags.map((tag) => [tag.id, tag.name]));
-        return ok({
-          message: t.tagsReview({ contact: resolveContactName(contact) }),
-          details: [
-            { label: t.contact, value: resolveContactName(contact) },
-            { label: t.add, value: input.addTagIds.map((id: string) => names.get(id) ?? id).join(", ") || t.none },
-            { label: t.remove, value: input.removeTagIds.map((id: string) => names.get(id) ?? id).join(", ") || t.none },
-          ],
-          links: [{ rel: "open" as const, href: contactHref(contact) }],
-          approvalScope: bookApprovalScope(contact.bookId),
-        });
+        return ok(
+          contactAutomationReview("tag.change", context.locale, {
+            title: resolveContactName(contact),
+            message: t.tagsReview({ contact: resolveContactName(contact) }),
+            details: [
+              { label: t.contact, value: resolveContactName(contact) },
+              { label: t.add, value: input.addTagIds.map((id: string) => names.get(id) ?? id).join(", ") || t.none },
+              { label: t.remove, value: input.removeTagIds.map((id: string) => names.get(id) ?? id).join(", ") || t.none },
+            ],
+            links: [{ rel: "open" as const, href: contactHref(contact) }],
+            scope: bookApprovalScope(contact.bookId),
+          }),
+        );
       },
       run: runTagChange,
     },
@@ -1486,11 +1492,11 @@ export const contactsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
-      approval: "rememberable",
+      policy: { silent: "shared" },
       review: async (input, context) => {
         const { t } = contactCapabilityMessages.resolve([context.locale]);
         if (!userBacked(context)) return fail(err.forbidden("Notes require a user-backed actor"));
-        return reviewContactAction(input.contactId, context, "write", (contact) => ({
+        const review = await reviewContactAction(input.contactId, context, "write", (contact) => ({
           message: t.noteReview({ contact: resolveContactName(contact) }),
           details: [
             { label: t.contact, value: resolveContactName(contact) },
@@ -1498,6 +1504,16 @@ export const contactsCapabilities = defineCapabilities({
           ],
           approvalScope: contactApprovalScope(contact.id),
         }));
+        if (!review.ok) return review;
+        return ok(
+          contactAutomationReview("note.create", context.locale, {
+            title: review.data.details?.[0]?.value ?? t.contact,
+            message: review.data.message,
+            details: review.data.details ?? [],
+            scope: contactApprovalScope(input.contactId),
+            links: review.data.links,
+          }),
+        );
       },
       run: runNoteCreate,
     },

@@ -13,16 +13,7 @@ export type ChartDatum = {
   label?: string;
   anchor: [number, number];
   grid?: [number, number];
-  values: { key: string; value: string | number; formatted?: string }[];
+  values: { key: string; value: string | number; formatted?: string; label?: string }[];
 };
 
-/** Serializable number presentation, compatible with the editor's NumberFormat contract. */
-export type ChartNumberFormat = {
-  style?: "number" | "percent" | "currency";
-  currency?: string;
-  unit?: string;
-  decimals?: number;
-  compact?: boolean;
-};
-export type ChartDateFormat = { date: "day" | "minute" | "second" };
-export type ChartFormat = ChartNumberFormat | ChartDateFormat;
+export type { ChartDateFormat, ChartFormat, ChartNumberFormat } from "../description";

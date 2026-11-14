@@ -2,7 +2,7 @@ import { accountCategory } from "../../contracts/account-categories";
 import type { User } from "../../contracts/shared";
 import { redis, sql } from "../../runtime/clients";
 import { createAuthLoginUrl } from "../../shared/redirect";
-import { isAccountCategoryAllowed } from "../account-category-policy";
+import { isAccountAllowed, isAccountCategoryAllowed } from "../account-category-policy";
 import { accounts } from "../accounts";
 import { logger } from "../logging";
 import { providers } from "../providers";
@@ -140,7 +140,7 @@ const signIn = async (params: {
   if (!user) {
     return { ok: false, status: 401, message: "User not found" };
   }
-  if (!(await isAccountCategoryAllowed(user)) || (params.category && accountCategory(user) !== params.category))
+  if (!(await isAccountAllowed(user)) || (params.category && accountCategory(user) !== params.category))
     return { ok: false, status: 403, message: "This account cannot sign in through this category. Contact an administrator." };
   return { ok: true, userId: params.userId, user, email: params.email ?? user.mail, createdGuest: params.createdGuest ?? false };
 };

@@ -66,6 +66,12 @@ const portableSections = [
       page("boolean", "Boolean inputs", "ti ti-toggle-right", "Switch, checkbox, and descriptive checkbox-card controls."),
       page("select", "Selection controls", "ti ti-list-check", "Single, multi, and compact controlled selection."),
       page(
+        "field-suggestion",
+        "Field suggestions",
+        "ti ti-sparkles",
+        "A proposed value inside an empty field that only becomes the value when someone accepts it, with Accept all for a group.",
+      ),
+      page(
         "rich-select",
         "RichSelect",
         "ti ti-list-details",
@@ -91,14 +97,20 @@ const portableSections = [
       page("tags", "TagsInput", "ti ti-tags", "Comma-separated tag entry in one editable field, deduplicated on commit."),
       page("tag-editor", "Tag editing", "ti ti-tag", "Reusable tag presentation, entity management, and assignment composition."),
       page("date-picker", "Date pickers", "ti ti-calendar", "Date, date-time, and date-range selection with explicit timezone handling."),
+      page("period-picker", "PeriodPicker", "ti ti-calendar-stats", "One control for the period a view shows: presets and a custom range."),
       page("color", "ColorInput", "ti ti-palette", "Native color selection with controlled value and optional transparency."),
       page("pin", "PinInput", "ti ti-password", "Grouped one-time-code entry with paste and arrow-key navigation."),
-      page("slider", "Slider", "ti ti-adjustments-horizontal", "Range input with value labels and optional centered scale."),
+      page(
+        "slider",
+        "Slider",
+        "ti ti-adjustments-horizontal",
+        "Range input with value and reset beside the track or label, and an optional centered scale.",
+      ),
       page(
         "choice-slider",
         "ChoiceSlider",
         "ti ti-adjustments-alt",
-        "A slider over a few named stops with a fixed description line and unavailable stops.",
+        "A slider over a few named stops with a fixed description line and unavailable stops, and its indicator for triggers.",
       ),
       page("icon", "IconInput", "ti ti-icons", "Searchable controlled icon selection."),
       page("image", "ImageInput", "ti ti-photo", "Controlled image selection, preview, transform, and removal."),
@@ -144,9 +156,20 @@ const portableSections = [
     title: "Actions",
     icon: "ti ti-click",
     pages: [
-      page("buttons", "Buttons", "ti ti-hand-click", "Semantic button and icon-button variants with loading behavior."),
+      page(
+        "buttons",
+        "Buttons",
+        "ti ti-hand-click",
+        "Semantic buttons, quiet link actions, and icon buttons with stable loading behavior.",
+      ),
       page("copy-remove", "Copy and remove", "ti ti-copy", "Focused clipboard feedback and destructive icon actions."),
       page("menus", "Menus", "ti ti-menu-2", "Dropdown and context menus with keyboard and viewport behavior."),
+      page(
+        "command-menu",
+        "CommandMenu",
+        "ti ti-slash",
+        "One list of commands for a composer's slash menu, its “+” button, and a chip, with second lists.",
+      ),
       page("gestures", "GestureMenu", "ti ti-hand-finger", "Swipe, double-tap, and long-press shortcuts into an element's menu."),
       page(
         "drag-and-drop",
@@ -154,6 +177,7 @@ const portableSections = [
         "ti ti-drag-drop-2",
         "Drag rows, tasks, and paragraphs onto targets, with hold-then-drag on touch and a keyboard path.",
       ),
+      page("sortable-list", "SortableList", "ti ti-grip-vertical", "Reorder rows by a grip, by dragging or with the arrow keys."),
       page("filters", "Filters", "ti ti-filter", "Section-aware single and multi-select filtering."),
       page("segmented-control", "SegmentedControl", "ti ti-layout-grid", "A controlled radio-group toolbar with roving focus."),
       page("tabs", "Tabs", "ti ti-folders", "Accessible controlled peer views with compositional or data-driven items."),
@@ -207,7 +231,7 @@ const portableSections = [
         "page-title",
         "PageTitle",
         "ti ti-chevron-left",
-        "A page title with its way up: a back link, or a path whose middle collapses only when it does not fit.",
+        "A page title with its way up, and Breadcrumbs for a folder path inside a dialog or panel.",
       ),
       page(
         "resize-separator",
@@ -229,13 +253,19 @@ const portableSections = [
       ),
       page("tab-bar", "TabBar", "ti ti-layout-navbar", "Bottom navigation between a phone app's top-level pages."),
       page("panel-dialog", "PanelDialog", "ti ti-app-window", "Contained or floating composition for complex editors."),
-      page("floating-window", "FloatingWindow", "ti ti-window", "Movable and resizable utility content with mobile fallback."),
+      page(
+        "floating-window",
+        "FloatingWindow",
+        "ti ti-window",
+        "Movable, resizable windows that minimize to a bar, maximize over a scrim, and are a sheet on a phone.",
+      ),
       page(
         "anchored-popover",
         "AnchoredPopover",
         "ti ti-message-2",
         "A card anchored to a control that keeps its side while open and is a bottom sheet on a phone.",
       ),
+      page("person-popover", "PersonPopover", "ti ti-id-badge-2", "A card about one person with contact rows, a list, and actions."),
     ],
   },
   {
@@ -251,12 +281,24 @@ const portableSections = [
         "Color style guidelines: when color carries meaning, the app color of a selected row, view, or filter, and what stays blue or neutral.",
       ),
       page(
+        "elevation",
+        "Layers and shadows",
+        "ti ti-stack-2",
+        "Four layers, one rule: content cards in the main content are islands with a soft shadow; lists, grids, panels, and controls stay flat.",
+      ),
+      page(
         "base-stylesheet",
         "Base stylesheet",
         "ti ti-file-type-css",
         "Classless styles that make a plain HTML page look like the components in light and dark.",
       ),
       page("paper", "Paper", "ti ti-square", "Neutral semantic grouping for application-owned content."),
+      page(
+        "section",
+        "Section and Field",
+        "ti ti-layout-rows",
+        "One topic per card on a page, flat in a panel: named tones, a restricted marker, parts, states, and label-value fields.",
+      ),
       page("empty-states", "Empty states", "ti ti-box-off", "Compact and panel placeholders plus route-level not-found states."),
       page(
         "cards",
@@ -293,6 +335,12 @@ const portableSections = [
       page("moved-hint", "MovedHint", "ti ti-arrow-move-right", "A one-time anchored hint to a familiar path’s new place."),
       page("tooltip", "Tooltip", "ti ti-message", "Concise accessible hints with viewport-aware positioning."),
       page(
+        "hover-card",
+        "HoverCard",
+        "ti ti-message-2",
+        "A larger hint with a path, facts, or a small graphic beside its control; a sheet on a phone.",
+      ),
+      page(
         "hover-preview",
         "HoverPreview",
         "ti ti-id-badge-2",
@@ -308,10 +356,17 @@ const portableSections = [
     icon: "ti ti-file-description",
     pages: [
       page("map-view", "MapView", "ti ti-map", "Server-rendered places and routes with a progressively loaded map image."),
+      page(
+        "map-dialog",
+        "MapTile and MapDialog",
+        "ti ti-map-2",
+        "A still map tile that opens the full map with list, details and navigation.",
+      ),
       page("kbd", "Kbd", "ti ti-keyboard", "Accessible platform and locale aware shortcut caps."),
       page("label-chip", "LabelChip", "ti ti-tag", "Control names inside running text."),
       page("match-text", "MatchText", "ti ti-highlight", "Search matches marked in a result's name or path."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
+      page("progress-path", "ProgressPath", "ti ti-route", "The stages of one thing in order, each with a word and a day."),
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
       page("money", "Money", "ti ti-coin", "Amounts that show their direction, turquoise in and violet out, and balance rows."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),
@@ -329,7 +384,13 @@ const portableSections = [
         "virtual-feed",
         "VirtualFeed",
         "ti ti-timeline-event-text",
-        "Long feeds that load at both ends, stay at the end, and keep the reading position to the pixel.",
+        "Long feeds and work lists that load as they scroll, keep the reading position to the pixel, and keep group headings in view.",
+      ),
+      page(
+        "load-more",
+        "LoadMore",
+        "ti ti-arrow-bar-to-down",
+        "The edge of a list that loads more by itself, with a button, the busy state, and Try again in one steady row.",
       ),
       page(
         "message-rows",
@@ -438,9 +499,6 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
-/** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 187;
-
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
     id: section.id,
@@ -479,6 +537,14 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  resolvePeriod: "Server-side PeriodPicker resolution to inclusive days; documented on the PeriodPicker page (/en/ui/input/period-picker).",
+  periodInstants: "Query bounds [from, to) for a resolved period in a time zone; documented on the PeriodPicker page.",
+  parsePeriodValue: "Validation of stored or URL period values; documented on the PeriodPicker page.",
+  periodContext: "Today and week start a period preset resolves against; documented on the PeriodPicker page.",
+  periodDayCount: "Calendar day count of an inclusive period; documented on the PeriodPicker page.",
+  formatPeriodDays: "The preset day label the PeriodPicker trigger shows; documented on the PeriodPicker page.",
+  formatPeriodRange: "The explicit range label the PeriodPicker trigger shows; documented on the PeriodPicker page.",
+  isPeriodDay: "Real calendar day key check used by parsePeriodValue; documented on the PeriodPicker page.",
   filterRows: "Search helper for complete table rows; documented in Search, groups, and order on the DataTable page.",
   sortRows: "Order helper for complete table rows by a typed column; documented on the DataTable page.",
   DETAILS_ICON: "The one Details icon class that DetailsToggle and AppWorkspace.Detail show; documented on the AppWorkspace page.",
@@ -491,6 +557,10 @@ export const documentedOnlyUiCatalogExports = {
   mapAttribution: "Plain attribution data for custom map credits; documented on the MapView page.",
   mapStyle: "OpenMapTiles style builder requiring host tile and glyph templates; documented on the MapView page.",
   MapViewFrame: "Server-only geometry fallback; documented on the MapView page.",
+  geoNavigationHref: "Navigation link into the device's maps app; documented on the MapTile and MapDialog page.",
+  geoNavigationPlatform: "Platform choice for geoNavigationHref; documented on the MapTile and MapDialog page.",
+  mapDialogOptions: "dialogCore options MapTile opens MapDialog with; documented on the MapTile and MapDialog page.",
+  MAP_DIALOG_PARAM: "The URL parameter that names an open map dialog; documented on the MapTile and MapDialog page.",
   MapSnapshotError: "Typed browser capture failures; documented with MapView.snapshot on the MapView page.",
   MAP_SNAPSHOT_MAX_PIXELS: "Decoded pixel budget for browser map capture; documented on the MapView page.",
   truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",
@@ -587,6 +657,7 @@ export const documentedOnlyUiCatalogExports = {
   sameSettingValue: "Documented Settings dirty-state helper.",
   scanMarkdownInfoBlock: "Documented MarkdownView info-block grammar for renderers that scan Markdown themselves.",
   shouldCollapseAppWorkspaceSidebar: "Documented AppWorkspace responsive-state helper.",
+  createDelayedLoading: "Documented Skeleton helper that shows loading shapes only after a delay and keeps them for a minimum.",
   suppressTextSelection: "Documented AppWorkspace helper that keeps a custom pointer drag from selecting page text.",
   syncThemeColor: "Documented MobileShell status-bar helper that changes the live document.",
   PAGE_TRAIL_EVENT: "Documented PageTitle window event that follows each published page trail.",

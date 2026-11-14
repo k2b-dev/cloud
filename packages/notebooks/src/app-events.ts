@@ -5,6 +5,14 @@ import { z } from "zod";
 import type { notebooksCapabilities } from "./capabilities";
 
 export const notebooksEvents = {
+  "comment.created": {
+    version: 1,
+    title: "Page discussion post created",
+    description: "A post was added to a note's page discussion.",
+    subject: "comment",
+    place: "notebook",
+    schema: z.strictObject({}),
+  },
   "notebook.created": {
     version: 1,
     title: "Notebook created",

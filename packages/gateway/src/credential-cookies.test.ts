@@ -16,8 +16,11 @@ const nonCredentials = new Map([
   ["pwa_ended", "Display marker telling the phone to discard local drafts."],
   ["pwa_last_address", "Last address label shown by the mobile app."],
   ["cloud_mail_workspace", "Mail layout and pinned mailbox preferences."],
+  ["cloud_shared_workstation", "Marks the browser as a shared workstation (development name); the server holds each session's limit."],
+  ["__Host-cloud_shared_workstation", "Marks the browser as a shared workstation; the server holds each session's limit."],
   ["app-access-fixture", "Identifies in-memory state in the browser UI fixture."],
   ["mail_fixture_focus_notice", "Mail's browser fixture marks its notice as closed; the fixture server only."],
+  ["mail_fixture_workspace", "Mail's browser fixture keeps the list share and seen hints; the fixture server only."],
 ]);
 const sources = new Map<string, ts.SourceFile>();
 const sourceAt = (path: string): ts.SourceFile => {

@@ -1,4 +1,4 @@
-import { DetailPanel, NumberInput, Select, TextInput } from "@k2b/ui";
+import { DetailPanel, NumberInput, Section, Select, TextInput } from "@k2b/ui";
 import type { CustomAppBlock } from "../../../custom-apps/contracts";
 import { type CustomAppBuilderText, useCustomAppBuilderMessages } from "./builder-messages";
 
@@ -11,12 +11,7 @@ export const CustomAppChartEditor = (props: { block: ChartBlock; update: (update
   const text = (value: CustomAppBuilderText) => messages().text({ value });
   return (
     <DetailPanel.Group label={text("Chart settings")}>
-      <DetailPanel.Section
-        title={text("Chart")}
-        description={text("Choose the chart presentation and result limit.")}
-        collapsible
-        defaultOpen
-      >
+      <Section title={text("Chart")} description={text("Choose the chart presentation and result limit.")} collapsible defaultOpen>
         <div class="flex flex-col gap-4">
           <TextInput
             label={text("Subtitle")}
@@ -47,8 +42,8 @@ export const CustomAppChartEditor = (props: { block: ChartBlock; update: (update
             }}
           />
         </div>
-      </DetailPanel.Section>
-      <DetailPanel.Section
+      </Section>
+      <Section
         title={text("Appearance")}
         description={text("Optional axis labels and value formatting.")}
         collapsible
@@ -72,7 +67,7 @@ export const CustomAppChartEditor = (props: { block: ChartBlock; update: (update
             onChange={(valueFormat) => props.update((block) => ({ ...block, valueFormat }))}
           />
         </div>
-      </DetailPanel.Section>
+      </Section>
     </DetailPanel.Group>
   );
 };

@@ -145,6 +145,44 @@ describe("ChoiceSlider behavior", () => {
     expect(view.changes).toEqual([]);
   });
 
+  test("draws one rail with a fill that ends at the thumb", async () => {
+    const view = await mount("balanced");
+    const track = view.slider()!;
+    const fill = track.querySelector<HTMLElement>(".k2b-choice-slider__fill");
+    expect(track.querySelectorAll(".k2b-choice-slider__rail")).toHaveLength(1);
+    expect(track.querySelector(".k2b-choice-slider__segment")).toBeNull();
+    expect(fill?.hidden).toBe(false);
+    // Fill and thumb read the same position, so the fill always ends at the thumb's centre.
+    expect(track.style.getPropertyValue("--k2b-choice-slider-at")).toBe(`${(1 / 3) * 100}%`);
+    key(track, "End");
+    expect(track.style.getPropertyValue("--k2b-choice-slider-at")).toBe("100%");
+    const stops = [...track.querySelectorAll(".k2b-choice-slider__stop")];
+    expect(stops.map((stop) => [stop.hasAttribute("data-on"), stop.hasAttribute("data-current")])).toEqual([
+      [true, false],
+      [true, false],
+      [true, false],
+      [false, true],
+    ]);
+  });
+
+  test("marks the track while a drag previews a stop, and only then", async () => {
+    const view = await mount("balanced");
+    expect(view.slider()?.hasAttribute("data-dragging")).toBe(false);
+    view.pointer("pointerdown");
+    expect(view.slider()?.hasAttribute("data-dragging")).toBe(true);
+    view.pointer("pointerup");
+    expect(view.slider()?.hasAttribute("data-dragging")).toBe(false);
+    view.pointer("pointerdown");
+    view.pointer("pointercancel");
+    expect(view.slider()?.hasAttribute("data-dragging")).toBe(false);
+  });
+
+  test("a choice outside the stops hides the fill with the thumb", async () => {
+    const view = await mount(null);
+    expect(view.slider()?.querySelector<HTMLElement>(".k2b-choice-slider__fill")?.hidden).toBe(true);
+    expect(view.slider()?.querySelectorAll("[data-on]")).toHaveLength(0);
+  });
+
   test("one stop renders the line without a track", async () => {
     const view = await mount("fast", options.slice(0, 1));
     expect(view.slider()).toBeNull();

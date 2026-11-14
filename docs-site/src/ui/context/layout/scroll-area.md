@@ -70,6 +70,23 @@ change, such as those scroll margins, calls `measureScrollFade(element)` from
 `DetailPanel` also integrates its gutter with the surrounding workspace inset;
 that panel-specific geometry is not part of `ScrollArea`.
 
+## Quiet scrollbars
+
+Add the `k2b-quiet-scrollbar` class when many scrollers sit side by side, such
+as the columns of a board, and permanent scrollbars would make the view
+busy. The class works on a `ScrollArea` and on any other element that scrolls.
+With a mouse, the scrollbar stays invisible until the pointer is over the
+scroller or the keyboard focus is inside it. Only its color changes, so the
+content never moves. Touch devices keep their native scrollbars, and forced
+colors mode always shows them. The workspace sidebar and the chat timeline
+already behave this way.
+
+```tsx
+<ScrollArea class="k2b-quiet-scrollbar">
+  <BoardColumnCards />
+</ScrollArea>
+```
+
 ## Horizontal strips
 
 Use `orientation="horizontal"` for a bounded row of wider content. It uses

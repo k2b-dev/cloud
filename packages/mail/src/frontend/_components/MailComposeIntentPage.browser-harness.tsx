@@ -1,6 +1,6 @@
 import { render } from "solid-js/web";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
-import type { MailDraftSeed } from "../../contracts";
+import type { MailDraft, MailDraftSeed } from "../../contracts";
 import MailComposeIntentPage from "./MailComposeIntentPage.island";
 
 declare global {
@@ -20,6 +20,7 @@ const seed: MailDraftSeed = {
   derivedFromMessageId: null,
   derivationKind: null,
   content: {
+    quoteSource: null,
     senderIdentityId: "Send01",
     to: [{ name: null, address: "ada@example.test" }],
     cc: [],
@@ -32,8 +33,33 @@ const seed: MailDraftSeed = {
     requestReadReceipt: false,
   },
   attachments: [],
-  origin: { kind: "compose", input: { senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "", body: "" } },
+  origin: { kind: "compose", input: { quoteSource: null, senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "", body: "" } },
   createdAt: "2026-11-06T10:00:00.000Z",
+};
+
+/** The draft the server materializes from the seed; Mail then opens it as a window (`?draft=`). */
+const draft: MailDraft = {
+  ...seed.content,
+  id: "Drf0New1",
+  mailboxId: seed.mailboxId,
+  conversationId: null,
+  intent: "new",
+  sourceMessageId: null,
+  derivedFromMessageId: null,
+  derivationKind: null,
+  attachments: [],
+  suggestion: false,
+  suggestedBy: null,
+  createdBy: { kind: "user", userId: "Usr001" },
+  lastEditedBy: { kind: "user", userId: "Usr001" },
+  lastEditedByDisplayName: "Reader",
+  recoveryCopyCount: 0,
+  revision: 1,
+  state: "draft",
+  deliveryClass: "normal",
+  signatureTemplateId: null,
+  createdAt: seed.createdAt,
+  updatedAt: seed.createdAt,
 };
 
 window.seedRequests = [];
@@ -44,6 +70,7 @@ const realFetch = window.fetch.bind(window);
 window.fetch = Object.assign(
   async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+    if (url.pathname === "/api/mail/mailboxes/mail01/draft-seeds/materialize") return Response.json(draft);
     if (url.pathname !== "/api/mail/mailboxes/mail01/draft-seeds") return realFetch(input, init);
     window.seedRequests.push(await new Request(input, init).json());
     await answered;

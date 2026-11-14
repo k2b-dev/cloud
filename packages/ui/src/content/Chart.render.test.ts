@@ -279,3 +279,13 @@ describe("Line chart top legend", () => {
     expect(render({ kind: "line", series: [], legend: true, legendPlacement: "top-start" })).not.toContain("k2b-chart__legend-item");
   });
 });
+
+test("stat sparklines keep the generic Chart markup byte for byte without the catalog dispatcher", async () => {
+  const { ChartSparkline } = await import("./ChartSparkline");
+  for (const data of [[], [0], [1, 3, 2], [-3, 0, 8], [0.001, 0.003, 0.002]]) {
+    const props = { data, showLast: true, class: "k2b-stat-cell__trend", labels: { interactiveChart: "Requests" } };
+    const generic = renderToString(() => createComponent(Chart, { kind: "sparkline", ...props }));
+    const dedicated = renderToString(() => createComponent(ChartSparkline, props));
+    expect(dedicated).toBe(generic);
+  }
+});

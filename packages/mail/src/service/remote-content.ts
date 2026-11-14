@@ -47,9 +47,21 @@ export type RemoteContentRule = {
   createdAt: string;
 };
 
+/** One of the reader's own rules that allows a message's remote images. */
+export type RemoteContentAllowRule = {
+  id: string;
+  scope: RemoteContentRuleScope;
+  value: string;
+};
+
 export type MessageRemoteContent = {
   imageIds: string[];
   allowedByRule: boolean;
+  /**
+   * The reader's own rules in this mailbox that together allow the images, sender rules first; empty when no rule
+   * allows them. Removing all of them stops loading the images automatically.
+   */
+  allowRules: RemoteContentAllowRule[];
   sender: string | null;
   domain: string | null;
 };
@@ -189,6 +201,25 @@ export const deleteRemoteContentRule = async (params: {
 
 const senderDomain = (sender: string): string | null => sender.slice(sender.lastIndexOf("@") + 1) || null;
 
+/**
+ * The rules that allow remote images for a message from `senders` (normalized addresses): each sender needs its own
+ * sender rule or a rule for its domain. Returns every rule that matches when all senders are covered, sender rules
+ * first, and none otherwise, so revoking the returned rules always stops the automatic loading.
+ */
+export const matchRemoteContentRules = (
+  senders: readonly string[],
+  rules: readonly { id: string; scope: RemoteContentRuleScope; value: string }[],
+): RemoteContentAllowRule[] => {
+  const matches = new Map<string, RemoteContentAllowRule>();
+  for (const sender of senders) {
+    const domain = senderDomain(sender);
+    const matching = rules.filter((rule) => (rule.scope === "sender" ? rule.value === sender : rule.value === domain));
+    if (matching.length === 0) return [];
+    for (const rule of matching) matches.set(rule.id, { id: rule.id, scope: rule.scope, value: rule.value });
+  }
+  return [...matches.values()].sort((left, right) => (left.scope === right.scope ? 0 : left.scope === "sender" ? -1 : 1));
+};
+
 export const resolveMessagesRemoteContent = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -215,19 +246,18 @@ export const resolveMessagesRemoteContent = async (params: {
     current.push(image.id);
     imagesByMessage.set(image.message_id, current);
   }
+  // Only the reader's own rules in this mailbox: another reader's choices never show or apply here.
   const rules = await listRulesForPrincipal(params.mailboxId, personalPrincipal(params.context));
-  const senders = new Set(rules.filter((rule) => rule.scope === "sender").map((rule) => rule.value));
-  const domains = new Set(rules.filter((rule) => rule.scope === "domain").map((rule) => rule.value));
   for (const message of params.messages) {
     const normalizedSenders = [
       ...new Set(message.from.map((address) => normalizeEmailAddress(address.address)).filter((value) => value !== null)),
     ];
-    const allowedByRule =
-      normalizedSenders.length > 0 && normalizedSenders.every((sender) => senders.has(sender) || domains.has(senderDomain(sender) ?? ""));
+    const allowRules = matchRemoteContentRules(normalizedSenders, rules);
     const sender = normalizedSenders.length === 1 ? normalizedSenders[0]! : null;
     result.set(message.id, {
       imageIds: imagesByMessage.get(message.id) ?? [],
-      allowedByRule,
+      allowedByRule: allowRules.length > 0,
+      allowRules,
       sender,
       domain: sender ? senderDomain(sender) : null,
     });

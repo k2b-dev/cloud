@@ -30,6 +30,7 @@ const context = (permission: MailboxSettingsContext["permission"], options: Rend
     searchBackend: "auto",
     automaticReplyManagementPermission: "admin",
     accessScope: "mailbox",
+    draftEditMode: "lock",
     composeSafety: { internalDomains: ["example.test"], largeRecipientThreshold: 20 },
     createdAt: now,
     updatedAt: now,

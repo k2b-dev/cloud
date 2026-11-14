@@ -11,7 +11,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
 import { checkFixtureSessionOrigin } from "../../../../../../../scripts/fixtures/session-origin";
-import { browserName, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
@@ -425,7 +425,7 @@ const boxes = (page: Page) =>
       }),
   );
 /** The Properties section, the first in the panel body. */
-const PROPERTY_ROWS = ".k2b-detail-panel__body > section.k2b-detail-panel__section:first-of-type .k2b-description-list__item";
+const PROPERTY_ROWS = ".k2b-detail-panel__body > section.k2b-section:first-of-type .k2b-description-list__item";
 const planningRow = (page: Page, term: string) =>
   page.locator(PROPERTY_ROWS, { has: page.locator("dt", { hasText: new RegExp(`^${term}$`) }) });
 const clickLabel = async (page: Page, term: string) => {
@@ -737,13 +737,11 @@ describe("Spaces item detail in a browser", () => {
           const outline = await page.evaluate(() => {
             const visible = (selector: string) =>
               Array.from(window.document.querySelectorAll(selector)).filter((element) => !element.closest("[hidden]"));
-            const headings = visible(
-              ".k2b-detail-panel__section-header h3, .k2b-detail-panel__section-summary .k2b-detail-panel__section-title, .k2b-discussion h3",
-            );
+            const headings = visible(".k2b-section__title");
             return {
               edges: headings.map((element) => Math.round(element.getBoundingClientRect().left)),
-              sections: visible(".k2b-detail-panel__section, .k2b-discussion").length,
-              icons: visible(".k2b-detail-panel__section-icon i, .k2b-discussion__icon i").length,
+              sections: visible(".k2b-section").length,
+              icons: visible(".k2b-section__icon i").length,
             };
           });
           expect(outline.edges.length).toBeGreaterThan(4);
@@ -763,7 +761,7 @@ describe("Spaces item detail in a browser", () => {
           const remove = blocker.getByRole("button", { name: "Blockierung durch Rename the computers entfernen" });
           if (!view.touch) {
             expect(await remove.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
-            await blocker.hover();
+            await hoverInPlace(blocker);
             expect(await remove.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
             expect(await boxes(page)).toEqual(rest);
           } else expect(await remove.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
@@ -952,7 +950,7 @@ describe("Spaces item detail in a browser", () => {
       expect(await page.locator(".spaces-dependency__remove").count()).toBe(0);
       expect(await page.getByText("Rename the computers").count()).toBe(1);
       const rest = await boxes(page);
-      await planningRow(page, "Priority").hover();
+      await hoverInPlace(planningRow(page, "Priority"));
       expect(await boxes(page)).toEqual(rest);
     } finally {
       await page.context().close();
@@ -962,7 +960,7 @@ describe("Spaces item detail in a browser", () => {
     ["desktop", desktop, "en"],
     ["phone", phone, "de"],
   ] as const)
-    test(`${name}: a video attachment shows its first frame and plays in a dialog that fits the whole reel`, async () => {
+    test(`${name}: a video attachment shows its first frame and plays in the Lightbox, the whole reel in view`, async () => {
       rangeRequests.length = 0;
       const page = await open(view, { locale, attachments: [reelAttachment] });
       try {
@@ -984,43 +982,43 @@ describe("Spaces item detail in a browser", () => {
         ).toBe(1);
 
         await tile.click();
-        await page.waitForSelector(".spaces-video-dialog[open] .k2b-video-player__video");
-        await page.waitForFunction(() => (document.querySelector(".spaces-video-dialog video") as HTMLVideoElement).readyState >= 1);
-        expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Reel for approval.webm");
-        const body = (await page.locator(".spaces-video-dialog .k2b-panel-dialog__body").boundingBox())!;
-        const frame = (await page.locator(".spaces-video-dialog .k2b-video-player").boundingBox())!;
-        // The player fills the body: a portrait reel shows at the body's full height, uncropped.
-        expect(frame.width).toBeGreaterThan(body.width - 2 * 24 - 2);
-        expect(frame.height).toBeGreaterThan(body.height - 24 - 4 - 2);
-        expect(frame.y + frame.height).toBeLessThanOrEqual(body.y + body.height);
+        await page.waitForSelector("dialog.k2b-lightbox[open] .k2b-video-player__video");
+        await page.waitForFunction(() => (document.querySelector(".k2b-lightbox video") as HTMLVideoElement).readyState >= 1);
+        // The player has the focus, so Space and the arrows work in the video at once.
+        await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Reel for approval.webm");
+        const stage = (await page.locator(".k2b-lightbox__stage").boundingBox())!;
+        const frame = (await page.locator(".k2b-lightbox .k2b-video-player").boundingBox())!;
+        // The whole reel stays in view on the stage.
+        expect(frame.y).toBeGreaterThanOrEqual(stage.y);
+        expect(frame.y + frame.height).toBeLessThanOrEqual(stage.y + stage.height + 1);
         if (view === phone) {
-          const dialog = (await page.locator(".spaces-video-dialog").boundingBox())!;
+          const dialog = (await page.locator("dialog.k2b-lightbox").boundingBox())!;
           expect([dialog.x, dialog.y, dialog.width, dialog.height]).toEqual([0, 0, 390, 844]);
         }
-        const download = page.locator(".spaces-video-dialog .k2b-panel-dialog__actions a");
+        const download = page.locator(".k2b-lightbox__actions a[download]");
         expect(await download.getAttribute("href")).toBe("/api/spaces/Space1/items/Item01/attachments/Reel01/content?download=true");
         expect(rangeRequests.some((range) => range !== null)).toBe(true);
         // The reel plays: play() resolves once it does. Muted, it needs no user gesture in either engine.
-        await page.$eval(".spaces-video-dialog video", (element) => {
+        await page.$eval(".k2b-lightbox video", (element) => {
           const video = element as HTMLVideoElement;
           video.muted = true;
           return video.play();
         });
         await page.keyboard.press("Escape");
-        await page.waitForSelector(".spaces-video-dialog", { state: "detached" });
+        await page.waitForSelector("dialog.k2b-lightbox", { state: "detached" });
       } finally {
         await page.context().close();
       }
     }, 30_000);
 
-  test("a video the browser cannot play announces its fallback and keeps focus in the dialog", async () => {
+  test("a video the browser cannot play announces its fallback and keeps focus in the Lightbox", async () => {
     const page = await open(desktop, { locale: "en", attachments: [brokenAttachment] });
     try {
       await page.getByRole("button", { name: "Broken.mov", exact: true }).click();
-      await page.waitForSelector(".spaces-video-dialog .k2b-video-player__fallback[role=alert]");
-      expect(await page.locator(".spaces-video-dialog .k2b-video-player__fallback").innerText()).toContain("This video cannot play here");
-      // Focus started on the video, which the fallback replaced; it must not drop to the page behind the dialog.
-      expect(await page.evaluate(() => document.querySelector(".spaces-video-dialog")!.contains(document.activeElement))).toBe(true);
+      await page.waitForSelector(".k2b-lightbox .k2b-video-player__fallback[role=alert]");
+      expect(await page.locator(".k2b-lightbox .k2b-video-player__fallback").innerText()).toContain("This video cannot play here");
+      // Focus started on the video, which the fallback replaced; it must not drop to the page behind the Lightbox.
+      expect(await page.evaluate(() => document.querySelector("dialog.k2b-lightbox")!.contains(document.activeElement))).toBe(true);
     } finally {
       await page.context().close();
     }

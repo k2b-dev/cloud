@@ -4,7 +4,7 @@ import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { RenderErrorBoundary } from "../internal/render-error";
 import { resolveUiMessages } from "../intl/messages";
-import { isPointInsideToast } from "./toast";
+import { isPointInsideToast } from "./toast-hit";
 
 export type DialogClose<T> = (result?: T) => void;
 
@@ -29,6 +29,12 @@ export type OpenDialogOptions = {
    * A traversal that `@k2b/ssr/nav` hides from popstate listeners reaches this core through `ssr:nav-popstate`.
    */
   history?: boolean;
+  /**
+   * With `history`, the URL of the dialog's own entry, such as the page URL with a query parameter that names the
+   * dialog. Closing returns to the entry below with its own URL. A reload on that entry keeps the URL; opening a
+   * dialog with the same `historyUrl` then resumes the entry instead of adding another above it.
+   */
+  historyUrl?: string;
 };
 
 export type DialogRender<T> = (
@@ -171,6 +177,8 @@ export const createDialogCore = () => {
   /** How often islands were disposed, so a dialog that waits to open notices that a content swap happened meanwhile. */
   let disposals = 0;
   const ownMarker = (marker: unknown): marker is number => typeof marker === "number" && issued.has(marker);
+  /** The address of each own entry that a dialog named with `historyUrl`. */
+  const ownUrls = new Map<number, string>();
   let seen: ReturnType<typeof historySnapshot> | undefined;
   let traversalFrom: { href: string; marker: unknown } | undefined;
   let syntheticFrom: { href: string; marker: unknown } | undefined;
@@ -239,7 +247,10 @@ export const createDialogCore = () => {
     resolveReturning = undefined;
     try {
       const marker = historyMarker();
-      if (from && from.href === location.href && from.marker !== marker && (ownMarker(from.marker) || ownMarker(marker))) {
+      // A dialog's own address (`historyUrl`) changes only between its entry and the page: still a dialog-only traversal.
+      const ownAddress = (entry: unknown, href: string) => ownMarker(entry) && ownUrls.get(entry) === href;
+      const sameAddress = from && (from.href === location.href || ownAddress(from.marker, from.href) || ownAddress(marker, location.href));
+      if (from && sameAddress && from.marker !== marker && (ownMarker(from.marker) || ownMarker(marker))) {
         event.stopImmediatePropagation();
       }
       // Own entries are ordered by id. A retired entry reached by Forward stays tracked, so closing the dialogs
@@ -311,18 +322,23 @@ export const createDialogCore = () => {
   // created before islands mount and add their navigation listeners, so it listens from the start.
   if (typeof window !== "undefined") listen();
 
-  const pushHistory = (entry: HistoryEntry) => {
+  const pushHistory = (entry: HistoryEntry, url?: string) => {
     listen();
     const previous = historyRecord();
     // A reload or Forward never brings back a dialog or its sensitive transient state.
-    if (historyIds.length === 0 && previous[HISTORY_MARKER] !== undefined) {
-      delete previous[HISTORY_MARKER];
-      history.replaceState(previous, "");
-    }
+    const stale = historyIds.length === 0 && previous[HISTORY_MARKER] !== undefined;
+    if (stale) delete previous[HISTORY_MARKER];
     entry.historyId = ++nextHistoryId;
     issued.add(entry.historyId);
     historyIds.push(entry.historyId);
-    history.pushState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "");
+    // Only a dialog that names itself in the URL resumes the entry a reload left behind; the page entry stays below.
+    const resume = stale && url !== undefined && new URL(url, location.href).href === location.href;
+    if (resume) history.replaceState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "");
+    else {
+      if (stale) history.replaceState(previous, "");
+      history.pushState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "", url);
+    }
+    if (url !== undefined) ownUrls.set(entry.historyId, location.href);
     seen = historySnapshot();
   };
 
@@ -611,7 +627,7 @@ export const createDialogCore = () => {
         popTop(result);
       };
 
-      if (options.history) pushHistory(entry);
+      if (options.history) pushHistory(entry, options.historyUrl);
       state.stack.push(entry);
       try {
         entry.dispose = render(

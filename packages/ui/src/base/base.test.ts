@@ -55,6 +55,7 @@ describe("@k2b/ui base stylesheet", () => {
     const missing = [...used].filter(
       (name) =>
         !defined.has(name) &&
+        !/^--k2b-line-(label-room|axis-fraction|axis-expand)$/.test(name) &&
         !/^--k2b-chart-(width|height|inspection-(color|x|y)|plot-(left|right|top|bottom)|band-(left|top|width|height))$/.test(name),
     );
     expect(missing).toEqual([]);

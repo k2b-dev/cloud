@@ -442,6 +442,23 @@ export const migrate = async (): Promise<void> => {
     ON spaces.items USING GIST (tstzrange(starts_at, ends_at, '[]'))
     WHERE starts_at IS NOT NULL AND ends_at IS NOT NULL AND completed_at IS NULL
   `.simple();
+  // Durable emission receipts: a due value fires once even after moving away and back to it.
+  await sql`CREATE TABLE IF NOT EXISTS spaces.item_due_events (
+    item_id UUID NOT NULL REFERENCES spaces.items(id) ON DELETE CASCADE,
+    due_value TEXT NOT NULL,
+    PRIMARY KEY (item_id, due_value)
+  )`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS spaces.app_event_sweep (
+    singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
+    last_swept_at TIMESTAMPTZ
+  )`.simple();
+  // Initialized by the first successful tick, never advanced by later ticks or restarts.
+  await sql`ALTER TABLE spaces.app_event_sweep ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ`.simple();
+  await sql`INSERT INTO spaces.app_event_sweep(singleton) VALUES (true) ON CONFLICT DO NOTHING`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_items_due_timed_events ON spaces.items(deadline, id)
+    WHERE completed_at IS NULL AND (starts_at IS NULL OR ends_at IS NULL) AND deadline IS NOT NULL`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_items_due_date_events ON spaces.items(deadline_date, id)
+    WHERE completed_at IS NULL AND (starts_at IS NULL OR ends_at IS NULL) AND deadline_date IS NOT NULL`.simple();
   console.log("  ✓ spaces.items table");
 
   await sql`

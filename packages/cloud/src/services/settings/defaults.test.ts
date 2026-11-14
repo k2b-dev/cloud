@@ -1,5 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_STORAGE_BUCKET_ID } from "../../contracts/storage-buckets";
 import { resolveSettingPresentation, toLegacySettingDefs, validateSettingValue } from "./defaults";
+
+test("storage_bucket defaults to default and validates normalized references without checking existence", () => {
+  const [definition] = toLegacySettingDefs({ "example.bucket": { kind: "storage_bucket" } });
+  if (!definition) throw new Error("Missing definition");
+  expect(definition.default).toBe(DEFAULT_STORAGE_BUCKET_ID);
+  expect(validateSettingValue(definition, " DEFAULT ")).toEqual({ ok: true, value: DEFAULT_STORAGE_BUCKET_ID });
+  expect(validateSettingValue(definition, " ABCDEF12-1234-5678-90AB-ABCDEF123456 ")).toEqual({
+    ok: true,
+    value: "abcdef12-1234-5678-90ab-abcdef123456",
+  });
+  for (const value of ["", "missing", "~default", null, 12, true]) expect(validateSettingValue(definition, value).ok).toBe(false);
+});
 
 describe("setting presentation", () => {
   test("inherits the app base locale and resolves regional overlays", () => {

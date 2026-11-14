@@ -71,6 +71,7 @@ import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
 import { revokeChatWebsite } from "../artifacts/approval-preferences";
 import { createCodeApprovals } from "../artifacts/CapabilityApproval";
 import { ChatPresentation } from "../artifacts/ChatPresentation";
+import { scheduleChartPreparation } from "../artifacts/html/prepare-assets";
 import { artifactMessages } from "../artifacts/messages";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
 import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
@@ -368,6 +369,7 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
   onMount(() => {
+    onCleanup(scheduleChartPreparation("/api/assistant/artifacts/runtime"));
     const subscription = followAssistantLive(liveHub, {
       cursor: props.initialLiveCursor,
       failing: (failing) => setLiveError(failing ? t().liveRetry : null),
@@ -735,10 +737,17 @@ export default function AssistantWorkspace(props: Props) {
       setPanelStorageFailed(true);
     }
   };
+  // The draft the composer shows. When the new chat's own save creates it, the draft stays the same one there, so an
+  // open command list and its caret stay; a send or an app command moves on with the composer's own `follow()` path.
+  const [composerIdentities, setComposerIdentities] = createSignal<Record<string, string>>({ __new__: "__new__:0" });
+  let newComposerIdentities = 0;
+  const composerIdentity = (key: string) => composerIdentities()[key] ?? key;
   const migrateNewComposer = (conversation: AiConversation) => {
     const from = "__new__";
     const local = sessions.get(from);
     if (!local?.dirty) return;
+    if (draftCreation() && !pendingCommandSaves() && !composerSubmitting())
+      setComposerIdentities((all) => ({ ...all, [conversation.id]: all[from] ?? from, [from]: `${from}:${++newComposerIdentities}` }));
     // The replay may contain another tab's newer draft. Keep the revision this local text was based on.
     sessions.set(conversation.id, local);
     setComposerDraft(conversation.id, composerDraft(from));
@@ -762,15 +771,29 @@ export default function AssistantWorkspace(props: Props) {
         setCreationVersion((version) => version + 1);
       }
       setRejectedCreations((keys) => new Set([...keys].filter((item) => item !== key)));
-      const conversation = await chat.createConversation(request);
+      // A replay can find a conversation already edited in this workspace. Never replace that session.
+      const collides = (conversation: AiConversation) => {
+        const existing = sessions.get(conversation.id);
+        return Boolean(existing && (existing.dirty || existing.conflict || existing.saving));
+      };
+      // The new draft moves into the chat in the same update that opens it, so the field never shows the chat without it.
+      let moved = false;
+      const conversation = await chat.createConversation(
+        request,
+        projectId
+          ? undefined
+          : (created) => {
+              if (collides(created)) return;
+              migrateNewComposer(created);
+              moved = true;
+            },
+      );
       if (!conversation && [400, 401, 403, 404, 409, 413, 422].includes(chat.creationErrorStatus() ?? 0)) {
         creationRequests.delete(key);
         setRejectedCreations((keys) => new Set([...keys, key]));
         setCreationVersion((version) => version + 1);
       }
-      const existing = conversation && !projectId ? sessions.get(conversation.id) : undefined;
-      if (existing && (existing.dirty || existing.conflict || existing.saving)) {
-        // A replay can find a conversation already edited in this workspace. Never replace that session.
+      if (conversation && !projectId && !moved && collides(conversation)) {
         chat.setError(t().panelCreateDraftCollision);
         return null;
       }
@@ -799,10 +822,24 @@ export default function AssistantWorkspace(props: Props) {
       return conversation;
     },
   });
+  // The draft's own save creates its chat in the background. Meanwhile the field stays editable, and whatever needs
+  // the new chat, such as a send or an app command, continues in that one.
+  const [draftCreation, setDraftCreation] = createSignal<Promise<AiConversation | null>>();
   const createConversation = async (focus: boolean, projectId?: string, shouldNavigate: boolean | (() => boolean) = true) => {
+    const drafting = projectId ? undefined : draftCreation();
+    if (drafting) return drafting;
     if (newConversation.loading() || composerPicking() > 0) return null;
     await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
     return newConversation.data();
+  };
+  const createDraftConversation = () => {
+    let creation!: Promise<AiConversation | null>;
+    // One update: the field never sees the creation without knowing it is the draft's.
+    batch(() => {
+      creation = createConversation(false);
+      setDraftCreation(() => creation);
+    });
+    return creation.finally(() => setDraftCreation(undefined));
   };
   type UnknownExit = { revisions: Record<string, number>; generations: Map<string, number>; creations: Map<string, string> };
   let confirmedUnknownExit: UnknownExit | undefined;
@@ -980,8 +1017,9 @@ export default function AssistantWorkspace(props: Props) {
       if (composerSessionKey() !== key || session(key).conflict) return;
       let conversationId = target;
       if (!conversationId) {
-        const created = await createConversation(false);
-        if (!created) return;
+        const created = await createDraftConversation();
+        // A send that started meanwhile took this draft along; it saves no older copy after it.
+        if (!created || composerSubmitting()) return;
         conversationId = created.id;
       }
       await saveComposer(conversationId, conversationId);
@@ -1054,7 +1092,7 @@ export default function AssistantWorkspace(props: Props) {
     () =>
       canUseComposer() &&
       !composerBusy() &&
-      !newConversation.loading() &&
+      (!newConversation.loading() || Boolean(draftCreation())) &&
       !chat.loadingConversation() &&
       !chat.running() &&
       !chat.activeTurn(),
@@ -2190,7 +2228,7 @@ export default function AssistantWorkspace(props: Props) {
               </Show>
             </>
           }
-          draftKey={sessionKey()}
+          draftKey={composerIdentity(sessionKey())}
           mentions={mentionsFor(sessionKey())}
           onMentionsChange={(mentions) => setMentionsFor(sessionKey(), mentions)}
           commandSections={assistantCommandSections(commandCopy(), appCommands().pending)}
@@ -2370,7 +2408,7 @@ export default function AssistantWorkspace(props: Props) {
             !canUseComposer() ||
             panelStorageFailed() ||
             submissionUnknown(sessionKey()) ||
-            (newConversation.loading() && !commandCreating()) ||
+            (newConversation.loading() && !commandCreating() && !draftCreation()) ||
             chat.loadingConversation()
           }
           state={

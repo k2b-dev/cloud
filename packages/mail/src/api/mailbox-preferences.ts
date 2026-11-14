@@ -4,7 +4,13 @@ import { ok } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { MAX_MAILBOX_PREFERENCES, ResourceShortIdSchema } from "../contracts";
+import {
+  MAX_MAILBOX_PREFERENCES,
+  mailWorkspacePreferenceChangeSchema,
+  mailWorkspacePreferenceSchema,
+  markMailWorkspaceHintSeenSchema,
+  ResourceShortIdSchema,
+} from "../contracts";
 import { mailDoneTodayCountsSchema, mailViewPreferenceChangeSchema, mailViewPreferenceSchema } from "../mail-view-preference";
 import { type MailRequestContext, mailboxPreferences } from "../service";
 import { getMailboxDoneTodayCounts } from "../service/done-today";
@@ -97,6 +103,65 @@ export default new Hono<MailApiContext>()
     v("json", mailViewPreferenceChangeSchema),
     async (c) =>
       respondPublic(c, mailboxPreferences.setMailboxViewPreference(requestContext(c), internalMailboxId(c), c.req.valid("json"))),
+  )
+  .get(
+    "/mailboxes/:mailboxId/workspace-preference",
+    describeRoute({
+      tags: ["Mail:Mailboxes"],
+      summary: "Read your workspace preferences",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailWorkspacePreferenceSchema, "List share and seen hints for this person and mailbox"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    resolveMailboxParam,
+    v("param", mailboxParamSchema),
+    async (c) => respondPublic(c, mailboxPreferences.getMailboxWorkspacePreference(requestContext(c), internalMailboxId(c))),
+  )
+  .patch(
+    "/mailboxes/:mailboxId/workspace-preference",
+    describeRoute({
+      tags: ["Mail:Mailboxes"],
+      summary: "Remember your list width",
+      description: "listShare is 0..1; null restores the default 40%. Read access is sufficient. Other preferences stay unchanged.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailWorkspacePreferenceSchema, "Your workspace preferences"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid list share"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    resolveMailboxParam,
+    v("param", mailboxParamSchema),
+    v("json", mailWorkspacePreferenceChangeSchema),
+    async (c) =>
+      respondPublic(c, mailboxPreferences.setMailboxWorkspacePreference(requestContext(c), internalMailboxId(c), c.req.valid("json"))),
+  )
+  .put(
+    "/mailboxes/:mailboxId/workspace-preference/seen-hints",
+    describeRoute({
+      tags: ["Mail:Mailboxes"],
+      summary: "Mark a workspace hint as seen",
+      description: "Adds one known hint id to your bounded set. Repeated calls do not change the set or the list width.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailWorkspacePreferenceSchema, "Your workspace preferences"),
+        400: jsonResponse(ErrorResponseSchema, "Unknown hint id"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    resolveMailboxParam,
+    v("param", mailboxParamSchema),
+    v("json", markMailWorkspaceHintSeenSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        mailboxPreferences.markMailboxWorkspaceHintSeen(requestContext(c), internalMailboxId(c), c.req.valid("json").hintId),
+      ),
   )
   .get(
     "/mailboxes/:mailboxId/done-today",

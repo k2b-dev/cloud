@@ -125,7 +125,7 @@ export const mapDocumentSummary = (row: DocumentDbRow, artifacts: DocumentArtifa
   const binding = [row.template_id, row.snapshot_id, row.table_id, row.record_id];
   if (
     !binding.every((value) => typeof value === "string") &&
-    !(binding.every((value) => value === null) && typeof row.workflow_run_id === "string")
+    !(binding.every((value) => value === null) && (typeof row.workflow_run_id === "string" || typeof row.domain_data_id === "string"))
   )
     throw new Error("document source invariant violated");
   return {

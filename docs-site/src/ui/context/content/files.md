@@ -133,7 +133,11 @@ images, PDF, audio, and video use built-in renderers. Supplying `save` enables
 editing for compatible text renderers.
 
 `previewHref` is an authenticated URL that answers inline. With it, images,
-PDF, audio, and video render natively from that URL and `load` is not called.
+audio, and video render natively from that URL and `load` is not called. A PDF
+at a same-origin URL loads from it into [`PdfViewer`](/en/ui/content/media#pdf-viewer),
+whose "Open in new tab" icon opens that URL; closing the preview stops the
+download. A PDF at another origin stays with the browser's own viewer, because
+fetching it would need CORS.
 Video plays in [`VideoPlayer`](/en/ui/content/media#video): the browser fetches
 it by range from `previewHref`, so serve that URL with `206` answers to `Range`
 requests. A video the browser cannot decode shows the player's fallback with a
@@ -141,10 +145,10 @@ download link to `downloadHref`.
 `downloadHref` only adds download actions; it is never a preview source,
 because browsers do not show an attachment response inline. Without
 `previewHref`, a PDF renders from the bytes `load` returns, through
-[`PdfPreview`](/en/ui/content/media): its "Open preview" action, which opens it
-in the browser's own viewer, sits above the document in the preview frame.
-There is no visible heading, because the host already names the file; the
-document frame keeps the file name as its accessible title.
+[`PdfViewer`](/en/ui/content/media#pdf-viewer): its pill ends with "Open in new
+tab", which shows the document in the browser's own viewer. There is no visible
+heading, because the host already names the file; the page area keeps the file
+name as its accessible title.
 
 Pass `revision` to refetch a `FileView` whose path did not change. A
 `FileBrowserPanel` forwards its `refreshKey` to both the file list and the

@@ -1690,17 +1690,13 @@ dialog:has(.launchpad-panel)::backdrop {
   background: rgb(255 255 255 / 0.96);
   border: 1px solid rgb(228 228 231 / 0.82);
   border-radius: 1.5rem;
-  box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.9),
-    0 28px 68px -42px rgb(24 24 27 / 0.48);
+  /* A dialog floats on layer 3. */
+  box-shadow: var(--k2b-shadow-float);
 }
 
 .dark .launchpad-panel {
   background: linear-gradient(180deg, rgb(24 24 27 / 0.98), rgb(15 15 17 / 0.98));
   border-color: rgb(255 255 255 / 0.13);
-  box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.08),
-    0 28px 68px -36px rgb(0 0 0 / 0.82);
 }
 
 /* Dashboard launchpad app icon. One app colour drives the glyph and graded rim;
@@ -1742,7 +1738,6 @@ dialog:has(.launchpad-panel)::backdrop {
   --rim-bottom-hover: color-mix(in oklab, var(--app-icon-color), white 6%);
   --glyph: var(--app-icon-color);
   --glyph-hover: color-mix(in oklab, var(--app-icon-color), white 32%);
-  --drop: 0 10px 20px -12px rgb(0 0 0 / 0.7);
 }
 
 @supports (color: oklch(from red l c h)) {

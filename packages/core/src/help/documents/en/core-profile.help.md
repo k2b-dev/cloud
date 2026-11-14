@@ -3,7 +3,7 @@ id: core-profile
 title: Profile
 icon: ti ti-user-circle
 description: Review your account, groups, and activity, request FreeIPA access, and use API keys and passkeys.
-updated: 2026-10-12
+updated: 2026-11-11
 order: 110
 ---
 
@@ -38,3 +38,26 @@ The profile menu shows your current appearance as one entry. Choose it to
 switch to the next: **Automatic**, **Light**, **Dark**, then **Automatic**
 again. The menu stays open. Automatic is the default. It follows your
 device's light or dark setting.
+
+## Hide your content with the privacy screen {icon="eye-off"}
+
+The privacy screen hides your content when someone looks over your shoulder.
+It locks nothing. It hides the whole screen, the app bar included.
+
+:::reference
+- **Now:** In the profile menu, choose **Privacy screen**, or press **Ctrl+.**
+  (**⌘+.** on a Mac). The shortcut also works while a dialog is open.
+- **Automatically:** When you do not use Cloud for two minutes, Cloud hides
+  your content. In profile settings under **At your screen**, choose another
+  time or **Off** for **Hide automatically**. The setting applies on every
+  computer where you sign in.
+- **Countdown:** Ten seconds before, a symbol with a ring that empties shows
+  above your profile. Any key or mouse movement stops the privacy screen.
+- **Continue working:** Press a key or choose any place on the page. The page
+  does not get this input. A mouse movement only lights up the hint.
+:::
+
+The privacy screen applies to all Cloud tabs of this browser. A running
+dictation and the progress of an upload stay visible. Cloud does not hide
+notifications of the operating system. Phones and tablets without a mouse or
+touchpad have no privacy screen.

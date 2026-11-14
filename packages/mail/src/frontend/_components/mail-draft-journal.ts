@@ -23,8 +23,8 @@ const mailDraftJournalSchema = z.object({
 });
 
 export const serializeMailDraftContent = (content: DraftEditableContent): string => {
-  const { signatureTemplateId, ...rest } = content;
-  return JSON.stringify({ ...rest, signatureTemplateId: signatureTemplateId ?? null });
+  const { signatureTemplateId, quoteSource, ...rest } = content;
+  return JSON.stringify({ ...rest, signatureTemplateId: signatureTemplateId ?? null, ...(quoteSource ? { quoteSource } : {}) });
 };
 
 /** An exact pending write can reuse the current input instead of storing the body twice. */

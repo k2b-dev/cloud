@@ -1,11 +1,21 @@
 import { createSignal, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { ChatPresentation } from "./ChatPresentation";
+import { loadAppAssets, scheduleChartPreparation } from "./html/prepare-assets";
 
 declare global {
   var openedApps: string[];
+  var chartPreparation: { prepare(): void; cancel(): void; load(): ReturnType<typeof loadAppAssets> };
 }
 globalThis.openedApps = [];
+let cancel = () => {};
+globalThis.chartPreparation = {
+  prepare() {
+    cancel = scheduleChartPreparation("/api/assistant/artifacts/runtime");
+  },
+  cancel: () => cancel(),
+  load: () => loadAppAssets("/api/assistant/artifacts/runtime"),
+};
 const params = new URLSearchParams(location.search);
 function Harness() {
   const [visible, setVisible] = createSignal(true);

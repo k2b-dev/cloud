@@ -1,9 +1,10 @@
 import { logger } from "@k2b/cloud/services";
 import { fail, i18n, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
-import type { AutomationLogItem } from "../contracts";
+import type { AutomationLogItem, MailWorkspacePreference } from "../contracts";
 import {
   type ConversationDraftSummary,
+  type ConversationListDrafts,
   type ConversationView,
   conversationViewSchema,
   type DraftFolderPage,
@@ -35,6 +36,7 @@ import type {
   MailAssignableUser,
 } from "./collaboration";
 import * as collaboration from "./collaboration";
+import { listConversationDraftSummaries } from "./conversation-draft-summaries";
 import type { ConversationKeep } from "./conversation-keeps";
 import * as conversationKeeps from "./conversation-keeps";
 import type { MailConversationParticipant, MailConversationParticipants } from "./conversation-participants";
@@ -49,7 +51,7 @@ import { listRowImageAttachments, type RowImages } from "./list-image-attachment
 import { mailLive } from "./live";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
-import { getMailboxViewPreference } from "./mailbox-preferences";
+import { getMailboxViewPreference, getMailboxWorkspacePreference } from "./mailbox-preferences";
 import * as mailboxes from "./mailboxes";
 import type { ConversationRowState, ConversationSummary, ConversationViewCounts, MailFolderView, MessageDetail } from "./messages";
 import * as messages from "./messages";
@@ -65,6 +67,7 @@ import * as senderIdentities from "./sender-identities";
 const log = logger("mail:workspace");
 
 export type MailListItem = {
+  drafts: ConversationListDrafts;
   kept: boolean;
   id: string;
   conversationId: string | null;
@@ -189,6 +192,7 @@ const workspaceMessage = (message: MessageDetail): MailWorkspaceMessage => {
 
 export type MailboxPageData = {
   viewPreference: MailViewPreference;
+  workspacePreference: MailWorkspacePreference;
   doneTodayCounts: MailDoneTodayCounts;
   receivingAddress: string | null;
   mailbox: Mailbox;
@@ -319,6 +323,7 @@ const EMPTY_SELECTION_DETAIL: MailSelectionDetail = {
 };
 
 const conversationToListItem = (conversation: ConversationSummary): MailListItem => ({
+  drafts: { count: 0, editors: [] },
   kept: conversation.kept,
   id: conversation.id,
   conversationId: conversation.id,
@@ -377,6 +382,7 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
     latestMessageAt: item.latestMessageAt,
     preview: item.snippet,
     attachmentMatch: item.attachmentMatch,
+    drafts: { count: 0, editors: [] },
     unread: item.unread,
     activeFolderIds: item.activeFolderIds,
     flagged: item.flagged,
@@ -405,7 +411,7 @@ const attachRowDetails = async (
   rule: Pick<MailListPage, "openOnly" | "expression">,
 ): Promise<MailListPage> => {
   const conversationIds = items.flatMap((item) => (item.conversationId ? [item.conversationId] : []));
-  const [tags, participants, images] = await Promise.all([
+  const [tags, participants, images, draftSummaries] = await Promise.all([
     localTags.listConversationLocalTags({ context, mailboxId, conversationIds }),
     conversationParticipants.listConversationParticipants({
       context,
@@ -413,8 +419,9 @@ const attachRowDetails = async (
       conversationIds: items.flatMap((item) => (item.selectionKind === "conversation" && item.conversationId ? [item.conversationId] : [])),
     }),
     loadRowImages(context, mailboxId, items),
+    listConversationDraftSummaries({ context, mailboxId, conversationIds }),
   ]);
-  if (!tags.ok || !participants.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
+  if (!tags.ok || !participants.ok || !draftSummaries.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
   return {
     error: null,
     nextCursor,
@@ -430,6 +437,7 @@ const attachRowDetails = async (
               ...(shown.imageAttachmentCount > shown.imageAttachments.length ? { imageAttachmentCount: shown.imageAttachmentCount } : {}),
             }
           : {}),
+        drafts: (item.conversationId && draftSummaries.data.get(item.conversationId)) || { count: 0, editors: [] },
         localTags: item.conversationId ? (tags.data.get(item.conversationId) ?? []) : [],
         ...(written && !namesOnlyItsSender(item, written)
           ? {
@@ -1073,6 +1081,7 @@ export const loadMailboxPageData = async (pageParams: {
     receivingAddress,
     listView,
     viewPreference,
+    workspacePreference,
     doneTodayCounts,
   ] = await Promise.all([
     mailboxes.getMailbox(params.context, params.mailboxId),
@@ -1092,10 +1101,12 @@ export const loadMailboxPageData = async (pageParams: {
     mailboxes.getMailboxReceivingAddress(params.mailboxId),
     list,
     getMailboxViewPreference(params.context, params.mailboxId),
+    getMailboxWorkspacePreference(params.context, params.mailboxId),
     getMailboxDoneTodayCounts(params.context, params.mailboxId),
   ]);
   if (!mailboxResult.ok) return fail(mailboxResult.error);
   if (!viewPreference.ok) return viewPreference;
+  if (!workspacePreference.ok) return workspacePreference;
   if (!doneTodayCounts.ok) return doneTodayCounts;
 
   const { scheduledMode, draftsMode, folderId } = listView;
@@ -1129,6 +1140,7 @@ export const loadMailboxPageData = async (pageParams: {
     mailbox: mailboxResult.data,
     receivingAddress,
     viewPreference: viewPreference.data,
+    workspacePreference: workspacePreference.data,
     doneTodayCounts: doneTodayCounts.data,
     permission: permission.data.permission,
     access: { scope: permission.data.scope, permission: permission.data.permission },

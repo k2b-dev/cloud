@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, settled } from "../../test/browser";
+import { browserName, hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // Whether a row keeps its height, whether hover moves anything, and what a link really is are results of layout,
 // paint, and the DOM in a real engine. The rows run inside VirtualFeed, as in a conversation.
@@ -308,6 +308,12 @@ const open = async (
   await page.goto(`${assets}page`);
   // Fonts first: a font that arrives late changes every text's height, which is not the row's doing.
   await page.evaluate(async () => {
+    // Tabler 3.50 splits glyphs across unicode ranges; loading a space only warms the first face.
+    await Promise.all(
+      Array.from(document.fonts)
+        .filter((face) => face.family === "tabler-icons")
+        .map((face) => face.load()),
+    );
     await Promise.all(
       [
         "400 15px 'IBM Plex Sans'",
@@ -380,7 +386,7 @@ describe(`MessageRow in ${browserName}`, () => {
       const before = await boxes(page);
       expect(await opacity(page, "m4")).toBe("0");
 
-      await rowOf(page, "m4").locator(".k2b-message-row__bubble").hover();
+      await hoverInPlace(rowOf(page, "m4").locator(".k2b-message-row__bubble"));
       expect(await opacity(page, "m4")).toBe("1");
       expect(await boxes(page)).toEqual(before);
       await page.screenshot({ path: `/tmp/k2b-ui-message-rows-${browserName}-hover.png`, clip: { x: 0, y: 150, width: 720, height: 300 } });
@@ -421,7 +427,7 @@ describe(`MessageRow in ${browserName}`, () => {
       expect(Math.abs(geometry.itemLeft - geometry.feedLeft - (geometry.feedWidth - 760) / 2)).toBeLessThanOrEqual(8);
 
       for (const key of ["m3", "m6"]) {
-        await rowOf(page, key).locator(".k2b-message-row__bubble").hover();
+        await hoverInPlace(rowOf(page, key).locator(".k2b-message-row__bubble"));
         await settled(page);
         const place = await rowOf(page, key).evaluate((row) => {
           const bubble = row.querySelector(".k2b-message-row__bubble")!.getBoundingClientRect();

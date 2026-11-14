@@ -86,27 +86,39 @@ export { FileGrid, type FileGridGroup, type FileGridOpenProps, type FileGridProp
 export { default as FileTree, type FileTreeActions, type FileTreeEntry, type FileTreeProps } from "./FileTree";
 export { type FileType, FileTypeIcon, type FileTypeIconProps, fileKindLabel, fileTypeOf } from "./FileTypeIcon";
 export {
-  canPreviewFile,
   default as FileView,
   type FileViewContent,
-  type FileViewFile,
-  type FileViewPreviewKind,
   type FileViewProps,
   type FileViewRenderer,
   type FileViewRendererProps,
   formatFileViewSize,
-  getFileViewPreviewKind,
 } from "./FileView";
 export { FlowAmount, type FlowAmountDirection, type FlowAmountProps, flowDirection } from "./FlowAmount";
+// Choosing a renderer needs no renderer: these come from their own small module, so an app that only asks which kind
+// a file is never loads FileView and its PDF, video and code dependencies.
+export { canPreviewFile, type FileViewFile, type FileViewPreviewKind, getFileViewPreviewKind } from "./file-view-preview";
 export type { KbdProps } from "./Kbd";
 export { Kbd } from "./Kbd";
 export type { LabelChipProps } from "./LabelChip";
 export { LabelChip } from "./LabelChip";
-export type { LightboxAction, LightboxImage } from "./Lightbox";
+export type { LightboxAction, LightboxItem, LightboxProps } from "./Lightbox";
 export { default as Lightbox } from "./Lightbox";
+export type { LoadMoreProps } from "./LoadMore";
+export { LoadMore } from "./LoadMore";
 export type { LogTableEntry } from "./LogEntriesTable";
 export { default as LogEntriesTable } from "./LogEntriesTable";
 export { MapAttribution } from "./MapAttribution";
+export {
+  MapDialog,
+  type MapDialogFact,
+  type MapDialogMapView,
+  type MapDialogMenuItem,
+  type MapDialogProps,
+  type MapPlace,
+  type MapPlaceLink,
+  type MapPlaceSource,
+} from "./MapDialog";
+export { MAP_DIALOG_PARAM, MapTile, type MapTileProps, mapDialogOptions } from "./MapTile";
 export { MapView } from "./MapView";
 export { MapViewFrame } from "./MapViewFrame";
 export { default as MarkdownView, type MarkdownRenderOptions, type MarkdownViewProps, renderSafeMarkdown } from "./MarkdownView";
@@ -130,6 +142,7 @@ export type {
   MessageSystemRowProps,
 } from "./MessageRow";
 export { MessageEventGroup, MessageEventRow, MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
+export { type GeoNavigationPlatform, geoNavigationHref, geoNavigationPlatform } from "./map-navigation";
 export { type MapPaletteColors, type MapTheme, mapPalette } from "./map-palette";
 export { type MapStyleOptions, mapAttribution, mapStyle } from "./map-style";
 export { MAP_SNAPSHOT_MAX_PIXELS, MapSnapshotError, type MapSnapshotErrorCode } from "./map-view-snapshot";
@@ -173,8 +186,10 @@ export {
   renderMarkdownLink,
 } from "./markdown-links";
 export { Pagination, type PaginationProps } from "./Pagination";
-export type { PdfPreviewProps, PdfPreviewRequest } from "./PdfPreview";
-export { default as PdfPreview } from "./PdfPreview";
+export { PdfThumbnails, type PdfThumbnailsProps } from "./PdfThumbnails";
+export type { PdfViewerProps, PdfViewerRequest } from "./PdfViewer";
+export { default as PdfViewer } from "./PdfViewer";
+export { ProgressPath, type ProgressPathProps, type ProgressPathStep } from "./ProgressPath";
 export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
 export { ReactionBar, type ReactionBarItem, type ReactionBarProps } from "./ReactionBar";
@@ -189,6 +204,7 @@ export type { StepsProps } from "./Steps";
 export { Steps } from "./Steps";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";
 export { default as StructuredDataPreview, isStructuredDataValue } from "./StructuredDataPreview";
+export { ThumbnailStrip, type ThumbnailStripItem, type ThumbnailStripProps } from "./ThumbnailStrip";
 export type { TimelineColor, TimelineController, TimelineItem, TimelineProps } from "./Timeline";
 export { default as Timeline } from "./Timeline";
 export { VideoPlayer, type VideoPlayerProps } from "./VideoPlayer";

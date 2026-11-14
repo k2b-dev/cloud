@@ -38,7 +38,7 @@ export default ssr<AuthContext>(async (c) => {
       manual_demote: t.deletedReasonManualDemote,
       manual_delete: t.deletedReasonManualDelete,
     })[reason] ?? reason;
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
   const search = (c.req.query("search") ?? "").trim();

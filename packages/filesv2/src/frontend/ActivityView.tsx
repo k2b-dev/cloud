@@ -2,11 +2,23 @@ import { query } from "@k2b/stdlib/solid";
 import { Button, Dropdown, FilterChip, Placeholder, Skeleton, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry, ActivityPage, HistoryAction } from "../activity-contracts";
+import type { MarkedEntry } from "../contracts";
 import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
-import { dayGroups, type HistoryActions, type HistoryEnvironment, historyRows } from "./history-actions";
-import { useHistoryMessages } from "./history-messages";
+import {
+  dayGroups,
+  dayHeading,
+  dayKey,
+  type HistoryActions,
+  type HistoryEnvironment,
+  type HistoryRowModel,
+  type HistoryRun,
+  historyRows,
+  historyRuns,
+  sameActor,
+} from "./history-actions";
+import { type HistoryMessages, useHistoryMessages } from "./history-messages";
 import { type ActivityFilters, type ActivityRequest, type ActivityWhen, activityRequest } from "./history-requests";
-import { HistoryRow, MoreFooter, SkeletonRows } from "./history-rows";
+import { HistoryRow, HistoryRunRow, MoreFooter, OpenedRow, SkeletonRows } from "./history-rows";
 import MissingItemView from "./MissingItemView";
 
 /* ------------------------------------------------------------------ activity view */
@@ -39,6 +51,64 @@ const filterKey = (filters: ActivityFilters) =>
     filters.q ?? null,
   ]);
 
+/**
+ * Runs this tab has opened. They stay open when the person comes back from a file they opened from the history;
+ * opening is presentation only, so a reload starts closed.
+ */
+const openedRuns = new Set<string>();
+
+/** A file the person opened, shown only in their own activity ("Me"); the server authorized it for this read. */
+export type OpenedLine = { kind: "opened"; key: string; item: MarkedEntry };
+export type ActivityLine = { item: HistoryRun | OpenedLine; repeat: boolean };
+export type ActivityDay = { key: string; label: string; detail: string | null; items: ActivityLine[] };
+
+const lineTime = (item: HistoryRun | OpenedLine) =>
+  item.kind === "opened" ? item.item.markedAt : item.kind === "run" ? item.rows[0]!.lead.time : item.row.lead.time;
+const lineEntry = (item: HistoryRun | OpenedLine) =>
+  item.kind === "opened" ? null : item.kind === "run" ? item.rows[0]!.lead : item.row.lead;
+
+/**
+ * Day groups of rows and runs, each line knowing whether the line above names the same actor. Opened files join in
+ * time order, but only as far back as the loaded changes reach while older pages remain, so a later page never
+ * slips a change in above an opened file it should follow.
+ */
+export function activityDays(
+  rows: readonly HistoryRowModel[],
+  opened: readonly MarkedEntry[],
+  options: { complete: boolean; locale: string; t: HistoryMessages; env: HistoryEnvironment },
+): ActivityDay[] {
+  const days = new Map<string, ActivityDay>();
+  const day = (iso: string) => {
+    const key = dayKey(iso, options.env.timeZone);
+    let found = days.get(key);
+    if (!found) {
+      found = { key, ...dayHeading(iso, options.locale, options.t, options.env), items: [] };
+      days.set(key, found);
+    }
+    return found;
+  };
+  for (const group of dayGroups(rows, options.locale, options.t, options.env))
+    for (const item of historyRuns(group.rows)) day(lineTime(item)).items.push({ item, repeat: false });
+  const oldest = rows.at(-1)?.entries.at(-1)?.time;
+  for (const item of opened) {
+    if (!options.complete && (!oldest || item.markedAt < oldest)) continue;
+    day(item.markedAt).items.push({ item: { kind: "opened", key: `opened:${item.base.id}:${item.entry.path}`, item }, repeat: false });
+  }
+  return [...days.values()]
+    .sort((a, b) => b.key.localeCompare(a.key))
+    .map((group) => {
+      const items = group.items.sort((a, b) => lineTime(b.item).localeCompare(lineTime(a.item)));
+      return {
+        ...group,
+        items: items.map((line, index) => {
+          const entry = lineEntry(line.item);
+          const previous = index > 0 ? lineEntry(items[index - 1]!.item) : null;
+          return { ...line, repeat: !!entry && !!previous && sameActor(previous, entry) };
+        }),
+      };
+    });
+}
+
 export type ActivityViewProps = {
   env: HistoryEnvironment;
   actions?: HistoryActions;
@@ -56,6 +126,11 @@ export type ActivityViewProps = {
   retentionDays: number;
   /** Optional trailing head controls, such as the administration's export. */
   headActions?: JSX.Element;
+  /**
+   * Files this person opened, joined into "Me" only. `initial` is the server's authorized list for the first view;
+   * `load` reads it again. Without it "Me" shows changes alone.
+   */
+  opened?: { initial?: readonly MarkedEntry[] | null; load: (signal: AbortSignal) => Promise<readonly MarkedEntry[]> };
 };
 
 export default function ActivityView(props: ActivityViewProps) {
@@ -82,8 +157,29 @@ export default function ActivityView(props: ActivityViewProps) {
       .map((result) => result.page),
   );
   const entries = createMemo(() => visiblePages().flatMap((page) => page.items));
-  const rows = createMemo(() => historyRows(entries(), { batches: true }));
-  const groups = createMemo(() => dayGroups(rows(), locale(), h(), props.env));
+  const rows = createMemo(() => historyRows(entries(), { batches: true, merge: true }));
+  const [openRuns, setOpenRuns] = createSignal<ReadonlySet<string>>(new Set(openedRuns));
+  const toggleRun = (key: string, open: boolean) => {
+    if (open) openedRuns.add(key);
+    else openedRuns.delete(key);
+    setOpenRuns(new Set(openedRuns));
+  };
+  /** "Me" is the person's own activity: no actor column, and the files they opened join in. */
+  const mine = () => props.filters.actor === "me";
+  const mode = () => (mine() ? ("me" as const) : ("all" as const));
+  const recent = query.create({
+    source: () => "opened",
+    enabled: () => mine() && !!props.opened,
+    initial: props.opened?.initial ? { source: "opened", data: props.opened.initial } : undefined,
+    load: (_, { abortSignal }) => props.opened!.load(abortSignal),
+  });
+  // A failed list of opened files leaves "Me" with the changes; they stay reachable in each file's details.
+  const opened = () => (mine() && !recent.error() ? (recent.data() ?? []) : []);
+  // Scoped views name one place; opened files then belong to no filter and stay out.
+  const narrowed = () => !!(props.filters.baseId || props.filters.action || props.filters.when || props.filters.q);
+  const groups = createMemo(() =>
+    activityDays(rows(), narrowed() ? [] : opened(), { complete: !pages.hasMore(), locale: locale(), t: h(), env: props.env }),
+  );
   const limited = () => visiblePages().some((page) => page.searchLimitReached);
   const [text, setText] = createSignal(props.filters.q ?? "");
   // Back and forward change the URL; the field follows it.
@@ -94,8 +190,8 @@ export default function ActivityView(props: ActivityViewProps) {
       { defer: true },
     ),
   );
-  const filtered = () =>
-    !!(props.filters.baseId || props.filters.path || props.filters.actor || props.filters.action || props.filters.when);
+  // "Me" is where Activity starts; anything else, "All" included, is a filter that Reset takes back.
+  const filtered = () => !!(props.filters.baseId || props.filters.path || !mine() || props.filters.action || props.filters.when);
   const change = (patch: Partial<ActivityFilters>) => {
     const next: ActivityFilters = { ...props.filters, ...patch };
     for (const key of Object.keys(next) as (keyof ActivityFilters)[])
@@ -103,7 +199,14 @@ export default function ActivityView(props: ActivityViewProps) {
     props.onFiltersChange(next);
   };
   const resetFilters = () =>
-    change({ baseId: undefined, path: undefined, scope: undefined, actor: undefined, action: undefined, when: undefined });
+    change({ baseId: undefined, path: undefined, scope: undefined, actor: "me", action: undefined, when: undefined });
+  /** "Who": a segmented "Me | All" row, then the people; choosing a person replaces "Me" or "All" and back. */
+  const whoValue = () => [props.filters.actor ?? "all"];
+  const changeWho = (value: string[]) => {
+    const added = value.find((item) => !whoValue().includes(item));
+    if (added) change({ actor: added === "all" ? undefined : added });
+    else if (!value.length) change({ actor: undefined });
+  };
   const submit = () => change({ q: text().trim() || undefined });
   const single = (value: string[]) => value.at(-1);
   const placeLabel = () => props.bases.find((base) => base.id === props.filters.baseId)?.label;
@@ -161,6 +264,27 @@ export default function ActivityView(props: ActivityViewProps) {
         />
         <div class="filesv2-history-head__filters k2b-focus-inset">
           <FilterChip
+            label={h().filterWho}
+            icon="ti ti-user"
+            showValue
+            value={whoValue()}
+            defaultValue={["me"]}
+            onValueChange={changeWho}
+            options={[
+              {
+                label: h().whoShow,
+                layout: "row",
+                options: [
+                  { value: "me", label: h().whoMe },
+                  { value: "all", label: h().whoAll },
+                ],
+              },
+              ...(props.people.length
+                ? [{ label: h().whoPerson, options: props.people.map((person) => ({ value: person.id, label: person.label })) }]
+                : []),
+            ]}
+          />
+          <FilterChip
             label={h().filterBase}
             icon="ti ti-folders"
             showValue
@@ -180,14 +304,6 @@ export default function ActivityView(props: ActivityViewProps) {
               />
             )}
           </Show>
-          <FilterChip
-            label={h().filterWho}
-            icon="ti ti-user"
-            showValue
-            value={props.filters.actor ? [props.filters.actor] : []}
-            onValueChange={(value) => change({ actor: single(value) })}
-            options={[{ options: props.people.map((person) => ({ value: person.id, label: person.label })) }]}
-          />
           <FilterChip
             label={h().filterWhat}
             icon="ti ti-activity"
@@ -279,7 +395,7 @@ export default function ActivityView(props: ActivityViewProps) {
             />
           }
         >
-          <div class="filesv2-history-list">
+          <div class="filesv2-history-list filesv2-history-list--compact">
             <Switch>
               <Match when={props.filters.baseId?.startsWith("freeipa:") || isHistoryUnavailable(pages.error())}>
                 <HistoryUnavailable />
@@ -304,11 +420,11 @@ export default function ActivityView(props: ActivityViewProps) {
                   {h().loading}
                 </p>
                 <Skeleton class="filesv2-history-skeleton__day" />
-                <SkeletonRows count={4} variant="list" />
+                <SkeletonRows count={4} variant="compact" />
                 <Skeleton class="filesv2-history-skeleton__day" />
-                <SkeletonRows count={3} variant="list" />
+                <SkeletonRows count={3} variant="compact" />
               </Match>
-              <Match when={rows().length === 0 && (pages.hasMore() || pages.error())}>
+              <Match when={groups().length === 0 && (pages.hasMore() || pages.error())}>
                 <p class="filesv2-history-scanned">{h().nothingVisibleYet}</p>
                 <MoreFooter
                   hasMore={pages.hasMore()}
@@ -318,7 +434,23 @@ export default function ActivityView(props: ActivityViewProps) {
                   onMore={() => void (pages.hasMore() ? pages.loadMore() : pages.refresh())}
                 />
               </Match>
-              <Match when={rows().length === 0}>
+              <Match when={groups().length === 0 && mine() && !narrowed()}>
+                {/* Nothing of their own yet: the way to everyone else's changes is one click. */}
+                <Placeholder
+                  class="filesv2-history-placeholder"
+                  state="empty"
+                  icon="ti ti-history"
+                  title={h().noMineTitle}
+                  description={h().noMineText}
+                  action={
+                    <Button variant="secondary" onClick={() => change({ actor: undefined })}>
+                      <i class="ti ti-users" aria-hidden="true" />
+                      {h().showAll}
+                    </Button>
+                  }
+                />
+              </Match>
+              <Match when={groups().length === 0}>
                 <Placeholder
                   class="filesv2-history-placeholder"
                   state={filtered() ? "no-results" : "empty"}
@@ -335,7 +467,7 @@ export default function ActivityView(props: ActivityViewProps) {
                   }
                 />
               </Match>
-              <Match when={rows().length > 0}>
+              <Match when={groups().length > 0}>
                 <For each={groups()}>
                   {(group) => (
                     <section class="filesv2-history-day" aria-label={group.detail ? `${group.label}, ${group.detail}` : group.label}>
@@ -346,18 +478,45 @@ export default function ActivityView(props: ActivityViewProps) {
                         </Show>
                       </h2>
                       <ul class="filesv2-history-rows">
-                        <For each={group.rows}>
-                          {(row) => (
+                        <For each={group.items}>
+                          {(line) => (
                             <li>
-                              <HistoryRow
-                                row={row}
-                                env={props.env}
-                                actions={props.actions}
-                                context="activity"
-                                dated
-                                variant="list"
-                                onChanged={() => void pages.refresh()}
-                              />
+                              <Switch>
+                                <Match when={line.item.kind === "row" && line.item}>
+                                  {(single) => (
+                                    <HistoryRow
+                                      row={single().row}
+                                      env={props.env}
+                                      actions={props.actions}
+                                      context="activity"
+                                      dated
+                                      variant="compact"
+                                      mode={mode()}
+                                      links
+                                      repeat={line.repeat}
+                                      onChanged={() => void pages.refresh()}
+                                    />
+                                  )}
+                                </Match>
+                                <Match when={line.item.kind === "run" && line.item}>
+                                  {(run) => (
+                                    <HistoryRunRow
+                                      rows={run().rows}
+                                      env={props.env}
+                                      actions={props.actions}
+                                      mode={mode()}
+                                      links
+                                      repeat={line.repeat}
+                                      expanded={openRuns().has(run().key)}
+                                      onToggle={(open) => toggleRun(run().key, open)}
+                                      onChanged={() => void pages.refresh()}
+                                    />
+                                  )}
+                                </Match>
+                                <Match when={line.item.kind === "opened" && line.item}>
+                                  {(file) => <OpenedRow item={file().item} env={props.env} bases={props.bases} />}
+                                </Match>
+                              </Switch>
                             </li>
                           )}
                         </For>

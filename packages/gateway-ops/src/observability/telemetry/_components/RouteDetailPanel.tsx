@@ -1,6 +1,6 @@
 import { formatDateTime, formatDurationMs } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, DetailPanel, IconButtonLink, useLocale } from "@k2b/ui";
+import { DataTable, type DataTableColumn, DetailPanel, IconButtonLink, Section, useLocale } from "@k2b/ui";
 import { gatewayOpsMessages } from "../../../messages";
 import type { TelemetryEventRow } from "../service";
 
@@ -33,7 +33,6 @@ export default function RouteDetailPanel(props: RouteDetailPanelProps) {
     <aside class="paper min-h-0 p-3" aria-label={t.routeDetail}>
       <DetailPanel>
         <DetailPanel.Header
-          kind={<span>{t.route}</span>}
           title={<code class="font-mono">{props.route}</code>}
           subtitle={t.lastRequestsInRange({ count: props.eventLimit })}
           actions={
@@ -44,7 +43,7 @@ export default function RouteDetailPanel(props: RouteDetailPanelProps) {
         />
 
         <DetailPanel.Body>
-          <DetailPanel.Section title={t.requests}>
+          <Section title={t.requests}>
             {props.events.length === 0 ? (
               <p class="text-xs text-dimmed">{t.noRetainedRequests}</p>
             ) : (
@@ -77,7 +76,7 @@ export default function RouteDetailPanel(props: RouteDetailPanelProps) {
                 }}
               />
             )}
-          </DetailPanel.Section>
+          </Section>
         </DetailPanel.Body>
       </DetailPanel>
     </aside>

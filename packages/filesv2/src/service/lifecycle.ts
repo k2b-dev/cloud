@@ -18,6 +18,7 @@ import { finishActivity, insertActivity } from "../data/activity";
 import type { bindings, NewBinding } from "../data/bases";
 import { machineStorage } from "../data/machine-storage";
 import { type NewOperation, type Operation, operations, withRootLock } from "../data/operations";
+import { markdownRevision } from "../document-assets";
 import {
   type FilesCall,
   fileAction,
@@ -828,6 +829,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
           directory: node.directory,
           size: node.size,
           modified: node.modified,
+          revision: node.directory ? node.revision : markdownRevision(node),
         })),
         next: page.next ?? null,
       };

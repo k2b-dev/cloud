@@ -22,6 +22,8 @@ export type ValueFieldProps<T> = FieldProps & {
   onValueCommit?: (value: T) => void;
 };
 
+export type { FieldSuggestion, FieldSuggestionProps } from "./field-suggestion-types";
+
 /** Reports one atomic edit as both the current and committed field value. */
 export const commitFieldValue = <T>(owner: Pick<ValueFieldProps<T>, "onValueChange" | "onValueCommit">, value: T): void => {
   owner.onValueChange?.(value);

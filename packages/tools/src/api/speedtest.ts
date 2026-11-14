@@ -1,75 +1,66 @@
 import type { AuthContext } from "@k2b/cloud/server";
-import { auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { describeRoute, resolver } from "hono-openapi";
+import { z } from "zod";
+import { app } from "../config";
 
-// Web Crypto caps getRandomValues at 65536 bytes per call, so the chunk
-// has to fit in that window.
-const CHUNK_SIZE = 64 * 1024;
-const MAX_TRANSFER_BYTES = 200 * 1024 * 1024;
+export const readSpeedtestConfig = async () => ({
+  server: await app.settings.get("tools.speedtest_server"),
+  enabled: await app.settings.get("tools.speedtest_enabled"),
+});
 
-// One incompressible random chunk, generated once at module load and reused
-// for every download stream. Re-randomising per request would burn CPU for
-// no benefit — the goal is to defeat opportunistic compression in proxies,
-// which a single random buffer already does.
-const randomChunk = (() => {
-  const buf = new Uint8Array(CHUNK_SIZE);
-  crypto.getRandomValues(buf);
-  return buf;
-})();
-
-const noStoreHeaders = {
-  "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-  Pragma: "no-cache",
-  Expires: "0",
+const moved = {
+  code: "SPEEDTEST_MOVED",
+  message:
+    "Measurements and scripts moved to the standalone speedtest server. Use cld tools speedtest, or download /cli from the server shown on /tools/speedtest. Python scripts are no longer supplied. No redirect is performed.",
+  settings: "/tools/api/speedtest/config",
+  page: "/tools/speedtest",
 };
+const migration = describeRoute({
+  summary: "Legacy speedtest URL: migration notice",
+  description:
+    "Cloud measurement endpoints and /cli have moved. The retired Python script /tools/api/speedtest/cli.py also returns 410. No request is redirected to the measurement server.",
+  deprecated: true,
+  responses: { 410: { description: "Moved to the standalone measurement server; no redirect or measurement." } },
+});
 
-export default new Hono<AuthContext>()
-  .get("/ping", (c) => {
-    return new Response(null, { status: 204, headers: noStoreHeaders });
-  })
-  .get("/download", (c) => {
-    const raw = Number.parseInt(c.req.query("size") ?? "", 10);
-    const size = Number.isFinite(raw) && raw > 0 ? Math.min(raw, MAX_TRANSFER_BYTES) : 10 * 1024 * 1024;
-
-    let sent = 0;
-    const stream = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        if (sent >= size) {
-          controller.close();
-          return;
-        }
-        const remaining = size - sent;
-        const chunk = remaining >= CHUNK_SIZE ? randomChunk : randomChunk.subarray(0, remaining);
-        controller.enqueue(chunk);
-        sent += chunk.byteLength;
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        ...noStoreHeaders,
-        "Content-Type": "application/octet-stream",
-        "Content-Length": String(size),
-      },
-    });
-  })
-  .post("/upload", auth.readOnly, async (c) => {
-    const body = c.req.raw.body;
-    if (!body) return c.json({ ok: true, bytes: 0 });
-    const reader = body.getReader();
-    let total = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) total += value.byteLength;
-        if (total > MAX_TRANSFER_BYTES) {
-          await reader.cancel();
-          return c.json({ error: "upload too large" }, 413);
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-    return c.json({ ok: true, bytes: total });
-  });
+export function createSpeedtestRoutes(readConfig = readSpeedtestConfig) {
+  return new Hono<AuthContext>()
+    .get(
+      "/config",
+      describeRoute({
+        summary: "Public speedtest server and availability",
+        responses: {
+          200: {
+            description: "Anonymous measurement target and operator switch.",
+            content: { "application/json": { schema: resolver(z.object({ server: z.string(), enabled: z.boolean() })) } },
+          },
+        },
+      }),
+      async (c) => c.json(await readConfig(), 200, { "Cache-Control": "no-store" }),
+    )
+    .get("/ping", migration, (c) => c.json(moved, 410, { "Cache-Control": "no-store" }))
+    .get("/download", migration, (c) => c.json(moved, 410, { "Cache-Control": "no-store" }))
+    .post("/upload", migration, (c) => c.json(moved, 410, { "Cache-Control": "no-store" }))
+    .get("/cli", migration, (c) =>
+      c.text(
+        `# Speedtest moved.
+# Open /tools/speedtest for the selected server.
+# Use cld tools speedtest, or download /cli from that standalone server.
+# Cloud no longer supplies measurement scripts.
+`,
+        410,
+        { "Cache-Control": "no-store" },
+      ),
+    )
+    .get("/cli.py", migration, (c) =>
+      c.text(
+        `# Speedtest moved. Python scripts are no longer supplied.
+# Use cld tools speedtest or the standalone server's /cli (Node/Bun).
+`,
+        410,
+        { "Cache-Control": "no-store" },
+      ),
+    );
+}
+export default createSpeedtestRoutes();

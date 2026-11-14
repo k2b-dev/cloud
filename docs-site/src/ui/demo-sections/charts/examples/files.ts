@@ -4,9 +4,9 @@ import type { ChartShowcaseExample } from "./types";
 /** Files in this folder that hold no examples. */
 const support = new Set(["index.ts", "files.ts", "generate.ts", "registry.generated.ts", "types.ts", "common.ts"]);
 
-/** Example files in this folder, in name order. */
-export const exampleFiles = () =>
-  readdirSync(import.meta.dir)
+/** Example files in this folder (or another copy of it, such as a repository check's), in name order. */
+export const exampleFiles = (folder = import.meta.dir) =>
+  readdirSync(folder)
     .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts") && !support.has(file))
     .sort();
 

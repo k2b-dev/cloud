@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { resolve } from "node:path";
 import { DashboardDefinitionSchema, DashboardPanelSchema, DashboardSaveSchema, dashboardWindow } from "./dashboard-contracts";
 import { projectDashboardPanel } from "./dashboard-result";
 import type { SqlRows } from "./store/sql-run";
@@ -9,6 +10,27 @@ const rows = (columns: SqlRows["columns"], data: unknown[][], truncated = false)
   truncated,
   rowCount: data.length,
   stats: { elapsedMs: 1, readRows: data.length, readBytes: 1 },
+});
+
+test("huge nearly equal values render promptly", async () => {
+  const child = Bun.spawn([process.execPath, "--no-env-file", resolve(import.meta.dir, "dashboard-result.test-fixture.ts")], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const deadline = setTimeout(() => child.kill(), 4_000);
+  try {
+    const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+    expect(exit, stderr).toBe(0);
+    expect(JSON.parse(stdout)).toEqual(
+      [1e17, 1e17 + 16].map((second) => [
+        ["2026-10-22 12:00:00.000", 1e17],
+        ["2026-10-22 13:00:00.000", second],
+      ]),
+    );
+  } finally {
+    clearTimeout(deadline);
+    if (child.exitCode === null) child.kill();
+  }
 });
 test("dashboard projection exposes only selected columns and rejects ambiguous, truncated and excessive results", () => {
   const panel = DashboardPanelSchema.parse({

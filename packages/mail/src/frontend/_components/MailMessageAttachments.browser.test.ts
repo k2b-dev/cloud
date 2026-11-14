@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { MailAttachmentsHarnessAttachment } from "./MailMessageAttachments.browser-harness";
 
 // Type sizes, line clamping, truncation and focus need real layout, so the real attachment list runs in a browser.
@@ -106,46 +106,57 @@ const openPreview = async (context: BrowserContextOptions, index: number): Promi
   const page = await (await browser.newContext(context)).newPage();
   await page.goto(server.url.href);
   await page.evaluate((list) => window.mountAttachments(list), attachments);
-  await page.locator(".k2b-file-grid__open").nth(index).click();
-  await page.locator(".k2b-dialog[open] .k2b-content-markdown").waitFor();
+  await page.locator(".mail-attachment-tile__open").nth(index).click();
+  await page.locator("dialog.k2b-lightbox[open] .k2b-content-markdown").waitFor();
   return page;
 };
 
-const heading = (page: Page) =>
-  page.evaluate(() => {
-    const dialog = document.querySelector(".k2b-dialog[open]")!;
-    const box = (selector: string) => dialog.querySelector(selector)!.getBoundingClientRect();
-    const name = dialog.querySelector<HTMLElement>(".mail-attachment-dialog__facts-name");
-    return {
-      title: Number.parseFloat(getComputedStyle(dialog.querySelector(".k2b-panel-dialog__heading h2")!).fontSize),
-      section: Number.parseFloat(getComputedStyle(dialog.querySelector(".k2b-content-markdown h2") ?? document.body).fontSize),
-      titleTop: box(".k2b-panel-dialog__heading h2").top,
-      bodyTop: box(".k2b-panel-dialog__body").top,
-      factsHeight: box(".mail-attachment-dialog__facts").height,
-      nameTruncated: name ? name.scrollWidth > name.clientWidth : null,
-      nameTitle: name?.title ?? null,
-    };
-  });
+describe("Mail attachment tiles", () => {
+  for (const [name, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`every tile has the same size, a long name stays on one line, and nothing scrolls sideways on ${name}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate((list) => window.mountAttachments(list), attachments);
+        await page.locator(".mail-attachment-tile").first().waitFor();
+        await settled(page);
+        const layout = await page.evaluate(() => ({
+          tiles: [...document.querySelectorAll<HTMLElement>(".mail-attachment-tile")].map((tile) => {
+            const box = tile.getBoundingClientRect();
+            return [Math.round(box.width), Math.round(box.height)];
+          }),
+          names: [...document.querySelectorAll<HTMLElement>(".mail-attachment-tile__name")].map(
+            (label) => label.getClientRects().length === 1 && label.scrollHeight <= label.clientHeight + 1,
+          ),
+          overflow: document.documentElement.scrollWidth > window.innerWidth,
+        }));
+        expect(layout.tiles).toHaveLength(2);
+        expect(layout.tiles[0]).toEqual(layout.tiles[1]!);
+        expect(layout.tiles[0]![1]).toBe(56);
+        expect(layout.names).toEqual([true, true]);
+        expect(layout.overflow).toBe(false);
+        expect(await page.locator("[data-mail-download-all]").textContent()).toContain("Download all 2");
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+});
 
-describe("Mail attachment preview layout", () => {
-  test("the document title stands above its section headings and holds still while the attachment loads", async () => {
+describe("Mail attachment preview in the Lightbox", () => {
+  test("a document shows a placeholder while it loads, then its title in the name pill", async () => {
     delay = 400;
     const page = await (await browser.newContext(desktop)).newPage();
     try {
       await page.goto(server.url.href);
       await page.evaluate((list) => window.mountAttachments(list), attachments);
-      await page.locator(".k2b-file-grid__open").first().click();
-      await page.locator(".k2b-dialog[open] .mail-attachment-dialog__title-pending").waitFor();
-      const loading = await page.evaluate(() => ({
-        titleTop: document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__heading h2")!.getBoundingClientRect().top,
-        bodyTop: document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__body")!.getBoundingClientRect().top,
-      }));
-      await page.locator(".k2b-dialog[open] .k2b-content-markdown").waitFor();
-      const loaded = await heading(page);
-      expect(loaded.title).toBe(24);
-      expect(loaded.section).toBeLessThan(loaded.title);
-      expect(loaded.titleTop).toBe(loading.titleTop);
-      expect(loaded.bodyTop).toBe(loading.bodyTop);
+      await page.locator(".mail-attachment-tile__open").first().click();
+      await page.locator('dialog.k2b-lightbox[open] .k2b-lightbox__placeholder[role="status"]').waitFor();
+      await page.locator("dialog.k2b-lightbox[open] .k2b-content-markdown").waitFor();
+      expect(await page.locator("dialog.k2b-lightbox[open]").getAttribute("aria-label")).toBe("Summer party 2026");
     } finally {
       delay = 0;
       await page.context().close();
@@ -156,25 +167,42 @@ describe("Mail attachment preview layout", () => {
     ["desktop", desktop],
     ["phone", phone],
   ] as const) {
-    test(`a long file name stays on one quiet line on ${name}`, async () => {
+    test(`a long name stays on one line and nothing scrolls sideways on ${name}`, async () => {
       const page = await openPreview(context, 1);
       try {
-        const layout = await heading(page);
-        expect(layout.nameTruncated).toBeTrue();
-        expect(layout.nameTitle).toBe(files.Att002!.filename);
-        expect(layout.factsHeight).toBeLessThanOrEqual(20);
+        // The document's title leads; the long file name follows in the facts and never pushes into the actions. The
+        // name pill keeps the height of a pill of small controls (@k2b/ui `k2b-pill`: `--k2b-pill-control` plus
+        // `--k2b-pill-inset` on both sides inside a 1 px edge), the height of the action pill beside it.
+        const layout = await page.evaluate(() => {
+          const dialog = document.querySelector<HTMLElement>("dialog.k2b-lightbox")!;
+          const pill = dialog.querySelector<HTMLElement>(".k2b-lightbox__name")!.getBoundingClientRect();
+          const actions = dialog.querySelector<HTMLElement>(".k2b-lightbox__actions")!.getBoundingClientRect();
+          const probe = document.createElement("div");
+          probe.style.cssText = "position: absolute; block-size: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px)";
+          dialog.append(probe);
+          const contract = probe.getBoundingClientRect().height;
+          probe.remove();
+          return {
+            pillHeight: pill.height === contract && contract > 0,
+            actionsHeight: actions.height === contract,
+            clear: pill.right <= actions.left,
+            overflow: document.documentElement.scrollWidth > window.innerWidth,
+          };
+        });
+        expect(await page.locator("dialog.k2b-lightbox[open]").getAttribute("aria-label")).toBe("Planning");
+        expect(layout).toEqual({ pillHeight: true, actionsHeight: true, clear: true, overflow: false });
       } finally {
         await page.context().close();
       }
     }, 30_000);
   }
 
-  test("focus starts on the content, so Page Down scrolls a long document at once", async () => {
+  test("focus starts on the file, so Page Down scrolls a long document at once", async () => {
     const page = await openPreview(desktop, 0);
     try {
-      expect(await page.evaluate(() => document.activeElement?.classList.contains("mail-attachment-dialog__content"))).toBeTrue();
+      expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-lightbox__stage"))).toBeTrue();
       await page.keyboard.press("PageDown");
-      await page.waitForFunction(() => document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__body")!.scrollTop > 0);
+      await page.waitForFunction(() => document.querySelector("dialog.k2b-lightbox .k2b-lightbox__stage")!.scrollTop > 0);
     } finally {
       await page.context().close();
     }

@@ -211,6 +211,12 @@ The recipient determines the address accepted by `send()`.
 A user recipient must exist in Cloud. Cloud resolves the user's registered
 email address and browser endpoints when the event is sent.
 
+A user whose account FreeIPA locks receives nothing on any channel. The send
+result is `suppressed` with `account_locked`. Cloud checks the lock again when
+each delivery goes out, so a delivery prepared before the lock is also
+suppressed. After the account is unlocked, new notifications reach the user
+again; suppressed ones are not delivered later.
+
 A direct email address is normalized and validated before Cloud creates the
 event.
 
@@ -720,6 +726,7 @@ platform codes include:
 | --- | --- |
 | `disabled_by_user` | The user disabled every recommended channel |
 | `no_preferred_channel` | No recommended channel or user preference exists |
+| `account_locked` | FreeIPA locks the recipient's account; no channel, required or recommended, delivers to it |
 | `channel_unavailable` | No driver is registered for the selected channel |
 | `no_endpoint` | The recipient has no usable destination for the channel |
 | `preparation_failed` | Destination resolution or payload creation failed |

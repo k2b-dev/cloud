@@ -122,6 +122,12 @@ suite("mail remote content rules", () => {
     const ownerMetadata = await resolveMessagesRemoteContent({ context: ownerContext, mailboxId, messages: [message] });
     expect(readerMetadata.ok && readerMetadata.data.get(message.id)?.allowedByRule).toBeTrue();
     expect(ownerMetadata.ok && ownerMetadata.data.get(message.id)?.allowedByRule).toBeFalse();
+    // The reader sees the rule that allows the images, to revoke it in place; the owner never sees another reader's rule.
+    expect(readerMetadata.ok && readerMetadata.data.get(message.id)?.allowRules).toEqual([
+      { id: created.data.id, scope: "sender", value: "sender@example.com" },
+    ]);
+    expect(ownerMetadata.ok && ownerMetadata.data.get(message.id)?.allowRules).toEqual([]);
+    expect((await resolveMessagesRemoteContent({ context: outsiderContext, mailboxId, messages: [message] })).ok).toBeFalse();
 
     expect((await deleteRemoteContentRule({ context: ownerContext, mailboxId, ruleId: created.data.id })).ok).toBeFalse();
     expect((await deleteRemoteContentRule({ context: readerContext, mailboxId, ruleId: created.data.id })).ok).toBeTrue();

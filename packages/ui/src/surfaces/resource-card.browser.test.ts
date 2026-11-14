@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { hoverInPlace, launchBrowser } from "../../test/browser";
 
 // Whether every state has the same box is a result of layout in a real engine, with the real type and icons.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-resource-card-browser-"));
@@ -148,7 +148,7 @@ describe("ResourceCard in a real engine", () => {
         const box = element.getBoundingClientRect();
         return { x: box.x, y: box.y, width: box.width, height: box.height, background: getComputedStyle(element).backgroundColor };
       });
-      await card.hover();
+      await hoverInPlace(card);
       const hovered = await card.evaluate((element) => {
         const box = element.getBoundingClientRect();
         return { x: box.x, y: box.y, width: box.width, height: box.height, background: getComputedStyle(element).backgroundColor };

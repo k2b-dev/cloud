@@ -11,7 +11,6 @@ import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
 import {
   createNotebookTablePresentation,
   fadeScrollMarginsExtension,
-  fadeScrollPadding,
   listCommandsExtension,
   notebookSourceFormulasExtension,
   pressMissedEditor,
@@ -92,7 +91,7 @@ import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace
 import { openAttachmentPicker } from "./AttachmentPicker";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
-import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
+import EditorToolbar, { formattingKeymap, pillScrollPadding } from "./EditorToolbar";
 import { EmptyNoteTemplates } from "./EmptyNoteTemplates";
 import { caretFormat, sameCaretFormat } from "./editor-actions";
 import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
@@ -419,7 +418,7 @@ export default function NoteEditor(props: Props) {
       </Show>
       <Show when={showRouteLoading()}>
         <div class="pointer-events-none absolute inset-0 z-30 flex items-start justify-center pt-4" aria-live="polite" aria-busy="true">
-          <div class="inline-flex items-center gap-2 rounded-md bg-white/95 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm ring-1 ring-zinc-950/10 dark:bg-zinc-900/95 dark:text-zinc-200 dark:ring-white/10">
+          <div class="inline-flex items-center gap-2 rounded-md bg-white/95 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-[var(--k2b-shadow-toolbar)] ring-1 ring-zinc-950/10 dark:bg-zinc-900/95 dark:text-zinc-200 dark:ring-white/10">
             <i class="ti ti-loader-2 animate-spin text-blue-600 dark:text-blue-400" aria-hidden="true" />
             <span>{t().loadingNote}</span>
           </div>
@@ -1440,7 +1439,11 @@ function EditorInstance(
   });
 
   return (
-    <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+    // While the note is writable, the formatting and page pills float over its bottom edge (layers and shadows).
+    <div
+      class="notebook-editor-frame relative flex-1 min-w-0 flex flex-col overflow-hidden"
+      data-notebook-pills={props.readOnly ? undefined : ""}
+    >
       <article ref={printArticle} class="notebook-book-content notebook-note-print" />
       {/* Once retries stop, the sync-ended bar owns the message; this notice promises retries. */}
       <Show when={storageExhausted() && !syncEnded.ended()}>
@@ -1466,7 +1469,7 @@ function EditorInstance(
       </Show>
       <ScrollArea
         ref={scrollPort}
-        style={{ "scroll-padding-block": fadeScrollPadding }}
+        style={{ "scroll-padding-block": pillScrollPadding }}
         class="relative min-h-0 flex-1 cursor-text"
         onMouseDown={(event) => {
           if (props.readOnly || !pressMissedEditor(event)) return;
@@ -1530,6 +1533,8 @@ function EditorInstance(
             setCommentsExtent,
           )}
         </div>
+        {/* Room for the floating pills, so the end of the note always scrolls above them. */}
+        <div class="notebook-editor-endgap" aria-hidden="true" />
       </ScrollArea>
       {comments.toolbar(() => scrollPort)}
       {/* Files dropped anywhere on the note's page upload and land at the cursor. */}
@@ -1547,7 +1552,8 @@ function EditorInstance(
         <Show when={deviceReady() && device().recovery && (props.readOnly || provider?.recoveryInput().text !== currentText())}>
           <TextInput multiline readOnly label={t().deviceCopyLabel} value={deviceReady() ? (provider?.recoveryInput().text ?? "") : ""} />
         </Show>
-        <Show when={tabOnly() || device().failed || device().recovery}>
+        {/* Once sync ended, the red pill holds the device copy's actions; only a failing device store keeps this row. */}
+        <Show when={device().failed || (!syncEnded.ended() && (tabOnly() || device().recovery))}>
           <div class="flex flex-wrap items-center gap-2 px-2 py-2" data-notebook-device-state>
             <InlineGuidance
               role={device().failed ? "alert" : "status"}
@@ -1588,7 +1594,7 @@ function EditorInstance(
                 {t().deviceEditInTab}
               </Button>
             </Show>
-            <Show when={tabOnly() || (deviceReady() && (device().pending || device().failed))}>
+            <Show when={!syncEnded.ended() && (tabOnly() || (deviceReady() && (device().pending || device().failed)))}>
               <Button
                 size="xs"
                 variant="ghost"
@@ -1647,6 +1653,19 @@ function EditorInstance(
               sync={syncEnded}
               markdown={() => (collabActive() ? provider?.recoveryInput().text : undefined) ?? currentText()}
               noteHref={() => window.location.pathname + window.location.search}
+              recovery={
+                device().recovery
+                  ? {
+                      kept: deviceKept(),
+                      canKeep: device().saved,
+                      keep: () =>
+                        void documentClient?.flush().then((saved) => {
+                          if (saved) setDeviceKept(true);
+                        }),
+                      discard: () => void discardDeviceInput(),
+                    }
+                  : undefined
+              }
             />
           )}
         </Show>

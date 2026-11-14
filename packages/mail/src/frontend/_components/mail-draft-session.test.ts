@@ -16,6 +16,7 @@ const seed: MailDraftSeed = {
   derivedFromMessageId: null,
   derivationKind: null,
   content: {
+    quoteSource: null,
     senderIdentityId: "30000000-0000-4000-8000-000000000003",
     to: [],
     cc: [],
@@ -32,6 +33,7 @@ const seed: MailDraftSeed = {
   origin: {
     kind: "compose",
     input: {
+      quoteSource: null,
       senderIdentityId: "30000000-0000-4000-8000-000000000003",
       to: [],
       cc: [],

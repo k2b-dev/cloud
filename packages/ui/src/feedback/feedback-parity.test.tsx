@@ -41,14 +41,17 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(header).not.toContain("background");
     expect(title).toContain("font-size: 1.25rem");
     expect(title).toContain("font-weight: 600");
-    expect(title).toContain("overflow-wrap: anywhere");
+    // A title never wraps: one line that ends with an ellipsis, so a long name moves nothing.
+    expect(title).toContain("white-space: nowrap");
+    expect(title).toContain("text-overflow: ellipsis");
     expect(subtitle).toContain("margin-top: 0.375rem");
     expect(subtitle).toContain("font-size: 0.8125rem");
 
-    // Prompt dialogs share the flat header and wrap a long title like it.
+    // Prompt dialogs share the flat header and keep a long title on one line like it.
     const promptTitle = feedbackCss.match(/\.k2b-ui \.k2b-dialog__header h2 \{([^}]*)\}/)?.[1] ?? "";
-    expect(promptTitle).toContain("overflow-wrap: anywhere");
-    expect(promptTitle).not.toContain("nowrap");
+    expect(promptTitle).toContain("white-space: nowrap");
+    expect(promptTitle).toContain("text-overflow: ellipsis");
+    expect(promptTitle).not.toContain("overflow-wrap: anywhere");
     expect(feedbackCss).not.toMatch(/\.k2b-ui \.k2b-dialog__header \{[^}]*background/);
   });
 
@@ -217,7 +220,8 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(narrow).toContain("--k2b-toast-rail-top: calc(env(safe-area-inset-top, 0px) + var(--k2b-toast-offset-top, 0px));");
     expect(narrow).toContain("--k2b-toast-rail-bottom: auto;");
     expect(narrow).toContain("--k2b-toast-rail-direction: column-reverse;");
-    expect(source).toContain("flex-direction:var(--k2b-toast-rail-direction,column);");
+    // The stack reads the edge from the same variable: `column-reverse` puts the newest toast at the top edge.
+    expect(source).toContain('getPropertyValue("--k2b-toast-rail-direction").trim() === "column-reverse"');
     // A phone uses the full width with a 0.5rem edge.
     const phone = feedbackCss.match(/@media \(max-width: 47\.999rem\) \{\s*\.k2b-ui \[data-k2b-toast-container\] \{([^}]*)\}/)?.[1];
     expect(phone).toContain("--k2b-toast-rail-left: env(safe-area-inset-left, 0px);");

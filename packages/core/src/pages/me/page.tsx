@@ -1,5 +1,5 @@
 import { accountCategoryLabel } from "@k2b/cloud/contracts";
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, isAppSessionActor } from "@k2b/cloud/server";
 import {
   accountsAppService,
   audit,
@@ -9,13 +9,16 @@ import {
   serviceAccountCredentials,
   webauthn,
 } from "@k2b/cloud/services";
+import { screenPreferences } from "@k2b/cloud/services/screen-preferences";
+import { sharedWorkstationIdleSeconds } from "@k2b/cloud/services/session/shared-workstation";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
-import { ButtonLink, NoticeCard, Placeholder, SettingsSection } from "@k2b/ui";
+import { ButtonLink, keyboardPlatform, NoticeCard, Placeholder, SettingsSection } from "@k2b/ui";
 import { ssr } from "../../config";
 import AccountHub, { AccountPage, AccountProfileActions } from "./AccountHub";
 import { pwaAvailable } from "./app-availability";
 import { type AccountMessages, accountMessages } from "./messages";
+import ScreenSettings from "./ScreenSettings.island";
 
 // The page shell starts warning about an expiry 14 days ahead; the notice here only turns
 // urgent from the same point, so an account with a distant expiry reads as a fact.
@@ -51,13 +54,19 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   const appName = rawAppName || "Cloud";
   const freeIpaEnabled = Boolean(freeIpaEnabledRaw);
-  const [pendingRequest, apiKeys, passkeys, activityPage, notificationPreferences] = await Promise.all([
+  const platform = keyboardPlatform(c.req.header("User-Agent") ?? "");
+  const [pendingRequest, apiKeys, passkeys, activityPage, notificationPreferences, screen] = await Promise.all([
     user.provider === "local" ? accountsAppService.accountRequest.getPendingForUser({ userId: user.id }) : Promise.resolve(null),
     serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
     webauthn.listForUser({ userId: user.id }),
     audit.listSelfServiceActivity({ userId: user.id, days: 30, pagination: { page: 1, perPage: 5 } }),
     notifications.user.preferences.list(user.id, locale),
+    screenPreferences.get(user.id),
   ]);
+  // Only a browser session can mark its browser as a shared workstation; the mobile app's phone never is one.
+  const sharedWorkstation = isAppSessionActor(c.get("actor"))
+    ? undefined
+    : { userId: user.id, minutes: Math.round((await sharedWorkstationIdleSeconds()) / 60) };
   const customizedNotifications = notificationPreferences.definitions.filter((preference) => preference.customized).length;
   const action = c.req.query("action");
   // Mirrors when the profile actions offer Extend account, so the notice has no empty action row.
@@ -174,6 +183,8 @@ export default ssr<AuthContext>(async (c) => {
             </dl>
           </SettingsSection>
 
+          <ScreenSettings timerSeconds={screen.privacyTimerSeconds} platform={platform} sharedWorkstation={sharedWorkstation} />
+
           <ul class="-mx-3 grid gap-1 sm:grid-cols-2">
             {(
               [
@@ -232,9 +243,9 @@ export default ssr<AuthContext>(async (c) => {
             }
           >
             {activityPage.items.length > 0 ? (
-              <ul class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
+              <ul class="flex flex-col divide-y divide-(--ui-data-row-divider)">
                 {activityPage.items.slice(0, 3).map((entry) => (
-                  <li class="grid gap-1 rounded-[var(--ui-radius-control)] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <li class="grid gap-1 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                     <div class="min-w-0">
                       <p class="truncate text-sm font-medium text-primary">{entry.label}</p>
                       <p class="mt-0.5 truncate text-xs text-dimmed">{entry.context || t.accountContext}</p>

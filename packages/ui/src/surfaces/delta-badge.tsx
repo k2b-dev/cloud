@@ -6,7 +6,8 @@ import { type StatCellMessages, useStatCellMessages } from "./stat-cell-messages
 // The change badge of a key figure, on its own so a table cell can show it without the tile and its trend chart.
 
 /** The change as shown: one decimal of a percent or point, so text, arrow and rating never disagree. */
-const shownDelta = (delta: StatCellDelta): number => Math.round(delta.value * 1000) / 1000 || 0;
+const shownDelta = (delta: StatCellDelta): number =>
+  delta.unit === "absolute" ? delta.value || 0 : Math.round(delta.value * 1000) / 1000 || 0;
 
 const deltaTone = (delta: StatCellDelta): "good" | "bad" | "neutral" => {
   const value = shownDelta(delta);
@@ -15,14 +16,25 @@ const deltaTone = (delta: StatCellDelta): "good" | "bad" | "neutral" => {
 
 /** Signed with a true minus sign (U+2212), as figures are typeset. */
 export const deltaText = (delta: StatCellDelta, locale: string, t: StatCellMessages): string =>
-  (delta.unit === "points"
-    ? `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(shownDelta(delta) * 100)} ${t.points}`
-    : new Intl.NumberFormat(locale, {
-        style: "percent",
-        minimumFractionDigits: 1,
-        maximumFractionDigits: 1,
+  (delta.unit === "absolute"
+    ? `${new Intl.NumberFormat(locale, {
+        ...(!delta.format ? { maximumSignificantDigits: 15 } : {}),
+        style: delta.format?.style === "number" ? "decimal" : delta.format?.style,
+        currency: delta.format?.currency,
+        ...(delta.format?.decimals === undefined
+          ? {}
+          : { minimumFractionDigits: delta.format.decimals, maximumFractionDigits: delta.format.decimals }),
+        ...(delta.format?.compact ? { notation: "compact" } : {}),
         signDisplay: "exceptZero",
-      }).format(shownDelta(delta))
+      }).format(delta.value === 0 ? 0 : delta.value)}${delta.format?.unit ? ` ${delta.format.unit}` : ""}`
+    : delta.unit === "points"
+      ? `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(shownDelta(delta) * 100)} ${t.points}`
+      : new Intl.NumberFormat(locale, {
+          style: "percent",
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+          signDisplay: "exceptZero",
+        }).format(shownDelta(delta))
   ).replace("-", "\u2212");
 
 /** A change badge: arrow, signed text, and a spoken label that names the comparison and, with `better`, the rating. */

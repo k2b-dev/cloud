@@ -1,4 +1,5 @@
 import { lazySync, sql } from "@k2b/cloud";
+import { sweepDueItems } from "./item-due-events";
 
 // Match the existing Contacts idempotency-retention maintenance budget.
 const DELETE_BATCH_SIZE = 10_000;
@@ -30,6 +31,18 @@ export const itemCreateRetention = {
       meta: { appId: "spaces", family: "maintenance", label: "Task create receipt retention" },
       async process(context) {
         while (!context.signal.aborted && (await deleteExpiredCreateRequests()) === DELETE_BATCH_SIZE) await context.heartbeat();
+        context.signal.throwIfAborted();
+      },
+    });
+    await scheduler().create({
+      id: "spaces:item-due:events",
+      cron: "* * * * *",
+      timezone: "UTC",
+      misfire: "latest",
+      meta: { appId: "spaces", family: "maintenance", label: "Task due events" },
+      async process(context) {
+        context.signal.throwIfAborted();
+        await sweepDueItems();
         context.signal.throwIfAborted();
       },
     });

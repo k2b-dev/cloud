@@ -28,6 +28,7 @@ export const contextCommandsWithShortcuts = (): ContextAwareCommand[] => {
 };
 
 const ARROWS = new Set(["arrowup", "arrowdown", "arrowleft", "arrowright"]);
+const WITH_DIALOGS = new Set(["cloud.search", "cloud.privacy.now"]);
 
 /**
  * One owner in the Cloud layout; app islands only publish commands. A command
@@ -45,11 +46,14 @@ export const attachCommandShortcuts = (run: (command: ContextAwareCommand) => vo
     const dialogOpen = Boolean(document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]'));
     const matches = contextCommandsWithShortcuts().filter((command) => {
       if (!command.shortcut) return false;
-      if (command.id !== "cloud.search" && dialogOpen) return false;
+      // Search and the privacy screen work over dialogs too; the privacy screen then covers the dialog.
+      if (!WITH_DIALOGS.has(command.id) && dialogOpen) return false;
       const combo = parse(command.shortcut);
       if (!combo || ARROWS.has(combo.key) !== arrows || (editing && !combo.ctrl && !combo.meta)) return false;
       // Shift+/ reports '?' on common keyboard layouts.
       const key = event.key === "?" && combo.key === "/" ? "/" : event.key.toLowerCase();
+      // Punctuation is a character contract: a French keyboard needs Shift for ".", so Shift does not count there.
+      const shiftFree = combo.key === "." && !combo.shift;
       const physicalLetter =
         combo.alt &&
         (event.key === "Dead" || !/^[a-z]$/i.test(event.key)) &&
@@ -59,7 +63,7 @@ export const attachCommandShortcuts = (run: (command: ContextAwareCommand) => vo
         (key === combo.key || physicalLetter) &&
         event.ctrlKey === combo.ctrl &&
         event.altKey === combo.alt &&
-        event.shiftKey === combo.shift &&
+        (shiftFree || event.shiftKey === combo.shift) &&
         event.metaKey === combo.meta
       );
     });

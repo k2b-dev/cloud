@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { sql } from "../../runtime/clients";
+import { accountLockedSql } from "../account-lock";
+import { publishMailSettled } from "../outgoing-mail/dispatcher";
 import { decryptSecret } from "../secrets";
 import { getNotificationChannel } from "./channels";
 import { quietStateForEvent } from "./quiet";
@@ -17,6 +19,7 @@ type DeliveryRow = {
   route_priority: number | null;
   attempt_count: number;
   outgoing_mail_id: string | null;
+  recipient_locked: boolean;
 };
 
 export type DeliveryAttemptResult =
@@ -52,6 +55,36 @@ const holdBackForQuietTime = async (delivery: DeliveryRow): Promise<boolean> => 
     `;
   });
   return true;
+};
+
+/**
+ * The recipient's account was locked after the event was prepared. Nothing goes out on any channel, required or not,
+ * and the stored payloads are cleared; the event's other pending deliveries reach this check themselves. Mail that
+ * outgoing mail still holds for a retry is cancelled; mail already being sent cannot be recalled.
+ */
+const dropForLockedRecipient = async (delivery: DeliveryRow): Promise<void> => {
+  const message = "The recipient's account is locked.";
+  const cancelled = await sql.begin(async (tx) => {
+    await tx`
+      UPDATE notifications.deliveries
+      SET status = 'suppressed', attempt_count = attempt_count - 1, next_attempt_at = NULL,
+          error_code = 'account_locked', error_message = ${message}, payload_encrypted = NULL, updated_at = now()
+      WHERE id = ${delivery.id}::uuid AND status = 'sending'
+    `;
+    await tx`
+      UPDATE notifications.deliveries
+      SET status = 'suppressed', error_code = 'account_locked', error_message = ${message}, payload_encrypted = NULL, updated_at = now()
+      WHERE event_id = ${delivery.event_id}::uuid AND status = 'deferred'
+    `;
+    if (!delivery.outgoing_mail_id) return [];
+    return tx<{ id: string }[]>`
+      UPDATE outgoing_mail.messages
+      SET status = 'cancelled', error_code = 'account_locked', error_message = ${message}, next_attempt_at = NULL, updated_at = now()
+      WHERE id = ${delivery.outgoing_mail_id}::uuid AND status = 'queued'
+      RETURNING id
+    `;
+  });
+  for (const mail of cancelled) await publishMailSettled(mail.id).catch(() => {});
 };
 
 const activateNextFallback = async (eventId: string): Promise<string[]> => {
@@ -108,12 +141,20 @@ export const processNotificationDelivery = async (
     WHERE id = ${deliveryId}::uuid
       AND status = 'pending'
       AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-    RETURNING id, event_id, channel, payload_encrypted, required, route_priority, attempt_count, outgoing_mail_id
+    RETURNING id, event_id, channel, payload_encrypted, required, route_priority, attempt_count, outgoing_mail_id,
+      EXISTS (
+        SELECT 1 FROM notifications.events e
+        WHERE e.id = notifications.deliveries.event_id AND ${accountLockedSql(sql`e.recipient_user_id`)}
+      ) AS recipient_locked
   `;
   const delivery = rows[0];
   if (!delivery) return { status: "skipped" };
 
   try {
+    if (delivery.recipient_locked) {
+      await dropForLockedRecipient(delivery);
+      return { status: "suppressed" };
+    }
     if (await holdBackForQuietTime(delivery)) return { status: "suppressed" };
     const driver = getNotificationChannel(delivery.channel);
     if (!driver)

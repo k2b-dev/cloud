@@ -5,7 +5,7 @@ section: Reference
 order: 1276
 description: Display account categories, manage Linux identities, and pair or remove a person's Cloud app devices through supported APIs.
 tags: [accounts, api, linux]
-updated: 2026-10-23
+updated: 2026-11-11
 ---
 
 # Account administration API
@@ -24,8 +24,9 @@ only the required presentation data to the browser.
 
 Cloud's authentication layer enforces access automatically. The server-only
 `isAccountCategoryAllowed(user)` checks category eligibility for platform-owned
-credential flows; it does not replace authentication, expiry checks or resource
-authorization. Authorization reads the durable policy without relying on the
+credential flows. `isAccountAllowed(user)` checks one account: its category and
+a FreeIPA lock mirrored by synchronization. Neither replaces authentication,
+expiry checks or resource authorization. Authorization reads the durable policy without relying on the
 settings cache; invalid stored policy fails closed.
 
 ## Linux identity API

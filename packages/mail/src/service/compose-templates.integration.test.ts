@@ -20,6 +20,7 @@ import {
   getMailboxComposeStyle,
   listComposeTemplates,
   previewComposeDraft,
+  previewComposeSignature,
   removeMailboxComposeLogo,
   renderComposeDraft,
   renderComposeSnippet,
@@ -29,6 +30,7 @@ import {
   updateMailboxComposeLogo,
   updateMailboxComposeStyle,
 } from "./compose-templates";
+import { readDraftDocument } from "./draft-documents";
 import { acquireDraftLease, releaseDraftLease } from "./draft-leases";
 import {
   createDraft,
@@ -40,7 +42,7 @@ import {
   updateDraft,
 } from "./drafts";
 import { currentMailboxLogo, deleteUnusedMailboxLogoVersions, mailboxLogoSha256 } from "./mailbox-logos";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, updateMailbox } from "./mailboxes";
 import { updateSenderIdentity } from "./sender-identities";
 
 const markComposeTemplateSegment = (source: string): string => `\u2063${source}\u2064`;
@@ -94,7 +96,7 @@ const delegatedContext = (context: MailRequestContext, serviceAccountId: string)
   };
 };
 
-suite("mail compose templates", () => {
+const draftModeTests = (draftEditMode: "shared" | "lock") => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   const accessIds: string[] = [];
@@ -128,6 +130,11 @@ suite("mail compose templates", () => {
     const mailbox = await createMailbox(owner, { name: `Compose ${suffix}`, description: "Compose template test" });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxId = mailbox.data.id;
+    expect(mailbox.data.draftEditMode).toBe("shared");
+    if (draftEditMode === "lock") {
+      const mode = await updateMailbox({ context: owner, mailboxId, draftEditMode });
+      if (!mode.ok) throw new Error(mode.error.message);
+    }
     const granted = await grantMailboxAccess({
       context: owner,
       mailboxId,
@@ -164,6 +171,33 @@ suite("mail compose templates", () => {
     }
     if (userIds.length) {
       await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
+    }
+  });
+
+  test("signature fragments require write access and never expose another owner's private template", async () => {
+    const created = await createComposeTemplate({
+      context: owner,
+      mailboxId,
+      input: {
+        kind: "signature",
+        scope: "private",
+        name: "Fragment test",
+        shortcut: "fragment_test",
+        body: "**{{ actor.display_name }}**",
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const input = { senderIdentityId, signatureTemplateId: created.data.id, format: "markdown" as const };
+    expect(await previewComposeSignature({ context: owner, mailboxId, input })).toMatchObject({ ok: true, data: { text: "Ada Owner" } });
+    expect(await previewComposeSignature({ context: collaborator, mailboxId, input })).toMatchObject({ ok: false });
+    const readGrant = await updateMailboxAccess({ context: owner, mailboxId, accessId: accessIds[0]!, permission: "read" });
+    if (!readGrant.ok) throw new Error(readGrant.error.message);
+    try {
+      expect(
+        await previewComposeSignature({ context: collaborator, mailboxId, input: { ...input, signatureTemplateId: null } }),
+      ).toMatchObject({ ok: false, error: { status: 403 } });
+    } finally {
+      await updateMailboxAccess({ context: owner, mailboxId, accessId: accessIds[0]!, permission: "write" });
     }
   });
 
@@ -274,6 +308,7 @@ suite("mail compose templates", () => {
       if (!signature.ok) throw new Error(signature.error.message);
       logoSignature = signature.data;
       const draft: DraftEditableContentInput = {
+        quoteSource: null,
         senderIdentityId,
         to: [],
         cc: [],
@@ -490,6 +525,7 @@ suite("mail compose templates", () => {
       origin: {
         kind: "compose",
         input: {
+          quoteSource: null,
           conversationId: null,
           intent: "new",
           sourceMessageId: null,
@@ -517,6 +553,7 @@ suite("mail compose templates", () => {
       context: owner,
       mailboxId,
       input: {
+        quoteSource: null,
         conversationId: null,
         intent: "new",
         sourceMessageId: null,
@@ -546,6 +583,7 @@ suite("mail compose templates", () => {
       context: collaborator,
       mailboxId,
       input: {
+        quoteSource: null,
         conversationId: null,
         intent: "new",
         sourceMessageId: null,
@@ -579,6 +617,7 @@ suite("mail compose templates", () => {
     const snippet = templates.data.find((template) => template.shortcut === "welcome");
     if (!snippet) throw new Error("Mailbox snippet is missing");
     const draft = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -650,6 +689,7 @@ suite("mail compose templates", () => {
     if (!mailboxTemplate.ok || !privateTemplate.ok) return;
 
     const draft = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -680,6 +720,7 @@ suite("mail compose templates", () => {
 
   test("materializes delegated service-account signatures as the delegated user", async () => {
     const draft = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -811,6 +852,7 @@ suite("mail compose templates", () => {
     expect(listed.ok && listed.data.every((entry) => entry.formattingWarnings === undefined)).toBe(true);
 
     const content = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -860,6 +902,7 @@ suite("mail compose templates", () => {
 
   test("preview and send preserve the same extra Markdown blank lines", async () => {
     const draft: DraftEditableContentInput = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -888,6 +931,7 @@ suite("mail compose templates", () => {
 
   test("preview and send preserve the same Markdown dividers and dash underlines", async () => {
     const draft: DraftEditableContentInput = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -917,6 +961,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       { code: "ignored_mailbox_css", property: "background" },
     ];
     const draft: DraftEditableContentInput = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -987,6 +1032,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       expect(saved).toMatchObject({ ok: true, data: { formattingWarnings: [] } });
       if (!saved.ok) throw new Error(saved.error.message);
       const draft: DraftEditableContentInput = {
+        quoteSource: null,
         senderIdentityId,
         to: [{ name: null, address: "reader@example.test" }],
         cc: [],
@@ -1032,9 +1078,10 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     }
   });
 
-  const newContent = () => ({ senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" });
+  const newContent = () => ({ quoteSource: null, senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" });
 
   const content = (draft: MailDraft): DraftEditableContent => ({
+    quoteSource: null,
     senderIdentityId: draft.senderIdentityId,
     to: draft.to,
     cc: draft.cc,
@@ -1311,7 +1358,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     });
   });
 
-  test("legacy drafts migrate on open without a write and persist the migrated view on save", async () => {
+  test("legacy drafts keep their effective signature across open and save", async () => {
     const chosen = await signature("migratedchoice");
     const body = `Answer\n\n${markComposeTemplateSegment(chosen.body)}\n\nAda wrote:\n> History`;
     const created = await createDraft({ context: owner, mailboxId, input: { ...newContent(), body, signatureTemplateId: null } });
@@ -1325,7 +1372,12 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     const [stored] = await sql<
       { body_markdown: string; signature_template_id: string | null }[]
     >`SELECT body_markdown, signature_template_id FROM mail.drafts WHERE id = ${created.data.id}::uuid`;
-    expect(stored).toEqual({ body_markdown: body, signature_template_id: null });
+    // Shared open seeds a canonical document; lock open only projects the view.
+    expect(stored).toEqual(
+      draftEditMode === "shared"
+        ? { body_markdown: opened.data.body, signature_template_id: chosen.id }
+        : { body_markdown: body, signature_template_id: null },
+    );
     const saved = await updateDraft({
       context: owner,
       mailboxId,
@@ -1381,6 +1433,37 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     ).toMatchObject({ ok: true, data: { body: "Edited answer", signatureTemplateId: chosen.id } });
   });
 
+  if (draftEditMode === "shared") {
+    test("failed shared recovery restores never add false recovery copies on retry", async () => {
+      const created = await createDraft({ context: owner, mailboxId, input: newContent() });
+      if (!created.ok) throw new Error(created.error.message);
+      const target = { context: owner, mailboxId, draftId: created.data.id };
+      const seeded = await readDraftDocument(target);
+      if (!seeded.ok) throw new Error(seeded.error.message);
+      // Real expired authenticated history, rather than a fabricated future revision.
+      await sql`DELETE FROM mail.draft_document_revisions WHERE draft_id = ${created.data.id}::uuid`;
+      expect(
+        await updateDraft({
+          ...target,
+          expectedRevision: created.data.revision,
+          input: { ...content(created.data), body: "Recover this text" },
+        }),
+      ).toMatchObject({ ok: false, error: { status: 409 } });
+      const copies = await listDraftRecoveryCopies(target);
+      if (!copies.ok || copies.data.length !== 1) throw new Error("Expected one retained edit");
+      for (const historyComplete of [true, false]) {
+        await sql`UPDATE mail.drafts SET doc_history_complete = ${historyComplete} WHERE id = ${created.data.id}::uuid`;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          expect(
+            await restoreDraftRecoveryCopy({ ...target, recoveryCopyId: copies.data[0]!.id, expectedRevision: created.data.revision }),
+          ).toMatchObject({ ok: false, error: { status: 409 } });
+          expect(await listDraftRecoveryCopies(target)).toEqual(copies);
+        }
+      }
+      await sql`UPDATE mail.drafts SET doc_history_complete = true WHERE id = ${created.data.id}::uuid`;
+    });
+  }
+
   test("recovery copies restore explicit choices and keep the current choice for old copies", async () => {
     const first = await signature("recoveryfirst");
     const second = await signature("recoverysecond");
@@ -1395,12 +1478,16 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     });
     if (!current.ok) throw new Error(current.error.message);
     const { signatureTemplateId: _, ...oldContent } = content(current.data);
+    // Simulate an offline client's stale base aging out of authenticated history.
+    if (draftEditMode === "shared")
+      await sql`DELETE FROM mail.draft_document_revisions WHERE draft_id = ${created.data.id}::uuid AND revision = ${created.data.revision}`;
+    const recoveryRevision = created.data.revision;
     for (const choice of [{ signatureTemplateId: second.id }, {}, { signatureTemplateId: null }]) {
       const conflict = await updateDraft({
         context: owner,
         mailboxId,
         draftId: created.data.id,
-        expectedRevision: created.data.revision,
+        expectedRevision: recoveryRevision,
         input: { ...oldContent, subject: "Stale edited subject", ...choice },
       });
       expect(conflict).toMatchObject({ ok: false, error: { status: 409 } });
@@ -1537,11 +1624,14 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     if (!current.ok) throw new Error(current.error.message);
     const { signatureTemplateId: _, ...oldContent } = content(current.data);
     const expectedBody = `Recovered answer\n\n${markComposeTemplateSegment(other.body)}`;
+    if (draftEditMode === "shared")
+      await sql`DELETE FROM mail.draft_document_revisions WHERE draft_id = ${created.data.id}::uuid AND revision = ${created.data.revision}`;
     expect(
       await updateDraft({
         context: owner,
         mailboxId,
         draftId: current.data.id,
+        // The offline client's actual base is no longer retained.
         expectedRevision: created.data.revision,
         input: { ...oldContent, body: `${expectedBody}\n\n${markComposeTemplateSegment(chosen.body)}` },
       }),
@@ -1610,4 +1700,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     expect(preview.data.text).toBe("Answer\n\nRegards previewlegacy Ada Owner");
     expect(preview.data.html.match(/Regards previewlegacy/g)).toHaveLength(1);
   });
-});
+};
+
+for (const draftEditMode of ["shared", "lock"] as const)
+  suite(`mail compose templates (${draftEditMode})`, () => draftModeTests(draftEditMode));

@@ -1983,7 +1983,7 @@ suite("mail lifecycle control plane", () => {
     const fixture = await reconcileFixture({ key: "long-reply-id", uidValidity: "68", localUids: [] });
     const longMessageId = `<${"a".repeat(1_200)}-${suffix}@example.test>`;
     const original = { ...reconcileEnvelope(11, "68", fixture.folderId, "long-reply-id"), messageId: longMessageId, subject: "Original" };
-    const reply = { ...reconcileEnvelope(12, "68", fixture.folderId, "long-reply-id"), inReplyTo: longMessageId, subject: "Answer" };
+    const reply = { ...reconcileEnvelope(12, "68", fixture.folderId, "long-reply-id"), inReplyTo: longMessageId, subject: "Re: Original" };
     await commitEnvelopes({ fixture, uidValidity: "68", role: "other", messages: [original, { ...reply, references: [longMessageId] }] });
 
     const links = await sql<{ uid: string; conversation_id: string }[]>`

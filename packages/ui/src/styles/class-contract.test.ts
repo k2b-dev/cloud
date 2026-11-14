@@ -60,6 +60,8 @@ const isForeignContract = (token: string) =>
   token.startsWith("md-") ||
   token.startsWith("stdlib-") ||
   token.startsWith("maplibregl-") ||
+  // pdf.js wraps tagged text in its text layer in `markedContent` spans.
+  token === "markedContent" ||
   token.startsWith("cm-");
 
 /** Marker classes: CopyButton uses its base styles; Navigation styles its lists and rows. */

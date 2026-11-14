@@ -2,6 +2,20 @@ import type { CapabilityActionCallReview, CapabilityActionReview } from "@k2b/cl
 
 const sentences = {
   en: {
+    "comment.create": {
+      action: "Comment on {item}",
+      running: "Commenting on {item}",
+      done: "Commented on {item}",
+      confirm: "Post",
+      decline: "Cancel",
+    },
+    "item.tags.set": {
+      action: "Set tags on {item}",
+      running: "Setting tags on {item}",
+      done: "Set tags on {item}",
+      confirm: "Save",
+      decline: "Cancel",
+    },
     "task.create": {
       action: "Create task {item}",
       running: "Creating task {item}",
@@ -32,6 +46,20 @@ const sentences = {
     },
   },
   de: {
+    "comment.create": {
+      action: "{item} kommentieren",
+      running: "{item} wird kommentiert",
+      done: "{item} kommentiert",
+      confirm: "Posten",
+      decline: "Abbrechen",
+    },
+    "item.tags.set": {
+      action: "Tags für {item} setzen",
+      running: "Tags für {item} werden gesetzt",
+      done: "Tags für {item} gesetzt",
+      confirm: "Speichern",
+      decline: "Abbrechen",
+    },
     "task.create": {
       action: "Aufgabe {item} anlegen",
       running: "Aufgabe {item} wird angelegt",

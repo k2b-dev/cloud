@@ -156,8 +156,16 @@ ordinary editor. Prompts carry the same tone through their `variant`; see
 stacked above it shows only the upper one's frame. A `floating` panel draws
 the edge on its own frame.
 
+Add `celebrate` to a success dialog that reports a finished result, such as a
+created customer or an issued invoice. Its header draws the check once when it
+appears: the ring closes, the check follows, and the mark springs up a little,
+in under a second. The check takes the icon's place in its chip at the same
+size and colour, and nothing else moves. With reduced motion, the check is
+finished at once. Other tones ignore it; leave it off for routine saves.
+Toasts and `prompts.success` take the same option.
+
 ```tsx
-<PanelDialog tone="success">
+<PanelDialog tone="success" celebrate>
   <PanelDialog.Header title="Invoice RE-2026-0142 created" subtitle="Mueller Antik GmbH" close={() => close()} />
   <PanelDialog.Body>…</PanelDialog.Body>
   <PanelDialog.Footer>
@@ -165,6 +173,24 @@ the edge on its own frame.
     <Button variant="secondary" onClick={send}>Send by email</Button>
     <Button onClick={() => close()}>Done</Button>
   </PanelDialog.Footer>
+</PanelDialog>
+```
+
+## Picture and video
+
+Set `media` when the body shows one picture or one video, such as a file
+preview. The body then reaches the dialog's edges on the muted canvas, and the
+header floats over it as glass chips (`k2b-overlay-surface`): the title and
+subtitle in one chip, the actions in a group, and the close button. The
+header's `icon` is left out. A long title fades out at its end, and the subtitle
+gives way first; on a phone the chip shows the title only. Leave `media` off for
+documents, text, tables, and forms: text under glass reads as a rendering
+fault.
+
+```tsx
+<PanelDialog media={kind === "image" || kind === "video"}>
+  <PanelDialog.Header title={file.name} subtitle={facts} actions={actions} close={() => close()} />
+  <PanelDialog.Body>{preview}</PanelDialog.Body>
 </PanelDialog>
 ```
 
@@ -184,7 +210,8 @@ their size. Header, tabs, body, and footer share a 24 px leading inset, 16 px
 below 48rem; body and footer use it at the trailing edge too. The header's
 trailing edge is tighter, 20 px and 12 px below 48rem, so the close control
 sits closer to the corner. Keep filenames and other long identifiers in the
-subtitle or body; both heading lines wrap.
+subtitle or body. The title never wraps: it stays on one line and ends with an
+ellipsis, and the native hint shows all of it; the subtitle wraps.
 Use whitespace to separate content when additional section frames add no meaning.
 
 Pass the dialog's `close` callback to `PanelDialog.Header`. `closeDisabled`
@@ -211,7 +238,7 @@ type PanelDialogSurface = "contained" | "floating";
 type DialogTone = "success" | "warning" | "danger";
 
 type PanelDialogProps = {
-  children: JSX.Element; surface?: PanelDialogSurface; tone?: DialogTone;
+  children: JSX.Element; surface?: PanelDialogSurface; tone?: DialogTone; celebrate?: boolean; media?: boolean;
 };
 
 type PanelDialogHeaderProps = {

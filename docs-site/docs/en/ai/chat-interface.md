@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-23
+updated: 2026-11-10
 ---
 
 # Chat interface
@@ -116,7 +116,10 @@ The controller exposes:
 - file URLs and file counts;
 - one error state for the active chat.
 
-`createConversation()` returns `null` on failure. `creationErrorStatus()` exposes
+`createConversation(input, beforeOpen?)` returns `null` on failure. When the
+new chat becomes active, `beforeOpen(conversation)` runs in the same update.
+Use it to move local state, such as a draft, to the new chat ID, so that views
+keyed by that ID never show the chat without that state. `creationErrorStatus()` exposes
 the HTTP status when the controller reports a creation failure, or `null` when
 that status is unavailable. Applications can distinguish a definitive refusal (such as an unavailable
 creation replay) from an uncertain write; retain local drafts in either case.
@@ -162,6 +165,50 @@ helper lets SSR decide whether to render a microphone.
 Lists, Sources, files, routines, dictations, and Project context refresh through
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
 on `/api/ai/live`, not through the conversation stream.
+
+## Suggest the next message
+
+Interactive browser chats with the default tool source offer
+`suggest_next_message({ text: string | null })` when the person's
+`suggestNextMessage` preference is on (the default). Project composers,
+local clients, routines, workflows and background runs do not load it. A
+chat inside a Project is still an interactive chat.
+
+The platform prompt includes **Suggestions → Next message** only while the
+tool is loaded. It asks for one plain sentence in the person's language, at
+most 120 characters, only when the answer ends with a question or offers an
+obvious next step. `null` deliberately means no suggestion. Completed requests,
+failures, refusals, blockers, pending question cards or approvals, thanks and
+requests for brevity or no suggestions should produce none. A suggestion uses
+only the person's messages and the visible answer, never unseen tool data.
+
+The server rejects multiline text, more than 200 Unicode characters, URLs,
+Markdown, mentions and text equal to the person's last message after Unicode,
+case, punctuation and whitespace normalization. Rejected text means no
+suggestion. The first closing call wins, including `null` or invalid text. An alone,
+last call following answer text in the same model step ends the loop without
+another model request. Other calls receive
+`noted, call only alone after the answer` and the loop continues. Their arguments
+are stored as `{ text: null }` and do not count as a suggestion. The call
+never appears as a tool block.
+
+The latest completed answer can carry the optional field
+`suggestedNextMessage: { text: string; dismissedAt: string | null }` in the
+conversation detail, message page, initial stream snapshot and completed-turn
+stream event. Only the person who triggered the run receives it. A newer
+message or turn, an error, stop, redirect, queued message, pending approval or
+question hides it. Reloading preserves both the suggestion and its dismissal.
+Model history, exported answer text, title enrichment, search and notifications
+exclude this field.
+
+Dismiss it with
+`DELETE /api/ai/conversations/:conversationId/messages/:messageId/suggested-next-message`,
+using public chat and message IDs. The route checks conversation access and the
+trigger person's identity, sets `dismissedAt` once and returns
+`{ dismissed: true }`. Repeating it is safe. Keep a dismissed suggestion hidden.
+Use `GET /api/ai/prefs` and `PUT /api/ai/prefs` with
+`{ suggestNextMessage: false }` to turn generation off. No additional provider
+or model request is made for a suggestion.
 
 ## Attach Cloud resources
 
@@ -338,17 +385,28 @@ order:
    through the owning app's reader with the viewer's current access. The finished
    `present` summary reserves its height while loading;
    group summaries list each chart's kind and title, so every frame reserves
-   its own height. Stats summaries carry per-item booleans for sparkline, sub
-   and delta to reserve the exact tile height; details summaries carry the
+   its own height. Stats summaries carry per-item booleans for sparkline, sub, delta
+   and comparison to reserve the exact tile height; details summaries carry the
    field count and the label, reference flag and text length of the first
    twelve fields, so wrapped values keep their room on a phone. These
    summaries contain no values. A card's text wraps instead of being cut off. While the call runs, the work
    line names the step and the place stays empty. Table header labels stay on one line and the table
    scrolls sideways, so up to eight rows fit the reserved height on a phone.
+   Chart, group and explorer drawings load when Chat first shows one. Their
+   headings, controls and plot areas reserve the same space while the code and
+   data arrive. A drawing that came from the server stays visible until its
+   browser code is ready, including when reopening history. Its accessible name
+   remains available, “Loading chart” is announced politely, and its controls
+   look disabled until they can respond. If that code cannot
+   load, that chart shows **The chart could not be loaded** with **Reload**.
+   The composer, sidebar and other chat controls remain usable while charts load
+   and if loading fails.
+
    A table with `search` or `groupBy` shows a search field or a group choice
    beside its title. The summary reserves their space while the controls load,
    then shows them disabled until the file arrives. If the controls cannot load,
-   a notice offers to reload the page.
+   a notice offers to reload the page. Stats also keep their reserved tiles while
+   loading; if their display cannot download, the same notice offers a reload.
    Search matches the shown cells and never leaves the browser; Copy data keeps
    every row. A column's `priority` hides it on a narrow table, and each row's
    details button shows the hidden values.
@@ -637,56 +695,84 @@ only sources already read in that conversation; they cannot supply pin locations
 Opening hours can be unknown. Stored provider times and attribution remain with
 the results.
 
-Select a pin or a list row to show its information. Arrow keys, Home, and End move
-through the list. On phones and in the Assistant panel, four rows appear first;
-**All places** expands the list in the conversation. The information card keeps
-its height, including when an opening schedule or description is missing.
+In the conversation the map is a still tile with a summary, such as
+`86.4 km · 1 h 32 min · A → B → C → D`, `12 places`, or the state that needs
+attention, such as **Which place did you mean?** or **Confirm costs**. The
+tile is one button; it opens the full map in a dialog, on phones on the whole
+screen with the list as a sheet. Back or **Close** returns to the tile. While
+the dialog is open, the URL names the map, so a reload opens it again.
+
+In the dialog, select a pin or a list row to show its information and a link
+into the device's navigation app. Arrow keys, Home, and End move through the
+list. The information keeps its place, including when an opening schedule or
+description is missing.
+
+Callers can attach a note, a source label with an optional generic symbol, and up
+to three labeled links to each place or route stop. The map dialog shows them with
+the selected place or stop, below its address and above its actions. Use
+`describe` with `details`, `web`, or both, or pass stop `details` with `route`.
+Each detail's `id` is a returned place mark or a stop ID; an ID that names both a
+stop and a place mark is rejected. Notes allow 600 characters, source labels 120,
+link labels 80, and link URLs 2,000. A map keeps details only for what it shows:
+up to two groups of 20 places, five results to pick a stop from, and 26 route
+stops (71 entries), so a live entry is never dropped for room. A new entry
+replaces the whole earlier entry for that ID; send the ID alone to clear it.
+Replacing places drops their details, a new route replaces all stop details even
+where it reuses a stop ID, and changing a stop's address drops that stop's
+details. External HTTP(S) links require a source already read in the
+conversation and open in a new tab. Root-relative Cloud paths beginning with a
+single `/` open in place without fetching and are not checked, so they should
+name pages the person may open; dot segments and other link forms are rejected. These fields are caller-supplied
+display information; the map has no application-specific knowledge.
+
+Callers can attach a note, a source label with an optional generic symbol, and up
+to three labeled links to each place or route stop. The selected place shows these
+details; route legs show the destination stop's note below its label. Use
+`describe` with `details`, `web`, or both, or pass stop `details` with `route`.
+Each detail's `id` is a returned place mark or a stop ID; an ID that names both a
+stop and a place mark is rejected. Notes allow 600 characters, source labels 120,
+link labels 80, and link URLs 2,000. A map keeps details only for what it shows:
+up to two groups of 20 places, five results to pick a stop from, and 26 route
+stops (71 entries), so a live entry is never dropped for room. A new entry
+replaces the whole earlier entry for that ID; send the ID alone to clear it.
+Replacing places drops their details, a new route replaces all stop details even
+where it reuses a stop ID, and changing a stop's address drops that stop's
+details. External HTTP(S) links require a source already read in the
+conversation and open in a new tab. Root-relative Cloud paths beginning with a
+single `/` open in place without fetching and are not checked, so they should
+name pages the person may open; dot segments and other link forms are rejected. These fields are caller-supplied
+display information; the map has no application-specific knowledge.
 
 Follow-up searches reuse `mapId` and the current revision. A second group uses
 letters and a second color on the original map; later searches replace that
 secondary group. Earlier questions and answers remain. The follow-up answer
-includes **Jump to map**. Reloading resolves that original result from the saved
-map rather than restoring the old search.
+includes **Jump to map**, which moves to the original tile. Reloading resolves
+that original result from the saved map rather than restoring the old search.
 
 **Route here** accepts a starting address or a location the person explicitly
 shares with their browser. Denying location access leaves the address option
-available. Route stops have letters, and each leg shows distance and duration.
-An ambiguous address shows up to five server candidates before route calculation
-continues.
+available. Without a connection, **Route here** says why it is unavailable and
+the navigation link still works. Route stops have letters, and each stop's row
+shows the distance and duration of the leg that reaches it. An ambiguous
+address lists up to five server candidates before route calculation continues.
 
-Inserting or moving a stop, optimizing the order, and changing travel options
-produce a calculated proposal. The map keeps the original route until the person
-accepts it. **Discard** preserves the route; an accepted change has a timestamp
-and **Undo**. Options can apply to the entire tour or one leg. Along-route place
-searches use the saved route and an explicit kilometer window. The search form
-accepts an optional place name alongside the category controls; the provider
-searches for that name within the selected category and route corridor. Navigation
-opens the destination in an external navigation app; Cloud does not provide live
-turn-by-turn navigation.
+The dialog's **More actions** menu holds **Insert stop**, **Optimize stop
+order**, **Options**, and **Eat along the route**, one at a time: while a form,
+results to choose from, a proposal, a question, or a recovery is open, the menu
+waits. Inserting a stop, optimizing the order, and changing options produce a
+calculated proposal, shown as a dashed line and a `+` pin for a new stop; each
+stop's row shows the proposed leg that reaches it and marks changed legs. The
+map keeps the original route until the person accepts it. **Discard**
+preserves the route; an accepted change has a timestamp and **Undo**. Options
+can apply to the entire tour or one leg. **Eat along the route** lists places
+near the route; it uses the saved route and an explicit kilometer window. The search form accepts an optional place name
+alongside the category controls; the provider searches for that name within
+the selected category and route corridor. Navigation opens the destination in
+an external navigation app; Cloud does not provide live turn-by-turn
+navigation.
 
-**Save as Notebook** asks for a writable notebook. Each place group becomes a
-shared `:::map` block, and the complete accepted route is kept in a route block.
-Large maps are saved in parts without shortening geometry or changing the
-source. Saving does not call the geographic provider. The export omits `savedAt`
-because the map has no durable save timestamp: opening-hours reads refresh the
-viewing time, which must not change a resumable export. Notebook labels the
-provenance date as the calculation date.
-
-Confirmed progress and a link to any known partial note stay visible. **Cancel**
-stops further requests and keeps saved parts. **Resume save** checks the note
-before continuing; **Check save outcome** reconciles an uncertain append.
-If the last part is still unresolved, check again later; it is never sent twice.
-A changed map source or edited note stops the save and exposes recovery links.
-An uncertain create cannot be repeated, even after 24 hours: open the selected
-notebook to find the possible note. A receipt left by an earlier save flow also
-opens Notebook recovery instead of creating another note.
-
-Progress survives reload in this browser, separately for each signed-in owner,
-conversation, map and revision. Completed receipts are retained to prevent a
-second save of that source. Browser local storage and Web Locks support are
-required; unavailable storage or another tab saving the same source produces
-visible feedback before another write. Clearing browser data also removes
-these receipts, so check the notebook before starting over.
+Maps in chat are no longer saved to a notebook from the map. Maps saved that
+way earlier stay in their notes and keep showing there.
 
 A missing Geo configuration or exhausted allowance shows a short explanation
 without starting a map or provider query. Budget messages include their reset
@@ -705,7 +791,7 @@ still needs a smaller reservation. Resolve the remaining stops the same way;
 editing a selected address clears its old coordinates. Suggestions consume the
 same Core budget, so recovery requires credits to remain available.
 
-Map reads, exports, and changes check the conversation's current owner. Writes
+Map reads and changes check the conversation's current owner. Writes
 also check the saved revision before provider work. A conflict offers the current
 state instead of overwriting it. A fork receives independent copies of the maps
 in its copied history. The server and browser use the same saved snapshot;
@@ -931,18 +1017,23 @@ margins and text. Visible values such as `NaN`, `undefined`, `Invalid Date` or
 
 `cloud.chart(options)` returns chart markup for apps, scripts and PDFs without
 needing a DOM. It takes the same kinds and options as chat charts and maps them
-through the same path: bar, line, scatter, pie, donut, histogram, gauge,
-sparkline, boxplot, heatmap, barGauge and stat. See
+through the same path: waterfall, area, bar, hbar, funnel, line, scatter, pie,
+donut, histogram, gauge, sparkline, boxplot, heatmap, barGauge, stat, treemap,
+pareto, bubble and radar. Bars take several series side by side or stacked.
+The chart tool and the Code reference `chart-kinds.md` describe each kind with
+when to use it and one small valid example, generated from the chart showcase
+by `bun scripts/generate-chart-catalog.ts`. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals#tool-contracts) for data,
 axes, declarative formats, references, thresholds, series style/role and limits.
-There is no grouped or stacked bar mode, or second y axis. For related computed
-measures in chat, use `cloud.view.group`.
+There is no second y axis. For related computed measures in chat, use
+`cloud.view.group`.
 
 `cloud.chart()` returns synchronously. In HTML apps, line, bar, pie, donut,
 stat and sparkline render immediately. Other kinds return a loading state
 that the frame fills after the markup enters the document, preserving its box
-size. The renderer is bundled with the frame and needs no network request,
-even on first use offline. A loading failure shows a retry button.
+size. The host keeps the renderers with its other assets and sends each frame
+only the kinds it draws, plus their shared helpers. Drawing needs no network
+request, even on first use offline. A loading failure shows a retry button.
 A rendering error (including a throwing format callback) shows its message
 without retry and is reported to the host. Tooltips,
 format callbacks and the print value table remain available after rendering.
@@ -950,6 +1041,9 @@ Frame readiness and snapshots wait for pending drawings; `cloud.pdf.render`
 also finishes pending chart markup before creating the PDF. Insert the returned
 markup rather than extracting its SVG immediately. Scripts and PDF markup
 created by scripts still render every kind synchronously.
+
+The host prepares chart assets after the page becomes interactive. An app
+started earlier waits for preparation before it becomes ready.
 
 Function `format(value)` is also accepted on axes and values. `width` and
 `height` set the logical size: 480 × 280 by default, or 160 × 40 for sparkline.

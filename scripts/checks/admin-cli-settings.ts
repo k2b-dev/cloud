@@ -28,10 +28,13 @@ const structured: Readonly<Record<string, { file: string; command: string }>> = 
     "default_profile",
   ].map((key) => [`pulse.${key}`, { file: "packages/pulse/src/cli/admin.ts", command: "admin policy set" }]),
   ["pulse.clickhouse_connection", { file: "packages/pulse/src/cli/admin.ts", command: "admin store set" }],
-  ...["notebooks.reindex_cron", "notebooks.snapshot_cron", "gateway.health_check_schedule"].map((key) => [
-    key,
-    { file: "packages/cloud/src/cli/admin/settings.ts", command: "settings set" },
-  ]),
+  ...[
+    "notebooks.reindex_cron",
+    "notebooks.snapshot_cron",
+    "gateway.health_check_schedule",
+    "tools.speedtest_server",
+    "tools.speedtest_enabled",
+  ].map((key) => [key, { file: "packages/cloud/src/cli/admin/settings.ts", command: "settings set" }]),
   ["filesv2.configuration", { file: "packages/filesv2/src/cli-admin.ts", command: "admin configuration set" }],
   ...["weather.default_lat", "weather.default_lon", "weather.cache_minutes"].map((key) => [
     key,

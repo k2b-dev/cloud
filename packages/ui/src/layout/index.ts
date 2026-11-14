@@ -35,6 +35,7 @@ export type {
   AppWorkspaceSidebarItemTone,
   AppWorkspaceSidebarProps,
   AppWorkspaceSidebarSectionProps,
+  AppWorkspaceSidebarToggleProps,
   AppWorkspaceSidebarVisibility,
   AppWorkspaceWidthShare,
 } from "./AppWorkspace";
@@ -75,10 +76,12 @@ export {
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
 export { type BottomSheetProps, bottomSheetAdaptiveOptions, bottomSheetOptions, default as BottomSheet } from "./BottomSheet";
+export { type BreadcrumbItem, Breadcrumbs, type BreadcrumbsProps } from "./Breadcrumbs";
 export type { DataPanelProps } from "./DataPanel";
 export { DataPanel } from "./DataPanel";
 export type {
   DetailPanelActionButtonProps,
+  DetailPanelActionCheckbox,
   DetailPanelActionLinkProps,
   DetailPanelActionProps,
   DetailPanelActionSecondary,
@@ -87,9 +90,7 @@ export type {
   DetailPanelHeaderProps,
   DetailPanelProps,
   DetailPanelRowProps,
-  DetailPanelSectionProps,
   DetailPanelSummaryProps,
-  DetailPanelTone,
 } from "./DetailPanel";
 export { default as DetailPanel } from "./DetailPanel";
 export type {
@@ -112,10 +113,12 @@ export { default as Discussion } from "./Discussion";
 export type {
   FloatingWindowClose,
   FloatingWindowProps,
+  FloatingWindowState,
   OpenFloatingWindowOptions,
 } from "./FloatingWindow";
 export {
   default as FloatingWindow,
+  type FloatingWindowBounds,
   type FloatingWindowRect,
   fitFloatingWindowRect,
   openFloatingWindow,
@@ -159,6 +162,15 @@ export type { PanelHeaderProps } from "./PanelHeader";
 export { PanelHeader } from "./PanelHeader";
 export type { PanesItem, PanesProps } from "./Panes";
 export { default as Panes } from "./Panes";
+export {
+  PersonPopover,
+  type PersonPopoverAction,
+  type PersonPopoverError,
+  type PersonPopoverLink,
+  type PersonPopoverList,
+  type PersonPopoverPhone,
+  type PersonPopoverProps,
+} from "./PersonPopover";
 export type { PullToRefreshProps, PullToRefreshState } from "./PullToRefresh";
 export { default as PullToRefresh } from "./PullToRefresh";
 export { installPageTitleController } from "./page-title-controller";
@@ -171,6 +183,7 @@ export type {
   PanesNode,
   PanesPath,
   PanesPathSegment,
+  PanesPreset,
   PanesSide,
   PanesSplit,
 } from "./panes-layout";
@@ -178,6 +191,7 @@ export {
   activatePanesItem,
   addPanesItem,
   applyPanesIntent,
+  applyPanesPreset,
   createPanesLayout,
   isPanesItemVisible,
   PANES_LAYOUT_VERSION,

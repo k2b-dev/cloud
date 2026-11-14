@@ -53,10 +53,39 @@ QR commands write SVG when `--out` is supplied, otherwise they print SVG. For en
 ## Network diagnostic
 
 ```bash
-cld tools speedtest --server https://cloud.example.org
+cld tools speedtest --mode quick --json
+cld tools speedtest --server https://speedtest.example.com --mode accurate --json
+cld tools speedtest --server https://speedtest.example.com --udp --udp-port 8080 --json
 ```
 
-The speedtest contacts the specified Cloud instance. It is the only Tools command in this reference that needs a Cloud URL.
+Browser, Cloud CLI and the standalone server's Node/Bun script share one engine.
+Quick mode takes at most 14 seconds; accurate mode at most 29. A stable rate can
+finish early. Ping is the median after warmup, jitter is the mean consecutive
+ping difference, and throughput excludes ramp-up. JSON retains `ping_ms`,
+`jitter_ms`, `download_mbps` and `upload_mbps`, and adds `mode`, `duration_ms`,
+`loaded_latency_ms`, byte totals and per-phase `stable` flags.
+
+With a Cloud profile URL, the command first reads `/tools/api/speedtest/config`
+from that Cloud (two-second lookup deadline). It respects the operator's server
+and disable switch. Without a Cloud URL it uses `https://speedtest.k2b.dev`.
+The command's `--server` is an explicit independent measurement target and
+bypasses Cloud settings. The global `cld --server … tools speedtest` still selects
+a Cloud installation. Cloud credentials are used only for the configuration
+request; they are never forwarded to the measurement target.
+
+The CLI names the server and prints decreasing remaining time to stderr: a
+single refreshed line on a TTY, or one line per completed phase otherwise.
+`--json` and `--jsonl` keep stdout structured. Ctrl+C cancels all active work.
+A failed test produces no result; HTTP 429 reports the server's retry delay.
+
+`--udp` explicitly selects a separate two-second jitter/loss diagnostic, with no
+throughput measurement. Browser and default CLI tests never use UDP.
+
+**Script migration (breaking):** `/tools/api/speedtest/cli` and `/cli.py`, plus
+Cloud's `/ping`, `/download` and `/upload` under that prefix, now return HTTP 410
+with a migration notice and no redirect. Obtain `/cli` from the selected
+standalone server and run it with Node or Bun. Python scripts are no longer
+supplied. Never send a Cloud token to the standalone server.
 
 Document to Markdown and Markdown to PDF intentionally have no dedicated local
 `cld tools` commands. Use the signed-in Tools pages, or call their authenticated

@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import type { z } from "zod";
+import { wakeChatEvents } from "../app-events";
 import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./access";
 import {
   CHANGES_PAGE_SIZE,
@@ -120,6 +121,7 @@ const send = async (input: Input & { input: unknown; replayHash?: string }): Pro
   });
   if (result.ok && result.data.created) {
     chatLive.wake();
+    wakeChatEvents();
     void notificationOutbox.notify();
   }
   return result;

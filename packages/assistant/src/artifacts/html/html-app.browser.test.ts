@@ -4,9 +4,9 @@
 // prelude and host with in-memory services.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, settled } from "../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, settled } from "../../../../ui/test/browser";
 import { ChunkName, chunkSource } from "../runtime/chunks";
-import { buildBaseCss, buildChartModule, buildPrelude } from "./build-assets";
+import { buildBaseCss, buildChartParts, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
 
 const sinkHits: string[] = [];
@@ -37,10 +37,10 @@ beforeAll(async () => {
       data: () => {},
     },
   });
-  const [prelude, baseCss, chartModule, harness] = await Promise.all([
+  const [prelude, baseCss, chartParts, harness] = await Promise.all([
     buildPrelude(),
     buildBaseCss(),
-    buildChartModule(),
+    buildChartParts(),
     Bun.build({
       entrypoints: [new URL("./html-app-browser-harness.ts", import.meta.url).pathname],
       target: "browser",
@@ -51,7 +51,7 @@ beforeAll(async () => {
     }),
   ]);
   const preludeHash = `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`;
-  const assets = `globalThis.assets=${JSON.stringify({ prelude, preludeHash, baseCss, chartModule })};`;
+  const assets = `globalThis.assets=${JSON.stringify({ prelude, preludeHash, baseCss, chartParts })};`;
   server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -812,7 +812,7 @@ document.addEventListener('securitypolicyviolation', () => { document.querySelec
       };
       const open = () => tooltip.evaluate((element) => element.matches(":popover-open"));
       const title = () => tooltip.locator(".k2b-chart__tooltip-title").textContent();
-      const inspect = () => (hasTouch ? bar.tap() : bar.hover());
+      const inspect = () => (hasTouch ? bar.tap() : hoverInPlace(bar));
       const width = () =>
         chart.locator(".k2b-chart__svg").evaluate((element: HTMLElement) => element.style.getPropertyValue("--k2b-chart-width"));
       expect(await eventually(width, (value) => value !== "480px")).not.toBe("480px");

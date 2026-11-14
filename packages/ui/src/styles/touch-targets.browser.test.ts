@@ -22,8 +22,9 @@ const { Dropdown } = await import("../actions/Dropdown");
 const { FilterChip } = await import("../actions/FilterChip");
 const { Toolbar } = await import("../actions/Toolbar");
 const { Tooltip } = await import("../feedback/Tooltip");
-const { default: PdfPreview } = await import("../content/PdfPreview");
+const { default: PdfViewer } = await import("../content/PdfViewer");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
+const { Section } = await import("../surfaces/Section");
 const { default: Select } = await import("../inputs/Select");
 const { SettingsGroup } = await import("../layout/Settings");
 const { default: SettingsModal } = await import("../layout/SettingsModal");
@@ -226,13 +227,19 @@ const takenPixels = async (page: Page, markup: string, width = "22rem", script =
   );
 };
 
-/** Shows toasts through the real `toast` module and waits until every one has settled in the rail. */
+/**
+ * Shows toasts through the real `toast` module, fans the stack out with its shortcut, so every toast is whole and in
+ * reach, and waits until it has settled.
+ */
 const runToasts = async (page: Page, script: string) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addScriptTag({ content: `${toastScript}\n${script}` });
   await page.waitForFunction(() =>
     Array.from(document.querySelectorAll(".k2b-toast")).every((toast) => toast.getAttribute("data-open") === "true"),
   );
+  await page.keyboard.press("Alt+t");
+  await page.waitForFunction(() => document.querySelector("[data-k2b-toast-container]")?.getAttribute("data-expanded") === "true");
+  await settled(page);
 };
 
 describe("@k2b/ui touch hit areas on a phone", () => {
@@ -500,16 +507,12 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     }
   });
 
-  test("keep every edge when the PdfPreview actions wrap", async () => {
-    // A failed preview adds the retry action, which wraps below the open and download actions in a narrow panel.
+  test("keep every edge of the PdfViewer's waiting action in a narrow panel", async () => {
     const markup = html(() =>
-      createComponent(PdfPreview, {
+      createComponent(PdfViewer, {
+        title: "Flyer",
         request: async () => new Blob(),
-        openHref: "/files/flyer.pdf",
-        openButtonLabel: "Open in new tab",
-        buttonLabel: "Try again",
-        onDownload: () => {},
-        children: (parts) => [parts.actions, parts.content],
+        loadLabel: "Render the flyer preview",
       }),
     );
     const page = await browser.newPage(phone);
@@ -522,7 +525,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
 
   // DetailPanel.Action rows of every kind, read on a touch screen and on a device without one.
   const section = html(() =>
-    createComponent(DetailPanel.Section, {
+    createComponent(Section, {
       title: "Actions",
       get actions() {
         return icon("Add action");
@@ -548,7 +551,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
   const heights = async (page: Page) => {
     await show(page, `<main style="width:22rem;padding:2rem">${section}</main>`);
     return await page.evaluate(() =>
-      Array.from(document.querySelectorAll<HTMLElement>(".k2b-detail-panel__section-body .k2b-button")).map((control) => {
+      Array.from(document.querySelectorAll<HTMLElement>(".k2b-section__body .k2b-button")).map((control) => {
         const box = control.getBoundingClientRect();
         const reaches = (y: number) => document.elementFromPoint(box.left + box.width / 2, y)?.closest("a, button") === control;
         // 21 px from the centre up and down: at least 42 px, which a 31 px row never reaches.
@@ -564,7 +567,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
 
   test("give stacked DetailPanel.Action rows a 44 px row on touch that keeps its neighbours' and the section header's edges", async () => {
     // Grids and Spaces stack their rows flush; Files keeps 0.25rem between them.
-    const filesColumn = `<style>.k2b-detail-panel__section-body{display:flex;flex-direction:column;gap:0.25rem}</style>`;
+    const filesColumn = `<style>.k2b-section__body{display:flex;flex-direction:column;gap:0.25rem}</style>`;
     const page = await browser.newPage(phone);
     try {
       expect(await takenPixels(page, section)).toEqual({});
@@ -813,17 +816,17 @@ describe("@k2b/ui touch hit areas on a phone", () => {
   });
 
   test("give a toast's action and close button 44 px hit areas that keep each other's and the next toast's edges", async () => {
-    // A phone shows two toasts at once. "Neu laden" after a notebook session expiry, a one-line "OK" right before the
-    // close button, and a toast with a progress bar, where only the close button dismisses.
+    // Two toasts fanned out on a phone. "Neu laden" after a notebook session expiry, a one-line "OK", and a toast with
+    // a progress bar, where only the close button dismisses.
     const reload = `toast("Live updates need a new sign-in.", { title: "Session expired", duration: 0, action: { label: "Reload", onClick: () => {} } });`;
     const ok = `toast("Saved.", { duration: 0, action: { label: "OK", href: "#ok" } });`;
     const progress = `toast("500 / 1000 records saved", { title: "Import", progress: 0.5, action: { label: "Cancel", onClick: () => {} } });`;
-    const close = ["Dismiss notification", true, true, true, true];
     const page = await browser.newPage(phone);
     try {
+      // Each toast: its round close button first, named after the toast, then its action.
       for (const [toasts, labels] of [
-        [`${reload}\n${ok}`, ["Reload", "OK"]],
-        [`${ok}\n${progress}`, ["OK", "Cancel"]],
+        [`${reload}\n${ok}`, ["Close: Session expired", "Reload", "Close: Saved.", "OK"]],
+        [`${ok}\n${progress}`, ["Close: Saved.", "OK", "Close: Import", "Cancel"]],
       ] as const) {
         expect(await takenPixels(page, "", "22rem", toasts)).toEqual({});
 
@@ -831,7 +834,15 @@ describe("@k2b/ui touch hit areas on a phone", () => {
         const reach = await page.evaluate(() =>
           Array.from(document.querySelectorAll<HTMLElement>(".k2b-toast__action, .k2b-toast__close")).map((control) => {
             const box = control.getBoundingClientRect();
-            const reaches = (x: number, y: number) => document.elementFromPoint(x, y)?.closest("a, button") === control;
+            // The screen's edge ends the close button's area over the first toast's corner, and the neighbouring toast's
+            // edge ends it over the 10 px gap: the area never takes a pixel of the next toast.
+            const own = control.closest(".k2b-toast");
+            const reaches = (x: number, y: number) => {
+              if (x < 0 || y < 0) return true;
+              const hit = document.elementFromPoint(x, y);
+              const neighbour = hit?.closest(".k2b-toast");
+              return hit?.closest("a, button") === control || (!!neighbour && neighbour !== own && !hit?.closest("a, button"));
+            };
             const midX = box.left + box.width / 2;
             const midY = box.top + box.height / 2;
             // 21 px from the centre in every direction: at least 42 px, which only the 2.75rem hit area reaches.
@@ -844,14 +855,14 @@ describe("@k2b/ui touch hit areas on a phone", () => {
             ];
           }),
         );
-        expect(reach).toEqual(labels.flatMap((label) => [[label, true, true, true, true], close]));
+        expect(reach).toEqual(labels.map((label) => [label, true, true, true, true]));
       }
     } finally {
       await page.close();
     }
   });
 
-  test("keep the rail open below the last toast for its shadow, and order a titled progress toast like the upload panel", async () => {
+  test("let the toast shadow and close button reach past the rail, and order a titled progress toast like the upload panel", async () => {
     const page = await browser.newPage(phone);
     try {
       await page.setContent(phonePage("<main></main>"));
@@ -871,19 +882,20 @@ describe("@k2b/ui touch hit areas on a phone", () => {
           ".k2b-toast__close",
         ].map(box);
         return {
-          // The rail scrolls and so clips; the toast shadow reaches 24 px below the card in the dark theme.
-          shadowRoom: rail!.bottom - card!.bottom >= 24,
+          // The rail clips nothing: the shadow below the card and the close button over its corner stay whole.
+          unclipped: getComputedStyle(document.querySelector("[data-k2b-toast-container]")!).overflow === "visible",
+          closeOverCorner: close!.left < card!.left && close!.top < card!.top && close!.top >= rail!.top,
           order: title!.bottom <= bar!.top && bar!.bottom <= summary!.top,
-          actionOnSummaryLine: action!.top >= bar!.bottom && action!.right === close!.right,
-          barUnderCloseColumn: bar!.right > close!.left,
+          // The action stays beside the text column, centred on it.
+          actionBeside: action!.left >= bar!.right && Math.abs(action!.top + action!.height / 2 - (card!.top + card!.height / 2)) <= 1,
           tabular: getComputedStyle(document.querySelector(".k2b-toast__description")!).fontVariantNumeric,
         };
       });
       expect(layout).toEqual({
-        shadowRoom: true,
+        unclipped: true,
+        closeOverCorner: true,
         order: true,
-        actionOnSummaryLine: true,
-        barUnderCloseColumn: true,
+        actionBeside: true,
         tabular: "tabular-nums",
       });
     } finally {

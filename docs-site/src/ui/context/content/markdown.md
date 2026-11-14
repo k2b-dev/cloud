@@ -242,6 +242,12 @@ column: at the start by default, or with the column's GFM alignment (`:-:`,
 `--:`). Body cells use tabular figures, so numbers line up. Inline formatting
 is preserved.
 
+This hairline style belongs to documents: Notebooks pages, help, Fibel pages,
+and mail bodies. In a Cloud chat or Assistant answer, a table is a data result,
+so a Markdown table there takes the look of the view table beside it: a framed
+island with the grey header band, a line under every row, lighter column lines,
+and the compact cell padding of `DataTable`.
+
 The table reaches 0.5rem past the prose on both sides, and every cell pads its
 text by 0.5rem, so columns sit 1rem apart. The lines therefore run 0.5rem past
 the outer text. Cloud's Markdown tables use the same geometry for their hover:

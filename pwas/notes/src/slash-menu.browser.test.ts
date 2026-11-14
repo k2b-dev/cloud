@@ -186,7 +186,7 @@ describe("Notes: slash menu", () => {
       { name: "plan.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF\n") },
     ]);
     await leave();
-    await page.locator(".cm-content img").first().waitFor();
+    await page.locator(".cm-content .cm-image-widget img").first().waitFor();
     await page.getByText("plan.pdf").first().waitFor();
   }, 15_000);
 

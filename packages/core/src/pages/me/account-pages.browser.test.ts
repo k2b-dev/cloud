@@ -5,9 +5,12 @@ import { join, resolve } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import { defaultRailPreferences } from "@k2b/cloud/contracts/rail-preferences";
+import { defaultScreenPreferences } from "@k2b/cloud/contracts/screen-preferences";
 import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { railPreferences } from "@k2b/cloud/services/rail-preferences";
+import { screenPreferences } from "@k2b/cloud/services/screen-preferences";
+import * as sharedWorkstation from "@k2b/cloud/services/session/shared-workstation";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
 import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { createConfig } from "@k2b/ssr";
@@ -243,6 +246,8 @@ beforeEach(() => {
     spyOn(server.auth.session, "authenticateRequest").mockImplementation(async () => ({ user, data: { sid: "demo-session" } }) as never),
     // The page shell's own reads.
     spyOn(railPreferences, "get").mockResolvedValue(defaultRailPreferences()),
+    spyOn(screenPreferences, "get").mockResolvedValue(defaultScreenPreferences()),
+    spyOn(sharedWorkstation, "sharedWorkstationIdleSeconds").mockResolvedValue(600),
     spyOn(services.railShortcuts, "forUser").mockResolvedValue([]),
     spyOn(services.announcements.active, "forState").mockResolvedValue({
       banners: [],
@@ -337,6 +342,19 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
           return border || visible(style.boxShadow);
         })
         .map((element) => element.className.toString().split(" ").slice(0, 3).join(" "));
+      // A list inside the frame is rows with hairlines, never a grey tub: no block of rows paints its own fill. Controls
+      // keep their own track, such as the privacy timer's segmented row.
+      const tubs = Array.from(panel.querySelectorAll<HTMLElement>("ul, ol, div"))
+        .filter(
+          (element) =>
+            element.checkVisibility() &&
+            element.children.length > 1 &&
+            !element.closest(
+              "button, a, table, .tag, .k2b-input-shell, .k2b-multi-select-trigger, .k2b-notice-card, .k2b-segmented-control",
+            ),
+        )
+        .filter((element) => visible(getComputedStyle(element).backgroundColor))
+        .map((element) => element.className.toString().split(" ").slice(0, 3).join(" "));
       const heading = panel.querySelector("h2")!;
       const headingBox = heading.getBoundingClientRect();
       const avatar = main.querySelector("header .k2b-avatar")!.getBoundingClientRect();
@@ -345,7 +363,10 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
         navTop: Math.round(nav.getBoundingClientRect().top),
         panelTop: Math.round(panel.getBoundingClientRect().top),
         identityInFrame: !!main.querySelector("h1")!.closest(".paper, .k2b-paper"),
+        // Account pages are settings: the one frame stands flat, with its edge and no shadow (a quiet area).
+        frameShadow: getComputedStyle(panel).boxShadow,
         frames,
+        tubs,
         current: nav.querySelector('[aria-current="page"]')?.getAttribute("href"),
         pageHeading: { text: heading.textContent, width: headingBox.width, height: headingBox.height },
         sectionFrames: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).map((section) => {
@@ -474,12 +495,14 @@ describe("account pages in a browser", () => {
         for (const path of Object.keys(pages) as Path[]) {
           const result = await measure(view, path, "en", dark);
           const label = `${path} ${view.width}px ${dark ? "dark" : "light"}`;
-          expect({ label, identityInFrame: result.identityInFrame, frames: result.frames }).toEqual({
+          expect({ label, identityInFrame: result.identityInFrame, frames: result.frames, tubs: result.tubs }).toEqual({
             label,
             identityInFrame: false,
             frames: ["k2b-paper account-page flex"],
+            tubs: [],
           });
           for (const frame of result.sectionFrames) expect(frame).toBe("0px rgba(0, 0, 0, 0)");
+          expect(result.frameShadow, label).toBe("rgba(0, 0, 0, 0) 0px 0px 0px 0px");
           expect(result.overflow).toBeLessThanOrEqual(0);
         }
   }, 120_000);

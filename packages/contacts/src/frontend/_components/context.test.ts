@@ -1,28 +1,5 @@
 import { expect, test } from "bun:test";
 import { clearSelectedContactInUrl } from "./context";
-import { setDesktopDetailVisibility } from "./DesktopDetailLayoutSync.island";
-
-test("opens and closes the AppWorkspace detail through its hidden state", () => {
-  const originalDocument = globalThis.document;
-  const detail = { hidden: true } as HTMLElement;
-  const requestedIds: string[] = [];
-  (globalThis as unknown as { document: unknown }).document = {
-    getElementById: (id: string) => {
-      requestedIds.push(id);
-      return detail;
-    },
-  };
-
-  try {
-    setDesktopDetailVisibility("contacts-detail-panel", true);
-    expect(detail.hidden).toBe(false);
-    setDesktopDetailVisibility("contacts-detail-panel", false);
-    expect(detail.hidden).toBe(true);
-    expect(requestedIds).toEqual(["k2b-workspace-detail-contacts-detail-panel", "k2b-workspace-detail-contacts-detail-panel"]);
-  } finally {
-    (globalThis as unknown as { document: unknown }).document = originalDocument;
-  }
-});
 
 test("live reconciliation replaces invalid detail history", () => {
   const originalWindow = globalThis.window;

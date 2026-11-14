@@ -66,6 +66,7 @@ import { type PlatformPermission, PlatformPermissionSchema } from "../contracts/
 import { isPwaPartId, PWA_AUTH_PATH, PWA_CANVAS_COLORS, PWA_MANIFEST_PATH, PWA_SHELL_APP_ID } from "../contracts/pwa";
 import { rememberedPwaAddress } from "../contracts/pwa-location";
 import type { AppRegistryEntry } from "../contracts/registry";
+import type { ScreenPreferences } from "../contracts/screen-preferences";
 import type { AppSettingsMap, KindToType } from "../contracts/settings-types";
 import type { Role } from "../contracts/shared";
 import type { HelpDefinition } from "../server/help";
@@ -96,7 +97,9 @@ import { normalizeInvocationRequestId } from "../services/identity/invocation-to
 import { startLinksRuntime } from "../services/links/runtime";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
+import { startPreviewsRuntime } from "../services/previews/runtime";
 import { readRailSnapshot } from "../services/rail-snapshot";
+import { screenPreferences } from "../services/screen-preferences";
 import { isAppPagePath } from "../services/session";
 import { get, loadCache as loadSettingsCache, set } from "../services/settings";
 import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
@@ -158,6 +161,8 @@ type ResolvedPageOptions = PageOptions & {
   themePreference?: CloudThemePreference;
   appAccent?: string;
   appPrimary?: AppAppearance["primary"];
+  /** Signed-in pages: the person's screen preferences, for the privacy screen. */
+  screen?: ScreenPreferences;
 };
 
 // ── Public types ────────────────────────────────────────────────────────────
@@ -687,6 +692,13 @@ export const defineApp = <
         preloadLayoutHelp(c),
         user ? preloadPanelConsent(c) : undefined,
         user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,
+        // An unreadable preference keeps the page: Layout then applies the default, the privacy screen after two minutes.
+        user
+          ? screenPreferences.get(user.id).then(
+              (screen) => (c.get("page").screen = screen),
+              () => undefined,
+            )
+          : undefined,
       ]);
     }),
     createPageResponses(html, opts.id, (c) => ({ installable: requestInstallable(c.req.path) })),
@@ -1308,6 +1320,7 @@ export const defineApp = <
         log.info(`Start: ${meta.id}`);
         await startOpts.lifecycle.start(cloudCtx);
       }
+      cleanup.push(await startPreviewsRuntime());
 
       // Provision resources declared during application setup before exposing readiness.
       await processSync.sync.ready();

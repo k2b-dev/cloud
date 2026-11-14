@@ -78,7 +78,7 @@ test("fields that share a grid align their controls through a subgrid", () => {
   const fieldRule = indexCss.match(new RegExp(`\n  ${paired.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \{([^}]*)\}`))?.[1] ?? "";
   expect(fieldRule).toContain("grid-template-rows: subgrid");
   expect(fieldRule).toContain("grid-row: span 4");
-  expect(indexCss).toContain(`${paired} > .k2b-field__label {\n    grid-row: 1;`);
+  expect(indexCss).toContain(`${paired} > :is(.k2b-field__label, .k2b-field__label-row) {\n    grid-row: 1;`);
   expect(indexCss).toContain(`${paired} > .k2b-field__description {\n    grid-row: 2;`);
   expect(indexCss).toContain(`${paired} > .k2b-field__error {\n    grid-row: 4;`);
 });
@@ -738,10 +738,10 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(withoutSteppers).not.toContain("k2b-number-input__step");
     expect(cssRule(".k2b-ui .k2b-number-input")).toContain("width: 100%");
     expect(cssRule(".k2b-ui .k2b-number-input__step")).toContain("border: 0");
-    expect(cssRule(".k2b-ui .k2b-number-input__step:first-child")).toContain("border-right");
-    expect(cssRule(".k2b-ui .k2b-number-input__step:last-child")).toContain("border-left");
-    expect(cssRule(".k2b-ui .k2b-number-input:focus-within > .k2b-number-input__step")).toContain("var(--k2b-focus-fill)");
-    expect(cssRule(".k2b-ui .k2b-number-input__step:hover:not(:disabled)")).toContain("var(--k2b-focus-fill)");
+    // One quiet divider in the edge grey; the fill reaches the field's border.
+    expect(cssRule(".k2b-ui .k2b-number-input__step:first-child")).toContain("border-right: 1px solid var(--k2b-edge)");
+    expect(cssRule(".k2b-ui .k2b-number-input__step:last-child")).toContain("border-left: 1px solid var(--k2b-edge)");
+    expect(cssRule(".k2b-ui .k2b-number-input__step:is(:hover, :focus-visible):not(:disabled)")).toContain("var(--k2b-focus-fill)");
     expect(cssRule(".k2b-ui .k2b-input-shell__affix:last-child")).toContain("margin-right: 0.625rem");
   });
 
@@ -776,8 +776,10 @@ describe("@k2b/ui complete choice input migrations", () => {
   });
 
   test("gives steppers, colour buttons and disabled sliders a visible state", () => {
-    // A focused stepper draws the field's focus edge inside its own box.
-    expect(cssRule(".k2b-ui .k2b-number-input__step:focus-visible")).toContain("var(--k2b-edge-focus)");
+    // A focused stepper takes the stepper fill inside the field's focus edge.
+    expect(cssRule(".k2b-ui .k2b-number-input__step:is(:hover, :focus-visible):not(:disabled)")).toContain(
+      "background: var(--k2b-focus-fill)",
+    );
     expect(cssRule(".k2b-ui .k2b-slider input:disabled")).toContain("cursor: not-allowed");
     const disabled = renderToString(() =>
       createComponent(Slider, {
@@ -788,6 +790,19 @@ describe("@k2b/ui complete choice input migrations", () => {
       }),
     );
     expect(disabled).toContain("disabled");
+  });
+
+  test("disabled Slider fills are muted in both value placements and track directions", () => {
+    for (const valuePlacement of ["control", "label"] as const) {
+      for (const center of [false, true]) {
+        const html = renderToString(() =>
+          createComponent(Slider, { label: "Strength", value: 80, defaultValue: 0, disabled: true, valuePlacement, center }),
+        );
+        expect(html).toContain('data-disabled="true"');
+        expect(html).toContain("var(--k2b-text-muted)");
+        expect(html).not.toContain("var(--k2b-action)");
+      }
+    }
   });
 
   test("filters labels, descriptions, and values while skipping disabled keyboard targets", () => {

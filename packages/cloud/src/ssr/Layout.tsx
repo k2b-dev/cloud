@@ -9,11 +9,13 @@ import { type CloudResourceRef, CloudResourceRefSchema } from "../contracts/capa
 import { PANEL_HELP_ID_MAX_LENGTH, PanelPageContextSchema } from "../contracts/panel-context";
 import { isPwaShellAvailable } from "../contracts/pwa";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
+import { defaultScreenPreferences } from "../contracts/screen-preferences";
 import { hasRole, type User } from "../contracts/shared";
 import { isAppSessionActor } from "../server/actor";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
-import { dates, resolveHomePath } from "../shared";
+import { readSharedWorkstationMark } from "../services/session/shared-workstation";
+import { createLoginRedirectUrl, dates, resolveHomePath } from "../shared";
 import { publicCloudOrigin } from "../shared/app-url";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
@@ -28,6 +30,7 @@ import { HELP_VIEW_LIMIT } from "./layout-help-start";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 import PageTrailRow from "./PageTrailRow";
 import PanelSlot from "./PanelSlot";
+import PrivacyCountdown from "./PrivacyCountdown";
 import { getPageSwapBuild, pageSwapSignature } from "./page-swap";
 import { derivePageTrail } from "./page-trail";
 import { platformMessages } from "./platform-messages";
@@ -220,6 +223,14 @@ export default function Layout(props: LayoutProps) {
   const shellFocus = showRail && readShellFocusCookie(cookie);
   // The profile menu offers the mobile app only while the installation runs it.
   const appHref = user && isPwaShellAvailable(displayApps) ? "/me/app" : undefined;
+  const privacyTimerSeconds = (c.get("page").screen ?? defaultScreenPreferences()).privacyTimerSeconds;
+  // Browser sessions only: the mobile app's phone is never a shared workstation.
+  const browserSession = !!user && !isAppSessionActor(c.get("actor"));
+  const sharedWorkstation = browserSession && readSharedWorkstationMark(c.req.raw.headers);
+  const sessionIdle = browserSession ? c.get("sessionIdle") : undefined;
+  const proof = browserSession ? c.get("credentialProof") : undefined;
+  const signedInBrowser =
+    user && proof?.kind === "session" ? { userId: user.id, sid: proof.sid, ...(sessionIdle ? { idle: sessionIdle } : {}) } : undefined;
   const profileName = user?.displayName || user?.uid || "?";
   const profileAvatarSrc =
     user?.avatarHash && user.id
@@ -270,13 +281,21 @@ export default function Layout(props: LayoutProps) {
     ...(user
       ? {
           rail: c.get("railPreferences") ?? defaultRailPreferences(),
+          privacyTimerSeconds,
           home: resolveHomePath(settings?.app?.home_path),
-          profile: { userId: user.id, name: profileName, avatarSrc: profileAvatarSrc, appHref },
+          profile: {
+            userId: user.id,
+            name: profileName,
+            avatarSrc: profileAvatarSrc,
+            appHref,
+            ...(sharedWorkstation ? { sharedWorkstation: true as const } : {}),
+          },
         }
       : {}),
     legalLinks,
     theme,
     accent: currentApp?.appearance?.accent,
+    ...(currentApp?.appearance ? { appearance: currentApp.appearance } : {}),
     searchLinks,
     appId: currentApp?.id,
   };
@@ -324,7 +343,15 @@ export default function Layout(props: LayoutProps) {
             pageTrail
             help={runtimeHelp}
             panel={panel ? true : undefined}
+            privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
+            browserSession={signedInBrowser}
           />
+          {/* Without an app bar, the privacy screen's countdown floats at the bottom start corner. */}
+          {user && (
+            <div class="cloud-privacy-float">
+              <PrivacyCountdown timerSeconds={privacyTimerSeconds} />
+            </div>
+          )}
           <PageTrailProvider trail={pageTrail} onOwnTitle={() => (focusContent.ownTitle = true)}>
             {(() => {
               // As in the full shell: the page renders first, so its area can say whether it shows its own title.
@@ -346,7 +373,18 @@ export default function Layout(props: LayoutProps) {
             })()}
           </PageTrailProvider>
           {/* Focus pages also expose the canonical origin to their islands. */}
-          <ShellDataProvider data={{ cloudOrigin, panel, platform: shellData.platform, theme, apps: [], legalLinks: [], searchLinks: {} }}>
+          <ShellDataProvider
+            data={{
+              cloudOrigin,
+              panel,
+              platform: shellData.platform,
+              theme,
+              apps: [],
+              legalLinks: [],
+              searchLinks: {},
+              ...(user ? { privacyTimerSeconds } : {}),
+            }}
+          >
             {panel && <PanelSlot panel={panel} state={{ ...panelState, open: false }} platform={shellData.platform} />}
           </ShellDataProvider>
           <div data-print-fallback="">
@@ -393,9 +431,11 @@ export default function Layout(props: LayoutProps) {
               : undefined
           }
           banners={user && (swap || announcements?.banners.length) ? true : undefined}
+          privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
+          browserSession={signedInBrowser}
         />
         <ShellDataProvider data={shellData} skipScript={swap}>
-          {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} />}
+          {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} name={appName} />}
           {showRail && <div class="cloud-shell-reveal" data-cloud-shell-reveal="" aria-hidden="true" />}
           {(() => {
             // The page renders before the shell's element, so its attributes can say what the page holds. The parts
@@ -409,6 +449,7 @@ export default function Layout(props: LayoutProps) {
                 title={appLabel ?? breadcrumbs.at(-1)?.title}
                 launchpad={!!(user || appLabel)}
                 breadcrumbs={user ? undefined : breadcrumbs}
+                loginHref={user ? undefined : createLoginRedirectUrl(c.req.raw.url)}
               />,
               user && announcements && <AnnouncementBanners banners={announcements.banners} />,
               user && <ProfileWarnings user={user} locale={lang} />,

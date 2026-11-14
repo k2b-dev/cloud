@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { sql } from "../runtime/clients";
-import { isAccountCategoryAllowed } from "./account-category-policy";
+import { isAccountAllowed } from "./account-category-policy";
 import { isAccountExpired } from "./account-model";
 import { verifySessionToken } from "./identity";
 import { getIdentityRuntimeConfig } from "./identity/runtime-config";
 import { session } from "./session";
+import { sharedWorkstationIdleSeconds, withinIdleLimit } from "./session/shared-workstation";
 import { loadJwtSessionUser } from "./session/user";
 import * as settings from "./settings";
 
@@ -55,17 +56,18 @@ export const legalConsent = {
     if (!pending) throw new HTTPException(401, { message: "Sign in again to continue." });
     const current = await legalConsent.documents();
     if (current.version !== version) throw new HTTPException(409, { message: "The documents changed. Reload and review them again." });
+    const familyIdle = withinIdleLimit(sql`sf.last_input_at`, await sharedWorkstationIdleSeconds());
     await sql.begin(async (tx) => {
-      const [user] = await tx<{ provider: "local" | "ipa"; profile: "guest" | "user" }[]>`
-        SELECT u.provider, u.profile FROM auth.users u JOIN auth.session_families sf ON sf.user_id = u.id
+      const [user] = await tx<{ id: string; provider: "local" | "ipa"; profile: "guest" | "user" }[]>`
+        SELECT u.id, u.provider, u.profile FROM auth.users u JOIN auth.session_families sf ON sf.user_id = u.id
         JOIN auth.signing_keys sk ON sk.kid = sf.signing_kid AND sk.state <> 'revoked'
         WHERE u.id = ${pending.user.id}::uuid AND sf.sid = ${pending.sid}::uuid
           AND u.auth_epoch = ${pending.authEpoch} AND sf.auth_epoch = u.auth_epoch
-          AND sf.revoked_at IS NULL AND sf.expires_at > now()
+          AND sf.revoked_at IS NULL AND sf.expires_at > now() AND ${familyIdle}
           AND (u.account_expires IS NULL OR u.account_expires > now())
         FOR UPDATE OF u, sf
       `;
-      if (!user || !(await isAccountCategoryAllowed(user, tx))) throw new HTTPException(401, { message: "Sign in again to continue." });
+      if (!user || !(await isAccountAllowed(user, tx))) throw new HTTPException(401, { message: "Sign in again to continue." });
       await tx`
         INSERT INTO auth.legal_acceptances (user_id, session_id, document_version, documents)
         VALUES (${pending.user.id}::uuid, ${pending.sid}::uuid, ${current.version}, ${JSON.stringify(current.documents)}::text::jsonb)
