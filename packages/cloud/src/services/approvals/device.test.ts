@@ -100,7 +100,7 @@ test("no-review questions use the card's question, reason and later sentence row
   expect(view.sentence).toBe("Send draft?");
   expect(view.requester.title).toBe("A letter");
   expect(view.message).toBe(pendingApprovalCard(input, options.appName).reason.text);
-  expect(view.details).toEqual([{ label: "Text", value: "Details To: Ada Lovelace" }]);
+  expect(view.details).toEqual([{ label: "Text", value: "To: Ada Lovelace" }]);
   expect(view.truncated).toBe(false);
   expect(AppActionViewSchema.parse(view)).toEqual(view);
 });
@@ -147,9 +147,7 @@ test("legacy reviews preserve literal questions, date hints and Markdown blocks 
   const view = await appActionView(input, options);
   expect(view.sentence).toBe("Read this letter?");
   expect(view.message).toBe(pendingApprovalCard(input, options.appName).reason.text);
-  expect(view.details).toEqual([
-    { label: "Text", value: "Details Date: 2026-10-11 Time: 2026-10-11T10:00:00+02:00 **Body** **Hello** world" },
-  ]);
+  expect(view.details).toEqual([{ label: "Text", value: "Date: 2026-10-11 Time: 2026-10-11T10:00:00+02:00 **Body** **Hello** world" }]);
 });
 
 for (const kind of ["value"] as const)
@@ -242,14 +240,14 @@ test("fallback questions and legacy rows retain plain-text cleaning and keep unl
     options,
   );
   expect(cleaned.sentence).toBe("Send draft ?");
-  expect(cleaned.details).toEqual([{ label: "Text", value: "Details To: Ada Lovelace —: Read this first" }]);
+  expect(cleaned.details).toEqual([{ label: "Text", value: "To: Ada Lovelace Read this first" }]);
   expect(cleaned.truncated).toBe(false);
   const review = await appActionView(
     { ...row, details: { message: "Read\nthis\u202e?", details: [{ label: "Body\u202e", value: "Hello\nworld\u200b" }] } },
     options,
   );
   expect(review.sentence).toBe("Read this?");
-  expect(review.details).toEqual([{ label: "Text", value: "Details Body: Hello world" }]);
+  expect(review.details).toEqual([{ label: "Text", value: "Body: Hello world" }]);
 });
 
 test("bounded block text and envelope fields stay within device limits", async () => {

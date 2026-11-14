@@ -452,10 +452,21 @@ export type CapabilityActionReviewPresentation =
       draft?: { editable: boolean; fields: string[] };
       incomplete?: boolean;
     });
+/**
+ * A bound view as Cloud presents it. Published JSON schemas (the approvals API) describe it as an object, because the
+ * chart rules inside transform values; Zod readers still check it completely and keep the value as Cloud sent it.
+ */
+export const PresentedViewSchema = /* @__PURE__ */ (() =>
+  z.record(z.string(), z.unknown()).superRefine((value, ctx) => {
+    const parsed = BoundViewSchema.safeParse(value);
+    if (!parsed.success)
+      for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+  }) as unknown as z.ZodType<z.output<typeof BoundViewSchema>>)();
+
 export const CapabilityActionReviewPresentationSchema: z.ZodType<CapabilityActionReviewPresentation> = /* @__PURE__ */ (() =>
   z.union([
     CapabilityActionCallReviewSchema.safeExtend({
-      view: BoundViewSchema.optional(),
+      view: PresentedViewSchema.optional(),
       contentRef: CapabilityReviewContentRefSchema.optional(),
       draft: z.strictObject({ editable: z.boolean(), fields: z.array(z.string()) }).optional(),
       incomplete: z.boolean().optional(),

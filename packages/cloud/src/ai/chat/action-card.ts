@@ -361,8 +361,9 @@ export const legacyActionCard = (input: LegacyCardInput, context: ActionCardCont
     reason: actionReason("app_asks", { locale: context.locale, appName: context.app.name }),
     timeZone: context.timeZone,
     view: [
+      // An older server's rows read as its lines did: "Label: value", or the value alone, never under a dash.
       ...(input.rows.length
-        ? [{ kind: "Detail" as const, title: "Details", items: input.rows.map((row) => ({ label: row.label || "—", value: row.value })) }]
+        ? [{ kind: "Text" as const, text: input.rows.map((row) => (row.label ? `${row.label}: ${row.value}` : row.value)).join("\n") }]
         : []),
       ...(input.markdown ? [{ kind: "Text" as const, text: input.markdown }] : []),
       ...(showInput ? [{ kind: "Text" as const, text: JSON.stringify(input.input, null, 2) }] : []),

@@ -78,8 +78,13 @@ const STATUS_ICONS: Record<ApprovalFrameStatus["tone"], string> = {
 
 export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
   const t = () => actionMessages(props.locale);
-  const loading = () => props.state === "loading";
-  const editing = () => props.mode === "edit" && props.state === "open";
+  // A memo, so moving between closed states (sending, decided) does not rebuild the outcome line: it keeps its node,
+  // its focus and its live region while only its words change.
+  const loading = createMemo(() => props.state === "loading");
+  // Passed as a memo, never as an expression: the decision then draws its outcome line before its focus effect runs.
+  const state = createMemo(() => (props.state === "loading" ? "decided" : props.state));
+  const editing = createMemo(() => props.mode === "edit" && props.state === "open");
+  const mode = createMemo(() => (editing() ? "edit" : "approve"));
   const status = createMemo(() => {
     if (loading()) return { label: t().statusLoading, icon: STATUS_ICONS.running, tone: "running" as const };
     const given = props.status;
@@ -89,8 +94,8 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
   return (
     <LocaleProvider locale={props.locale}>
       <Chat.Decision
-        state={props.state === "loading" ? "decided" : props.state}
-        mode={editing() ? "edit" : "approve"}
+        state={state()}
+        mode={mode()}
         anchorId={props.anchorId}
         kind={editing() ? { label: t().draftKind, icon: "ti ti-pencil" } : { label: t().approvalKind, icon: "ti ti-shield-check" }}
         source={props.source}

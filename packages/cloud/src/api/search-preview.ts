@@ -3,13 +3,14 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { getApp, getCapability } from "../_internal/registry";
-import { type BoundBlockView, BoundBlockViewSchema, bindView, validateBlocks } from "../blocks";
+import { type BoundBlockView, bindView, validateBlocks } from "../blocks";
 import { ErrorResponseSchema } from "../contracts";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CloudResourceRefSchema,
   capabilityResultSchema,
   cloudResourceRefAppId,
+  PresentedViewSchema,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
 import {
@@ -26,7 +27,7 @@ import { dispatchCapability } from "./capabilities";
 import { waitWithin } from "./fanout";
 
 export const SearchPreviewQuerySchema = CloudResourceRefSchema;
-export const SearchPreviewResponseSchema = z.object({ view: BoundBlockViewSchema.nullable() });
+export const SearchPreviewResponseSchema = z.object({ view: PresentedViewSchema.nullable() });
 
 export type SearchPreviewDependencies = {
   getCapability?: typeof getCapability;
