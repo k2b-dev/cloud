@@ -862,18 +862,111 @@ test("an event-only connection rechecks credentials before its first subscriptio
   expect(socket.closes).toEqual([{ code: 1008, reason: "session_expired" }]);
 });
 
-test("identity invalidation allows only one coalesced catch-up", async () => {
+test("identity invalidation catches up to delayed hints and fails closed at the check deadline", async () => {
+  const timers = spyOn(globalThis, "setTimeout");
   let checks = 0;
+  const third = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
   const socket = fakeSocket();
   engine.open(socket, viewer("ada"), async () => {
     checks++;
     accessChanged({ userId: "ada" });
+    if (checks === 3) {
+      third.resolve();
+      await release.promise;
+    }
     return viewer("ada");
   });
-  await until(() => socket.closes.length === 1);
-  expect(checks).toBe(2);
-  expect(socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
+  try {
+    await third.promise;
+    expect(socket.closes).toEqual([]);
+    // Expire the check deadlines explicitly after observing the third read;
+    // runner scheduling must not decide whether that read starts in time.
+    for (const [expire, ms] of timers.mock.calls) if (ms === LIVE_LIMITS.checkMs && typeof expire === "function") expire();
+    await until(() => socket.closes.length === 1);
+    expect(checks).toBe(3);
+    expect(socket.closes).toEqual([{ code: 1011, reason: "unavailable" }]);
+  } finally {
+    release.resolve();
+    timers.mockRestore();
+  }
 });
+
+test("a socket waiting for its first authorization slot has no catch-up deadline", async () => {
+  LIVE_LIMITS.callsInFlight = 1;
+  const timers = spyOn(globalThis, "setTimeout");
+  const reading = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  engine.open(fakeSocket(), viewer("ada"), async () => {
+    reading.resolve();
+    await release.promise;
+    return viewer("ada");
+  });
+  try {
+    await reading.promise;
+    const before = timers.mock.calls.length;
+    const socket = fakeSocket();
+    let reads = 0;
+    const connection = engine.open(socket, viewer("bob"), async () => {
+      reads++;
+      return viewer("bob");
+    });
+    await Bun.sleep(0);
+    expect(reads).toBe(0);
+    // Advancing any deadlines armed by the queued socket must not end it.
+    for (const [expire, ms] of timers.mock.calls.slice(before)) if (ms === LIVE_LIMITS.checkMs && typeof expire === "function") expire();
+    release.resolve();
+    connection.message(JSON.stringify({ t: "sub", id: "s", channel: "item", scope: { key: "a" } }));
+    await until(() => socket.closes.length > 0 || socket.frames.some((frame) => frame.t === "ready"));
+    expect(socket.closes).toEqual([]);
+    expect(reads).toBe(1);
+  } finally {
+    release.resolve();
+    timers.mockRestore();
+  }
+});
+
+for (const revocation of ["credential", "channel"] as const) {
+  test(`a ${revocation} revocation in the third identity check blocks pending delivery`, async () => {
+    engine.stop();
+    engine = createLiveEngine({ appId: "app", topic: () => topic, channels, subscribeAccess });
+    const socket = fakeSocket();
+    const who = viewer("ada");
+    const reading = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let checking = false;
+    let checks = 0;
+    const connection = engine.open(socket, who, async () => {
+      if (!checking) return who;
+      checks++;
+      if (checks <= 2) {
+        accessChanged({ userId: "ada" });
+        if (checks === 1) {
+          reading.resolve();
+          await release.promise;
+        }
+      } else if (revocation === "credential") return null;
+      else readers.get("a")?.delete(who.id);
+      return who;
+    });
+    try {
+      connection.message(JSON.stringify({ t: "sub", id: "s", channel: "item", scope: { key: "a" } }));
+      await until(() => socket.frames.some((frame) => frame.t === "ready"));
+      checking = true;
+      accessChanged({ userId: "ada" });
+      await reading.promise;
+      topic.publish(event("a", 1));
+      release.resolve();
+      await until(() => socket.closes.length > 0 || socket.frames.some((frame) => frame.t === "revoked"));
+      expect(checks).toBe(3);
+      expect(socket.frames.filter((frame) => frame.t === "event")).toEqual([]);
+      if (revocation === "credential") expect(socket.closes).toEqual([{ code: 1008, reason: "session_expired" }]);
+      else expect(socket.frames.at(-1)).toEqual({ t: "revoked", id: "s", code: "access_denied" });
+    } finally {
+      release.resolve();
+    }
+  });
+}
 
 test("subscription admission cannot livelock when its authorizer keeps changing access", async () => {
   engine.stop();
@@ -905,43 +998,62 @@ test("subscription admission cannot livelock when its authorizer keeps changing 
 test("collection refresh defers sustained domain bursts without closing sockets", async () => {
   engine.stop();
   LIVE_LIMITS.sweepMs = 50;
+  const setTimer = globalThis.setTimeout;
+  let resume: (() => void) | undefined;
+  const schedule = new Proxy(setTimer, {
+    apply(target, _receiver, args: Parameters<typeof setTimeout>) {
+      const timer = target(...args);
+      const [callback, delay, ...values] = args;
+      if (delay === LIVE_LIMITS.sweepMs && typeof callback === "function") {
+        // Hold the deferred sweep until the first bounded refresh is observed.
+        clearTimeout(timer);
+        resume = () => callback(...values);
+      }
+      return timer;
+    },
+  });
+  const timers = spyOn(globalThis, "setTimeout").mockImplementation(schedule);
   let changing = false;
   let refreshes = 0,
     listings = 0;
-  engine = createLiveEngine({
-    appId: "app",
-    topic: () => topic,
-    channels: {
-      list: {
-        eventOnly: true,
-        collection: true,
-        scope: z.object({}),
-        keys: async () => {
-          listings++;
-          if (changing) {
-            refreshes++;
-            topic.publish({ v: 1, k: "a", a: true });
-            await Bun.sleep(0);
-          }
-          return ["a"];
+  try {
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: {
+        list: {
+          eventOnly: true,
+          collection: true,
+          scope: z.object({}),
+          keys: async () => {
+            listings++;
+            if (changing) {
+              refreshes++;
+              topic.publish({ v: 1, k: "a", a: true });
+              await Bun.sleep(0);
+            }
+            return ["a"];
+          },
+          authorize,
         },
-        authorize,
       },
-    },
-  });
-  const ada = connect();
-  ada.send({ t: "sub", id: "s", channel: "list", scope: {} });
-  await until(() => ada.framesOf("s").length === 1);
-  changing = true;
-  topic.publish({ v: 1, k: "a", a: true });
-  await until(() => refreshes >= 2 || ada.socket.closes.length > 0);
-  await Bun.sleep(20);
-  expect(ada.socket.closes).toEqual([]);
-  expect(refreshes).toBeLessThanOrEqual(4);
-  changing = false;
-  await until(() => listings > refreshes + 1);
-  topic.publish(event("a", 1));
-  await until(() => ada.framesOf("s").some((frame) => frame.t === "event"));
+    });
+    const ada = connect();
+    ada.send({ t: "sub", id: "s", channel: "list", scope: {} });
+    await until(() => ada.framesOf("s").length === 1);
+    changing = true;
+    topic.publish({ v: 1, k: "a", a: true });
+    await until(() => resume !== undefined || ada.socket.closes.length > 0);
+    expect(ada.socket.closes).toEqual([]);
+    expect(refreshes).toBeLessThanOrEqual(4);
+    changing = false;
+    resume?.();
+    await until(() => listings > refreshes + 1);
+    topic.publish(event("a", 1));
+    await until(() => ada.framesOf("s").some((frame) => frame.t === "event"));
+  } finally {
+    timers.mockRestore();
+  }
 });
 
 test("periodic collection refresh discards decisions from before an access event", async () => {
@@ -1029,6 +1141,7 @@ test("foreign identity events during periodic refresh and admission do not retry
 });
 
 test("an unstable collection reconnects only its own connection", async () => {
+  LIVE_LIMITS.checkMs = 100;
   engine.stop();
   let changing = false;
   let checks = 0;
@@ -1057,8 +1170,8 @@ test("an unstable collection reconnects only its own connection", async () => {
   changing = true;
   accessChanged({ userId: "ada" });
   await until(() => ada.socket.closes.length === 1);
-  expect(checks).toBe(2);
-  expect(ada.socket.closes).toEqual([{ code: 1013, reason: "access_changing" }]);
+  expect(checks).toBeGreaterThan(0);
+  expect(ada.socket.closes).toEqual([{ code: 1011, reason: "unavailable" }]);
   topic.publish(event("a", 1));
   await until(() => bob.framesOf("s").length === 2);
   expect(bob.socket.closes).toEqual([]);

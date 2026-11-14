@@ -44,6 +44,7 @@ testFor("database")("SQL budget of live authorization across the two-second cach
   };
   let changed: (subject?: IdentityAccessSubject) => void = () => {};
   let authorized: (() => void) | undefined;
+  let revalidated: (() => void) | undefined;
   const batches: string[][] = [];
   const engine = createLiveEngine({
     subscribeAccess: (callback) => {
@@ -92,6 +93,7 @@ testFor("database")("SQL budget of live authorization across the two-second cach
         viewer,
         async () => {
           await sql`SELECT 1`;
+          revalidated?.();
           return viewer;
         },
       );
@@ -156,6 +158,28 @@ testFor("database")("SQL budget of live authorization across the two-second cach
     expect(access).toHaveLength(2);
     expect(batches).toEqual([["budget"]]);
     console.log("SQL BUDGET shared live identity event", access.length);
+    let catchups = 0;
+    const settled = Promise.withResolvers<void>();
+    revalidated = () => {
+      if (++catchups < 3) changed({ userId: "11111111-1111-4111-8111-111111111111" });
+    };
+    authorized = () => {
+      if (catchups === 3) settled.resolve();
+    };
+    const delayedHints = await meter.during(async () => {
+      changed({ userId: "11111111-1111-4111-8111-111111111111" });
+      await settled.promise;
+    });
+    // Three credential reads and three authorization reads, only for this viewer.
+    expect(delayedHints).toHaveLength(6);
+    expect(catchups).toBe(3);
+    expect(batches.slice(-3)).toEqual([["budget"], ["budget"], ["budget"]]);
+    const afterCatchup = await meter.during(async () => {
+      topic.publish({ v: 1, k: "one", d: { changed: "after catch-up" } });
+      await until(() => frames.filter((frame) => frame.t === "event").length === 5);
+    });
+    expect(afterCatchup).toHaveLength(0);
+    console.log("SQL BUDGET shared live delayed identity hints", delayedHints.length, "subsequent delivery", afterCatchup.length);
   } finally {
     engine.stop();
     intervals.mockRestore();

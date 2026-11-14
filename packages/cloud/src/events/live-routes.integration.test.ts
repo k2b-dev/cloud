@@ -10,12 +10,12 @@ import { sessionOriginGuard } from "../server/middleware/session-origin";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
 import { prepareIdentitySigner } from "../services/identity/key-ring";
-import { getIdentityRuntimeConfig } from "../services/identity/runtime-config";
+import * as identityRuntimeConfig from "../services/identity/runtime-config";
 import { session } from "../services/session";
 import { createTestSession } from "../services/session/session.test-fixture";
 import * as settings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
-import { wakeAppAccessChanged } from "./app-access";
+import { subscribeIdentityAccessChanged, wakeAppAccessChanged } from "./app-access";
 import { defineLive, startLiveOutbox } from "./live";
 import { liveTopic, startLiveDelivery } from "./live-delivery";
 import { LIVE_LIMITS, type LiveChannel, type LiveViewer } from "./live-engine";
@@ -232,6 +232,111 @@ suite("live routes", () => {
       }
     });
   }
+
+  test("a delayed identity hint during replica startup revalidation keeps valid access and replays", async () => {
+    // The fixture's legal acceptance commits before either handshake. Hold its
+    // real outbox publication until the new replica's startup catch-up is reading.
+    const resets = spyOn(identityRuntimeConfig, "invalidateIdentityRuntimeConfig");
+    const topic = liveTopic(APP);
+    const originalEventPublish = topic.publish.bind(topic);
+    const replayPublished = Promise.withResolvers<string>();
+    const events = spyOn(topic, "publish").mockImplementation(async (input) => {
+      const receipt = await originalEventPublish(input);
+      if (input.data.k === "delayed-identity" && z.object({ n: z.literal(3) }).safeParse(input.data.d).success)
+        replayPublished.resolve(receipt.cursor);
+      return receipt;
+    });
+    const core = liveTopic("core");
+    const originalPublish = core.publish.bind(core);
+    const queued = Promise.withResolvers<void>();
+    const publishHint = Promise.withResolvers<void>();
+    const publishing = spyOn(core, "publish").mockImplementation(async (input) => {
+      const hint = z.object({ type: z.literal("identity.access.changed"), userId: z.string() }).safeParse(input.data.d);
+      if (hint.success) {
+        queued.resolve();
+        await publishHint.promise;
+      }
+      return originalPublish(input);
+    });
+    const initialRead = Promise.withResolvers<void>();
+    const finishInitial = Promise.withResolvers<void>();
+    const catchupRead = Promise.withResolvers<void>();
+    const finishCatchup = Promise.withResolvers<void>();
+    const authenticate = session.authenticateRequest;
+    let reconnecting = false;
+    let checks = 0;
+    const authentication = spyOn(session, "authenticateRequest").mockImplementation(async (context, token) => {
+      const result = await authenticate(context, token);
+      // The engine's probe omits Upgrade; the handshake/app-entry guard retains it.
+      if (reconnecting && !context.req.header("upgrade")) {
+        checks++;
+        if (checks === 1) {
+          initialRead.resolve();
+          await finishInitial.promise;
+        } else if (checks === 2) {
+          catchupRead.resolve();
+          await finishCatchup.promise;
+        }
+      }
+      return result;
+    });
+    const sockets: Awaited<ReturnType<typeof open>>[] = [];
+    let stopHint = () => {};
+    try {
+      const ada = await person("Delayed identity reader");
+      allow("delayed-identity", ada);
+      wakeAppAccessChanged();
+      await queued.promise;
+      const first = await open(0, ada.headers);
+      sockets.push(first);
+      first.sub("s", "item", { key: "delayed-identity" });
+      await until(() => first.of("s")[0]?.t === "ready");
+      await publish("delayed-identity", 1);
+      await until(() => first.of("s").some((frame) => frame.data?.n === 1));
+      const applied = first.of("s").at(-1)!.cursor!;
+      first.socket.close();
+      await until(() => first.state.closed !== null);
+      await publish("delayed-identity", 3);
+
+      const startupBefore = resets.mock.calls.length;
+      reconnecting = true;
+      const second = await open(1, ada.headers);
+      sockets.push(second);
+      await initialRead.promise;
+      // Observe the startup notification and this replica's applied cursor,
+      // rather than assuming either completes within the credential read.
+      await until(() => resets.mock.calls.length > startupBefore);
+      const replayAt = await replayPublished.promise;
+      await until(() => second.progress().some((frame) => frame.cursor === replayAt));
+      finishInitial.resolve();
+      await catchupRead.promise;
+      const delivered = Promise.withResolvers<void>();
+      stopHint = subscribeIdentityAccessChanged((subject) => {
+        if (subject?.userId === ada.id) delivered.resolve();
+      });
+      publishHint.resolve();
+      await delivered.promise;
+      finishCatchup.resolve();
+      second.sub("s", "item", { key: "delayed-identity" }, applied);
+      await until(() => second.of("s").some((frame) => frame.t === "ready") || second.state.closed !== null);
+      expect(second.state.closed).toBeNull();
+      expect(second.of("s").map((frame) => [frame.t, frame.data?.n])).toEqual([
+        ["event", 3],
+        ["ready", undefined],
+      ]);
+      expect(checks).toBe(3);
+    } finally {
+      publishHint.resolve();
+      finishInitial.resolve();
+      finishCatchup.resolve();
+      stopHint();
+      publishing.mockRestore();
+      events.mockRestore();
+      resets.mockRestore();
+      authentication.mockRestore();
+      for (const socket of sockets) socket.socket.close();
+    }
+  });
 
   test("an access event revokes a reader before later content on either replica", async () => {
     const ada = await person("Ada Example");
@@ -454,7 +559,7 @@ suite("live routes", () => {
     await sql`INSERT INTO oauth.clients (name, client_id, redirect_uris) VALUES ('Live test', ${clientId}, ARRAY['https://client.example/callback'])`;
     try {
       const signer = await prepareIdentitySigner("oauth");
-      const { issuer } = await getIdentityRuntimeConfig();
+      const { issuer } = await identityRuntimeConfig.getIdentityRuntimeConfig();
       const [account] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${hal.id}::uuid`;
       const token = (scope: string) =>
         new SignJWT({ token_use: "access", client_id: clientId, id: hal.id, auth_epoch: Number(account!.auth_epoch), scope })

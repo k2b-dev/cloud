@@ -918,23 +918,34 @@ export const createLiveEngine = (input: {
     conn.checkAgain = true;
     if (conn.accessCheck) return conn.accessCheck;
     conn.accessCheck = Promise.resolve().then(async () => {
+      let deadline: ReturnType<typeof setTimeout> | undefined;
       try {
-        // At most one coalesced catch-up; repeated invalidations cannot hold delivery forever.
-        for (let pass = 0; pass < 2 && !conn.closed; pass++) {
+        // Startup and delayed outbox hints can overlap a valid read. Coalesce
+        // until stable within the existing check deadline, holding delivery back.
+        // Start that budget only on catch-up; an ordinary first check retains
+        // its per-step bounds and may wait for a shared authorization slot.
+        while (!conn.closed) {
           conn.checkAgain = false;
           const viewer = await limited(() => bounded("The credential check", conn.revalidate()));
+          if (conn.closed) return;
           if (!viewer || viewer.id !== conn.viewer.id) return close(conn, 1008, "session_expired", "The session ended.");
           conn.viewer = viewer;
           const selected = new Set([conn]);
           const keys = new Set([...conn.subs.values()].flatMap((sub) => [...sub.keys]));
           await eachLimited([...keys], LIVE_LIMITS.sweepInFlight, (key) => reauthorize(key, selected, false, true));
           await refreshCollections(selected);
-          if (!conn.checkAgain) break;
+          if (!conn.checkAgain || conn.closed) break;
+          deadline ??= setTimeout(() => {
+            fail([conn], new Error(`Identity access did not settle within ${LIVE_LIMITS.checkMs} ms`), "identity access");
+          }, LIVE_LIMITS.checkMs);
+          // Let the deadline and other sockets run even with immediately
+          // resolved authorizers that invalidate themselves on every read.
+          await sleep(0);
         }
-        if (conn.checkAgain && !conn.closed) close(conn, 1013, "access_changing");
       } catch (error) {
         fail([conn], error, "identity access");
       } finally {
+        clearTimeout(deadline);
         conn.accessCheck = null;
       }
     });
