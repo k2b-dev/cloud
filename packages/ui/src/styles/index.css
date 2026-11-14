@@ -48,9 +48,9 @@
   --k2b-ai-solid: #8e1b6f;
   --k2b-ai-solid-hover: #701556;
   --k2b-ai-on-solid: #ffffff;
-  /* The assistant composer's edge: light plum at rest (2.1:1 on the surface, 4.0:1 against the accent it turns into
-     on focus) and a soft plum glow outside while it has focus. */
-  --k2b-ai-edge-rest: #d9a3c9;
+  /* The assistant composer's edge: the AI border (#c4519f) at 60 % on white at rest (2.2:1 on the surface, 3.6:1
+     against the accent it turns into on focus) and a soft plum glow outside while it has focus. */
+  --k2b-ai-edge-rest: #dc97c5;
   --k2b-ai-glow: 0 0 0 4px rgb(142 27 111 / 0.1), 0 6px 22px rgb(142 27 111 / 0.12);
 
   --k2b-surface-canvas: var(--k2b-neutral-50);
@@ -15343,6 +15343,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    stays), and a disabled card keeps a quiet grey edge on the muted well. The conversation variant stays neutral. */
 .k2b-ui .k2b-chat-composer:not([data-variant="conversation"]) {
   --k2b-edge-color: var(--k2b-ai-edge-rest);
+  border-radius: calc(var(--k2b-radius-surface) + 0.125rem);
 }
 
 .k2b-ui .k2b-chat-composer[data-invalid="true"]:not([data-variant="conversation"]) {

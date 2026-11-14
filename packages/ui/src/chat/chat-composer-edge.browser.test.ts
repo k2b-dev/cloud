@@ -111,6 +111,9 @@ const measure = (page: Page, name: string) =>
           return layer.content !== "none" && layer.boxShadow !== "none" && layer.opacity === "1";
         })(),
         fill: rgba(style.backgroundColor),
+        radius: style.borderTopLeftRadius,
+        // The glow layer sits on the outer edge of the border, so the glow starts where the edge ends.
+        glowInset: getComputedStyle(edge, "::after").top,
       };
     },
     { name, field: FIELD },
@@ -225,6 +228,9 @@ describe("assistant composer edge in the browser", () => {
               expect(actual.box.width, `${label} ${state} width`).toBe(rest.box.width);
               expect(actual.drop, `${label} ${state} shadow on the card`).toBe(0);
               expect(actual.glow, `${label} ${state} glow`).toBe(state.includes("focus"));
+              // v12: the assistant card has a 14 px radius, and the glow starts at the outer edge of its 2 px border.
+              expect(actual.radius, `${label} ${state} radius`).toBe("14px");
+              expect(actual.glowInset, `${label} ${state} glow layer`).toBe("-2px");
             }
             const expected: Record<string, [Rgba, Rgba]> = {
               rest: [token.rest, token.surface],
