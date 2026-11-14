@@ -6966,6 +6966,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.125rem;
 }
 
+/* The named size control: both labels lie in one grid cell and only the current one shows, so the control keeps
+   one width when the window grows or shrinks. */
+.k2b-ui .k2b-floating-window__size {
+  flex: none;
+}
+
+.k2b-ui .k2b-floating-window__size-label {
+  display: inline-grid;
+}
+
+.k2b-ui .k2b-floating-window__size-label > span {
+  grid-area: 1 / 1;
+}
+
+.k2b-ui .k2b-floating-window__size-label > span[aria-hidden="true"] {
+  visibility: hidden;
+}
+
 .k2b-ui .k2b-floating-window__title > span {
   display: block;
   overflow: hidden;

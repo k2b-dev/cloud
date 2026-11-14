@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, createUniqueId, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Portal, render } from "solid-js/web";
-import { IconButton } from "../actions/Button";
+import { Button, IconButton } from "../actions/Button";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { RenderErrorBoundary } from "../internal/render-error";
@@ -60,6 +60,12 @@ export type FloatingWindowProps = {
   minWidth?: number;
   minHeight?: number;
   accent?: string;
+  /**
+   * `text` names the size control beside its icon ("Maximize" / "Restore size"), for a window whose size changes what
+   * it shows, such as a composer that spreads out into panes when large. The control keeps one width in both states.
+   * Defaults to `icon`.
+   */
+  sizeControl?: "icon" | "text";
   class?: string;
   resolveScope?: () => HTMLElement | null | undefined;
 };
@@ -459,14 +465,35 @@ export default function FloatingWindow(props: FloatingWindowProps): JSX.Element 
                   <i class="ti ti-minus" aria-hidden="true" />
                 </IconButton>
               </Show>
-              <IconButton
-                ref={maximizeButton}
-                size="sm"
-                label={state() === "maximized" ? floatingWindowMessages().restoreSize : floatingWindowMessages().maximizeWindow}
-                onClick={() => changeState(state() === "maximized" ? "normal" : "maximized")}
+              <Show
+                when={props.sizeControl === "text"}
+                fallback={
+                  <IconButton
+                    ref={maximizeButton}
+                    size="sm"
+                    label={state() === "maximized" ? floatingWindowMessages().restoreSize : floatingWindowMessages().maximizeWindow}
+                    onClick={() => changeState(state() === "maximized" ? "normal" : "maximized")}
+                  >
+                    <i class={state() === "maximized" ? "ti ti-arrows-diagonal-minimize-2" : "ti ti-arrows-diagonal"} aria-hidden="true" />
+                  </IconButton>
+                }
               >
-                <i class={state() === "maximized" ? "ti ti-arrows-diagonal-minimize-2" : "ti ti-arrows-diagonal"} aria-hidden="true" />
-              </IconButton>
+                <Button
+                  ref={maximizeButton}
+                  size="sm"
+                  variant="ghost"
+                  class="k2b-floating-window__size"
+                  aria-label={state() === "maximized" ? floatingWindowMessages().restoreSize : floatingWindowMessages().maximizeWindow}
+                  onClick={() => changeState(state() === "maximized" ? "normal" : "maximized")}
+                >
+                  <i class={state() === "maximized" ? "ti ti-arrows-diagonal-minimize-2" : "ti ti-arrows-diagonal"} aria-hidden="true" />
+                  {/* Both labels share one cell, so the control keeps its width when it changes. */}
+                  <span class="k2b-floating-window__size-label">
+                    <span aria-hidden={state() === "maximized" ? "true" : undefined}>{floatingWindowMessages().maximizeWindow}</span>
+                    <span aria-hidden={state() === "maximized" ? undefined : "true"}>{floatingWindowMessages().restoreSize}</span>
+                  </span>
+                </Button>
+              </Show>
             </Show>
             <IconButton size="sm" class="k2b-floating-window__close" label={floatingWindowMessages().closeWindow} onClick={close}>
               <i class="ti ti-x" aria-hidden="true" />

@@ -4543,6 +4543,248 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
+      /** The conversation beside a large draft: two messages, the newest with a file, and one internal note. */
+      const historyApi = async (page: Page) => {
+        const person = (name: string, address: string) => ({ name, address });
+        const summary = (id: string, subject: string, preview: string, date: string, hasAttachments: boolean) => ({
+          id,
+          subject,
+          preview,
+          hasAttachments,
+          messageId: `<${id}@example.test>`,
+          internalDate: date,
+          sentAt: date,
+          from: [person("Example sender", "sender@example.test")],
+          to: [person("Example support", "support@example.test")],
+          flags: ["\\Seen"],
+          keywords: [],
+          hydrationStatus: "complete",
+          remoteAvailable: true,
+          folderId: null,
+        });
+        const messages = [
+          summary("Hist01", "Example request 1", "Hello, could you set up chairs for Saturday?", "2026-10-13T08:12:00.000Z", false),
+          summary("Hist02", "Re: Example request 1", "Saturday works for us. The quote is attached.", "2026-10-14T09:12:00.000Z", true),
+        ];
+        const detail = (message: (typeof messages)[number]) => ({
+          ...message,
+          deletedOnServer: false,
+          contentType: "text/plain",
+          sizeBytes: 2048,
+          replyTo: [],
+          cc: [],
+          plainText: `Hello,\n\n${message.preview}\n\nKind regards\nExample sender`,
+          sanitizedHtml: null,
+          forwardText: "",
+          selectedHeaders: {},
+          sourceAvailable: false,
+          mailingList: null,
+          remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
+          delivery: null,
+          attachments: message.hasAttachments
+            ? [
+                {
+                  id: "Att900",
+                  filename: "Quote_Saturday.pdf",
+                  contentType: "application/pdf",
+                  sizeBytes: 18_000,
+                  contentId: null,
+                  checksum: null,
+                },
+              ]
+            : [],
+        });
+        await page.route("**/api/mail/mailboxes/Box001/conversations/Conv01/messages**", (route) =>
+          route.fulfill({ json: { items: messages.toReversed(), nextCursor: null } }),
+        );
+        await page.route(/\/api\/mail\/mailboxes\/Box001\/messages\/Hist0\d$/, (route) =>
+          route.fulfill({ json: detail(messages.find((message) => route.request().url().endsWith(message.id))!) }),
+        );
+        await page.route("**/api/mail/mailboxes/Box001/conversations/Conv01/comments?**", (route) =>
+          route.request().method() === "GET"
+            ? route.fulfill({
+                json: {
+                  items: [
+                    {
+                      id: "Note90",
+                      conversationId: "Conv01",
+                      body: "Hall A is free until noon only.",
+                      author: { kind: "user", id: "Usr002", displayName: "Tom Example", avatarHash: null },
+                      referencedMessageId: null,
+                      revision: 1,
+                      canEdit: false,
+                      canDelete: false,
+                      editedAt: null,
+                      deletedAt: null,
+                      createdAt: "2026-10-13T16:40:00.000Z",
+                      updatedAt: "2026-10-13T16:40:00.000Z",
+                    },
+                  ],
+                  nextCursor: null,
+                },
+              })
+            : route.fallback(),
+        );
+      };
+      const largeWindow = (page: Page) => page.locator('.mail-compose-window[data-state="maximized"]');
+      const writeLarge = async (page: Page) => {
+        await page.locator("[data-mail-reply-box='mail'] [data-mail-write-large]").click();
+        await largeWindow(page).locator(".mail-large-panes .cm-content").waitFor();
+      };
+
+      test("Write large: the draft beside its conversation above the preview; Esc gives it back to the box; the arrangement stays", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          await draftApi(next);
+          await historyApi(next);
+        });
+        try {
+          await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("Saturday at 11 works.");
+          await writeLarge(page);
+          const panes = largeWindow(page).locator(".mail-large-panes");
+          // F3: draft on the left; on the right the conversation above the preview.
+          expect(await panes.locator('[role="tab"]').allTextContents()).toEqual(["Draft", "History", "Preview"]);
+          const panel = async (name: string) =>
+            (await panes
+              .locator(`[role="tabpanel"][aria-labelledby="${await panes.getByRole("tab", { name }).getAttribute("id")}"]`)
+              .boundingBox())!;
+          const [draft, history, preview] = [await panel("Draft"), await panel("History"), await panel("Preview")];
+          expect(draft.x + draft.width).toBeLessThanOrEqual(history.x);
+          expect(history.y + history.height).toBeLessThanOrEqual(preview.y);
+          expect(Math.abs(history.x - preview.x)).toBeLessThan(1);
+          expect(await largeWindow(page).locator(".mail-large-panes .cm-content").textContent()).toContain("Saturday at 11 works.");
+          await panes.locator(".mail-large-preview iframe").waitFor();
+          await panes.locator(".mail-composer-history", { hasText: "Saturday works for us." }).waitFor();
+          await panes.locator(".mail-note", { hasText: "Hall A is free until noon only." }).waitFor();
+          await panes.getByRole("button", { name: "Attach Quote_Saturday.pdf to the reply" }).waitFor();
+          // The caret is in the text, where it stood in the box.
+          expect(await page.evaluate(() => document.activeElement?.closest(".mail-large-panes .cm-content") !== null)).toBe(true);
+          if (screenshots) {
+            await settled(page);
+            await page.screenshot({ path: join(resolve(screenshots), "large-stacked-light-1440.png") });
+            await panes.locator(".k2b-panes__arrange").click();
+            await page.locator(".k2b-panes__menu:popover-open").waitFor();
+            await settled(page);
+            await page.screenshot({ path: join(resolve(screenshots), "large-arrange-light-1440.png") });
+            await page.keyboard.press("Escape");
+          }
+
+          // The person chooses Tabs; Mail keeps that choice.
+          await panes.locator(".k2b-panes__arrange").click();
+          await page.locator(".k2b-panes__menu:popover-open").getByRole("menuitemradio", { name: "Tabs" }).click();
+          await eventually(
+            async () =>
+              decodeURIComponent((await storedCookie(page, "settings-app-mail-composer-panes"))?.value ?? "").includes('"type":"group"'),
+            true,
+            "the arrangement is stored",
+          );
+
+          // The preview's mail stays in an opaque sandbox. Esc from the draft leaves the large window: the draft stands in
+          // the box again, with its text. (After a click into the preview's mail, keys stay in its frame until the person
+          // clicks outside; "Restore size" stays visible. Agreed exception, see the PR.)
+          await panes.getByRole("tab", { name: "Preview" }).click();
+          expect(await largeWindow(page).locator(".mail-large-preview iframe").getAttribute("sandbox")).toBe("");
+          await panes.getByRole("tab", { name: "Draft" }).click();
+          await largeWindow(page).locator(".mail-large-panes .cm-content").click();
+          await page.keyboard.press("Escape");
+          await largeWindow(page).waitFor({ state: "detached" });
+          await page.locator("[data-mail-reply-box='mail'] .cm-content", { hasText: "Saturday at 11 works." }).waitFor();
+          await page.waitForFunction(() => document.activeElement?.closest("[data-mail-reply-box='mail'] .cm-content") != null);
+
+          // Next time it opens as chosen.
+          await writeLarge(page);
+          expect(await largeWindow(page).locator('.mail-large-panes [role="tablist"]').count()).toBe(1);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("390: Write large is a full-screen sheet with Draft, History and Preview as tabs", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 390, undefined, "reduce", async (next) => {
+          await draftApi(next);
+          await historyApi(next);
+        });
+        try {
+          await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("Saturday at 11 works.");
+          await page.locator("[data-mail-reply-box='mail'] [data-mail-write-large]").click();
+          const panes = page.locator('.mail-compose-window .mail-large-panes[data-narrow="true"]');
+          await panes.waitFor();
+          // The mockup's order on a phone: the draft, how it arrives, then the conversation.
+          expect(await panes.locator('[role="tab"]').allTextContents()).toEqual(["Draft", "Preview", "History"]);
+          expect(await panes.locator(".k2b-panes__arrange, .k2b-panes__separator").count()).toBe(0);
+          if (screenshots) {
+            await settled(page);
+            await page.screenshot({ path: join(resolve(screenshots), "large-phone-light-390.png") });
+          }
+          await panes.getByRole("tab", { name: "Preview" }).click();
+          await panes.locator(".mail-large-preview iframe").waitFor();
+        } finally {
+          await close(page);
+        }
+      });
+
+      if (screenshots)
+        test("Write large review screenshots", async () => {
+          const directory = resolve(screenshots);
+          const shot = async (
+            name: string,
+            path: string,
+            width: number,
+            act: (page: Page) => Promise<void>,
+            failing?: "history" | "preview",
+          ) => {
+            const page = await open(path, width, undefined, "reduce", async (next) => {
+              await draftApi(next);
+              await historyApi(next);
+              if (failing === "history")
+                await next.route("**/api/mail/mailboxes/Box001/conversations/Conv01/messages**", (route) =>
+                  route.fulfill({ status: 503, json: { message: "Unavailable" } }),
+                );
+              if (failing === "preview")
+                await next.route("**/api/mail/mailboxes/Box001/compose-preview", (route) =>
+                  route.fulfill({ status: 503, json: { message: "Unavailable" } }),
+                );
+            });
+            try {
+              await readyDraft(page);
+              await act(page);
+              await settled(page);
+              await page.screenshot({ path: join(directory, `${name}.png`) });
+            } finally {
+              await page.context().close();
+            }
+          };
+          const thread = `${boxPath}?conversation=Conv01&identity=1`;
+          await shot("large-entry-light-1440", thread, 1440, async (page) => {
+            await page.locator("[data-mail-reply-box='mail'] [data-mail-write-large]").hover();
+            await page.locator("[role='tooltip']", { hasText: "Write large" }).waitFor();
+          });
+          await shot("large-stacked-dark-1440", `${thread}&theme=dark`, 1440, writeLarge);
+          await shot(
+            "large-history-error-light-1440",
+            thread,
+            1440,
+            async (page) => {
+              await writeLarge(page);
+              await page.locator(".mail-composer-history", { hasText: "The conversation could not load" }).waitFor();
+            },
+            "history",
+          );
+          await shot(
+            "large-preview-error-light-1440",
+            thread,
+            1440,
+            async (page) => {
+              await writeLarge(page);
+              await page.locator(".mail-large-preview", { hasText: "Preview could not be rendered" }).waitFor();
+            },
+            "preview",
+          );
+        }, 120_000);
+
       if (screenshots)
         test("draft review screenshots", async () => {
           const directory = resolve(screenshots);

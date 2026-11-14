@@ -49,6 +49,8 @@ Desktop windows can be moved and resized. Geometry stays inside the `area`, or t
 
 The header shows the title on one line, ending with an ellipsis; pointing at a cut title shows all of it. An optional `status`, such as "Saved", follows the title. Optional `actions` of the content, such as Send, come next. Then come Minimize, Maximize, and Close. A minimized bar hides the status and the actions.
 
+Set `sizeControl="text"` when the size changes what the window shows, such as a composer that spreads out into panes when it is large: Maximize and Restore size then show their name beside the icon. Both names share one place, so the control keeps its width and position when the window grows or shrinks.
+
 ## States
 
 A window is `normal`, `minimized`, or `maximized`.
@@ -86,7 +88,8 @@ type FloatingWindowProps = {
   state?: FloatingWindowState; defaultState?: FloatingWindowState; onStateChange?: (state: FloatingWindowState) => void;
   rect?: FloatingWindowRect; onRectChange?: (rect: FloatingWindowRect) => void; placement?: "center" | "dock";
   area?: () => HTMLElement | null | undefined; initialWidth?: number; initialHeight?: number; minWidth?: number;
-  minHeight?: number; accent?: string; class?: string; resolveScope?: () => HTMLElement | null | undefined;
+  minHeight?: number; accent?: string; sizeControl?: "icon" | "text"; class?: string;
+  resolveScope?: () => HTMLElement | null | undefined;
 };
 
 type OpenFloatingWindowOptions = Omit<FloatingWindowProps, "children" | "onClose">;
@@ -108,7 +111,7 @@ The window uses `role="dialog"` and the title names it. It has `aria-modal="fals
 
 The title control supports arrow-key movement. The lower-right resize control supports arrow-key resizing. Holding Shift uses larger steps. On a minimized bar the title control restores the window.
 
-Minimize, Maximize or Restore size, and Close are icon buttons with names and tooltips. When a window minimizes, the focus moves to its bar.
+Minimize, Maximize or Restore size, and Close are icon buttons with names and tooltips; with `sizeControl="text"` the size control shows its current name as text. When a window minimizes, the focus moves to its bar.
 
 Escape acts on the window that holds the focus: a maximized window returns to its normal size, any other open window closes. A nested widget that handles Escape itself calls `preventDefault()` first. Escape never closes a minimized bar.
 

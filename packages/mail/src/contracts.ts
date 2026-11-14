@@ -365,6 +365,7 @@ export const MAIL_WORKSPACE_HINT_IDS = [
   "toolbar-moved",
   "density-by-width",
   "drafts-consolidated",
+  "panes-arrange",
 ] as const;
 export const mailWorkspaceHintIdSchema = z.enum(MAIL_WORKSPACE_HINT_IDS);
 export type MailWorkspaceHintId = z.infer<typeof mailWorkspaceHintIdSchema>;

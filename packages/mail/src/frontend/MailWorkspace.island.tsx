@@ -3728,6 +3728,8 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
               returnHref={mailbox.requestPath()}
               onDraftsChanged={() => void mailbox.requireWorkspaceReconcile().catch(() => undefined)}
               onDockedChange={mailbox.setWindowsDocked}
+              replyPosition={mailbox.replyPosition}
+              arrangeHint={{ open: () => !mailbox.hintSeen("panes-arrange"), dismiss: () => mailbox.markHintSeen("panes-arrange") }}
             />
           </Show>
         )}

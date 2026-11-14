@@ -940,11 +940,13 @@ describe("MailComposer robustness", () => {
   let hostControls: import("./MailComposer").MailInlineDraftControls | undefined;
   let materialized: string[] = [];
   let detached: string[] = [];
+  let detachOptions: unknown[] = [];
   let buffered: string[] = [];
 
   beforeEach(() => {
     materialized = [];
     detached = [];
+    detachOptions = [];
     buffered = [];
     dom = createDomTestHarness();
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
@@ -1066,7 +1068,10 @@ describe("MailComposer robustness", () => {
                             holdCreate: options.box.hold ?? (() => false),
                             autofocus: false,
                             materialized: (draft: MailDraft) => materialized.push(draft.id),
-                            detach: (draftId: string) => detached.push(draftId),
+                            detach: (draftId: string, options?: { large?: boolean; selection?: { anchor: number; head: number } }) => {
+                              detached.push(draftId);
+                              detachOptions.push(options);
+                            },
                             buffer: (text: string) => buffered.push(text),
                           },
                         }
@@ -1310,6 +1315,93 @@ describe("MailComposer robustness", () => {
     await waitFor(() => detached.length === 1);
     expect(detached).toEqual(["Draft1"]);
     expect(saves.at(-1)?.body).toBe("Hello More.");
+  });
+
+  test("Write large saves the reply, gives its lease back, and hands it over large with the caret where it stood", async () => {
+    await mount({ host: true, draft: replyDraft, box: {} });
+    view().dispatch({ changes: { from: view().state.doc.length, insert: " More." }, userEvent: "input.type" });
+    view().dispatch({ selection: { anchor: 2, head: 4 } });
+    const large = dom.root.querySelector<HTMLButtonElement>('[data-mail-reply-box="mail"] [data-mail-write-large]')!;
+    expect(large.getAttribute("aria-label")).toBe("Write large");
+    large.click();
+    await waitFor(() => detached.length === 1);
+    expect(detached).toEqual(["Draft1"]);
+    expect(detachOptions).toEqual([{ large: true, selection: { anchor: 2, head: 4 } }]);
+    expect(saves.at(-1)?.body).toBe("Hello More.");
+    expect(requests.some((request) => request.includes("/lease"))).toBe(true);
+  });
+
+  test("Write large waits while an attachment uploads, and says why", async () => {
+    const files = await import("@k2b/cloud/browser/files");
+    const choose = spyOn(files, "chooseFiles").mockResolvedValue([new File(["%PDF"], "offer.pdf", { type: "application/pdf" })]);
+    const serve = globalThis.fetch;
+    const never = new Promise<Response>(() => {});
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes("/attachment-uploads")) return never;
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount({ host: true, draft: replyDraft, box: {} });
+      const large = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-write-large]")!;
+      expect(large().disabled).toBe(false);
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Attach files"]')!.click();
+      await waitFor(() => large().disabled);
+      expect(dom.document.body.textContent).toContain("Waits until the attachment has uploaded");
+      expect(detached).toEqual([]);
+    } finally {
+      choose.mockRestore();
+    }
+  });
+
+  test("a failed Write large keeps the reply in the box with its text and offers to try again", async () => {
+    const serve = globalThis.fetch;
+    let failSave = true;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        const url = input instanceof Request ? input.url : String(input);
+        if (failSave && method === "PUT" && url.endsWith("/drafts/Draft1")) return Response.json({ message: "Down" }, { status: 503 });
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await mount({ host: true, draft: replyDraft, box: {} });
+    view().dispatch({ changes: { from: view().state.doc.length, insert: " More." }, userEvent: "input.type" });
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-write-large]")!.click();
+    await waitFor(() => Boolean(dom.root.querySelector("[data-mail-write-large-failed]")));
+    expect(dom.root.querySelector("[data-mail-write-large-failed]")!.textContent).toContain(
+      "The draft could not open large. Your text stays here.",
+    );
+    expect(detached).toEqual([]);
+    expect(view().state.doc.toString()).toBe("Hello More.");
+    failSave = false;
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-write-large-failed] button")!.click();
+    await waitFor(() => detached.length === 1);
+    expect(dom.root.querySelector("[data-mail-write-large-failed]")).toBeNull();
+  });
+
+  test("Write large without a confirmed lease release keeps the reply in the box", async () => {
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        const url = input instanceof Request ? input.url : String(input);
+        if (method === "DELETE" && url.endsWith("/lease")) return Response.json({ message: "Down" }, { status: 503 });
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await mount({ host: true, draft: replyDraft, box: {} });
+    // Typing takes the edit lease, which the handover then has to give back.
+    view().dispatch({ changes: { from: view().state.doc.length, insert: " More." }, userEvent: "input.type" });
+    await waitFor(() => requests.some((request) => request.endsWith("/lease")));
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-write-large]")!.click();
+    await waitFor(() => Boolean(dom.root.querySelector("[data-mail-write-large-failed]")));
+    expect(detached).toEqual([]);
   });
 
   test("discarding an unsaved seed creates no draft, also not when the box unmounts", async () => {

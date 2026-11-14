@@ -4,7 +4,7 @@
 
 /* Yellow means an internal note (plum is AI, orange a draft). Text contrast: ink 12.6:1 and badge 6.6:1 on the
    light surface; ink 14.8:1 and badge 10.4:1 on the dark one. */
-.k2b-ui .mail-reader {
+.k2b-ui :is(.mail-reader, .mail-composer-history) {
   --mail-note-surface: #fdf7dc;
   --mail-note-edge: #f0d982;
   --mail-note-ink: #3b2c03;
@@ -13,7 +13,7 @@
   --mail-note-badge-ink: #6a4b00;
 }
 
-.dark .k2b-ui .mail-reader {
+.dark .k2b-ui :is(.mail-reader, .mail-composer-history) {
   --mail-note-surface: #2b2307;
   --mail-note-edge: #5e4a12;
   --mail-note-ink: #fbf0c6;
