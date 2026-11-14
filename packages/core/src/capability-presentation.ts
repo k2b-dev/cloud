@@ -112,14 +112,23 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "code.readable": {
           title: "Code-Leserechte prüfen",
           description: "Prüft aktuelle Leserechte für die Zustellung eines Code-Ereignisses.",
+          input: {
+            id: "Stabile ID des Codes.",
+            container: "Erwarteter aktueller Ort; bei Code nicht erforderlich.",
+            "container.type": "Typ des erwarteten Orts.",
+            "container.id": "Öffentliche ID des erwarteten Orts.",
+            principals: "Konkrete Konten, deren heutiges Leserecht geprüft wird; höchstens 500.",
+          },
         },
         "code.resource.read": {
           title: "Code lesen",
           description: "Liest den Namen und die heutigen Leserechte eines Codes für Ressourcen-Links und Ereignisse.",
+          input: { id: "Stabile ID des Codes." },
         },
         "code.version.review": {
           title: "Code-Prüfung lesen",
           description: "Liest die veröffentlichte Entscheidung und Kommentare als Daten mit den heutigen Bearbeitungsrechten.",
+          input: { ...codeVersionInput, before: "Cursor aus nextBefore; für die erste Kommentarseite weglassen." },
         },
         ...generatedFilePresentation,
         "code.event.catchup.read": {

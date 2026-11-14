@@ -336,6 +336,12 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "mailbox.managers": {
           title: "Verwaltende eines Postfachs ermitteln",
           description: "Ermittelt eine begrenzte Seite der Personen mit heutigen Verwaltungsrechten für Mitteilungen.",
+          input: {
+            id: "Öffentliche ID des Postfachs.",
+            afterId: "Letzte Benutzer-UUID der vorherigen Seite; nur spätere UUIDs werden zurückgegeben.",
+            userId: "Prüft nur die heutigen Verwaltungsrechte dieser Person.",
+            limit: "Höchstens so viele Verwaltende zurückgeben; Standard und Maximum 50.",
+          },
         },
         "mailbox.readable": {
           title: "Leser für Postfach prüfen",
