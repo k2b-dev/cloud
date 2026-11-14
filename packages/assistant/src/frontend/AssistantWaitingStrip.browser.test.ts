@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiStoredMessage, AiTurnBlock } from "@k2b/cloud/ai";
 import { aiOpenQuestionFixture, aiQuestionFixtures } from "@k2b/cloud/ai/testing";
@@ -562,6 +562,18 @@ describe("Waiting for you", () => {
           expect(row.height).toBe(height(view));
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
           const composerTop = field.top;
+          // Evidence for the comparison with the concept's images; the run keeps them in /tmp.
+          mkdirSync("/tmp/assistant-waiting-shots", { recursive: true });
+          await page.screenshot({ path: `/tmp/assistant-waiting-shots/zeile-${theme}-${view.name}.png` });
+          if (narrow && theme === "light") {
+            await strip(page).locator(".assistant-waiting__more:visible").click();
+            await page.getByRole("menuitem").first().waitFor();
+            await settled(page);
+            await page.screenshot({ path: `/tmp/assistant-waiting-shots/liste-${theme}-${view.name}.png` });
+            await page.keyboard.press("Escape");
+            await page.getByRole("menuitem").first().waitFor({ state: "detached" });
+            await settled(page);
+          }
           // The row lies over the timeline's free end: the timeline keeps its size whether the row is there or not.
           const timeline = () => rect(page, ".k2b-chat-timeline__viewport");
           const timelineBefore = await timeline();
