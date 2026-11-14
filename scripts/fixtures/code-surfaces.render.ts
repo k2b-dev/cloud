@@ -33,8 +33,8 @@ const [
   import("../../packages/assistant/src/frontend/AssistantCodeVersionCard"),
   import("../../packages/assistant/src/frontend/assistant-live"),
 ]);
-const fixtures: { name: string; text: string }[] = [];
-function collect(name: string, locale: string, render: Parameters<typeof renderToString>[0]) {
+const fixtures: { file: string; name: string; text: string }[] = [];
+function collect(file: string, name: string, locale: string, render: Parameters<typeof renderToString>[0]) {
   const html = renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -47,7 +47,7 @@ function collect(name: string, locale: string, render: Parameters<typeof renderT
   const ordinary = new HTMLRewriter()
     .on('[data-code-source-region="admin-approval"], [data-code-source-region="code-tab"]', { element: (element) => element.remove() })
     .transform(html);
-  fixtures.push({ name: `${locale}/${name}`, text: renderedText(ordinary, "\n") });
+  fixtures.push({ file, name: `${locale}/${name}`, text: renderedText(ordinary, "\n") });
 }
 const pageStates: Parameters<typeof codePageFixture>[0][] = [
   "overview",
@@ -85,7 +85,7 @@ const pageStates: Parameters<typeof codePageFixture>[0][] = [
   "error",
 ];
 for (const locale of ["de", "en"] as const) {
-  collect("chat/version-card", locale, () =>
+  collect("packages/assistant/src/frontend/AssistantCodeVersionCard.tsx", "chat/version-card", locale, () =>
     createComponent(AssistantLiveProvider, {
       value: createAssistantLiveHub(),
       get children() {
@@ -99,7 +99,9 @@ for (const locale of ["de", "en"] as const) {
     }),
   );
   for (const state of pageStates)
-    collect(`page/${state}`, locale, () => createComponent(CodePage, { data: codePageFixture(state, locale) }));
+    collect("packages/cloud/src/ssr/code-page/CodePage.tsx", `page/${state}`, locale, () =>
+      createComponent(CodePage, { data: codePageFixture(state, locale) }),
+    );
   const queries: Record<string, string>[] = [
     {},
     { sec: "approvals" },
@@ -118,7 +120,7 @@ for (const locale of ["de", "en"] as const) {
   ];
   for (const state of admin.CODE_FIXTURE_STATES)
     for (const query of queries)
-      collect(`admin/${state}/${JSON.stringify(query)}`, locale, () =>
+      collect("packages/core/src/pages/admin/code/view.tsx", `admin/${state}/${JSON.stringify(query)}`, locale, () =>
         createComponent(CodeAreaView, {
           t: codeAdminMessages.resolve([locale]).t,
           locale,
@@ -143,7 +145,7 @@ for (const locale of ["de", "en"] as const) {
     ],
     ["code_submit", { version: 1, codeId: "c_fixture", versionId: "00000000-0000-4000-8000-000000000001", number: 5, status: "pending" }],
   ] as const)
-    collect(`chat/${name}`, locale, () =>
+    collect("packages/cloud/src/ai/ui.tsx", `chat/${name}`, locale, () =>
       createComponent(AiTurnBlockView, {
         block: { id: "fixture", kind: "tool", callId: name, name, args: {}, status: "completed", result },
         turnId: "fixture",
@@ -161,6 +163,10 @@ for (const locale of ["de", "en"] as const) {
               ["versionId", "href", "submittedAt", "locale"].includes(key) ? [] : strings(item),
             )
           : [];
-  fixtures.push({ name: `${locale}/version-words`, text: strings(model).join("\n") });
+  fixtures.push({
+    file: "packages/core/src/code/read-model/fixtures.ts",
+    name: `${locale}/version-words`,
+    text: strings(model).join("\n"),
+  });
 }
 process.stdout.write(JSON.stringify(fixtures));

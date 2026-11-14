@@ -165,7 +165,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
 
   test("confirmed weekly effects settle atomically once per run, excluding replays and unknown results", async () => {
     const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "activity", input: null });
-    await sql`UPDATE code.runs SET state='running',started_at=${fixed} WHERE id=${id}::uuid`;
+    await sql`UPDATE code.runs SET state='running',created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
     await sql.begin(async (tx) => {
       for (const replayed of [false, true]) {
         const ordinal = await appendCodeCall(
@@ -320,10 +320,11 @@ databaseSuite()("Core Code data and Query authorization", () => {
   });
   test("confirmed NUL results finish, late confirmations update the same weekly snapshot once", async () => {
     const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "late-effect", input: null });
+    await sql`UPDATE code.runs SET state='running',created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
     const ordinal = await sql.begin(async (tx) =>
       appendCodeCall({ runId: id, kind: "action", call: { capability: "example.item.update", target: null, refs: {}, input: {} } }, tx),
     );
-    await sql`UPDATE code.calls SET state='uncertain' WHERE run_id=${id}::uuid`;
+    await sql`UPDATE code.calls SET state='uncertain',ended_at=${fixed} WHERE run_id=${id}::uuid`;
     await sql`UPDATE code.runs SET state='failed',ended_at=${fixed} WHERE id=${id}::uuid`;
     await finishCodeCall(
       { runId: id, ordinal, state: "succeeded", result: { ok: true, data: "\u0000" }, confirmedEffect: true, endedAt: fixed },
@@ -339,6 +340,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
   });
   test("real structured application failures distinguish refusal from unknown and hide both counts from readers", async () => {
     const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "failure-words", input: null });
+    await sql`UPDATE code.runs SET state='running',created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
     await sql.begin(async (tx) => {
       for (const error of [
         { code: "CONFLICT", status: 409 },
@@ -543,7 +545,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
   test("versions preserve exact UTF-8 source/bundle and hashes, reject stale base and in-place changes", async () => {
     const version = await readCodeVersion(
       { codeId: code.id, versionId, offset: 0, length: 100, content: { kind: "bundle" } },
-      ctx(ids.reader),
+      ctx(ids.editor),
     );
     expect(version.content?.text).toBe("export default 'bundle';");
     expect(version.version.sourceHash).toBe(codeSourceHash({ "code.ts": "export default 'source';" }));

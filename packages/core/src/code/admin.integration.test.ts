@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:tes
 import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import type { User } from "@k2b/cloud/contracts";
+import { CloudResourceReaderViewSchema, type User } from "@k2b/cloud/contracts";
 import { countPending } from "@k2b/cloud/services/approvals";
 import { z } from "zod";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -45,7 +45,15 @@ const operation = {
 };
 const catalog = compileCapabilityManifest("example", {
   protocolVersion: 2,
-  queries: { "item.read": operation },
+  types: { item: { title: "Item", description: "A fictional item.", reader: "item.read" } },
+  queries: {
+    "item.read": {
+      ...operation,
+      input: z.object({ id: z.string().describe("Fictional item to read.") }).strict(),
+      data: z.object({ view: CloudResourceReaderViewSchema }).strict(),
+      run: () => ({ ok: true as const, data: { data: { view: { title: "Fixture item", permission: "read" as const } } } }),
+    },
+  },
   actions: {
     "item.change": {
       ...operation,

@@ -917,7 +917,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     expect(data.source?.text).toBe("enabled source");
     expect(data.difference?.text).toContain("pending source");
     expect(data.versions.map((v) => v.number)).toEqual([2, 1]);
-    expect(data.versions[0]?.submittedAt).toBe(fixed.toISOString());
+    expect(data.versions[0]?.submittedAt).toBe(pending.version.createdAt);
     await setCodePaused(code.id, true, author);
     expect((await loadCodeSourceTab({ codeId: code.id }, author)).enabled?.id).toBe(first.version.id);
     await expect(loadCodeSourceTab({ codeId: code.id }, reviewer)).rejects.toMatchObject({ code: "NOT_FOUND" });

@@ -102,3 +102,11 @@ The consumer fixtures live in Core's `code/read-model/fixtures.ts`:
 `codeActivityReadModelFixture` each accept `de` or `en` and return a fixed,
 fictional snapshot. Render tests can use these answers directly with the
 shared view blocks; the read model adds no block schemas.
+
+The `code-no-source` repository rule renders the Code surfaces and rejects
+new technical text outside the two explicitly marked source fields. Its
+`scripts/checks/code-no-source.baseline` records existing findings by rendering
+file, exact finding and count. Removed findings must lower or remove their
+entry; `bun scripts/check.ts code-no-source --fix` only makes those reductions.
+The version card/chat, Code page and administration migrations must empty
+this baseline before the v12 preview (issue #3357).
