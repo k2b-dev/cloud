@@ -30,6 +30,7 @@ describe("Cloud tokens", () => {
       { property: "--k2b-row-selected", value: "var(--k2b-selected)" },
       { property: "--k2b-link-accent", value: "var(--k2b-action)" },
       { property: "--k2b-detail-panel-accent", value: "var(--k2b-action)" },
+      { property: "--k2b-detail-panel-accent-hover", value: "var(--k2b-action-hover)" },
       { property: "--k2b-app-workspace-active", value: "var(--k2b-action)" },
       { property: "--k2b-app-workspace-selected", value: "var(--k2b-selected)" },
     ];

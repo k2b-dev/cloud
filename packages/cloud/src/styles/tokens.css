@@ -242,6 +242,7 @@
   --k2b-row-selected: var(--k2b-selected);
   --k2b-link-accent: var(--k2b-action);
   --k2b-detail-panel-accent: var(--k2b-action);
+  --k2b-detail-panel-accent-hover: var(--k2b-action-hover);
   --k2b-app-workspace-active: var(--k2b-action);
   --k2b-app-workspace-selected: var(--k2b-selected);
 }
