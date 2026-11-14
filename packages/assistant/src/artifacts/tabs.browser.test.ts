@@ -172,7 +172,10 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
         return {
           title: style(".artifact-pane__title"),
           meta: style(".artifact-pane__meta"),
-          actions: element.querySelectorAll(".artifact-pane__actions > *").length,
+          // Download and "…": at most two actions beside the title.
+          actions: Array.from(element.querySelectorAll(".artifact-pane__actions :is(a, button)")).filter(
+            (control) => control.getClientRects().length > 0,
+          ).length,
         };
       });
       expect(type).toEqual({ title: "14/600", meta: "12/400", actions: 2 });
