@@ -102,6 +102,13 @@ test("on a phone the folder picker is a bottom sheet that opens at half height a
     await tab.locator(".k2b-bottom-sheet__handle").tap();
     await settled(tab);
     expect(await frame.getAttribute("data-sheet-detent")).toBe("full");
+    // At full height the folders fill the sheet: the grid grows and the sheet's body scrolls, not an 18rem box.
+    const grid = await tab.locator(".filesv2-picker").evaluate((element) => ({
+      height: element.getBoundingClientRect().height,
+      overflow: getComputedStyle(element).overflowY,
+    }));
+    expect(grid.overflow).toBe("visible");
+    expect(grid.height).toBeGreaterThan(18 * 16);
     // Back closes it like Cancel.
     await tab.goBack();
     await tab.waitForFunction(() => window.picked === null);

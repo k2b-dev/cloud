@@ -65,6 +65,7 @@ const place = (tab: Page) =>
     };
   });
 
+// settled: callers read before a gesture starts, after `settled` or the page's first frame.
 const handleCenter = async (tab: Page) => {
   const box = (await tab.locator("#handle").boundingBox())!;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -73,12 +74,14 @@ const handleCenter = async (tab: Page) => {
 test("a drag follows the pointer by transform: the layout height stays fixed, and the sheet rests on a detent", async () => {
   const tab = await open({ reducedMotion: "reduce" });
   try {
+    await settled(tab);
     const start = await handleCenter(tab);
     await tab.mouse.move(start.x, start.y);
     await tab.mouse.down();
     const layouts = new Set<number>();
     for (const step of [20, 60, 100, 140]) {
       await tab.mouse.move(start.x, start.y - step);
+      // settled: the sheet under the held pointer is the subject.
       const now = await place(tab);
       layouts.add(now.layout);
       expect(now.visible).toBe(300 + step);
@@ -99,6 +102,7 @@ test("a drag follows the pointer by transform: the layout height stays fixed, an
 test("a press glides to the other detent with one layout height, frame by frame", async () => {
   const tab = await open({ reducedMotion: "no-preference" });
   try {
+    // settled: every frame of the glide is the subject.
     await tab.evaluate(() => {
       const sheet = document.querySelector<HTMLElement>("#sheet")!;
       const samples: { layout: number; visible: number }[] = [];
@@ -130,8 +134,10 @@ test("with reduced motion a press switches at once", async () => {
   const tab = await open({ reducedMotion: "reduce" });
   try {
     await tab.click("#handle");
+    await settled(tab);
     expect(await place(tab)).toEqual({ layout: 700, visible: 700, detent: "full", inline: "" });
     await tab.keyboard.press("Enter");
+    await settled(tab);
     expect(await place(tab)).toEqual({ layout: 300, visible: 300, detent: "half", inline: "" });
   } finally {
     await tab.context().close();
@@ -141,14 +147,17 @@ test("with reduced motion a press switches at once", async () => {
 test("a drag far down slides the sheet out before it asks to close", async () => {
   const tab = await open({ reducedMotion: "no-preference" }, true);
   try {
+    await settled(tab);
     const start = await handleCenter(tab);
     await tab.mouse.move(start.x, start.y);
     await tab.mouse.down();
     await tab.mouse.move(start.x, start.y + 120, { steps: 6 });
+    // settled: the sheet under the held pointer is the subject.
     expect((await place(tab)).visible).toBe(180);
     await tab.mouse.move(start.x, start.y + 260, { steps: 6 });
     // The owner is asked only after the slide: right after the release, the sheet is still on screen and moving down.
     await tab.mouse.up();
+    // settled: the moment right after the release, while the sheet slides out, is the subject.
     const right = await tab.evaluate(() => ({
       dismissed: (window as unknown as { dismissed: number }).dismissed,
       visible: Math.round(innerHeight - document.querySelector("#sheet")!.getBoundingClientRect().top),
@@ -156,6 +165,49 @@ test("a drag far down slides the sheet out before it asks to close", async () =>
     expect(right.dismissed).toBe(0);
     expect(right.visible).toBeGreaterThan(0);
     await tab.waitForFunction(() => (window as unknown as { dismissed: number }).dismissed === 1);
+  } finally {
+    await tab.context().close();
+  }
+});
+
+test("an owner that hides the sheet during a glide ends the glide: the next opening starts clean", async () => {
+  const tab = await open({ reducedMotion: "no-preference" });
+  try {
+    await tab.evaluate(() => {
+      const sheet = document.querySelector<HTMLElement>("#sheet")!;
+      document.querySelector<HTMLElement>("#handle")!.click();
+      // The owner closes the sheet mid-glide and forgets its detent, then opens it again soon after.
+      requestAnimationFrame(() => {
+        sheet.hidden = true;
+        delete sheet.dataset.sheetDetent;
+        setTimeout(() => {
+          sheet.hidden = false;
+        }, 60);
+      });
+    });
+    // fixed wait: longer than the 280 ms glide that was cut short.
+    await tab.waitForTimeout(500);
+    await settled(tab);
+    expect(await place(tab)).toEqual({ layout: 300, visible: 300, detent: undefined, inline: "" });
+  } finally {
+    await tab.context().close();
+  }
+});
+
+test("a press that catches a glide at its end lets it land, and its click does not move the sheet on", async () => {
+  const tab = await open({ reducedMotion: "no-preference" });
+  try {
+    await tab.evaluate(() => {
+      document.querySelector<HTMLElement>("#handle")!.click();
+      // Hold the glide a hair before its end, where the catch lands it at once.
+      for (const animation of document.getAnimations()) {
+        animation.pause();
+        animation.currentTime = 279.9;
+      }
+    });
+    await tab.click("#handle");
+    await settled(tab);
+    expect(await place(tab)).toEqual({ layout: 700, visible: 700, detent: "full", inline: "" });
   } finally {
     await tab.context().close();
   }

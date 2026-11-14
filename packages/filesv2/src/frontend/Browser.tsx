@@ -667,8 +667,11 @@ export default function Browser(props: {
       progress: "indeterminate",
       action: { label: b().cancel, onClick: () => request.abort() },
     });
-    // The reading toast turns into an error in place; otherwise the upload takes over and it leaves.
-    const fail = (message: string) => notice.update(message, { variant: "error", progress: null, duration: undefined, action: null });
+    // The reading toast turns into an error in place, or a new one when the person closed it; otherwise the upload
+    // takes over and it leaves.
+    const fail = (message: string) => {
+      if (notice.update(message, { variant: "error", progress: null, duration: undefined, action: null }) === false) toast.error(message);
+    };
     void readDroppedEntries(entries, request.signal)
       .then((result) => {
         if (request.signal.aborted || source !== locationKey()) return notice.dismiss();

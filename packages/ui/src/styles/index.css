@@ -19338,7 +19338,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Pulled past full height, a sheet gives like a rubber band and lifts off the
  * edge; an apron in its own colour fills the gap below it. */
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion] {
-  box-shadow: 0 6rem 0 0 var(--k2b-surface-elevated), var(--k2b-shadow-float);
+  box-shadow: 0 6rem 0 0 var(--k2b-surface), var(--k2b-shadow-sheet);
 }
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion][data-sheet-dragging] {
   user-select: none;
@@ -19356,7 +19356,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-bottom-sheet-frame[data-sheet-detents] > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
   position: relative;
   z-index: 1;
-  background: var(--k2b-surface-elevated);
+  background: var(--k2b-surface);
   transform: translate3d(0, var(--k2b-sheet-footer-y, 0px), 0);
 }
 /* A sheet only dims what lies behind it, without blur, so a drag stays

@@ -88,6 +88,14 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     running.cancel();
     put(pinned.highest - matrix.m42);
   };
+  // When the owner hides the sheet while it moves, as a close button or navigation does, the move ends without
+  // landing: no detent, no `onDismiss`, nothing left for the next opening.
+  const hidden =
+    typeof ResizeObserver === "function"
+      ? new ResizeObserver(() => {
+          if (pinned && sheet.getClientRects().length === 0) unpin();
+        })
+      : undefined;
   const pin = () => {
     if (pinned) {
       stop();
@@ -99,6 +107,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     pinned = { heights, highest: Math.max(visible, ...heights), visible };
     sheet.style.height = `${pinned.highest}px`;
     put(visible);
+    hidden?.observe(sheet);
     return pinned;
   };
   const unpin = () => {
@@ -108,6 +117,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     delete sheet.dataset.sheetDragging;
     if (!pinned) return;
     pinned = undefined;
+    hidden?.unobserve(sheet);
     sheet.style.removeProperty("height");
     sheet.style.removeProperty("transform");
     // The stylesheet's resting height arrives in this one layout, not through a transition.
@@ -146,8 +156,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     const state = pin();
     goal = detent;
     glide(state.heights[detents.indexOf(detent)] ?? state.visible, MOVE_MS, () => {
-      // A sheet its owner closed during the glide keeps the detent the owner left it.
-      if (sheet.getClientRects().length > 0) set(detent);
+      set(detent);
       unpin();
     });
   };
@@ -164,6 +173,8 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
   let drag:
     | {
         id: number;
+        /** The press caught a glide; its click lets the glide land instead of moving on. */
+        caught: boolean;
         startY: number;
         /** The visible height when the drag took the sheet. */
         from: number;
@@ -184,6 +195,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     if (handle.hasPointerCapture?.(ended.id)) handle.releasePointerCapture(ended.id);
     // A press that caught a glide lets it land; a cancelled drag returns. A cancelled gesture sends no click.
     if (!ended.moved || !commit) {
+      if (!ended.moved && ended.caught && commit) suppressClick = true;
       if (pinned) moveTo(ended.moved ? current() : (goal ?? current()));
       return;
     }
@@ -207,10 +219,12 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     if (event.button !== 0 || event.isPrimary === false || drag) return;
     suppressClick = false;
     // A press during a glide catches the sheet where it is now.
+    const caught = animation !== undefined;
     stop();
     handle.setPointerCapture?.(event.pointerId);
     drag = {
       id: event.pointerId,
+      caught,
       startY: event.clientY,
       from: 0,
       moved: false,
@@ -271,6 +285,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
   return () => {
     finish(false);
     unpin();
+    hidden?.disconnect();
     handle.style.touchAction = touchAction;
     handle.removeEventListener("pointerdown", down);
     handle.removeEventListener("pointermove", move);
