@@ -20,6 +20,7 @@ import {
 } from "./approvals";
 import { aiCapabilityToolName } from "./capabilities";
 import { aiCapabilityCheckResult } from "./capability-execution";
+import { CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
 import { aiFileStore, readAiConversationFile } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
@@ -61,6 +62,52 @@ suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("authoring stop receipts survive reload but are omitted from forks without the draft", async () => {
+    const userId = await insertUser();
+    const source = await aiConversations.createConversation({ ownerUserId: userId });
+    const conversationIds = [source.id];
+    try {
+      const guard = createCodeAuthoringTurnBudget({
+        priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 1 },
+        selected: true,
+        finishedToolCalls: [],
+      });
+      const store = aiConversations.createSessionStore({ conversationId: source.id, codeAuthoringStop: guard.stopped });
+      const loop = nessi({
+        systemPrompt: "Prepare the task.",
+        input: "Prepare a task",
+        store,
+        provider: guard.wrap({
+          name: "stub",
+          model: "stub",
+          family: "openai-compatible",
+          capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: false },
+          async *stream() {
+            throw new Error("An exhausted turn must not dispatch");
+          },
+        }),
+      });
+      try {
+        for await (const _event of loop) {
+          /* Persist through the real session store. */
+        }
+      } finally {
+        loop.abort();
+      }
+      const messages = await aiConversations.listMessages({ conversationId: source.id });
+      const last = messages.at(-1)!;
+      expect(last.message).toMatchObject({ role: "assistant", content: [] });
+      expect(last.meta?.codeAuthoringStop).toEqual(guard.stopped()!);
+      const fork = await aiConversations.forkConversation({ sourceConversationId: source.id, ownerUserId: userId, throughSeq: last.seq });
+      conversationIds.push(fork.id);
+      expect((await aiConversations.listMessages({ conversationId: fork.id })).at(-1)?.meta?.codeAuthoringStop).toBeUndefined();
+      await store.append(assistantMessage("Summary"), { kind: "summary" });
+      expect((await aiConversations.listMessages({ conversationId: source.id })).at(-1)?.meta?.codeAuthoringStop).toBeUndefined();
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
   test("resource presentation survives indexing, updates and user listings", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];

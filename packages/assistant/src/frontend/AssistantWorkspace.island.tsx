@@ -82,6 +82,7 @@ import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
 import AssistantApprovalsView from "./AssistantApprovalsView";
+import AssistantAuthoringStop from "./AssistantAuthoringStop";
 import {
   AssistantChatContextContent,
   assistantChatSidebarActions,
@@ -3179,6 +3180,9 @@ export default function AssistantWorkspace(props: Props) {
                               fallback={
                                 <AiChatActionsProvider
                                   actions={{
+                                    renderCodeAuthoringStop: (state, continuable) => (
+                                      <AssistantAuthoringStop state={state} continuable={continuable} />
+                                    ),
                                     renderCodeVersion: (version) => (
                                       <AssistantCodeVersionCard
                                         {...version}
@@ -3221,14 +3225,15 @@ export default function AssistantWorkspace(props: Props) {
                                     },
                                     onContinueTurn: async (message) => {
                                       const target = chat.activeConversationId();
-                                      if (!target) return;
+                                      if (!target) throw new Error(t().authoringContinueFailed);
                                       // Sending replaces the saved draft; what the person was writing goes back into it.
-                                      await sendBesideComposer(session(target), {
+                                      const sent = await sendBesideComposer(session(target), {
                                         send: () => send({ message }),
                                         hasContent: () =>
                                           Boolean(composerDraft(target).trim()) || composerAttachmentsFor(target).length > 0,
                                         save: () => saveComposer(target, target),
                                       });
+                                      if (!sent) throw new Error(t().authoringContinueFailed);
                                     },
                                     onOpenFile: (path) => void openFiles(path),
                                     resolveFileLink: (href) => {

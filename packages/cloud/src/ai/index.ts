@@ -391,6 +391,7 @@ export type {
   AiApprovalTarget,
   AiCapabilityToolPresentation,
   AiClientToolId,
+  AiCodeAuthoringStop,
   AiConversation,
   AiConversationCounts,
   AiConversationDraft,

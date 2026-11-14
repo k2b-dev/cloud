@@ -273,3 +273,20 @@ Each process emits at most one slow summary per app and hop per minute.
 `app-access` failures similarly include the app ID and a throttled
 `failureCount`. These counters describe observed probes, not unique users.
 Compare matching app IDs and hop timings across processes to locate the delay.
+
+## Gustav stops while authoring Code
+
+A message saying that work is repeating or growing too large means the
+[Code authoring safety budget](/en/docs/ai/chat-runtime-and-streaming#code-authoring-safety-budget)
+ended the turn. The chat shows confirmed completed work, saved drafts and
+remaining checks or version saves. The draft was saved at the stop; continuing
+checks its current state. Choose **Continue**
+(**Weiterarbeiten** in German) to start a new turn; nothing resumes automatically.
+If sending fails, the notice offers the same action again. Inspect the failed
+check before repeating it.
+
+For diagnosis, filter Core logs by `ai:executor` and
+`AI authoring turn reached its safety budget`. The event includes conversation
+and turn IDs and one reason: `model_calls`, `input_tokens`, or
+`repeated_error`. Inspect provider attempts in the AI usage report. No live
+configuration change or model price is needed for this guard.

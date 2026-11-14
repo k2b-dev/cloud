@@ -290,6 +290,16 @@ export type AiConversationProjectUpdateResult =
 
 export type AiCodeOrigin = { codeId: string; title: string; runId: string; requestId: string; label: string };
 
+/** Receipt-based snapshot at an authoring stop; deliberately contains no source or paths. */
+export type AiCodeAuthoringStop = {
+  reason: "model_calls" | "input_tokens" | "repeated_error";
+  completedSteps: number;
+  drafts: number;
+  unchecked: number;
+  untested: number;
+  unsubmitted: number;
+};
+
 export type AiStoredMessage = {
   /** Personal composer hint, projected only for the person who triggered the latest completed answer. */
   suggestedNextMessage?: { text: string; dismissedAt: string | null };
@@ -315,6 +325,7 @@ export type AiStoredMessage = {
   meta: {
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
+    codeAuthoringStop?: AiCodeAuthoringStop;
     codeOrigin?: AiCodeOrigin;
     modelRequest?: AiModelRequest;
     modelResolved?: AiResolvedModelRef;
@@ -1109,6 +1120,8 @@ export type AiConversationService = {
     modelId?: string | null;
     turnId?: string | null;
     leaseOwner?: string | null;
+    /** Read only for the terminal assistant append, persisted with the message. */
+    codeAuthoringStop?: () => AiCodeAuthoringStop | null;
     /** Ephemeral provider input for this turn; user-message persistence remains reference-only. */
     turnInput?: Input;
     /** Mutable snapshot map read only when an assistant tool-call message is persisted. */

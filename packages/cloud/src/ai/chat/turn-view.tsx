@@ -586,7 +586,13 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean })
     <NoticeCard
       tone="warning"
       class="ai-turn__notice"
-      title={props.notice.kind === "output_limit" ? t().outputLimitReached : t().turnErrorTitle}
+      title={
+        props.notice.kind === "output_limit"
+          ? t().outputLimitReached
+          : props.notice.kind === "code_authoring"
+            ? t().authoringTurnStopped
+            : t().turnErrorTitle
+      }
       detail={props.notice.kind === "output_limit" && props.notice.reasoning ? t().outputLimitReasoning : undefined}
     >
       <Show when={props.continuable && actions.onContinueTurn}>
@@ -715,6 +721,7 @@ function AiTurnText(props: {
  * turn becomes history.
  */
 export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosureState: AiToolDisclosureState }): JSX.Element {
+  const hostActions = useAiChatActions();
   const locale = useLocale();
   const layout = () => props.segment().layout;
   const results = createMemo(() => new Map(layout().results.map((result) => [result.id, result])));
@@ -793,7 +800,19 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} />}
         </Show>
         <Show when={props.segment().stopNotice}>
-          {(notice) => <AiTurnStopNotice notice={notice()} continuable={props.segment().continuable === true} />}
+          {(notice) => (
+            <Show
+              when={notice().kind === "code_authoring" && hostActions.renderCodeAuthoringStop}
+              fallback={<AiTurnStopNotice notice={notice()} continuable={props.segment().continuable === true} />}
+            >
+              {untrack(() => {
+                const current = notice();
+                return current.kind === "code_authoring"
+                  ? hostActions.renderCodeAuthoringStop?.(current.state, () => props.segment().continuable === true)
+                  : null;
+              })}
+            </Show>
+          )}
         </Show>
       </div>
     </AiToolDisclosureProvider>
