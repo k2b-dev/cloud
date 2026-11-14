@@ -10,6 +10,7 @@ export {
 import { z } from "zod";
 import { CodeIdSchema, CodeSourceFilesSchema, CodeVersionSchema } from "./contracts";
 import { CodePolicyRowSchema } from "./policy-contracts";
+import { CodeReviewOutcomeSchema, CodeSubmissionOriginSchema } from "./review-contracts";
 
 const hash = z
   .string()
@@ -42,6 +43,8 @@ export type CodeVersionDiffFile = z.infer<typeof CodeVersionDiffFileSchema>;
 export const CodeVersionDecisionSchema = z
   .object({
     approved: z.boolean(),
+    outcome: CodeReviewOutcomeSchema,
+    comment: z.string().nullable(),
     decidedBy: z.uuid().nullable(),
     decidedAt: z.iso.datetime(),
     soleAdmin: z.boolean(),
@@ -54,9 +57,20 @@ const submission = z
   .object({
     version: CodeVersionSchema,
     binding: CodeVersionBindingSchema,
-    status: z.enum(["submitted", "pending", "approved", "rejected", "expired", "cancelled"]),
+    status: z.enum([
+      "submitted",
+      "pending",
+      "approved",
+      "rejected",
+      "changes_requested",
+      "withdrawn",
+      "superseded",
+      "expired",
+      "cancelled",
+    ]),
     approvalId: z.uuid().nullable(),
     decision: CodeVersionDecisionSchema.nullable(),
+    origin: CodeSubmissionOriginSchema.optional(),
   })
   .strict();
 /** Submission metadata consumed by version lists, activation, CLI and approval UI. */

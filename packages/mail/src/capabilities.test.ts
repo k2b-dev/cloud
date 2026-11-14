@@ -1001,7 +1001,7 @@ describe("mail capabilities", () => {
     expect(typeViewIssues(manifest, "mailbox")).toEqual([]);
     expect(mailCapabilities.types.conversation.icon).toBe("ti ti-mail");
     expect(manifest.queries.map((query) => query.localId).sort()).toEqual(
-      [...Object.keys(mailCapabilities.queries), "mailbox.readable"].sort(),
+      [...Object.keys(mailCapabilities.queries), "mailbox.readable", "mailbox.managers"].sort(),
     );
     expect(manifest.actions.map((action) => action.localId).sort()).toEqual(Object.keys(mailCapabilities.actions).sort());
     const mailboxReader = manifest.queries.find((query) => query.localId === "mailbox.read");

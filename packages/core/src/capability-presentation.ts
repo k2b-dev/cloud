@@ -25,6 +25,7 @@ const codeAiFileInput = {
   "files[].id": "Unveränderter, an diesen Code-Lauf gebundener FileRef aus einem berechtigt gelesenen Ergebnis.",
 };
 const codeVersionDecisionInput = {
+  comment: "Nachricht für die einreichende Person; Pflicht bei Ablehnung und Änderungswunsch.",
   versionId: codeVersionInput.versionId,
   sourceHash: "Unveränderter SHA-256-Hash des geprüften Quelltexts aus dem Vergleich.",
   bundleHash: "Unveränderter SHA-256-Hash des geprüften Bundles aus dem Vergleich.",
@@ -108,6 +109,18 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "code.readable": {
+          title: "Code-Leserechte prüfen",
+          description: "Prüft aktuelle Leserechte für die Zustellung eines Code-Ereignisses.",
+        },
+        "code.resource.read": {
+          title: "Code lesen",
+          description: "Liest den Namen und die heutigen Leserechte eines Codes für Ressourcen-Links und Ereignisse.",
+        },
+        "code.version.review": {
+          title: "Code-Prüfung lesen",
+          description: "Liest die veröffentlichte Entscheidung und Kommentare als Daten mit den heutigen Bearbeitungsrechten.",
+        },
         ...generatedFilePresentation,
         "code.event.catchup.read": {
           title: "Fortschritt des Code-Nachholens lesen",
@@ -520,6 +533,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "code.version.reject": {
           title: "Code-Version ablehnen",
           description: "Lehnt die genaue Version und ihren Vergleich über dieselbe Plattform-Anfrage ab.",
+          input: codeVersionDecisionInput,
+        },
+        "code.version.request_changes": {
+          title: "Änderungen an Code-Version anfordern",
+          description: "Fordert mit einer Nachricht Änderungen an genau dieser Version an. Sie bleibt ausgeschaltet.",
           input: codeVersionDecisionInput,
         },
         "code.pause": {

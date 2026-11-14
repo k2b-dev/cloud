@@ -12,8 +12,13 @@ export class RemoteCodeError extends Error {
     super(body.error.message);
   }
 }
-export function request<K extends CodeAuthoringCommand>(ctx: CloudCliContext, name: K, input: unknown): Promise<CodeAuthoringData<K>>;
-export async function request(ctx: CloudCliContext, name: CodeAuthoringCommand, input: unknown) {
+export function request<K extends CodeAuthoringCommand>(
+  ctx: CloudCliContext,
+  name: K,
+  input: unknown,
+  signal?: AbortSignal,
+): Promise<CodeAuthoringData<K>>;
+export async function request(ctx: CloudCliContext, name: CodeAuthoringCommand, input: unknown, signal?: AbortSignal) {
   const parsedInput = codeAuthoringContracts[name].input.safeParse(input);
   if (!parsedInput.success) throw new Error("Invalid Code command input. Check IDs, cursors and flags with --help.");
   const body = JSON.stringify(parsedInput.data);
@@ -22,6 +27,7 @@ export async function request(ctx: CloudCliContext, name: CodeAuthoringCommand, 
     method: "POST",
     headers: { "content-type": "application/json" },
     body,
+    signal,
   });
   if (!response.ok) {
     const text = await response.text();

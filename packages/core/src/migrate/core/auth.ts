@@ -199,6 +199,7 @@ export const migrate = async (): Promise<void> => {
     END $$;
   `.simple();
   await sql`ALTER TABLE auth.users VALIDATE CONSTRAINT users_auth_epoch_nonnegative_check`.simple();
+  await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS notification_locale TEXT CHECK(notification_locale IS NULL OR length(notification_locale) BETWEEN 1 AND 35)`.simple();
   console.log("  ✓ auth.users table");
 
   await sql`

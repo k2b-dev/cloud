@@ -333,6 +333,10 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
         },
+        "mailbox.managers": {
+          title: "Verwaltende eines Postfachs ermitteln",
+          description: "Ermittelt eine begrenzte Seite der Personen mit heutigen Verwaltungsrechten für Mitteilungen.",
+        },
         "mailbox.readable": {
           title: "Leser für Postfach prüfen",
           description: "Prüfen, welche aktuellen Konten dieses Postfach lesen dürfen; ohne Grenzen einzelner Anmeldedaten.",

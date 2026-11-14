@@ -10,6 +10,7 @@ import { createCodeAuthoringRoutes } from "../api/code-authoring";
 import type { CodeAuthoringData, CodeProject } from "../code/authoring-contracts";
 import type { Code } from "../code/contracts";
 import { codePolicyPreset } from "../code/policy-contracts";
+import type { CodeReview } from "../code/review-contracts";
 import code, { printCodeCheck } from "./code";
 import { codeProjectFolder, listCodeProjects, loadCodeProject, readCodeFiles, writeCodeProject } from "./code-files";
 
@@ -950,18 +951,21 @@ test("status defaults to the current project or ./code without scanning unrelate
   const { root } = await project();
   const directory = await writeCodeProject(join(root, "code"), config, { "code.ts": source });
   await symlink(join(root, "example"), join(root, "unrelated-link"));
+  const empty = join(root, "no-project");
+  await mkdir(empty);
   const script = join(root, "status-default.ts");
   await writeFile(
     script,
-    `import { listCodeProjects } from ${JSON.stringify(import.meta.dir + "/code-files.ts")}; console.log(JSON.stringify((await listCodeProjects()).map(project => project.config.codeId)));`,
+    `import { listCodeProjects } from ${JSON.stringify(import.meta.dir + "/code-files.ts")};
+` +
+      `const results = []; for (const cwd of ${JSON.stringify([root, directory, empty])}) { process.chdir(cwd); results.push((await listCodeProjects()).map(project => project.config.codeId)); } console.log(JSON.stringify(results));`,
   );
-  for (const cwd of [root, directory]) {
-    const child = Bun.spawn([process.execPath, script], { cwd, stdout: "pipe", stderr: "pipe" });
-    const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    expect(exit).toBe(0);
-    expect(stderr).toBe("");
-    expect(JSON.parse(stdout)).toEqual([config.codeId]);
-  }
+  // One isolated process covers both working directories without paying for two cold module loads.
+  const child = Bun.spawn([process.execPath, script], { cwd: root, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect(exit).toBe(0);
+  expect(stderr).toBe("");
+  expect(JSON.parse(stdout)).toEqual([[config.codeId], [config.codeId], []]);
 });
 
 test("resource pulls use Code IDs for unsafe IDs and colliding resource types without overwrites", async () => {
@@ -1009,22 +1013,6 @@ test("invalid operation IDs fail without schema diagnostics or network requests"
       error: { code: "code_cli_input", message: "Invalid Code command input. Check IDs, cursors and flags with --help.", details: null },
     },
   ]);
-});
-
-test("status with no current project and no default code folder returns an empty list", async () => {
-  const { root } = await project();
-  const empty = join(root, "no-project");
-  await mkdir(empty);
-  const script = join(root, "status-empty.ts");
-  await writeFile(
-    script,
-    `import { listCodeProjects } from ${JSON.stringify(import.meta.dir + "/code-files.ts")}; console.log(JSON.stringify(await listCodeProjects()));`,
-  );
-  const child = Bun.spawn([process.execPath, script], { cwd: empty, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-  expect(exit).toBe(0);
-  expect(stderr).toBe("");
-  expect(JSON.parse(stdout)).toEqual([]);
 });
 
 test("human check output uses reviewed titles and JSON retains both titles and stable entrypoints", async () => {
@@ -1182,4 +1170,89 @@ test("db export leaves no final file on a truncated stream or an authorization r
   expect(await code.run(denied.ctx)).toBe(1);
   expect(await readdir(directory)).toEqual([]);
   expect(JSON.stringify(denied.printed)).toContain("NOT_FOUND");
+});
+
+const reviewFixture: CodeReview = {
+  codeId: config.codeId,
+  versionId: uuid,
+  number: 5,
+  status: "changes_requested",
+  origin: { kind: "cli" },
+  approvalId: uuid,
+  expiresAt: "2026-11-15T12:00:00.000Z",
+  decidedBy: { id: uuid, name: "Jana Probe", avatarHash: null },
+  decidedAt: "2026-11-01T12:00:00.000Z",
+  message: "Use the shared folder.",
+  comments: [
+    {
+      id: uuid,
+      author: { id: uuid, name: "Jana Probe", avatarHash: null },
+      createdAt: "2026-11-01T12:00:00.000Z",
+      body: "Use the approved destination.",
+      parentId: null,
+      path: "code.ts",
+      line: 12,
+    },
+  ],
+  nextBefore: null,
+  commentCount: 1,
+  activeVersion: null,
+  contentTrust: "untrusted_data",
+};
+test("review show preserves the exact JSON contract and exit codes for all eight states", async () => {
+  const { directory } = await project();
+  for (const [status, exit] of [
+    ["not_required", 0],
+    ["pending", 13],
+    ["approved", 0],
+    ["changes_requested", 10],
+    ["rejected", 11],
+    ["withdrawn", 12],
+    ["superseded", 12],
+    ["expired", 12],
+  ] as const) {
+    const review = { ...reviewFixture, status };
+    const run = context(["review", "show", directory], {}, "json", () => Response.json(review));
+    expect(await code.run(run.ctx)).toBe(exit);
+    expect(run.printed).toEqual([review]);
+    expect(run.requests).toEqual([{ path: "/api/code/authoring/review", input: { codeId: config.codeId, versionId: uuid } }]);
+  }
+});
+test("review show uses --version and prints the author, line comments, retained version and next step", async () => {
+  const { directory } = await project();
+  const versionId = "22222222-2222-4222-8222-222222222222";
+  const review = { ...reviewFixture, versionId, activeVersion: { id: uuid, number: 4 } };
+  const run = context(["review", "show", directory], { version: versionId }, "text", () => Response.json(review));
+  expect(await code.run(run.ctx)).toBe(10);
+  expect(run.requests[0]?.input.versionId).toBe(versionId);
+  expect(run.printed.join("\n")).toContain("Änderungen angefordert");
+  expect(run.printed.join("\n")).toContain("code.ts:12  Use the approved destination.");
+  expect(run.printed.join("\n")).toContain("Version 4 bleibt eingeschaltet.");
+  expect(run.printed.join("\n")).toContain("Jana Probe");
+  expect(run.printed.join("\n")).toContain("eine neue Version einreichen");
+});
+test("review wait reports a terminal decision through the held request and Ctrl+C cancels only waiting", async () => {
+  const { directory } = await project();
+  const finished = context(["review", "wait", directory], { timeout: "2" }, "json", () => Response.json(reviewFixture));
+  expect(await code.run(finished.ctx)).toBe(10);
+  expect(finished.requests[0]?.path).toBe("/api/code/authoring/reviewWait");
+  expect(finished.printed).toEqual([reviewFixture]);
+  const stopped = context(["review", "wait", directory], { timeout: "2" }, "text", () => {
+    queueMicrotask(() => process.emit("SIGINT"));
+    return Response.json({ ...reviewFixture, status: "pending" });
+  });
+  expect(await code.run(stopped.ctx)).toBe(13);
+  expect(stopped.requests.map((item) => item.path)).toEqual(["/api/code/authoring/reviewWait"]);
+  expect(stopped.errors.at(-1)).toContain("Freigabe bleibt unverändert");
+});
+test("review timeout refreshes durable state before printing JSON and rejects waits longer than fourteen days", async () => {
+  const { directory } = await project();
+  const pending = { ...reviewFixture, status: "pending" };
+  const run = context(["review", "wait", directory], { timeout: "1" }, "json", () => Response.json(pending));
+  expect(await code.run(run.ctx)).toBe(13);
+  expect(run.requests.map((item) => item.path)).toEqual(["/api/code/authoring/reviewWait", "/api/code/authoring/review"]);
+  expect(run.printed).toEqual([pending]);
+  const invalid = context(["review", "wait", directory], { timeout: String(14 * 86400 + 1) }, "json");
+  expect(await code.run(invalid.ctx)).toBe(1);
+  expect(invalid.requests).toHaveLength(0);
 });

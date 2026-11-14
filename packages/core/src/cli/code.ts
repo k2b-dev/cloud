@@ -33,6 +33,7 @@ import {
 import { codeOperationCommands } from "./code-operations";
 import { pullAllCode } from "./code-pull";
 import { RemoteCodeError, request } from "./code-request";
+import { codeReviewCommands } from "./code-review";
 
 function printDiff(ctx: CloudCliContext, files: CodeVersionDiffFile[]) {
   for (const file of files) {
@@ -83,9 +84,13 @@ export function buildCodeCli(locale?: string) {
     name: "code",
     summary: t("feat/code: develop, check and submit Code", "feat/code: Code entwickeln, prüfen und einreichen"),
     requiresCloud: true,
-    groupSummaries: { sdk: t("Download the generated SDK", "Erzeugtes SDK herunterladen") },
+    groupSummaries: {
+      review: t("Read and await admin decisions", "Admin-Entscheidungen lesen und abwarten"),
+      sdk: t("Download the generated SDK", "Erzeugtes SDK herunterladen"),
+    },
     commands: [
       ...codeOperationCommands(locale),
+      ...codeReviewCommands(locale),
       command("init", {
         summary: t("Create Code and a local project", "Code und lokales Projekt anlegen"),
         flags: {

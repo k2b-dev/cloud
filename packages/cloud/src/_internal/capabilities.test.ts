@@ -1873,3 +1873,57 @@ describe("Code version call reviews", () => {
     });
   }
 });
+
+test("resource manager audiences use a paged app-only query without a person session", async () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  let page: unknown;
+  const definitions = defineCapabilities({
+    protocolVersion: 2,
+    queries: example().queries,
+    types: {
+      item: {
+        title: "Item",
+        description: "One item.",
+        reader: "get",
+        access: {
+          managers: (input, caller) => {
+            expect(caller.actor).toEqual({ kind: "app", appId: "notice-sender" });
+            expect(caller.accessSubject).toEqual({ type: "none" });
+            page = input;
+            return [id];
+          },
+        },
+      },
+    },
+  });
+  const compiled = compileCapabilities("example", definitions);
+  const operation = compiled.queries.get("item.managers")!;
+  expect(operation.manifest.appOnly).toBe(true);
+  const result = await invokeCompiledCapability({
+    compiled,
+    kind: "query",
+    localId: "item.managers",
+    expectedSchemaHash: operation.manifest.schemaHash,
+    input: { id: "thing", userId: id, limit: 1 },
+    context: {
+      actor: { kind: "app", appId: "notice-sender" },
+      accessSubject: { type: "none" },
+      user: null,
+      locale: "en",
+      origin: "app",
+      requestId: "managers",
+      signal: new AbortController().signal,
+    },
+  });
+  expect(result).toMatchObject({ ok: true, data: { data: { userIds: [id] } } });
+  expect(page).toEqual({ id: "thing", userId: id, limit: 1 });
+  const person = await invokeCompiledCapability({
+    compiled,
+    kind: "query",
+    localId: "item.managers",
+    expectedSchemaHash: operation.manifest.schemaHash,
+    input: { id: "thing" },
+    context,
+  });
+  expect(person).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+});
