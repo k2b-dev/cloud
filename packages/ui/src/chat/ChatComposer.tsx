@@ -2412,7 +2412,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 acceptSuggestion();
               }}
             >
-              <span class="k2b-chat-composer__suggestion-mark">✦</span>
+              <i class="ti ti-sparkles k2b-chat-composer__suggestion-mark" aria-hidden="true" />
               <kbd class="k2b-chat-composer__suggestion-cap">Tab</kbd>
               {chatMessages().suggestionKeyHint}
             </span>
@@ -2423,9 +2423,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               onMouseDown={keepFieldFocus}
               onClick={acceptSuggestion}
             >
-              <span class="k2b-chat-composer__suggestion-mark" aria-hidden="true">
-                ✦
-              </span>
+              <i class="ti ti-sparkles k2b-chat-composer__suggestion-mark" aria-hidden="true" />
               {chatMessages().suggestionAccept}
             </button>
           </div>

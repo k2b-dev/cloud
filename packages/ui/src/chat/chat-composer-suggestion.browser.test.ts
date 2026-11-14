@@ -150,6 +150,26 @@ const suggest = async (page: Page, text: string | undefined) => {
 };
 
 describe("Chat.Composer suggestion", () => {
+  test(
+    "the hint reads in the 12 px meta step and the suggestion stays readable plum",
+    async () => {
+      const page = await open(1440);
+      try {
+        await suggest(page, SUGGESTION);
+        const look = await page.evaluate(() => {
+          const hint = getComputedStyle(document.querySelector(".k2b-chat-composer__suggestion-key")!);
+          const text = getComputedStyle(document.querySelector(".k2b-chat-composer__suggestion")!);
+          return { size: hint.fontSize, weight: hint.fontWeight, text: text.fontSize };
+        });
+        // v12 6d: sizes only from 12/13/14/18 px; the hint is the meta step at 12 px, semibold as v12 draws it.
+        expect(look).toEqual({ size: "12px", weight: "600", text: "14px" });
+      } finally {
+        await page.context().close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   for (const [width, context] of [
     [1440, {}],
     [390, touch],
